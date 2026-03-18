@@ -7,6 +7,7 @@ Usage:
     bsl-analyzer --check [PATH ...]                 Run linter (ruff-style output)
     bsl-analyzer --index [PATH]                     Force full reindex of workspace
     bsl-analyzer --list-rules                       Show all available rules
+    bsl-analyzer --watch [PATH ...]                 Watch for changes and re-lint
 
 Check mode flags:
     --select BSL001,BSL002         Run only these rules
@@ -90,6 +91,56 @@ def _run_check(
     )
 
 
+def _run_watch(
+    paths: list[str],
+    fmt: str,
+    select: set[str] | None,
+    ignore: set[str] | None,
+    jobs: int,
+    sonar_root: str | None,
+    exit_zero: bool,
+) -> None:
+    """Watch paths for BSL file changes and re-run checks on each save."""
+    from rich.console import Console
+
+    from bsl_analyzer.cli.check import (
+        _print_json,
+        _print_sarif,
+        _print_sonarqube,
+        _print_summary,
+        _print_text,
+        _run_checks,
+    )
+    from bsl_analyzer.cli.config import load_config
+    from bsl_analyzer.indexer.watcher import FileWatcher
+
+    _console = Console(stderr=True)
+    search_from = paths[0] if paths else os.getcwd()
+    cfg = load_config(search_from)
+    workspace = paths[0] if len(paths) == 1 and os.path.isdir(paths[0]) else os.path.commonpath(paths) if paths else os.getcwd()
+
+    _console.print(f"[bold green]Watching[/bold green] {workspace} for BSL changes (Ctrl+C to stop)")
+
+    def _on_change(changed: list[str]) -> None:
+        _console.print(f"\n[dim]Changed:[/dim] {', '.join(os.path.basename(f) for f in changed)}")
+        diags, _ = _run_checks(sorted(changed), select=select, ignore=ignore, jobs=jobs, config=cfg)
+        if fmt == "json":
+            _print_json(diags)
+        elif fmt == "sonarqube":
+            _print_sonarqube(diags, sonar_root)
+        elif fmt == "sarif":
+            _print_sarif(diags, sonar_root)
+        else:
+            _print_text(diags)
+            if diags:
+                _print_summary(diags, len(changed))
+            else:
+                _console.print(f"[green]Clean.[/green] ({len(changed)} file(s))")
+
+    watcher = FileWatcher()
+    watcher.watch(workspace, _on_change)
+
+
 def _run_index(workspace: str, force: bool) -> None:
     from bsl_analyzer.indexer.incremental import IncrementalIndexer
     db_path = os.environ.get("INDEX_DB_PATH", "bsl_index.sqlite")
@@ -135,6 +186,12 @@ Examples:
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument("--lsp", action="store_true", help="Start LSP server on stdio")
     mode_group.add_argument("--mcp", action="store_true", help="Start MCP HTTP server")
+    mode_group.add_argument(
+        "--watch",
+        metavar="PATH",
+        nargs="*",
+        help="Watch PATH(s) for BSL file changes and re-run linter on each save",
+    )
     mode_group.add_argument(
         "--check",
         metavar="PATH",
@@ -255,6 +312,18 @@ Examples:
                 baseline=args.baseline,
                 update_baseline=args.update_baseline,
             )
+        )
+
+    elif args.watch is not None:
+        watch_paths = args.watch if args.watch else [os.getcwd()]
+        _run_watch(
+            watch_paths,
+            fmt=args.format,
+            select=_parse_codes(args.select),
+            ignore=_parse_codes(args.ignore),
+            jobs=args.jobs,
+            sonar_root=args.sonar_root,
+            exit_zero=args.exit_zero,
         )
 
     elif args.index is not None:

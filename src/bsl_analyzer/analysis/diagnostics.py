@@ -380,6 +380,78 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MINOR",
         "tags": ["deprecated", "ui"],
     },
+    "BSL042": {
+        "name": "EmptyExportMethod",
+        "description": "Exported method has no meaningful body (empty stub)",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["design", "api"],
+    },
+    "BSL043": {
+        "name": "TooManyVariables",
+        "description": "Method declares too many local variables (default >15)",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["brain-overload", "size"],
+    },
+    "BSL044": {
+        "name": "FunctionNoReturnValue",
+        "description": "Exported Function contains no explicit Возврат/Return with a value",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["design", "api", "suspicious"],
+    },
+    "BSL045": {
+        "name": "MultilineStringLiteral",
+        "description": "Multi-line string via repeated concatenation — use | continuation instead",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL046": {
+        "name": "MissingElseBranch",
+        "description": "If…ElseIf chain has no Else branch — unhandled case may hide bugs",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "defensive-programming"],
+    },
+    "BSL047": {
+        "name": "DateTimeNow",
+        "description": "ТекущаяДата()/CurrentDate() returns local server time — use CurrentUniversalDate() for UTC-safe code",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "date-time"],
+    },
+    "BSL048": {
+        "name": "EmptyFile",
+        "description": "BSL file contains no executable code (empty or comments only)",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["unused"],
+    },
+    "BSL049": {
+        "name": "UnconditionalExceptionRaise",
+        "description": "ВызватьИсключение/Raise outside a Попытка/Try block is unconditional — consider using a guard condition",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["error-handling", "defensive-programming"],
+    },
+    "BSL050": {
+        "name": "LargeTransaction",
+        "description": "НачатьТранзакцию/BeginTransaction without close-by ЗафиксироватьТранзакцию/CommitTransaction may leave transaction open",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["design", "transactions", "reliability"],
+    },
 }
 
 
@@ -736,6 +808,40 @@ _PLATFORM_BUILTINS: frozenset[str] = frozenset(
         "char", "charcode", "format", "strtemplate",
     }
 )
+
+# String continuation line in BSL (| at the start for multiline literals)
+_RE_STR_CONTINUATION = re.compile(r'^\s*\|', re.MULTILINE)
+
+# ТекущаяДата / CurrentDate (non-UTC)
+_RE_CURRENT_DATE = re.compile(
+    r'\b(?:ТекущаяДата|CurrentDate)\s*\(',
+    re.IGNORECASE,
+)
+
+# НачатьТранзакцию / BeginTransaction
+_RE_BEGIN_TRANSACTION = re.compile(
+    r'\b(?:НачатьТранзакцию|BeginTransaction)\s*\(',
+    re.IGNORECASE,
+)
+
+# ЗафиксироватьТранзакцию / CommitTransaction or РоллбекТранзакции / RollbackTransaction
+_RE_COMMIT_TRANSACTION = re.compile(
+    r'\b(?:ЗафиксироватьТранзакцию|CommitTransaction'
+    r'|ОтменитьТранзакцию|RollbackTransaction)\s*\(',
+    re.IGNORECASE,
+)
+
+# ВызватьИсключение / Raise (not inside try)
+_RE_RAISE = re.compile(
+    r'^\s*(?:ВызватьИсключение|Raise)\b',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# If/ElseIf/Else/EndIf detection (for MissingElseBranch)
+_RE_IF_OPEN = re.compile(r'^\s*Если\b|^\s*If\b', re.IGNORECASE)
+_RE_ELSEIF = re.compile(r'^\s*(?:ИначеЕсли|ElsIf)\b', re.IGNORECASE)
+_RE_ELSE = re.compile(r'^\s*(?:Иначе|Else)\s*$|^\s*(?:Иначе|Else)\s*;?\s*$', re.IGNORECASE)
+_RE_ENDIF = re.compile(r'^\s*(?:КонецЕсли|EndIf)\b', re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
@@ -1120,6 +1226,24 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl040_using_this_form(path, lines))
         if self._rule_enabled("BSL041"):
             diagnostics.extend(self._rule_bsl041_notify_description(path, lines))
+        if self._rule_enabled("BSL042"):
+            diagnostics.extend(self._rule_bsl042_empty_export_method(path, lines, procs))
+        if self._rule_enabled("BSL043"):
+            diagnostics.extend(self._rule_bsl043_too_many_variables(path, lines, procs))
+        if self._rule_enabled("BSL044"):
+            diagnostics.extend(self._rule_bsl044_function_no_return_value(path, lines, procs))
+        if self._rule_enabled("BSL045"):
+            diagnostics.extend(self._rule_bsl045_multiline_string_literal(path, lines))
+        if self._rule_enabled("BSL046"):
+            diagnostics.extend(self._rule_bsl046_missing_else_branch(path, lines, procs))
+        if self._rule_enabled("BSL047"):
+            diagnostics.extend(self._rule_bsl047_current_date(path, lines))
+        if self._rule_enabled("BSL048"):
+            diagnostics.extend(self._rule_bsl048_empty_file(path, lines))
+        if self._rule_enabled("BSL049"):
+            diagnostics.extend(self._rule_bsl049_unconditional_raise(path, lines, procs))
+        if self._rule_enabled("BSL050"):
+            diagnostics.extend(self._rule_bsl050_large_transaction(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -2588,6 +2712,356 @@ class DiagnosticEngine:
                         ),
                     )
                 )
+        return diags
+
+
+    # ------------------------------------------------------------------
+    # BSL042 — Empty export method
+    # ------------------------------------------------------------------
+
+    def _rule_bsl042_empty_export_method(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag exported methods that have no meaningful body (only comments/blanks)."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.is_export:
+                continue
+            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
+            has_code = any(
+                line.strip() and not _RE_BLANK_OR_COMMENT.match(line)
+                for line in body_lines
+            )
+            if not has_code:
+                header = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header),
+                        severity=Severity.WARNING,
+                        code="BSL042",
+                        message=(
+                            f"Exported {proc.kind} '{proc.name}' has no body. "
+                            "Either implement it or remove the Export keyword."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL043 — Too many local variables
+    # ------------------------------------------------------------------
+
+    MAX_VARIABLES: int = 15
+
+    def _rule_bsl043_too_many_variables(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag methods with more than MAX_VARIABLES local Перем declarations."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            body_lines = lines[proc.start_idx : proc.end_idx + 1]
+            var_count = 0
+            for line in body_lines:
+                m = _RE_VAR_LOCAL.match(line)
+                if m:
+                    var_count += len([n for n in m.group("names").split(",") if n.strip()])
+            if var_count > self.MAX_VARIABLES:
+                header = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header),
+                        severity=Severity.INFORMATION,
+                        code="BSL043",
+                        message=(
+                            f"{proc.kind.capitalize()} '{proc.name}' declares "
+                            f"{var_count} local variables (max {self.MAX_VARIABLES}). "
+                            "Consider refactoring into smaller methods."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL044 — Function (Export) with no explicit return value
+    # ------------------------------------------------------------------
+
+    def _rule_bsl044_function_no_return_value(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag exported Function declarations that never return a value."""
+        diags: list[Diagnostic] = []
+        _re_return_value = re.compile(
+            r"^\s*(?:Возврат|Return)\s+\S", re.IGNORECASE | re.MULTILINE
+        )
+        for proc in procs:
+            if proc.kind != "function" or not proc.is_export:
+                continue
+            body = "\n".join(lines[proc.start_idx : proc.end_idx + 1])
+            if not _re_return_value.search(body):
+                header = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header),
+                        severity=Severity.WARNING,
+                        code="BSL044",
+                        message=(
+                            f"Exported Function '{proc.name}' contains no "
+                            "Возврат/Return with a value — callers will receive Undefined."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL045 — Multiline string via concatenation (should use | continuation)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl045_multiline_string_literal(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Detect patterns like::
+
+            Текст = "Строка1"
+                  + "Строка2";
+
+        BSL supports | continuation syntax which is more readable.
+        """
+        diags: list[Diagnostic] = []
+        _re_str_concat_literal = re.compile(
+            r'^\s*\+\s*"[^"]*"',
+            re.IGNORECASE,
+        )
+        for idx, line in enumerate(lines):
+            if _re_str_concat_literal.match(line):
+                # Check previous line ends with a string literal or another concat
+                prev = lines[idx - 1].rstrip() if idx > 0 else ""
+                if prev.endswith('"') or _re_str_concat_literal.match(lines[idx - 1]):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=0,
+                            end_line=idx + 1,
+                            end_character=len(line),
+                            severity=Severity.INFORMATION,
+                            code="BSL045",
+                            message=(
+                                "Multi-line string via concatenation — "
+                                'use BSL | continuation: "Строка1"\n    |Строка2'
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL046 — If…ElseIf chain without Else branch
+    # ------------------------------------------------------------------
+
+    def _rule_bsl046_missing_else_branch(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect Если...ИначеЕсли...КонецЕсли chains that have no Иначе branch.
+        Only reports top-level chains (depth=1) to avoid noise.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if _RE_IF_OPEN.match(line):
+                # Walk forward to matching EndIf
+                depth = 1
+                has_elseif = False
+                has_else = False
+                if_line = i
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    ln = lines[j]
+                    if _RE_IF_OPEN.match(ln):
+                        depth += 1
+                    elif _RE_ENDIF.match(ln):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        if _RE_ELSEIF.match(ln):
+                            has_elseif = True
+                        elif _RE_ELSE.match(ln):
+                            has_else = True
+                    j += 1
+                if has_elseif and not has_else:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=if_line + 1,
+                            character=len(line) - len(line.lstrip()),
+                            end_line=if_line + 1,
+                            end_character=len(line),
+                            severity=Severity.INFORMATION,
+                            code="BSL046",
+                            message=(
+                                "Если/ElseIf chain has no Иначе/Else branch — "
+                                "unhandled cases may silently do nothing."
+                            ),
+                        )
+                    )
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL047 — CurrentDate (non-UTC)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl047_current_date(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag ТекущаяДата()/CurrentDate() — prefer ТекущаяУниверсальнаяДата()."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.lstrip().startswith("//"):
+                continue
+            for m in _RE_CURRENT_DATE.finditer(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL047",
+                        message=(
+                            "ТекущаяДата()/CurrentDate() returns local server time. "
+                            "Use ТекущаяУниверсальнаяДата()/CurrentUniversalDate() "
+                            "for UTC-safe code."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL048 — Empty file
+    # ------------------------------------------------------------------
+
+    def _rule_bsl048_empty_file(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag BSL files that contain no executable code at all."""
+        for line in lines:
+            if line.strip() and not _RE_BLANK_OR_COMMENT.match(line):
+                return []
+        return [
+            Diagnostic(
+                file=path,
+                line=1,
+                character=0,
+                end_line=1,
+                end_character=0,
+                severity=Severity.INFORMATION,
+                code="BSL048",
+                message="File contains no executable code (empty or comments only).",
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # BSL049 — Unconditional raise outside Try
+    # ------------------------------------------------------------------
+
+    def _rule_bsl049_unconditional_raise(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag ВызватьИсключение/Raise statements that appear *outside* any
+        Попытка...Исключение block.  These are unconditional throws that will
+        always terminate the call — usually a bug or forgotten guard.
+        """
+        diags: list[Diagnostic] = []
+        _re_try_open = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+        _re_try_close = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+
+        for proc in procs:
+            body_lines = lines[proc.start_idx : proc.end_idx + 1]
+            try_depth = 0
+            for rel_idx, line in enumerate(body_lines):
+                if _re_try_open.match(line):
+                    try_depth += 1
+                elif _re_try_close.match(line):
+                    try_depth = max(0, try_depth - 1)
+                elif try_depth == 0 and _RE_RAISE.match(line):
+                    abs_idx = proc.start_idx + rel_idx
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=abs_idx + 1,
+                            character=len(line) - len(line.lstrip()),
+                            end_line=abs_idx + 1,
+                            end_character=len(line),
+                            severity=Severity.INFORMATION,
+                            code="BSL049",
+                            message=(
+                                "ВызватьИсключение/Raise outside a Попытка/Try block "
+                                "is unconditional — wrap in a guard condition."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL050 — Transaction without commit
+    # ------------------------------------------------------------------
+
+    def _rule_bsl050_large_transaction(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag methods that call НачатьТранзакцию/BeginTransaction but do not
+        contain a matching ЗафиксироватьТранзакцию/CommitTransaction or
+        ОтменитьТранзакцию/RollbackTransaction within the same method.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            body = "\n".join(lines[proc.start_idx : proc.end_idx + 1])
+            begin_matches = list(_RE_BEGIN_TRANSACTION.finditer(body))
+            if not begin_matches:
+                continue
+            if _RE_COMMIT_TRANSACTION.search(body):
+                continue
+            # Found BeginTransaction but no commit/rollback in this method
+            m = begin_matches[0]
+            line_offset = body[: m.start()].count("\n")
+            abs_line = proc.start_idx + line_offset
+            ln = lines[abs_line] if abs_line < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=abs_line + 1,
+                    character=m.start() - body.rfind("\n", 0, m.start()) - 1,
+                    end_line=abs_line + 1,
+                    end_character=len(ln),
+                    severity=Severity.WARNING,
+                    code="BSL050",
+                    message=(
+                        f"Method '{proc.name}' calls НачатьТранзакцию/BeginTransaction "
+                        "but contains no matching ЗафиксироватьТранзакцию/CommitTransaction "
+                        "or ОтменитьТранзакцию/RollbackTransaction — transaction may remain open."
+                    ),
+                )
+            )
         return diags
 
 
