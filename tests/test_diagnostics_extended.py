@@ -529,10 +529,10 @@ class TestRuleMetadata:
             missing = required - set(meta.keys())
             assert not missing, f"{code} is missing fields: {missing}"
 
-    def test_all_bsl031_rules_have_metadata(self) -> None:
+    def test_all_bsl036_rules_have_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
 
-        expected_codes = {f"BSL{i:03d}" for i in range(1, 32)}
+        expected_codes = {f"BSL{i:03d}" for i in range(1, 37)}
         assert expected_codes.issubset(set(RULE_METADATA.keys()))
 
 
@@ -901,3 +901,167 @@ class TestBsl031NumberOfParams:
         content = "Процедура Тест(А, Б, В)\nКонецПроцедуры\n"
         diags = _check(content, tmp_path, max_params=7)
         assert "BSL031" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL032 — FunctionReturnValue
+# ---------------------------------------------------------------------------
+
+
+class TestBsl032FunctionReturnValue:
+    def test_function_without_return_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(А)
+                А = А + 1;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL032" in _codes(diags)
+
+    def test_function_with_return_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(А)
+                Возврат А + 1;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL032" not in _codes(diags)
+
+    def test_procedure_not_flagged(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(А)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL032" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL033 — QueryInLoop
+# ---------------------------------------------------------------------------
+
+
+class TestBsl033QueryInLoop:
+    def test_query_in_foreach_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Коллекция)
+                ДляКаждого Элемент Из Коллекция Цикл
+                    Результат = Запрос.Выполнить();
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL033" in _codes(diags)
+
+    def test_query_in_while_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Пока Условие Цикл
+                    Рез = ЗапросHTTP.Execute();
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL033" in _codes(diags)
+
+    def test_query_outside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = Запрос.Выполнить();
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL033" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL034 — UnusedErrorVariable
+# ---------------------------------------------------------------------------
+
+
+class TestBsl034UnusedErrorVariable:
+    def test_unused_error_info_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    А = 1;
+                Исключение
+                    ИнфОшибки = ИнформацияОбОшибке();
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL034" in _codes(diags)
+
+    def test_used_error_info_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    А = 1;
+                Исключение
+                    ИнфОшибки = ИнформацияОбОшибке();
+                    ЗаписатьОшибку(ИнфОшибки);
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL034" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL035 — DuplicateStringLiteral
+# ---------------------------------------------------------------------------
+
+
+class TestBsl035DuplicateStringLiteral:
+    def test_duplicate_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = "ОченьДлиннаяСтрока";
+                Б = "ОченьДлиннаяСтрока";
+                В = "ОченьДлиннаяСтрока";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, min_duplicate_uses=3)
+        assert "BSL035" in _codes(diags)
+
+    def test_two_uses_no_warning_with_threshold_3(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = "ОченьДлиннаяСтрока";
+                Б = "ОченьДлиннаяСтрока";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, min_duplicate_uses=3)
+        assert "BSL035" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL036 — ComplexCondition
+# ---------------------------------------------------------------------------
+
+
+class TestBsl036ComplexCondition:
+    def test_too_many_bool_ops_detected(self, tmp_path: Path) -> None:
+        # 4 operators (И, ИЛИ, И, ИЛИ) > max_bool_ops=3
+        content = """\
+            Процедура Тест(А, Б, В, Г, Д)
+                Если А И Б ИЛИ В И Г ИЛИ Д Тогда
+                    А = 1;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_bool_ops=3)
+        assert "BSL036" in _codes(diags)
+
+    def test_simple_condition_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(А, Б)
+                Если А И Б Тогда
+                    А = 1;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_bool_ops=3)
+        assert "BSL036" not in _codes(diags)

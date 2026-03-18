@@ -255,7 +255,10 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     """
     Show symbol signature and doc comment on hover.
 
-    TODO: Resolve qualified names (Obj.Method) by tracking type information.
+    Resolution order:
+    1. Workspace symbol index (user-defined procedures/functions)
+    2. Platform API global functions
+    3. Platform API types
     """
     uri = params.text_document.uri
     pos = params.position
@@ -264,20 +267,46 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     if not word:
         return None
 
+    # 1. Workspace symbol
     symbols = ls.symbol_index.find_symbol(word, limit=1)
-    if not symbols:
-        return None
+    if symbols:
+        sym = symbols[0]
+        parts = [f"```bsl\n{sym.get('signature', sym['name'])}\n```"]
+        doc = sym.get("doc_comment")
+        if doc:
+            parts.append(doc)
+        parts.append(f"*Defined in* `{Path(sym['file_path']).name}:{sym['line']}`")
+        return Hover(
+            contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts))
+        )
 
-    sym = symbols[0]
-    parts = [f"```bsl\n{sym.get('signature', sym['name'])}\n```"]
-    doc = sym.get("doc_comment")
-    if doc:
-        parts.append(doc)
-    parts.append(f"*Defined in* `{Path(sym['file_path']).name}:{sym['line']}`")
+    # 2. Platform global function
+    global_fn = ls.platform_api.find_global(word)
+    if global_fn:
+        parts = [f"```bsl\n{global_fn.signature or global_fn.name}\n```"]
+        if global_fn.description:
+            parts.append(global_fn.description)
+        if global_fn.returns:
+            parts.append(f"**Returns:** `{global_fn.returns}`")
+        parts.append("*1C Platform built-in*")
+        return Hover(
+            contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts))
+        )
 
-    return Hover(
-        contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts))
-    )
+    # 3. Platform type
+    api_type = ls.platform_api.find_type(word)
+    if api_type:
+        method_names = ", ".join(m.name for m in api_type.methods[:5])
+        parts = [f"**{api_type.name}** *(1C {api_type.kind})*"]
+        if api_type.description:
+            parts.append(api_type.description)
+        if method_names:
+            parts.append(f"*Methods:* {method_names}{'...' if len(api_type.methods) > 5 else ''}")
+        return Hover(
+            contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts))
+        )
+
+    return None
 
 
 # ---------------------------------------------------------------------------

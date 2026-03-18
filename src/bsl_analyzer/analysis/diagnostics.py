@@ -300,6 +300,46 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["design", "brain-overload"],
     },
+    "BSL032": {
+        "name": "FunctionReturnValue",
+        "description": "Function may exit without returning a value (missing Возврат)",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["suspicious", "design"],
+    },
+    "BSL033": {
+        "name": "QueryInLoop",
+        "description": "Query execution inside a loop — severe performance risk in 1C",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "CRITICAL",
+        "tags": ["performance", "brain-overload"],
+    },
+    "BSL034": {
+        "name": "UnusedErrorVariable",
+        "description": "ИнформацияОбОшибке()/ErrorInfo() result assigned but never used",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["unused", "error-handling"],
+    },
+    "BSL035": {
+        "name": "DuplicateStringLiteral",
+        "description": "String literal is duplicated — extract to a constant",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["convention", "readability"],
+    },
+    "BSL036": {
+        "name": "ComplexCondition",
+        "description": "Condition expression has too many boolean operators",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["brain-overload", "complexity"],
+    },
 }
 
 
@@ -578,6 +618,34 @@ _RE_HEADER_SEMICOLON = re.compile(
     re.IGNORECASE,
 )
 
+# Query execution in loop — Запрос.Выполнить() or Выполнить() after .
+_RE_QUERY_EXECUTE = re.compile(
+    r"\.(?:Выполнить|Execute)\s*\(",
+    re.IGNORECASE,
+)
+
+# Loop open/close for QueryInLoop detection (separate from nesting ones)
+_RE_LOOP_OPEN = re.compile(
+    r"^\s*(?:ДляКаждого|ForEach|Для|For|Пока|While)\b",
+    re.IGNORECASE,
+)
+_RE_LOOP_CLOSE = re.compile(
+    r"^\s*(?:КонецЦикла|EndDo)\b",
+    re.IGNORECASE,
+)
+
+# ИнформацияОбОшибке() / ErrorInfo() call — result assigned to variable
+_RE_ERROR_INFO_ASSIGN = re.compile(
+    r"^\s*(\w+)\s*=\s*(?:ИнформацияОбОшибке|ErrorInfo)\s*\(\s*\)",
+    re.IGNORECASE,
+)
+
+# String literal extractor (simplified — single-quoted not used in BSL)
+_RE_STRING_LITERAL = re.compile(r'"([^"]{3,})"')
+
+# Boolean operators count in a single condition line
+_RE_BOOL_OP = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
+
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
@@ -796,6 +864,8 @@ class DiagnosticEngine:
     MAX_LINE_LENGTH: int = 120
     MAX_OPTIONAL_PARAMS: int = 3
     MAX_PARAMS: int = 7
+    MAX_BOOL_OPS: int = 3
+    MIN_DUPLICATE_USES: int = 3
     MIN_COMMENTED_CODE_BLOCK: int = 2
 
     def __init__(
@@ -812,6 +882,8 @@ class DiagnosticEngine:
         max_line_length: int = MAX_LINE_LENGTH,
         max_optional_params: int = MAX_OPTIONAL_PARAMS,
         max_params: int = MAX_PARAMS,
+        max_bool_ops: int = MAX_BOOL_OPS,
+        min_duplicate_uses: int = MIN_DUPLICATE_USES,
     ) -> None:
         self._parser = parser or BslParser()
         self._select: set[str] | None = {c.upper() for c in select} if select else None
@@ -824,6 +896,8 @@ class DiagnosticEngine:
         self.max_line_length = max_line_length
         self.max_optional_params = max_optional_params
         self.max_params = max_params
+        self.max_bool_ops = max_bool_ops
+        self.min_duplicate_uses = min_duplicate_uses
 
     def _rule_enabled(self, code: str) -> bool:
         """Return True if *code* should be executed."""
@@ -935,6 +1009,16 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl030_header_semicolon(path, lines))
         if self._rule_enabled("BSL031"):
             diagnostics.extend(self._rule_bsl031_number_of_params(path, lines, procs))
+        if self._rule_enabled("BSL032"):
+            diagnostics.extend(self._rule_bsl032_function_return_value(path, lines, procs))
+        if self._rule_enabled("BSL033"):
+            diagnostics.extend(self._rule_bsl033_query_in_loop(path, lines, procs))
+        if self._rule_enabled("BSL034"):
+            diagnostics.extend(self._rule_bsl034_unused_error_variable(path, lines, procs))
+        if self._rule_enabled("BSL035"):
+            diagnostics.extend(self._rule_bsl035_duplicate_string_literal(path, lines))
+        if self._rule_enabled("BSL036"):
+            diagnostics.extend(self._rule_bsl036_complex_condition(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -2005,6 +2089,222 @@ class DiagnosticEngine:
                         message=(
                             f"{proc.kind.capitalize()} '{proc.name}' has {total} parameters "
                             f"(maximum {self.max_params})"
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL032 — Function may not return a value
+    # ------------------------------------------------------------------
+
+    def _rule_bsl032_function_return_value(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect functions that may exit without a Возврат/Return statement.
+
+        Only flags *functions* (not procedures). A function that has no Возврат
+        at all (or only inside conditional branches that may not execute) is
+        likely a bug — the caller receives Неопределено unexpectedly.
+
+        Heuristic: if the function body has no bare (non-indented) Возврат
+        outside a nested Если/Для/Пока block, flag it.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if proc.kind != "function":
+                continue
+            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
+            has_return = any(_RE_RETURN.match(ln) for ln in body_lines)
+            if not has_return:
+                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(line_text),
+                        severity=Severity.WARNING,
+                        code="BSL032",
+                        message=(
+                            f"Function '{proc.name}' may exit without returning a value "
+                            "(missing Возврат/Return statement)"
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL033 — Query execution inside a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl033_query_in_loop(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect ``.Выполнить()`` / ``.Execute()`` calls inside loops.
+
+        Executing queries inside loops is a critical performance anti-pattern
+        in 1C Enterprise — it causes N database round-trips per iteration.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            loop_depth = 0
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                if _RE_LOOP_OPEN.match(line):
+                    loop_depth += 1
+                elif _RE_LOOP_CLOSE.match(line):
+                    loop_depth = max(0, loop_depth - 1)
+                elif loop_depth > 0:
+                    m = _RE_QUERY_EXECUTE.search(line)
+                    if m and not line.strip().startswith("//"):
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=i + 1,
+                                character=m.start(),
+                                end_line=i + 1,
+                                end_character=m.end(),
+                                severity=Severity.WARNING,
+                                code="BSL033",
+                                message=(
+                                    "Query.Выполнить() inside a loop causes N database "
+                                    "round-trips. Move the query outside the loop."
+                                ),
+                            )
+                        )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL034 — ИнформацияОбОшибке() assigned but not used
+    # ------------------------------------------------------------------
+
+    def _rule_bsl034_unused_error_variable(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect Перем = ИнформацияОбОшибке() where the variable is never read.
+
+        A common pattern in catch blocks is to grab the error info but then
+        not actually use it — meaning the error details are silently discarded.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                m = _RE_ERROR_INFO_ASSIGN.match(line)
+                if not m:
+                    continue
+                var_name = m.group(1)
+                # Check if the variable is used anywhere after this line in the proc
+                rest = "\n".join(lines[i + 1 : proc.end_idx + 1])
+                pattern = r"\b" + re.escape(var_name) + r"\b"
+                if not re.search(pattern, rest, re.IGNORECASE):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=i + 1,
+                            character=0,
+                            end_line=i + 1,
+                            end_character=len(line),
+                            severity=Severity.WARNING,
+                            code="BSL034",
+                            message=(
+                                f"Variable '{var_name}' holds ИнформацияОбОшибке() "
+                                "but is never used — error details are discarded"
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL035 — Duplicate string literal
+    # ------------------------------------------------------------------
+
+    def _rule_bsl035_duplicate_string_literal(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag string literals that appear *min_duplicate_uses* or more times.
+
+        Only flags the second occurrence onward to guide extraction.
+        Ignores short/trivial strings (less than 4 chars after stripping).
+        """
+        from collections import Counter
+
+        counts: Counter[str] = Counter()
+        positions: dict[str, list[tuple[int, int]]] = {}
+
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            for m in _RE_STRING_LITERAL.finditer(line):
+                val = m.group(1).strip()
+                if not val:
+                    continue
+                counts[val] += 1
+                positions.setdefault(val, []).append((idx + 1, m.start()))
+
+        diags: list[Diagnostic] = []
+        for val, count in counts.items():
+            if count >= self.min_duplicate_uses:
+                # Report second occurrence onward
+                for line_no, col in positions[val][1:]:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_no,
+                            character=col,
+                            end_line=line_no,
+                            end_character=col + len(val) + 2,
+                            severity=Severity.INFORMATION,
+                            code="BSL035",
+                            message=(
+                                f'String "{val}" is duplicated {count} times — '
+                                "extract to a named constant"
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL036 — Complex condition (too many boolean operators)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl036_complex_condition(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag Если/If lines with more boolean operators than *max_bool_ops*.
+
+        A condition like ``А И Б ИЛИ В И Г`` is hard to read and should
+        be refactored into named boolean variables or helper functions.
+        """
+        diags: list[Diagnostic] = []
+        _if_line = re.compile(r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b", re.IGNORECASE)
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if not _if_line.match(line):
+                continue
+            ops = len(_RE_BOOL_OP.findall(line))
+            if ops > self.max_bool_ops:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.WARNING,
+                        code="BSL036",
+                        message=(
+                            f"Condition has {ops} boolean operators "
+                            f"(maximum {self.max_bool_ops}) — "
+                            "extract sub-conditions into named variables"
                         ),
                     )
                 )
