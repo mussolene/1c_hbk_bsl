@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from bsl_analyzer.parser.bsl_parser import BslParser, _RegexTree
+from bsl_analyzer.parser.bsl_parser import BslParser
 
 
 class TestBslParserParseFile:

@@ -13,11 +13,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-import pytest
-
 from bsl_analyzer.analysis.diagnostics import Diagnostic, DiagnosticEngine, Severity
-from bsl_analyzer.parser.bsl_parser import BslParser
-
 
 # ---------------------------------------------------------------------------
 # Helpers

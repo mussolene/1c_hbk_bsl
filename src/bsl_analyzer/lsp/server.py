@@ -17,46 +17,43 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
-from pygls.server import LanguageServer
 from lsprotocol.types import (
     INITIALIZE,
+    TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
-    TEXT_DOCUMENT_DEFINITION,
-    TEXT_DOCUMENT_HOVER,
     TEXT_DOCUMENT_DOCUMENT_SYMBOL,
+    TEXT_DOCUMENT_HOVER,
     WORKSPACE_SYMBOL,
-    InitializeParams,
-    InitializeResult,
-    ServerCapabilities,
-    TextDocumentSyncKind,
-    DidOpenTextDocumentParams,
-    DidChangeTextDocumentParams,
-    DidSaveTextDocumentParams,
     DefinitionParams,
-    HoverParams,
+    DiagnosticSeverity,
+    DidChangeTextDocumentParams,
+    DidOpenTextDocumentParams,
+    DidSaveTextDocumentParams,
+    DocumentSymbol,
     DocumentSymbolParams,
-    WorkspaceSymbolParams,
-    Location,
-    Range,
-    Position,
     Hover,
+    HoverParams,
+    InitializeParams,
+    Location,
     MarkupContent,
     MarkupKind,
-    DocumentSymbol,
+    Position,
+    Range,
     SymbolInformation,
     SymbolKind,
-    PublishDiagnosticsParams,
-    Diagnostic as LspDiagnostic,
-    DiagnosticSeverity,
+    WorkspaceSymbolParams,
 )
+from lsprotocol.types import (
+    Diagnostic as LspDiagnostic,
+)
+from pygls.server import LanguageServer
 
 from bsl_analyzer.analysis.diagnostics import DiagnosticEngine, Severity
-from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
+from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -211,7 +208,6 @@ def on_definition(
     and perform a fuzzy lookup in the symbol index.
     """
     uri = params.text_document.uri
-    path = _uri_to_path(uri)
     pos = params.position
 
     # Extract word at cursor

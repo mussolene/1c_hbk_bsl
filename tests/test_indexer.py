@@ -12,11 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-import time
-from pathlib import Path
-
-import pytest
-
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
 
 # ---------------------------------------------------------------------------

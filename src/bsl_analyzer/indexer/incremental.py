@@ -8,15 +8,15 @@ so only modified .bsl/.os files are re-parsed on each run.
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
-from bsl_analyzer.analysis.symbols import extract_symbols
 from bsl_analyzer.analysis.call_graph import extract_calls
+from bsl_analyzer.analysis.symbols import extract_symbols
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.parser.bsl_parser import BslParser
 

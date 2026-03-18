@@ -9,7 +9,7 @@ Provides:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -99,8 +99,11 @@ def _visit_for_calls(
                 break
         container = name or container
 
-    if node_type == "call_expression":
-        call = _ts_call_to_record(node, file_path, container)
+    # BSL grammar uses `method_call` for all calls:
+    # direct:  method_call { identifier, arguments }
+    # chained: call_expression { access, ".", method_call }
+    if node_type == "method_call":
+        call = _ts_method_call_to_record(node, file_path, container)
         if call:
             calls.append(call)
 
@@ -108,7 +111,7 @@ def _visit_for_calls(
         _visit_for_calls(child, calls, file_path, container)
 
 
-def _ts_call_to_record(node: Any, file_path: str, container: str | None) -> Call | None:
+def _ts_method_call_to_record(node: Any, file_path: str, container: str | None) -> Call | None:
     callee_name = ""
     args_count = 0
 
@@ -116,13 +119,7 @@ def _ts_call_to_record(node: Any, file_path: str, container: str | None) -> Call
         ct = child.type
         if ct == "identifier":
             callee_name = _node_text(child)
-        elif ct == "member_expression":
-            # Obj.Method() — use the property part
-            for subchild in child.children:
-                if subchild.type == "identifier":
-                    callee_name = _node_text(subchild)
-        elif ct == "argument_list":
-            # Count non-comma, non-paren children as arguments
+        elif ct == "arguments":
             args_count = sum(
                 1
                 for c in child.children
@@ -206,7 +203,7 @@ def _extract_from_source(content: str, file_path: str) -> list[Call]:
 # ---------------------------------------------------------------------------
 
 def build_call_graph(
-    index: "SymbolIndex",
+    index: SymbolIndex,
     symbol_name: str,
     depth: int = 5,
 ) -> dict:

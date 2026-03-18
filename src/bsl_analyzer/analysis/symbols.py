@@ -8,8 +8,7 @@ from a tree-sitter Tree (or _RegexTree fallback).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 # Regex fallbacks (used when tree-sitter node types differ)
@@ -135,11 +134,9 @@ def _ts_proc_to_symbol(
         ct = child.type
         if ct == "identifier":
             name = _node_text(child)
-        elif ct == "param_list":
-            params = [_node_text(p) for p in child.children if p.type == "param"]
-        elif ct in ("export_keyword", "экспорт", "export"):
-            is_export = True
-        elif _node_text(child).lower() in ("экспорт", "export"):
+        elif ct == "parameters":
+            params = [_node_text(p) for p in child.children if p.type == "parameter"]
+        elif ct == "EXPORT_KEYWORD":
             is_export = True
 
     if not name:
@@ -177,7 +174,7 @@ def _ts_var_to_symbol(node: Any, file_path: str, container: str | None) -> Symbo
     for child in node.children:
         if child.type == "identifier":
             name = _node_text(child)
-        elif _node_text(child).lower() in ("экспорт", "export"):
+        elif child.type == "EXPORT_KEYWORD":
             is_export = True
 
     if not name:
@@ -234,10 +231,9 @@ def _extract_from_source(content: str, file_path: str) -> list[Symbol]:
         end_positions.append(line_idx)
 
     # Match procedures to their end lines
-    end_iter = iter(sorted(end_positions))
     sorted_starts = sorted(proc_starts, key=lambda x: x[0])
 
-    for idx, (line_idx, m) in enumerate(sorted_starts):
+    for _idx, (line_idx, m) in enumerate(sorted_starts):
         kw = m.group("kw").lower()
         kind = "function" if kw in ("функция", "function") else "procedure"
         name = m.group("name")

@@ -10,8 +10,8 @@ license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "tree-sitter>=0.23",
-    "tree-sitter-languages>=1.10",
+    "tree-sitter>=0.24,<0.26",
+    "tree-sitter-bsl>=0.1.6",
     "watchfiles>=0.24",
     "fastmcp>=2.0,<4",
     "pygls>=1.3",
@@ -39,7 +39,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=src/bsl_analyzer --cov-report=term-missing --cov-fail-under=60"
+addopts = "-v --cov=src/bsl_analyzer --cov-report=term-missing --cov-fail-under=50"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]

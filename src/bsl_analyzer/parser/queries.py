@@ -1,18 +1,33 @@
 """
-Tree-sitter S-expression queries for BSL grammar.
+Tree-sitter S-expression queries for BSL grammar (tree-sitter-bsl).
 
-These queries are written against the BSL grammar available via
-tree-sitter-languages. Each constant is a multi-line S-expression
-string that can be compiled with Language.query(QUERY_STR).
+These queries are written against the actual BSL grammar node types.
+Can be compiled with Language.query() or the Query() constructor.
 
 Usage example::
 
-    from tree_sitter_languages import get_language
+    import tree_sitter_bsl
+    from tree_sitter import Language, Query
     from bsl_analyzer.parser.queries import PROCEDURES_QUERY
 
-    lang = get_language("bsl")
-    query = lang.query(PROCEDURES_QUERY)
+    lang = Language(tree_sitter_bsl.language())
+    query = Query(lang, PROCEDURES_QUERY)
     captures = query.captures(tree.root_node)
+
+BSL grammar node types (verified against tree-sitter-bsl):
+  procedure_definition  — Процедура … КонецПроцедуры
+  function_definition   — Функция … КонецФункции
+  parameters            — the ( … ) parameter list          [NOT param_list]
+  parameter             — a single parameter node            [NOT param]
+  EXPORT_KEYWORD        — Экспорт / Export keyword
+  method_call           — any function/procedure call        [NOT call_expression]
+  arguments             — the ( … ) argument list            [NOT argument_list]
+  call_expression       — chained call: Obj.Method()
+  call_statement        — statement wrapping a call
+  var_definition        — Перем … ;
+  preprocessor          — #Область / #КонецОбласти block
+  try_statement         — Попытка … Исключение … КонецПопытки
+  return_statement      — Возврат …
 """
 
 # ---------------------------------------------------------------------------
@@ -22,19 +37,19 @@ Usage example::
 #   @proc.def     — the entire procedure/function definition node
 #   @proc.name    — the identifier node with the proc/func name
 #   @proc.params  — the parameter list node
-#   @proc.export  — the "Экспорт"/"Export" keyword (present only when exported)
+#   @proc.export  — the EXPORT_KEYWORD node (present only when exported)
 # ---------------------------------------------------------------------------
 PROCEDURES_QUERY = """
 (procedure_definition
   name: (identifier) @proc.name
-  params: (param_list)? @proc.params
-  export: (_)? @proc.export
+  parameters: (parameters)? @proc.params
+  export: (EXPORT_KEYWORD)? @proc.export
 ) @proc.def
 
 (function_definition
   name: (identifier) @proc.name
-  params: (param_list)? @proc.params
-  export: (_)? @proc.export
+  parameters: (parameters)? @proc.params
+  export: (EXPORT_KEYWORD)? @proc.export
 ) @proc.def
 """
 
@@ -42,22 +57,18 @@ PROCEDURES_QUERY = """
 # Call expressions
 #
 # Captures:
-#   @call.expr    — the full call expression node
+#   @call.stmt    — the full call_statement or containing node
 #   @call.name    — the identifier (function/method name) being called
 #   @call.args    — the argument list node
 #
-# Covers both standalone calls (ПроцедураА()) and method chains (Obj.Method()).
+# Covers both standalone calls (ПроцедураА()) and chained calls (Obj.Method()).
+# All calls in BSL use method_call nodes, which appear either directly in
+# call_statement or nested inside call_expression (for chained calls).
 # ---------------------------------------------------------------------------
 CALLS_QUERY = """
-(call_expression
-  function: (identifier) @call.name
-  arguments: (argument_list) @call.args
-) @call.expr
-
-(call_expression
-  function: (member_expression
-    property: (identifier) @call.name)
-  arguments: (argument_list) @call.args
+(method_call
+  (identifier) @call.name
+  (arguments) @call.args
 ) @call.expr
 """
 
@@ -65,14 +76,22 @@ CALLS_QUERY = """
 # Variable declarations
 #
 # Captures:
-#   @var.stmt     — the Перем/Var statement node
-#   @var.name     — each declared variable name identifier
-#   @var.export   — present when declared with Экспорт/Export modifier
+#   @var.stmt   — the Перем/Var statement node
+#   @var.name   — each declared variable name identifier
+#   @var.export — present when declared with Экспорт/Export modifier
+#
+# Note: BSL has two variable node types:
+#   var_definition — module-level:  Перем Имя Экспорт;
+#   var_statement  — inside body:   Перем Имя;  (no Export allowed)
 # ---------------------------------------------------------------------------
 VARIABLES_QUERY = """
 (var_definition
-  name: (identifier) @var.name
-  export: (_)? @var.export
+  (identifier) @var.name
+  (EXPORT_KEYWORD)? @var.export
+) @var.stmt
+
+(var_statement
+  (identifier) @var.name
 ) @var.stmt
 """
 
@@ -80,41 +99,40 @@ VARIABLES_QUERY = """
 # #Region / #EndRegion preprocessor blocks
 #
 # Captures:
-#   @region.open  — #Область/#Region directive node
-#   @region.name  — the region name string literal
-#   @region.close — #КонецОбласти/#EndRegion directive node
+#   @region.open  — the preprocessor node containing PREPROC_REGION_KEYWORD
+#   @region.name  — the region name identifier
+#   @region.close — the preprocessor node containing PREPROC_ENDREGION_KEYWORD
 # ---------------------------------------------------------------------------
 REGIONS_QUERY = """
-(preprocessor_region
-  name: (_) @region.name
+(preprocessor
+  (PREPROC_REGION_KEYWORD)
+  (identifier) @region.name
 ) @region.open
 
-(preprocessor_end_region) @region.close
+(preprocessor
+  (PREPROC_ENDREGION_KEYWORD)
+) @region.close
 """
 
 # ---------------------------------------------------------------------------
 # Try/Except/EndTry blocks (used for BSL004: empty exception handler)
 #
 # Captures:
-#   @try.block       — the full try statement
-#   @try.handler     — the except (exception handler) body
+#   @try.block    — the full try statement
 # ---------------------------------------------------------------------------
 TRY_EXCEPT_QUERY = """
-(try_statement
-  body: (_) @try.body
-  handler: (_) @try.handler
-) @try.block
+(try_statement) @try.block
 """
 
 # ---------------------------------------------------------------------------
 # Return statements — used to detect functions that always return a value
 #
 # Captures:
-#   @return.stmt  — the КонецФункции/Return statement node
+#   @return.stmt  — the return statement node
 #   @return.value — the return value expression (may be absent)
 # ---------------------------------------------------------------------------
 RETURN_QUERY = """
 (return_statement
-  value: (_)? @return.value
+  (expression)? @return.value
 ) @return.stmt
 """

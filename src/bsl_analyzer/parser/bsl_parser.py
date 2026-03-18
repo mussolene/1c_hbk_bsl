@@ -1,8 +1,8 @@
 """
 BSL parser using tree-sitter.
 
-Primary: tree-sitter-languages (includes BSL grammar).
-Fallback: regex-based extraction if tree-sitter-bsl grammar not available.
+Primary: tree-sitter-bsl (dedicated BSL grammar package).
+Fallback: regex-based extraction if tree-sitter-bsl is not available.
 """
 
 from __future__ import annotations
@@ -20,10 +20,11 @@ _TS_AVAILABLE = False
 _BSL_LANGUAGE = None
 
 try:
-    from tree_sitter import Language, Parser as _TsParser
-    from tree_sitter_languages import get_language, get_parser
+    import tree_sitter_bsl as _ts_bsl
+    from tree_sitter import Language
+    from tree_sitter import Parser as _TsParser
 
-    _BSL_LANGUAGE = get_language("bsl")
+    _BSL_LANGUAGE = Language(_ts_bsl.language())
     _TS_AVAILABLE = True
     logger.debug("tree-sitter BSL grammar loaded successfully")
 except Exception as exc:  # pragma: no cover
@@ -40,7 +41,7 @@ class BslNode:
     text: str
     start_point: tuple[int, int]  # (row, col) — 0-based
     end_point: tuple[int, int]
-    children: list["BslNode"] = field(default_factory=list)
+    children: list[BslNode] = field(default_factory=list)
     is_error: bool = False
 
     @property
@@ -68,7 +69,7 @@ class BslParser:
     def __init__(self) -> None:
         self._ts_parser: Any = None
         if _TS_AVAILABLE:
-            self._ts_parser = get_parser("bsl")
+            self._ts_parser = _TsParser(_BSL_LANGUAGE)
 
     # ------------------------------------------------------------------
     # Public API
@@ -185,7 +186,7 @@ class _RegexNode:
         text: str,
         start_point: tuple[int, int],
         end_point: tuple[int, int],
-        children: list["_RegexNode"] | None = None,
+        children: list[_RegexNode] | None = None,
     ) -> None:
         self.type = type
         self.text = text

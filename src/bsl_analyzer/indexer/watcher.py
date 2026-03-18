@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,7 @@ class FileWatcher:
             callback:  Called with a list of changed file paths.
         """
         try:
-            from watchfiles import watch as wf_watch, Change
+            from watchfiles import watch as wf_watch
         except ImportError:
             logger.error(
                 "watchfiles is not installed. "
@@ -72,7 +71,7 @@ class FileWatcher:
         try:
             for changes in wf_watch(workspace, stop_event=self._stop_event):
                 changed_paths: list[str] = []
-                for change_type, path in changes:
+                for _change_type, path in changes:
                     if Path(path).suffix.lower() in BSL_EXTENSIONS:
                         changed_paths.append(path)
 

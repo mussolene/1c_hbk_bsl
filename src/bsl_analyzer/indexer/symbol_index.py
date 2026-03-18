@@ -16,7 +16,6 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 # Each thread gets its own connection to avoid SQLite thread-safety issues.
@@ -104,7 +103,9 @@ class SymbolIndex:
 
     def __init__(self, db_path: str = "bsl_index.sqlite") -> None:
         self.db_path = db_path
-        # Initialise schema in the calling thread's connection
+        # In-memory DBs are connection-scoped; keep per-instance connection to
+        # avoid test isolation issues with the thread-local pool.
+        self._mem_conn: sqlite3.Connection | None = None
         conn = self._conn()
         conn.executescript(SCHEMA_SQL)
         conn.commit()
@@ -113,18 +114,32 @@ class SymbolIndex:
     # Connection management
     # ------------------------------------------------------------------
 
+    def _make_conn(self) -> sqlite3.Connection:
+        """Create a new SQLite connection with all required settings."""
+        conn = sqlite3.connect(
+            self.db_path,
+            check_same_thread=False,
+            isolation_level=None,  # autocommit; we manage transactions manually
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        # Override SQLite LOWER with Python's Unicode-aware casefold so that
+        # Cyrillic (and other non-ASCII) characters are handled correctly.
+        conn.create_function("LOWER", 1, lambda x: x.casefold() if isinstance(x, str) else x)
+        return conn
+
     def _conn(self) -> sqlite3.Connection:
-        """Return the per-thread SQLite connection, creating it if needed."""
+        """Return an SQLite connection, creating it if needed."""
+        if self.db_path == ":memory:":
+            # Each SymbolIndex instance gets its own in-memory DB.
+            if self._mem_conn is None or self._is_closed(self._mem_conn):
+                self._mem_conn = self._make_conn()
+            return self._mem_conn
+
         conn: sqlite3.Connection | None = getattr(_local, "conn", None)
         if conn is None or self._is_closed(conn):
-            conn = sqlite3.connect(
-                self.db_path,
-                check_same_thread=False,
-                isolation_level=None,  # autocommit; we manage transactions manually
-            )
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
+            conn = self._make_conn()
             _local.conn = conn
         return conn
 
@@ -137,11 +152,16 @@ class SymbolIndex:
             return True
 
     def close(self) -> None:
-        """Close the connection for the current thread."""
-        conn: sqlite3.Connection | None = getattr(_local, "conn", None)
-        if conn and not self._is_closed(conn):
-            conn.close()
-            _local.conn = None
+        """Close the connection for the current thread (or instance for :memory:)."""
+        if self.db_path == ":memory:":
+            if self._mem_conn and not self._is_closed(self._mem_conn):
+                self._mem_conn.close()
+            self._mem_conn = None
+        else:
+            conn: sqlite3.Connection | None = getattr(_local, "conn", None)
+            if conn and not self._is_closed(conn):
+                conn.close()
+                _local.conn = None
 
     # ------------------------------------------------------------------
     # Write operations

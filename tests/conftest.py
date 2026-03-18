@@ -4,9 +4,7 @@ pytest fixtures for bsl_analyzer tests.
 
 from __future__ import annotations
 
-import os
 import shutil
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -48,8 +46,8 @@ def populated_index(symbol_index: SymbolIndex, sample_bsl_path: str) -> SymbolIn
     """
     Return a SymbolIndex pre-populated with the symbols from sample.bsl.
     """
-    from bsl_analyzer.analysis.symbols import extract_symbols
     from bsl_analyzer.analysis.call_graph import extract_calls
+    from bsl_analyzer.analysis.symbols import extract_symbols
     from bsl_analyzer.parser.bsl_parser import BslParser
 
     parser = BslParser()

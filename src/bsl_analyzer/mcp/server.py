@@ -20,7 +20,6 @@ import os
 from pathlib import Path
 from typing import Annotated
 
-import fastmcp
 from fastmcp import FastMCP
 
 from bsl_analyzer.analysis.call_graph import build_call_graph
