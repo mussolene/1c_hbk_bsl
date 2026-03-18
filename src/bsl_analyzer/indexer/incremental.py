@@ -11,7 +11,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
@@ -247,5 +247,3 @@ def _call_to_dict(call: Any) -> dict:  # noqa: ANN401
     }
 
 
-# Type hint only — avoid circular import
-from typing import Any  # noqa: E402

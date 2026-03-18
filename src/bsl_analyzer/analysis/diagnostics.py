@@ -88,7 +88,7 @@ _RE_EXCEPT = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 _RE_END_TRY = re.compile(
-    r"^\s*(?:КонецПопытки|EndTry)\s*(?://.*)?$",
+    r"^\s*(?:КонецПопытки|EndTry)\s*;?\s*(?://.*)?$",
     re.IGNORECASE | re.MULTILINE,
 )
 _RE_BLANK_OR_COMMENT = re.compile(r"^\s*(?://.*)?$")
