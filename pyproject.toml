@@ -25,6 +25,11 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
 ]
+build = [
+    "nuitka>=2.4",
+    "ordered-set>=4.1",   # nuitka dependency
+    "zstandard>=0.23",    # nuitka onefile compression
+]
 
 [project.scripts]
 bsl-analyzer = "bsl_analyzer.__main__:main"
