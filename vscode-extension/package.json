@@ -1,0 +1,111 @@
+{
+  "name": "bsl-analyzer",
+  "displayName": "BSL Analyzer (1C)",
+  "description": "Language support for 1C BSL: go-to-definition, hover, workspace symbols, diagnostics",
+  "version": "0.1.0",
+  "publisher": "bsl-analyzer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/1c_hbk_bsl"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "1C",
+    "BSL",
+    "1C Enterprise",
+    "OneScript"
+  ],
+  "activationEvents": [
+    "onLanguage:bsl"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "bsl",
+        "aliases": [
+          "BSL",
+          "1C Enterprise Script",
+          "OneScript"
+        ],
+        "extensions": [
+          ".bsl",
+          ".os"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "bslAnalyzer.reindexWorkspace",
+        "title": "BSL Analyzer: Reindex Workspace",
+        "category": "BSL"
+      },
+      {
+        "command": "bslAnalyzer.reindexCurrentFile",
+        "title": "BSL Analyzer: Reindex Current File",
+        "category": "BSL"
+      },
+      {
+        "command": "bslAnalyzer.showStatus",
+        "title": "BSL Analyzer: Show Index Status",
+        "category": "BSL"
+      }
+    ],
+    "configuration": {
+      "title": "BSL Analyzer",
+      "properties": {
+        "bslAnalyzer.serverPath": {
+          "type": "string",
+          "default": "bsl-analyzer",
+          "description": "Path to the bsl-analyzer executable. Leave as 'bsl-analyzer' to use the version on PATH."
+        },
+        "bslAnalyzer.useDocker": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run bsl-analyzer inside Docker instead of a local binary."
+        },
+        "bslAnalyzer.dockerContainer": {
+          "type": "string",
+          "default": "bsl-analyzer-default",
+          "description": "Docker container name to use when bslAnalyzer.useDocker is true."
+        },
+        "bslAnalyzer.indexDbPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the SQLite index database. Defaults to bsl_index.sqlite in the workspace."
+        },
+        "bslAnalyzer.logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warning", "error"],
+          "default": "info",
+          "description": "Log level for the BSL analyzer language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.3.0",
+    "typescript": "^5.3.0"
+  }
+}

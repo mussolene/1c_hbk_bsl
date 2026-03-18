@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.venv/
+venv/
+env/
+.env
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node.js / VSCode Extension
+node_modules/
+out/
+*.vsix
+*.js.map
+
+# SQLite index databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Docker
+.env
+docker/.env
+
+# IDE
+.idea/
+.vscode/settings.json
+.vscode/*.code-workspace
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Data files downloaded at runtime — not committed
+data/platform_api/*.json
+data/platform_api/*.xml
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+.tmp/

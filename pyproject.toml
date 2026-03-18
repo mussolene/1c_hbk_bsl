@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bsl-analyzer"
+version = "0.1.0"
+description = "BSL (1C Enterprise) analyzer: MCP server, LSP server, and CLI linter"
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "tree-sitter>=0.23",
+    "tree-sitter-languages>=1.10",
+    "watchfiles>=0.24",
+    "fastmcp>=2.0,<4",
+    "pygls>=1.3",
+    "defusedxml>=0.7",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+bsl-analyzer = "bsl_analyzer.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=src/bsl_analyzer --cov-report=term-missing --cov-fail-under=60"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+omit = [
+    "*/tests/*",
+]
+source = ["src/bsl_analyzer"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "S", "UP"]
+ignore = [
+    "E501",
+    "S101",   # assert used in tests
+    "S104",   # host="0.0.0.0" intentional for Docker
+    "S110",   # try/except pass — intentional fallbacks
+    "S603",   # subprocess with fixed args (git diff)
+    "S607",   # git from PATH — system dependency
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bsl_analyzer"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-cov>=7.0",
+    "ruff>=0.4",
+]

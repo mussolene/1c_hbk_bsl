@@ -1,0 +1,51 @@
+version: "3.9"
+
+# Persistent volume for the SQLite index database
+volumes:
+  bsl_index_data:
+    driver: local
+
+services:
+  bsl-analyzer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: "bsl-analyzer-${PROJECT_NAME:-default}"
+    restart: unless-stopped
+
+    mem_limit: 512m
+    cpus: "1.0"
+
+    volumes:
+      # Mount your BSL workspace read-only
+      - "${HOST_WORKSPACE:-.}:/workspace:ro"
+      # Persist the SQLite index across container restarts
+      - bsl_index_data:/data
+
+    environment:
+      WORKSPACE_ROOT: "${WORKSPACE_ROOT:-/workspace}"
+      INDEX_DB_PATH: "${INDEX_DB_PATH:-/data/bsl_index.sqlite}"
+      MCP_PORT: "${MCP_PORT:-8051}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      GIT_DIFF_BASE: "${GIT_DIFF_BASE:-HEAD}"
+
+    ports:
+      - "${MCP_PORT:-8051}:8051"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8051/health')"
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+    # Optional: run a full reindex on startup before starting the MCP server
+    # Uncomment to enable:
+    # command: >
+    #   sh -c "bsl-analyzer --index /workspace --force && bsl-analyzer --mcp"
