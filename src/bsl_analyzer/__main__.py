@@ -9,11 +9,19 @@ Usage:
     bsl-analyzer --list-rules                       Show all available rules
 
 Check mode flags:
-    --select BSL001,BSL002    Run only these rules
-    --ignore BSL002           Skip these rules
-    --format text|json|sonarqube   Output format (default: text)
-    --jobs N                  Parallel workers (0 = auto, 1 = serial)
-    --sonar-root PATH         Project root for SonarQube relative paths
+    --select BSL001,BSL002         Run only these rules
+    --ignore BSL002                Skip these rules
+    --format text|json|sonarqube|sarif  Output format (default: text)
+    --jobs N                       Parallel workers (0 = auto, 1 = serial)
+    --sonar-root PATH              Project root for SonarQube/SARIF relative paths
+    --exit-zero                    Always exit 0 (don't fail CI on issues)
+    --baseline FILE                Suppress issues listed in baseline
+    --update-baseline FILE         Save current issues as new baseline, exit 0
+
+Config file:
+    bsl-analyzer.toml (or [tool.bsl-analyzer] in pyproject.toml) is
+    automatically loaded from the checked directory (or cwd).
+    CLI flags override config file values.
 """
 
 from __future__ import annotations
@@ -57,9 +65,29 @@ def _run_check(
     ignore: set[str] | None,
     jobs: int,
     sonar_root: str | None,
+    exit_zero: bool,
+    baseline: str | None,
+    update_baseline: str | None,
 ) -> int:
     from bsl_analyzer.cli.check import check
-    return check(paths, format=fmt, select=select, ignore=ignore, jobs=jobs, sonar_root=sonar_root)
+    from bsl_analyzer.cli.config import load_config
+
+    # Load config from the first checked path (or cwd)
+    search_from = paths[0] if paths else os.getcwd()
+    cfg = load_config(search_from)
+
+    return check(
+        paths,
+        format=fmt,
+        select=select,
+        ignore=ignore,
+        jobs=jobs,
+        sonar_root=sonar_root,
+        exit_zero=exit_zero,
+        baseline=baseline,
+        update_baseline=update_baseline,
+        config=cfg,
+    )
 
 
 def _run_index(workspace: str, force: bool) -> None:
@@ -83,13 +111,17 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  bsl-analyzer --check .                         Check current directory
+  bsl-analyzer --check .                              Check current directory
   bsl-analyzer --check src/ --select BSL001,BSL002
   bsl-analyzer --check . --ignore BSL014 --format json > issues.json
   bsl-analyzer --check . --format sonarqube --sonar-root /project > sonar.json
-  bsl-analyzer --check . --jobs 8               Use 8 parallel workers
-  bsl-analyzer --list-rules                     Show all available rules
-  bsl-analyzer --mcp --port 8051               Start MCP server for Claude
+  bsl-analyzer --check . --format sarif > results.sarif
+  bsl-analyzer --check . --jobs 8                     Use 8 parallel workers
+  bsl-analyzer --check . --exit-zero                  Never fail CI
+  bsl-analyzer --check . --update-baseline baseline.json  Save known issues
+  bsl-analyzer --check . --baseline baseline.json     Only report new issues
+  bsl-analyzer --list-rules                           Show all available rules
+  bsl-analyzer --mcp --port 8051                     Start MCP server for Claude
         """,
     )
     parser.add_argument("--version", action="version", version=f"bsl-analyzer {__version__}")
@@ -133,7 +165,7 @@ Examples:
     # Check options
     parser.add_argument(
         "--format",
-        choices=["text", "json", "sonarqube"],
+        choices=["text", "json", "sonarqube", "sarif"],
         default="text",
         help="Output format for --check (default: text)",
     )
@@ -167,7 +199,25 @@ Examples:
         "--sonar-root",
         metavar="PATH",
         default=None,
-        help="Project root directory for SonarQube relative path calculation",
+        help="Project root directory for SonarQube/SARIF relative path calculation",
+    )
+    parser.add_argument(
+        "--exit-zero",
+        action="store_true",
+        default=False,
+        help="Always exit 0 even if issues are found (useful for CI metric collection)",
+    )
+    parser.add_argument(
+        "--baseline",
+        metavar="FILE",
+        default=None,
+        help="Path to baseline JSON — issues present in baseline are suppressed",
+    )
+    parser.add_argument(
+        "--update-baseline",
+        metavar="FILE",
+        default=None,
+        help="Save all found issues as a new baseline, then exit 0",
     )
 
     # Index options
@@ -201,6 +251,9 @@ Examples:
                 ignore=_parse_codes(args.ignore),
                 jobs=args.jobs,
                 sonar_root=args.sonar_root,
+                exit_zero=args.exit_zero,
+                baseline=args.baseline,
+                update_baseline=args.update_baseline,
             )
         )
 

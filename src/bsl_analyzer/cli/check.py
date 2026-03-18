@@ -6,6 +6,7 @@ Formats
 text       — path:line:col: SEVERITY CODE message  (default, like ruff/flake8)
 json       — structured JSON array
 sonarqube  — SonarQube Generic Issue Import Format (for sonar-scanner)
+sarif      — SARIF 2.1.0 (GitHub Code Scanning / GitLab SAST)
 
 SonarQube integration
 ---------------------
@@ -15,9 +16,15 @@ Pass the output of ``--format sonarqube`` to sonar-scanner via::
 
 Use ``--sonar-root`` to produce project-relative file paths required by SonarQube.
 
+SARIF / GitHub Code Scanning
+-----------------------------
+Upload the SARIF file to GitHub via the Code Scanning API or workflow action::
+
+    bsl-analyzer --check . --format sarif > bsl-results.sarif
+
 Exit codes
 ----------
-0 — no issues found
+0 — no issues found  (or --exit-zero is set)
 1 — one or more issues found
 2 — internal error (unreadable file, etc.)
 """
@@ -28,16 +35,19 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.text import Text
 
+from bsl_analyzer import __version__
 from bsl_analyzer.analysis.diagnostics import (
     RULE_METADATA,
     Diagnostic,
     DiagnosticEngine,
     Severity,
 )
+from bsl_analyzer.cli.config import _EMPTY, BslConfig
 
 console = Console(stderr=True)
 
@@ -57,6 +67,14 @@ _SONAR_SEVERITY = {
     Severity.HINT: "INFO",
 }
 
+# SARIF level mapping
+_SARIF_LEVEL = {
+    Severity.ERROR: "error",
+    Severity.WARNING: "warning",
+    Severity.INFORMATION: "note",
+    Severity.HINT: "note",
+}
+
 BSL_EXTENSIONS = {".bsl", ".os"}
 
 
@@ -67,37 +85,81 @@ def check(
     ignore: set[str] | None = None,
     jobs: int = 0,
     sonar_root: str | None = None,
+    exit_zero: bool = False,
+    baseline: str | None = None,
+    update_baseline: str | None = None,
+    config: BslConfig | None = None,
 ) -> int:
     """
     Run BSL lint rules on all .bsl/.os files under *paths*.
 
     Args:
-        paths:      Files or directories to check.
-        format:     Output format: ``text`` (default), ``json``, or ``sonarqube``.
-        select:     If provided, run only these rule codes (e.g. ``{"BSL001", "BSL002"}``).
-        ignore:     Rule codes to skip (e.g. ``{"BSL002"}``).
-        jobs:       Worker threads (0 = auto-detect from CPU count, 1 = serial).
-        sonar_root: Project root for SonarQube relative path calculation.
+        paths:           Files or directories to check.
+        format:          Output format: ``text``, ``json``, ``sonarqube``, or ``sarif``.
+        select:          If provided, run only these rule codes.
+        ignore:          Rule codes to skip.
+        jobs:            Worker threads (0 = auto-detect, 1 = serial).
+        sonar_root:      Project root for SonarQube relative path calculation.
+        exit_zero:       Always return 0 (never fail even if issues found).
+        baseline:        Path to baseline JSON — suppress known issues.
+        update_baseline: Write all found issues to this path, then exit 0.
+        config:          Merged ``BslConfig`` (overridden by explicit CLI flags).
 
     Returns:
         Exit code: 0 = clean, 1 = issues found, 2 = error.
     """
-    all_files = _collect_files(paths)
+    cfg = config or _EMPTY
+
+    # Merge config defaults with explicit flags (CLI wins over config)
+    effective_format = format if format != "text" or cfg.format is None else cfg.format
+    effective_jobs = jobs if jobs != 0 else (cfg.jobs if cfg.jobs is not None else 0)
+    effective_exit_zero = exit_zero or cfg.exit_zero
+    effective_baseline = baseline or cfg.baseline
+
+    all_files = _collect_files(paths, cfg)
     if not all_files:
         console.print("[yellow]No .bsl/.os files found.[/yellow]")
         return 0
 
     all_diagnostics, error_occurred = _run_checks(
-        sorted(all_files), select=select, ignore=ignore, jobs=jobs
+        sorted(all_files),
+        select=select,
+        ignore=ignore,
+        jobs=effective_jobs,
+        config=cfg,
     )
 
     if error_occurred:
         return 2
 
-    if format == "json":
+    # --update-baseline: save & exit 0
+    if update_baseline:
+        from bsl_analyzer.cli.baseline import save_baseline
+        n = save_baseline(all_diagnostics, update_baseline)
+        console.print(
+            f"[green]Baseline updated:[/green] {n} issue(s) written to {update_baseline}"
+        )
+        return 0
+
+    # --baseline: suppress known issues
+    if effective_baseline:
+        from bsl_analyzer.cli.baseline import filter_baseline, load_baseline
+        known = load_baseline(effective_baseline)
+        suppressed = len(all_diagnostics) - len(
+            [d for d in all_diagnostics if (Path(d.file).name, d.code, d.line) not in known]
+        )
+        all_diagnostics = filter_baseline(all_diagnostics, known)
+        if suppressed:
+            console.print(
+                f"[dim]Suppressed {suppressed} baseline issue(s).[/dim]"
+            )
+
+    if effective_format == "json":
         _print_json(all_diagnostics)
-    elif format == "sonarqube":
+    elif effective_format == "sonarqube":
         _print_sonarqube(all_diagnostics, sonar_root)
+    elif effective_format == "sarif":
+        _print_sarif(all_diagnostics, sonar_root)
     else:
         _print_text(all_diagnostics)
         if not all_diagnostics:
@@ -107,6 +169,8 @@ def check(
             return 0
         _print_summary(all_diagnostics, len(all_files))
 
+    if effective_exit_zero:
+        return 0
     return 0 if not all_diagnostics else 1
 
 
@@ -151,11 +215,19 @@ def _run_checks(
     select: set[str] | None,
     ignore: set[str] | None,
     jobs: int,
+    config: BslConfig | None = None,
 ) -> tuple[list[Diagnostic], bool]:
     """Run checks in parallel (or serial if jobs=1). Returns (diagnostics, error_flag)."""
+    cfg = config or _EMPTY
+    engine_kw = cfg.engine_kwargs()
 
-    def _make_engine() -> DiagnosticEngine:
-        return DiagnosticEngine(select=select, ignore=ignore)
+    def _make_engine(extra_ignore: set[str] | None = None) -> DiagnosticEngine:
+        effective_ignore = (ignore or set()) | (extra_ignore or set())
+        return DiagnosticEngine(
+            select=select,
+            ignore=effective_ignore or None,
+            **engine_kw,
+        )
 
     workers = jobs if jobs > 0 else min(os.cpu_count() or 4, 8)
 
@@ -166,14 +238,19 @@ def _run_checks(
         engine = _make_engine()
         for fp in files:
             try:
-                all_diagnostics.extend(engine.check_file(fp))
+                per_file_extra = cfg.get_file_ignores(fp)
+                if per_file_extra:
+                    all_diagnostics.extend(_make_engine(per_file_extra).check_file(fp))
+                else:
+                    all_diagnostics.extend(engine.check_file(fp))
             except Exception as exc:
                 console.print(f"[red]Error checking {fp}: {exc}[/red]")
                 error_occurred = True
     else:
         # Each thread gets its own engine (BslParser is not thread-safe to share)
         def _check_one(fp: str) -> list[Diagnostic]:
-            return _make_engine().check_file(fp)
+            per_file_extra = cfg.get_file_ignores(fp)
+            return _make_engine(per_file_extra).check_file(fp)
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(_check_one, fp): fp for fp in files}
@@ -258,6 +335,84 @@ def _print_sonarqube(
     print(json.dumps({"issues": issues}, indent=2, ensure_ascii=False))
 
 
+def _print_sarif(
+    diagnostics: list[Diagnostic], project_root: str | None = None
+) -> None:
+    """
+    Print SARIF 2.1.0 JSON to stdout.
+
+    Compatible with GitHub Code Scanning and GitLab SAST.
+    """
+    # Build rule descriptors
+    rules: list[dict[str, Any]] = []
+    seen_rules: set[str] = set()
+    for d in diagnostics:
+        if d.code not in seen_rules:
+            seen_rules.add(d.code)
+            meta = RULE_METADATA.get(d.code, {})
+            rules.append(
+                {
+                    "id": d.code,
+                    "name": meta.get("name", d.code),
+                    "shortDescription": {"text": meta.get("description", d.code)},
+                    "defaultConfiguration": {
+                        "level": _SARIF_LEVEL.get(d.severity, "warning")
+                    },
+                    "properties": {"tags": meta.get("tags", [])},
+                }
+            )
+
+    results: list[dict[str, Any]] = []
+    for d in diagnostics:
+        file_uri = Path(d.file).as_uri()
+        if project_root:
+            try:
+                rel = Path(d.file).relative_to(project_root)
+                file_uri = rel.as_posix()
+            except ValueError:
+                pass
+
+        results.append(
+            {
+                "ruleId": d.code,
+                "level": _SARIF_LEVEL.get(d.severity, "warning"),
+                "message": {"text": d.message},
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": file_uri},
+                            "region": {
+                                "startLine": d.line,
+                                "startColumn": d.character + 1,
+                                "endLine": max(d.line, d.end_line),
+                                "endColumn": d.end_character + 1,
+                            },
+                        }
+                    }
+                ],
+            }
+        )
+
+    sarif: dict[str, Any] = {
+        "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "bsl-analyzer",
+                        "version": __version__,
+                        "informationUri": "https://github.com/bsl-analyzer/bsl-analyzer",
+                        "rules": rules,
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+    print(json.dumps(sarif, indent=2, ensure_ascii=False))
+
+
 def _print_summary(diagnostics: list[Diagnostic], file_count: int) -> None:
     """Print a rich summary line similar to ruff."""
     errors = sum(1 for d in diagnostics if d.severity == Severity.ERROR)
@@ -278,17 +433,25 @@ def _print_summary(diagnostics: list[Diagnostic], file_count: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _collect_files(paths: list[str]) -> list[str]:
+def _collect_files(
+    paths: list[str], config: BslConfig | None = None
+) -> list[str]:
     """Recursively collect all .bsl/.os files from paths (files or dirs)."""
+    cfg = config or _EMPTY
     result: list[str] = []
     for raw in paths:
         p = Path(raw)
         if p.is_file():
             if p.suffix.lower() in BSL_EXTENSIONS:
-                result.append(str(p.resolve()))
+                resolved = str(p.resolve())
+                if not cfg.is_excluded(resolved):
+                    result.append(resolved)
         elif p.is_dir():
             for ext in BSL_EXTENSIONS:
-                result.extend(str(f.resolve()) for f in p.rglob(f"*{ext}"))
+                for f in p.rglob(f"*{ext}"):
+                    resolved = str(f.resolve())
+                    if not cfg.is_excluded(resolved):
+                        result.append(resolved)
         else:
             console.print(f"[yellow]Path not found: {raw}[/yellow]")
     return result

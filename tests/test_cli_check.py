@@ -14,11 +14,13 @@ from bsl_analyzer.cli.check import (
     BSL_EXTENSIONS,
     _collect_files,
     _print_json,
+    _print_sarif,
     _print_sonarqube,
     _run_checks,
     check,
     list_rules,
 )
+from bsl_analyzer.cli.config import BslConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -226,6 +228,139 @@ class TestCheckIntegration:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert "issues" in data
+        assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# _print_sarif
+# ---------------------------------------------------------------------------
+
+
+class TestPrintSarif:
+    def test_valid_sarif_structure(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        diag = _make_diag(str(tmp_path / "a.bsl"))
+        _print_sarif([diag])
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["version"] == "2.1.0"
+        assert "runs" in data
+        assert len(data["runs"]) == 1
+        run = data["runs"][0]
+        assert "tool" in run
+        assert "results" in run
+
+    def test_sarif_result_fields(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        diag = _make_diag(str(tmp_path / "b.bsl"), line=3)
+        _print_sarif([diag])
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        result = data["runs"][0]["results"][0]
+        assert result["ruleId"] == "BSL009"
+        assert "message" in result
+        assert "locations" in result
+        loc = result["locations"][0]["physicalLocation"]
+        assert loc["region"]["startLine"] == 3
+
+    def test_sarif_empty_list(self, capsys: pytest.CaptureFixture) -> None:
+        _print_sarif([])
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["runs"][0]["results"] == []
+
+    def test_sarif_relative_path(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        src = tmp_path / "src"
+        src.mkdir()
+        diag = _make_diag(str(src / "module.bsl"))
+        _print_sarif([diag], project_root=str(tmp_path))
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        uri = data["runs"][0]["results"][0]["locations"][0]["physicalLocation"][
+            "artifactLocation"
+        ]["uri"]
+        assert "module.bsl" in uri
+        assert not uri.startswith("/")
+
+    def test_sarif_rule_descriptors(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        diag = _make_diag(str(tmp_path / "a.bsl"))
+        _print_sarif([diag])
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        rules = data["runs"][0]["tool"]["driver"]["rules"]
+        assert any(r["id"] == "BSL009" for r in rules)
+
+
+# ---------------------------------------------------------------------------
+# check() — new features
+# ---------------------------------------------------------------------------
+
+
+class TestCheckNewFeatures:
+    def test_exit_zero_suppresses_exit_1(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "dirty.bsl", 'Пароль = "секрет123";\n')
+        rc = check([str(tmp_path)], format="text", select={"BSL012"}, exit_zero=True)
+        assert rc == 0
+
+    def test_sarif_format(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
+        rc = check([str(tmp_path)], format="sarif", select={"BSL012"})
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert "runs" in data
+        assert rc == 1
+
+    def test_update_baseline_writes_file_and_exits_0(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
+        baseline_path = str(tmp_path / "b.json")
+        rc = check(
+            [str(tmp_path)],
+            format="text",
+            select={"BSL012"},
+            update_baseline=baseline_path,
+        )
+        assert rc == 0
+        import json as _json
+        with open(baseline_path, encoding="utf-8") as f:
+            data = _json.load(f)
+        assert isinstance(data, list)
+        assert any(item["code"] == "BSL012" for item in data)
+
+    def test_baseline_suppresses_known_issues(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
+        baseline_path = str(tmp_path / "b.json")
+        # Create baseline
+        check(
+            [str(tmp_path)],
+            format="text",
+            select={"BSL012"},
+            update_baseline=baseline_path,
+        )
+        # Now run with baseline — should be clean
+        rc = check(
+            [str(tmp_path)],
+            format="text",
+            select={"BSL012"},
+            baseline=baseline_path,
+        )
+        assert rc == 0
+
+    def test_config_exclude_removes_file(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "skip.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"exclude": ["skip.bsl"]})
+        rc = check([str(tmp_path)], format="text", select={"BSL012"}, config=cfg)
+        assert rc == 0
+
+    def test_config_per_file_ignores(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "legacy.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"per-file-ignores": {"legacy.bsl": ["BSL012"]}})
+        rc = check([str(tmp_path)], format="text", select={"BSL012"}, config=cfg)
+        assert rc == 0
+
+    def test_config_threshold_applied(self, tmp_path: Path) -> None:
+        # Very short max line length — should trigger BSL001
+        long_line = "А" * 50 + ";\n"
+        _write_bsl(tmp_path, "t.bsl", long_line)
+        cfg = BslConfig({"max-line-length": 10})
+        rc = check([str(tmp_path)], format="text", select={"BSL001"}, config=cfg)
         assert rc == 1
 
 

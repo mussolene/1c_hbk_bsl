@@ -45,6 +45,62 @@ class TestParseCodes:
 # ---------------------------------------------------------------------------
 
 
+class TestMainCheckNewFlags:
+    def test_exit_zero_flag(self, tmp_path: Path) -> None:
+        (tmp_path / "dirty.bsl").write_text('Пароль = "секрет123";\n', encoding="utf-8")
+        with patch("sys.argv", [
+            "bsl-analyzer", "--check", str(tmp_path),
+            "--select", "BSL012", "--exit-zero",
+        ]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 0
+
+    def test_sarif_format(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        (tmp_path / "ok.bsl").write_text("А = 1;\n", encoding="utf-8")
+        with patch("sys.argv", [
+            "bsl-analyzer", "--check", str(tmp_path),
+            "--format", "sarif", "--select", "BSL001",
+        ]):
+            with pytest.raises(SystemExit):
+                main()
+        import json
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert "runs" in data
+
+    def test_update_baseline_flag(self, tmp_path: Path) -> None:
+        (tmp_path / "f.bsl").write_text('Пароль = "с123";\n', encoding="utf-8")
+        baseline = str(tmp_path / "b.json")
+        with patch("sys.argv", [
+            "bsl-analyzer", "--check", str(tmp_path),
+            "--select", "BSL012", "--update-baseline", baseline,
+        ]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 0
+        assert Path(baseline).exists()
+
+    def test_baseline_flag(self, tmp_path: Path) -> None:
+        (tmp_path / "f.bsl").write_text('Пароль = "с123";\n', encoding="utf-8")
+        baseline = str(tmp_path / "b.json")
+        # First, create baseline
+        with patch("sys.argv", [
+            "bsl-analyzer", "--check", str(tmp_path),
+            "--select", "BSL012", "--update-baseline", baseline,
+        ]):
+            with pytest.raises(SystemExit):
+                main()
+        # Then run with baseline — should exit 0
+        with patch("sys.argv", [
+            "bsl-analyzer", "--check", str(tmp_path),
+            "--select", "BSL012", "--baseline", baseline,
+        ]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 0
+
+
 class TestMainCheck:
     def test_check_mode_clean_exits_0(self, tmp_path: Path) -> None:
         (tmp_path / "ok.bsl").write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
