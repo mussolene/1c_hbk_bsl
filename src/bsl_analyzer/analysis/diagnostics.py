@@ -452,6 +452,46 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["design", "transactions", "reliability"],
     },
+    "BSL051": {
+        "name": "UnreachableCode",
+        "description": "Code after an unconditional Возврат/Return or ВызватьИсключение/Raise is unreachable",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["suspicious", "dead-code"],
+    },
+    "BSL052": {
+        "name": "UselessCondition",
+        "description": "Condition is always True or always False (literal Истина/Ложь/True/False)",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["suspicious", "logic"],
+    },
+    "BSL053": {
+        "name": "ExecuteDynamic",
+        "description": "Выполнить()/Execute() runs dynamically constructed code — security and maintenance risk",
+        "severity": "WARNING",
+        "sonar_type": "VULNERABILITY",
+        "sonar_severity": "MAJOR",
+        "tags": ["security", "design"],
+    },
+    "BSL054": {
+        "name": "ModuleLevelVariable",
+        "description": "Module-level Перем/Var declaration creates shared mutable state — prefer local variables",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "global-state"],
+    },
+    "BSL055": {
+        "name": "ConsecutiveBlankLines",
+        "description": "More than 2 consecutive blank lines reduce readability",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["style", "formatting"],
+    },
 }
 
 
@@ -807,6 +847,27 @@ _PLATFORM_BUILTINS: frozenset[str] = frozenset(
         "strsplit", "strconcat", "strcontains", "strstartswith", "strendswith",
         "char", "charcode", "format", "strtemplate",
     }
+)
+
+# Выполнить / Execute dynamic code
+_RE_EXECUTE_DYNAMIC = re.compile(
+    r'^\s*(?:Выполнить|Execute)\s*\(',
+    re.IGNORECASE,
+)
+
+# Module-level variable declaration (outside any proc/function)
+# We reuse _RE_VAR_LOCAL for matching
+
+# Literal True/False in If condition
+_RE_IF_LITERAL = re.compile(
+    r'^\s*(?:Если|If)\s+(?:Истина|True|Ложь|False)\b',
+    re.IGNORECASE,
+)
+
+# Unconditional exit from method body (for unreachable code detection)
+_RE_UNCONDITIONAL_EXIT = re.compile(
+    r'^\s*(?:Возврат|Return|ВызватьИсключение|Raise)\b',
+    re.IGNORECASE,
 )
 
 # String continuation line in BSL (| at the start for multiline literals)
@@ -1244,6 +1305,16 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl049_unconditional_raise(path, lines, procs))
         if self._rule_enabled("BSL050"):
             diagnostics.extend(self._rule_bsl050_large_transaction(path, lines, procs))
+        if self._rule_enabled("BSL051"):
+            diagnostics.extend(self._rule_bsl051_unreachable_code(path, lines, procs))
+        if self._rule_enabled("BSL052"):
+            diagnostics.extend(self._rule_bsl052_useless_condition(path, lines))
+        if self._rule_enabled("BSL053"):
+            diagnostics.extend(self._rule_bsl053_execute_dynamic(path, lines))
+        if self._rule_enabled("BSL054"):
+            diagnostics.extend(self._rule_bsl054_module_level_variable(path, lines, procs))
+        if self._rule_enabled("BSL055"):
+            diagnostics.extend(self._rule_bsl055_consecutive_blank_lines(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -3062,6 +3133,217 @@ class DiagnosticEngine:
                     ),
                 )
             )
+        return diags
+
+
+    # ------------------------------------------------------------------
+    # BSL051 — Unreachable code after Return/Raise
+    # ------------------------------------------------------------------
+
+    def _rule_bsl051_unreachable_code(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag code that follows an unconditional Возврат/Return or
+        ВызватьИсключение/Raise within the same scope block.
+
+        Simple heuristic: if an unconditional exit is followed by a
+        non-blank, non-comment line *at the same or lesser indentation*,
+        it is unreachable.
+        """
+        diags: list[Diagnostic] = []
+        # Track which lines are proc-end markers to avoid false positives
+        end_line_idxs: set[int] = set()
+        for proc in procs:
+            end_line_idxs.add(proc.end_idx)
+
+        for proc in procs:
+            body_lines = list(enumerate(
+                lines[proc.start_idx + 1 : proc.end_idx], start=proc.start_idx + 1
+            ))
+            i = 0
+            while i < len(body_lines):
+                abs_idx, line = body_lines[i]
+                if _RE_UNCONDITIONAL_EXIT.match(line) and ";" in line:
+                    exit_indent = len(line) - len(line.lstrip())
+                    # Look at next non-blank, non-comment line
+                    j = i + 1
+                    while j < len(body_lines):
+                        next_abs, next_line = body_lines[j]
+                        stripped = next_line.strip()
+                        if not stripped or stripped.startswith("//"):
+                            j += 1
+                            continue
+                        next_indent = len(next_line) - len(next_line.lstrip())
+                        # Same or lesser indent => same scope => unreachable
+                        if next_indent <= exit_indent and next_abs not in end_line_idxs:
+                            # Skip КонецЕсли/КонецЦикла/etc. (they close blocks)
+                            if not re.match(
+                                r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo"
+                                r"|Исключение|Except|Иначе|Else|ИначеЕсли|ElsIf)\b",
+                                next_line, re.IGNORECASE
+                            ):
+                                diags.append(
+                                    Diagnostic(
+                                        file=path,
+                                        line=next_abs + 1,
+                                        character=next_indent,
+                                        end_line=next_abs + 1,
+                                        end_character=len(next_line),
+                                        severity=Severity.WARNING,
+                                        code="BSL051",
+                                        message="Unreachable code after unconditional Возврат/ВызватьИсключение.",
+                                    )
+                                )
+                        break
+                    i = j
+                    continue
+                i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL052 — Useless condition (literal True/False in If)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl052_useless_condition(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Если Истина/Ложь Тогда — condition is never evaluated."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.lstrip().startswith("//"):
+                continue
+            m = _RE_IF_LITERAL.match(line)
+            if m:
+                # Get the literal value
+                literal_m = re.search(
+                    r'\b(Истина|True|Ложь|False)\b', line, re.IGNORECASE
+                )
+                literal = literal_m.group(1) if literal_m else "literal"
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.WARNING,
+                        code="BSL052",
+                        message=(
+                            f"Condition is always '{literal}' — "
+                            "this If branch either always or never executes."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL053 — Execute() dynamic code
+    # ------------------------------------------------------------------
+
+    def _rule_bsl053_execute_dynamic(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Выполнить()/Execute() calls — dynamic code is a security risk."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.lstrip().startswith("//"):
+                continue
+            if _RE_EXECUTE_DYNAMIC.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.WARNING,
+                        code="BSL053",
+                        message=(
+                            "Выполнить()/Execute() executes dynamically constructed code — "
+                            "potential code injection vulnerability and hard to maintain."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL054 — Module-level Перем/Var (global state)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl054_module_level_variable(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag Перем/Var declarations that appear at module level
+        (outside any procedure or function) — they create shared mutable state.
+        """
+        diags: list[Diagnostic] = []
+        # Build set of line indices that are inside a proc/function
+        inside: set[int] = set()
+        for proc in procs:
+            for i in range(proc.start_idx, proc.end_idx + 1):
+                inside.add(i)
+
+        for idx, line in enumerate(lines):
+            if idx in inside:
+                continue
+            m = _RE_VAR_LOCAL.match(line)
+            if m:
+                names = [n.strip() for n in m.group("names").split(",") if n.strip()]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.INFORMATION,
+                        code="BSL054",
+                        message=(
+                            f"Module-level variable '{', '.join(names)}' creates shared "
+                            "mutable state — prefer local variables inside methods."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL055 — Consecutive blank lines (> 2)
+    # ------------------------------------------------------------------
+
+    MAX_BLANK_LINES: int = 2
+
+    def _rule_bsl055_consecutive_blank_lines(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag runs of more than 2 consecutive blank lines."""
+        diags: list[Diagnostic] = []
+        blank_run = 0
+        run_start = 0
+        for idx, line in enumerate(lines):
+            if line.strip() == "":
+                if blank_run == 0:
+                    run_start = idx
+                blank_run += 1
+            else:
+                if blank_run > self.MAX_BLANK_LINES:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=run_start + 1,
+                            character=0,
+                            end_line=run_start + blank_run,
+                            end_character=0,
+                            severity=Severity.INFORMATION,
+                            code="BSL055",
+                            message=(
+                                f"{blank_run} consecutive blank lines "
+                                f"(max {self.MAX_BLANK_LINES}) — remove extra blank lines."
+                            ),
+                        )
+                    )
+                blank_run = 0
         return diags
 
 

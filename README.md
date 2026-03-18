@@ -2,208 +2,314 @@
 
 Static analysis toolkit for **1C Enterprise BSL** language.
 
-Provides three interfaces over a single shared symbol index:
+Three interfaces powered by a single shared symbol index:
 
-| Interface    | Command                    | Client             |
-|--------------|----------------------------|--------------------|
-| MCP server   | `bsl-analyzer --mcp`       | Claude             |
-| LSP server   | `bsl-analyzer --lsp`       | VSCode / Cursor    |
-| CLI linter   | `bsl-analyzer --check`     | CI / terminal      |
+| Interface  | Command                  | Client           |
+|------------|--------------------------|------------------|
+| MCP server | `bsl-analyzer --mcp`     | Claude           |
+| LSP server | `bsl-analyzer --lsp`     | VSCode / Cursor  |
+| CLI linter | `bsl-analyzer --check`   | CI / terminal    |
 
-## Architecture
+**Performance:** ~600 files/sec with `--jobs 4` · ~80 MB RAM · Python 3.11+
 
-```
-┌──────────────────────────────────────────────┐
-│               bsl-analyzer                   │
-│  ┌─────────┐  ┌─────────┐  ┌──────────────┐ │
-│  │ MCP     │  │ LSP     │  │ CLI --check  │ │
-│  │ HTTP    │  │ stdio   │  │ rich output  │ │
-│  └────┬────┘  └────┬────┘  └──────┬───────┘ │
-│       └────────────┴──────────────┘          │
-│              Analysis Layer                  │
-│         symbols · call_graph · diagnostics   │
-│              Indexer Layer                   │
-│     IncrementalIndexer · FileWatcher         │
-│              SymbolIndex (SQLite FTS5)        │
-│              Parser Layer                    │
-│     BslParser (tree-sitter) + regex fallback │
-└──────────────────────────────────────────────┘
-```
+---
 
 ## Quick Start
-
-### pip install
 
 ```bash
 pip install bsl-analyzer
 
-# Index your workspace
-bsl-analyzer --index /path/to/1c/project
-
-# Start the MCP server (port 8051)
-bsl-analyzer --mcp
-
-# Or start the LSP server (stdio, for VSCode/Cursor)
-bsl-analyzer --lsp
-
-# Run the linter
+# Lint a project
 bsl-analyzer --check /path/to/1c/project
+
+# Start MCP server for Claude
+bsl-analyzer --mcp --port 8051
+
+# Start LSP server (stdio) for VSCode/Cursor
+bsl-analyzer --lsp
 ```
 
-### uv (recommended)
+With [uv](https://docs.astral.sh/uv/) (recommended):
 
 ```bash
 uv tool install bsl-analyzer
-bsl-analyzer --mcp --port 8051
 ```
 
-## MCP Tools
-
-Configure in Claude Desktop / Cursor by pointing to `http://localhost:8051/mcp`:
-
-| Tool               | Description                                        |
-|--------------------|----------------------------------------------------|
-| `bsl_status`       | Index health check (symbol count, last commit)     |
-| `bsl_find_symbol`  | Search symbols by name (exact or prefix)           |
-| `bsl_file_symbols` | All symbols defined in a file                      |
-| `bsl_callers`      | Who calls a given procedure/function               |
-| `bsl_callees`      | What a procedure/function calls                    |
-| `bsl_diagnostics`  | Lint rules: BSL001 syntax, BSL002 length, BSL004   |
-| `bsl_definition`   | Definition location(s) of a symbol                 |
-| `bsl_index_file`   | Force re-index a single file                       |
-
-### Example MCP session
-
-```
-You: Find the definition of ОбработатьЗаказ in the project
-Claude: [calls bsl_find_symbol("ОбработатьЗаказ")]
-        Found in /workspace/src/Orders.bsl:142 — exported procedure
-
-You: Who calls it?
-Claude: [calls bsl_callers("ОбработатьЗаказ", depth=2)]
-        Called from:
-          - DocumentPosting.bsl:88 in ОбработкаПроведения
-          - WebhookHandler.bsl:55 in ОбработатьВебхук
-```
-
-## LSP Capabilities
-
-| Capability                    | Status       |
-|-------------------------------|--------------|
-| Go to definition              | ✓            |
-| Hover (signature + doc)       | ✓            |
-| Document symbols (outline)    | ✓            |
-| Workspace symbol search       | ✓            |
-| Diagnostics on save           | ✓            |
-| Completions                   | Planned      |
-| Find references               | Planned      |
-| Rename                        | Planned      |
+---
 
 ## CLI Linter
 
 ```bash
-# Check a single file
-bsl-analyzer --check src/Orders.bsl
+# Check current directory (auto-discovers .bsl and .os files)
+bsl-analyzer --check .
 
-# Check entire directory, JSON output
-bsl-analyzer --check src/ --format json
+# Select specific rules
+bsl-analyzer --check src/ --select BSL001,BSL011,BSL012
 
-# Exit code 0 = clean, 1 = issues found
+# Ignore rules
+bsl-analyzer --check . --ignore BSL014,BSL023
+
+# JSON output (for CI / dashboards)
+bsl-analyzer --check . --format json > issues.json
+
+# SARIF output (GitHub Code Scanning / GitLab SAST)
+bsl-analyzer --check . --format sarif > results.sarif
+
+# SonarQube Generic Issue Import
+bsl-analyzer --check . --format sonarqube --sonar-root /project > sonar.json
+
+# Parallel workers
+bsl-analyzer --check . --jobs 8
+
+# Never fail CI (collect metrics but exit 0)
+bsl-analyzer --check . --exit-zero
+
+# Watch mode — re-lint on every save
+bsl-analyzer --watch src/
 ```
 
-Output format (text):
+**Exit codes:** `0` = clean · `1` = issues found · `2` = internal error
+
+### Inline suppression
+
+```bsl
+Пароль = "dev_only";  // noqa: BSL012
+Пароль = "dev_only";  // bsl-disable: BSL012
+Пароль = "dev_only";  // noqa          ← suppresses ALL rules on this line
+```
+
+### Output format (text)
 
 ```
-src/Orders.bsl:145:0: W BSL002 Procedure 'ОбработатьЗаказ' is 215 lines long (maximum 200)
-src/Utils.bsl:78:4:  W BSL004 Empty exception handler: Except block contains no statements.
+src/Orders.bsl:145:0: W BSL002 Procedure 'ОбработатьЗаказ' is 215 lines long (max 200)
+src/Utils.bsl:78:4:  W BSL004 Empty exception handler: Except block has no statements.
+src/Utils.bsl:92:0:  E BSL012 Possible hardcoded credential: Пароль = "..."
 ```
 
-### Built-in Rules
+---
 
-| Code   | Severity | Description                                       |
-|--------|----------|---------------------------------------------------|
-| BSL001 | ERROR    | Syntax error detected by the parser               |
-| BSL002 | WARNING  | Procedure / function longer than 200 lines        |
-| BSL003 | WARNING  | Public procedure missing Export keyword (planned) |
-| BSL004 | WARNING  | Empty exception handler (Except block)            |
+## Configuration File
 
-## Docker
+Create `bsl-analyzer.toml` in your project root (or use `[tool.bsl-analyzer]` in
+`pyproject.toml`):
+
+```toml
+# bsl-analyzer.toml
+select = []                  # [] = all rules (default)
+ignore = ["BSL014", "BSL023"]
+exclude = ["vendor", "tests/fixtures"]
+format = "text"              # text | json | sonarqube | sarif
+jobs = 0                     # 0 = auto
+exit-zero = false
+
+# Per-file overrides
+[per-file-ignores]
+"legacy_*.bsl" = ["BSL012", "BSL035"]
+"*test*.bsl"   = ["BSL002"]
+
+# Threshold overrides
+max-line-length = 120
+max-proc-lines  = 200
+max-cognitive-complexity = 15
+max-mccabe-complexity    = 10
+max-nesting-depth        = 4
+max-params               = 7
+max-returns              = 3
+max-bool-ops             = 3
+min-duplicate-uses       = 3
+```
+
+---
+
+## Baseline (gradual adoption)
+
+Start with a clean baseline so only *new* issues break the build:
 
 ```bash
-# Build and start
-HOST_WORKSPACE=/path/to/your/1c/project \
-  docker compose -f docker/docker-compose.yml up -d
+# 1. Record all current issues as baseline
+bsl-analyzer --check . --update-baseline bsl-baseline.json
 
-# Check status
-curl http://localhost:8051/health
+# 2. Commit bsl-baseline.json
+git add bsl-baseline.json && git commit -m "chore: add BSL analyzer baseline"
+
+# 3. In CI — only NEW issues fail the build
+bsl-analyzer --check . --baseline bsl-baseline.json
+
+# 4. After fixing issues, shrink the baseline
+bsl-analyzer --check . --update-baseline bsl-baseline.json
 ```
 
-Environment variables:
+---
 
-| Variable         | Default                  | Description                  |
-|------------------|--------------------------|------------------------------|
-| `WORKSPACE_ROOT` | `/workspace`             | Path inside the container    |
-| `INDEX_DB_PATH`  | `/data/bsl_index.sqlite` | SQLite DB location           |
-| `MCP_PORT`       | `8051`                   | HTTP port                    |
-| `LOG_LEVEL`      | `info`                   | Logging verbosity            |
-| `GIT_DIFF_BASE`  | `HEAD`                   | Base for incremental diff    |
+## Built-in Rules
 
-## VSCode / Cursor Extension
+55 rules (BSL001–BSL055) covering syntax, size, complexity, security, and style.
 
-The extension lives in `vscode-extension/`.
+Run `bsl-analyzer --list-rules` for the full table.
 
-### Development install
+### Rule categories
+
+| Category     | Rules                   | Description                                  |
+|--------------|-------------------------|----------------------------------------------|
+| Syntax       | BSL001                  | Parser errors                                |
+| Size         | BSL002, BSL015, BSL031, BSL043 | Method/param count limits          |
+| Complexity   | BSL011, BSL019, BSL020  | Cognitive / McCabe / nesting depth           |
+| Security     | BSL005, BSL006, BSL012, BSL053 | Hardcoded secrets, paths, exec()    |
+| Error handling | BSL004, BSL028, BSL034, BSL049 | Empty catch, missing try, raise  |
+| Design       | BSL003, BSL032, BSL042, BSL044, BSL050 | API contracts, transactions |
+| Performance  | BSL033, BSL038          | Query-in-loop, string concat in loop         |
+| Style        | BSL013, BSL014, BSL023–BSL026, BSL055 | Comments, line length      |
+| Deprecated   | BSL017, BSL022, BSL041  | Outdated APIs                                |
+| Suspicious   | BSL009, BSL010, BSL051, BSL052 | Self-assign, dead code, literals    |
+
+### Selected rules
+
+| Code   | Sev | Name                        | Description                                             |
+|--------|-----|-----------------------------|---------------------------------------------------------|
+| BSL001 | ERR | ParseError                  | Syntax error detected by tree-sitter                   |
+| BSL002 | WRN | MethodSize                  | Method longer than 200 lines                            |
+| BSL004 | WRN | EmptyCodeBlock              | Empty `Исключение` block                               |
+| BSL005 | WRN | HardcodeNetworkAddress      | Hardcoded IP / URL                                      |
+| BSL011 | WRN | CognitiveComplexity         | Cognitive complexity > 15                               |
+| BSL012 | WRN | HardcodeCredentials         | Hardcoded password / token / secret                     |
+| BSL019 | WRN | CyclomaticComplexity        | McCabe complexity > 10                                  |
+| BSL033 | ERR | QueryInLoop                 | DB query inside a loop (critical performance issue)     |
+| BSL042 | WRN | EmptyExportMethod           | Exported method has no body                             |
+| BSL049 | INF | UnconditionalRaise          | `ВызватьИсключение` outside `Попытка`                  |
+| BSL050 | WRN | LargeTransaction            | `НачатьТранзакцию` without matching commit/rollback    |
+| BSL051 | WRN | UnreachableCode             | Code after unconditional `Возврат`/`ВызватьИсключение` |
+| BSL052 | WRN | UselessCondition            | `Если Истина/Ложь Тогда` — condition is constant       |
+| BSL053 | WRN | ExecuteDynamic              | `Выполнить()` — dynamic code execution security risk    |
+
+---
+
+## SonarQube Integration
 
 ```bash
-cd vscode-extension
-npm install
-npm run compile
-# Press F5 in VSCode to open a new Extension Development Host window
+bsl-analyzer --check . --format sonarqube --sonar-root /project > bsl-issues.json
 ```
 
-### Configuration
+In `sonar-project.properties`:
+
+```properties
+sonar.externalIssuesReportPaths=bsl-issues.json
+```
+
+---
+
+## GitHub Actions / CI
+
+```yaml
+- name: BSL Lint
+  run: |
+    pip install bsl-analyzer
+    bsl-analyzer --check . --format sarif > bsl-results.sarif
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: bsl-results.sarif
+```
+
+---
+
+## MCP Server (for Claude)
+
+Start the server:
+
+```bash
+bsl-analyzer --mcp --port 8051
+```
+
+Configure in Claude Desktop / Cursor (`claude_desktop_config.json`):
 
 ```json
-// .vscode/settings.json
 {
-  "bslAnalyzer.serverPath": "bsl-analyzer",
-  "bslAnalyzer.useDocker": false,
-  "bslAnalyzer.logLevel": "info"
+  "mcpServers": {
+    "bsl-analyzer": {
+      "url": "http://localhost:8051/mcp"
+    }
+  }
 }
 ```
 
-To use Docker instead of a local binary:
+Available tools:
 
-```json
-{
-  "bslAnalyzer.useDocker": true,
-  "bslAnalyzer.dockerContainer": "bsl-analyzer-default"
-}
-```
+| Tool                  | Description                                            |
+|-----------------------|--------------------------------------------------------|
+| `bsl_status`          | Index health check (symbol count, last commit)         |
+| `bsl_find_symbol`     | Search symbols by name (exact or prefix)               |
+| `bsl_file_symbols`    | All symbols defined in a file                          |
+| `bsl_callers`         | Who calls a given procedure/function                   |
+| `bsl_callees`         | What a procedure/function calls                        |
+| `bsl_diagnostics`     | Run lint rules on a file or directory                  |
+| `bsl_definition`      | Definition location(s) of a symbol                     |
+| `bsl_index_file`      | Force re-index a single file                           |
+| `bsl_check_file`      | Run lint rules with select/ignore filters              |
+| `bsl_list_rules`      | List all rules (with optional tag filter)              |
 
-## Incremental Indexing
+---
 
-On startup the indexer runs `git diff --name-only <last_commit> HEAD` to find
-changed files and only re-parses those. First run (or `--force`) does a full
-workspace scan.
+## LSP Server (for VSCode / Cursor)
 
 ```bash
-# Full reindex
-bsl-analyzer --index /workspace --force
-
-# Incremental (automatic, uses stored commit hash)
-bsl-analyzer --index /workspace
+bsl-analyzer --lsp
 ```
+
+Capabilities:
+
+| Feature                   | Status |
+|---------------------------|--------|
+| Go to definition          | ✓      |
+| Hover (signature + doc)   | ✓      |
+| Document symbols          | ✓      |
+| Workspace symbol search   | ✓      |
+| Completions               | ✓      |
+| Find references           | ✓      |
+| Diagnostics on save       | ✓      |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                  bsl-analyzer                   │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ MCP HTTP │  │ LSP stdio│  │ CLI --check   │  │
+│  └────┬─────┘  └────┬─────┘  └──────┬────────┘  │
+│       └─────────────┴───────────────┘            │
+│                Analysis Layer                    │
+│     DiagnosticEngine (55 rules, BSL001–BSL055)   │
+│     symbols · call_graph · platform_api          │
+│                Indexer Layer                     │
+│       IncrementalIndexer · FileWatcher           │
+│              SymbolIndex (SQLite FTS5)           │
+│                Parser Layer                      │
+│      BslParser (tree-sitter-bsl) + regex         │
+└─────────────────────────────────────────────────┘
+```
+
+---
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, test, and style instructions.
-
 ```bash
+git clone https://github.com/your-org/bsl-analyzer
+cd bsl-analyzer
 uv pip install -e ".[dev]"
+
+# Run tests
 pytest
+
+# Lint
 ruff check src/ tests/
+
+# Full check with coverage
+pytest --cov=src/bsl_analyzer --cov-report=term-missing
 ```
+
+---
 
 ## License
 

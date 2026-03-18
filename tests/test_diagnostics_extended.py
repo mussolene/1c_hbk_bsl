@@ -1442,6 +1442,139 @@ class TestBsl050LargeTransaction:
 
 
 # ---------------------------------------------------------------------------
+# BSL051 — UnreachableCode
+# ---------------------------------------------------------------------------
+
+
+class TestBsl051UnreachableCode:
+    def test_code_after_return_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Возврат;
+                Сообщить("никогда");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL051"})
+        assert "BSL051" in _codes(diags)
+
+    def test_no_unreachable_code_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Сообщить("привет");
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL051"})
+        assert "BSL051" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL052 — UselessCondition
+# ---------------------------------------------------------------------------
+
+
+class TestBsl052UselessCondition:
+    def test_if_true_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Если Истина Тогда
+                А = 1;
+            КонецЕсли;
+        """
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert "BSL052" in _codes(diags)
+
+    def test_if_false_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Если Ложь Тогда
+                А = 1;
+            КонецЕсли;
+        """
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert "BSL052" in _codes(diags)
+
+    def test_normal_condition_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Если А > 0 Тогда
+                Б = 1;
+            КонецЕсли;
+        """
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert "BSL052" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL053 — ExecuteDynamic
+# ---------------------------------------------------------------------------
+
+
+class TestBsl053ExecuteDynamic:
+    def test_execute_detected(self, tmp_path: Path) -> None:
+        content = 'Выполнить("А = 1;");\n'
+        diags = _check(content, tmp_path, select={"BSL053"})
+        assert "BSL053" in _codes(diags)
+
+    def test_in_comment_no_warning(self, tmp_path: Path) -> None:
+        content = '// Выполнить("А = 1;");\n'
+        diags = _check(content, tmp_path, select={"BSL053"})
+        assert "BSL053" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL054 — ModuleLevelVariable
+# ---------------------------------------------------------------------------
+
+
+class TestBsl054ModuleLevelVariable:
+    def test_module_level_var_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Перем МояПеременная;
+            Процедура Тест()
+                Сообщить(МояПеременная);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL054"})
+        assert "BSL054" in _codes(diags)
+
+    def test_local_var_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Перем Локальная;
+                Локальная = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL054"})
+        assert "BSL054" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL055 — ConsecutiveBlankLines
+# ---------------------------------------------------------------------------
+
+
+class TestBsl055ConsecutiveBlankLines:
+    def test_many_blank_lines_detected(self, tmp_path: Path) -> None:
+        content = "А = 1;\n\n\n\n\nБ = 2;\n"
+        bsl_file = tmp_path / "test.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL055"}).check_file(str(bsl_file))
+        assert "BSL055" in _codes(diags)
+
+    def test_two_blank_lines_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\n\n\nБ = 2;\n"
+        bsl_file = tmp_path / "test.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL055"}).check_file(str(bsl_file))
+        assert "BSL055" not in _codes(diags)
+
+    def test_single_blank_line_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\n\nБ = 2;\n"
+        bsl_file = tmp_path / "test.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL055"}).check_file(str(bsl_file))
+        assert "BSL055" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # Metadata completeness
 # ---------------------------------------------------------------------------
 
@@ -1449,6 +1582,6 @@ class TestBsl050LargeTransaction:
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 51)}
+        expected = {f"BSL{i:03d}" for i in range(1, 56)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
