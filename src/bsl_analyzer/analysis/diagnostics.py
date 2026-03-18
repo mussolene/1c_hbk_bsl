@@ -340,6 +340,46 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["brain-overload", "complexity"],
     },
+    "BSL037": {
+        "name": "OverrideBuiltinMethod",
+        "description": "Method name shadows a 1C platform built-in function",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["suspicious", "convention"],
+    },
+    "BSL038": {
+        "name": "StringConcatenationInLoop",
+        "description": "String concatenation operator '+' inside a loop — use StrTemplate or array join",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance"],
+    },
+    "BSL039": {
+        "name": "NestedTernaryOperator",
+        "description": "Nested ternary ?() expression reduces readability",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["brain-overload", "readability"],
+    },
+    "BSL040": {
+        "name": "UsingThisForm",
+        "description": "Direct use of ЭтаФорма/ThisForm outside event handlers is fragile",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "ui"],
+    },
+    "BSL041": {
+        "name": "NotifyDescriptionToModalWindow",
+        "description": "ОписаниеОповещения/NotifyDescription call with modal window is deprecated",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["deprecated", "ui"],
+    },
 }
 
 
@@ -645,6 +685,57 @@ _RE_STRING_LITERAL = re.compile(r'"([^"]{3,})"')
 
 # Boolean operators count in a single condition line
 _RE_BOOL_OP = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
+
+# String concatenation inside a loop: variable = variable + "string" or + Str(...)
+_RE_STR_CONCAT = re.compile(
+    r"\b\w+\s*=\s*\w+\s*\+\s*(?:\"[^\"]*\"|\w+\s*\()",
+    re.IGNORECASE,
+)
+
+# Nested ternary: ?( inside a ?(
+_RE_NESTED_TERNARY = re.compile(
+    r"\?\s*\([^)]*\?\s*\(",
+    re.IGNORECASE,
+)
+
+# ЭтаФорма / ThisForm outside a comment
+_RE_THIS_FORM = re.compile(
+    r"\b(?:ЭтаФорма|ThisForm)\b",
+    re.IGNORECASE,
+)
+
+# ОписаниеОповещения / NotifyDescription
+_RE_NOTIFY_DESCRIPTION = re.compile(
+    r"\bОписаниеОповещения\s*\(|NotifyDescription\s*\(",
+    re.IGNORECASE,
+)
+
+# Platform built-in names (lowercase) — used for BSL037 override detection
+_PLATFORM_BUILTINS: frozenset[str] = frozenset(
+    {
+        "сообщить", "предупреждение", "вопрос", "описаниеошибки",
+        "информацияобошибке", "новоеисключение", "типзнч", "тип",
+        "значениезаполнено", "стрдлина", "лев", "прав", "сред",
+        "стрнайти", "стрзаменить", "нрег", "врег", "сокрл", "сокрп", "сокрлп",
+        "пустаястрока", "строка", "число", "булево", "дата",
+        "окр", "цел", "abs", "макс", "мин",
+        "текущаядата", "началодня", "конецдня", "началомесяца", "конецмесяца",
+        "добавитьмесяц", "год", "месяц", "день",
+        "стрразделить", "стрсоединить", "стрсодержит",
+        "стрначинаетсяс", "стрзаканчиваетсяна",
+        "символ", "кодсимвола", "формат", "стршаблон",
+        # English aliases
+        "message", "question", "errordescription", "errorinfo",
+        "typeof", "type", "valueisfilled",
+        "strlen", "left", "right", "mid", "strfind", "strreplace",
+        "lower", "upper", "triml", "trimr", "trimall", "isblankstring",
+        "string", "number", "boolean", "round", "int", "max", "min",
+        "currentdate", "begofday", "endofday", "begofmonth", "endofmonth",
+        "addmonth", "year", "month", "day",
+        "strsplit", "strconcat", "strcontains", "strstartswith", "strendswith",
+        "char", "charcode", "format", "strtemplate",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
@@ -1019,6 +1110,16 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl035_duplicate_string_literal(path, lines))
         if self._rule_enabled("BSL036"):
             diagnostics.extend(self._rule_bsl036_complex_condition(path, lines))
+        if self._rule_enabled("BSL037"):
+            diagnostics.extend(self._rule_bsl037_override_builtin(path, lines, procs))
+        if self._rule_enabled("BSL038"):
+            diagnostics.extend(self._rule_bsl038_string_concat_in_loop(path, lines, procs))
+        if self._rule_enabled("BSL039"):
+            diagnostics.extend(self._rule_bsl039_nested_ternary(path, lines))
+        if self._rule_enabled("BSL040"):
+            diagnostics.extend(self._rule_bsl040_using_this_form(path, lines))
+        if self._rule_enabled("BSL041"):
+            diagnostics.extend(self._rule_bsl041_notify_description(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -2305,6 +2406,185 @@ class DiagnosticEngine:
                             f"Condition has {ops} boolean operators "
                             f"(maximum {self.max_bool_ops}) — "
                             "extract sub-conditions into named variables"
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL037 — Method name overrides a platform built-in
+    # ------------------------------------------------------------------
+
+    def _rule_bsl037_override_builtin(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag methods whose name matches a known 1C platform built-in function."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if proc.name.lower() in _PLATFORM_BUILTINS:
+                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(line_text),
+                        severity=Severity.WARNING,
+                        code="BSL037",
+                        message=(
+                            f"'{proc.name}' shadows a 1C platform built-in function. "
+                            "Rename to avoid confusion."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL038 — String concatenation in loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl038_string_concat_in_loop(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag ``Переменная = Переменная + "..."`` inside a loop.
+
+        Building a string in a loop via ``+`` is O(n²). Use a Массив + СтрСоединить
+        or СтрШаблон pattern instead.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            loop_depth = 0
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                if _RE_LOOP_OPEN.match(line):
+                    loop_depth += 1
+                elif _RE_LOOP_CLOSE.match(line):
+                    loop_depth = max(0, loop_depth - 1)
+                elif loop_depth > 0 and not line.strip().startswith("//"):
+                    if _RE_STR_CONCAT.search(line):
+                        m = _RE_STR_CONCAT.search(line)
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=i + 1,
+                                character=m.start() if m else 0,
+                                end_line=i + 1,
+                                end_character=len(line),
+                                severity=Severity.WARNING,
+                                code="BSL038",
+                                message=(
+                                    "String concatenation inside a loop is O(n²). "
+                                    "Use Массив + СтрСоединить() instead."
+                                ),
+                            )
+                        )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL039 — Nested ternary operator
+    # ------------------------------------------------------------------
+
+    def _rule_bsl039_nested_ternary(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag nested ?() expressions — they are nearly unreadable."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_NESTED_TERNARY.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL039",
+                        message=(
+                            "Nested ternary ?() expression reduces readability. "
+                            "Extract inner condition to a variable."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL040 — ЭтаФорма / ThisForm outside event handler context
+    # ------------------------------------------------------------------
+
+    def _rule_bsl040_using_this_form(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag direct use of ЭтаФорма/ThisForm.
+
+        These are only valid in form module event handlers. Using them in
+        common modules or non-handler procedures causes hard-to-debug errors.
+        """
+        p = Path(path)
+        stem_lower = p.stem.lower()
+        # Only applies if file is NOT a form module
+        if "форма" in stem_lower or "form" in stem_lower:
+            return []
+
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_THIS_FORM.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL040",
+                        message=(
+                            "ЭтаФорма/ThisForm should only be used in form module handlers. "
+                            "Pass the form as a parameter instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL041 — ОписаниеОповещения / NotifyDescription (deprecated modal)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl041_notify_description(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag ОписаниеОповещения() usage — this API is tied to legacy modal windows.
+
+        The modern equivalent is async handlers via background tasks or form callbacks.
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_NOTIFY_DESCRIPTION.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL041",
+                        message=(
+                            "ОписаниеОповещения()/NotifyDescription() is linked to "
+                            "deprecated modal window APIs. Use async event handlers."
                         ),
                     )
                 )

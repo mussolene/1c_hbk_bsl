@@ -529,10 +529,10 @@ class TestRuleMetadata:
             missing = required - set(meta.keys())
             assert not missing, f"{code} is missing fields: {missing}"
 
-    def test_all_bsl036_rules_have_metadata(self) -> None:
+    def test_all_bsl041_rules_have_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
 
-        expected_codes = {f"BSL{i:03d}" for i in range(1, 37)}
+        expected_codes = {f"BSL{i:03d}" for i in range(1, 42)}
         assert expected_codes.issubset(set(RULE_METADATA.keys()))
 
 
@@ -1065,3 +1065,89 @@ class TestBsl036ComplexCondition:
         """
         diags = _check(content, tmp_path, max_bool_ops=3)
         assert "BSL036" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL037 — OverrideBuiltinMethod
+# ---------------------------------------------------------------------------
+
+
+class TestBsl037OverrideBuiltin:
+    def test_builtin_name_detected(self, tmp_path: Path) -> None:
+        content = "Функция Строка(Значение)\nКонецФункции\n"
+        diags = _check(content, tmp_path)
+        assert "BSL037" in _codes(diags)
+
+    def test_unique_name_no_warning(self, tmp_path: Path) -> None:
+        content = "Функция МояФункция(Значение)\nВозврат Значение;\nКонецФункции\n"
+        diags = _check(content, tmp_path)
+        assert "BSL037" not in _codes(diags)
+
+    def test_message_contains_name(self, tmp_path: Path) -> None:
+        content = "Процедура Сообщить(Текст)\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path)
+        bsl037 = [d for d in diags if d.code == "BSL037"]
+        assert bsl037
+        assert "Сообщить" in bsl037[0].message
+
+
+# ---------------------------------------------------------------------------
+# BSL038 — StringConcatenationInLoop
+# ---------------------------------------------------------------------------
+
+
+class TestBsl038StringConcatInLoop:
+    def test_concat_in_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Массив)
+                Результат = "";
+                ДляКаждого Эл Из Массив Цикл
+                    Результат = Результат + "текст";
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL038" in _codes(diags)
+
+    def test_concat_outside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = "А" + "Б";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL038" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL039 — NestedTernaryOperator
+# ---------------------------------------------------------------------------
+
+
+class TestBsl039NestedTernary:
+    def test_nested_ternary_detected(self, tmp_path: Path) -> None:
+        content = 'А = ?(Б, ?(В, 1, 2), 3);\n'
+        diags = _check(content, tmp_path)
+        assert "BSL039" in _codes(diags)
+
+    def test_simple_ternary_no_warning(self, tmp_path: Path) -> None:
+        content = 'А = ?(Б, 1, 2);\n'
+        diags = _check(content, tmp_path)
+        assert "BSL039" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL041 — NotifyDescriptionToModalWindow
+# ---------------------------------------------------------------------------
+
+
+class TestBsl041NotifyDescription:
+    def test_notify_description_detected(self, tmp_path: Path) -> None:
+        content = "ОповещениеОЗакрытии = ОписаниеОповещения(\"ОбработкаЗакрытия\", ЭтотОбъект);\n"
+        diags = _check(content, tmp_path)
+        assert "BSL041" in _codes(diags)
+
+    def test_in_comment_not_flagged(self, tmp_path: Path) -> None:
+        content = "// ОписаниеОповещения(\"ОбработкаЗакрытия\", ЭтотОбъект)\n"
+        diags = _check(content, tmp_path)
+        assert "BSL041" not in _codes(diags)
