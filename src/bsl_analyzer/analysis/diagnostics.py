@@ -188,6 +188,118 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["design"],
     },
+    "BSL018": {
+        "name": "RaiseExceptionWithLiteral",
+        "description": "ВызватьИсключение/Raise used with a string literal instead of an exception object",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["error-handling"],
+    },
+    "BSL019": {
+        "name": "CyclomaticComplexity",
+        "description": "Method McCabe cyclomatic complexity exceeds the allowed threshold",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "CRITICAL",
+        "tags": ["brain-overload", "complexity"],
+    },
+    "BSL020": {
+        "name": "ExcessiveNesting",
+        "description": "Code block nesting depth exceeds the allowed maximum",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["brain-overload"],
+    },
+    "BSL021": {
+        "name": "UnusedValParameter",
+        "description": "Value parameter (Знач/Val) is never read inside the method body",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["unused"],
+    },
+    "BSL022": {
+        "name": "DeprecatedMessage",
+        "description": "Предупреждение()/Warning() is a deprecated modal dialog — use status bar messaging instead",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["deprecated", "ui"],
+    },
+    "BSL023": {
+        "name": "UsingServiceTag",
+        "description": "Service tag (TODO/FIXME/HACK/КЕЙС) found — should be resolved or linked to a ticket",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["convention"],
+    },
+    "BSL024": {
+        "name": "SpaceAtStartComment",
+        "description": "Comment text should start with a space after '//'",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["convention", "style"],
+    },
+    "BSL025": {
+        "name": "MissingSemicolon",
+        "description": "Statement is not terminated with a semicolon",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MINOR",
+        "tags": ["syntax", "convention"],
+    },
+    "BSL026": {
+        "name": "EmptyRegion",
+        "description": "#Область/#Region block contains no executable code",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["unused"],
+    },
+    "BSL027": {
+        "name": "UseGotoOperator",
+        "description": "Перейти/Goto statement makes control flow hard to follow",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "CRITICAL",
+        "tags": ["design", "brain-overload"],
+    },
+    "BSL028": {
+        "name": "MissingCodeTryCatch",
+        "description": "Method body contains no error handling (Try/Except) for potentially risky operations",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["error-handling", "robustness"],
+    },
+    "BSL029": {
+        "name": "MagicNumber",
+        "description": "Magic number literal used directly in code — extract it to a named constant",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["convention", "readability"],
+    },
+    "BSL030": {
+        "name": "LineEndsWithSemicolon",
+        "description": "Procedure/function header line ends with a semicolon (not needed in BSL)",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["convention", "style"],
+    },
+    "BSL031": {
+        "name": "NumberOfParams",
+        "description": "Method has too many parameters (including required ones)",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["design", "brain-overload"],
+    },
 }
 
 
@@ -249,7 +361,8 @@ class _ProcInfo:
     start_idx: int          # 0-based line index (header line)
     end_idx: int            # 0-based line index (КонецПроцедуры/КонецФункции)
     is_export: bool
-    params: list[str]       # param names only (no defaults, no Val)
+    params: list[str]       # all param names (no defaults, no Val prefix)
+    val_params: list[str]   # Знач/Val param names (passed by value)
     optional_count: int     # count of params with default values
     header_col: int = 0     # column of the keyword (indent)
 
@@ -373,9 +486,95 @@ _CC_ELSE = re.compile(
     re.IGNORECASE,
 )
 
+# ВызватьИсключение / Raise with a string literal (anti-pattern)
+_RE_RAISE_LITERAL = re.compile(
+    r'^\s*(?:ВызватьИсключение|Raise)\s+"',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# McCabe: decision-point keywords
+_RE_MCCABE_BRANCH = re.compile(
+    r"^\s*(?:Если|If|ИначеЕсли|ElsIf|Для|For|ДляКаждого|ForEach|Пока|While|Исключение|Except)\b",
+    re.IGNORECASE,
+)
+# McCabe: boolean operators (each И/Or adds a path)
+_RE_MCCABE_BOOL = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
+
+# Nesting open/close tokens (re-use _CC_OPEN/_CC_CLOSE shapes)
+_RE_NEST_OPEN = re.compile(
+    r"^\s*(?:Если|If|ДляКаждого|ForEach|Для|For|Пока|While|Попытка|Try)\b",
+    re.IGNORECASE,
+)
+_RE_NEST_CLOSE = re.compile(
+    r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b",
+    re.IGNORECASE,
+)
+
 # Inline noqa/bsl-disable
 _RE_NOQA = re.compile(
     r"//\s*(?:noqa|bsl-disable)(?:\s*:\s*(?P<codes>[A-Z0-9,\s]+))?",
+    re.IGNORECASE,
+)
+
+# Deprecated dialog: Предупреждение(...) / Warning(...)
+_RE_DEPRECATED_MSG = re.compile(
+    r"^\s*(?:Предупреждение|Warning)\s*\(",
+    re.IGNORECASE,
+)
+
+# Service tags in comments
+_RE_SERVICE_TAG = re.compile(
+    r"//.*\b(?:TODO|FIXME|HACK|КЕЙС|WORKAROUND|UNDONE|XXX)\b",
+    re.IGNORECASE,
+)
+
+# Comment without space after //  (but allow //!, ///  doc-comments)
+_RE_NO_SPACE_COMMENT = re.compile(
+    r"//(?![/! ])(?!\s*$)(?!noqa)(?!bsl-disable)",
+    re.IGNORECASE,
+)
+
+# Statements that MUST end with ;  — simplified: lines inside procs that look
+# like assignment, method call, or return, but have no trailing semicolon.
+# Only used as a heuristic; BSL allows some statements without semicolons.
+_RE_STMT_NO_SEMI = re.compile(
+    r"^\s*(?:"
+    r"(?:\w+(?:\.\w+)*)\s*\([^)]*\)"     # method call
+    r"|(?:\w+(?:\.\w+)*)\s*="            # assignment
+    r"|(?:Возврат|Return)\s+\S"          # return with value
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+# Empty region: #Область...#КонецОбласти with nothing code-like inside
+_RE_REGION_OPEN_CAP = re.compile(
+    r"^\s*#(?:Область|Region)\s+(?P<name>\S+)",
+    re.IGNORECASE,
+)
+_RE_REGION_CLOSE_BARE = re.compile(
+    r"^\s*#(?:КонецОбласти|EndRegion)",
+    re.IGNORECASE,
+)
+
+# Goto / Перейти operator
+_RE_GOTO = re.compile(
+    r"^\s*(?:Перейти|Goto)\s+~",
+    re.IGNORECASE,
+)
+
+# Magic number: numeric literal not 0/1/-1, not in a comment or string
+# A simplified heuristic: standalone number after =, (, or operator
+_RE_MAGIC_NUMBER = re.compile(
+    r"(?<![\"'\w.])"        # not preceded by string/word/dot
+    r"-?(?:[2-9]\d*|\d{2,})" # 2+ digit integer OR single digit >= 2
+    r"(?:\.\d+)?"           # optional decimal part
+    r"(?![\w.\"])",          # not followed by word/dot/quote
+)
+
+# Procedure/function header line that erroneously ends with ;
+_RE_HEADER_SEMICOLON = re.compile(
+    r"^\s*(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\([^)]*\)\s*"
+    r"(?:(?:Экспорт|Export)\s*)?;",
     re.IGNORECASE,
 )
 
@@ -468,6 +667,7 @@ def _find_procedures(content: str) -> list[_ProcInfo]:
 
         parsed = _parse_params(params_str)
         params = [p[0] for p in parsed]
+        val_params = [p[0] for p in parsed if p[1]]
         optional_count = sum(1 for p in parsed if p[2])
 
         # Match to closest end marker after start
@@ -485,6 +685,7 @@ def _find_procedures(content: str) -> list[_ProcInfo]:
                 end_idx=end_idx,
                 is_export=is_export,
                 params=params,
+                val_params=val_params,
                 optional_count=optional_count,
                 header_col=header_col,
             )
@@ -545,6 +746,26 @@ def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -
     return complexity
 
 
+def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> int:
+    """
+    Calculate McCabe cyclomatic complexity for a procedure body.
+
+    CC = 1 + number of decision points.
+    Decision points: Если/If, ИначеЕсли/ElsIf, Для/For, ДляКаждого/ForEach,
+    Пока/While, Исключение/Except, plus each И/And and ИЛИ/Or boolean operator.
+    """
+    cc = 1
+    for i in range(start_idx + 1, min(end_idx, len(lines))):
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        if _RE_MCCABE_BRANCH.match(line):
+            cc += 1
+        cc += len(_RE_MCCABE_BOOL.findall(line))
+    return cc
+
+
 # ---------------------------------------------------------------------------
 # Diagnostic Engine
 # ---------------------------------------------------------------------------
@@ -570,8 +791,11 @@ class DiagnosticEngine:
     MAX_PROC_LINES: int = 200
     MAX_RETURNS: int = 3
     MAX_COGNITIVE_COMPLEXITY: int = 15
+    MAX_MCCABE_COMPLEXITY: int = 10
+    MAX_NESTING_DEPTH: int = 4
     MAX_LINE_LENGTH: int = 120
     MAX_OPTIONAL_PARAMS: int = 3
+    MAX_PARAMS: int = 7
     MIN_COMMENTED_CODE_BLOCK: int = 2
 
     def __init__(
@@ -583,8 +807,11 @@ class DiagnosticEngine:
         max_proc_lines: int = MAX_PROC_LINES,
         max_returns: int = MAX_RETURNS,
         max_cognitive_complexity: int = MAX_COGNITIVE_COMPLEXITY,
+        max_mccabe_complexity: int = MAX_MCCABE_COMPLEXITY,
+        max_nesting_depth: int = MAX_NESTING_DEPTH,
         max_line_length: int = MAX_LINE_LENGTH,
         max_optional_params: int = MAX_OPTIONAL_PARAMS,
+        max_params: int = MAX_PARAMS,
     ) -> None:
         self._parser = parser or BslParser()
         self._select: set[str] | None = {c.upper() for c in select} if select else None
@@ -592,8 +819,11 @@ class DiagnosticEngine:
         self.max_proc_lines = max_proc_lines
         self.max_returns = max_returns
         self.max_cognitive_complexity = max_cognitive_complexity
+        self.max_mccabe_complexity = max_mccabe_complexity
+        self.max_nesting_depth = max_nesting_depth
         self.max_line_length = max_line_length
         self.max_optional_params = max_optional_params
+        self.max_params = max_params
 
     def _rule_enabled(self, code: str) -> bool:
         """Return True if *code* should be executed."""
@@ -677,6 +907,34 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl016_non_standard_region(path, lines, regions))
         if self._rule_enabled("BSL017"):
             diagnostics.extend(self._rule_bsl017_export_in_command_module(path, lines, procs))
+        if self._rule_enabled("BSL018"):
+            diagnostics.extend(self._rule_bsl018_raise_with_literal(path, lines))
+        if self._rule_enabled("BSL019"):
+            diagnostics.extend(self._rule_bsl019_cyclomatic_complexity(path, lines, procs))
+        if self._rule_enabled("BSL020"):
+            diagnostics.extend(self._rule_bsl020_excessive_nesting(path, lines, procs))
+        if self._rule_enabled("BSL021"):
+            diagnostics.extend(self._rule_bsl021_unused_val_parameter(path, lines, procs))
+        if self._rule_enabled("BSL022"):
+            diagnostics.extend(self._rule_bsl022_deprecated_message(path, lines))
+        if self._rule_enabled("BSL023"):
+            diagnostics.extend(self._rule_bsl023_service_tag(path, lines))
+        if self._rule_enabled("BSL024"):
+            diagnostics.extend(self._rule_bsl024_space_at_start_comment(path, lines))
+        if self._rule_enabled("BSL025"):
+            diagnostics.extend(self._rule_bsl025_missing_semicolon(path, lines, procs))
+        if self._rule_enabled("BSL026"):
+            diagnostics.extend(self._rule_bsl026_empty_region(path, lines, regions))
+        if self._rule_enabled("BSL027"):
+            diagnostics.extend(self._rule_bsl027_use_goto(path, lines))
+        if self._rule_enabled("BSL028"):
+            diagnostics.extend(self._rule_bsl028_missing_try_catch(path, lines, procs))
+        if self._rule_enabled("BSL029"):
+            diagnostics.extend(self._rule_bsl029_magic_number(path, lines, procs))
+        if self._rule_enabled("BSL030"):
+            diagnostics.extend(self._rule_bsl030_header_semicolon(path, lines))
+        if self._rule_enabled("BSL031"):
+            diagnostics.extend(self._rule_bsl031_number_of_params(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -1229,6 +1487,527 @@ class DiagnosticEngine:
                     ),
                 )
             )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL018 — Raise exception with string literal
+    # ------------------------------------------------------------------
+
+    def _rule_bsl018_raise_with_literal(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Detect ``ВызватьИсключение "строка"`` — raising with a raw string.
+
+        Recommended pattern is to use an exception object::
+
+            ВызватьИсключение НовоеИсключение("Описание ошибки");
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_RAISE_LITERAL.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.WARNING,
+                        code="BSL018",
+                        message=(
+                            "ВызватьИсключение used with a string literal. "
+                            "Consider using НовоеИсключение() for structured error information."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL019 — McCabe cyclomatic complexity
+    # ------------------------------------------------------------------
+
+    def _rule_bsl019_cyclomatic_complexity(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            cc = _calc_mccabe_complexity(lines, proc.start_idx, proc.end_idx)
+            if cc > self.max_mccabe_complexity:
+                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(line_text),
+                        severity=Severity.WARNING,
+                        code="BSL019",
+                        message=(
+                            f"{proc.kind.capitalize()} '{proc.name}' has cyclomatic "
+                            f"complexity {cc} (maximum {self.max_mccabe_complexity})"
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL020 — Excessive nesting depth
+    # ------------------------------------------------------------------
+
+    def _rule_bsl020_excessive_nesting(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag the first line inside a procedure where nesting exceeds max_nesting_depth."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            nesting = 0
+            reported: set[int] = set()  # report each over-nested block once
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                if _RE_NEST_OPEN.match(line):
+                    nesting += 1
+                    if nesting > self.max_nesting_depth and i not in reported:
+                        reported.add(i)
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=i + 1,
+                                character=len(line) - len(line.lstrip()),
+                                end_line=i + 1,
+                                end_character=len(line),
+                                severity=Severity.WARNING,
+                                code="BSL020",
+                                message=(
+                                    f"Nesting depth {nesting} exceeds maximum "
+                                    f"{self.max_nesting_depth} in '{proc.name}'"
+                                ),
+                            )
+                        )
+                elif _RE_NEST_CLOSE.match(line):
+                    nesting = max(0, nesting - 1)
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL021 — Unused Знач/Val parameter (kept before new rules)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl021_unused_val_parameter(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect ``Знач``/``Val`` parameters that are never read inside the body.
+
+        Reference parameters (without Знач) are skipped because they may serve
+        as output parameters — flagging them would produce many false positives.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.val_params:
+                continue
+            body = "\n".join(lines[proc.start_idx + 1 : proc.end_idx + 1])
+            for param in proc.val_params:
+                pattern = r"\b" + re.escape(param) + r"\b"
+                if not re.search(pattern, body, re.IGNORECASE):
+                    line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=proc.header_col,
+                            end_line=proc.start_idx + 1,
+                            end_character=len(line_text),
+                            severity=Severity.WARNING,
+                            code="BSL021",
+                            message=(
+                                f"Value parameter '{param}' (Знач) of "
+                                f"{proc.kind} '{proc.name}' is never read"
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL022 — Deprecated Предупреждение() / Warning()
+    # ------------------------------------------------------------------
+
+    def _rule_bsl022_deprecated_message(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag calls to Предупреждение()/Warning() — deprecated modal dialogs.
+
+        These block execution and are not allowed in background procedures.
+        Use Сообщить() or status bar notifications instead.
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_DEPRECATED_MSG.match(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.WARNING,
+                        code="BSL022",
+                        message=(
+                            "Предупреждение()/Warning() is deprecated. "
+                            "Use Сообщить() or status bar messaging instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL023 — Service tags (TODO/FIXME/HACK)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl023_service_tag(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag TODO, FIXME, HACK, КЕЙС, WORKAROUND, UNDONE, XXX in comments.
+
+        These should be resolved or linked to a ticket before merging.
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            m = _RE_SERVICE_TAG.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.INFORMATION,
+                        code="BSL023",
+                        message=(
+                            f"Service tag found: {line.strip()!r}. "
+                            "Resolve this before merging or add a ticket reference."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL024 — No space after // in comment
+    # ------------------------------------------------------------------
+
+    def _rule_bsl024_space_at_start_comment(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Require a space after ``//`` in single-line comments.
+
+        Exceptions: ``///`` (doc-comments), ``//!`` (region markers),
+        empty comments ``//``, and suppression comments.
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped.startswith("//"):
+                continue
+            col = line.index("//")
+            m = _RE_NO_SPACE_COMMENT.search(line, col)
+            if m and m.start() == col:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=col,
+                        end_line=idx + 1,
+                        end_character=col + 2,
+                        severity=Severity.INFORMATION,
+                        code="BSL024",
+                        message="Comment text should start with a space after '//'",
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL025 — Missing semicolon at end of statement
+    # ------------------------------------------------------------------
+
+    def _rule_bsl025_missing_semicolon(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect statements inside methods that appear to be missing a trailing
+        semicolon.
+
+        Only flags lines that match a statement pattern (call/assignment/return)
+        and do not end with ``;`` or a continuation character.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                stripped = line.rstrip()
+                if not stripped or stripped.strip().startswith("//"):
+                    continue
+                code_part = stripped.split("//")[0].rstrip()
+                if not code_part:
+                    continue
+                last_char = code_part[-1]
+                if last_char in (";", ",", "(", ")", "|", "+", "-", "*", "/", "="):
+                    continue
+                if _RE_STMT_NO_SEMI.match(code_part):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=i + 1,
+                            character=len(code_part),
+                            end_line=i + 1,
+                            end_character=len(code_part),
+                            severity=Severity.WARNING,
+                            code="BSL025",
+                            message="Statement appears to be missing a trailing semicolon",
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL026 — Empty #Область / #Region block
+    # ------------------------------------------------------------------
+
+    def _rule_bsl026_empty_region(
+        self,
+        path: str,
+        lines: list[str],
+        regions: list[_RegionInfo],
+    ) -> list[Diagnostic]:
+        """
+        Flag #Область blocks that contain no executable code.
+
+        A region is considered empty if the only content between its open and
+        close markers is blank lines, comments, or nested region markers.
+        """
+        diags: list[Diagnostic] = []
+        _code_re = re.compile(
+            r"^\s*(?!//|#(?:Область|Region|КонецОбласти|EndRegion))\S",
+            re.IGNORECASE,
+        )
+        for region in regions:
+            has_code = False
+            for i in range(region.start_idx + 1, min(region.end_idx, len(lines))):
+                if _code_re.match(lines[i]):
+                    has_code = True
+                    break
+            if not has_code:
+                line_idx = region.start_idx
+                line_text = lines[line_idx] if line_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_idx + 1,
+                        character=0,
+                        end_line=line_idx + 1,
+                        end_character=len(line_text),
+                        severity=Severity.INFORMATION,
+                        code="BSL026",
+                        message=f"Region '{region.name}' contains no executable code",
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL027 — UseGotoOperator
+    # ------------------------------------------------------------------
+
+    def _rule_bsl027_use_goto(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Перейти/Goto — unconditional jumps damage readability."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_GOTO.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line),
+                        severity=Severity.WARNING,
+                        code="BSL027",
+                        message=(
+                            "Перейти/Goto makes control flow unpredictable. "
+                            "Refactor using structured loops or functions."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL028 — MissingCodeTryCatch (risky calls without error handling)
+    # ------------------------------------------------------------------
+
+    _RE_RISKY_CALL = re.compile(
+        r"^\s*(?:"
+        r"Новый\s+(?:HTTPСоединение|FTPСоединение|WSОпределения|WSПрокси)"
+        r"|ПолучитьФайл|ОтправитьФайл"
+        r"|Выполнить\b"
+        r"|ЗагрузитьВнешнийОтчет|ЗагрузитьВнешнуюОбработку"
+        r")",
+        re.IGNORECASE,
+    )
+    _RE_TRY_BLOCK = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+
+    def _rule_bsl028_missing_try_catch(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect risky API calls (network, file, Execute) outside a Try/Except block.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            in_try = False
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                if self._RE_TRY_BLOCK.match(line):
+                    in_try = True
+                elif _RE_NEST_CLOSE.match(line) and in_try:
+                    in_try = False
+                if not in_try and self._RE_RISKY_CALL.match(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=i + 1,
+                            character=len(line) - len(line.lstrip()),
+                            end_line=i + 1,
+                            end_character=len(line),
+                            severity=Severity.INFORMATION,
+                            code="BSL028",
+                            message=(
+                                "Potentially risky call outside Try/Except — "
+                                "consider wrapping in error handling."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL029 — MagicNumber
+    # ------------------------------------------------------------------
+
+    def _rule_bsl029_magic_number(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Detect numeric literals > 1 used directly in executable code.
+
+        Ignores:
+        - 0 and 1 (universally accepted)
+        - Lines that look like constant declarations (Перем Х = N)
+        - Comment lines and strings
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                stripped = line.strip()
+                if not stripped or stripped.startswith("//"):
+                    continue
+                # Skip constant-like declarations
+                if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
+                    continue
+                # Remove string contents before scanning
+                code_part = re.sub(r'"[^"]*"', '""', line)
+                code_part = code_part.split("//")[0]
+                for m in _RE_MAGIC_NUMBER.finditer(code_part):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=i + 1,
+                            character=m.start(),
+                            end_line=i + 1,
+                            end_character=m.end(),
+                            severity=Severity.INFORMATION,
+                            code="BSL029",
+                            message=(
+                                f"Magic number {m.group()!r} — "
+                                "extract to a named constant for readability."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL030 — Procedure/function header ends with semicolon
+    # ------------------------------------------------------------------
+
+    def _rule_bsl030_header_semicolon(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Detect procedure/function headers that end with a semicolon.
+
+        BSL does not require (or allow) a semicolon on the header line;
+        adding one is a common copy-paste error from other languages.
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_HEADER_SEMICOLON.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line.rstrip()) - 1,
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL030",
+                        message="Procedure/function header should not end with a semicolon",
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL031 — Too many parameters (total, not just optional)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl031_number_of_params(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag methods with more than *max_params* parameters in total.
+
+        Complements BSL015 (optional params only); this rule counts all params.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            total = len(proc.params)
+            if total > self.max_params:
+                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(line_text),
+                        severity=Severity.WARNING,
+                        code="BSL031",
+                        message=(
+                            f"{proc.kind.capitalize()} '{proc.name}' has {total} parameters "
+                            f"(maximum {self.max_params})"
+                        ),
+                    )
+                )
         return diags
 
 

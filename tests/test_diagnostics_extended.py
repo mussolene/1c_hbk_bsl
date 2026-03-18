@@ -528,3 +528,376 @@ class TestRuleMetadata:
         for code, meta in RULE_METADATA.items():
             missing = required - set(meta.keys())
             assert not missing, f"{code} is missing fields: {missing}"
+
+    def test_all_bsl031_rules_have_metadata(self) -> None:
+        from bsl_analyzer.analysis.diagnostics import RULE_METADATA
+
+        expected_codes = {f"BSL{i:03d}" for i in range(1, 32)}
+        assert expected_codes.issubset(set(RULE_METADATA.keys()))
+
+
+# ---------------------------------------------------------------------------
+# BSL018 — RaiseWithLiteral
+# ---------------------------------------------------------------------------
+
+
+class TestBsl018RaiseWithLiteral:
+    def test_raise_with_string_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ВызватьИсключение "Ошибка";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        bsl018 = [d for d in diags if d.code == "BSL018"]
+        assert len(bsl018) >= 1
+
+    def test_raise_eng_with_string_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Procedure Test()
+                Raise "Error message";
+            EndProcedure
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL018" in _codes(diags)
+
+    def test_raise_with_variable_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ВызватьИсключение НовоеИсключение("Ошибка");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL018" not in _codes(diags)
+
+    def test_raise_in_comment_no_warning(self, tmp_path: Path) -> None:
+        content = '// ВызватьИсключение "Ошибка";\n'
+        diags = _check(content, tmp_path)
+        assert "BSL018" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL019 — CyclomaticComplexity
+# ---------------------------------------------------------------------------
+
+
+class TestBsl019CyclomaticComplexity:
+    def test_high_complexity_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Сложная(А, Б, В, Г)
+                Если А Тогда
+                    Если Б Тогда
+                        Если В Тогда
+                            Если Г Тогда
+                                Возврат 1;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                ИначеЕсли Б И В Тогда
+                    Возврат 2;
+                ИначеЕсли В Или Г Тогда
+                    Возврат 3;
+                КонецЕсли;
+                Возврат 0;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_mccabe_complexity=5)
+        bsl019 = [d for d in diags if d.code == "BSL019"]
+        assert len(bsl019) >= 1
+
+    def test_simple_function_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Простая(А)
+                Если А > 0 Тогда
+                    Возврат А;
+                КонецЕсли;
+                Возврат 0;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_mccabe_complexity=10)
+        assert "BSL019" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL020 — ExcessiveNesting
+# ---------------------------------------------------------------------------
+
+
+class TestBsl020ExcessiveNesting:
+    def test_deep_nesting_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(А, Б, В)
+                Если А Тогда
+                    Если Б Тогда
+                        Если В Тогда
+                            Если А И Б Тогда
+                                А = 1;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_nesting_depth=3)
+        bsl020 = [d for d in diags if d.code == "BSL020"]
+        assert len(bsl020) >= 1
+
+    def test_shallow_nesting_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(А)
+                Если А Тогда
+                    А = 1;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_nesting_depth=4)
+        assert "BSL020" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL021 — UnusedValParameter
+# ---------------------------------------------------------------------------
+
+
+class TestBsl021UnusedValParameter:
+    def test_unused_val_param_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Знач НеИспользуется)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        bsl021 = [d for d in diags if d.code == "BSL021"]
+        assert len(bsl021) >= 1
+        assert "НеИспользуется" in bsl021[0].message
+
+    def test_used_val_param_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Знач Параметр)
+                А = Параметр + 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL021" not in _codes(diags)
+
+    def test_reference_param_not_flagged(self, tmp_path: Path) -> None:
+        """Reference params (without Знач) should NOT be flagged."""
+        content = """\
+            Процедура Тест(НеИспользуется)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL021" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL022 — DeprecatedMessage
+# ---------------------------------------------------------------------------
+
+
+class TestBsl022DeprecatedMessage:
+    def test_preduprezhdenie_detected(self, tmp_path: Path) -> None:
+        content = 'Предупреждение("Внимание!");\n'
+        diags = _check(content, tmp_path)
+        assert "BSL022" in _codes(diags)
+
+    def test_warning_detected(self, tmp_path: Path) -> None:
+        content = 'Warning("Alert!");\n'
+        diags = _check(content, tmp_path)
+        assert "BSL022" in _codes(diags)
+
+    def test_soobshchit_no_warning(self, tmp_path: Path) -> None:
+        content = 'Сообщить("Готово");\n'
+        diags = _check(content, tmp_path)
+        assert "BSL022" not in _codes(diags)
+
+    def test_in_comment_ignored(self, tmp_path: Path) -> None:
+        content = '// Предупреждение("устарело");\n'
+        diags = _check(content, tmp_path)
+        assert "BSL022" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL023 — UsingServiceTag
+# ---------------------------------------------------------------------------
+
+
+class TestBsl023UsingServiceTag:
+    def test_todo_detected(self, tmp_path: Path) -> None:
+        content = "// TODO: реализовать проверку\nПроцедура Тест()\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path)
+        assert "BSL023" in _codes(diags)
+
+    def test_fixme_detected(self, tmp_path: Path) -> None:
+        content = "// FIXME: баг с кодировкой\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL023" in _codes(diags)
+
+    def test_hack_detected(self, tmp_path: Path) -> None:
+        content = "// HACK: временный обходной путь\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL023" in _codes(diags)
+
+    def test_normal_comment_no_warning(self, tmp_path: Path) -> None:
+        content = "// Обычный комментарий без тегов\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL023" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL024 — SpaceAtStartComment
+# ---------------------------------------------------------------------------
+
+
+class TestBsl024SpaceAtStartComment:
+    def test_no_space_detected(self, tmp_path: Path) -> None:
+        content = "//Без пробела\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL024" in _codes(diags)
+
+    def test_with_space_no_warning(self, tmp_path: Path) -> None:
+        content = "// С пробелом\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL024" not in _codes(diags)
+
+    def test_doc_comment_slash3_no_warning(self, tmp_path: Path) -> None:
+        """/// doc-comments are exempted."""
+        content = "/// Документация функции\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL024" not in _codes(diags)
+
+    def test_empty_comment_no_warning(self, tmp_path: Path) -> None:
+        """An empty // comment (nothing after) is OK."""
+        content = "//\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL024" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL026 — EmptyRegion
+# ---------------------------------------------------------------------------
+
+
+class TestBsl026EmptyRegion:
+    def test_empty_region_detected(self, tmp_path: Path) -> None:
+        content = """\
+            #Область ПустаяОбласть
+            #КонецОбласти
+        """
+        diags = _check(content, tmp_path)
+        bsl026 = [d for d in diags if d.code == "BSL026"]
+        assert len(bsl026) >= 1
+        assert "ПустаяОбласть" in bsl026[0].message
+
+    def test_region_with_code_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            #Область ПрограммныйИнтерфейс
+            Процедура Тест() Экспорт
+            КонецПроцедуры
+            #КонецОбласти
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL026" not in _codes(diags)
+
+    def test_region_with_only_comments_is_empty(self, tmp_path: Path) -> None:
+        content = """\
+            #Область ТолькоКомментарии
+            // Это просто комментарий
+            #КонецОбласти
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL026" in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL027 — UseGotoOperator
+# ---------------------------------------------------------------------------
+
+
+class TestBsl027UseGoto:
+    def test_goto_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Перейти ~МетаМетка;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL027" in _codes(diags)
+
+    def test_goto_in_comment_ignored(self, tmp_path: Path) -> None:
+        content = "// Перейти ~Метка;\nА = 1;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL027" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL029 — MagicNumber
+# ---------------------------------------------------------------------------
+
+
+class TestBsl029MagicNumber:
+    def test_magic_number_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Возврат 42;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL029" in _codes(diags)
+
+    def test_zero_one_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Если А = 0 Тогда
+                    Возврат 1;
+                КонецЕсли;
+                Возврат 0;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL029" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL030 — LineEndsWithSemicolon (header semicolon)
+# ---------------------------------------------------------------------------
+
+
+class TestBsl030HeaderSemicolon:
+    def test_semicolon_on_header_detected(self, tmp_path: Path) -> None:
+        content = "Процедура Тест();\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path)
+        assert "BSL030" in _codes(diags)
+
+    def test_no_semicolon_no_warning(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path)
+        assert "BSL030" not in _codes(diags)
+
+    def test_export_with_semicolon_detected(self, tmp_path: Path) -> None:
+        content = "Процедура Тест() Экспорт;\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path)
+        assert "BSL030" in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL031 — NumberOfParams
+# ---------------------------------------------------------------------------
+
+
+class TestBsl031NumberOfParams:
+    def test_too_many_params_detected(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Тест(А, Б, В, Г, Д, Е, Ж, З)\n"
+            "КонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path, max_params=7)
+        bsl031 = [d for d in diags if d.code == "BSL031"]
+        assert len(bsl031) >= 1
+        assert "8" in bsl031[0].message
+
+    def test_acceptable_params_no_warning(self, tmp_path: Path) -> None:
+        content = "Процедура Тест(А, Б, В)\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, max_params=7)
+        assert "BSL031" not in _codes(diags)

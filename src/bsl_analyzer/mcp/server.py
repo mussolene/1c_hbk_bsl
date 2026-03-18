@@ -23,7 +23,7 @@ from typing import Annotated
 from fastmcp import FastMCP
 
 from bsl_analyzer.analysis.call_graph import build_call_graph
-from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+from bsl_analyzer.analysis.diagnostics import RULE_METADATA, DiagnosticEngine
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.parser.bsl_parser import BslParser
@@ -315,6 +315,97 @@ def create_mcp_app() -> FastMCP:
                 for r in rows
             ],
         }
+
+    # ------------------------------------------------------------------
+    # bsl_check_file
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description=(
+            "Run BSL lint rules on a file with optional rule selection/ignore. "
+            "Returns structured diagnostics list. Supports all BSL001–BSL021 rules."
+        )
+    )
+    def bsl_check_file(
+        file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
+        select: Annotated[
+            str | None,
+            "Comma-separated rule codes to enable (e.g. 'BSL001,BSL012'). "
+            "If omitted, all rules run.",
+        ] = None,
+        ignore: Annotated[
+            str | None,
+            "Comma-separated rule codes to skip (e.g. 'BSL014'). "
+            "Ignored when *select* is provided.",
+        ] = None,
+    ) -> dict:
+        """
+        Lint *file_path* using the BSL DiagnosticEngine.
+
+        Supports inline suppression comments in the source::
+
+            А = А;  // noqa: BSL009
+            Пароль = "123";  // bsl-disable: BSL012
+
+        Args:
+            file_path: Path to the .bsl source file.
+            select:    Whitelist of rule codes (comma-separated).
+            ignore:    Blacklist of rule codes (comma-separated).
+
+        Returns:
+            Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
+        """
+        path = _resolve_path(file_path)
+        select_set: set[str] | None = (
+            {c.strip().upper() for c in select.split(",") if c.strip()} if select else None
+        )
+        ignore_set: set[str] | None = (
+            {c.strip().upper() for c in ignore.split(",") if c.strip()} if ignore else None
+        )
+        engine = DiagnosticEngine(select=select_set, ignore=ignore_set)
+        issues = engine.check_file(path)
+        return {
+            "file_path": path,
+            "count": len(issues),
+            "has_errors": any(d.severity.name == "ERROR" for d in issues),
+            "diagnostics": [d.to_dict() for d in issues],
+        }
+
+    # ------------------------------------------------------------------
+    # bsl_list_rules
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description="Return metadata for all built-in BSL lint rules (BSL001–BSL021).",
+    )
+    def bsl_list_rules(
+        tag_filter: Annotated[
+            str | None, "Optional: only return rules that have this tag (e.g. 'security')"
+        ] = None,
+    ) -> dict:
+        """
+        List all available BSL diagnostic rules with descriptions and SonarQube mapping.
+
+        Returns:
+            Dict with ``count`` and ``rules`` list, each having:
+            code, name, description, severity, sonar_type, sonar_severity, tags.
+        """
+        rules = []
+        for code, meta in sorted(RULE_METADATA.items()):
+            if tag_filter and tag_filter.lower() not in [t.lower() for t in meta.get("tags", [])]:
+                continue
+            rules.append(
+                {
+                    "code": code,
+                    "name": meta["name"],
+                    "description": meta["description"],
+                    "severity": meta["severity"],
+                    "sonar_type": meta["sonar_type"],
+                    "sonar_severity": meta["sonar_severity"],
+                    "tags": meta.get("tags", []),
+                }
+            )
+        return {"count": len(rules), "rules": rules}
 
     # ------------------------------------------------------------------
     # bsl_index_file  (mutating tool)

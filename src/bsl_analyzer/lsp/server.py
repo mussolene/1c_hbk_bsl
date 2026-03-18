@@ -20,13 +20,19 @@ from pathlib import Path
 
 from lsprotocol.types import (
     INITIALIZE,
+    TEXT_DOCUMENT_COMPLETION,
     TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
     TEXT_DOCUMENT_DOCUMENT_SYMBOL,
     TEXT_DOCUMENT_HOVER,
+    TEXT_DOCUMENT_REFERENCES,
     WORKSPACE_SYMBOL,
+    CompletionItem,
+    CompletionItemKind,
+    CompletionList,
+    CompletionParams,
     DefinitionParams,
     DiagnosticSeverity,
     DidChangeTextDocumentParams,
@@ -42,6 +48,7 @@ from lsprotocol.types import (
     MarkupKind,
     Position,
     Range,
+    ReferenceParams,
     SymbolInformation,
     SymbolKind,
     WorkspaceSymbolParams,
@@ -52,6 +59,7 @@ from lsprotocol.types import (
 from pygls.server import LanguageServer
 
 from bsl_analyzer.analysis.diagnostics import DiagnosticEngine, Severity
+from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.parser.bsl_parser import BslParser
@@ -96,6 +104,7 @@ class BslLanguageServer(LanguageServer):
         self.parser = BslParser()
         self.diagnostics_engine = DiagnosticEngine(parser=self.parser)
         self.indexer = IncrementalIndexer(index=self.symbol_index)
+        self.platform_api: PlatformApi = get_platform_api()
         # In-memory document cache: uri → content
         self._docs: dict[str, str] = {}
 
@@ -341,8 +350,180 @@ def on_workspace_symbol(
 
 
 # ---------------------------------------------------------------------------
+# Find all references
+# ---------------------------------------------------------------------------
+
+
+@server.feature(TEXT_DOCUMENT_REFERENCES)
+def on_references(
+    ls: BslLanguageServer, params: ReferenceParams
+) -> list[Location] | None:
+    """
+    Return all locations where the symbol under the cursor is called/referenced.
+
+    Uses the call-graph index to find every call site of the function/procedure.
+    Also includes the definition itself if ``includeDeclaration`` is True.
+    """
+    uri = params.text_document.uri
+    pos = params.position
+    content = ls._docs.get(uri, "")
+    word = _word_at_position(content, pos.line, pos.character)
+    if not word:
+        return None
+
+    locations: list[Location] = []
+
+    # Include declaration if requested
+    if params.context and params.context.include_declaration:
+        defs = ls.symbol_index.find_symbol(word, limit=5)
+        for sym in defs:
+            line = max(0, sym["line"] - 1)
+            locations.append(
+                Location(
+                    uri=_path_to_uri(sym["file_path"]),
+                    range=Range(
+                        start=Position(line=line, character=sym["character"]),
+                        end=Position(line=line, character=sym["character"] + len(sym["name"])),
+                    ),
+                )
+            )
+
+    # All call sites
+    callers = ls.symbol_index.find_callers(word, limit=200)
+    for c in callers:
+        line = max(0, c["caller_line"] - 1)
+        locations.append(
+            Location(
+                uri=_path_to_uri(c["caller_file"]),
+                range=Range(
+                    start=Position(line=line, character=0),
+                    end=Position(line=line, character=len(word)),
+                ),
+            )
+        )
+
+    return locations if locations else None
+
+
+# ---------------------------------------------------------------------------
+# Completion
+# ---------------------------------------------------------------------------
+
+# Map platform kind strings → LSP CompletionItemKind
+_COMPLETION_KIND_MAP = {
+    "function": CompletionItemKind.Function,
+    "method": CompletionItemKind.Method,
+    "property": CompletionItemKind.Property,
+    "class": CompletionItemKind.Class,
+    "enum": CompletionItemKind.Enum,
+    "procedure": CompletionItemKind.Function,
+    "variable": CompletionItemKind.Variable,
+}
+
+
+@server.feature(TEXT_DOCUMENT_COMPLETION)
+def on_completion(
+    ls: BslLanguageServer, params: CompletionParams
+) -> CompletionList | None:
+    """
+    Provide completion suggestions at the cursor position.
+
+    Strategy:
+    1. If the cursor follows a ``.`` (member access), resolve the preceding
+       identifier as a type name and offer its methods/properties.
+    2. Otherwise offer global platform functions + workspace-level symbols
+       filtered by the current word prefix.
+    """
+    uri = params.text_document.uri
+    pos = params.position
+    content = ls._docs.get(uri, "")
+    lines = content.splitlines()
+
+    if pos.line >= len(lines):
+        return None
+
+    line_text = lines[pos.line]
+    col = min(pos.character, len(line_text))
+    prefix_line = line_text[:col]
+
+    items: list[CompletionItem] = []
+
+    # ---- member access: Obj.Prefix ----------------------------------------
+    dot_idx = prefix_line.rfind(".")
+    if dot_idx != -1:
+        # Extract the identifier before the dot
+        before_dot = prefix_line[:dot_idx]
+        obj_name = _last_identifier(before_dot)
+        member_prefix = prefix_line[dot_idx + 1 :]
+
+        # Try to resolve obj_name as a known type (direct type name reference)
+        type_completions = ls.platform_api.get_method_completions(obj_name)
+        for c in type_completions:
+            label = c["label"]
+            if member_prefix and not label.lower().startswith(member_prefix.lower()):
+                continue
+            items.append(
+                CompletionItem(
+                    label=label,
+                    kind=_COMPLETION_KIND_MAP.get(c["kind"], CompletionItemKind.Method),
+                    detail=c.get("signature", ""),
+                    documentation=c.get("description", ""),
+                    insert_text=label,
+                )
+            )
+        # Return member completions even if empty (no global pollution on `.`)
+        return CompletionList(is_incomplete=False, items=items)
+
+    # ---- global scope: prefix match ----------------------------------------
+    prefix = _last_identifier(prefix_line)
+
+    # Platform global functions
+    for c in ls.platform_api.get_global_completions(prefix):
+        items.append(
+            CompletionItem(
+                label=c["label"],
+                kind=CompletionItemKind.Function,
+                detail=c.get("signature", ""),
+                documentation=c.get("description", ""),
+                insert_text=c["label"],
+            )
+        )
+
+    # Workspace symbols (procedures/functions from the index)
+    if prefix:
+        ws_symbols = ls.symbol_index.find_symbol(prefix, limit=30, fuzzy=True)
+        seen: set[str] = {c.label for c in items}  # type: ignore[attr-defined]
+        for sym in ws_symbols:
+            if sym["name"] in seen:
+                continue
+            seen.add(sym["name"])
+            items.append(
+                CompletionItem(
+                    label=sym["name"],
+                    kind=_COMPLETION_KIND_MAP.get(sym["kind"], CompletionItemKind.Function),
+                    detail=sym.get("signature") or "",
+                    documentation=(
+                        sym.get("doc_comment") or ""
+                        + f"\n*{Path(sym['file_path']).name}:{sym['line']}*"
+                    ),
+                    insert_text=sym["name"],
+                )
+            )
+
+    return CompletionList(is_incomplete=len(items) >= 30, items=items)
+
+
+# ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+
+def _last_identifier(text: str) -> str:
+    """Extract the last BSL identifier from *text* (for prefix completion)."""
+    import re
+
+    m = re.search(r"[А-ЯЁа-яёA-Za-z_]\w*$", text)
+    return m.group(0) if m else ""
 
 
 def _word_at_position(content: str, line: int, character: int) -> str:
