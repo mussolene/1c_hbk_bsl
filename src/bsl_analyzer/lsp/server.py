@@ -182,6 +182,56 @@ server = BslLanguageServer()
 
 
 # ---------------------------------------------------------------------------
+# Git branch watcher — re-indexes when .git/HEAD changes (branch switch)
+# ---------------------------------------------------------------------------
+
+def _start_branch_watcher(ls: BslLanguageServer, workspace_root: str) -> None:
+    """Watch .git/HEAD for branch switches and trigger incremental re-index.
+
+    When the user runs ``git checkout``, git rewrites ``.git/HEAD`` to point
+    at the new branch.  We detect this with watchfiles (already a dependency)
+    and kick off an incremental re-index in the background so LSP features
+    stay accurate without requiring a server restart.
+    """
+    git_head = Path(workspace_root) / ".git" / "HEAD"
+    if not git_head.exists():
+        return  # not a git repo or .git is elsewhere (worktree etc.)
+
+    def _watch() -> None:
+        try:
+            from watchfiles import watch  # already in requirements
+
+            logger.info("LSP: watching %s for branch changes", git_head)
+            for _ in watch(str(git_head), stop_event=None):
+                branch = _current_branch(git_head)
+                logger.warning("LSP: branch changed → %s — re-indexing %s", branch, workspace_root)
+                try:
+                    ls.indexer.index_workspace(workspace_root, force=False)
+                    stats = ls.symbol_index.get_stats()
+                    logger.warning(
+                        "LSP: re-index complete: %d symbols in %d files",
+                        stats["symbol_count"], stats["file_count"],
+                    )
+                except Exception as exc:
+                    logger.error("LSP: re-index after branch switch failed: %s", exc)
+        except Exception as exc:
+            logger.error("LSP: branch watcher crashed: %s", exc)
+
+    threading.Thread(target=_watch, daemon=True, name="bsl-branch-watcher").start()
+
+
+def _current_branch(git_head: Path) -> str:
+    """Read the current branch name from .git/HEAD (best-effort)."""
+    try:
+        content = git_head.read_text(encoding="utf-8").strip()
+        if content.startswith("ref: refs/heads/"):
+            return content[len("ref: refs/heads/"):]
+        return content[:8]  # detached HEAD — show short hash
+    except OSError:
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
 
@@ -214,6 +264,7 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
                 logger.error("LSP: indexing failed: %s", exc)
 
         threading.Thread(target=_do_index, daemon=True).start()
+        _start_branch_watcher(ls, workspace_root)
 
 
 # ---------------------------------------------------------------------------

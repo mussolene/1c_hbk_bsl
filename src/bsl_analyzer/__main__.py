@@ -42,17 +42,30 @@ from bsl_analyzer import __version__
 
 
 def _setup_logging(level: str) -> None:
+    from rich.console import Console
     logging.basicConfig(
         level=level.upper(),
         format="%(message)s",
         datefmt="[%X]",
-        handlers=[RichHandler(rich_tracebacks=True)],
+        # Explicitly route to stderr — stdout is reserved for LSP JSON-RPC in stdio mode
+        handlers=[RichHandler(console=Console(stderr=True), rich_tracebacks=True)],
     )
 
 
 def _run_lsp() -> None:
+    # In LSP stdio mode stdout is the exclusive JSON-RPC pipe.
+    # Reconfigure logging with force=True so that any previously installed
+    # handlers (e.g. from _setup_logging) are replaced with a plain stderr
+    # handler.  Rich colours are suppressed because stderr is not a TTY when
+    # the process is spawned by VSCode.
+    import sys
+    logging.basicConfig(
+        level=logging.WARNING,   # silence noisy pygls INFO startup messages
+        format="[bsl-lsp] %(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+        force=True,
+    )
     from bsl_analyzer.lsp.server import start_lsp_server
-    logging.getLogger(__name__).info("Starting BSL LSP server on stdio")
     start_lsp_server()
 
 
