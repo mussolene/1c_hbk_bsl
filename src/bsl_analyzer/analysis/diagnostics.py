@@ -988,6 +988,86 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "suspicious"],
     },
+    "BSL118": {
+        "name": "FunctionReturnsNothing",
+        "description": "Функция body has no Возврат with a value — returns Неопределено implicitly",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL119": {
+        "name": "LineTooLong",
+        "description": "Line length exceeds 120 characters — split into multiple lines",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL120": {
+        "name": "TrailingWhitespace",
+        "description": "Line has trailing whitespace — remove for consistent diffs",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style"],
+    },
+    "BSL121": {
+        "name": "TabIndentation",
+        "description": "Tab character used for indentation — use spaces for consistent formatting",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style"],
+    },
+    "BSL122": {
+        "name": "UnusedParameter",
+        "description": "Parameter declared in the signature is never referenced in the body",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "design"],
+    },
+    "BSL123": {
+        "name": "CommentedOutCode",
+        "description": "Comment line appears to contain commented-out code — remove or restore",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "suspicious"],
+    },
+    "BSL124": {
+        "name": "ShortProcedureName",
+        "description": "Procedure/function name is shorter than 3 characters — use a descriptive name",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL125": {
+        "name": "UseOfAbortOutsideLoop",
+        "description": "Прервать/Break used outside a loop — has no effect or causes an error",
+        "severity": "ERROR",
+        "sonar_type": "BUG",
+        "sonar_severity": "CRITICAL",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL126": {
+        "name": "UseOfContinueOutsideLoop",
+        "description": "Продолжить/Continue used outside a loop — has no effect or causes an error",
+        "severity": "ERROR",
+        "sonar_type": "BUG",
+        "sonar_severity": "CRITICAL",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL127": {
+        "name": "MultipleReturnValues",
+        "description": "Multiple Возврат statements at the same nesting level — consolidate to one exit point",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
 }
 
 
@@ -1086,6 +1166,16 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL115": "Simplify НЕ НЕ to the positive form of the condition.",
     "BSL116": "Replace the Для i = 0 По ... pattern with ДляКаждого where applicable.",
     "BSL117": "Check whether you intended to call a Функция instead of a Процедура.",
+    "BSL118": "Add an explicit Возврат <value>; statement or change Функция to Процедура.",
+    "BSL119": "Break the long line into multiple lines or extract to a variable.",
+    "BSL120": "Remove trailing whitespace from the line.",
+    "BSL121": "Replace tab characters with spaces (4 spaces per indent level).",
+    "BSL122": "Remove the unused parameter or add logic that uses it.",
+    "BSL123": "Remove the commented-out code block or restore it with a comment explaining why.",
+    "BSL124": "Rename to a descriptive name with at least 3 characters.",
+    "BSL125": "Move Прервать inside a loop body or replace with a conditional early exit.",
+    "BSL126": "Move Продолжить inside a loop body or replace with a conditional.",
+    "BSL127": "Consolidate multiple top-level returns into a single exit variable pattern.",
 }
 
 
@@ -1703,6 +1793,17 @@ _RE_DOUBLE_NEGATION = re.compile(
     re.IGNORECASE,
 )
 
+# Прервать / Break (BSL125)
+_RE_BREAK = re.compile(r'^\s*(?:Прервать|Break)\s*;', re.IGNORECASE)
+
+# Продолжить / Continue (BSL126)
+_RE_CONTINUE = re.compile(r'^\s*(?:Продолжить|Continue)\s*;', re.IGNORECASE)
+
+# Comment that looks like commented-out code (BSL123): // contains = ; or ()
+_RE_COMMENTED_CODE = re.compile(
+    r'^\s*//\s*\w.*(?:;|\(|\) *=|:=)',
+)
+
 # Hardcoded file path in string literal (BSL100)
 _RE_HARDCODED_PATH = re.compile(
     r'"(?:[A-Za-z]:\\|/(?:home|usr|etc|var|opt|tmp)/)[^"]*"',
@@ -2266,6 +2367,26 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl116_use_of_obsolete_iterator(path, lines))
         if self._rule_enabled("BSL117"):
             diagnostics.extend(self._rule_bsl117_procedure_called_as_function(path, lines, procs))
+        if self._rule_enabled("BSL118"):
+            diagnostics.extend(self._rule_bsl118_function_returns_nothing(path, lines, procs))
+        if self._rule_enabled("BSL119"):
+            diagnostics.extend(self._rule_bsl119_line_too_long(path, lines))
+        if self._rule_enabled("BSL120"):
+            diagnostics.extend(self._rule_bsl120_trailing_whitespace(path, lines))
+        if self._rule_enabled("BSL121"):
+            diagnostics.extend(self._rule_bsl121_tab_indentation(path, lines))
+        if self._rule_enabled("BSL122"):
+            diagnostics.extend(self._rule_bsl122_unused_parameter(path, lines, procs))
+        if self._rule_enabled("BSL123"):
+            diagnostics.extend(self._rule_bsl123_commented_out_code(path, lines))
+        if self._rule_enabled("BSL124"):
+            diagnostics.extend(self._rule_bsl124_short_procedure_name(path, lines, procs))
+        if self._rule_enabled("BSL125"):
+            diagnostics.extend(self._rule_bsl125_break_outside_loop(path, lines))
+        if self._rule_enabled("BSL126"):
+            diagnostics.extend(self._rule_bsl126_continue_outside_loop(path, lines))
+        if self._rule_enabled("BSL127"):
+            diagnostics.extend(self._rule_bsl127_multiple_return_values(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -6743,6 +6864,341 @@ class DiagnosticEngine:
                         ),
                     )
                 )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL118 — Функция with no Возврат <value>
+    # ------------------------------------------------------------------
+
+    def _rule_bsl118_function_returns_nothing(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag Функция bodies that never reach a Возврат with a value."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if proc.kind != "function":
+                continue
+            body_lines = lines[proc.start_idx: proc.end_idx + 1]
+            body_text = "\n".join(body_lines)
+            if not _RE_RETURN_VALUE.search(body_text):
+                header = lines[proc.start_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL118",
+                        message=(
+                            f"Функция '{proc.name}' has no Возврат with a value — "
+                            "add an explicit return or change to Процедура."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL119 — Line too long
+    # ------------------------------------------------------------------
+
+    _MAX_LINE_LENGTH = 120
+
+    def _rule_bsl119_line_too_long(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines longer than MAX_LINE_LENGTH characters."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            length = len(line.rstrip("\n\r"))
+            if length > self._MAX_LINE_LENGTH:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=self._MAX_LINE_LENGTH,
+                        end_line=idx + 1,
+                        end_character=length,
+                        severity=Severity.INFORMATION,
+                        code="BSL119",
+                        message=(
+                            f"Line is {length} characters long "
+                            f"(max {self._MAX_LINE_LENGTH}) — split into multiple lines."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL120 — Trailing whitespace
+    # ------------------------------------------------------------------
+
+    def _rule_bsl120_trailing_whitespace(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines that have trailing whitespace."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            stripped = line.rstrip("\n\r")
+            if stripped != stripped.rstrip():
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(stripped.rstrip()),
+                        end_line=idx + 1,
+                        end_character=len(stripped),
+                        severity=Severity.INFORMATION,
+                        code="BSL120",
+                        message="Trailing whitespace — remove for consistent diffs.",
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL121 — Tab indentation
+    # ------------------------------------------------------------------
+
+    def _rule_bsl121_tab_indentation(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines that use tab characters for indentation."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if "\t" in line:
+                col = line.index("\t")
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=col,
+                        end_line=idx + 1,
+                        end_character=col + 1,
+                        severity=Severity.INFORMATION,
+                        code="BSL121",
+                        message="Tab character used for indentation — use 4 spaces instead.",
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL122 — Unused parameter
+    # ------------------------------------------------------------------
+
+    def _rule_bsl122_unused_parameter(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag procedure/function parameters that are never referenced in the body."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.params:
+                continue
+            body_lines = lines[proc.start_idx + 1: proc.end_idx]
+            body_text = "\n".join(body_lines).lower()
+            for param in proc.params:
+                # Strip default value and leading &/Val markers
+                raw = param.lstrip("&").split("=")[0].strip()
+                # Remove leading Val/Значение keyword
+                pname = re.sub(
+                    r'^\s*(?:Значение|Val)\s+', "", raw, flags=re.IGNORECASE
+                ).strip()
+                if not pname:
+                    continue
+                if pname.lower() not in body_text:
+                    header = lines[proc.start_idx]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=proc.header_col,
+                            end_line=proc.start_idx + 1,
+                            end_character=len(header.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL122",
+                            message=(
+                                f"Parameter '{pname}' in '{proc.name}' "
+                                "is never used in the body."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL123 — Commented-out code
+    # ------------------------------------------------------------------
+
+    def _rule_bsl123_commented_out_code(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag comment lines that appear to contain commented-out code."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_COMMENTED_CODE.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL123",
+                        message=(
+                            "Commented-out code detected — "
+                            "remove it or restore with an explanation."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL124 — Short procedure/function name
+    # ------------------------------------------------------------------
+
+    _MIN_PROC_NAME_LEN = 3
+
+    def _rule_bsl124_short_procedure_name(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag procedures/functions whose name is shorter than MIN_PROC_NAME_LEN."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if len(proc.name) < self._MIN_PROC_NAME_LEN:
+                header = lines[proc.start_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL124",
+                        message=(
+                            f"'{proc.name}' is too short ({len(proc.name)} chars) — "
+                            "use a descriptive name of at least 3 characters."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL125 — Break (Прервать) outside a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl125_break_outside_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Прервать/Break statements that appear outside any loop."""
+        diags: list[Diagnostic] = []
+        loop_depth = 0
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if _RE_LOOP_OPEN.match(line) or _RE_LOOP_FOR.match(line):
+                loop_depth += 1
+            elif _RE_LOOP_ENDDO.match(line):
+                loop_depth = max(0, loop_depth - 1)
+            elif loop_depth == 0 and _RE_BREAK.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.ERROR,
+                        code="BSL125",
+                        message="Прервать/Break outside a loop — has no effect.",
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL126 — Continue (Продолжить) outside a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl126_continue_outside_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Продолжить/Continue statements that appear outside any loop."""
+        diags: list[Diagnostic] = []
+        loop_depth = 0
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if _RE_LOOP_OPEN.match(line) or _RE_LOOP_FOR.match(line):
+                loop_depth += 1
+            elif _RE_LOOP_ENDDO.match(line):
+                loop_depth = max(0, loop_depth - 1)
+            elif loop_depth == 0 and _RE_CONTINUE.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.ERROR,
+                        code="BSL126",
+                        message="Продолжить/Continue outside a loop — has no effect.",
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL127 — Multiple top-level return statements in a function
+    # ------------------------------------------------------------------
+
+    def _rule_bsl127_multiple_return_values(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag functions with more than one top-level Возврат statement."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if proc.kind != "function":
+                continue
+            body_lines = lines[proc.start_idx + 1: proc.end_idx]
+            # Count top-level Возврат statements (not inside nested if/loop)
+            depth = 0
+            top_returns: list[int] = []
+            for rel_idx, line in enumerate(body_lines):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("//"):
+                    continue
+                if (
+                    _RE_IF_OPEN.match(line)
+                    or _RE_LOOP_OPEN.match(line)
+                    or _RE_LOOP_FOR.match(line)
+                    or _RE_TRY_OPEN.match(line)
+                ):
+                    depth += 1
+                elif _RE_ENDIF.match(line) or _RE_LOOP_ENDDO.match(line) or _RE_END_TRY.match(line):
+                    depth = max(0, depth - 1)
+                elif depth == 0 and _RE_RETURN_VALUE.match(line):
+                    top_returns.append(proc.start_idx + 1 + rel_idx)
+            if len(top_returns) > 1:
+                # Report on the second+ return
+                for abs_idx in top_returns[1:]:
+                    ret_line = lines[abs_idx]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=abs_idx + 1,
+                            character=len(ret_line) - len(ret_line.lstrip()),
+                            end_line=abs_idx + 1,
+                            end_character=len(ret_line.rstrip()),
+                            severity=Severity.INFORMATION,
+                            code="BSL127",
+                            message=(
+                                f"'{proc.name}' has multiple top-level Возврат statements — "
+                                "consolidate to a single exit point."
+                            ),
+                        )
+                    )
         return diags
 
 

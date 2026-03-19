@@ -3196,9 +3196,199 @@ class TestBsl117ProcedureCalledAsFunction:
         assert "BSL117" not in _codes(diags)
 
 
+class TestBsl118FunctionReturnsNothing:
+    def test_function_without_return_value_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция ПустаяФункция()
+    А = 1;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL118"})
+        assert "BSL118" in _codes(diags)
+
+    def test_function_with_return_value_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция ПолучитьЗначение()
+    Возврат 42;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL118"})
+        assert "BSL118" not in _codes(diags)
+
+
+class TestBsl119LineTooLong:
+    def test_long_line_detected(self, tmp_path: Path) -> None:
+        content = "А = " + '"' + "х" * 120 + '"' + ";\n"
+        diags = _check(content, tmp_path, select={"BSL119"})
+        assert "BSL119" in _codes(diags)
+
+    def test_short_line_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL119"})
+        assert "BSL119" not in _codes(diags)
+
+
+class TestBsl120TrailingWhitespace:
+    def test_trailing_spaces_detected(self, tmp_path: Path) -> None:
+        content = "А = 1;   \n"
+        diags = _check(content, tmp_path, select={"BSL120"})
+        assert "BSL120" in _codes(diags)
+
+    def test_no_trailing_spaces_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL120"})
+        assert "BSL120" not in _codes(diags)
+
+
+class TestBsl121TabIndentation:
+    def test_tab_detected(self, tmp_path: Path) -> None:
+        # Write directly — textwrap.dedent strips common leading whitespace
+        p = tmp_path / "test.bsl"
+        p.write_bytes("Процедура Тест()\n\tА = 1;\nКонецПроцедуры\n".encode())
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL121"}).check_file(str(p))
+        assert "BSL121" in _codes(diags)
+
+    def test_spaces_no_warning(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    А = 1;\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL121"})
+        assert "BSL121" not in _codes(diags)
+
+
+class TestBsl122UnusedParameter:
+    def test_unused_param_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(НеИспользуется)
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL122"})
+        assert "BSL122" in _codes(diags)
+
+    def test_used_param_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(Значение)
+    А = Значение;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL122"})
+        assert "BSL122" not in _codes(diags)
+
+
+class TestBsl123CommentedOutCode:
+    def test_commented_code_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    // А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL123"})
+        assert "BSL123" in _codes(diags)
+
+    def test_plain_comment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    // Это просто комментарий
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL123"})
+        assert "BSL123" not in _codes(diags)
+
+
+class TestBsl124ShortProcedureName:
+    def test_two_char_name_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура ВП()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL124"})
+        assert "BSL124" in _codes(diags)
+
+    def test_long_name_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура ВыполнитьДействие()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL124"})
+        assert "BSL124" not in _codes(diags)
+
+
+class TestBsl125BreakOutsideLoop:
+    def test_break_outside_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Прервать;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL125"})
+        assert "BSL125" in _codes(diags)
+
+    def test_break_inside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока Истина Цикл
+        Прервать;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL125"})
+        assert "BSL125" not in _codes(diags)
+
+
+class TestBsl126ContinueOutsideLoop:
+    def test_continue_outside_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Продолжить;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL126"})
+        assert "BSL126" in _codes(diags)
+
+    def test_continue_inside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока Истина Цикл
+        Продолжить;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL126"})
+        assert "BSL126" not in _codes(diags)
+
+
+class TestBsl127MultipleReturnValues:
+    def test_multiple_top_level_returns_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Если А > 0 Тогда
+        Возврат 1;
+    КонецЕсли;
+    Возврат 0;
+    Возврат -1;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL127"})
+        assert "BSL127" in _codes(diags)
+
+    def test_single_return_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Если А > 0 Тогда
+        Возврат 1;
+    КонецЕсли;
+    Возврат 0;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL127"})
+        assert "BSL127" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 118)}
+        expected = {f"BSL{i:03d}" for i in range(1, 128)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
