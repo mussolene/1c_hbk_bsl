@@ -3654,9 +3654,280 @@ class TestBsl137UseOfFindByDescription:
         assert "BSL137" not in _codes(diags)
 
 
+# ---------------------------------------------------------------------------
+# BSL138 — UseOfDebugOutput
+# ---------------------------------------------------------------------------
+
+
+class TestBsl138UseOfDebugOutput:
+    def test_сообщить_detected(self, tmp_path: Path) -> None:
+        content = 'Сообщить("отладка");\n'
+        diags = _check(content, tmp_path, select={"BSL138"})
+        assert "BSL138" in _codes(diags)
+
+    def test_message_detected(self, tmp_path: Path) -> None:
+        content = 'Message("debug");\n'
+        diags = _check(content, tmp_path, select={"BSL138"})
+        assert "BSL138" in _codes(diags)
+
+    def test_no_debug_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL138"})
+        assert "BSL138" not in _codes(diags)
+
+    def test_comment_skipped(self, tmp_path: Path) -> None:
+        content = '// Сообщить("отладка");\n'
+        diags = _check(content, tmp_path, select={"BSL138"})
+        assert "BSL138" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL139 — TooLongParameterName
+# ---------------------------------------------------------------------------
+
+
+class TestBsl139TooLongParameterName:
+    def test_long_param_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(ОченьДлинноеИмяПараметраКотороеПревышаетТридцатьСимволов)
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL139"})
+        assert "BSL139" in _codes(diags)
+
+    def test_short_param_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(ТипичноеИмяПараметра)
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL139"})
+        assert "BSL139" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL140 — UnreachableElseIf
+# ---------------------------------------------------------------------------
+
+
+class TestBsl140UnreachableElseIf:
+    def test_elseif_after_else_detected(self, tmp_path: Path) -> None:
+        content = """\
+Если А Тогда
+    Б = 1;
+Иначе
+    В = 2;
+ИначеЕсли Г Тогда
+    Д = 3;
+КонецЕсли;
+"""
+        diags = _check(content, tmp_path, select={"BSL140"})
+        assert "BSL140" in _codes(diags)
+
+    def test_normal_elseif_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Если А Тогда
+    Б = 1;
+ИначеЕсли В Тогда
+    Г = 2;
+КонецЕсли;
+"""
+        diags = _check(content, tmp_path, select={"BSL140"})
+        assert "BSL140" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL141 — MagicBooleanReturn
+# ---------------------------------------------------------------------------
+
+
+class TestBsl141MagicBooleanReturn:
+    def test_boolean_return_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Если А Тогда
+        Возврат Истина;
+    КонецЕсли;
+    Возврат Ложь;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL141"})
+        assert "BSL141" in _codes(diags)
+
+    def test_direct_return_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Возврат А > 0;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL141"})
+        assert "BSL141" not in _codes(diags)
+
+    def test_only_true_return_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Возврат Истина;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL141"})
+        assert "BSL141" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL142 — LargeParameterDefaultValue
+# ---------------------------------------------------------------------------
+
+
+class TestBsl142LargeParameterDefaultValue:
+    def test_large_default_detected(self, tmp_path: Path) -> None:
+        content = (
+            'Процедура Тест(Параметр = "Очень длинное значение по умолчанию которое превышает пятьдесят символов!")\n'
+            "КонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL142"})
+        assert "BSL142" in _codes(diags)
+
+    def test_short_default_no_warning(self, tmp_path: Path) -> None:
+        content = "Процедура Тест(Параметр = 0)\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL142"})
+        assert "BSL142" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL143 — DuplicateElseIfCondition
+# ---------------------------------------------------------------------------
+
+
+class TestBsl143DuplicateElseIfCondition:
+    def test_duplicate_condition_detected(self, tmp_path: Path) -> None:
+        content = """\
+Если А = 1 Тогда
+    Б = 1;
+ИначеЕсли А = 1 Тогда
+    В = 2;
+КонецЕсли;
+"""
+        diags = _check(content, tmp_path, select={"BSL143"})
+        assert "BSL143" in _codes(diags)
+
+    def test_different_conditions_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Если А = 1 Тогда
+    Б = 1;
+ИначеЕсли А = 2 Тогда
+    В = 2;
+КонецЕсли;
+"""
+        diags = _check(content, tmp_path, select={"BSL143"})
+        assert "BSL143" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL144 — UnnecessaryParentheses
+# ---------------------------------------------------------------------------
+
+
+class TestBsl144UnnecessaryParentheses:
+    def test_return_paren_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест()
+    Возврат (А + Б);
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL144"})
+        assert "BSL144" in _codes(diags)
+
+    def test_return_no_paren_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест()
+    Возврат А + Б;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL144"})
+        assert "BSL144" not in _codes(diags)
+
+    def test_return_new_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест()
+    Возврат (Новый Массив());
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL144"})
+        assert "BSL144" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL145 — StringFormatInsteadOfConcat
+# ---------------------------------------------------------------------------
+
+
+class TestBsl145StringFormatInsteadOfConcat:
+    def test_multi_concat_detected(self, tmp_path: Path) -> None:
+        content = 'С = "Привет, " + Имя + "! Ваш код: " + Код + ".";\n'
+        diags = _check(content, tmp_path, select={"BSL145"})
+        assert "BSL145" in _codes(diags)
+
+    def test_simple_concat_no_warning(self, tmp_path: Path) -> None:
+        content = 'С = "Привет, " + Имя;\n'
+        diags = _check(content, tmp_path, select={"BSL145"})
+        assert "BSL145" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL146 — ModuleInitializationCode
+# ---------------------------------------------------------------------------
+
+
+class TestBsl146ModuleInitializationCode:
+    def test_module_level_code_detected(self, tmp_path: Path) -> None:
+        content = """\
+А = 1;
+ЗаполнитьТаблицу();
+"""
+        diags = _check(content, tmp_path, select={"BSL146"})
+        assert "BSL146" in _codes(diags)
+
+    def test_code_inside_proc_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL146"})
+        assert "BSL146" not in _codes(diags)
+
+    def test_perем_declaration_no_warning(self, tmp_path: Path) -> None:
+        content = "Перем МодульнаяПеременная;\n"
+        diags = _check(content, tmp_path, select={"BSL146"})
+        assert "BSL146" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL147 — UseOfUICall
+# ---------------------------------------------------------------------------
+
+
+class TestBsl147UseOfUICall:
+    def test_open_form_detected(self, tmp_path: Path) -> None:
+        content = 'ОткрытьФорму("ФормаТовара");\n'
+        diags = _check(content, tmp_path, select={"BSL147"})
+        assert "BSL147" in _codes(diags)
+
+    def test_openform_english_detected(self, tmp_path: Path) -> None:
+        content = 'OpenForm("ItemForm");\n'
+        diags = _check(content, tmp_path, select={"BSL147"})
+        assert "BSL147" in _codes(diags)
+
+    def test_unrelated_call_no_warning(self, tmp_path: Path) -> None:
+        content = "ПолучитьЗначение();\n"
+        diags = _check(content, tmp_path, select={"BSL147"})
+        assert "BSL147" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 138)}
+        expected = {f"BSL{i:03d}" for i in range(1, 148)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

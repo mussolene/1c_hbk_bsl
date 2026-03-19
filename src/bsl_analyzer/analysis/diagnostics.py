@@ -1148,6 +1148,86 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["performance", "suspicious"],
     },
+    "BSL138": {
+        "name": "UseOfDebugOutput",
+        "description": "Сообщить()/Message()/Предупреждение() debug output should not be in production code",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["suspicious", "debug"],
+    },
+    "BSL139": {
+        "name": "TooLongParameterName",
+        "description": "Parameter name is longer than 30 characters — shorten it for readability",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL140": {
+        "name": "UnreachableElseIf",
+        "description": "ИначеЕсли/ElsIf branch appears after an unconditional Иначе/Else — it can never be reached",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL141": {
+        "name": "MagicBooleanReturn",
+        "description": "Function returns literal Истина/Ложь — replace with a direct boolean expression",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL142": {
+        "name": "LargeParameterDefaultValue",
+        "description": "Default parameter value is longer than 50 characters — move to a named constant",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL143": {
+        "name": "DuplicateElseIfCondition",
+        "description": "The same condition appears more than once in an Если/ИначеЕсли chain",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL144": {
+        "name": "UnnecessaryParentheses",
+        "description": "Return value is wrapped in redundant parentheses — remove them",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL145": {
+        "name": "StringFormatInsteadOfConcat",
+        "description": "Three or more string parts joined with '+' — use СтрШаблон()/StrTemplate() instead",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL146": {
+        "name": "ModuleInitializationCode",
+        "description": "Executable code at module level outside procedures — move to an Инициализация() procedure",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "correctness"],
+    },
+    "BSL147": {
+        "name": "UseOfUICall",
+        "description": "ОткрытьФорму()/OpenForm() UI calls should not appear in server-side code",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["suspicious", "debug"],
+    },
 }
 
 
@@ -1266,6 +1346,16 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL135": "Assign the inner call result to a named variable before passing it as an argument.",
     "BSL136": "Add a space before the // inline comment.",
     "BSL137": "Use НайтиПоСсылке() or filter via a query with an indexed field instead.",
+    "BSL138": "Remove debug output before deploying to production.",
+    "BSL139": "Shorten parameter names to improve readability.",
+    "BSL140": "Remove or fix the condition — it can never be reached.",
+    "BSL141": "Replace 'Если Условие Тогда Возврат Истина; КонецЕсли; Возврат Ложь;' with 'Возврат Условие;'",
+    "BSL142": "Move complex default values to a named constant.",
+    "BSL143": "Remove or fix the duplicate condition in the ИначеЕсли chain.",
+    "BSL144": "Remove redundant parentheses from the condition or return value.",
+    "BSL145": "Use СтрШаблон()/StrTemplate() for readable string interpolation.",
+    "BSL146": "Move initialization code into a dedicated Инициализация() procedure.",
+    "BSL147": "Remove ОткрытьФорму()/OpenForm() calls used for debugging.",
 }
 
 
@@ -1953,6 +2043,44 @@ _RE_FIND_BY_DESCRIPTION = re.compile(
     re.IGNORECASE,
 )
 
+# BSL138 — UseOfDebugOutput: Сообщить()/Message()/Предупреждение()/Warning()
+_RE_DEBUG_OUTPUT = re.compile(
+    r'\b(?:Сообщить|Message|Предупреждение|Warning)\s*\(',
+    re.IGNORECASE,
+)
+
+# BSL141 — MagicBooleanReturn
+_RE_RETURN_TRUE = re.compile(
+    r'^\s*(?:Возврат|Return)\s+(?:Истина|True)\s*;',
+    re.IGNORECASE,
+)
+_RE_RETURN_FALSE = re.compile(
+    r'^\s*(?:Возврат|Return)\s+(?:Ложь|False)\s*;',
+    re.IGNORECASE,
+)
+
+# BSL143 — DuplicateElseIfCondition: extract condition text from Если/ИначеЕсли
+_RE_IF_COND = re.compile(
+    r'^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(.*?)\s+(?:Тогда|Then)\s*$',
+    re.IGNORECASE,
+)
+
+# BSL144 — UnnecessaryParentheses: Возврат (expr)
+_RE_RETURN_PAREN = re.compile(
+    r'^\s*(?:Возврат|Return)\s+\((?!\s*(?:Новый|New)\b)',
+    re.IGNORECASE,
+)
+
+# BSL145 — StringFormatInsteadOfConcat: 3+ string parts with +
+_RE_MULTI_CONCAT = re.compile(r'"[^"]*"\s*\+[^+;]+\+[^+;]+\+')
+
+# BSL147 — UseOfUICall: ОткрытьФорму()/OpenForm() etc.
+_RE_UI_CALL = re.compile(
+    r'\b(?:ОткрытьФорму|OpenForm|ПоказатьПредупреждение|ShowMessageBox'
+    r'|ПоказатьВопрос|ShowQueryBox)\s*\(',
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
@@ -2531,6 +2659,26 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl136_missing_space_before_comment(path, lines))
         if self._rule_enabled("BSL137"):
             diagnostics.extend(self._rule_bsl137_use_of_find_by_description(path, lines))
+        if self._rule_enabled("BSL138"):
+            diagnostics.extend(self._rule_bsl138_use_of_debug_output(path, lines))
+        if self._rule_enabled("BSL139"):
+            diagnostics.extend(self._rule_bsl139_too_long_parameter_name(path, lines, procs))
+        if self._rule_enabled("BSL140"):
+            diagnostics.extend(self._rule_bsl140_unreachable_elseif(path, lines))
+        if self._rule_enabled("BSL141"):
+            diagnostics.extend(self._rule_bsl141_magic_boolean_return(path, lines, procs))
+        if self._rule_enabled("BSL142"):
+            diagnostics.extend(self._rule_bsl142_large_param_default_value(path, lines, procs))
+        if self._rule_enabled("BSL143"):
+            diagnostics.extend(self._rule_bsl143_duplicate_elseif_condition(path, lines))
+        if self._rule_enabled("BSL144"):
+            diagnostics.extend(self._rule_bsl144_unnecessary_parentheses(path, lines))
+        if self._rule_enabled("BSL145"):
+            diagnostics.extend(self._rule_bsl145_string_format_instead_of_concat(path, lines))
+        if self._rule_enabled("BSL146"):
+            diagnostics.extend(self._rule_bsl146_module_initialization_code(path, lines, procs))
+        if self._rule_enabled("BSL147"):
+            diagnostics.extend(self._rule_bsl147_use_of_ui_call(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -7712,6 +7860,415 @@ class DiagnosticEngine:
                         message=(
                             f"'{m.group().rstrip('(')}' performs a full-table scan — "
                             "use НайтиПоСсылке() or a query with an indexed field instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL138 — UseOfDebugOutput
+    # ------------------------------------------------------------------
+
+    def _rule_bsl138_use_of_debug_output(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag calls to Сообщить()/Message()/Предупреждение()/Warning() debug output."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_DEBUG_OUTPUT.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL138",
+                        message=(
+                            f"'{m.group().rstrip('(')}' is debug output — "
+                            "remove before deploying to production."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL139 — TooLongParameterName
+    # ------------------------------------------------------------------
+
+    _MAX_PARAM_NAME_LEN: int = 30
+
+    def _rule_bsl139_too_long_parameter_name(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag parameter names longer than 30 characters."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            for param in proc.params:
+                if len(param) > self._MAX_PARAM_NAME_LEN:
+                    line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                    col = line_text.find(param)
+                    if col < 0:
+                        col = 0
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=col,
+                            end_line=proc.start_idx + 1,
+                            end_character=col + len(param),
+                            severity=Severity.INFORMATION,
+                            code="BSL139",
+                            message=(
+                                f"Parameter '{param}' has {len(param)} characters — "
+                                f"keep parameter names under {self._MAX_PARAM_NAME_LEN} characters."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL140 — UnreachableElseIf
+    # ------------------------------------------------------------------
+
+    def _rule_bsl140_unreachable_elseif(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag ИначеЕсли/ElsIf that immediately follows an unconditional Иначе/Else."""
+        diags: list[Diagnostic] = []
+        depth = 0
+        after_else_at_depth0 = False
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("//"):
+                continue
+            if _RE_IF_OPEN.match(line):
+                depth += 1
+                after_else_at_depth0 = False
+            elif _RE_ENDIF.match(line):
+                if depth > 0:
+                    depth -= 1
+                after_else_at_depth0 = False
+            elif depth == 1 and _RE_ELSE.match(line):
+                after_else_at_depth0 = True
+            elif depth == 1 and _RE_ELSEIF.match(line):
+                if after_else_at_depth0:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=len(line) - len(line.lstrip()),
+                            end_line=idx + 1,
+                            end_character=len(line.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL140",
+                            message=(
+                                "Unreachable ИначеЕсли/ElsIf after an unconditional "
+                                "Иначе/Else — this branch can never be reached."
+                            ),
+                        )
+                    )
+                after_else_at_depth0 = False
+            elif stripped and not stripped.startswith("//"):
+                if depth == 1 and after_else_at_depth0:
+                    # We're inside the Else block — keep flag
+                    pass
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL141 — MagicBooleanReturn
+    # ------------------------------------------------------------------
+
+    def _rule_bsl141_magic_boolean_return(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag functions whose body contains both 'Возврат Истина' and 'Возврат Ложь'."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if proc.kind != "function":
+                continue
+            body_start = proc.start_idx + 1
+            body_end = min(proc.end_idx, len(lines))
+            first_true_idx = None
+            has_false = False
+            for i in range(body_start, body_end):
+                ln = lines[i]
+                if _RE_RETURN_TRUE.match(ln):
+                    if first_true_idx is None:
+                        first_true_idx = i
+                if _RE_RETURN_FALSE.match(ln):
+                    has_false = True
+            if first_true_idx is not None and has_false:
+                ln = lines[first_true_idx]
+                col = len(ln) - len(ln.lstrip())
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=first_true_idx + 1,
+                        character=col,
+                        end_line=first_true_idx + 1,
+                        end_character=len(ln.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL141",
+                        message=(
+                            "Function returns literal Истина/Ложь — "
+                            "replace with a direct boolean expression (Возврат Условие;)."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL142 — LargeParameterDefaultValue
+    # ------------------------------------------------------------------
+
+    _MAX_DEFAULT_VALUE_LEN: int = 50
+
+    def _rule_bsl142_large_param_default_value(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag parameter default values longer than 50 characters."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if proc.start_idx >= len(lines):
+                continue
+            header_line = lines[proc.start_idx]
+            # Extract raw params string from header
+            m_header = _RE_PROC_HEADER.match(header_line)
+            if not m_header:
+                continue
+            params_str = m_header.group("params") or ""
+            for raw in params_str.split(","):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                if "=" not in raw:
+                    continue
+                default_part = raw.split("=", 1)[1].strip()
+                if len(default_part) > self._MAX_DEFAULT_VALUE_LEN:
+                    col = header_line.find(default_part)
+                    if col < 0:
+                        col = 0
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=col,
+                            end_line=proc.start_idx + 1,
+                            end_character=col + len(default_part),
+                            severity=Severity.INFORMATION,
+                            code="BSL142",
+                            message=(
+                                f"Parameter default value is {len(default_part)} characters — "
+                                f"move complex defaults (>{self._MAX_DEFAULT_VALUE_LEN} chars) "
+                                "to a named constant."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL143 — DuplicateElseIfCondition
+    # ------------------------------------------------------------------
+
+    def _rule_bsl143_duplicate_elseif_condition(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag the same condition text appearing twice in an Если/ИначеЕсли chain."""
+        diags: list[Diagnostic] = []
+        depth = 0
+        # Stack: list of (conditions_seen_set, first_line_map)
+        # Each entry tracks conditions at this if-block level
+        chain_stack: list[dict[str, int]] = []  # cond_lower -> first line number
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_IF_OPEN.match(line) and not _RE_ELSEIF.match(line):
+                depth += 1
+                chain_stack.append({})
+                m = _RE_IF_COND.match(line)
+                if m and chain_stack:
+                    cond = m.group(1).strip().lower()
+                    chain_stack[-1][cond] = idx + 1
+            elif _RE_ELSEIF.match(line):
+                m = _RE_IF_COND.match(line)
+                if m and chain_stack:
+                    cond = m.group(1).strip().lower()
+                    if cond in chain_stack[-1]:
+                        col = len(line) - len(line.lstrip())
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=col,
+                                end_line=idx + 1,
+                                end_character=len(line.rstrip()),
+                                severity=Severity.WARNING,
+                                code="BSL143",
+                                message=(
+                                    f"Duplicate condition '{m.group(1).strip()}' in "
+                                    f"ИначеЕсли chain — first seen on line "
+                                    f"{chain_stack[-1][cond]}."
+                                ),
+                            )
+                        )
+                    else:
+                        chain_stack[-1][cond] = idx + 1
+            elif _RE_ENDIF.match(line):
+                if chain_stack:
+                    chain_stack.pop()
+                if depth > 0:
+                    depth -= 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL144 — UnnecessaryParentheses
+    # ------------------------------------------------------------------
+
+    def _rule_bsl144_unnecessary_parentheses(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag 'Возврат (expr)' where the return value is wrapped in redundant parens."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_RETURN_PAREN.search(line)
+            if m:
+                col = len(line) - len(line.lstrip())
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=col,
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL144",
+                        message=(
+                            "Return value is wrapped in redundant parentheses — "
+                            "remove the outer parentheses."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL145 — StringFormatInsteadOfConcat
+    # ------------------------------------------------------------------
+
+    def _rule_bsl145_string_format_instead_of_concat(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines with 3+ string parts joined by '+'."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_MULTI_CONCAT.search(line)
+            if m:
+                col = m.start()
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=col,
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL145",
+                        message=(
+                            "Three or more string parts joined with '+' — "
+                            "use СтрШаблон()/StrTemplate() for readable string interpolation."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL146 — ModuleInitializationCode
+    # ------------------------------------------------------------------
+
+    def _rule_bsl146_module_initialization_code(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag executable statements at module level outside any procedure/function."""
+        diags: list[Diagnostic] = []
+        # Build set of line indices that are inside a proc body
+        inside_proc: set[int] = set()
+        for proc in procs:
+            for i in range(proc.start_idx, proc.end_idx + 1):
+                inside_proc.add(i)
+
+        _re_perем = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
+        _re_region = re.compile(r'^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b', re.IGNORECASE)
+        _re_preproc = re.compile(r'^\s*#', re.IGNORECASE)
+        _re_exec = re.compile(r'[А-Яа-яA-Za-z0-9_]')
+
+        for idx, line in enumerate(lines):
+            if idx in inside_proc:
+                continue
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("//"):
+                continue
+            if _re_perем.match(line):
+                continue
+            if _re_region.match(line):
+                continue
+            if _re_preproc.match(line):
+                continue
+            # Must look like an executable statement (contains identifier chars)
+            if _re_exec.search(stripped):
+                col = len(line) - len(line.lstrip())
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=col,
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL146",
+                        message=(
+                            "Executable statement at module level — "
+                            "move initialization code into a dedicated Инициализация() procedure."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL147 — UseOfUICall
+    # ------------------------------------------------------------------
+
+    def _rule_bsl147_use_of_ui_call(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag ОткрытьФорму()/OpenForm() and similar UI calls."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_UI_CALL.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL147",
+                        message=(
+                            f"'{m.group().rstrip('(')}' is a UI call — "
+                            "remove or restrict to client-side context."
                         ),
                     )
                 )
