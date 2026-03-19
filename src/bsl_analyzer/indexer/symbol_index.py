@@ -290,7 +290,7 @@ class SymbolIndex:
                 SELECT s.*
                 FROM symbols s
                 JOIN symbols_fts f ON s.id = f.rowid
-                WHERE symbols_fts MATCH ?
+                WHERE symbols_fts MATCH :fts_query
                   AND (:file_filter IS NULL OR s.file_path LIKE :file_like)
                 ORDER BY rank
                 LIMIT :limit
@@ -301,18 +301,7 @@ class SymbolIndex:
                 "file_like": f"%{file_filter}%" if file_filter else None,
                 "limit": limit,
             }
-            rows = conn.execute(sql, (fts_query,)).fetchmany(limit)
-            # Re-run with named params for file filter
-            sql2 = """
-                SELECT s.*
-                FROM symbols s
-                JOIN symbols_fts f ON s.id = f.rowid
-                WHERE symbols_fts MATCH :fts_query
-                  AND (:file_filter IS NULL OR s.file_path LIKE :file_like)
-                ORDER BY rank
-                LIMIT :limit
-            """
-            rows = conn.execute(sql2, params).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         else:
             sql = """
                 SELECT * FROM symbols
