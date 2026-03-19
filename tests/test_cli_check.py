@@ -436,3 +436,11 @@ class TestListRules:
     def test_list_rules_does_not_raise(self) -> None:
         # Just ensure it runs without error
         list_rules()
+
+    def test_list_rules_with_tag_filter(self) -> None:
+        # Tag filter should not raise
+        list_rules(tag="security")
+
+    def test_list_rules_unknown_tag_shows_nothing(self) -> None:
+        # Unknown tag returns 0 results, but doesn't raise
+        list_rules(tag="nonexistent_tag_xyz")

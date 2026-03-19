@@ -192,6 +192,11 @@ class TestMainListRules:
             # Should return normally (no sys.exit called)
             main()
 
+    def test_list_rules_with_tag_filter(self) -> None:
+        with patch("sys.argv", ["bsl-analyzer", "--list-rules", "--tag", "security"]):
+            # Should return normally and show only security rules
+            main()
+
 
 # ---------------------------------------------------------------------------
 # main() — version

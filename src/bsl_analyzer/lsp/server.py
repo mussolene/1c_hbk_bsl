@@ -56,6 +56,7 @@ from lsprotocol.types import (
 from lsprotocol.types import (
     Diagnostic as LspDiagnostic,
 )
+
 try:
     from pygls.server import LanguageServer  # pygls < 1.2
 except ImportError:

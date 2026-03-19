@@ -229,18 +229,23 @@ def _apply_fixes_to_files(diagnostics: list[Diagnostic]) -> list[Diagnostic]:
     return remaining
 
 
-def list_rules() -> None:
-    """Print a formatted table of all available rules to stdout."""
+def list_rules(tag: str | None = None) -> None:
+    """Print a formatted table of all available rules to stdout.
+
+    Args:
+        tag: If provided, only show rules with this tag.
+    """
     from rich.table import Table
 
     from bsl_analyzer.analysis.fix_engine import FIXABLE_RULES
 
-    table = Table(title="BSL Analyzer Rules", show_lines=True)
+    title = f"BSL Analyzer Rules — tag: {tag}" if tag else "BSL Analyzer Rules"
+    table = Table(title=title, show_lines=True)
     table.add_column("Code", style="bold cyan", width=8)
     table.add_column("Name", style="bold", width=32)
     table.add_column("Severity", width=12)
     table.add_column("Fix", width=5)
-    table.add_column("SonarQube Type", width=16)
+    table.add_column("Tags", width=24)
     table.add_column("Description")
 
     sev_colors = {
@@ -250,7 +255,11 @@ def list_rules() -> None:
         "HINT": "dim",
     }
 
+    shown = 0
     for code, meta in sorted(RULE_METADATA.items()):
+        tags = meta.get("tags", [])
+        if tag and tag.lower() not in [t.lower() for t in tags]:
+            continue
         sev = meta["severity"]
         fixable = "[green]✓[/green]" if code in FIXABLE_RULES else ""
         table.add_row(
@@ -258,11 +267,14 @@ def list_rules() -> None:
             meta["name"],
             f"[{sev_colors.get(sev, 'white')}]{sev}[/]",
             fixable,
-            meta["sonar_type"],
+            ", ".join(tags),
             meta["description"],
         )
+        shown += 1
 
-    Console().print(table)
+    console = Console()
+    console.print(table)
+    console.print(f"[dim]{shown} rule(s) shown[/dim]")
 
 
 # ---------------------------------------------------------------------------

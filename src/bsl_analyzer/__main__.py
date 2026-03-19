@@ -207,15 +207,16 @@ exclude = [
 # baseline = "bsl-baseline.json"
 
 # ---- Threshold overrides ----
-# max-line-length = 120
-# max-proc-lines  = 200
-# max-cognitive-complexity = 15
-# max-mccabe-complexity    = 10
-# max-nesting-depth        = 4
-# max-params               = 7
-# max-returns              = 3
-# max-bool-ops             = 3
-# min-duplicate-uses       = 3
+# max-line-length          = 120    # BSL014
+# max-proc-lines           = 200    # BSL002
+# max-cognitive-complexity = 15     # BSL011
+# max-mccabe-complexity    = 10     # BSL019
+# max-nesting-depth        = 4      # BSL020
+# max-params               = 7      # BSL031
+# max-returns              = 3      # BSL008
+# max-bool-ops             = 3      # BSL036
+# min-duplicate-uses       = 3      # BSL035
+# max-module-lines         = 1000   # BSL063
 '''
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -412,12 +413,20 @@ Examples:
         help="Force full reindex even if incremental is possible (--index mode)",
     )
 
+    # List-rules filter
+    parser.add_argument(
+        "--tag",
+        metavar="TAG",
+        default=None,
+        help="Filter --list-rules output to rules with this tag (e.g. security, performance)",
+    )
+
     args = parser.parse_args()
     _setup_logging(args.log_level)
 
     if args.list_rules:
         from bsl_analyzer.cli.check import list_rules
-        list_rules()
+        list_rules(tag=args.tag)
         return
 
     if args.init:
