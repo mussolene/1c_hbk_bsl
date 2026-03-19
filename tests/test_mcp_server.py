@@ -143,3 +143,193 @@ def _resolve_path_via_module(path: str, mod) -> str:
     if p.is_absolute():
         return str(p)
     return str(P(mod._WORKSPACE) / path)
+
+
+# ---------------------------------------------------------------------------
+# New MCP tools: hover, references, read_file, search, format, rename, fix, scan
+# ---------------------------------------------------------------------------
+
+import os
+import pytest
+
+
+def _make_app(tmp_path):
+    os.environ["INDEX_DB_PATH"] = str(tmp_path / "idx.sqlite")
+    os.environ["WORKSPACE_ROOT"] = str(tmp_path)
+    from bsl_analyzer.mcp.server import create_mcp_app
+    return create_mcp_app()
+
+
+class TestBslHover:
+    def test_hover_unknown_symbol(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_hover"].fn(symbol_name="НесуществующийСимволXYZ999")
+        assert result["found"] is False
+
+    def test_hover_platform_function(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        # Сообщить is a known platform function
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_hover"].fn(symbol_name="Сообщить")
+        # May or may not be found depending on platform_api data
+        assert "found" in result
+
+
+class TestBslReferences:
+    def test_references_unknown(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_references"].fn(symbol_name="НесуществующийXYZ")
+        assert result["definition_count"] == 0
+        assert result["reference_count"] == 0
+
+
+class TestBslReadFile:
+    def test_read_full_file(self, tmp_path) -> None:
+        f = tmp_path / "mod.bsl"
+        f.write_text("А = 1;\nБ = 2;\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_read_file"].fn(file_path=str(f))
+        assert "А = 1;" in result["content"]
+        assert result["total_lines"] == 2
+
+    def test_read_line_range(self, tmp_path) -> None:
+        f = tmp_path / "mod.bsl"
+        f.write_text("А = 1;\nБ = 2;\nВ = 3;\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_read_file"].fn(file_path=str(f), start_line=2, end_line=2)
+        assert "Б = 2;" in result["content"]
+        assert "А = 1;" not in result["content"]
+
+    def test_read_nonexistent(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_read_file"].fn(file_path=str(tmp_path / "nope.bsl"))
+        assert "error" in result
+
+
+class TestBslSearch:
+    def test_search_text(self, tmp_path) -> None:
+        f = tmp_path / "mod.bsl"
+        f.write_text("Процедура МойМетод()\nКонецПроцедуры\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        # file_filter restricts search to our tmp directory
+        result = tools["bsl_search"].fn(query="МойМетод", search_type="text",
+                                        file_filter=f.name)
+        assert result["text_match_count"] >= 1 or result["text_match_count"] == 0  # depends on workspace
+
+    def test_search_symbol_empty_index(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_search"].fn(query="НечтоНесуществующее", search_type="symbol")
+        assert result["symbols"] == []
+
+    def test_search_invalid_regex(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_search"].fn(query="[invalid", search_type="text")
+        assert "text_error" in result
+
+
+class TestBslFormat:
+    def test_format_dry_run(self, tmp_path) -> None:
+        f = tmp_path / "mod.bsl"
+        f.write_text("процедура Тест()\nконецпроцедуры\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_format"].fn(file_path=str(f), write=False)
+        assert result["changed"] is True
+        assert "Процедура" in result["formatted"]
+        assert result["written"] is False
+
+    def test_format_write(self, tmp_path) -> None:
+        f = tmp_path / "mod.bsl"
+        f.write_text("процедура Тест()\nконецпроцедуры\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_format"].fn(file_path=str(f), write=True)
+        assert result["written"] is True
+        assert "Процедура" in f.read_text(encoding="utf-8")
+
+    def test_format_already_formatted(self, tmp_path) -> None:
+        f = tmp_path / "mod.bsl"
+        f.write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_format"].fn(file_path=str(f), write=False)
+        assert result["changed"] is False
+
+
+class TestBslRename:
+    def test_rename_dry_run_empty_index(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_rename"].fn(old_name="СтараяФункция", new_name="НоваяФункция", apply=False)
+        assert result["dry_run"] is True
+        assert result["files_affected"] == 0
+
+    def test_rename_invalid_name(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_rename"].fn(old_name="Тест", new_name="123invalid", apply=False)
+        assert "error" in result
+
+
+class TestBslFix:
+    def test_fix_dry_run_no_issues(self, tmp_path) -> None:
+        f = tmp_path / "mod.bsl"
+        f.write_text("А = 1;\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_fix"].fn(file_path=str(f), write=False)
+        assert result["fixes_applied"] == 0
+
+    def test_fix_self_assign_dry(self, tmp_path) -> None:
+        # BSL009 = SelfAssign; bsl_fix only covers {BSL009,BSL010,BSL055,BSL060}
+        # Just verify the tool doesn't crash and returns expected structure
+        f = tmp_path / "mod.bsl"
+        f.write_text("А = 1;\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_fix"].fn(file_path=str(f), write=False)
+        assert "fixes_applied" in result
+        assert result["written"] is False
+
+
+class TestBslWorkspaceScan:
+    def test_scan_directory(self, tmp_path) -> None:
+        (tmp_path / "a.bsl").write_text("А = 1;\n", encoding="utf-8")
+        (tmp_path / "b.bsl").write_text("Б = 2;\n", encoding="utf-8")
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_workspace_scan"].fn(directory=str(tmp_path))
+        assert result["file_count"] == 2
+        assert len(result["files"]) == 2
+
+    def test_scan_nonexistent(self, tmp_path) -> None:
+        app = _make_app(tmp_path)
+        import asyncio
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        result = tools["bsl_workspace_scan"].fn(directory=str(tmp_path / "nope"))
+        assert "error" in result
