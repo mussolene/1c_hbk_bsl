@@ -133,15 +133,19 @@ class BslParser:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    # tree-sitter-bsl grammar bug: КонецЦикла; is rejected only inside
+    # while_statement. BSL spec (1C docs) shows КонецЦикла; WITH semicolon.
+    # Для/ДляКаждого loops already accept the trailing semicolon correctly.
+    _WHILE_LOOP_NODE_TYPES = frozenset({"while_statement"})
+
     def _collect_errors(self, node: Any, errors: list[dict]) -> None:
         """Recursively collect ERROR and MISSING nodes from a tree-sitter tree."""
         if node.type in ("ERROR", "error") or node.is_missing:
-            # Skip lone `;` ERROR nodes — this is a bug in tree-sitter-bsl:
-            # the grammar incorrectly rejects trailing semicolons after
-            # КонецЦикла/КонецПроцедуры/КонецФункции even though BSL requires
-            # a semicolon at the end of every statement including block closers.
             text = node.text if isinstance(node.text, bytes) else b""
-            if text.strip() == b";":
+            # Suppress lone ';' that follows a while_statement — grammar bug.
+            # КонецПроцедуры/КонецФункции have no trailing semicolon in BSL,
+            # so those remain valid errors and must NOT be suppressed.
+            if text.strip() == b";" and self._prev_sibling_type(node) in self._WHILE_LOOP_NODE_TYPES:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
@@ -156,6 +160,16 @@ class BslParser:
             )
         for child in node.children:
             self._collect_errors(child, errors)
+
+    @staticmethod
+    def _prev_sibling_type(node: Any) -> str:
+        """Return the node type of the previous sibling in the parent, or ''."""
+        parent = getattr(node, "parent", None)
+        if parent is None:
+            return ""
+        children = list(parent.children)
+        idx = next((i for i, c in enumerate(children) if c.id == node.id), -1)
+        return children[idx - 1].type if idx > 0 else ""
 
 
 # ---------------------------------------------------------------------------
