@@ -33,7 +33,7 @@ const CLIENT_NAME = "BSL Analyzer";
 const BINARY_NAME = process.platform === "win32" ? "bsl-analyzer.exe" : "bsl-analyzer";
 
 /** GitHub release tag to download when no binary is found locally. */
-const RELEASE_TAG = "v0.1.0";
+const RELEASE_TAG = "v0.2.0";
 
 /** Map from Node platform+arch → asset filename in GitHub Releases. */
 const PLATFORM_ASSETS: Record<string, string> = {
