@@ -708,6 +708,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "INFO",
         "tags": ["style"],
     },
+    "BSL083": {
+        "name": "TooManyModuleVariables",
+        "description": "Module has too many module-level Перем declarations — encapsulate in a structure",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["maintainability", "style"],
+    },
+    "BSL084": {
+        "name": "FunctionWithNoReturn",
+        "description": "Функция/Function has no Возврат with a value — should be Процедура",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness"],
+    },
+    "BSL085": {
+        "name": "LiteralBooleanCondition",
+        "description": "Если Истина/Ложь Тогда — constant condition always true or false",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
 }
 
 
@@ -771,6 +795,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL080": "Log the error with ЗаписьЖурналаРегистрации or re-raise with ВызватьИсключение.",
     "BSL081": "Assign intermediate results to named variables to improve readability.",
     "BSL082": "Add a newline at the end of the file.",
+    "BSL083": "Move module-level state into a dedicated data structure or configuration object.",
+    "BSL084": "Add 'Возврат <value>;' or change 'Функция' to 'Процедура'.",
+    "BSL085": "Remove the constant condition — the branch always or never executes.",
 }
 
 
@@ -1254,6 +1281,12 @@ _RE_VAR_DECL = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
 # Executable code (not comment, not blank, not Перем, not proc header)
 _RE_EXECUTABLE_LINE = re.compile(
     r'^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)',
+    re.IGNORECASE,
+)
+
+# Literal boolean in Если condition (BSL085)
+_RE_LITERAL_BOOL_CONDITION = re.compile(
+    r'^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(?:Истина|True|Ложь|False)\s+(?:Тогда|Then)\b',
     re.IGNORECASE,
 )
 
@@ -1764,6 +1797,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl081_long_method_chain(path, lines))
         if self._rule_enabled("BSL082"):
             diagnostics.extend(self._rule_bsl082_missing_newline_at_eof(path, lines))
+        if self._rule_enabled("BSL083"):
+            diagnostics.extend(self._rule_bsl083_too_many_module_variables(path, lines, procs))
+        if self._rule_enabled("BSL084"):
+            diagnostics.extend(self._rule_bsl084_function_with_no_return(path, lines, procs))
+        if self._rule_enabled("BSL085"):
+            diagnostics.extend(self._rule_bsl085_literal_boolean_condition(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -4927,6 +4966,113 @@ class DiagnosticEngine:
                 )
             ]
         return []
+
+    # ------------------------------------------------------------------
+    # BSL083 — Too many module-level variables
+    # ------------------------------------------------------------------
+
+    MAX_MODULE_VARIABLES: int = 10
+
+    def _rule_bsl083_too_many_module_variables(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag modules with more than MAX_MODULE_VARIABLES Перем declarations
+        at the module level (outside any method).
+        """
+        first_proc = min((p.start_idx for p in procs), default=len(lines))
+        module_var_count = 0
+        for idx in range(first_proc):
+            if _RE_VAR_DECL.match(lines[idx]):
+                # Count comma-separated names on this line
+                rest = lines[idx][_RE_VAR_DECL.match(lines[idx]).end():].rstrip().rstrip(";")
+                count = len([n for n in re.split(r'\s*,\s*', rest) if n.strip()])
+                module_var_count += max(count, 1)
+        if module_var_count > self.MAX_MODULE_VARIABLES:
+            return [
+                Diagnostic(
+                    file=path,
+                    line=1,
+                    character=0,
+                    end_line=1,
+                    end_character=0,
+                    severity=Severity.INFORMATION,
+                    code="BSL083",
+                    message=(
+                        f"Module has {module_var_count} module-level variables "
+                        f"(max {self.MAX_MODULE_VARIABLES}). "
+                        "Consider encapsulating state in a structure or configuration object."
+                    ),
+                )
+            ]
+        return []
+
+    # ------------------------------------------------------------------
+    # BSL084 — Функция with no Возврат value
+    # ------------------------------------------------------------------
+
+    def _rule_bsl084_function_with_no_return(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag Функция/Function declarations where the body contains no
+        'Возврат <value>' statement — such functions always return Неопределено
+        and should be declared as Процедура.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if proc.kind != "function":
+                continue
+            body_lines = lines[proc.start_idx + 1: proc.end_idx]
+            has_return_value = any(
+                _RE_RETURN_VALUE.match(ln) for ln in body_lines
+            )
+            if not has_return_value:
+                header = lines[proc.start_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL084",
+                        message=(
+                            f"Функция '{proc.name}' never returns a value — "
+                            "change to Процедура or add a Возврат statement."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL085 — Literal boolean condition
+    # ------------------------------------------------------------------
+
+    def _rule_bsl085_literal_boolean_condition(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Если Истина/Ложь Тогда — conditions that are always true or false."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_LITERAL_BOOL_CONDITION.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL085",
+                        message=(
+                            "Condition is a literal boolean — the branch always or never executes. "
+                            "Remove the dead code or fix the condition."
+                        ),
+                    )
+                )
+        return diags
 
 
 # ---------------------------------------------------------------------------

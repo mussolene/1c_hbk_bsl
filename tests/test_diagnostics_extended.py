@@ -2410,9 +2410,86 @@ class TestBsl082MissingNewlineAtEof:
         assert "BSL082" not in _codes(diags)
 
 
+class TestBsl083TooManyModuleVariables:
+    def test_many_module_vars_detected(self, tmp_path: Path) -> None:
+        vars_lines = "\n".join(f"Перем Переменная{i};" for i in range(12))
+        content = vars_lines + "\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL083"})
+        assert "BSL083" in _codes(diags)
+
+    def test_few_module_vars_no_warning(self, tmp_path: Path) -> None:
+        content = "Перем А;\nПерем Б;\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL083"})
+        assert "BSL083" not in _codes(diags)
+
+
+class TestBsl084FunctionWithNoReturn:
+    def test_function_without_return_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция ВсегдаПусто()
+    А = 1;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL084"})
+        assert "BSL084" in _codes(diags)
+
+    def test_function_with_return_ok(self, tmp_path: Path) -> None:
+        content = """\
+Функция Получить()
+    Возврат 42;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL084"})
+        assert "BSL084" not in _codes(diags)
+
+    def test_procedure_not_flagged(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL084"})
+        assert "BSL084" not in _codes(diags)
+
+
+class TestBsl085LiteralBooleanCondition:
+    def test_if_true_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если Истина Тогда
+        А = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL085"})
+        assert "BSL085" in _codes(diags)
+
+    def test_if_false_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если Ложь Тогда
+        А = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL085"})
+        assert "BSL085" in _codes(diags)
+
+    def test_normal_condition_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А > 0 Тогда
+        Б = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL085"})
+        assert "BSL085" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 83)}
+        expected = {f"BSL{i:03d}" for i in range(1, 86)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
