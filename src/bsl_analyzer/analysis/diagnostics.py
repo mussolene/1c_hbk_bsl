@@ -2437,6 +2437,25 @@ class DiagnosticEngine:
             return False
         return code not in self._ignore
 
+    def check_content(self, path: str, content: str) -> list[Diagnostic]:
+        """
+        Run all enabled diagnostic rules on *content* (pre-loaded string).
+
+        Useful for LSP in-memory documents: avoids a second disk read and
+        ensures diagnostics reflect the current editor state, not the saved file.
+        """
+        try:
+            tree = self._parser.parse_content(content, file_path=path)
+        except Exception as exc:
+            return [
+                Diagnostic(
+                    file=path, line=1, character=0, end_line=1, end_character=0,
+                    severity=Severity.ERROR, code="BSL001",
+                    message=f"Failed to parse content: {exc}",
+                )
+            ]
+        return self._run_rules(path, content, tree)
+
     def check_file(self, path: str, tree: Any | None = None) -> list[Diagnostic]:
         """
         Run all enabled diagnostic rules on *path*.
@@ -2468,7 +2487,10 @@ class DiagnosticEngine:
                     message=f"Cannot read file: {exc}",
                 )
             ]
+        return self._run_rules(path, content, tree)
 
+    def _run_rules(self, path: str, content: str, tree: Any) -> list[Diagnostic]:
+        """Execute all enabled rules and return filtered, sorted diagnostics."""
         lines = content.splitlines()
         suppressions = _parse_suppressions(lines)
 

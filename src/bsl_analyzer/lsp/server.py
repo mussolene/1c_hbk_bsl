@@ -290,6 +290,8 @@ def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> Non
 
 
 _DIAG_DEBOUNCE_SECS = 0.6
+# Skip live diagnostics for files larger than this (run only on save)
+_DIAG_MAX_LINES_LIVE = 3000
 
 
 @server.feature(TEXT_DOCUMENT_DID_CHANGE)
@@ -304,6 +306,12 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
     old_timer = ls._diag_timers.pop(uri, None)
     if old_timer is not None:
         old_timer.cancel()
+
+    # Skip live diagnostics for very large files — they block the server
+    content = ls._docs.get(uri, "")
+    if content.count("\n") > _DIAG_MAX_LINES_LIVE:
+        logger.debug("LSP: skipping live diags for large file %s", uri)
+        return
 
     path = _uri_to_path(uri)
 
@@ -341,9 +349,17 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
 
 
 def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
-    """Run diagnostic engine and push results to the client."""
+    """Run diagnostic engine and push results to the client.
+
+    Uses in-memory document content when available (reflects current editor
+    state) and falls back to reading from disk.
+    """
     try:
-        issues = ls.diagnostics_engine.check_file(path)
+        cached = ls._docs.get(uri)
+        if cached is not None:
+            issues = ls.diagnostics_engine.check_content(path, cached)
+        else:
+            issues = ls.diagnostics_engine.check_file(path)
         lsp_diags = [
             LspDiagnostic(
                 range=Range(
