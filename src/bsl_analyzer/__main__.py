@@ -75,6 +75,7 @@ def _run_check(
     show_fix: bool,
     diff: bool,
     since: str | None,
+    fix: bool,
 ) -> int:
     from bsl_analyzer.cli.check import check
     from bsl_analyzer.cli.config import load_config
@@ -107,6 +108,7 @@ def _run_check(
         config=cfg,
         stats=stats,
         show_fix=show_fix,
+        fix=fix,
     )
 
 
@@ -392,6 +394,17 @@ Examples:
         ),
     )
 
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        default=False,
+        help=(
+            "Auto-fix supported issues in-place. "
+            "Supported rules: BSL009, BSL010, BSL055, BSL060. "
+            "Remaining unfixable issues are still reported."
+        ),
+    )
+
     # Index options
     parser.add_argument(
         "--force",
@@ -434,6 +447,7 @@ Examples:
                 show_fix=args.show_fix,
                 diff=args.diff,
                 since=args.since,
+                fix=args.fix,
             )
         )
 

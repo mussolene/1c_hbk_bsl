@@ -91,6 +91,7 @@ def check(
     config: BslConfig | None = None,
     stats: bool = False,
     show_fix: bool = False,
+    fix: bool = False,
 ) -> int:
     """
     Run BSL lint rules on all .bsl/.os files under *paths*.
@@ -106,6 +107,7 @@ def check(
         baseline:        Path to baseline JSON — suppress known issues.
         update_baseline: Write all found issues to this path, then exit 0.
         config:          Merged ``BslConfig`` (overridden by explicit CLI flags).
+        fix:             Auto-fix supported issues in-place.
 
     Returns:
         Exit code: 0 = clean, 1 = issues found, 2 = error.
@@ -133,6 +135,10 @@ def check(
 
     if error_occurred:
         return 2
+
+    # --fix: apply in-place auto-fixes before reporting
+    if fix:
+        all_diagnostics = _apply_fixes_to_files(all_diagnostics)
 
     # --update-baseline: save & exit 0
     if update_baseline:
@@ -177,6 +183,45 @@ def check(
     if effective_exit_zero:
         return 0
     return 0 if not all_diagnostics else 1
+
+
+def _apply_fixes_to_files(diagnostics: list[Diagnostic]) -> list[Diagnostic]:
+    """
+    Group *diagnostics* by file, call :func:`apply_fixes` for each file,
+    print a summary to stderr, and return only the unfixed diagnostics.
+    """
+    from collections import defaultdict
+
+    from bsl_analyzer.analysis.fix_engine import FIXABLE_RULES, apply_fixes
+
+    by_file: dict[str, list[Diagnostic]] = defaultdict(list)
+    for d in diagnostics:
+        by_file[d.file].append(d)
+
+    total_applied = 0
+    total_errors = 0
+    remaining: list[Diagnostic] = []
+
+    for file_path, file_diags in sorted(by_file.items()):
+        result = apply_fixes(file_path, file_diags)
+        if result.error:
+            console.print(f"[red]Fix error {file_path}: {result.error}[/red]")
+            total_errors += 1
+            remaining.extend(file_diags)
+            continue
+        applied_set = set(result.applied)
+        total_applied += len(result.applied)
+        # Keep diagnostics that were not fixed
+        remaining.extend(
+            d for d in file_diags if d.code not in applied_set or d.code not in FIXABLE_RULES
+        )
+
+    if total_applied:
+        console.print(f"[green]Fixed {total_applied} issue(s) in-place.[/green]")
+    if total_errors:
+        console.print(f"[red]Fix failed for {total_errors} file(s).[/red]")
+
+    return remaining
 
 
 def list_rules() -> None:
