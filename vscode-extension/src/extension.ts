@@ -208,7 +208,7 @@ async function downloadBinary(
     return null;
   }
 
-  const repoOwner = "your-org";
+  const repoOwner = "mussolene";
   const repoName = "1c_hbk_bsl";
   const url = `https://github.com/${repoOwner}/${repoName}/releases/download/${RELEASE_TAG}/${assetName}`;
 

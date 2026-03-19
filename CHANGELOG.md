@@ -38,5 +38,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Nuitka build system for standalone native binary (~40 MB)
 
-[Unreleased]: https://github.com/your-org/1c_hbk_bsl/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/your-org/1c_hbk_bsl/releases/tag/v0.1.0
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mussolene/1c_hbk_bsl/releases/tag/v0.1.0

@@ -3,16 +3,16 @@
   "displayName": "BSL Analyzer (1C)",
   "description": "Language support for 1C BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename and more",
   "version": "0.1.0",
-  "publisher": "bsl-analyzer",
+  "publisher": "mussolene",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/1c_hbk_bsl"
+    "url": "https://github.com/mussolene/1c_hbk_bsl"
   },
   "bugs": {
-    "url": "https://github.com/your-org/1c_hbk_bsl/issues"
+    "url": "https://github.com/mussolene/1c_hbk_bsl/issues"
   },
-  "homepage": "https://github.com/your-org/1c_hbk_bsl#readme",
+  "homepage": "https://github.com/mussolene/1c_hbk_bsl#readme",
   "galleryBanner": {
     "color": "#1e3a5f",
     "theme": "dark"
@@ -135,7 +135,7 @@
           "type": "object",
           "default": {
             "editor.formatOnSave": true,
-            "editor.defaultFormatter": "bsl-analyzer.bsl-analyzer",
+            "editor.defaultFormatter": "mussolene.bsl-analyzer",
             "editor.semanticHighlighting.enabled": true,
             "editor.inlayHints.enabled": "on",
             "editor.tabSize": 4,

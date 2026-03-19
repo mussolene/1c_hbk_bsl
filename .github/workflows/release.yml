@@ -209,7 +209,7 @@ jobs:
             ## BSL Analyzer ${{ github.ref_name }}
 
             ### Установка расширения VSCode
-            Установите из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=bsl-analyzer.bsl-analyzer)
+            Установите из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.bsl-analyzer)
             или скачайте `.vsix` для вашей платформы ниже и установите через:
             ```
             code --install-extension bsl-analyzer-*.vsix

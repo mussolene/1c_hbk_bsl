@@ -2,8 +2,8 @@
 
 Языковой сервер, линтер и MCP-сервер для **1C Enterprise / BSL** (язык 1С:Предприятие).
 
-[![CI](https://github.com/your-org/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/1c_hbk_bsl/actions/workflows/ci.yml)
-[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/bsl-analyzer.bsl-analyzer)](https://marketplace.visualstudio.com/items?itemName=bsl-analyzer.bsl-analyzer)
+[![CI](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml)
+[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/mussolene.bsl-analyzer)](https://marketplace.visualstudio.com/items?itemName=mussolene.bsl-analyzer)
 [![PyPI](https://img.shields.io/pypi/v/bsl-analyzer)](https://pypi.org/project/bsl-analyzer/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -35,10 +35,10 @@
 
 ## Установка в VSCode
 
-Установите расширение из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=bsl-analyzer.bsl-analyzer):
+Установите расширение из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.bsl-analyzer):
 
 ```
-ext install bsl-analyzer.bsl-analyzer
+ext install mussolene.bsl-analyzer
 ```
 
 При первом открытии `.bsl` файла расширение автоматически скачает серверный бинарник.
@@ -49,7 +49,7 @@ ext install bsl-analyzer.bsl-analyzer
 {
   "[bsl]": {
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "bsl-analyzer.bsl-analyzer",
+    "editor.defaultFormatter": "mussolene.bsl-analyzer",
     "editor.tabSize": 4
   },
   "bslAnalyzer.indexDbPath": "${workspaceFolder}/bsl_index.sqlite"
@@ -183,7 +183,7 @@ bsl-analyzer/
 ## Разработка
 
 ```bash
-git clone https://github.com/your-org/1c_hbk_bsl
+git clone https://github.com/mussolene/1c_hbk_bsl
 cd 1c_hbk_bsl
 make install    # установить зависимости
 make test       # запустить тесты

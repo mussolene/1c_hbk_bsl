@@ -15,7 +15,7 @@ Thank you for your interest in contributing!
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/1c_hbk_bsl.git
+git clone https://github.com/mussolene/1c_hbk_bsl.git
 cd 1c_hbk_bsl
 
 # Create a virtual environment and install in editable mode with dev deps
