@@ -2233,8 +2233,98 @@ def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
     return result
 
 
+def _ts_node_text(node: Any) -> str:
+    """Decode tree-sitter node text to str."""
+    t = getattr(node, "text", None)
+    if t is None:
+        return ""
+    return t.decode("utf-8", errors="replace") if isinstance(t, bytes) else str(t)
+
+
+def _find_procedures_from_tree(tree: Any) -> list[_ProcInfo]:
+    """Extract procedure/function definitions from a tree-sitter AST.
+
+    Handles multi-line signatures correctly (e.g. params on multiple lines).
+    Returns empty list if *tree* is not a real tree-sitter tree.
+    """
+    root = getattr(tree, "root_node", None)
+    if root is None or not isinstance(getattr(root, "text", None), (bytes, type(None))):
+        return []
+
+    result: list[_ProcInfo] = []
+    _collect_procs_from_node(root, result)
+    return result
+
+
+def _collect_procs_from_node(node: Any, result: list[_ProcInfo]) -> None:
+    """Recursively walk AST collecting procedure/function definition nodes."""
+    if node.type in ("procedure_definition", "function_definition"):
+        proc = _ts_node_to_proc_info(node)
+        if proc:
+            result.append(proc)
+        return  # BSL does not allow nested procedures
+    for child in node.children:
+        _collect_procs_from_node(child, result)
+
+
+def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
+    """Convert a tree-sitter procedure/function node to _ProcInfo."""
+    name = ""
+    params: list[str] = []
+    val_params: list[str] = []
+    optional_count = 0
+    is_export = False
+
+    for child in node.children:
+        ct = child.type
+        if ct == "identifier" and not name:
+            name = _ts_node_text(child)
+        elif ct == "EXPORT_KEYWORD":
+            is_export = True
+        elif ct == "parameters":
+            for param in child.children:
+                if param.type != "parameter":
+                    continue
+                param_name = ""
+                is_val = False
+                has_default = False
+                for pc in param.children:
+                    if pc.type == "VAL_KEYWORD":
+                        is_val = True
+                    elif pc.type == "identifier" and not param_name:
+                        param_name = _ts_node_text(pc)
+                    elif pc.type == "=":
+                        has_default = True
+                if param_name:
+                    params.append(param_name)
+                    if is_val:
+                        val_params.append(param_name)
+                    if has_default:
+                        optional_count += 1
+
+    if not name:
+        return None
+
+    kind = "function" if node.type == "function_definition" else "procedure"
+    return _ProcInfo(
+        name=name,
+        kind=kind,
+        start_idx=node.start_point[0],
+        end_idx=node.end_point[0],
+        is_export=is_export,
+        params=params,
+        val_params=val_params,
+        optional_count=optional_count,
+        header_col=node.start_point[1],
+    )
+
+
 def _find_procedures(content: str) -> list[_ProcInfo]:
-    """Extract all procedure/function definitions from BSL source."""
+    """Extract procedure/function definitions via regex (fallback only).
+
+    Prefer _find_procedures_from_tree() when a tree-sitter tree is available.
+    This regex path is kept as a fallback for the regex-tree (_RegexTree) mode.
+    """
     ends: list[int] = []
     for m in _RE_END_PROC.finditer(content):
         ends.append(content[: m.start()].count("\n"))
@@ -2255,7 +2345,6 @@ def _find_procedures(content: str) -> list[_ProcInfo]:
         val_params = [p[0] for p in parsed if p[1]]
         optional_count = sum(1 for p in parsed if p[2])
 
-        # Match to closest end marker after start
         end_idx = start_idx + 5
         for e in ends:
             if e > start_idx:
@@ -2498,8 +2587,10 @@ class DiagnosticEngine:
         lines = content.splitlines()
         suppressions = _parse_suppressions(lines)
 
-        # Precompute structural info once (shared across rules)
-        procs = _find_procedures(content)
+        # Precompute structural info once (shared across rules).
+        # Prefer AST-based extraction (handles multi-line signatures, exact
+        # boundaries); fall back to regex when tree-sitter is unavailable.
+        procs = _find_procedures_from_tree(tree) or _find_procedures(content)
         regions = _find_regions(content)
 
         diagnostics: list[Diagnostic] = []

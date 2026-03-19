@@ -29,6 +29,7 @@ import os
 import re as _re
 import threading
 import urllib.parse
+from dataclasses import dataclass
 from pathlib import Path
 
 from lsprotocol.types import (
@@ -441,8 +442,32 @@ def on_definition(
     if not word:
         return None
 
-    # Для методов через точку (Объект.Метод) ищем по всему индексу — без фильтра файла.
-    # Если курсор на левой части (Объект) — пробуем и её тоже.
+    origin_range = _word_range_at_position(content, pos.line, pos.character)
+
+    # 1. Check local scope first (parameters, Перем, loop vars, assignments).
+    #    Local variables shadow same-named globals — resolve them without index.
+    try:
+        _tree = ls.parser.parse_content(content, file_path=uri)
+        local_vars = _extract_scope_vars(_tree, pos.line)
+        for lv in local_vars:
+            if lv.name.casefold() == word.casefold():
+                decl_line = lv.line - 1  # 0-based
+                decl_char = lv.character
+                name_end = decl_char + len(lv.name)
+                r = Range(
+                    start=Position(line=decl_line, character=decl_char),
+                    end=Position(line=decl_line, character=name_end),
+                )
+                return [LocationLink(
+                    target_uri=uri,
+                    target_range=r,
+                    target_selection_range=r,
+                    origin_selection_range=origin_range,
+                )]
+    except Exception:
+        pass
+
+    # 2. Workspace symbol index (procedures, functions, exported variables)
     symbols = ls.symbol_index.find_symbol(word, limit=20)
     if not symbols:
         return None
@@ -577,6 +602,31 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
         return None
 
     left_word = _left_word_at_position(content, pos.line, pos.character)
+
+    # 0. Local variable scope (parameters, Перем, loop vars, assignments).
+    #    Check before workspace index — locals shadow global names.
+    #    Skip when cursor is on the right side of a dot (member access).
+    if not left_word:
+        try:
+            _tree = ls.parser.parse_content(content, file_path=uri)
+            _local_vars = _extract_scope_vars(_tree, pos.line)
+            for _lv in _local_vars:
+                if _lv.name.casefold() == word.casefold():
+                    _kind_map = {
+                        "parameter": "параметр",
+                        "val_parameter": "параметр (Знач)",
+                        "var_decl": "локальная переменная",
+                        "loop_var": "переменная цикла",
+                        "assignment": "локальная переменная",
+                    }
+                    _lv_kind = _kind_map.get(_lv.kind, "переменная")
+                    _parts: list[str] = [f"```bsl\n{_lv.name}\n```"]
+                    _parts.append(f"*{_lv_kind}*, объявлена на строке {_lv.line}")
+                    if _lv.type_hint:
+                        _parts.append(f"**Тип:** `{_lv.type_hint}`")
+                    return _hover_markdown(_parts)
+        except Exception:
+            pass
 
     # 1. Символы рабочего пространства
     # Skip workspace/global lookup when cursor is on a member (Obj.Word) —
@@ -1247,6 +1297,180 @@ def _infer_type_from_content(content: str, var_name: str) -> str | None:
         if m.group(1).casefold() == var_lo:
             return m.group(2)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Local scope variable tracking (AST-based)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _LocalVar:
+    """A local variable visible at a given cursor position."""
+    name: str
+    kind: str       # 'parameter' | 'val_parameter' | 'var_decl' | 'loop_var' | 'assignment'
+    line: int       # 1-based declaration line
+    character: int  # 0-based column of the name token
+    type_hint: str = ""  # e.g. "Массив" from «МойМассив = Новый Массив»
+
+
+def _ast_node_text(node: Any) -> str:
+    t = getattr(node, "text", None)
+    if t is None:
+        return ""
+    return t.decode("utf-8", errors="replace") if isinstance(t, bytes) else str(t)
+
+
+def _find_proc_at_line(node: Any, line0: int) -> Any | None:
+    """Return the innermost procedure/function AST node that contains line0."""
+    if node.type in ("procedure_definition", "function_definition"):
+        if node.start_point[0] <= line0 <= node.end_point[0]:
+            for child in node.children:
+                inner = _find_proc_at_line(child, line0)
+                if inner:
+                    return inner
+            return node
+    for child in node.children:
+        r = _find_proc_at_line(child, line0)
+        if r:
+            return r
+    return None
+
+
+def _collect_local_vars(node: Any, up_to_line0: int, result: list[_LocalVar]) -> None:
+    """Walk an AST subtree collecting local variable declarations up to up_to_line0."""
+    if node.start_point[0] > up_to_line0:
+        return
+
+    if node.type == "var_statement":
+        # Перем ИмяПерем; — may declare multiple names
+        for child in node.children:
+            if child.type == "identifier":
+                result.append(_LocalVar(
+                    name=_ast_node_text(child),
+                    kind="var_decl",
+                    line=node.start_point[0] + 1,
+                    character=child.start_point[1],
+                ))
+
+    elif node.type == "for_each_statement":
+        # Для Каждого <iterator> Из <collection> Цикл
+        # The first identifier child (after FOR/EACH keywords) is the iterator
+        saw_each = False
+        for child in node.children:
+            if child.type == "EACH_KEYWORD":
+                saw_each = True
+            elif saw_each and child.type == "identifier":
+                result.append(_LocalVar(
+                    name=_ast_node_text(child),
+                    kind="loop_var",
+                    line=node.start_point[0] + 1,
+                    character=child.start_point[1],
+                ))
+                break
+        # Recurse into loop body
+        for child in node.children:
+            _collect_local_vars(child, up_to_line0, result)
+
+    elif node.type == "for_statement":
+        # Для <var> = <start> По <end> Цикл
+        for child in node.children:
+            if child.type == "identifier":
+                result.append(_LocalVar(
+                    name=_ast_node_text(child),
+                    kind="loop_var",
+                    line=node.start_point[0] + 1,
+                    character=child.start_point[1],
+                ))
+                break
+        for child in node.children:
+            _collect_local_vars(child, up_to_line0, result)
+
+    elif node.type == "assignment_statement":
+        # <target> = <expr>  — first identifier is the assignment target
+        target_node = None
+        type_hint = ""
+        for child in node.children:
+            if child.type == "identifier" and target_node is None:
+                target_node = child
+            elif child.type == "expression":
+                # Look for Новый TypeName to capture the type
+                for ec in child.children:
+                    if ec.type == "new_expression":
+                        for nc in ec.children:
+                            if nc.type == "identifier":
+                                type_hint = _ast_node_text(nc)
+                                break
+        if target_node is not None:
+            result.append(_LocalVar(
+                name=_ast_node_text(target_node),
+                kind="assignment",
+                line=node.start_point[0] + 1,
+                character=target_node.start_point[1],
+                type_hint=type_hint,
+            ))
+
+    else:
+        for child in node.children:
+            _collect_local_vars(child, up_to_line0, result)
+
+
+def _extract_scope_vars(tree: Any, cursor_line0: int) -> list[_LocalVar]:
+    """Extract local variables visible at cursor_line0 (0-based row).
+
+    Finds the enclosing procedure/function, then collects:
+    - parameters (with Знач/Val distinction)
+    - Перем declarations
+    - loop iterators (Для Каждого/Для)
+    - assignment targets (А = ...)
+    Only returns declarations at or before cursor_line0.
+    Results are deduplicated by name (first occurrence wins for navigation).
+    """
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+    # Only works with real tree-sitter trees (bytes text)
+    if not isinstance(getattr(root, "text", None), (bytes, type(None))):
+        return []
+
+    proc_node = _find_proc_at_line(root, cursor_line0)
+    if proc_node is None:
+        return []
+
+    vars: list[_LocalVar] = []
+
+    # 1. Parameters from the procedure/function signature
+    for child in proc_node.children:
+        if child.type == "parameters":
+            for param in child.children:
+                if param.type != "parameter":
+                    continue
+                is_val = any(pc.type == "VAL_KEYWORD" for pc in param.children)
+                for pc in param.children:
+                    if pc.type == "identifier":
+                        vars.append(_LocalVar(
+                            name=_ast_node_text(pc),
+                            kind="val_parameter" if is_val else "parameter",
+                            line=proc_node.start_point[0] + 1,
+                            character=pc.start_point[1],
+                        ))
+                        break
+
+    # 2. Body: Перем, loop vars, assignments up to cursor
+    skip_types = frozenset({
+        "PROCEDURE_KEYWORD", "FUNCTION_KEYWORD", "ENDPROCEDURE_KEYWORD",
+        "ENDFUNCTION_KEYWORD", "EXPORT_KEYWORD", "identifier", "parameters",
+    })
+    for child in proc_node.children:
+        if child.type not in skip_types:
+            _collect_local_vars(child, cursor_line0, vars)
+
+    # Deduplicate: first declaration wins (for Go-to-Definition)
+    seen: dict[str, _LocalVar] = {}
+    for v in vars:
+        key = v.name.casefold()
+        if key not in seen:
+            seen[key] = v
+    return list(seen.values())
 
 
 def _make_snippet(label: str, signature: str | None) -> tuple[str, InsertTextFormat]:
