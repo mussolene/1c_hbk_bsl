@@ -5,6 +5,7 @@ Usage:
     bsl-analyzer --lsp                              Start LSP server on stdio
     bsl-analyzer --mcp [--port 8051]               Start MCP HTTP server
     bsl-analyzer --check [PATH ...]                 Run linter (ruff-style output)
+    bsl-analyzer --check [PATH] --diff              Check only git-changed BSL files
     bsl-analyzer --index [PATH]                     Force full reindex of workspace
     bsl-analyzer --list-rules                       Show all available rules
     bsl-analyzer --watch [PATH ...]                 Watch for changes and re-lint
@@ -72,6 +73,8 @@ def _run_check(
     update_baseline: str | None,
     stats: bool,
     show_fix: bool,
+    diff: bool,
+    since: str | None,
 ) -> int:
     from bsl_analyzer.cli.check import check
     from bsl_analyzer.cli.config import load_config
@@ -79,6 +82,17 @@ def _run_check(
     # Load config from the first checked path (or cwd)
     search_from = paths[0] if paths else os.getcwd()
     cfg = load_config(search_from)
+
+    # --diff: resolve paths to git-changed BSL files
+    if diff:
+        from bsl_analyzer.cli.git_utils import git_changed_files
+        workspace = paths[0] if len(paths) == 1 and os.path.isdir(paths[0]) else search_from
+        git_paths = git_changed_files(workspace, since=since)
+        if not git_paths:
+            import logging
+            logging.getLogger(__name__).info("--diff: no changed BSL files found")
+            return 0
+        paths = git_paths
 
     return check(
         paths,
@@ -359,6 +373,24 @@ Examples:
         default=False,
         help="Show actionable fix hints below each issue in text output",
     )
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        default=False,
+        help=(
+            "Only check BSL files changed since HEAD (or --since REF). "
+            "Requires git. Useful in pre-commit hooks and PR pipelines."
+        ),
+    )
+    parser.add_argument(
+        "--since",
+        metavar="REF",
+        default=None,
+        help=(
+            "Git ref to diff against when using --diff "
+            "(e.g. HEAD~1, main, origin/main). Default: HEAD."
+        ),
+    )
 
     # Index options
     parser.add_argument(
@@ -400,6 +432,8 @@ Examples:
                 update_baseline=args.update_baseline,
                 stats=args.stats,
                 show_fix=args.show_fix,
+                diff=args.diff,
+                since=args.since,
             )
         )
 

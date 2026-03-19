@@ -27,6 +27,7 @@ max-params                int
 max-returns               int
 max-bool-ops              int
 min-duplicate-uses        int
+max-module-lines          int
 """
 
 from __future__ import annotations
@@ -160,6 +161,10 @@ class BslConfig:
     def min_duplicate_uses(self) -> int | None:
         return self._data.get("min-duplicate-uses")
 
+    @property
+    def max_module_lines(self) -> int | None:
+        return self._data.get("max-module-lines")
+
     def engine_kwargs(self) -> dict[str, Any]:
         """Return DiagnosticEngine __init__ kwargs derived from config (non-None only)."""
         mapping = {
@@ -172,6 +177,7 @@ class BslConfig:
             "max_returns": self.max_returns,
             "max_bool_ops": self.max_bool_ops,
             "min_duplicate_uses": self.min_duplicate_uses,
+            "max_module_lines": self.max_module_lines,
         }
         return {k: v for k, v in mapping.items() if v is not None}
 

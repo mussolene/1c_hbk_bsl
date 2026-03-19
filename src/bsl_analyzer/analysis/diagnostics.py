@@ -540,6 +540,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "INFO",
         "tags": ["style", "readability"],
     },
+    "BSL062": {
+        "name": "UnusedParameter",
+        "description": "Procedure/function parameter is never referenced in the method body",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["unused", "design"],
+    },
+    "BSL063": {
+        "name": "LargeModule",
+        "description": "Module file exceeds the maximum allowed line count",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["size", "brain-overload"],
+    },
+    "BSL064": {
+        "name": "ProcedureReturnsValue",
+        "description": "Procedure (Процедура) contains 'Возврат <value>' — should be declared as Function",
+        "severity": "ERROR",
+        "sonar_type": "BUG",
+        "sonar_severity": "CRITICAL",
+        "tags": ["correctness", "design"],
+    },
 }
 
 
@@ -579,6 +603,12 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL053": "Replace Выполнить() with explicit method calls or a strategy pattern.",
     "BSL057": "Replace with asynchronous ПоказатьВводЗначения() or use a form.",
     "BSL058": "Add a WHERE/ГДЕ clause or use ПЕРВЫЕ N to limit returned rows.",
+    "BSL059": "Use the boolean expression directly: 'Если А Тогда' instead of 'Если А = Истина Тогда'.",
+    "BSL060": "Remove the double negation — НЕ НЕ cancels out.",
+    "BSL061": "Refactor by moving the exit condition into the loop header.",
+    "BSL062": "Remove the unused parameter or add a comment explaining why it is kept.",
+    "BSL063": "Split the large module into smaller focused modules.",
+    "BSL064": "Change 'Процедура' to 'Функция' and add the required return type handling.",
 }
 
 
@@ -1025,6 +1055,13 @@ _RE_ELSEIF = re.compile(r'^\s*(?:ИначеЕсли|ElsIf)\b', re.IGNORECASE)
 _RE_ELSE = re.compile(r'^\s*(?:Иначе|Else)\s*$|^\s*(?:Иначе|Else)\s*;?\s*$', re.IGNORECASE)
 _RE_ENDIF = re.compile(r'^\s*(?:КонецЕсли|EndIf)\b', re.IGNORECASE)
 
+# Procedure body header (BSL062/BSL064)
+# Return with a value (BSL064 — Procedure returns value)
+_RE_RETURN_VALUE = re.compile(
+    r'^\s*(?:Возврат|Return)\s+\S',
+    re.IGNORECASE | re.MULTILINE,
+)
+
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
@@ -1246,6 +1283,7 @@ class DiagnosticEngine:
     MAX_BOOL_OPS: int = 3
     MIN_DUPLICATE_USES: int = 3
     MIN_COMMENTED_CODE_BLOCK: int = 2
+    MAX_MODULE_LINES: int = 1000
 
     def __init__(
         self,
@@ -1263,6 +1301,7 @@ class DiagnosticEngine:
         max_params: int = MAX_PARAMS,
         max_bool_ops: int = MAX_BOOL_OPS,
         min_duplicate_uses: int = MIN_DUPLICATE_USES,
+        max_module_lines: int = MAX_MODULE_LINES,
     ) -> None:
         self._parser = parser or BslParser()
         self._select: set[str] | None = {c.upper() for c in select} if select else None
@@ -1277,6 +1316,7 @@ class DiagnosticEngine:
         self.max_params = max_params
         self.max_bool_ops = max_bool_ops
         self.min_duplicate_uses = min_duplicate_uses
+        self.max_module_lines = max_module_lines
 
     def _rule_enabled(self, code: str) -> bool:
         """Return True if *code* should be executed."""
@@ -1448,6 +1488,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl060_double_negation(path, lines))
         if self._rule_enabled("BSL061"):
             diagnostics.extend(self._rule_bsl061_abrupt_loop_exit(path, lines))
+        if self._rule_enabled("BSL062"):
+            diagnostics.extend(self._rule_bsl062_unused_parameter(path, lines, procs))
+        if self._rule_enabled("BSL063"):
+            diagnostics.extend(self._rule_bsl063_large_module(path, lines))
+        if self._rule_enabled("BSL064"):
+            diagnostics.extend(self._rule_bsl064_procedure_returns_value(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -3707,6 +3753,132 @@ class DiagnosticEngine:
                 i = j
                 continue
             i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL062 — Unused parameter
+    # ------------------------------------------------------------------
+
+    def _rule_bsl062_unused_parameter(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag method parameters that are never referenced in the method body.
+
+        Heuristic: scan the body lines for the parameter name as a word token.
+        Excludes parameters that start with '_' (convention for intentionally unused).
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            header_line = lines[proc.start_idx]
+            m = _RE_PROC_HEADER.search(header_line)
+            if not m:
+                continue
+            params_str = m.group("params")
+            if not params_str.strip():
+                continue
+            # Parse parameter names (ignore default values, Val keyword)
+            parsed_params: list[str] = []
+            for raw_param in params_str.split(","):
+                # Strip Знач/Val and default value
+                token = re.sub(r'=.*$', '', raw_param, flags=re.IGNORECASE)
+                token = re.sub(r'\b(?:Знач|Val)\b', '', token, flags=re.IGNORECASE).strip()
+                if not token:
+                    continue
+                name = token.split()[0] if token.split() else ""
+                if name and not name.startswith("_"):
+                    parsed_params.append(name)
+            # Body lines (excluding header and closing line)
+            body_lines = lines[proc.start_idx + 1: proc.end_idx]
+            body_text = "\n".join(body_lines)
+            header_lineno = proc.start_idx + 1  # 1-based
+            for param_name in parsed_params:
+                if not re.search(r'\b' + re.escape(param_name) + r'\b', body_text, re.IGNORECASE):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=header_lineno,
+                            character=0,
+                            end_line=header_lineno,
+                            end_character=len(header_line),
+                            severity=Severity.WARNING,
+                            code="BSL062",
+                            message=f"Parameter '{param_name}' is never used in the method body.",
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL063 — Large module
+    # ------------------------------------------------------------------
+
+    def _rule_bsl063_large_module(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag files that exceed the maximum module line count."""
+        total = len(lines)
+        if total <= self.max_module_lines:
+            return []
+        return [
+            Diagnostic(
+                file=path,
+                line=1,
+                character=0,
+                end_line=1,
+                end_character=0,
+                severity=Severity.WARNING,
+                code="BSL063",
+                message=(
+                    f"Module has {total} lines — exceeds limit of {self.max_module_lines}. "
+                    "Split into smaller focused modules."
+                ),
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # BSL064 — Procedure returns value
+    # ------------------------------------------------------------------
+
+    def _rule_bsl064_procedure_returns_value(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag a Процедура body that contains 'Возврат <value>' — it should be a Функция.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            header_line = lines[proc.start_idx]
+            m = _RE_PROC_HEADER.search(header_line)
+            if not m:
+                continue
+            kind = m.group("kw").lower()
+            # Only flag Процедура/Procedure, not Функция/Function
+            if kind not in ("процедура", "procedure"):
+                continue
+            # Scan body for Возврат <value>
+            for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[idx]
+                # Skip comments
+                stripped = line.lstrip()
+                if stripped.startswith("//"):
+                    continue
+                if _RE_RETURN_VALUE.match(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=len(line) - len(stripped),
+                            end_line=idx + 1,
+                            end_character=len(line.rstrip()),
+                            severity=Severity.ERROR,
+                            code="BSL064",
+                            message=(
+                                "Процедура contains 'Возврат <value>' — "
+                                "change the declaration to 'Функция'."
+                            ),
+                        )
+                    )
+                    break  # One diagnostic per procedure is enough
         return diags
 
 

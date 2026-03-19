@@ -1753,9 +1753,111 @@ class TestBsl061AbruptLoopExit:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# BSL062 — UnusedParameter
+# ---------------------------------------------------------------------------
+
+
+class TestBsl062UnusedParameter:
+    def test_unused_param_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(НеИспользуемый)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" in _codes(diags)
+
+    def test_used_param_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Значение)
+                А = Значение + 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_underscore_param_ignored(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(_НеИспользуемый)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_no_params_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL063 — LargeModule
+# ---------------------------------------------------------------------------
+
+
+class TestBsl063LargeModule:
+    def test_large_module_detected(self, tmp_path: Path) -> None:
+        content = "\n".join([f"А{i} = {i};" for i in range(1100)]) + "\n"
+        diags = _check(content, tmp_path, select={"BSL063"}, max_module_lines=1000)
+        assert "BSL063" in _codes(diags)
+
+    def test_small_module_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\nБ = 2;\n"
+        diags = _check(content, tmp_path, select={"BSL063"}, max_module_lines=1000)
+        assert "BSL063" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL064 — ProcedureReturnsValue
+# ---------------------------------------------------------------------------
+
+
+class TestBsl064ProcedureReturnsValue:
+    def test_procedure_with_return_value_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Возврат 42;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL064"})
+        assert "BSL064" in _codes(diags)
+
+    def test_function_with_return_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Возврат 42;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL064"})
+        assert "BSL064" not in _codes(diags)
+
+    def test_procedure_return_empty_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Если Условие Тогда
+                    Возврат;
+                КонецЕсли;
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL064"})
+        assert "BSL064" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# Metadata completeness
+# ---------------------------------------------------------------------------
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 62)}
+        expected = {f"BSL{i:03d}" for i in range(1, 65)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

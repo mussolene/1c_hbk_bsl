@@ -1,0 +1,19 @@
+- id: bsl-analyzer
+  name: BSL Analyzer
+  description: Lint BSL (1C Enterprise) source files
+  language: python
+  types: [file]
+  files: '\.(bsl|os)$'
+  entry: bsl-analyzer --check
+  args: []
+  pass_filenames: true
+
+- id: bsl-analyzer-select
+  name: BSL Analyzer (critical rules only)
+  description: Run only critical BSL rules (BSL001, BSL012, BSL053)
+  language: python
+  types: [file]
+  files: '\.(bsl|os)$'
+  entry: bsl-analyzer --check
+  args: [--select, "BSL001,BSL012,BSL053"]
+  pass_filenames: true
