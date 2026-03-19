@@ -1511,58 +1511,73 @@ def on_document_highlight(
 # ---------------------------------------------------------------------------
 # Folding Ranges (#Область / Процедура / Если / Для / Попытка)
 # ---------------------------------------------------------------------------
+#
+# Uses tree-sitter AST so multi-line conditions like
+#   Если А = 1
+#       Или Б = 2 Тогда          ← Тогда on different line than Если
+# are correctly folded. Regex-based approach fails for these.
+#
+# #Область / #КонецОбласти are separate preprocessor nodes in the AST
+# (not parent-child), so they are matched with a regex stack pass.
 
-_FOLD_OPEN_RE = _re.compile(
-    r"^\s*(?:"
-    r"#(?:Область|Region)\b"
-    r"|(?:Процедура|Функция|Procedure|Function)\b"
-    r"|(?:Если|If)\b.*(?:Тогда|Then)\s*$"
-    r"|(?:Для|ДляКаждого|For|ForEach|Пока|While)\b.*(?:Цикл|Do)\s*$"
-    r"|(?:Попытка|Try)\s*$"
-    r")",
-    _re.IGNORECASE,
-)
+_REGION_PREPROC_OPEN_RE = _re.compile(r"^\s*#(?:Область|Region)\b", _re.IGNORECASE)
+_REGION_PREPROC_CLOSE_RE = _re.compile(r"^\s*#(?:КонецОбласти|EndRegion)\b", _re.IGNORECASE)
 
-_FOLD_CLOSE_RE = _re.compile(
-    r"^\s*(?:"
-    r"#(?:КонецОбласти|EndRegion)\b"
-    r"|(?:КонецПроцедуры|EndProcedure|КонецФункции|EndFunction)\b"
-    r"|(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b"
-    r")",
-    _re.IGNORECASE,
-)
+# AST node types that map to code-fold ranges (start_point → end_point)
+_FOLD_AST_TYPES = frozenset({
+    "procedure_definition",
+    "function_definition",
+    "if_statement",
+    "while_statement",
+    "for_statement",
+    "for_each_statement",
+    "try_statement",
+})
 
-_REGION_OPEN_RE = _re.compile(r"^\s*#(?:Область|Region)\b", _re.IGNORECASE)
+
+def _collect_ast_fold_ranges(node: Any, ranges: list[FoldingRange]) -> None:
+    """Walk tree-sitter AST and collect folding ranges for block nodes."""
+    if node.type in _FOLD_AST_TYPES:
+        start = node.start_point[0]   # 0-based row
+        end = node.end_point[0]
+        if end > start:
+            ranges.append(FoldingRange(start_line=start, end_line=end, kind=None))
+    for child in node.children:
+        _collect_ast_fold_ranges(child, ranges)
 
 
 @server.feature(TEXT_DOCUMENT_FOLDING_RANGE)
 def on_folding_range(
     ls: BslLanguageServer, params: FoldingRangeParams
 ) -> list[FoldingRange] | None:
-    """Return folding ranges for BSL block structures."""
+    """Return folding ranges for BSL block structures using the AST."""
     uri = params.text_document.uri
     content = ls._docs.get(uri, "")
     if not content:
         return None
 
-    lines = content.splitlines()
-    stack: list[tuple[int, str]] = []  # (start_line, kind)
     ranges: list[FoldingRange] = []
 
+    # 1. AST-based ranges (handles multi-line conditions correctly)
+    try:
+        tree = ls.parser.parse_content(content, file_path=uri)
+        _collect_ast_fold_ranges(tree.root_node, ranges)
+    except Exception:
+        pass  # fall through to regex pass for regions
+
+    # 2. #Область / #КонецОбласти — preprocessor nodes are siblings in AST,
+    #    so match them with a line-by-line stack pass (faster than AST walk).
+    lines = content.splitlines()
+    region_stack: list[int] = []
     for idx, line in enumerate(lines):
-        if _FOLD_OPEN_RE.match(line):
-            kind = FoldingRangeKind.Region if _REGION_OPEN_RE.match(line) else None
-            stack.append((idx, kind))
-        elif _FOLD_CLOSE_RE.match(line) and stack:
-            start_line, kind = stack.pop()
-            if idx > start_line:
-                ranges.append(
-                    FoldingRange(
-                        start_line=start_line,
-                        end_line=idx,
-                        kind=kind,
-                    )
-                )
+        if _REGION_PREPROC_OPEN_RE.match(line):
+            region_stack.append(idx)
+        elif _REGION_PREPROC_CLOSE_RE.match(line) and region_stack:
+            start = region_stack.pop()
+            if idx > start:
+                ranges.append(FoldingRange(
+                    start_line=start, end_line=idx, kind=FoldingRangeKind.Region,
+                ))
 
     return ranges if ranges else None
 
