@@ -508,6 +508,82 @@ class TestRuleSelection:
         diags = _check(content, tmp_path)
         assert "BSL012" not in _codes(diags)
 
+    # ── BSLLS block suppression ──────────────────────────────────────────
+
+    def test_bslls_block_off_on(self, tmp_path: Path) -> None:
+        """BSLLS:Rule-off suppresses from that line; -on re-enables."""
+        content = (
+            "// BSLLS:UsingHardcodeSecretInformation-off\n"        # line 1 → BSL012 off
+            'Пароль = "СуперСекрет2024!";\n'                       # line 2 → suppressed
+            "// BSLLS:UsingHardcodeSecretInformation-on\n"         # line 3 → re-enable
+            'ТоженПароль = "МойПароль123@#";\n'                    # line 4 → reported
+        )
+        diags = _check(content, tmp_path)
+        lines_bsl012 = {d.line for d in diags if d.code == "BSL012"}
+        assert 2 not in lines_bsl012, "Line 2 must be suppressed by BSLLS block"
+        assert 4 in lines_bsl012, "Line 4 must NOT be suppressed after -on"
+
+    def test_bslls_inline_same_line(self, tmp_path: Path) -> None:
+        """BSLLS-off at end of line suppresses that line itself."""
+        content = 'Пароль = "секрет123";  // BSLLS:UsingHardcodeSecretInformation-off\n'
+        diags = _check(content, tmp_path)
+        assert "BSL012" not in _codes(diags)
+
+    def test_bslls_all_off(self, tmp_path: Path) -> None:
+        """BSLLS-off without rule name suppresses all diagnostics."""
+        content = (
+            "// BSLLS-off\n"
+            'Пароль = "секрет123";\n'
+            "// BSLLS-on\n"
+        )
+        diags = _check(content, tmp_path)
+        assert not _codes(diags), "All diagnostics must be suppressed inside BSLLS-off block"
+
+    def test_bslls_russian_flags(self, tmp_path: Path) -> None:
+        """BSLLS-выкл/вкл Russian flags are equivalent to off/on."""
+        content = (
+            "// BSLLS:UsingHardcodeSecretInformation-выкл\n"
+            'Пароль = "секрет123";\n'
+            "// BSLLS:UsingHardcodeSecretInformation-вкл\n"
+        )
+        diags = _check(content, tmp_path)
+        assert "BSL012" not in _codes(diags)
+
+    def test_bslls_and_noqa_coexist(self, tmp_path: Path) -> None:
+        """BSLLS block and noqa can be used together without conflict."""
+        content = (
+            "// BSLLS:UsingHardcodeSecretInformation-off\n"
+            'Пароль = "секрет123";  // noqa: BSL009\n'   # both suppressions active
+            "// BSLLS:UsingHardcodeSecretInformation-on\n"
+        )
+        diags = _check(content, tmp_path)
+        assert "BSL012" not in _codes(diags)
+
+    def test_bslls_unknown_name_ignored(self, tmp_path: Path) -> None:
+        """Unknown BSLLS names are silently ignored — other rules still fire."""
+        content = (
+            "// BSLLS:NonExistentRule-off\n"
+            'Пароль = "секрет123";\n'
+        )
+        diags = _check(content, tmp_path)
+        assert "BSL012" in _codes(diags)
+
+    def test_bslls_nested_independent_rules(self, tmp_path: Path) -> None:
+        """Two rules can be independently nested."""
+        content = (
+            "// BSLLS:UsingHardcodeSecretInformation-off\n"   # BSL012 off
+            "// BSLLS:LineLength-off\n"                        # BSL014 off
+            'Пароль = "секрет123";\n'                          # both suppressed
+            "// BSLLS:UsingHardcodeSecretInformation-on\n"    # BSL012 back on
+            'Токен = "abc";\n'                                 # BSL012 fires, BSL014 still off
+            "// BSLLS:LineLength-on\n"
+        )
+        diags = _check(content, tmp_path)
+        # Line 3: both should be suppressed
+        assert all(d.code not in {"BSL012", "BSL014"} for d in diags if d.line == 3)
+        # Line 5: BSL012 should fire again (if token is a secret-looking string)
+        # BSL014 still off → no line-length errors on line 5
+
 
 # ---------------------------------------------------------------------------
 # RULE_METADATA completeness

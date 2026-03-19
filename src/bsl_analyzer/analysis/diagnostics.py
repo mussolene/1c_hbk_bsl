@@ -31,6 +31,24 @@ Inline suppression on a specific line::
     Исключение  // bsl-disable: BSL004
     Исключение  // noqa            ← suppresses ALL rules on this line
 
+BSL Language Server (BSLLS) block suppression — compatible with existing
+1c-syntax/bsl-language-server annotations::
+
+    // BSLLS:CognitiveComplexity-off   ← disable from this line onward
+    ... complex code ...
+    // BSLLS:CognitiveComplexity-on    ← re-enable
+
+    // BSLLS-off    ← disable ALL diagnostics from this line onward
+    // BSLLS-on     ← re-enable all
+
+    Russian flags are also recognised::
+
+        // BSLLS:MethodSize-выкл
+        // BSLLS:MethodSize-вкл
+
+    BSLLS diagnostic names are mapped to their BSL code equivalents
+    (see _BSLLS_NAME_TO_CODE). Unknown names are silently ignored.
+
 Engine-level rule selection::
 
     DiagnosticEngine(select={"BSL001", "BSL002"})   # only these rules
@@ -1571,6 +1589,70 @@ _RE_NOQA = re.compile(
     r"//\s*(?:noqa|bsl-disable)(?:\s*:\s*(?P<codes>[A-Z0-9,\s]+))?",
     re.IGNORECASE,
 )
+
+# BSL Language Server (BSLLS) block-level suppression
+# Format: // BSLLS[:DiagnosticName]-off|on|выкл|вкл
+_RE_BSLLS = re.compile(
+    r"//\s*BSLLS(?::(?P<name>[A-Za-z]+))?-(?P<flag>off|on|выкл|вкл)\b",
+    re.IGNORECASE,
+)
+
+# Mapping from BSL Language Server diagnostic names → our BSL codes.
+# Used to translate // BSLLS:<Name>-off/on comments into BSL rule suppressions.
+_BSLLS_NAME_TO_CODE: dict[str, str] = {
+    # ── Exact name matches ────────────────────────────────────────────────
+    "ParseError":                  "BSL001",
+    "MethodSize":                  "BSL002",
+    "NonExportMethodsInApiRegion": "BSL003",
+    "EmptyCodeBlock":              "BSL004",
+    "UnusedLocalVariable":         "BSL007",
+    "SelfAssign":                  "BSL009",
+    "CognitiveComplexity":         "BSL011",
+    "CommentedCode":               "BSL013",
+    "NumberOfOptionalParams":      "BSL015",
+    "NonStandardRegion":           "BSL016",
+    "CyclomaticComplexity":        "BSL019",
+    "DeprecatedMessage":           "BSL022",
+    "UsingServiceTag":             "BSL023",
+    "SpaceAtStartComment":         "BSL024",
+    "EmptyRegion":                 "BSL026",
+    "MagicNumber":                 "BSL029",
+    "NumberOfParams":              "BSL031",
+    "DuplicateStringLiteral":      "BSL035",
+    "NestedTernaryOperator":       "BSL039",
+    "UsingThisForm":               "BSL040",
+    "UnreachableCode":             "BSL051",
+    "ProcedureReturnsValue":       "BSL064",
+    # ── Name differences between BSLLS and our codebase ───────────────────
+    "UsingHardcodeNetworkAddress":    "BSL005",   # our: HardcodeNetworkAddress
+    "UsingHardcodePath":              "BSL006",   # our: HardcodePath
+    "TooManyReturns":                 "BSL008",   # our: TooManyReturnStatements
+    "UsingHardcodeSecretInformation": "BSL012",   # our: HardcodeCredentials
+    "LineLength":                     "BSL014",   # our: LineTooLong
+    "CommandModuleExportMethods":     "BSL017",   # our: ExportMethodsInCommandModule
+    "NestedStatements":               "BSL020",   # our: ExcessiveNesting
+    "UsingGoto":                      "BSL027",   # our: UseGotoOperator
+    "MissingCodeTryCatchEx":          "BSL028",   # our: MissingCodeTryCatch
+    "FunctionShouldHaveReturn":       "BSL032",   # our: FunctionReturnValue
+    "CreateQueryInCycle":             "BSL033",   # our: QueryInLoop
+    "QueryInCycle":                   "BSL033",   # alternate BSLLS name
+    "IfConditionComplexity":          "BSL036",   # our: ComplexCondition
+    "ConsecutiveEmptyLines":          "BSL055",   # our: ConsecutiveBlankLines
+    "DoubleNegatives":                "BSL060",   # our: DoubleNegation
+    "UnusedParameters":               "BSL062",   # our: UnusedParameter
+    "MissingReturnedValueDescription":"BSL065",   # our: MissingExportComment
+    "DeprecatedFind":                 "BSL066",   # our: DeprecatedPlatformMethod
+    "MagicDate":                      "BSL047",   # our: DateTimeNow
+    "DeprecatedCurrentDate":          "BSL097",   # our: UseOfCurrentDate
+    "ExportVariables":                "BSL054",   # our: ModuleLevelVariable
+    "SelectTopWithoutOrderBy":        "BSL077",   # our: SelectStar
+    "EmptyStatement":                 "BSL025",   # our: MissingSemicolon
+    "SemicolonPresence":              "BSL030",   # our: LineEndsWithSemicolon
+    "IdenticalExpressions":           "BSL052",   # our: UselessCondition
+    "TooManyReturnStatements":        "BSL008",   # BSL LS alternate form
+    "DuplicateRegion":                "BSL026",   # maps to EmptyRegion rule
+    "UnusedLocalMethod":              "BSL042",   # our: EmptyExportMethod
+}
 
 # Deprecated dialog: Предупреждение(...) / Warning(...)
 _RE_DEPRECATED_MSG = re.compile(
@@ -8283,31 +8365,87 @@ class DiagnosticEngine:
 _Suppressions = dict[int, set[str]]
 
 
+_BSLLS_OFF_FLAGS = frozenset({"off", "выкл"})
+
+
 def _parse_suppressions(lines: list[str]) -> _Suppressions:
     """
-    Scan source lines for inline suppression comments.
+    Scan source lines for inline and block suppression comments.
 
-    Supported forms (case-insensitive)::
+    Supported forms (case-insensitive):
+
+    Line-level (suppress only the annotated line)::
 
         // noqa                    — suppress all rules on this line
         // noqa: BSL001, BSL002    — suppress specific rules
         // bsl-disable: BSL001     — bsl-analyzer style
 
+    Block-level BSLLS (compatible with 1c-syntax/bsl-language-server)::
+
+        // BSLLS-off               — disable ALL rules from this line onward
+        // BSLLS-on                — re-enable all rules
+        // BSLLS:CognitiveComplexity-off   — disable specific rule from this line
+        // BSLLS:CognitiveComplexity-on    — re-enable specific rule
+        // BSLLS:MethodSize-выкл   — Russian flags also accepted
+        // BSLLS:MethodSize-вкл
+
+    Block suppression affects the comment line itself AND all subsequent lines
+    until the matching ``-on`` / ``-вкл`` comment.  Multiple rules can be
+    independently nested and toggled.
+
     Returns a dict mapping 1-based line numbers to a set of suppressed codes.
-    An empty set means "suppress all rules".
+    An empty set means "suppress ALL rules on that line".
     """
     result: _Suppressions = {}
+
+    # Block-level BSLLS state tracked across lines
+    block_all: bool = False       # BSLLS-off (no specific rule) is active
+    block_codes: set[str] = set() # specific BSL codes currently block-suppressed
+
     for idx, line in enumerate(lines):
-        m = _RE_NOQA.search(line)
-        if m is None:
-            continue
         line_no = idx + 1
-        codes_str = m.group("codes")
-        if codes_str:
-            codes = {c.strip().upper() for c in codes_str.split(",") if c.strip()}
-        else:
-            codes = set()
-        result[line_no] = codes
+
+        # ── Step 1: update block state from BSLLS comments ───────────────
+        # Changes take effect ON the line where the comment appears.
+        for bm in _RE_BSLLS.finditer(line):
+            name = bm.group("name")
+            is_off = bm.group("flag").lower() in _BSLLS_OFF_FLAGS
+
+            if name is None:
+                # // BSLLS-off / // BSLLS-on  — affects all rules
+                if is_off:
+                    block_all = True
+                    block_codes.clear()  # individual tracking subsumed
+                else:
+                    block_all = False
+                    block_codes.clear()
+            else:
+                # // BSLLS:RuleName-off/on
+                bsl_code = _BSLLS_NAME_TO_CODE.get(name)
+                if bsl_code:
+                    if is_off:
+                        block_codes.add(bsl_code)
+                    else:
+                        block_codes.discard(bsl_code)
+                # Names not in the mapping are silently ignored
+
+        # ── Step 2: collect line-level noqa/bsl-disable comment ──────────
+        noqa_all = False
+        noqa_codes: set[str] = set()
+        m = _RE_NOQA.search(line)
+        if m is not None:
+            codes_str = m.group("codes")
+            if codes_str:
+                noqa_codes = {c.strip().upper() for c in codes_str.split(",") if c.strip()}
+            else:
+                noqa_all = True
+
+        # ── Step 3: merge into result for this line ───────────────────────
+        if block_all or noqa_all:
+            result[line_no] = set()  # suppress ALL
+        elif block_codes or noqa_codes:
+            result[line_no] = set(block_codes) | noqa_codes
+
     return result
 
 

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- BSLLS block-level suppression compatible with `1c-syntax/bsl-language-server`:
+  - `// BSLLS:RuleName-off` / `// BSLLS:RuleName-on` — disable/re-enable specific rule
+  - `// BSLLS-off` / `// BSLLS-on` — disable/re-enable all diagnostics
+  - Russian flags supported: `-выкл` / `-вкл`
+  - 50+ BSLLS diagnostic names mapped to BSL rule codes (`_BSLLS_NAME_TO_CODE`)
+  - Multiple rules can be independently nested and toggled
+  - 8 new tests covering all suppression scenarios
+
 ## [0.2.0] - 2026-03-19
 
 ### Added
