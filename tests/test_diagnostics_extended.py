@@ -2487,9 +2487,87 @@ class TestBsl085LiteralBooleanCondition:
         assert "BSL085" not in _codes(diags)
 
 
+class TestBsl086HttpRequestInLoop:
+    def test_http_in_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        Соединение = Новый HTTPСоединение("example.com");
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL086"})
+        assert "BSL086" in _codes(diags)
+
+    def test_http_outside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Соединение = Новый HTTPСоединение("example.com");
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL086"})
+        assert "BSL086" not in _codes(diags)
+
+
+class TestBsl087ObjectCreationInLoop:
+    def test_new_object_in_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        Запрос = Новый Запрос;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL087"})
+        assert "BSL087" in _codes(diags)
+
+    def test_allowed_new_in_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        Стр = Новый Структура;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL087"})
+        assert "BSL087" not in _codes(diags)
+
+
+class TestBsl088MissingParameterComment:
+    def test_export_with_params_no_comment_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(Значение) Экспорт
+    А = Значение;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL088"})
+        assert "BSL088" in _codes(diags)
+
+    def test_export_with_params_and_comment_ok(self, tmp_path: Path) -> None:
+        content = """\
+// Процедура для теста.
+// Параметры:
+//   Значение — тестовое значение.
+Процедура Тест(Значение) Экспорт
+    А = Значение;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL088"})
+        assert "BSL088" not in _codes(diags)
+
+    def test_non_export_method_not_flagged(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(Значение)
+    А = Значение;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL088"})
+        assert "BSL088" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 86)}
+        expected = {f"BSL{i:03d}" for i in range(1, 89)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

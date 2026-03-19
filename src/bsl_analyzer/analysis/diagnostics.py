@@ -732,6 +732,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "suspicious"],
     },
+    "BSL086": {
+        "name": "HttpRequestInLoop",
+        "description": "HTTP request call inside a loop — batch requests or move outside",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance"],
+    },
+    "BSL087": {
+        "name": "ObjectCreationInLoop",
+        "description": "Новый/New object creation inside a loop — consider moving outside",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["performance"],
+    },
+    "BSL088": {
+        "name": "MissingParameterComment",
+        "description": "Export method has parameters but no // Parameters: comment in header",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["style", "documentation"],
+    },
 }
 
 
@@ -798,6 +822,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL083": "Move module-level state into a dedicated data structure or configuration object.",
     "BSL084": "Add 'Возврат <value>;' or change 'Функция' to 'Процедура'.",
     "BSL085": "Remove the constant condition — the branch always or never executes.",
+    "BSL086": "Collect IDs in a list, then make a single batched HTTP request outside the loop.",
+    "BSL087": "Create the object once before the loop and reuse it, or use a factory method.",
+    "BSL088": "Add a // Parameters section to the comment before the Export method.",
 }
 
 
@@ -1283,6 +1310,20 @@ _RE_EXECUTABLE_LINE = re.compile(
     r'^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)',
     re.IGNORECASE,
 )
+
+# HTTP request in loop (BSL086) — ПолучитьДанные, ВыполнитьЗапросHTTP, HTTPЗапрос etc.
+_RE_HTTP_REQUEST = re.compile(
+    r'(?:HTTPСоединение|HTTPConnection|HTTPЗапрос|HTTPRequest'
+    r'|ПолучитьДанные|GetData|ОтправитьДанные|PutData'
+    r'|ПолучитьСтроку|GetString|ОтправитьСтроку|PutString)\b',
+    re.IGNORECASE,
+)
+
+# Новый/New object creation (BSL087)
+_RE_NEW_OBJECT = re.compile(r'\bНовый\b|\bNew\b', re.IGNORECASE)
+
+# // Parameters: comment section (BSL088)
+_RE_PARAM_COMMENT = re.compile(r'//\s*(?:Параметры|Parameters)\s*:', re.IGNORECASE)
 
 # Literal boolean in Если condition (BSL085)
 _RE_LITERAL_BOOL_CONDITION = re.compile(
@@ -1803,6 +1844,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl084_function_with_no_return(path, lines, procs))
         if self._rule_enabled("BSL085"):
             diagnostics.extend(self._rule_bsl085_literal_boolean_condition(path, lines))
+        if self._rule_enabled("BSL086"):
+            diagnostics.extend(self._rule_bsl086_http_request_in_loop(path, lines))
+        if self._rule_enabled("BSL087"):
+            diagnostics.extend(self._rule_bsl087_object_creation_in_loop(path, lines))
+        if self._rule_enabled("BSL088"):
+            diagnostics.extend(self._rule_bsl088_missing_parameter_comment(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -5069,6 +5116,146 @@ class DiagnosticEngine:
                         message=(
                             "Condition is a literal boolean — the branch always or never executes. "
                             "Remove the dead code or fix the condition."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL086 — HTTP request in a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl086_http_request_in_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag HTTP-related calls inside a loop body."""
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_LOOP_OPEN.match(lines[i]):
+                depth = 1
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_LOOP_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_LOOP_CLOSE.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        m = _RE_HTTP_REQUEST.search(lines[j])
+                        if m:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=j + 1,
+                                    character=m.start(),
+                                    end_line=j + 1,
+                                    end_character=m.end(),
+                                    severity=Severity.WARNING,
+                                    code="BSL086",
+                                    message=(
+                                        f"HTTP call '{m.group()}' inside a loop — "
+                                        "batch requests or move outside the loop."
+                                    ),
+                                )
+                            )
+                    j += 1
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL087 — Новый/New object creation in a loop
+    # ------------------------------------------------------------------
+
+    # Objects that are cheap/intentional to create per-iteration
+    _ALLOWED_NEW_IN_LOOP: frozenset[str] = frozenset({
+        "структура", "соответствие", "массив", "список",
+        "structure", "map", "array", "list",
+    })
+
+    def _rule_bsl087_object_creation_in_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Новый/New object creation inside a loop body (potential performance issue)."""
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_LOOP_OPEN.match(lines[i]):
+                depth = 1
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_LOOP_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_LOOP_CLOSE.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        m = _RE_NEW_OBJECT.search(lines[j])
+                        if m:
+                            # Check the object type after Новый
+                            after = lines[j][m.end():].strip()
+                            obj_type = re.match(r'(\w+)', after)
+                            if obj_type and obj_type.group(1).lower() in self._ALLOWED_NEW_IN_LOOP:
+                                j += 1
+                                continue
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=j + 1,
+                                    character=m.start(),
+                                    end_line=j + 1,
+                                    end_character=m.end(),
+                                    severity=Severity.INFORMATION,
+                                    code="BSL087",
+                                    message=(
+                                        "Object creation with Новый/New inside a loop — "
+                                        "consider moving it outside if the object can be reused."
+                                    ),
+                                )
+                            )
+                    j += 1
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL088 — Export method with parameters but no // Parameters: comment
+    # ------------------------------------------------------------------
+
+    def _rule_bsl088_missing_parameter_comment(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag Export methods that have parameters but lack a // Parameters: or
+        // Параметры: comment section in the lines before the method header.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.is_export or not proc.params:
+                continue
+            # Scan up to 10 lines before the header for a Parameters comment
+            start = max(0, proc.start_idx - 10)
+            comment_block = lines[start: proc.start_idx]
+            has_param_comment = any(_RE_PARAM_COMMENT.search(ln) for ln in comment_block)
+            if not has_param_comment:
+                header = lines[proc.start_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL088",
+                        message=(
+                            f"Export method '{proc.name}' has {len(proc.params)} parameter(s) "
+                            "but no // Parameters: / // Параметры: comment section."
                         ),
                     )
                 )
