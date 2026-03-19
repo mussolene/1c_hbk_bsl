@@ -349,6 +349,7 @@ class TestFormatting:
     def _make_server(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
         ls.publish_diagnostics = MagicMock()
@@ -356,6 +357,7 @@ class TestFormatting:
 
     def test_formatting_normalises_keywords(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         ls._docs["file:///test.bsl"] = "процедура Тест()\nконецпроцедуры\n"
@@ -368,6 +370,7 @@ class TestFormatting:
 
     def test_formatting_empty_doc_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()
@@ -378,6 +381,7 @@ class TestFormatting:
 
     def test_formatting_already_formatted_returns_empty(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         code = "Процедура Тест()\nКонецПроцедуры\n"
@@ -390,7 +394,9 @@ class TestFormatting:
 
     def test_range_formatting(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from lsprotocol.types import Position, Range
+
         from bsl_analyzer.lsp.server import on_range_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         ls._docs["file:///test.bsl"] = "процедура Тест()\nконецпроцедуры\n"
@@ -411,6 +417,7 @@ class TestDocumentHighlight:
     def _make_server(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
         ls.publish_diagnostics = MagicMock()
@@ -418,6 +425,7 @@ class TestDocumentHighlight:
 
     def test_highlight_finds_occurrences(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_document_highlight
         ls = self._make_server(tmp_path, monkeypatch)
         ls._docs["file:///test.bsl"] = "МояПерем = 1;\nА = МояПерем;\n"
@@ -431,6 +439,7 @@ class TestDocumentHighlight:
 
     def test_highlight_empty_word_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_document_highlight
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()
@@ -450,6 +459,7 @@ class TestFoldingRange:
     def _make_server(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
         ls.publish_diagnostics = MagicMock()
@@ -457,6 +467,7 @@ class TestFoldingRange:
 
     def test_folding_procedure(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_folding_range
         ls = self._make_server(tmp_path, monkeypatch)
         ls._docs["file:///test.bsl"] = (
@@ -472,6 +483,7 @@ class TestFoldingRange:
 
     def test_folding_region(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_folding_range
         ls = self._make_server(tmp_path, monkeypatch)
         ls._docs["file:///test.bsl"] = (
@@ -487,6 +499,7 @@ class TestFoldingRange:
 
     def test_folding_empty_doc_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_folding_range
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()
@@ -504,6 +517,7 @@ class TestSemanticTokens:
     def _make_server(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
         ls.publish_diagnostics = MagicMock()
@@ -511,6 +525,7 @@ class TestSemanticTokens:
 
     def test_semantic_tokens_returns_data(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_semantic_tokens_full
         ls = self._make_server(tmp_path, monkeypatch)
         ls._docs["file:///test.bsl"] = "Процедура Тест()\n    А = 1;\nКонецПроцедуры\n"
@@ -523,6 +538,7 @@ class TestSemanticTokens:
 
     def test_semantic_tokens_empty_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_semantic_tokens_full
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()
@@ -540,6 +556,7 @@ class TestCodeAction:
     def _make_server(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
         ls.publish_diagnostics = MagicMock()
@@ -547,6 +564,7 @@ class TestCodeAction:
 
     def test_code_action_for_known_diagnostic(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_code_action
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()
@@ -561,6 +579,7 @@ class TestCodeAction:
 
     def test_code_action_unknown_diagnostic_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_code_action
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()

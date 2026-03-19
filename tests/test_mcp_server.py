@@ -7,6 +7,7 @@ using an in-memory SQLite index.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -148,9 +149,6 @@ def _resolve_path_via_module(path: str, mod) -> str:
 # ---------------------------------------------------------------------------
 # New MCP tools: hover, references, read_file, search, format, rename, fix, scan
 # ---------------------------------------------------------------------------
-
-import os
-import pytest
 
 
 def _make_app(tmp_path):
