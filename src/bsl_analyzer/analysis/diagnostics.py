@@ -588,6 +588,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["style", "design"],
     },
+    "BSL068": {
+        "name": "TooManyElseIf",
+        "description": "Если/ИначеЕсли chain has too many branches — consider a map or pattern",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "brain-overload"],
+    },
+    "BSL069": {
+        "name": "InfiniteLoop",
+        "description": "Пока Истина Цикл without a Прервать — potential infinite loop",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL070": {
+        "name": "EmptyLoopBody",
+        "description": "Loop body contains no executable statements (empty loop)",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["suspicious", "correctness"],
+    },
 }
 
 
@@ -636,6 +660,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL065": "Add a // Description comment on the line before the Export method declaration.",
     "BSL066": "Replace with the modern equivalent platform method.",
     "BSL067": "Move all Перем declarations to the start of the method, before any executable statements.",
+    "BSL068": "Replace long ИначеЕсли chain with a dictionary/map lookup or polymorphism.",
+    "BSL069": "Add a Прервать or exit condition to prevent an infinite loop.",
+    "BSL070": "Add a comment or remove the empty loop body.",
 }
 
 
@@ -1108,6 +1135,12 @@ _RE_DEPRECATED_METHOD = re.compile(
     re.IGNORECASE,
 )
 
+# Пока Истина Цикл / While True Do (BSL069)
+_RE_WHILE_TRUE = re.compile(
+    r'^\s*(?:Пока|While)\s+(?:Истина|True)\s+(?:Цикл|Do)\b',
+    re.IGNORECASE,
+)
+
 # Перем declaration (BSL067)
 _RE_VAR_DECL = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
 # Executable code (not comment, not blank, not Перем, not proc header)
@@ -1554,6 +1587,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl066_deprecated_platform_method(path, lines))
         if self._rule_enabled("BSL067"):
             diagnostics.extend(self._rule_bsl067_var_after_code(path, lines, procs))
+        if self._rule_enabled("BSL068"):
+            diagnostics.extend(self._rule_bsl068_too_many_elseif(path, lines))
+        if self._rule_enabled("BSL069"):
+            diagnostics.extend(self._rule_bsl069_infinite_loop(path, lines))
+        if self._rule_enabled("BSL070"):
+            diagnostics.extend(self._rule_bsl070_empty_loop_body(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -4054,6 +4093,163 @@ class DiagnosticEngine:
                         )
                 else:
                     found_executable = True
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL068 — Too many ИначеЕсли / ElsIf branches
+    # ------------------------------------------------------------------
+
+    MAX_ELSEIF_BRANCHES: int = 5
+
+    def _rule_bsl068_too_many_elseif(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag Если/If blocks that contain more than MAX_ELSEIF_BRANCHES ИначеЕсли branches.
+        Long chains are hard to read and maintain — use a map or polymorphism.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_IF_OPEN.match(lines[i]):
+                if_start = i
+                depth = 1
+                elseif_count = 0
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_IF_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_ENDIF.match(lines[j]):
+                        depth -= 1
+                    elif depth == 1 and _RE_ELSEIF.match(lines[j]):
+                        elseif_count += 1
+                    j += 1
+                if elseif_count > self.MAX_ELSEIF_BRANCHES:
+                    header = lines[if_start]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=if_start + 1,
+                            character=len(header) - len(header.lstrip()),
+                            end_line=if_start + 1,
+                            end_character=len(header.rstrip()),
+                            severity=Severity.INFORMATION,
+                            code="BSL068",
+                            message=(
+                                f"Если/If has {elseif_count} ИначеЕсли/ElsIf branches "
+                                f"(max {self.MAX_ELSEIF_BRANCHES}). "
+                                "Consider using a map, dispatch table, or polymorphism."
+                            ),
+                        )
+                    )
+                i = j
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL069 — Infinite loop (Пока Истина Цикл without Прервать)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl069_infinite_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag 'Пока Истина Цикл' / 'While True Do' bodies that contain no
+        Прервать/Break statement — this is almost certainly an infinite loop.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_WHILE_TRUE.match(lines[i]):
+                loop_start = i
+                depth = 1
+                has_break = False
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_LOOP_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_LOOP_CLOSE.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1 and _RE_BREAK.match(lines[j]):
+                        has_break = True
+                    j += 1
+                if not has_break:
+                    header = lines[loop_start]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=loop_start + 1,
+                            character=len(header) - len(header.lstrip()),
+                            end_line=loop_start + 1,
+                            end_character=len(header.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL069",
+                            message=(
+                                "Пока Истина Цикл/While True Do without Прервать/Break — "
+                                "potential infinite loop. Add an exit condition."
+                            ),
+                        )
+                    )
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL070 — Empty loop body
+    # ------------------------------------------------------------------
+
+    def _rule_bsl070_empty_loop_body(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag loops whose body contains no executable statements.
+        Only blank lines and comments between the loop header and КонецЦикла.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_LOOP_OPEN.match(lines[i]):
+                loop_start = i
+                depth = 1
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_LOOP_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_LOOP_CLOSE.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    j += 1
+                # Check if loop body (lines between loop header and КонецЦикла) is empty
+                body_lines = lines[loop_start + 1: j]
+                has_executable = any(
+                    ln.strip() and not ln.strip().startswith("//")
+                    for ln in body_lines
+                )
+                if not has_executable:
+                    header = lines[loop_start]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=loop_start + 1,
+                            character=len(header) - len(header.lstrip()),
+                            end_line=loop_start + 1,
+                            end_character=len(header.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL070",
+                            message=(
+                                "Loop body contains no executable statements. "
+                                "Add a comment explaining intent or remove the loop."
+                            ),
+                        )
+                    )
+                i = j + 1
+                continue
+            i += 1
         return diags
 
 

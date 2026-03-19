@@ -1943,6 +1943,137 @@ class TestBsl067VarDeclarationAfterCode:
         assert "BSL067" not in _codes(diags)
 
 
+class TestBsl068TooManyElseIf:
+    def test_many_elseif_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А = 1 Тогда
+        Б = 1;
+    ИначеЕсли А = 2 Тогда
+        Б = 2;
+    ИначеЕсли А = 3 Тогда
+        Б = 3;
+    ИначеЕсли А = 4 Тогда
+        Б = 4;
+    ИначеЕсли А = 5 Тогда
+        Б = 5;
+    ИначеЕсли А = 6 Тогда
+        Б = 6;
+    ИначеЕсли А = 7 Тогда
+        Б = 7;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL068"})
+        assert "BSL068" in _codes(diags)
+
+    def test_few_elseif_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А = 1 Тогда
+        Б = 1;
+    ИначеЕсли А = 2 Тогда
+        Б = 2;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL068"})
+        assert "BSL068" not in _codes(diags)
+
+    def test_nested_if_not_counted(self, tmp_path: Path) -> None:
+        """Inner ИначеЕсли branches should not count against outer Если."""
+        content = """\
+Процедура Тест(А)
+    Если А = 1 Тогда
+        Если А > 0 Тогда
+            ИначеЕсли А > 1 Тогда
+            ИначеЕсли А > 2 Тогда
+            ИначеЕсли А > 3 Тогда
+            ИначеЕсли А > 4 Тогда
+            ИначеЕсли А > 5 Тогда
+        КонецЕсли;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        # Outer Если has 0 ИначеЕсли — should NOT trigger BSL068
+        diags = _check(content, tmp_path, select={"BSL068"})
+        # The outer Если has 0 ElsIf so no warning at its level
+        outer_warnings = [d for d in diags if d.code == "BSL068" and d.line == 2]
+        assert not outer_warnings
+
+
+class TestBsl069InfiniteLoop:
+    def test_while_true_without_break_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока Истина Цикл
+        А = 1;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL069"})
+        assert "BSL069" in _codes(diags)
+
+    def test_while_true_with_break_ok(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока Истина Цикл
+        А = А + 1;
+        Если А > 10 Тогда
+            Прервать;
+        КонецЕсли;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL069"})
+        assert "BSL069" not in _codes(diags)
+
+    def test_regular_while_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока А < 10 Цикл
+        А = А + 1;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL069"})
+        assert "BSL069" not in _codes(diags)
+
+
+class TestBsl070EmptyLoopBody:
+    def test_empty_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL070"})
+        assert "BSL070" in _codes(diags)
+
+    def test_comment_only_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        // TODO: implement
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL070"})
+        assert "BSL070" in _codes(diags)
+
+    def test_loop_with_body_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        Б = А * 2;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL070"})
+        assert "BSL070" not in _codes(diags)
+
+
 # ---------------------------------------------------------------------------
 # Metadata completeness
 # ---------------------------------------------------------------------------
@@ -1951,6 +2082,6 @@ class TestBsl067VarDeclarationAfterCode:
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 68)}
+        expected = {f"BSL{i:03d}" for i in range(1, 71)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
