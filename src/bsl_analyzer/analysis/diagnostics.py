@@ -780,6 +780,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MINOR",
         "tags": ["style", "readability"],
     },
+    "BSL092": {
+        "name": "EmptyElseBlock",
+        "description": "Empty Иначе/Else block — remove it or add a comment explaining intent",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "suspicious"],
+    },
+    "BSL093": {
+        "name": "ComparisonToNull",
+        "description": "Use 'Значение = Неопределено' or 'ЗначениеЗаполнено()' instead of comparison to Null/NULL",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL094": {
+        "name": "AssignmentToItself",
+        "description": "Compound assignment where left and right sides match (А += 0, А *= 1)",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
 }
 
 
@@ -852,6 +876,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL089": "Move НачатьТранзакцию/ЗафиксироватьТранзакцию outside the loop.",
     "BSL090": "Move connection strings to environment variables or configuration parameters.",
     "BSL091": "Remove the Иначе keyword — the code after the Если block is only reached when the condition is false.",
+    "BSL092": "Remove the empty Иначе or add a comment explaining why it is intentionally empty.",
+    "BSL093": "Use ЗначениеЗаполнено() or explicit '= Неопределено' comparison instead of NULL.",
+    "BSL094": "Remove the no-op assignment: += 0 or *= 1 has no effect.",
 }
 
 
@@ -1336,6 +1363,17 @@ _RE_VAR_DECL = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
 _RE_EXECUTABLE_LINE = re.compile(
     r'^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)',
     re.IGNORECASE,
+)
+
+# NULL comparison (BSL093)
+_RE_NULL_COMPARISON = re.compile(
+    r'(?:=|<>)\s*(?:NULL|Null)\b|(?:NULL|Null)\s*(?:=|<>)',
+    re.IGNORECASE,
+)
+
+# Compound no-op assignment (BSL094): += 0 or *= 1 or -= 0 or /= 1
+_RE_NOOP_COMPOUND = re.compile(
+    r'\w+\s*(?:\+=\s*0|-=\s*0|\*=\s*1|/=\s*1)\b',
 )
 
 # Transaction begin in loop (BSL089)
@@ -1898,6 +1936,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl090_hardcoded_connection_string(path, lines))
         if self._rule_enabled("BSL091"):
             diagnostics.extend(self._rule_bsl091_redundant_else_after_return(path, lines, procs))
+        if self._rule_enabled("BSL092"):
+            diagnostics.extend(self._rule_bsl092_empty_else_block(path, lines))
+        if self._rule_enabled("BSL093"):
+            diagnostics.extend(self._rule_bsl093_comparison_to_null(path, lines))
+        if self._rule_enabled("BSL094"):
+            diagnostics.extend(self._rule_bsl094_noop_assignment(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -5447,6 +5491,112 @@ class DiagnosticEngine:
                 i = j + 1
                 continue
             i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL092 — Empty Иначе block
+    # ------------------------------------------------------------------
+
+    def _rule_bsl092_empty_else_block(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Иначе/Else blocks that contain no executable statements."""
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_ELSE.match(lines[i]):
+                else_idx = i
+                # Scan until КонецЕсли or another ИначеЕсли
+                j = i + 1
+                has_executable = False
+                while j < len(lines):
+                    if _RE_ENDIF.match(lines[j]) or _RE_ELSEIF.match(lines[j]):
+                        break
+                    stripped = lines[j].strip()
+                    if stripped and not stripped.startswith("//"):
+                        has_executable = True
+                        break
+                    j += 1
+                if not has_executable:
+                    header = lines[else_idx]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=else_idx + 1,
+                            character=len(header) - len(header.lstrip()),
+                            end_line=else_idx + 1,
+                            end_character=len(header.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL092",
+                            message=(
+                                "Empty Иначе/Else block — remove it or add a comment "
+                                "explaining why it is intentionally empty."
+                            ),
+                        )
+                    )
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL093 — Comparison to NULL
+    # ------------------------------------------------------------------
+
+    def _rule_bsl093_comparison_to_null(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag comparisons to SQL NULL — use Неопределено or ЗначениеЗаполнено()."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_NULL_COMPARISON.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL093",
+                        message=(
+                            "Comparison to NULL — use '= Неопределено' or "
+                            "ЗначениеЗаполнено() instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL094 — No-op compound assignment
+    # ------------------------------------------------------------------
+
+    def _rule_bsl094_noop_assignment(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag compound assignments that have no effect (e.g. += 0, *= 1)."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_NOOP_COMPOUND.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL094",
+                        message=(
+                            f"No-op compound assignment '{m.group().strip()}' — "
+                            "this operation has no effect."
+                        ),
+                    )
+                )
         return diags
 
 

@@ -2642,9 +2642,68 @@ class TestBsl091RedundantElseAfterReturn:
         assert "BSL091" not in _codes(diags)
 
 
+class TestBsl092EmptyElseBlock:
+    def test_empty_else_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А > 0 Тогда
+        Б = 1;
+    Иначе
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL092"})
+        assert "BSL092" in _codes(diags)
+
+    def test_else_with_code_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А > 0 Тогда
+        Б = 1;
+    Иначе
+        Б = 0;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL092"})
+        assert "BSL092" not in _codes(diags)
+
+
+class TestBsl093ComparisonToNull:
+    def test_null_comparison_detected(self, tmp_path: Path) -> None:
+        content = 'Если А = NULL Тогда\n    Б = 1;\nКонецЕсли;\n'
+        diags = _check(content, tmp_path, select={"BSL093"})
+        assert "BSL093" in _codes(diags)
+
+    def test_undefined_comparison_no_warning(self, tmp_path: Path) -> None:
+        content = 'Если А = Неопределено Тогда\n    Б = 1;\nКонецЕсли;\n'
+        diags = _check(content, tmp_path, select={"BSL093"})
+        assert "BSL093" not in _codes(diags)
+
+
+class TestBsl094NoopAssignment:
+    def test_plus_zero_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А += 0;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL094"})
+        assert "BSL094" in _codes(diags)
+
+    def test_normal_increment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А += 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL094"})
+        assert "BSL094" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 92)}
+        expected = {f"BSL{i:03d}" for i in range(1, 95)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
