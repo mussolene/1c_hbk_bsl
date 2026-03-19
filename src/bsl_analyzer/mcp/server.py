@@ -19,6 +19,9 @@ bsl_format          — format a BSL file using built-in formatter
 bsl_rename          — rename symbol across workspace (applies to files)
 bsl_fix             — apply auto-fixes to a file (trailing ws, tabs, etc.)
 bsl_workspace_scan  — list BSL files + quick metrics for a directory
+bsl_meta_object     — 1C config metadata: attributes/TS/forms for an object
+bsl_meta_collection — list objects in a 1C global collection (Справочники, etc.)
+bsl_meta_index      — trigger metadata re-indexing from XML config export
 """
 
 from __future__ import annotations
@@ -120,6 +123,7 @@ def create_mcp_app() -> FastMCP:
             "symbol_count": stats["symbol_count"],
             "file_count": stats["file_count"],
             "call_count": stats["call_count"],
+            "meta_object_count": stats.get("meta_object_count", 0),
             "last_commit": stats["last_commit"],
             "indexed_at": stats["indexed_at"],
             "workspace_root": stats["workspace_root"] or _WORKSPACE,
@@ -945,6 +949,143 @@ def create_mcp_app() -> FastMCP:
             "total_lines": total_lines,
             "files": files_info,
         }
+
+    # ------------------------------------------------------------------
+    # bsl_meta_object — metadata object info
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description=(
+            "Get 1C configuration metadata for an object: attributes (requisites), "
+            "tabular sections, and form attributes. Works only when a 1C configuration "
+            "export (with Configuration.xml) is present in the workspace."
+        )
+    )
+    def bsl_meta_object(
+        name: Annotated[str, "Technical name of the 1C metadata object (e.g. 'Контрагенты')"],
+        kind_filter: Annotated[
+            str | None,
+            "Optional: filter members by kind: 'attribute', 'tabular_section', "
+            "'ts_attribute', 'form_attribute', 'form_command'",
+        ] = None,
+    ) -> dict:
+        """
+        Return metadata members (attributes, tabular sections, form data) for a 1C config object.
+
+        Args:
+            name: Technical name of the object (e.g. 'Контрагенты', 'РасходнаяНакладная').
+            kind_filter: Filter by member kind (attribute, tabular_section, etc.).
+
+        Returns:
+            Dict with object info and list of members.
+        """
+        index = _get_index()
+        obj_info = index.find_meta_object(name)
+        if obj_info is None:
+            return {"error": f"Metadata object '{name}' not found. Is 1C config indexed?"}
+
+        members = index.get_meta_members(name)
+        if kind_filter:
+            members = [m for m in members if m.get("kind") == kind_filter]
+
+        # Group by kind for readability
+        attributes = [m for m in members if m["kind"] == "attribute"]
+        tabular_sections = [m for m in members if m["kind"] == "tabular_section"]
+        ts_attributes = [m for m in members if m["kind"] == "ts_attribute"]
+        form_attributes = [m for m in members if m["kind"] == "form_attribute"]
+        form_commands = [m for m in members if m["kind"] == "form_command"]
+
+        return {
+            "name": obj_info["name"],
+            "kind": obj_info["kind"],
+            "synonym_ru": obj_info.get("synonym_ru", ""),
+            "collection": obj_info.get("collection", ""),
+            "attributes": [{"name": m["name"], "type": m.get("type_info", "")} for m in attributes],
+            "tabular_sections": [m["name"] for m in tabular_sections],
+            "ts_attributes": [
+                {"name": m["name"], "type": m.get("type_info", "")} for m in ts_attributes
+            ],
+            "form_attributes": [m["name"] for m in form_attributes],
+            "form_commands": [m["name"] for m in form_commands],
+            "total_members": len(members),
+        }
+
+    # ------------------------------------------------------------------
+    # bsl_meta_collection — list objects in a 1C global collection
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description=(
+            "List all objects in a 1C global metadata collection "
+            "(e.g. 'Справочники', 'Документы', 'РегистрыСведений'). "
+            "Returns object names, kinds, and synonyms."
+        )
+    )
+    def bsl_meta_collection(
+        collection: Annotated[
+            str, "Russian name of the collection (e.g. 'Справочники', 'Документы')"
+        ],
+        prefix: Annotated[str, "Optional name prefix to filter results"] = "",
+        limit: Annotated[int, "Maximum results (default 100)"] = 100,
+    ) -> dict:
+        """
+        List metadata objects in a 1C global collection.
+
+        Args:
+            collection: Russian collection name (e.g. 'Справочники', 'Документы').
+            prefix: Filter objects whose name starts with this prefix.
+            limit: Maximum number of results.
+
+        Returns:
+            Dict with collection name and list of objects.
+        """
+        index = _get_index()
+        if not index.has_metadata():
+            return {
+                "error": "No metadata indexed. Is a 1C configuration export present in workspace?"
+            }
+        objects = index.find_meta_objects_by_collection(collection, prefix)[:limit]
+        return {
+            "collection": collection,
+            "count": len(objects),
+            "objects": [
+                {
+                    "name": o["name"],
+                    "kind": o["kind"],
+                    "synonym_ru": o.get("synonym_ru", ""),
+                }
+                for o in objects
+            ],
+        }
+
+    # ------------------------------------------------------------------
+    # bsl_meta_index — trigger metadata re-indexing
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description=(
+            "Trigger re-indexing of 1C configuration metadata (XML export). "
+            "Searches for Configuration.xml within the workspace and parses all objects."
+        )
+    )
+    def bsl_meta_index(
+        workspace: Annotated[
+            str | None, "Workspace path to index (defaults to server WORKSPACE_ROOT)"
+        ] = None,
+    ) -> dict:
+        """
+        Re-index 1C configuration metadata from XML export.
+
+        Args:
+            workspace: Path to workspace containing the 1C config export.
+                       Defaults to the server's WORKSPACE_ROOT.
+
+        Returns:
+            Dict with objects count, members count, or error.
+        """
+        ws = workspace or _WORKSPACE
+        indexer = _get_indexer()
+        return indexer.index_metadata(ws)
 
     return mcp
 

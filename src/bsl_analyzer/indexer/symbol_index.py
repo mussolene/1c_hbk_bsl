@@ -88,6 +88,34 @@ CREATE TABLE IF NOT EXISTS git_state (
     indexed_at     REAL,
     workspace_root TEXT
 );
+
+-- 1C Configuration metadata tables
+CREATE TABLE IF NOT EXISTS meta_objects (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    name_lower  TEXT NOT NULL,
+    kind        TEXT NOT NULL,    -- 'Catalog' | 'Document' | 'DataProcessor' | ...
+    synonym_ru  TEXT NOT NULL DEFAULT '',
+    file_path   TEXT NOT NULL DEFAULT '',
+    collection  TEXT NOT NULL DEFAULT '',  -- e.g. 'Справочники', 'Документы'
+    indexed_at  REAL NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_objects_name_kind ON meta_objects(name_lower, kind);
+CREATE INDEX IF NOT EXISTS idx_meta_objects_collection ON meta_objects(collection);
+
+CREATE TABLE IF NOT EXISTS meta_members (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_id    INTEGER NOT NULL REFERENCES meta_objects(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    name_lower   TEXT NOT NULL,
+    kind         TEXT NOT NULL,   -- 'attribute' | 'tabular_section' | 'ts_attribute' | 'form_attribute' | 'form_command'
+    type_info    TEXT NOT NULL DEFAULT '',
+    synonym_ru   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_meta_members_object ON meta_members(object_id);
+CREATE INDEX IF NOT EXISTS idx_meta_members_name ON meta_members(name_lower);
 """
 
 
@@ -123,6 +151,33 @@ class SymbolIndex:
         existing_calls = {row[1] for row in conn.execute("PRAGMA table_info(calls)")}
         if "callee_name_lower" not in existing_calls:
             conn.execute("ALTER TABLE calls ADD COLUMN callee_name_lower TEXT NOT NULL DEFAULT ''")
+
+        # Ensure metadata tables exist for databases created before metadata support
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS meta_objects (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                name_lower  TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                synonym_ru  TEXT NOT NULL DEFAULT '',
+                file_path   TEXT NOT NULL DEFAULT '',
+                collection  TEXT NOT NULL DEFAULT '',
+                indexed_at  REAL NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_objects_name_kind ON meta_objects(name_lower, kind);
+            CREATE INDEX IF NOT EXISTS idx_meta_objects_collection ON meta_objects(collection);
+            CREATE TABLE IF NOT EXISTS meta_members (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                object_id    INTEGER NOT NULL REFERENCES meta_objects(id) ON DELETE CASCADE,
+                name         TEXT NOT NULL,
+                name_lower   TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                type_info    TEXT NOT NULL DEFAULT '',
+                synonym_ru   TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_meta_members_object ON meta_members(object_id);
+            CREATE INDEX IF NOT EXISTS idx_meta_members_name ON meta_members(name_lower);
+        """)
 
     def _migrate_background(self) -> None:
         """Heavy migrations: index creation and data population, run in background thread."""
@@ -519,18 +574,179 @@ class SymbolIndex:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # ------------------------------------------------------------------
+    # Metadata write operations
+    # ------------------------------------------------------------------
+
+    def upsert_metadata(self, meta_objects: list) -> int:
+        """
+        Replace all metadata objects with the provided list.
+
+        Args:
+            meta_objects: List of MetaObject dataclass instances.
+
+        Returns:
+            Total number of members upserted.
+        """
+        from bsl_analyzer.indexer.metadata_parser import _KIND_TO_COLLECTION  # noqa: PLC0415
+
+        conn = self._conn()
+        now = time.time()
+        total_members = 0
+
+        with conn:
+            conn.execute("DELETE FROM meta_members")
+            conn.execute("DELETE FROM meta_objects")
+
+            for obj in meta_objects:
+                collection = _KIND_TO_COLLECTION.get(obj.kind, "")
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO meta_objects
+                        (name, name_lower, kind, synonym_ru, file_path, collection, indexed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        obj.name,
+                        obj.name.casefold(),
+                        obj.kind,
+                        obj.synonym_ru,
+                        obj.file_path,
+                        collection,
+                        now,
+                    ),
+                )
+                obj_row = conn.execute(
+                    "SELECT id FROM meta_objects WHERE name_lower=? AND kind=?",
+                    (obj.name.casefold(), obj.kind),
+                ).fetchone()
+                if obj_row is None:
+                    continue
+                obj_id = obj_row[0]
+
+                if obj.members:
+                    conn.executemany(
+                        """
+                        INSERT INTO meta_members (object_id, name, name_lower, kind, type_info, synonym_ru)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            (obj_id, m.name, m.name.casefold(), m.kind, m.type_info, m.synonym_ru)
+                            for m in obj.members
+                        ],
+                    )
+                    total_members += len(obj.members)
+
+        return total_members
+
+    # ------------------------------------------------------------------
+    # Metadata read operations
+    # ------------------------------------------------------------------
+
+    def get_meta_members(self, object_name: str, member_prefix: str = "") -> list[dict[str, Any]]:
+        """
+        Return metadata members for the given object name (case-insensitive).
+
+        Args:
+            object_name: Technical name of the 1C object (e.g. 'Контрагенты').
+            member_prefix: If provided, filter members whose name starts with this prefix.
+
+        Returns:
+            List of member dicts with keys: name, kind, type_info, synonym_ru, object_name, object_kind.
+        """
+        conn = self._conn()
+        name_lo = object_name.casefold()
+
+        obj_row = conn.execute(
+            "SELECT id, name, kind, synonym_ru FROM meta_objects WHERE name_lower = ? LIMIT 1",
+            (name_lo,),
+        ).fetchone()
+        if obj_row is None:
+            return []
+
+        obj_id = obj_row["id"]
+        obj_name = obj_row["name"]
+        obj_kind = obj_row["kind"]
+
+        if member_prefix:
+            prefix_lo = member_prefix.casefold()
+            rows = conn.execute(
+                "SELECT name, kind, type_info, synonym_ru FROM meta_members "
+                "WHERE object_id = ? AND name_lower LIKE ? ORDER BY name_lower LIMIT 200",
+                (obj_id, f"{prefix_lo}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT name, kind, type_info, synonym_ru FROM meta_members "
+                "WHERE object_id = ? ORDER BY name_lower LIMIT 200",
+                (obj_id,),
+            ).fetchall()
+
+        return [
+            {
+                "name": row["name"],
+                "kind": row["kind"],
+                "type_info": row["type_info"],
+                "synonym_ru": row["synonym_ru"],
+                "object_name": obj_name,
+                "object_kind": obj_kind,
+            }
+            for row in rows
+        ]
+
+    def find_meta_object(self, object_name: str) -> dict[str, Any] | None:
+        """Return metadata object info by name, or None if not found."""
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT name, kind, synonym_ru, collection FROM meta_objects WHERE name_lower = ? LIMIT 1",
+            (object_name.casefold(),),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def find_meta_objects_by_collection(self, collection: str, prefix: str = "") -> list[dict[str, Any]]:
+        """
+        Return all objects in a 1C global collection (e.g. 'Справочники').
+
+        Args:
+            collection: Russian collection name (e.g. 'Справочники', 'Документы').
+            prefix: If provided, filter by name prefix.
+        """
+        conn = self._conn()
+        if prefix:
+            prefix_lo = prefix.casefold()
+            rows = conn.execute(
+                "SELECT name, kind, synonym_ru FROM meta_objects "
+                "WHERE collection = ? AND name_lower LIKE ? ORDER BY name_lower LIMIT 100",
+                (collection, f"{prefix_lo}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT name, kind, synonym_ru FROM meta_objects "
+                "WHERE collection = ? ORDER BY name_lower LIMIT 100",
+                (collection,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def has_metadata(self) -> bool:
+        """Return True if any metadata objects are indexed."""
+        conn = self._conn()
+        row = conn.execute("SELECT COUNT(*) FROM meta_objects").fetchone()
+        return bool(row and row[0] > 0)
+
     def get_stats(self) -> dict[str, Any]:
         """Return index statistics."""
         conn = self._conn()
         symbol_count = conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
         file_count = conn.execute("SELECT COUNT(DISTINCT file_path) FROM symbols").fetchone()[0]
         call_count = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
+        meta_count = conn.execute("SELECT COUNT(*) FROM meta_objects").fetchone()[0]
         last_commit = self.get_last_commit()
         row = conn.execute("SELECT indexed_at, workspace_root FROM git_state WHERE id = 1").fetchone()
         return {
             "symbol_count": symbol_count,
             "file_count": file_count,
             "call_count": call_count,
+            "meta_object_count": meta_count,
             "last_commit": last_commit,
             "indexed_at": row["indexed_at"] if row else None,
             "workspace_root": row["workspace_root"] if row else None,

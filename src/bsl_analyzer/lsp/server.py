@@ -724,6 +724,44 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
         parts.append("*Встроенный метод платформы 1С*")
         return _hover_markdown(parts)
 
+    # 5. Метаданные конфигурации 1С
+    if hasattr(ls, "symbol_index") and ls.symbol_index.has_metadata():
+        # 5a. Hovering over a metadata object name (e.g. 'Контрагенты')
+        if not left_word:
+            meta_obj = ls.symbol_index.find_meta_object(word)
+            if meta_obj:
+                kind_str = meta_obj.get("kind", "")
+                synonym = meta_obj.get("synonym_ru", "")
+                collection = meta_obj.get("collection", "")
+                parts = [f"**{meta_obj['name']}** *({kind_str})*"]
+                if synonym and synonym != meta_obj["name"]:
+                    parts.append(f"*Синоним:* {synonym}")
+                if collection:
+                    parts.append(f"*Коллекция:* `{collection}`")
+                parts.append("*Объект метаданных конфигурации*")
+                return _hover_markdown(parts)
+
+        # 5b. Hovering over a metadata member (e.g. 'Контрагенты.НаименованиеПолное')
+        if left_word:
+            members = ls.symbol_index.get_meta_members(left_word, word)
+            word_lo = word.casefold()
+            for m in members:
+                if m["name"].casefold() == word_lo:
+                    kind_str = m["kind"]
+                    kind_ru = {
+                        "attribute": "Реквизит",
+                        "tabular_section": "Табличная часть",
+                        "ts_attribute": "Реквизит ТЧ",
+                        "form_attribute": "Реквизит формы",
+                        "form_command": "Команда формы",
+                    }.get(kind_str, kind_str)
+                    parts = [f"**{m['name']}** *({kind_ru} {m['object_kind']}.{m['object_name']})*"]
+                    if m.get("type_info"):
+                        parts.append(f"*Тип:* `{m['type_info']}`")
+                    if m.get("synonym_ru") and m["synonym_ru"] != m["name"]:
+                        parts.append(f"*Синоним:* {m['synonym_ru']}")
+                    return _hover_markdown(parts)
+
     return None
 
 
@@ -1182,6 +1220,10 @@ def on_completion(
                         )
                     )
 
+        # ---- metadata: Контрагенты. → attributes/TS; Справочники. → names ---
+        if not items:
+            items = _meta_dot_completions(ls, obj_name, member_prefix)
+
         # Return member completions even if empty (no global pollution on `.`)
         return CompletionList(is_incomplete=False, items=items)
 
@@ -1297,6 +1339,109 @@ def _infer_type_from_content(content: str, var_name: str) -> str | None:
         if m.group(1).casefold() == var_lo:
             return m.group(2)
     return None
+
+
+# 1C global collection names (both RU and EN variants) → canonical Russian name
+_META_COLLECTIONS: dict[str, str] = {
+    "справочники": "Справочники",
+    "catalogs": "Справочники",
+    "документы": "Документы",
+    "documents": "Документы",
+    "обработки": "Обработки",
+    "dataprocessors": "Обработки",
+    "отчеты": "Отчеты",
+    "reports": "Отчеты",
+    "регистрысведений": "РегистрыСведений",
+    "informationregisters": "РегистрыСведений",
+    "регистрынакопления": "РегистрыНакопления",
+    "accumulationregisters": "РегистрыНакопления",
+    "регистрыбухгалтерии": "РегистрыБухгалтерии",
+    "accountingregisters": "РегистрыБухгалтерии",
+    "регистрырасчета": "РегистрыРасчета",
+    "calculationregisters": "РегистрыРасчета",
+    "планыобмена": "ПланыОбмена",
+    "exchangeplans": "ПланыОбмена",
+    "бизнеспроцессы": "БизнесПроцессы",
+    "businessprocesses": "БизнесПроцессы",
+    "задачи": "Задачи",
+    "tasks": "Задачи",
+    "планысчетов": "ПланыСчетов",
+    "chartsofaccounts": "ПланыСчетов",
+    "планывидоврасчета": "ПланыВидовРасчета",
+    "chartsofcalculationtypes": "ПланыВидовРасчета",
+    "планывидоххарактеристик": "ПланыВидовХарактеристик",
+    "chartsofcharacteristictypes": "ПланыВидовХарактеристик",
+    "перечисления": "Перечисления",
+    "enums": "Перечисления",
+    "общиемодули": "ОбщиеМодули",
+    "commonmodules": "ОбщиеМодули",
+}
+
+_META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, Any] = {}  # filled lazily below
+
+
+def _meta_dot_completions(
+    ls: "BslLanguageServer",
+    obj_name: str,
+    member_prefix: str,
+) -> list["CompletionItem"]:
+    """
+    Return metadata-based completion items for ``obj_name.member_prefix``.
+
+    Handles two cases:
+    1. ``obj_name`` is a 1C global collection (e.g. 'Справочники') →
+       returns object names in that collection.
+    2. ``obj_name`` is a metadata object name (e.g. 'Контрагенты') →
+       returns attributes, TS, form attributes.
+    """
+    from lsprotocol.types import CompletionItem, CompletionItemKind  # noqa: PLC0415
+
+    if not hasattr(ls, "symbol_index") or not ls.symbol_index.has_metadata():
+        return []
+
+    items: list[CompletionItem] = []
+    obj_lo = obj_name.casefold()
+
+    # Case 1: global collection name
+    collection = _META_COLLECTIONS.get(obj_lo)
+    if collection:
+        for meta_obj in ls.symbol_index.find_meta_objects_by_collection(collection, member_prefix):
+            label = meta_obj["name"]
+            detail = meta_obj.get("synonym_ru", "")
+            items.append(
+                CompletionItem(
+                    label=label,
+                    kind=CompletionItemKind.Module,
+                    detail=detail or meta_obj.get("kind", ""),
+                    insert_text=label,
+                )
+            )
+        return items
+
+    # Case 2: direct object name → members
+    for member in ls.symbol_index.get_meta_members(obj_name, member_prefix):
+        label = member["name"]
+        kind_str = member["kind"]
+        if kind_str == "tabular_section":
+            ck = CompletionItemKind.Class
+        elif kind_str == "form_command":
+            ck = CompletionItemKind.Event
+        else:
+            ck = CompletionItemKind.Field
+        detail_parts = []
+        if member.get("type_info"):
+            detail_parts.append(member["type_info"])
+        if member.get("synonym_ru"):
+            detail_parts.append(member["synonym_ru"])
+        items.append(
+            CompletionItem(
+                label=label,
+                kind=ck,
+                detail=" | ".join(detail_parts),
+                insert_text=label,
+            )
+        )
+    return items
 
 
 # ---------------------------------------------------------------------------

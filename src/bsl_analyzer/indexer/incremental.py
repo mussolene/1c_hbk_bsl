@@ -17,6 +17,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 
 from bsl_analyzer.analysis.call_graph import extract_calls
 from bsl_analyzer.analysis.symbols import extract_symbols
+from bsl_analyzer.indexer.metadata_parser import crawl_config, find_config_root
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.parser.bsl_parser import BslParser
 
@@ -84,7 +85,47 @@ class IncrementalIndexer:
         if current_commit:
             self.index.save_commit(current_commit, workspace_root=workspace)
 
+        # Index 1C configuration metadata in background
+        self._start_metadata_indexing(workspace)
+
         return result
+
+    def index_metadata(self, workspace: str) -> dict:
+        """
+        Find and index 1C configuration metadata (XML export) within *workspace*.
+
+        Returns:
+            Dict with ``objects`` and ``members`` counts, or ``{"skipped": True}`` if no config found.
+        """
+        workspace = str(Path(workspace).resolve())
+        config_root = find_config_root(workspace)
+        if config_root is None:
+            logger.debug("No 1C config root found in %s — skipping metadata indexing", workspace)
+            return {"skipped": True}
+
+        logger.info("Indexing 1C metadata from %s", config_root)
+        try:
+            meta_objects = crawl_config(config_root)
+            total_members = self.index.upsert_metadata(meta_objects)
+            logger.info(
+                "Metadata indexed: %d objects, %d members",
+                len(meta_objects),
+                total_members,
+            )
+            return {"objects": len(meta_objects), "members": total_members}
+        except Exception as exc:
+            logger.error("Metadata indexing failed: %s", exc)
+            return {"objects": 0, "members": 0, "error": str(exc)}
+
+    def _start_metadata_indexing(self, workspace: str) -> None:
+        """Start metadata indexing in a background thread."""
+        import threading  # noqa: PLC0415
+        threading.Thread(
+            target=self.index_metadata,
+            args=(workspace,),
+            daemon=True,
+            name="bsl-metadata-index",
+        ).start()
 
     def get_changed_files(self, since_commit: str, workspace: str) -> list[str]:
         """
