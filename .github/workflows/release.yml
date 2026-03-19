@@ -21,18 +21,26 @@ jobs:
       matrix:
         include:
           - target: darwin-arm64
-            runner: macos-14          # Apple Silicon
+            runner: macos-14          # Apple Silicon — 3 cores
             asset: bsl-analyzer-darwin-arm64
+            jobs: 3
+            cache_path: ~/Library/Caches/Nuitka
           - target: darwin-x64
-            runner: macos-13          # Intel
+            runner: macos-13          # Intel — 3 cores
             asset: bsl-analyzer-darwin-x64
+            jobs: 3
+            cache_path: ~/Library/Caches/Nuitka
           - target: linux-x64
-            runner: ubuntu-22.04
+            runner: ubuntu-22.04      # 2 cores
             asset: bsl-analyzer-linux-x64
+            jobs: 2
+            cache_path: ~/.cache/Nuitka
           - target: win32-x64
-            runner: windows-2022
+            runner: windows-2022      # 2 cores
             asset: bsl-analyzer-win32-x64.exe
             ext: .exe
+            jobs: 2
+            cache_path: ~\AppData\Local\Nuitka\Nuitka\Cache
 
     steps:
       - uses: actions/checkout@v4
@@ -42,11 +50,27 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Cache pip downloads
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ matrix.target }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-${{ matrix.target }}-
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies (including Nuitka)
         run: uv pip install -e ".[dev,build]" --system
+
+      # Cache compiled Nuitka C objects — biggest speedup on repeat runs
+      - name: Cache Nuitka compilation
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.cache_path }}
+          key: nuitka-${{ matrix.target }}-py311-${{ hashFiles('src/**/*.py', 'pyproject.toml') }}
+          restore-keys: nuitka-${{ matrix.target }}-py311-
 
       - name: Build binary (Nuitka)
         shell: bash
@@ -54,6 +78,8 @@ jobs:
           python -m nuitka \
             --standalone \
             --onefile \
+            --deployment \
+            --python-flag=no_site,no_warnings \
             --output-filename=${{ env.BINARY_NAME }}${{ matrix.ext }} \
             --output-dir=dist \
             --include-package=bsl_analyzer \
@@ -63,15 +89,15 @@ jobs:
             --include-package=pygls \
             --include-package=watchfiles \
             --include-package=rich \
+            --nofollow-import-to=tkinter,test,unittest,pydoc,doctest,distutils \
             --include-data-dir=data=data \
             --assume-yes-for-downloads \
-            --jobs=2 \
+            --jobs=${{ matrix.jobs }} \
             src/bsl_analyzer/__main__.py
 
       - name: Rename asset
         shell: bash
-        run: |
-          mv dist/${{ env.BINARY_NAME }}${{ matrix.ext }} dist/${{ matrix.asset }}
+        run: mv dist/${{ env.BINARY_NAME }}${{ matrix.ext }} dist/${{ matrix.asset }}
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -191,14 +217,11 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          # Binaries
           find artifacts/ -name "bsl-analyzer-*" -not -name "*.vsix" \
             -exec cp {} release-assets/ \;
-          # VSIXes
           find artifacts/ -name "*.vsix" -exec cp {} release-assets/ \;
-          # Python wheel + sdist
-          find artifacts/python-wheel/ -name "*.whl" -o -name "*.tar.gz" \
-            | xargs -I{} cp {} release-assets/
+          find artifacts/python-wheel/ \( -name "*.whl" -o -name "*.tar.gz" \) \
+            -exec cp {} release-assets/ \;
           ls -lh release-assets/
 
       - name: Create GitHub Release
@@ -210,7 +233,7 @@ jobs:
 
             ### Установка расширения VSCode
             Установите из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.bsl-analyzer)
-            или скачайте `.vsix` для вашей платформы ниже и установите через:
+            или скачайте `.vsix` для вашей платформы ниже:
             ```
             code --install-extension bsl-analyzer-*.vsix
             ```
@@ -251,7 +274,6 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           npm ci
-          # Publish each platform VSIX
           for vsix in ../artifacts/vsix-*/*.vsix; do
             echo "Publishing $vsix"
             npx vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"

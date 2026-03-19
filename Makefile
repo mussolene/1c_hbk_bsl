@@ -45,13 +45,8 @@ endif
 
 BUILD_OUT = $(DIST_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
 
-build:
-	@echo "→ Компиляция через Nuitka ($(PLATFORM))..."
-	@mkdir -p $(DIST_DIR)
-	.venv/bin/python -m nuitka \
+NUITKA_COMMON = \
 		--standalone \
-		--onefile \
-		--output-filename=$(BIN_NAME)$(BIN_SUFFIX) \
 		--output-dir=$(DIST_DIR) \
 		--include-package=bsl_analyzer \
 		--include-package=tree_sitter \
@@ -60,21 +55,33 @@ build:
 		--include-package=pygls \
 		--include-package=watchfiles \
 		--include-package=rich \
+		--nofollow-import-to=tkinter,test,unittest,pydoc,doctest,distutils \
 		--include-data-dir=data=data \
 		--assume-yes-for-downloads \
-		--jobs=4 \
+		--jobs=4
+
+build:
+	@echo "→ Компиляция через Nuitka ($(PLATFORM))..."
+	@mkdir -p $(DIST_DIR)
+	.venv/bin/python -m nuitka \
+		$(NUITKA_COMMON) \
+		--onefile \
+		--deployment \
+		--python-flag=no_site,no_warnings \
+		--output-filename=$(BIN_NAME)$(BIN_SUFFIX) \
 		$(ENTRY)
 	@echo "✓ Готово: $(BUILD_OUT)"
 	@ls -lh $(BUILD_OUT)
 
-# Быстрая сборка без --onefile (для отладки, быстрее компилируется)
+# Быстрая сборка без --onefile (для отладки — не нужна упаковка onefile)
 build-dev:
-	@mkdir -p $(DIST_DIR)
+	@mkdir -p $(DIST_DIR)/dev
 	.venv/bin/python -m nuitka \
 		--standalone \
 		--output-dir=$(DIST_DIR)/dev \
 		--include-package=bsl_analyzer \
 		--include-data-dir=data=data \
+		--jobs=4 \
 		$(ENTRY)
 	@echo "✓ Готово: $(DIST_DIR)/dev/__main__.dist/$(BIN_NAME)$(BIN_SUFFIX)"
 
