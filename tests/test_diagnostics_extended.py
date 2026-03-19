@@ -3386,9 +3386,277 @@ class TestBsl127MultipleReturnValues:
         assert "BSL127" not in _codes(diags)
 
 
+# ---------------------------------------------------------------------------
+# BSL128 — DeadCodeAfterReturn
+# ---------------------------------------------------------------------------
+
+
+class TestBsl128DeadCodeAfterReturn:
+    def test_dead_code_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест()
+    Возврат 1;
+    А = 2;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL128"})
+        assert "BSL128" in _codes(diags)
+
+    def test_return_inside_if_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Если А Тогда
+        Возврат 1;
+    КонецЕсли;
+    Возврат 0;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL128"})
+        assert "BSL128" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL129 — RecursiveCall
+# ---------------------------------------------------------------------------
+
+
+class TestBsl129RecursiveCall:
+    def test_recursive_call_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Факториал(Н)
+    Возврат Факториал(Н - 1);
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL129"})
+        assert "BSL129" in _codes(diags)
+
+    def test_no_self_call_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест()
+    Возврат 1;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL129"})
+        assert "BSL129" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL130 — LongCommentLine
+# ---------------------------------------------------------------------------
+
+
+class TestBsl130LongCommentLine:
+    def test_long_comment_detected(self, tmp_path: Path) -> None:
+        long_comment = "// " + "x" * 120 + "\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(long_comment, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL130"}).check_file(str(p))
+        assert "BSL130" in [d.code for d in diags]
+
+    def test_short_comment_no_warning(self, tmp_path: Path) -> None:
+        content = "// короткий комментарий\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL130"}).check_file(str(p))
+        assert "BSL130" not in [d.code for d in diags]
+
+
+# ---------------------------------------------------------------------------
+# BSL131 — EmptyRegion
+# ---------------------------------------------------------------------------
+
+
+class TestBsl131EmptyRegion:
+    def test_empty_region_detected(self, tmp_path: Path) -> None:
+        content = "#Область ПустаяОбласть\n#КонецОбласти\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
+        assert "BSL131" in [d.code for d in diags]
+
+    def test_region_with_code_no_warning(self, tmp_path: Path) -> None:
+        content = "#Область СОдержимым\nА = 1;\n#КонецОбласти\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
+        assert "BSL131" not in [d.code for d in diags]
+
+
+# ---------------------------------------------------------------------------
+# BSL132 — RepeatedStringLiteral
+# ---------------------------------------------------------------------------
+
+
+class TestBsl132RepeatedStringLiteral:
+    def test_repeated_4_times_detected(self, tmp_path: Path) -> None:
+        content = (
+            'А = "ТаблицаЗначений";\n'
+            'Б = "ТаблицаЗначений";\n'
+            'В = "ТаблицаЗначений";\n'
+            'Г = "ТаблицаЗначений";\n'
+        )
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL132"}).check_file(str(p))
+        assert "BSL132" in [d.code for d in diags]
+
+    def test_repeated_3_times_no_warning(self, tmp_path: Path) -> None:
+        content = (
+            'А = "ТаблицаЗначений";\n'
+            'Б = "ТаблицаЗначений";\n'
+            'В = "ТаблицаЗначений";\n'
+        )
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL132"}).check_file(str(p))
+        assert "BSL132" not in [d.code for d in diags]
+
+
+# ---------------------------------------------------------------------------
+# BSL133 — RequiredParamAfterOptional
+# ---------------------------------------------------------------------------
+
+
+class TestBsl133RequiredParamAfterOptional:
+    def test_required_after_optional_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(Обязательный, Опциональный = 0, ЕщёОбязательный)
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL133"})
+        assert "BSL133" in _codes(diags)
+
+    def test_required_before_optional_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(Обязательный, ЕщёОбязательный, Опциональный = 0)
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL133"})
+        assert "BSL133" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL134 — CyclomaticComplexity
+# ---------------------------------------------------------------------------
+
+
+class TestBsl134CyclomaticComplexity:
+    def test_high_complexity_detected(self, tmp_path: Path) -> None:
+        # 11 Если blocks → CC = 12 > 10
+        ifs = "\n".join(
+            f"    Если А{i} Тогда\n        Б = {i};\n    КонецЕсли;"
+            for i in range(11)
+        )
+        content = f"Функция Тест()\n{ifs}\n    Возврат 0;\nКонецФункции\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL134"}).check_file(str(p))
+        assert "BSL134" in [d.code for d in diags]
+
+    def test_low_complexity_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест()
+    Если А Тогда
+        Б = 1;
+    КонецЕсли;
+    Если В Тогда
+        Г = 2;
+    КонецЕсли;
+    Если Д Тогда
+        Е = 3;
+    КонецЕсли;
+    Возврат 0;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL134"})
+        assert "BSL134" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL135 — NestedFunctionCalls
+# ---------------------------------------------------------------------------
+
+
+class TestBsl135NestedFunctionCalls:
+    def test_nested_call_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Результат = Строка(Число(Переменная));
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL135"})
+        assert "BSL135" in _codes(diags)
+
+    def test_simple_call_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Результат = Строка(Переменная);
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL135"})
+        assert "BSL135" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL136 — MissingSpaceBeforeComment
+# ---------------------------------------------------------------------------
+
+
+class TestBsl136MissingSpaceBeforeComment:
+    def test_no_space_detected(self, tmp_path: Path) -> None:
+        content = "А = 1;// комментарий\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL136"}).check_file(str(p))
+        assert "BSL136" in [d.code for d in diags]
+
+    def test_space_present_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1; // комментарий\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL136"}).check_file(str(p))
+        assert "BSL136" not in [d.code for d in diags]
+
+
+# ---------------------------------------------------------------------------
+# BSL137 — UseOfFindByDescription
+# ---------------------------------------------------------------------------
+
+
+class TestBsl137UseOfFindByDescription:
+    def test_find_by_description_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Элемент = Справочники.Номенклатура.НайтиПоНаименованию("Товар");
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL137"})
+        assert "BSL137" in _codes(diags)
+
+    def test_find_by_ref_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Элемент = Справочники.Номенклатура.НайтиПоСсылке(Ссылка);
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL137"})
+        assert "BSL137" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 128)}
+        expected = {f"BSL{i:03d}" for i in range(1, 138)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

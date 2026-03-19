@@ -1068,6 +1068,86 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MINOR",
         "tags": ["style", "readability"],
     },
+    "BSL128": {
+        "name": "DeadCodeAfterReturn",
+        "description": "Unreachable code after unconditional Возврат at the top level of a function/procedure body",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL129": {
+        "name": "RecursiveCall",
+        "description": "Function/procedure directly calls itself — verify that recursion is intentional and guarded",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL130": {
+        "name": "LongCommentLine",
+        "description": "Comment line exceeds 120 characters — split into multiple shorter lines",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL131": {
+        "name": "EmptyRegion",
+        "description": "#Область/#Region immediately followed by #КонецОбласти/#EndRegion with no code inside",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style"],
+    },
+    "BSL132": {
+        "name": "RepeatedStringLiteral",
+        "description": "String literal appears 4 or more times in the file — extract to a named constant",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "readability"],
+    },
+    "BSL133": {
+        "name": "RequiredParamAfterOptional",
+        "description": "Required parameter appears after an optional (default-valued) parameter in the signature",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "design"],
+    },
+    "BSL134": {
+        "name": "CyclomaticComplexity",
+        "description": "Cyclomatic complexity exceeds the allowed maximum — refactor into smaller functions",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["complexity", "design"],
+    },
+    "BSL135": {
+        "name": "NestedFunctionCalls",
+        "description": "Function call result passed directly as argument to another function — extract to a variable",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL136": {
+        "name": "MissingSpaceBeforeComment",
+        "description": "Inline // comment is not preceded by a space — add a space for readability",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style"],
+    },
+    "BSL137": {
+        "name": "UseOfFindByDescription",
+        "description": "НайтиПоНаименованию/FindByDescription performs a full-table scan — use an index or НайтиПоСсылке",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance", "suspicious"],
+    },
 }
 
 
@@ -1176,6 +1256,16 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL125": "Move Прервать inside a loop body or replace with a conditional early exit.",
     "BSL126": "Move Продолжить inside a loop body or replace with a conditional.",
     "BSL127": "Consolidate multiple top-level returns into a single exit variable pattern.",
+    "BSL128": "Remove or move the dead code before the unconditional Возврат statement.",
+    "BSL129": "Add a base-case guard to prevent infinite recursion, or refactor to an iterative approach.",
+    "BSL130": "Split the long comment into multiple shorter lines (max 120 characters each).",
+    "BSL131": "Populate the region with code or remove the empty #Область/#КонецОбласти block.",
+    "BSL132": "Extract the repeated string literal to a named constant at the top of the module.",
+    "BSL133": "Reorder parameters so all optional (default-valued) ones come after required ones.",
+    "BSL134": "Refactor the function by extracting logic into smaller helper procedures/functions.",
+    "BSL135": "Assign the inner call result to a named variable before passing it as an argument.",
+    "BSL136": "Add a space before the // inline comment.",
+    "BSL137": "Use НайтиПоСсылке() or filter via a query with an indexed field instead.",
 }
 
 
@@ -1829,6 +1919,40 @@ _RE_SLEEP = re.compile(r'\b(?:Приостановить|Sleep)\s*\(', re.IGNORE
 # Тогда — Then keyword for EmptyThenBranch (BSL107)
 _RE_THEN = re.compile(r'\b(?:Тогда|Then)\s*$', re.IGNORECASE)
 
+# BSL130 — LongCommentLine: comment line longer than 120 chars
+_RE_COMMENT_ONLY_LINE = re.compile(r'^\s*//')
+
+# BSL131 — EmptyRegion: #Область / #КонецОбласти markers (line-level, no name group)
+_RE_REGION_OPEN_LINE = re.compile(r'^\s*#(?:Область|Region)\b', re.IGNORECASE)
+_RE_REGION_CLOSE_LINE = re.compile(r'^\s*#(?:КонецОбласти|EndRegion)\b', re.IGNORECASE)
+
+# BSL132 — RepeatedStringLiteral: collect all double-quoted strings ≥ 3 chars
+_RE_STRING_LITERAL = re.compile(r'"([^"]{3,})"')
+
+# BSL133 — RequiredParamAfterOptional: detect optional params (have =)
+_RE_PARAM_HAS_DEFAULT = re.compile(r'=')
+
+# BSL134 — CyclomaticComplexity: decision-point keywords
+_RE_MCCABE_BRANCH_BSL134 = re.compile(
+    r'^\s*(?:Если|If|ИначеЕсли|ElsIf|Пока|While|Для|For|ДляКаждого|ForEach'
+    r'|Попытка|Try|Исключение|Except)\b',
+    re.IGNORECASE,
+)
+
+# BSL135 — NestedFunctionCalls: word( ... word(
+_RE_NESTED_CALL = re.compile(r'\w+\s*\([^)]*\w+\s*\(')
+
+# BSL136 — MissingSpaceBeforeComment: non-whitespace immediately before //
+_RE_NO_SPACE_BEFORE_COMMENT = re.compile(r'\S//')
+
+# BSL137 — UseOfFindByDescription: slow search methods
+_RE_FIND_BY_DESCRIPTION = re.compile(
+    r'\b(?:НайтиПоНаименованию|FindByDescription'
+    r'|НайтиПоКоду|FindByCode'
+    r'|НайтиПоРеквизиту|FindByAttribute)\s*\(',
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
@@ -2387,6 +2511,26 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl126_continue_outside_loop(path, lines))
         if self._rule_enabled("BSL127"):
             diagnostics.extend(self._rule_bsl127_multiple_return_values(path, lines, procs))
+        if self._rule_enabled("BSL128"):
+            diagnostics.extend(self._rule_bsl128_dead_code_after_return(path, lines, procs))
+        if self._rule_enabled("BSL129"):
+            diagnostics.extend(self._rule_bsl129_recursive_call(path, lines, procs))
+        if self._rule_enabled("BSL130"):
+            diagnostics.extend(self._rule_bsl130_long_comment_line(path, lines))
+        if self._rule_enabled("BSL131"):
+            diagnostics.extend(self._rule_bsl131_empty_region(path, lines))
+        if self._rule_enabled("BSL132"):
+            diagnostics.extend(self._rule_bsl132_repeated_string_literal(path, lines, content))
+        if self._rule_enabled("BSL133"):
+            diagnostics.extend(self._rule_bsl133_required_param_after_optional(path, lines, procs))
+        if self._rule_enabled("BSL134"):
+            diagnostics.extend(self._rule_bsl134_cyclomatic_complexity(path, lines, procs))
+        if self._rule_enabled("BSL135"):
+            diagnostics.extend(self._rule_bsl135_nested_function_calls(path, lines))
+        if self._rule_enabled("BSL136"):
+            diagnostics.extend(self._rule_bsl136_missing_space_before_comment(path, lines))
+        if self._rule_enabled("BSL137"):
+            diagnostics.extend(self._rule_bsl137_use_of_find_by_description(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -7199,6 +7343,378 @@ class DiagnosticEngine:
                             ),
                         )
                     )
+        return diags
+
+
+    # ------------------------------------------------------------------
+    # BSL128 — DeadCodeAfterReturn
+    # ------------------------------------------------------------------
+
+    def _rule_bsl128_dead_code_after_return(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag lines that are unreachable after an unconditional Возврат at depth 0."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
+            depth = 0
+            dead_from: int | None = None
+            for rel_idx, line in enumerate(body_lines):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("//"):
+                    continue
+                if (
+                    _RE_IF_OPEN.match(line)
+                    or _RE_LOOP_OPEN.match(line)
+                    or _RE_LOOP_FOR.match(line)
+                    or _RE_TRY_OPEN.match(line)
+                ):
+                    if dead_from is not None:
+                        # Entering a new block resets — code is live again
+                        dead_from = None
+                    depth += 1
+                elif _RE_ENDIF.match(line) or _RE_LOOP_ENDDO.match(line) or _RE_END_TRY.match(line):
+                    depth = max(0, depth - 1)
+                    if dead_from is not None and depth == 0:
+                        dead_from = None
+                elif depth == 0 and dead_from is None and _RE_RETURN_STMT.match(line):
+                    # Found unconditional return at depth 0 — mark subsequent lines as dead
+                    dead_from = rel_idx
+                elif dead_from is not None and depth == 0:
+                    abs_idx = proc.start_idx + 1 + rel_idx
+                    actual_line = lines[abs_idx]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=abs_idx + 1,
+                            character=len(actual_line) - len(actual_line.lstrip()),
+                            end_line=abs_idx + 1,
+                            end_character=len(actual_line.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL128",
+                            message=(
+                                f"Dead code in '{proc.name}': this line is unreachable after "
+                                "an unconditional Возврат."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL129 — RecursiveCall
+    # ------------------------------------------------------------------
+
+    def _rule_bsl129_recursive_call(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag procedures/functions that directly call themselves."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            pattern = re.compile(
+                r'\b' + re.escape(proc.name) + r'\s*\(',
+                re.IGNORECASE,
+            )
+            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
+            for rel_idx, line in enumerate(body_lines):
+                if line.strip().startswith("//"):
+                    continue
+                if pattern.search(line):
+                    abs_idx = proc.start_idx + 1 + rel_idx
+                    actual_line = lines[abs_idx]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=abs_idx + 1,
+                            character=len(actual_line) - len(actual_line.lstrip()),
+                            end_line=abs_idx + 1,
+                            end_character=len(actual_line.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL129",
+                            message=(
+                                f"'{proc.name}' calls itself recursively — "
+                                "ensure the recursion is intentional and has a base case."
+                            ),
+                        )
+                    )
+                    break  # one diagnostic per proc is sufficient
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL130 — LongCommentLine
+    # ------------------------------------------------------------------
+
+    def _rule_bsl130_long_comment_line(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag comment-only lines longer than 120 characters."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_COMMENT_ONLY_LINE.match(line) and len(line.rstrip()) > 120:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=0,
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL130",
+                        message=(
+                            f"Comment line is {len(line.rstrip())} characters long "
+                            "(max 120) — split into shorter lines."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL131 — EmptyRegion
+    # ------------------------------------------------------------------
+
+    def _rule_bsl131_empty_region(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag #Область immediately followed by #КонецОбласти with no code in between."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if not _RE_REGION_OPEN_LINE.match(line):
+                continue
+            # Look ahead for first non-blank line
+            for j in range(idx + 1, len(lines)):
+                next_stripped = lines[j].strip()
+                if not next_stripped:
+                    continue
+                if _RE_REGION_CLOSE_LINE.match(lines[j]):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=len(line) - len(line.lstrip()),
+                            end_line=idx + 1,
+                            end_character=len(line.rstrip()),
+                            severity=Severity.INFORMATION,
+                            code="BSL131",
+                            message=(
+                                "Empty region: #Область is immediately followed by "
+                                "#КонецОбласти with no code inside — remove or populate it."
+                            ),
+                        )
+                    )
+                break
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL132 — RepeatedStringLiteral
+    # ------------------------------------------------------------------
+
+    def _rule_bsl132_repeated_string_literal(
+        self, path: str, lines: list[str], content: str
+    ) -> list[Diagnostic]:
+        """Flag string literals that appear 4 or more times in the file."""
+        diags: list[Diagnostic] = []
+        all_strings = _RE_STRING_LITERAL.findall(content)
+        counts: dict[str, int] = {}
+        for s in all_strings:
+            counts[s] = counts.get(s, 0) + 1
+        repeated = {s for s, c in counts.items() if c >= 4}
+        if not repeated:
+            return diags
+        reported: set[str] = set()
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            for m in _RE_STRING_LITERAL.finditer(line):
+                s = m.group(1)
+                if s in repeated and s not in reported:
+                    reported.add(s)
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=m.start(),
+                            end_line=idx + 1,
+                            end_character=m.end(),
+                            severity=Severity.INFORMATION,
+                            code="BSL132",
+                            message=(
+                                f'String literal "{s}" appears {counts[s]} times in this file '
+                                "— extract to a named constant."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL133 — RequiredParamAfterOptional
+    # ------------------------------------------------------------------
+
+    def _rule_bsl133_required_param_after_optional(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag when a required param appears after an optional (default-valued) one."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            header_line = lines[proc.start_idx]
+            m = _RE_PROC_HEADER.search(header_line)
+            if not m:
+                continue
+            params_str = m.group("params") or ""
+            parsed = _parse_params(params_str)
+            found_optional = False
+            for name, _is_val, is_optional in parsed:
+                if is_optional:
+                    found_optional = True
+                elif found_optional:
+                    # Required param after optional
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=len(header_line) - len(header_line.lstrip()),
+                            end_line=proc.start_idx + 1,
+                            end_character=len(header_line.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL133",
+                            message=(
+                                f"'{proc.name}': required parameter '{name}' "
+                                "appears after an optional (default-valued) parameter — "
+                                "reorder so all required params come first."
+                            ),
+                        )
+                    )
+                    break  # one diagnostic per proc
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL134 — CyclomaticComplexity
+    # ------------------------------------------------------------------
+
+    MAX_CYCLOMATIC_COMPLEXITY: int = 10
+
+    def _rule_bsl134_cyclomatic_complexity(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag functions/procedures whose cyclomatic complexity exceeds the maximum."""
+        diags: list[Diagnostic] = []
+        max_cc = self.MAX_CYCLOMATIC_COMPLEXITY
+        for proc in procs:
+            cc = 1  # baseline
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                line = lines[i]
+                if line.strip().startswith("//"):
+                    continue
+                if _RE_MCCABE_BRANCH_BSL134.match(line):
+                    cc += 1
+            if cc > max_cc:
+                header_line = lines[proc.start_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=len(header_line) - len(header_line.lstrip()),
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header_line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL134",
+                        message=(
+                            f"'{proc.name}' has cyclomatic complexity {cc} "
+                            f"(max {max_cc}) — refactor into smaller functions."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL135 — NestedFunctionCalls
+    # ------------------------------------------------------------------
+
+    def _rule_bsl135_nested_function_calls(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines where a function call is passed directly as an argument to another."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_NESTED_CALL.search(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL135",
+                        message=(
+                            "Nested function call: a function's result is passed directly "
+                            "as an argument — extract to a named variable for readability."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL136 — MissingSpaceBeforeComment
+    # ------------------------------------------------------------------
+
+    def _rule_bsl136_missing_space_before_comment(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines where inline // is not preceded by a space."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            m = _RE_NO_SPACE_BEFORE_COMMENT.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start() + 1,  # position of the first /
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL136",
+                        message=(
+                            "Missing space before inline comment '//' — "
+                            "add a space between code and the comment."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL137 — UseOfFindByDescription
+    # ------------------------------------------------------------------
+
+    def _rule_bsl137_use_of_find_by_description(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag calls to НайтиПоНаименованию/FindByDescription and similar slow methods."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_FIND_BY_DESCRIPTION.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL137",
+                        message=(
+                            f"'{m.group().rstrip('(')}' performs a full-table scan — "
+                            "use НайтиПоСсылке() or a query with an indexed field instead."
+                        ),
+                    )
+                )
         return diags
 
 
