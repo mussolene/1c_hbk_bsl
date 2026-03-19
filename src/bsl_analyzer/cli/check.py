@@ -89,6 +89,7 @@ def check(
     baseline: str | None = None,
     update_baseline: str | None = None,
     config: BslConfig | None = None,
+    stats: bool = False,
 ) -> int:
     """
     Run BSL lint rules on all .bsl/.os files under *paths*.
@@ -168,6 +169,9 @@ def check(
             )
             return 0
         _print_summary(all_diagnostics, len(all_files))
+
+    if stats:
+        _print_stats(all_diagnostics, len(all_files))
 
     if effective_exit_zero:
         return 0
@@ -411,6 +415,28 @@ def _print_sarif(
         ],
     }
     print(json.dumps(sarif, indent=2, ensure_ascii=False))
+
+
+def _print_stats(diagnostics: list[Diagnostic], file_count: int) -> None:
+    """
+    Print a machine-readable JSON stats summary to stdout.
+
+    Useful for dashboards, trend tracking, and CI metric collection::
+
+        bsl-analyzer --check . --stats | jq .total
+    """
+    from collections import Counter
+
+    by_code: dict[str, int] = Counter(d.code for d in diagnostics)  # type: ignore[assignment]
+    by_severity: dict[str, int] = Counter(d.severity.name for d in diagnostics)  # type: ignore[assignment]
+
+    summary: dict[str, Any] = {
+        "total": len(diagnostics),
+        "files_checked": file_count,
+        "by_severity": dict(by_severity),
+        "by_rule": dict(sorted(by_code.items())),
+    }
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
 def _print_summary(diagnostics: list[Diagnostic], file_count: int) -> None:

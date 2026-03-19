@@ -492,6 +492,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "INFO",
         "tags": ["style", "formatting"],
     },
+    "BSL056": {
+        "name": "ShortMethodName",
+        "description": "Method name is too short (< 3 characters) — use a descriptive name",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["naming", "readability"],
+    },
+    "BSL057": {
+        "name": "DeprecatedInputDialog",
+        "description": "ВвестиЗначение/ВвестиЧисло/ВвестиДату/ВвестиСтроку are synchronous modal dialogs deprecated in 8.3",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["deprecated", "ui"],
+    },
+    "BSL058": {
+        "name": "QueryWithoutWhere",
+        "description": "Embedded query text has no WHERE clause — may return all rows and cause performance issues",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance", "sql"],
+    },
 }
 
 
@@ -863,6 +887,24 @@ _RE_IF_LITERAL = re.compile(
     r'^\s*(?:Если|If)\s+(?:Истина|True|Ложь|False)\b',
     re.IGNORECASE,
 )
+
+# Deprecated modal input dialogs
+_RE_INPUT_DIALOG = re.compile(
+    r'\b(?:ВвестиЗначение|ВвестиЧисло|ВвестиДату|ВвестиСтроку'
+    r'|InputValue|InputNumber|InputDate|InputString)\s*\(',
+    re.IGNORECASE,
+)
+
+# Query text block: "ВЫБРАТЬ ... ИЗ ..."
+_RE_QUERY_TEXT_START = re.compile(
+    r'".*(?:ВЫБРАТЬ|SELECT)\b',
+    re.IGNORECASE,
+)
+_RE_QUERY_WHERE = re.compile(
+    r'\b(?:ГДЕ|WHERE)\b',
+    re.IGNORECASE,
+)
+_RE_QUERY_END_QUOTE = re.compile(r'[^|"]*"')
 
 # Unconditional exit from method body (for unreachable code detection)
 _RE_UNCONDITIONAL_EXIT = re.compile(
@@ -1315,6 +1357,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl054_module_level_variable(path, lines, procs))
         if self._rule_enabled("BSL055"):
             diagnostics.extend(self._rule_bsl055_consecutive_blank_lines(path, lines))
+        if self._rule_enabled("BSL056"):
+            diagnostics.extend(self._rule_bsl056_short_method_name(path, lines, procs))
+        if self._rule_enabled("BSL057"):
+            diagnostics.extend(self._rule_bsl057_deprecated_input_dialog(path, lines))
+        if self._rule_enabled("BSL058"):
+            diagnostics.extend(self._rule_bsl058_query_without_where(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -3344,6 +3392,120 @@ class DiagnosticEngine:
                         )
                     )
                 blank_run = 0
+        return diags
+
+
+    # ------------------------------------------------------------------
+    # BSL056 — Short method name (< 3 chars)
+    # ------------------------------------------------------------------
+
+    MIN_METHOD_NAME_LEN: int = 3
+
+    def _rule_bsl056_short_method_name(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag method names shorter than 3 characters."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if len(proc.name) < self.MIN_METHOD_NAME_LEN:
+                header = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header),
+                        severity=Severity.INFORMATION,
+                        code="BSL056",
+                        message=(
+                            f"{proc.kind.capitalize()} name '{proc.name}' is too short "
+                            f"({len(proc.name)} chars, min {self.MIN_METHOD_NAME_LEN}). "
+                            "Use a descriptive name."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL057 — Deprecated input dialogs
+    # ------------------------------------------------------------------
+
+    def _rule_bsl057_deprecated_input_dialog(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag synchronous modal input dialogs deprecated in 8.3."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.lstrip().startswith("//"):
+                continue
+            m = _RE_INPUT_DIALOG.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL057",
+                        message=(
+                            f"'{m.group().rstrip('(')}' is a synchronous modal dialog "
+                            "deprecated since 1C 8.3. Use asynchronous ShowInputValue() "
+                            "or form-based input instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL058 — Embedded query without WHERE clause
+    # ------------------------------------------------------------------
+
+    def _rule_bsl058_query_without_where(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Detect string literals that contain a SELECT query without a WHERE clause.
+        Heuristic: looks for quoted strings spanning multiple lines (BSL | continuation)
+        that contain ВЫБРАТЬ/SELECT but not ГДЕ/WHERE and not ПЕРВЫЕ/FIRST/TOP.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if _RE_QUERY_TEXT_START.search(line):
+                # Collect all lines of this query string (| continuation)
+                query_start = i
+                query_lines = [line]
+                j = i + 1
+                while j < len(lines) and (lines[j].lstrip().startswith("|") or not lines[j].strip()):
+                    query_lines.append(lines[j])
+                    j += 1
+                query_text = "\n".join(query_lines)
+                has_where = _RE_QUERY_WHERE.search(query_text)
+                has_first = re.search(r'\b(?:ПЕРВЫЕ|FIRST|TOP)\b', query_text, re.IGNORECASE)
+                has_into = re.search(r'\b(?:ПОМЕСТИТЬ|INTO)\b', query_text, re.IGNORECASE)
+                if not has_where and not has_first and not has_into:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=query_start + 1,
+                            character=0,
+                            end_line=query_start + 1,
+                            end_character=len(line),
+                            severity=Severity.WARNING,
+                            code="BSL058",
+                            message=(
+                                "Query has no WHERE/ГДЕ clause and no FIRST/ПЕРВЫЕ limit — "
+                                "may return all table rows and cause performance issues."
+                            ),
+                        )
+                    )
+                i = j
+                continue
+            i += 1
         return diags
 
 

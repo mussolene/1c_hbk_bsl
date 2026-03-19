@@ -8,6 +8,7 @@ Usage:
     bsl-analyzer --index [PATH]                     Force full reindex of workspace
     bsl-analyzer --list-rules                       Show all available rules
     bsl-analyzer --watch [PATH ...]                 Watch for changes and re-lint
+    bsl-analyzer --init                             Generate starter bsl-analyzer.toml
 
 Check mode flags:
     --select BSL001,BSL002         Run only these rules
@@ -69,6 +70,7 @@ def _run_check(
     exit_zero: bool,
     baseline: str | None,
     update_baseline: str | None,
+    stats: bool,
 ) -> int:
     from bsl_analyzer.cli.check import check
     from bsl_analyzer.cli.config import load_config
@@ -88,6 +90,7 @@ def _run_check(
         baseline=baseline,
         update_baseline=update_baseline,
         config=cfg,
+        stats=stats,
     )
 
 
@@ -139,6 +142,67 @@ def _run_watch(
 
     watcher = FileWatcher()
     watcher.watch(workspace, _on_change)
+
+
+def _run_init(target_dir: str) -> None:
+    """Write a starter bsl-analyzer.toml to *target_dir*."""
+    from rich.console import Console
+
+    _console = Console(stderr=True)
+    config_path = os.path.join(target_dir, "bsl-analyzer.toml")
+
+    if os.path.exists(config_path):
+        _console.print(f"[yellow]Config already exists:[/yellow] {config_path}")
+        return
+
+    content = '''\
+# bsl-analyzer.toml — configuration for bsl-analyzer
+# See: https://github.com/your-org/bsl-analyzer
+
+# Rules to run (empty = all rules)
+# select = ["BSL001", "BSL002"]
+
+# Rules to always skip
+ignore = []
+
+# Directories / file patterns to exclude
+exclude = [
+    "vendor",
+    ".git",
+    "build",
+]
+
+# Per-file rule overrides
+# [per-file-ignores]
+# "legacy_*.bsl" = ["BSL012", "BSL035"]
+
+# Output format: text | json | sonarqube | sarif  (default: text)
+# format = "text"
+
+# Parallel workers (0 = auto, 1 = serial)
+# jobs = 0
+
+# Never fail CI exit code
+# exit-zero = false
+
+# Baseline file for gradual adoption
+# baseline = "bsl-baseline.json"
+
+# ---- Threshold overrides ----
+# max-line-length = 120
+# max-proc-lines  = 200
+# max-cognitive-complexity = 15
+# max-mccabe-complexity    = 10
+# max-nesting-depth        = 4
+# max-params               = 7
+# max-returns              = 3
+# max-bool-ops             = 3
+# min-duplicate-uses       = 3
+'''
+    with open(config_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    _console.print(f"[green]Created:[/green] {config_path}")
+    _console.print("Edit the file to customize rules and thresholds.")
 
 
 def _run_index(workspace: str, force: bool) -> None:
@@ -210,6 +274,11 @@ Examples:
         action="store_true",
         help="Show all available diagnostic rules with descriptions",
     )
+    mode_group.add_argument(
+        "--init",
+        action="store_true",
+        help="Generate a starter bsl-analyzer.toml in the current directory",
+    )
 
     # MCP options
     parser.add_argument(
@@ -276,6 +345,12 @@ Examples:
         default=None,
         help="Save all found issues as a new baseline, then exit 0",
     )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        default=False,
+        help="Print a machine-readable JSON stats summary to stdout after checking",
+    )
 
     # Index options
     parser.add_argument(
@@ -290,6 +365,10 @@ Examples:
     if args.list_rules:
         from bsl_analyzer.cli.check import list_rules
         list_rules()
+        return
+
+    if args.init:
+        _run_init(os.getcwd())
         return
 
     if args.lsp:
@@ -311,6 +390,7 @@ Examples:
                 exit_zero=args.exit_zero,
                 baseline=args.baseline,
                 update_baseline=args.update_baseline,
+                stats=args.stats,
             )
         )
 

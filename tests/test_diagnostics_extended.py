@@ -1575,6 +1575,102 @@ class TestBsl055ConsecutiveBlankLines:
 
 
 # ---------------------------------------------------------------------------
+# BSL056 — ShortMethodName
+# ---------------------------------------------------------------------------
+
+
+class TestBsl056ShortMethodName:
+    def test_short_name_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Аб()
+                Сообщить("hi");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL056"})
+        assert "BSL056" in _codes(diags)
+
+    def test_single_char_name_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Ф()
+                Возврат 1;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL056"})
+        assert "BSL056" in _codes(diags)
+
+    def test_normal_name_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ОбработатьЗаказ()
+                Сообщить("ok");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL056"})
+        assert "BSL056" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL057 — DeprecatedInputDialog
+# ---------------------------------------------------------------------------
+
+
+class TestBsl057DeprecatedInputDialog:
+    def test_input_value_detected(self, tmp_path: Path) -> None:
+        content = 'ВвестиЗначение(Значение, "Введите значение");\n'
+        diags = _check(content, tmp_path, select={"BSL057"})
+        assert "BSL057" in _codes(diags)
+
+    def test_input_number_detected(self, tmp_path: Path) -> None:
+        content = 'ВвестиЧисло(Число, "Введите число");\n'
+        diags = _check(content, tmp_path, select={"BSL057"})
+        assert "BSL057" in _codes(diags)
+
+    def test_in_comment_no_warning(self, tmp_path: Path) -> None:
+        content = '// ВвестиЗначение(Значение, "Введите");\n'
+        diags = _check(content, tmp_path, select={"BSL057"})
+        assert "BSL057" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL058 — QueryWithoutWhere
+# ---------------------------------------------------------------------------
+
+
+class TestBsl058QueryWithoutWhere:
+    def test_query_without_where_detected(self, tmp_path: Path) -> None:
+        content = '''\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Код,
+            |   Наименование
+            |ИЗ
+            |   Справочник.Номенклатура";
+        '''
+        diags = _check(content, tmp_path, select={"BSL058"})
+        assert "BSL058" in _codes(diags)
+
+    def test_query_with_where_no_warning(self, tmp_path: Path) -> None:
+        content = '''\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Код
+            |ИЗ
+            |   Справочник.Номенклатура
+            |ГДЕ
+            |   Код = &Код";
+        '''
+        diags = _check(content, tmp_path, select={"BSL058"})
+        assert "BSL058" not in _codes(diags)
+
+    def test_query_with_first_no_warning(self, tmp_path: Path) -> None:
+        content = '''\
+            ТекстЗапроса = "ВЫБРАТЬ ПЕРВЫЕ 10
+            |   Код
+            |ИЗ
+            |   Справочник.Номенклатура";
+        '''
+        diags = _check(content, tmp_path, select={"BSL058"})
+        assert "BSL058" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # Metadata completeness
 # ---------------------------------------------------------------------------
 
@@ -1582,6 +1678,6 @@ class TestBsl055ConsecutiveBlankLines:
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 56)}
+        expected = {f"BSL{i:03d}" for i in range(1, 59)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

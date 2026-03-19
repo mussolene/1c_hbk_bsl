@@ -16,6 +16,7 @@ from bsl_analyzer.cli.check import (
     _print_json,
     _print_sarif,
     _print_sonarqube,
+    _print_stats,
     _run_checks,
     check,
     list_rules,
@@ -362,6 +363,52 @@ class TestCheckNewFeatures:
         cfg = BslConfig({"max-line-length": 10})
         rc = check([str(tmp_path)], format="text", select={"BSL001"}, config=cfg)
         assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# _print_stats
+# ---------------------------------------------------------------------------
+
+
+class TestPrintStats:
+    def test_stats_valid_json(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        diag = _make_diag(str(tmp_path / "a.bsl"))
+        _print_stats([diag], file_count=5)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["total"] == 1
+        assert data["files_checked"] == 5
+        assert "by_severity" in data
+        assert "by_rule" in data
+
+    def test_stats_empty(self, capsys: pytest.CaptureFixture) -> None:
+        _print_stats([], file_count=10)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["total"] == 0
+        assert data["files_checked"] == 10
+
+    def test_stats_counts_by_rule(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        diags = [
+            _make_diag(str(tmp_path / "a.bsl"), code="BSL009"),
+            _make_diag(str(tmp_path / "a.bsl"), code="BSL009"),
+            _make_diag(str(tmp_path / "a.bsl"), code="BSL012"),
+        ]
+        _print_stats(diags, file_count=1)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["by_rule"]["BSL009"] == 2
+        assert data["by_rule"]["BSL012"] == 1
+
+
+class TestCheckStats:
+    def test_stats_flag_outputs_json(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
+        check([str(tmp_path)], format="text", select={"BSL012"}, stats=True)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert "total" in data
+        assert data["total"] >= 1
 
 
 # ---------------------------------------------------------------------------
