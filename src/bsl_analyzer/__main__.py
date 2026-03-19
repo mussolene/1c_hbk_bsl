@@ -87,12 +87,14 @@ def _autoindex_if_empty(workspace: str, db_path: str) -> None:
 
 
 def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
-    from bsl_analyzer.mcp.server import create_mcp_app
+    from bsl_analyzer.indexer.db_path import resolve_index_db_path
 
-    db_path = os.environ.get("INDEX_DB_PATH", os.path.join(workspace, "bsl_index.sqlite"))
-    # Propagate resolved paths so mcp/server.py picks them up
+    db_path = resolve_index_db_path(workspace)
+    # Set env vars BEFORE importing mcp/server so module-level globals pick them up
     os.environ.setdefault("INDEX_DB_PATH", db_path)
     os.environ.setdefault("WORKSPACE_ROOT", workspace)
+
+    from bsl_analyzer.mcp.server import create_mcp_app
 
     _autoindex_if_empty(workspace, db_path)
 
@@ -269,8 +271,9 @@ exclude = [
 
 
 def _run_index(workspace: str, force: bool) -> None:
+    from bsl_analyzer.indexer.db_path import resolve_index_db_path
     from bsl_analyzer.indexer.incremental import IncrementalIndexer
-    db_path = os.environ.get("INDEX_DB_PATH", "bsl_index.sqlite")
+    db_path = resolve_index_db_path(workspace)
     indexer = IncrementalIndexer(db_path=db_path)
     indexer.index_workspace(workspace, force=force)
 

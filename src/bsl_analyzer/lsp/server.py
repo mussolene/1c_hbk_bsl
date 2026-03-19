@@ -122,6 +122,7 @@ except ImportError:
 from bsl_analyzer.analysis.diagnostics import DiagnosticEngine, Severity
 from bsl_analyzer.analysis.formatter import default_formatter
 from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
+from bsl_analyzer.indexer.db_path import resolve_index_db_path
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.parser.bsl_parser import BslParser
@@ -165,7 +166,7 @@ class BslLanguageServer(LanguageServer):
             "v0.1.0",
             text_document_sync_kind=TextDocumentSyncKind.Full,
         )
-        db_path = os.environ.get("INDEX_DB_PATH", "bsl_index.sqlite")
+        db_path = resolve_index_db_path(os.getcwd())
         self.symbol_index = SymbolIndex(db_path=db_path)
         self.parser = BslParser()
         self.diagnostics_engine = DiagnosticEngine(parser=self.parser)
@@ -197,7 +198,13 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
         workspace_root = params.root_path
 
     if workspace_root and Path(workspace_root).is_dir():
-        logger.info("LSP: starting background index of %s", workspace_root)
+        # Re-resolve DB path now that we know the actual workspace root
+        db_path = resolve_index_db_path(workspace_root)
+        if db_path != ls.symbol_index.db_path:
+            ls.symbol_index = SymbolIndex(db_path=db_path)
+            ls.indexer = IncrementalIndexer(index=ls.symbol_index)
+
+        logger.info("LSP: starting background index of %s (db: %s)", workspace_root, db_path)
 
         def _do_index() -> None:
             try:

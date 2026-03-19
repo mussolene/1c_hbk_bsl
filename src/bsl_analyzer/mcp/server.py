@@ -35,6 +35,7 @@ from bsl_analyzer.analysis.call_graph import build_call_graph
 from bsl_analyzer.analysis.diagnostics import RULE_METADATA, DiagnosticEngine
 from bsl_analyzer.analysis.fix_engine import apply_fixes as _apply_fixes
 from bsl_analyzer.analysis.formatter import default_formatter
+from bsl_analyzer.indexer.db_path import resolve_index_db_path
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
 from bsl_analyzer.parser.bsl_parser import BslParser
@@ -45,8 +46,10 @@ logger = logging.getLogger(__name__)
 # Shared state
 # ---------------------------------------------------------------------------
 
-_DB_PATH = os.environ.get("INDEX_DB_PATH", "bsl_index.sqlite")
 _WORKSPACE = os.environ.get("WORKSPACE_ROOT", os.getcwd())
+
+# Resolve DB path: INDEX_DB_PATH env → .git/bsl_index.sqlite → ~/.cache/bsl-analyzer/<hash>/
+_DB_PATH = resolve_index_db_path(_WORKSPACE)
 
 _index: SymbolIndex | None = None
 _indexer: IncrementalIndexer | None = None
