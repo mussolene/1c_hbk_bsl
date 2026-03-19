@@ -802,26 +802,24 @@ class TestBsl022DeprecatedMessage:
 
 
 class TestBsl023UsingServiceTag:
-    """BSL023 is disabled by default — tests use select= to enable it explicitly."""
-
     def test_todo_detected(self, tmp_path: Path) -> None:
         content = "// TODO: реализовать проверку\nПроцедура Тест()\nКонецПроцедуры\n"
-        diags = _check(content, tmp_path, select={"BSL023"})
+        diags = _check(content, tmp_path)
         assert "BSL023" in _codes(diags)
 
     def test_fixme_detected(self, tmp_path: Path) -> None:
         content = "// FIXME: баг с кодировкой\nА = 1;\n"
-        diags = _check(content, tmp_path, select={"BSL023"})
+        diags = _check(content, tmp_path)
         assert "BSL023" in _codes(diags)
 
     def test_hack_detected(self, tmp_path: Path) -> None:
         content = "// HACK: временный обходной путь\nА = 1;\n"
-        diags = _check(content, tmp_path, select={"BSL023"})
+        diags = _check(content, tmp_path)
         assert "BSL023" in _codes(diags)
 
     def test_normal_comment_no_warning(self, tmp_path: Path) -> None:
         content = "// Обычный комментарий без тегов\nА = 1;\n"
-        diags = _check(content, tmp_path, select={"BSL023"})
+        diags = _check(content, tmp_path)
         assert "BSL023" not in _codes(diags)
 
 
@@ -831,28 +829,26 @@ class TestBsl023UsingServiceTag:
 
 
 class TestBsl024SpaceAtStartComment:
-    """BSL024 is disabled by default — tests use select= to enable it explicitly."""
-
     def test_no_space_detected(self, tmp_path: Path) -> None:
         content = "//Без пробела\nА = 1;\n"
-        diags = _check(content, tmp_path, select={"BSL024"})
+        diags = _check(content, tmp_path)
         assert "BSL024" in _codes(diags)
 
     def test_with_space_no_warning(self, tmp_path: Path) -> None:
         content = "// С пробелом\nА = 1;\n"
-        diags = _check(content, tmp_path, select={"BSL024"})
+        diags = _check(content, tmp_path)
         assert "BSL024" not in _codes(diags)
 
     def test_doc_comment_slash3_no_warning(self, tmp_path: Path) -> None:
         """/// doc-comments are exempted."""
         content = "/// Документация функции\nА = 1;\n"
-        diags = _check(content, tmp_path, select={"BSL024"})
+        diags = _check(content, tmp_path)
         assert "BSL024" not in _codes(diags)
 
     def test_empty_comment_no_warning(self, tmp_path: Path) -> None:
         """An empty // comment (nothing after) is OK."""
         content = "//\nА = 1;\n"
-        diags = _check(content, tmp_path, select={"BSL024"})
+        diags = _check(content, tmp_path)
         assert "BSL024" not in _codes(diags)
 
 

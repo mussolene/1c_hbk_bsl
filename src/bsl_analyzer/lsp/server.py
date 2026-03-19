@@ -478,6 +478,56 @@ def _hover_markdown(parts: list[str]) -> Hover:
     return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts)))
 
 
+def _format_doc_comment(raw: str) -> str:
+    """Strip BSL ``// `` line prefixes and render the doc comment as Markdown.
+
+    Input:  '// Описание.\\n//\\n// Параметры:\\n//   А - Тип - Описание'
+    Output: 'Описание.\\n\\n**Параметры:**\\n- А — Тип — Описание'
+    """
+    lines = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        # Remove leading // and optional single space
+        if stripped.startswith("///"):
+            text = stripped[3:].lstrip()
+        elif stripped.startswith("//"):
+            text = stripped[2:]
+            if text.startswith(" "):
+                text = text[1:]
+        else:
+            text = stripped
+
+        # Convert section headers
+        if _re.match(r"^Параметры:\s*$", text, _re.IGNORECASE):
+            lines.append("\n**Параметры:**")
+        elif _re.match(r"^Возвращаемое значение:\s*$", text, _re.IGNORECASE):
+            lines.append("\n**Возвращаемое значение:**")
+        elif _re.match(r"^Описание\s", text, _re.IGNORECASE):
+            # "Описание МойМетод." → keep as-is (first line)
+            lines.append(text)
+        elif text == "":
+            lines.append("")  # blank line
+        elif lines and lines[-1].endswith("**"):
+            # Line after a section header — format as list item
+            lines.append(f"- {text}")
+        else:
+            lines.append(text)
+
+    # Collapse multiple consecutive blank lines into one
+    result_lines: list[str] = []
+    prev_blank = False
+    for line in lines:
+        if line == "":
+            if not prev_blank:
+                result_lines.append("")
+            prev_blank = True
+        else:
+            result_lines.append(line)
+            prev_blank = False
+
+    return "\n".join(result_lines).strip()
+
+
 @server.feature(TEXT_DOCUMENT_HOVER)
 def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     """
@@ -506,7 +556,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
         parts: list[str] = [f"```bsl\n{sig}\n```"]
         doc = sym.get("doc_comment")
         if doc:
-            parts.append(doc)
+            parts.append(_format_doc_comment(doc))
         if len(symbols) == 1:
             file_name = Path(sym["file_path"]).name
             parts.append(f"*Определено в* `{file_name}`, строка {sym['line']}")
