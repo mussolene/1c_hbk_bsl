@@ -228,10 +228,13 @@ def list_rules() -> None:
     """Print a formatted table of all available rules to stdout."""
     from rich.table import Table
 
+    from bsl_analyzer.analysis.fix_engine import FIXABLE_RULES
+
     table = Table(title="BSL Analyzer Rules", show_lines=True)
     table.add_column("Code", style="bold cyan", width=8)
     table.add_column("Name", style="bold", width=32)
     table.add_column("Severity", width=12)
+    table.add_column("Fix", width=5)
     table.add_column("SonarQube Type", width=16)
     table.add_column("Description")
 
@@ -244,10 +247,12 @@ def list_rules() -> None:
 
     for code, meta in sorted(RULE_METADATA.items()):
         sev = meta["severity"]
+        fixable = "[green]✓[/green]" if code in FIXABLE_RULES else ""
         table.add_row(
             code,
             meta["name"],
             f"[{sev_colors.get(sev, 'white')}]{sev}[/]",
+            fixable,
             meta["sonar_type"],
             meta["description"],
         )

@@ -564,6 +564,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "design"],
     },
+    "BSL065": {
+        "name": "MissingExportComment",
+        "description": "Exported method has no preceding description comment (// or ///)",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "documentation"],
+    },
+    "BSL066": {
+        "name": "DeprecatedPlatformMethod",
+        "description": "Call to a deprecated 1C platform method that has a modern replacement",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["deprecated", "compatibility"],
+    },
+    "BSL067": {
+        "name": "VarDeclarationAfterCode",
+        "description": "Перем variable declaration appears after executable code — move it to the top",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["style", "design"],
+    },
 }
 
 
@@ -609,6 +633,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL062": "Remove the unused parameter or add a comment explaining why it is kept.",
     "BSL063": "Split the large module into smaller focused modules.",
     "BSL064": "Change 'Процедура' to 'Функция' and add the required return type handling.",
+    "BSL065": "Add a // Description comment on the line before the Export method declaration.",
+    "BSL066": "Replace with the modern equivalent platform method.",
+    "BSL067": "Move all Перем declarations to the start of the method, before any executable statements.",
 }
 
 
@@ -1062,6 +1089,33 @@ _RE_RETURN_VALUE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Comment line (BSL065 — export method comment check)
+_RE_COMMENT_LINE = re.compile(r'^\s*//')
+
+# Deprecated 1C platform methods (BSL066)
+_DEPRECATED_METHODS = frozenset({
+    # Deprecated in 8.3.x — replaced by async equivalents
+    "предупреждение", "сообщить", "вопрос", "вводзначение", "вводчисло",
+    "вводдату", "вводстроку", "открытьзначение", "редактировать",
+    "warning", "message", "question",
+    # Deprecated string methods (replaced by Str*)
+    "врег", "нрег", "сокрл", "сокрп", "сокрлп",
+    # Deprecated in favour of platform methods
+    "символ", "кодсимвола",
+})
+_RE_DEPRECATED_METHOD = re.compile(
+    r'\b(?:' + '|'.join(re.escape(m) for m in sorted(_DEPRECATED_METHODS)) + r')\s*\(',
+    re.IGNORECASE,
+)
+
+# Перем declaration (BSL067)
+_RE_VAR_DECL = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
+# Executable code (not comment, not blank, not Перем, not proc header)
+_RE_EXECUTABLE_LINE = re.compile(
+    r'^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)',
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
@@ -1494,6 +1548,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl063_large_module(path, lines))
         if self._rule_enabled("BSL064"):
             diagnostics.extend(self._rule_bsl064_procedure_returns_value(path, lines, procs))
+        if self._rule_enabled("BSL065"):
+            diagnostics.extend(self._rule_bsl065_missing_export_comment(path, lines, procs))
+        if self._rule_enabled("BSL066"):
+            diagnostics.extend(self._rule_bsl066_deprecated_platform_method(path, lines))
+        if self._rule_enabled("BSL067"):
+            diagnostics.extend(self._rule_bsl067_var_after_code(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -3879,6 +3939,121 @@ class DiagnosticEngine:
                         )
                     )
                     break  # One diagnostic per procedure is enough
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL065 — Missing export comment
+    # ------------------------------------------------------------------
+
+    def _rule_bsl065_missing_export_comment(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag exported methods that have no preceding description comment.
+
+        The line immediately before the method declaration (or the line before
+        blank lines above the declaration) must be a comment (// or ///).
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.is_export:
+                continue
+            header_idx = proc.start_idx
+            header_line = lines[header_idx]
+            # Walk backwards past blank lines to find the line before
+            prev_idx = header_idx - 1
+            while prev_idx >= 0 and not lines[prev_idx].strip():
+                prev_idx -= 1
+            # Check if that line is a comment
+            if prev_idx < 0 or not _RE_COMMENT_LINE.match(lines[prev_idx]):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=header_idx + 1,
+                        character=0,
+                        end_line=header_idx + 1,
+                        end_character=len(header_line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL065",
+                        message=(
+                            f"Exported method '{proc.name}' has no preceding description comment."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL066 — Deprecated platform method call
+    # ------------------------------------------------------------------
+
+    def _rule_bsl066_deprecated_platform_method(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag calls to deprecated 1C platform methods."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_COMMENT_LINE.match(line):
+                continue
+            m = _RE_DEPRECATED_METHOD.search(line)
+            if m:
+                method_name = m.group(0).rstrip("(").strip()
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL066",
+                        message=(
+                            f"'{method_name}' is a deprecated platform method — "
+                            "use its modern asynchronous replacement."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL067 — Перем declaration after executable code
+    # ------------------------------------------------------------------
+
+    def _rule_bsl067_var_after_code(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag Перем declarations that appear after any executable statement
+        in the same method body. Declarations should be at the top.
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            body_start = proc.start_idx + 1
+            body_end = proc.end_idx
+            found_executable = False
+            for idx in range(body_start, min(body_end, len(lines))):
+                line = lines[idx]
+                stripped = line.strip()
+                if not stripped or stripped.startswith("//"):
+                    continue
+                if _RE_VAR_DECL.match(line):
+                    if found_executable:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=len(line) - len(line.lstrip()),
+                                end_line=idx + 1,
+                                end_character=len(line.rstrip()),
+                                severity=Severity.WARNING,
+                                code="BSL067",
+                                message=(
+                                    "Перем/Var declaration appears after executable code — "
+                                    "move declarations to the start of the method."
+                                ),
+                            )
+                        )
+                else:
+                    found_executable = True
         return diags
 
 

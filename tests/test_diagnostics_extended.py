@@ -1851,6 +1851,99 @@ class TestBsl064ProcedureReturnsValue:
 
 
 # ---------------------------------------------------------------------------
+# BSL065 — MissingExportComment
+# ---------------------------------------------------------------------------
+
+
+class TestBsl065MissingExportComment:
+    def test_export_without_comment_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест() Экспорт
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL065"})
+        assert "BSL065" in _codes(diags)
+
+    def test_export_with_comment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            // Описание метода
+            Процедура Тест() Экспорт
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL065"})
+        assert "BSL065" not in _codes(diags)
+
+    def test_non_export_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL065"})
+        assert "BSL065" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL066 — DeprecatedPlatformMethod
+# ---------------------------------------------------------------------------
+
+
+class TestBsl066DeprecatedPlatformMethod:
+    def test_deprecated_message_detected(self, tmp_path: Path) -> None:
+        content = 'Сообщить("Привет");\n'
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" in _codes(diags)
+
+    def test_in_comment_no_warning(self, tmp_path: Path) -> None:
+        content = '// Сообщить("Привет");\n'
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" not in _codes(diags)
+
+    def test_modern_method_no_warning(self, tmp_path: Path) -> None:
+        content = 'ПоказатьОповещение("Привет", , "Заголовок");\n'
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL067 — VarDeclarationAfterCode
+# ---------------------------------------------------------------------------
+
+
+class TestBsl067VarDeclarationAfterCode:
+    def test_var_after_code_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = 1;
+                Перем Б;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL067"})
+        assert "BSL067" in _codes(diags)
+
+    def test_var_before_code_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Перем Б;
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL067"})
+        assert "BSL067" not in _codes(diags)
+
+    def test_no_var_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL067"})
+        assert "BSL067" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # Metadata completeness
 # ---------------------------------------------------------------------------
 
@@ -1858,6 +1951,6 @@ class TestBsl064ProcedureReturnsValue:
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 65)}
+        expected = {f"BSL{i:03d}" for i in range(1, 68)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
