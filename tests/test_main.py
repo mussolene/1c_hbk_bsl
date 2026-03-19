@@ -204,3 +204,76 @@ class TestMainVersion:
             with pytest.raises(SystemExit) as exc_info:
                 main()
         assert exc_info.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# main() — init mode
+# ---------------------------------------------------------------------------
+
+
+class TestMainInit:
+    def test_init_creates_config_file(self, tmp_path: Path) -> None:
+        with patch("sys.argv", ["bsl-analyzer", "--init"]):
+            with patch("os.getcwd", return_value=str(tmp_path)):
+                main()
+        assert (tmp_path / "bsl-analyzer.toml").exists()
+
+    def test_init_does_not_overwrite_existing(self, tmp_path: Path) -> None:
+        existing = tmp_path / "bsl-analyzer.toml"
+        existing.write_text("# custom\n")
+        with patch("sys.argv", ["bsl-analyzer", "--init"]):
+            with patch("os.getcwd", return_value=str(tmp_path)):
+                main()
+        assert existing.read_text() == "# custom\n"
+
+
+# ---------------------------------------------------------------------------
+# main() — compact format
+# ---------------------------------------------------------------------------
+
+
+class TestMainCompactFormat:
+    def test_compact_format_output(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        (tmp_path / "t.bsl").write_text("А = А;\n", encoding="utf-8")
+        with patch("sys.argv", [
+            "bsl-analyzer", "--check", str(tmp_path),
+            "--format", "compact", "--select", "BSL009",
+        ]):
+            with pytest.raises(SystemExit):
+                main()
+        captured = capsys.readouterr()
+        assert "BSL009" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# main() -- fix mode
+# ---------------------------------------------------------------------------
+
+
+class TestMainFixFlag:
+    def test_fix_flag_removes_self_assign(self, tmp_path: Path) -> None:
+        p = tmp_path / "t.bsl"
+        p.write_text("А = А;\n", encoding="utf-8")
+        with patch("sys.argv", [
+            "bsl-analyzer", "--check", str(tmp_path),
+            "--select", "BSL009", "--fix",
+        ]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 0
+        assert "А = А" not in p.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# main() — diff mode
+# ---------------------------------------------------------------------------
+
+
+class TestMainDiffFlag:
+    def test_diff_with_no_changes_exits_0(self, tmp_path: Path) -> None:
+        """--diff with no changed BSL files should exit 0 cleanly."""
+        with patch("sys.argv", ["bsl-analyzer", "--check", str(tmp_path), "--diff"]):
+            with patch("bsl_analyzer.cli.git_utils.git_changed_files", return_value=[]):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+        assert exc_info.value.code == 0

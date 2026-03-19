@@ -309,7 +309,7 @@ Examples:
     # Check options
     parser.add_argument(
         "--format",
-        choices=["text", "json", "sonarqube", "sarif"],
+        choices=["text", "compact", "json", "sonarqube", "sarif"],
         default="text",
         help="Output format for --check (default: text)",
     )

@@ -4,6 +4,7 @@ BSL lint CLI — ruff-style output with parallel processing.
 Formats
 -------
 text       — path:line:col: SEVERITY CODE message  (default, like ruff/flake8)
+compact    — path:line:col: CODE (minimal, good for grep/awk pipelines)
 json       — structured JSON array
 sonarqube  — SonarQube Generic Issue Import Format (for sonar-scanner)
 sarif      — SARIF 2.1.0 (GitHub Code Scanning / GitLab SAST)
@@ -168,6 +169,10 @@ def check(
         _print_sonarqube(all_diagnostics, sonar_root)
     elif effective_format == "sarif":
         _print_sarif(all_diagnostics, sonar_root)
+    elif effective_format == "compact":
+        _print_compact(all_diagnostics)
+        if not all_diagnostics:
+            return 0
     else:
         _print_text(all_diagnostics, show_fix=show_fix)
         if not all_diagnostics:
@@ -382,6 +387,17 @@ def _print_text(diagnostics: list[Diagnostic], show_fix: bool = False) -> None:
         console.print(text, highlight=False)
         if show_fix and d.code in RULE_FIX_HINTS:
             console.print(f"  [dim]fix:[/dim] {RULE_FIX_HINTS[d.code]}", highlight=False)
+
+
+def _print_compact(diagnostics: list[Diagnostic]) -> None:
+    """Print compact output (file:line:col: CODE) to stderr — good for grep/awk pipelines."""
+    for d in diagnostics:
+        _, style = _SEV_STYLE.get(d.severity, ("?", "white"))
+        line_str = f"{d.file}:{d.line}:{d.character}: {d.code}"
+        text = Text(line_str)
+        offset = len(d.file) + len(str(d.line)) + len(str(d.character)) + 4
+        text.stylize(style, offset)
+        console.print(text, highlight=False)
 
 
 def _print_json(diagnostics: list[Diagnostic]) -> None:
