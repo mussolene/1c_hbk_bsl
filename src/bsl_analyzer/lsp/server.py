@@ -37,6 +37,8 @@ from lsprotocol.types import (
     INITIALIZE,
     TEXT_DOCUMENT_CODE_ACTION,
     TEXT_DOCUMENT_COMPLETION,
+    CompletionOptions,
+    InsertTextFormat,
     TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_OPEN,
@@ -924,7 +926,10 @@ _COMPLETION_KIND_MAP = {
 }
 
 
-@server.feature(TEXT_DOCUMENT_COMPLETION)
+@server.feature(
+    TEXT_DOCUMENT_COMPLETION,
+    CompletionOptions(trigger_characters=["."]),
+)
 def on_completion(
     ls: BslLanguageServer, params: CompletionParams
 ) -> CompletionList | None:
@@ -961,34 +966,97 @@ def on_completion(
 
         # Try to resolve obj_name as a known type (direct type name reference)
         type_completions = ls.platform_api.get_method_completions(obj_name)
+        _snippet_kinds = {"function", "procedure", "method"}
         for c in type_completions:
             label = c["label"]
             if member_prefix and not label.lower().startswith(member_prefix.lower()):
                 continue
+            kind_str = c.get("kind", "")
+            if kind_str in _snippet_kinds:
+                insert, fmt = _make_snippet(label, c.get("signature"))
+            else:
+                insert, fmt = label, InsertTextFormat.PlainText
             items.append(
                 CompletionItem(
                     label=label,
-                    kind=_COMPLETION_KIND_MAP.get(c["kind"], CompletionItemKind.Method),
+                    kind=_COMPLETION_KIND_MAP.get(kind_str, CompletionItemKind.Method),
                     detail=c.get("signature", ""),
                     documentation=c.get("description", ""),
-                    insert_text=label,
+                    insert_text=insert,
+                    insert_text_format=fmt,
                 )
             )
+
+        # ---- common module dot-completion: ОбщийМодуль. → exported symbols --
+        if not items:
+            for sym in ls.symbol_index.get_module_exports(obj_name):
+                label = sym["name"]
+                if member_prefix and not label.lower().startswith(member_prefix.lower()):
+                    continue
+                kind_str = sym.get("kind", "")
+                if kind_str in _snippet_kinds:
+                    insert, fmt = _make_snippet(label, sym.get("signature"))
+                else:
+                    insert, fmt = label, InsertTextFormat.PlainText
+                items.append(
+                    CompletionItem(
+                        label=label,
+                        kind=_COMPLETION_KIND_MAP.get(kind_str, CompletionItemKind.Function),
+                        detail=sym.get("signature") or "",
+                        documentation=sym.get("doc_comment") or "",
+                        insert_text=insert,
+                        insert_text_format=fmt,
+                    )
+                )
+
+        # ---- type inference: Зап = Новый Запрос() → Зап. → методы Запрос ---
+        if not items:
+            inferred = _infer_type_from_content(content, obj_name)
+            if inferred:
+                for c in ls.platform_api.get_method_completions(inferred):
+                    label = c["label"]
+                    if member_prefix and not label.lower().startswith(member_prefix.lower()):
+                        continue
+                    kind_str = c.get("kind", "")
+                    if kind_str in _snippet_kinds:
+                        insert, fmt = _make_snippet(label, c.get("signature"))
+                    else:
+                        insert, fmt = label, InsertTextFormat.PlainText
+                    items.append(
+                        CompletionItem(
+                            label=label,
+                            kind=_COMPLETION_KIND_MAP.get(kind_str, CompletionItemKind.Method),
+                            detail=c.get("signature", ""),
+                            documentation=c.get("description", ""),
+                            insert_text=insert,
+                            insert_text_format=fmt,
+                        )
+                    )
+
         # Return member completions even if empty (no global pollution on `.`)
         return CompletionList(is_incomplete=False, items=items)
 
     # ---- global scope: prefix match ----------------------------------------
     prefix = _last_identifier(prefix_line)
 
+    _snippet_kinds = {"function", "procedure", "method"}
+
     # Platform global functions
     for c in ls.platform_api.get_global_completions(prefix):
+        label = c["label"]
+        kind_str = c.get("kind", "function")
+        if kind_str in _snippet_kinds:
+            insert, fmt = _make_snippet(label, c.get("signature"))
+        else:
+            insert, fmt = label, InsertTextFormat.PlainText
         items.append(
             CompletionItem(
-                label=c["label"],
+                label=label,
                 kind=CompletionItemKind.Function,
                 detail=c.get("signature", ""),
                 documentation=c.get("description", ""),
-                insert_text=c["label"],
+                insert_text=insert,
+                insert_text_format=fmt,
             )
         )
 
@@ -1000,16 +1068,22 @@ def on_completion(
             if sym["name"] in seen:
                 continue
             seen.add(sym["name"])
+            kind_str = sym.get("kind", "")
+            if kind_str in _snippet_kinds:
+                insert, fmt = _make_snippet(sym["name"], sym.get("signature"))
+            else:
+                insert, fmt = sym["name"], InsertTextFormat.PlainText
             items.append(
                 CompletionItem(
                     label=sym["name"],
-                    kind=_COMPLETION_KIND_MAP.get(sym["kind"], CompletionItemKind.Function),
+                    kind=_COMPLETION_KIND_MAP.get(kind_str, CompletionItemKind.Function),
                     detail=sym.get("signature") or "",
                     documentation=(
                         sym.get("doc_comment") or ""
                         + f"\n*{Path(sym['file_path']).name}:{sym['line']}*"
                     ),
-                    insert_text=sym["name"],
+                    insert_text=insert,
+                    insert_text_format=fmt,
                 )
             )
 
@@ -1027,6 +1101,70 @@ def _last_identifier(text: str) -> str:
 
     m = re.search(r"[А-ЯЁа-яёA-Za-z_]\w*$", text)
     return m.group(0) if m else ""
+
+
+_RE_PROC_HEADER = _re.compile(
+    r"^\s*(?:Процедура|Функция|Procedure|Function)\s+(\w+)\s*\(([^)]*)\)",
+    _re.IGNORECASE | _re.UNICODE,
+)
+
+
+def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str]) -> str | None:
+    """Generate a documentation comment block for a Procedure/Function header line.
+
+    Returns ``None`` if the line is not a procedure/function header, or if it is
+    already preceded by a ``//`` comment.
+    """
+    m = _RE_PROC_HEADER.match(header_line)
+    if not m:
+        return None
+    if line_idx > 0 and all_lines[line_idx - 1].strip().startswith("//"):
+        return None  # already documented
+    indent = " " * (len(header_line) - len(header_line.lstrip()))
+    func_name, params_str = m.group(1), m.group(2).strip()
+    lines = [f"{indent}// Описание {func_name}."]
+    if params_str:
+        lines += [f"{indent}//", f"{indent}// Параметры:"]
+        for p in params_str.split(","):
+            name = p.strip().split("=")[0].strip()
+            # Strip leading Знач/Val keyword
+            name = _re.sub(r"(?i)^(Знач|Val)\s+", "", name)
+            if name:
+                lines.append(f"{indent}//   {name} - Тип - Описание")
+    lines.append(f"{indent}//")
+    return "\n".join(lines) + "\n"
+
+
+_RE_NEW_ASSIGN = _re.compile(
+    r"(?:^|;)\s*(\w+)\s*=\s*(?:Новый|New)\s+([\wА-ЯЁа-яёA-Za-z]+)\s*[;(]",
+    _re.IGNORECASE | _re.MULTILINE | _re.UNICODE,
+)
+
+
+def _infer_type_from_content(content: str, var_name: str) -> str | None:
+    """Infer BSL type from `VarName = Новый TypeName()` assignment pattern."""
+    var_lo = var_name.casefold()
+    for m in _RE_NEW_ASSIGN.finditer(content):
+        if m.group(1).casefold() == var_lo:
+            return m.group(2)
+    return None
+
+
+def _make_snippet(label: str, signature: str | None) -> tuple[str, InsertTextFormat]:
+    """Build a snippet insert text for function/procedure/method items.
+
+    E.g. 'Найти(Знач, Кол?)' → 'Найти(${1:Знач}, ${2:Кол?})$0'
+    """
+    import re
+
+    if not signature:
+        return label, InsertTextFormat.PlainText
+    m = re.search(r"\(([^)]*)\)", signature)
+    if not m or not m.group(1).strip():
+        return f"{label}()$0", InsertTextFormat.Snippet
+    params = [p.strip() for p in m.group(1).split(",")]
+    snippet_params = ", ".join(f"${{{i + 1}:{p}}}" for i, p in enumerate(params))
+    return f"{label}({snippet_params})$0", InsertTextFormat.Snippet
 
 
 def _word_at_position(content: str, line: int, character: int) -> str:
@@ -1566,7 +1704,27 @@ def on_code_action(
                     )]}),
                 ))
 
-    # ── 4. Переформатировать документ (если есть что форматировать) ────────
+    # ── 4. Сгенерировать комментарий к методу ──────────────────────────────
+    try:
+        cursor_line = int(params.range.start.line)
+    except (TypeError, ValueError, AttributeError):
+        cursor_line = -1
+    if 0 <= cursor_line < len(doc_lines):
+        doc_block = _generate_doc_comment(doc_lines[cursor_line], cursor_line, doc_lines)
+        if doc_block:
+            actions.append(CodeAction(
+                title="Сгенерировать комментарий к методу",
+                kind=CodeActionKind.RefactorExtract,
+                edit=WorkspaceEdit(changes={uri: [TextEdit(
+                    range=Range(
+                        start=Position(line=cursor_line, character=0),
+                        end=Position(line=cursor_line, character=0),
+                    ),
+                    new_text=doc_block,
+                )]}),
+            ))
+
+    # ── 5. Переформатировать документ (если есть что форматировать) ────────
     if content:
         try:
             from bsl_analyzer.analysis.formatter import default_formatter
@@ -1702,6 +1860,45 @@ def on_selection_range(
 # ---------------------------------------------------------------------------
 # Custom BSL requests (used by VSCode extension commands)
 # ---------------------------------------------------------------------------
+
+
+def _node_to_dict(node: object, depth: int = 0, max_depth: int = 12) -> dict:
+    """Recursively convert a tree-sitter node to a JSON-serialisable dict."""
+    text = getattr(node, "text", "") or ""
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    result: dict = {
+        "type": getattr(node, "type", "unknown"),
+        "text": text[:200],
+        "start": list(getattr(node, "start_point", (0, 0))),
+        "end": list(getattr(node, "end_point", (0, 0))),
+    }
+    children = list(getattr(node, "children", []))
+    if depth < max_depth:
+        if children:
+            result["children"] = [_node_to_dict(c, depth + 1, max_depth) for c in children]
+    else:
+        if children:
+            result["children_truncated"] = len(children)
+    return result
+
+
+@server.feature("bsl/parseTree")
+def on_bsl_parse_tree(ls: BslLanguageServer, params: dict) -> dict:  # type: ignore[type-arg]
+    """Return the AST of a document as a JSON-serialisable dict."""
+    uri = params.get("uri", "")
+    content = ls._docs.get(uri)
+    if content is None:
+        try:
+            content = Path(_uri_to_path(uri)).read_text(encoding="utf-8-sig", errors="replace")
+        except Exception as exc:
+            return {"uri": uri, "tree": None, "error": str(exc)}
+    try:
+        tree = ls.parser.parse_content(content, file_path=uri)
+        root = ls.parser.get_root_node(tree)
+        return {"uri": uri, "tree": _node_to_dict(root), "error": None}
+    except Exception as exc:
+        return {"uri": uri, "tree": None, "error": str(exc)}
 
 
 @server.feature("bsl/status")

@@ -472,6 +472,19 @@ class SymbolIndex:
         row = conn.execute("SELECT commit_hash FROM git_state WHERE id = 1").fetchone()
         return row["commit_hash"] if row else None
 
+    def get_module_exports(self, module_name: str) -> list[dict]:
+        """Return exported symbols from the file whose stem matches *module_name* (case-insensitive)."""
+        conn = self._conn()
+        name_lo = module_name.casefold()
+        rows = conn.execute(
+            "SELECT * FROM symbols WHERE is_export=1 "
+            "AND (LOWER(REPLACE(REPLACE(file_path,'\\\\','/'),'.bsl','')) LIKE ? "
+            " OR  LOWER(REPLACE(REPLACE(file_path,'\\\\','/'),'.os',''))  LIKE ?) "
+            "ORDER BY name_lower LIMIT 100",
+            (f"%/{name_lo}", f"%/{name_lo}"),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_stats(self) -> dict[str, Any]:
         """Return index statistics."""
         conn = self._conn()

@@ -665,3 +665,159 @@ class TestSelectionRange:
                 break
             node = node.parent
         assert found
+
+
+# ---------------------------------------------------------------------------
+# _make_snippet helper (Iteration 1)
+# ---------------------------------------------------------------------------
+
+
+class TestMakeSnippet:
+    def test_snippet_helper_with_params(self) -> None:
+        from bsl_analyzer.lsp.server import _make_snippet
+        from lsprotocol.types import InsertTextFormat
+
+        insert, fmt = _make_snippet("Найти", "Найти(Знач, Кол?)")
+        assert fmt == InsertTextFormat.Snippet
+        assert insert == "Найти(${1:Знач}, ${2:Кол?})$0"
+
+    def test_snippet_helper_no_params(self) -> None:
+        from bsl_analyzer.lsp.server import _make_snippet
+        from lsprotocol.types import InsertTextFormat
+
+        insert, fmt = _make_snippet("Выполнить", "Выполнить()")
+        assert fmt == InsertTextFormat.Snippet
+        assert insert == "Выполнить()$0"
+
+    def test_snippet_helper_no_signature(self) -> None:
+        from bsl_analyzer.lsp.server import _make_snippet
+        from lsprotocol.types import InsertTextFormat
+
+        insert, fmt = _make_snippet("Количество", None)
+        assert fmt == InsertTextFormat.PlainText
+        assert insert == "Количество"
+
+
+# ---------------------------------------------------------------------------
+# _infer_type_from_content helper (Iteration 3)
+# ---------------------------------------------------------------------------
+
+
+class TestInferType:
+    def test_infer_novyi_pattern(self) -> None:
+        from bsl_analyzer.lsp.server import _infer_type_from_content
+
+        content = "Зап = Новый Запрос();\n"
+        assert _infer_type_from_content(content, "Зап") == "Запрос"
+
+    def test_infer_english_new(self) -> None:
+        from bsl_analyzer.lsp.server import _infer_type_from_content
+
+        content = "Req = New HTTPRequest(url);\n"
+        assert _infer_type_from_content(content, "Req") == "HTTPRequest"
+
+    def test_infer_returns_none(self) -> None:
+        from bsl_analyzer.lsp.server import _infer_type_from_content
+
+        content = "А = 1;\n"
+        assert _infer_type_from_content(content, "НесуществующаяПеремен") is None
+
+    def test_infer_case_insensitive(self) -> None:
+        from bsl_analyzer.lsp.server import _infer_type_from_content
+
+        content = "зап = НОВЫЙ Запрос();\n"
+        assert _infer_type_from_content(content, "ЗАП") == "Запрос"
+
+
+# ---------------------------------------------------------------------------
+# _node_to_dict helper (Iteration 4)
+# ---------------------------------------------------------------------------
+
+
+class TestNodeToDict:
+    def test_node_to_dict_basic(self) -> None:
+        from bsl_analyzer.lsp.server import _node_to_dict
+        from unittest.mock import MagicMock
+
+        node = MagicMock()
+        node.type = "module"
+        node.text = b"hello"
+        node.start_point = (0, 0)
+        node.end_point = (1, 5)
+        node.children = []
+
+        result = _node_to_dict(node)
+        assert result["type"] == "module"
+        assert result["text"] == "hello"
+        assert result["start"] == [0, 0]
+        assert result["end"] == [1, 5]
+        assert "children" not in result
+
+    def test_node_to_dict_max_depth(self) -> None:
+        from bsl_analyzer.lsp.server import _node_to_dict
+        from unittest.mock import MagicMock
+
+        def _make_node(depth_remaining):
+            node = MagicMock()
+            node.type = "x"
+            node.text = ""
+            node.start_point = (0, 0)
+            node.end_point = (0, 0)
+            if depth_remaining > 0:
+                child = _make_node(depth_remaining - 1)
+                node.children = [child]
+            else:
+                node.children = []
+            return node
+
+        root = _make_node(15)  # deeper than max_depth=12
+        result = _node_to_dict(root, max_depth=12)
+
+        # Walk to depth 12 and check truncation
+        def _max_depth_in_dict(d, depth=0):
+            children = d.get("children", [])
+            if not children:
+                return depth
+            return max(_max_depth_in_dict(c, depth + 1) for c in children)
+
+        assert _max_depth_in_dict(result) <= 12
+
+
+# ---------------------------------------------------------------------------
+# _generate_doc_comment helper (Iteration 5)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDocComment:
+    def test_generates_for_procedure(self) -> None:
+        from bsl_analyzer.lsp.server import _generate_doc_comment
+
+        lines = ["Процедура МойМетод(А, Б)\n", "КонецПроцедуры\n"]
+        result = _generate_doc_comment(lines[0], 0, lines)
+        assert result is not None
+        assert "МойМетод" in result
+        assert "Параметры" in result
+        assert "А" in result
+        assert "Б" in result
+
+    def test_skips_if_already_documented(self) -> None:
+        from bsl_analyzer.lsp.server import _generate_doc_comment
+
+        lines = ["// Уже есть\n", "Процедура МойМетод(А)\n", "КонецПроцедуры\n"]
+        result = _generate_doc_comment(lines[1], 1, lines)
+        assert result is None
+
+    def test_returns_none_for_non_header(self) -> None:
+        from bsl_analyzer.lsp.server import _generate_doc_comment
+
+        lines = ["А = 1;\n"]
+        result = _generate_doc_comment(lines[0], 0, lines)
+        assert result is None
+
+    def test_no_params_no_params_section(self) -> None:
+        from bsl_analyzer.lsp.server import _generate_doc_comment
+
+        lines = ["Функция БезПараметров()\n", "КонецФункции\n"]
+        result = _generate_doc_comment(lines[0], 0, lines)
+        assert result is not None
+        assert "Параметры" not in result

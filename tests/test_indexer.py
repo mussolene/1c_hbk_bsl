@@ -476,3 +476,90 @@ class TestIncrementalIndexerExtended:
             indexer.index_workspace(temp_workspace, force=True)
 
         assert len(progress_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# get_module_exports (Iteration 2)
+# ---------------------------------------------------------------------------
+
+
+class TestGetModuleExports:
+    def test_get_module_exports_finds_exported(self, symbol_index: SymbolIndex) -> None:
+        file_path = "/workspace/ОбщийМодуль.bsl"
+        symbol_index.upsert_file(
+            file_path,
+            [
+                {
+                    "name": "ЭкспортнаяФункция",
+                    "line": 1,
+                    "character": 0,
+                    "end_line": 5,
+                    "end_character": 0,
+                    "kind": "function",
+                    "is_export": True,
+                    "signature": "ЭкспортнаяФункция()",
+                    "doc_comment": None,
+                },
+                {
+                    "name": "НеЭкспорт",
+                    "line": 10,
+                    "character": 0,
+                    "end_line": 15,
+                    "end_character": 0,
+                    "kind": "procedure",
+                    "is_export": False,
+                    "signature": "НеЭкспорт()",
+                    "doc_comment": None,
+                },
+            ],
+            [],
+        )
+        results = symbol_index.get_module_exports("ОбщийМодуль")
+        names = [r["name"] for r in results]
+        assert "ЭкспортнаяФункция" in names
+
+    def test_get_module_exports_ignores_non_export(self, symbol_index: SymbolIndex) -> None:
+        file_path = "/workspace/МодульБезЭкспорта.bsl"
+        symbol_index.upsert_file(
+            file_path,
+            [
+                {
+                    "name": "Внутренняя",
+                    "line": 1,
+                    "character": 0,
+                    "end_line": 5,
+                    "end_character": 0,
+                    "kind": "procedure",
+                    "is_export": False,
+                    "signature": "Внутренняя()",
+                    "doc_comment": None,
+                }
+            ],
+            [],
+        )
+        results = symbol_index.get_module_exports("МодульБезЭкспорта")
+        assert results == []
+
+    def test_get_module_exports_case_insensitive(self, symbol_index: SymbolIndex) -> None:
+        file_path = "/workspace/МойМодуль.bsl"
+        symbol_index.upsert_file(
+            file_path,
+            [
+                {
+                    "name": "Метод",
+                    "line": 1,
+                    "character": 0,
+                    "end_line": 5,
+                    "end_character": 0,
+                    "kind": "function",
+                    "is_export": True,
+                    "signature": "Метод()",
+                    "doc_comment": None,
+                }
+            ],
+            [],
+        )
+        # lookup with different case
+        results = symbol_index.get_module_exports("мойМОДУЛЬ")
+        names = [r["name"] for r in results]
+        assert "Метод" in names
