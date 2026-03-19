@@ -125,16 +125,30 @@ bsl-analyzer --index /path/to/1c-project
 
 ## MCP-сервер для AI-агентов
 
+При первом запуске сервер автоматически индексирует воркспейс в фоне если индекс пустой.
+
+**stdio-режим** для Claude Desktop (рекомендуется):
 ```bash
-bsl-analyzer --mcp --port 8051
+bsl-analyzer --mcp --stdio --workspace /path/to/1c-project
 ```
 
-В `claude_desktop_config.json`:
+**HTTP-режим** для удалённого доступа:
+```bash
+bsl-analyzer --mcp --port 8051 --workspace /path/to/1c-project
+```
+
+Конфигурация `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "bsl-analyzer": { "url": "http://localhost:8051/mcp" }
+    "bsl-analyzer": {
+      "command": "bsl-analyzer",
+      "args": ["--mcp", "--stdio", "--workspace", "/path/to/1c-project"],
+      "env": {
+        "INDEX_DB_PATH": "/path/to/1c-project/bsl_index.sqlite"
+      }
+    }
   }
 }
 ```

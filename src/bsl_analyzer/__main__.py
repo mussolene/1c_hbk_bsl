@@ -4,6 +4,8 @@ Entry point for bsl-analyzer CLI.
 Usage:
     bsl-analyzer --lsp                              Start LSP server on stdio
     bsl-analyzer --mcp [--port 8051]               Start MCP HTTP server
+    bsl-analyzer --mcp --stdio                     Start MCP server over stdio (Claude Desktop)
+    bsl-analyzer --mcp --workspace /path/to/proj   Serve specific workspace (auto-indexes if empty)
     bsl-analyzer --check [PATH ...]                 Run linter (ruff-style output)
     bsl-analyzer --check [PATH] --diff              Check only git-changed BSL files
     bsl-analyzer --index [PATH]                     Force full reindex of workspace
@@ -54,11 +56,53 @@ def _run_lsp() -> None:
     start_lsp_server()
 
 
-def _run_mcp(port: int) -> None:
+def _autoindex_if_empty(workspace: str, db_path: str) -> None:
+    """Spawn background indexing if the index has no symbols yet."""
+    import threading
+
+    from bsl_analyzer.indexer.symbol_index import SymbolIndex
+
+    idx = SymbolIndex(db_path=db_path)
+    stats = idx.get_stats()
+    if stats["symbol_count"] > 0:
+        logging.getLogger(__name__).info(
+            "Index ready: %d symbols in %d files", stats["symbol_count"], stats["file_count"]
+        )
+        return
+
+    logging.getLogger(__name__).info(
+        "Index is empty — starting background indexing of %s", workspace
+    )
+
+    def _index() -> None:
+        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        IncrementalIndexer(db_path=db_path).index_workspace(workspace)
+        s = SymbolIndex(db_path=db_path).get_stats()
+        logging.getLogger(__name__).info(
+            "Background indexing complete: %d symbols in %d files",
+            s["symbol_count"], s["file_count"],
+        )
+
+    threading.Thread(target=_index, daemon=True, name="bsl-autoindex").start()
+
+
+def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
     from bsl_analyzer.mcp.server import create_mcp_app
-    logging.getLogger(__name__).info("Starting BSL MCP server on port %d", port)
+
+    db_path = os.environ.get("INDEX_DB_PATH", os.path.join(workspace, "bsl_index.sqlite"))
+    # Propagate resolved paths so mcp/server.py picks them up
+    os.environ.setdefault("INDEX_DB_PATH", db_path)
+    os.environ.setdefault("WORKSPACE_ROOT", workspace)
+
+    _autoindex_if_empty(workspace, db_path)
+
     app = create_mcp_app()
-    app.run(transport="streamable-http", host="0.0.0.0", port=port)
+    if stdio:
+        logging.getLogger(__name__).info("Starting BSL MCP server on stdio")
+        app.run(transport="stdio")
+    else:
+        logging.getLogger(__name__).info("Starting BSL MCP server on port %d", port)
+        app.run(transport="streamable-http", host="0.0.0.0", port=port)
 
 
 def _run_check(
@@ -306,6 +350,17 @@ Examples:
         default=int(os.environ.get("MCP_PORT", "8051")),
         help="Port for MCP HTTP server (default: 8051)",
     )
+    parser.add_argument(
+        "--stdio",
+        action="store_true",
+        help="Run MCP server over stdio instead of HTTP (for Claude Desktop / local agents)",
+    )
+    parser.add_argument(
+        "--workspace",
+        metavar="PATH",
+        default=os.environ.get("WORKSPACE_ROOT", os.getcwd()),
+        help="Workspace root to index and serve (default: $WORKSPACE_ROOT or cwd)",
+    )
 
     # Check options
     parser.add_argument(
@@ -437,7 +492,7 @@ Examples:
         _run_lsp()
 
     elif args.mcp:
-        _run_mcp(args.port)
+        _run_mcp(args.port, stdio=args.stdio, workspace=os.path.abspath(args.workspace))
 
     elif args.check is not None:
         paths = args.check if args.check else [os.getcwd()]
