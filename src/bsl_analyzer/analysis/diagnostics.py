@@ -660,6 +660,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MINOR",
         "tags": ["style", "readability"],
     },
+    "BSL077": {
+        "name": "SelectStar",
+        "description": "SELECT */ВЫБРАТЬ * in a query — enumerate columns explicitly",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance", "maintainability"],
+    },
+    "BSL078": {
+        "name": "RaiseWithoutMessage",
+        "description": "ВызватьИсключение/Raise without a message — provide context for the error",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "error-handling"],
+    },
+    "BSL079": {
+        "name": "UsingGoto",
+        "description": "Goto/Перейти statement found — avoid unstructured control flow",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "CRITICAL",
+        "tags": ["style", "brain-overload"],
+    },
 }
 
 
@@ -717,6 +741,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL074": "Resolve the TODO/FIXME or create a task in your issue tracker.",
     "BSL075": "Pass the variable as a parameter or return it as a function result.",
     "BSL076": "Rewrite as a positive condition: НЕ А → use the positive predicate if available.",
+    "BSL077": "List columns explicitly: ВЫБРАТЬ Поле1, Поле2 ИЗ instead of ВЫБРАТЬ *.",
+    "BSL078": "Add a descriptive message: ВызватьИсключение НСтр(\"ru = 'Reason'\");",
+    "BSL079": "Replace Goto with structured control flow: loops, conditions, or procedures.",
 }
 
 
@@ -1203,6 +1230,24 @@ _RE_EXECUTABLE_LINE = re.compile(
     re.IGNORECASE,
 )
 
+# SELECT * in query text (BSL077)
+_RE_SELECT_STAR = re.compile(
+    r'(?:ВЫБРАТЬ|SELECT)\s+\*',
+    re.IGNORECASE,
+)
+
+# Raise without message (BSL078): ВызватьИсключение; or Raise; alone on line
+_RE_RAISE_BARE = re.compile(
+    r'^\s*(?:ВызватьИсключение|Raise)\s*;',
+    re.IGNORECASE,
+)
+
+# Goto statement (BSL079)
+_RE_GOTO = re.compile(
+    r'^\s*(?:Перейти|Goto)\b',
+    re.IGNORECASE,
+)
+
 # TODO/FIXME/HACK comment (BSL074)
 _RE_TODO_COMMENT = re.compile(
     r'//\s*(?:TODO|FIXME|HACK|XXX)\b',
@@ -1671,6 +1716,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl075_global_variable_modification(path, lines, procs))
         if self._rule_enabled("BSL076"):
             diagnostics.extend(self._rule_bsl076_negative_condition_first(path, lines))
+        if self._rule_enabled("BSL077"):
+            diagnostics.extend(self._rule_bsl077_select_star(path, lines))
+        if self._rule_enabled("BSL078"):
+            diagnostics.extend(self._rule_bsl078_raise_without_message(path, lines))
+        if self._rule_enabled("BSL079"):
+            diagnostics.extend(self._rule_bsl079_using_goto(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -4615,6 +4666,91 @@ class DiagnosticEngine:
                         message=(
                             "Condition starts with НЕ/Not — consider rewriting "
                             "as a positive condition for better readability."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL077 — SELECT * in query
+    # ------------------------------------------------------------------
+
+    def _rule_bsl077_select_star(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag ВЫБРАТЬ */SELECT * in query text strings."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            m = _RE_SELECT_STAR.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL077",
+                        message=(
+                            "ВЫБРАТЬ */SELECT * retrieves all columns — "
+                            "list columns explicitly for better performance and maintainability."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL078 — ВызватьИсключение without a message
+    # ------------------------------------------------------------------
+
+    def _rule_bsl078_raise_without_message(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag bare ВызватьИсключение; / Raise; with no message argument."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_RAISE_BARE.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL078",
+                        message=(
+                            "ВызватьИсключение/Raise without a message — "
+                            "provide context so callers can diagnose the error."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL079 — Goto statement
+    # ------------------------------------------------------------------
+
+    def _rule_bsl079_using_goto(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Перейти/Goto statements as unstructured control flow."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_GOTO.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL079",
+                        message=(
+                            "Перейти/Goto creates unstructured control flow — "
+                            "replace with loops, conditions, or procedure calls."
                         ),
                     )
                 )

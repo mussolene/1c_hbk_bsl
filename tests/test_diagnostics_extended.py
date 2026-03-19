@@ -2268,9 +2268,75 @@ class TestBsl076NegativeConditionFirst:
         assert "BSL076" in _codes(diags)
 
 
+class TestBsl077SelectStar:
+    def test_select_star_detected(self, tmp_path: Path) -> None:
+        content = 'А = "ВЫБРАТЬ * ИЗ Документ.РасходнаяНакладная";\n'
+        diags = _check(content, tmp_path, select={"BSL077"})
+        assert "BSL077" in _codes(diags)
+
+    def test_select_columns_no_warning(self, tmp_path: Path) -> None:
+        content = 'А = "ВЫБРАТЬ Ссылка, Номер ИЗ Документ.РасходнаяНакладная";\n'
+        diags = _check(content, tmp_path, select={"BSL077"})
+        assert "BSL077" not in _codes(diags)
+
+    def test_english_select_star_detected(self, tmp_path: Path) -> None:
+        content = 'А = "SELECT * FROM Document.Invoice";\n'
+        diags = _check(content, tmp_path, select={"BSL077"})
+        assert "BSL077" in _codes(diags)
+
+
+class TestBsl078RaiseWithoutMessage:
+    def test_bare_raise_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Попытка
+        А = 1;
+    Исключение
+        ВызватьИсключение;
+    КонецПопытки;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL078"})
+        assert "BSL078" in _codes(diags)
+
+    def test_raise_with_message_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Попытка
+        А = 1;
+    Исключение
+        ВызватьИсключение "Ошибка операции";
+    КонецПопытки;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL078"})
+        assert "BSL078" not in _codes(diags)
+
+
+class TestBsl079UsingGoto:
+    def test_goto_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Перейти ~МетодМетки;
+~МетодМетки:
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL079"})
+        assert "BSL079" in _codes(diags)
+
+    def test_no_goto_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL079"})
+        assert "BSL079" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 77)}
+        expected = {f"BSL{i:03d}" for i in range(1, 80)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
