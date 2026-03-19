@@ -684,6 +684,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "CRITICAL",
         "tags": ["style", "brain-overload"],
     },
+    "BSL080": {
+        "name": "SilentCatch",
+        "description": "Exception handler ignores the error — no ИнформацияОбОшибке or re-raise",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["error-handling", "correctness"],
+    },
+    "BSL081": {
+        "name": "LongMethodChain",
+        "description": "Method call chain is too long — split into intermediate variables",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL082": {
+        "name": "MissingNewlineAtEndOfFile",
+        "description": "File does not end with a newline character",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["style"],
+    },
 }
 
 
@@ -744,6 +768,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL077": "List columns explicitly: ВЫБРАТЬ Поле1, Поле2 ИЗ instead of ВЫБРАТЬ *.",
     "BSL078": "Add a descriptive message: ВызватьИсключение НСтр(\"ru = 'Reason'\");",
     "BSL079": "Replace Goto with structured control flow: loops, conditions, or procedures.",
+    "BSL080": "Log the error with ЗаписьЖурналаРегистрации or re-raise with ВызватьИсключение.",
+    "BSL081": "Assign intermediate results to named variables to improve readability.",
+    "BSL082": "Add a newline at the end of the file.",
 }
 
 
@@ -1229,6 +1256,15 @@ _RE_EXECUTABLE_LINE = re.compile(
     r'^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)',
     re.IGNORECASE,
 )
+
+# Exception block detection (BSL080)
+_RE_EXCEPT_BLOCK = re.compile(r'^\s*(?:Исключение|Except)\b', re.IGNORECASE)
+_RE_END_TRY = re.compile(r'^\s*(?:КонецПопытки|EndTry)\b', re.IGNORECASE)
+_RE_TRY_OPEN = re.compile(r'^\s*(?:Попытка|Try)\b', re.IGNORECASE)
+_RE_ERROR_INFO = re.compile(r'(?:ИнформацияОбОшибке|ErrorInfo)\s*\(', re.IGNORECASE)
+
+# Method chain length (BSL081): count dots in a non-comment line
+_RE_DOT_CHAIN = re.compile(r'(?:\.\w+\s*\()+')
 
 # SELECT * in query text (BSL077)
 _RE_SELECT_STAR = re.compile(
@@ -1722,6 +1758,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl078_raise_without_message(path, lines))
         if self._rule_enabled("BSL079"):
             diagnostics.extend(self._rule_bsl079_using_goto(path, lines))
+        if self._rule_enabled("BSL080"):
+            diagnostics.extend(self._rule_bsl080_silent_catch(path, lines))
+        if self._rule_enabled("BSL081"):
+            diagnostics.extend(self._rule_bsl081_long_method_chain(path, lines))
+        if self._rule_enabled("BSL082"):
+            diagnostics.extend(self._rule_bsl082_missing_newline_at_eof(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -4755,6 +4797,136 @@ class DiagnosticEngine:
                     )
                 )
         return diags
+
+    # ------------------------------------------------------------------
+    # BSL080 — Silent catch (exception handler ignores the error)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl080_silent_catch(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag Исключение/Except blocks that contain no ИнформацияОбОшибке() call
+        and no ВызватьИсключение/Raise — the error is silently swallowed.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_TRY_OPEN.match(lines[i]):
+                # Find Исключение/Except block for this Попытка
+                depth = 1
+                j = i + 1
+                except_start = None
+                while j < len(lines) and depth > 0:
+                    if _RE_TRY_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_END_TRY.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1 and _RE_EXCEPT_BLOCK.match(lines[j]):
+                        except_start = j
+                    j += 1
+                if except_start is not None:
+                    # Scan the exception body for ИнформацияОбОшибке or ВызватьИсключение
+                    has_handling = False
+                    for k in range(except_start + 1, j):
+                        ln = lines[k]
+                        if _RE_ERROR_INFO.search(ln) or _RE_RAISE.match(ln):
+                            has_handling = True
+                            break
+                    if not has_handling:
+                        header = lines[except_start]
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=except_start + 1,
+                                character=len(header) - len(header.lstrip()),
+                                end_line=except_start + 1,
+                                end_character=len(header.rstrip()),
+                                severity=Severity.WARNING,
+                                code="BSL080",
+                                message=(
+                                    "Exception handler silently ignores the error — "
+                                    "call ИнформацияОбОшибке() or re-raise with ВызватьИсключение."
+                                ),
+                            )
+                        )
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL081 — Long method chain
+    # ------------------------------------------------------------------
+
+    MAX_METHOD_CHAIN_DEPTH: int = 5
+
+    def _rule_bsl081_long_method_chain(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag lines where a method call chain exceeds MAX_METHOD_CHAIN_DEPTH
+        chained calls (e.g. A.B().C().D().E().F() has 5 calls).
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            # Count chained method calls: pattern .MethodName(
+            chain_depth = len(_RE_DOT_CHAIN.findall(line))
+            if chain_depth > self.MAX_METHOD_CHAIN_DEPTH:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL081",
+                        message=(
+                            f"Method call chain has {chain_depth} chained calls "
+                            f"(max {self.MAX_METHOD_CHAIN_DEPTH}). "
+                            "Split into intermediate variables."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL082 — Missing newline at end of file
+    # ------------------------------------------------------------------
+
+    def _rule_bsl082_missing_newline_at_eof(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag files that do not end with a newline character."""
+        if not lines:
+            return []
+        # lines come from content.splitlines() — no trailing \n on each line.
+        # Read the raw bytes to check the actual last byte.
+        try:
+            raw = Path(path).read_bytes()
+        except OSError:
+            return []
+        if raw and not raw.endswith((b"\n", b"\r")):
+            last = lines[-1]
+            return [
+                Diagnostic(
+                    file=path,
+                    line=len(lines),
+                    character=len(last),
+                    end_line=len(lines),
+                    end_character=len(last),
+                    severity=Severity.INFORMATION,
+                    code="BSL082",
+                    message="File does not end with a newline. Add a trailing newline.",
+                )
+            ]
+        return []
 
 
 # ---------------------------------------------------------------------------

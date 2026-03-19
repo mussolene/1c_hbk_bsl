@@ -2334,9 +2334,85 @@ class TestBsl079UsingGoto:
         assert "BSL079" not in _codes(diags)
 
 
+class TestBsl080SilentCatch:
+    def test_silent_catch_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Попытка
+        А = 1 / 0;
+    Исключение
+        // ничего не делаем
+    КонецПопытки;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL080"})
+        assert "BSL080" in _codes(diags)
+
+    def test_catch_with_error_info_ok(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Попытка
+        А = 1 / 0;
+    Исключение
+        Ошибка = ИнформацияОбОшибке();
+        Сообщить(Ошибка.Описание);
+    КонецПопытки;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL080"})
+        assert "BSL080" not in _codes(diags)
+
+    def test_catch_with_reraise_ok(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Попытка
+        А = 1 / 0;
+    Исключение
+        ВызватьИсключение;
+    КонецПопытки;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL080"})
+        assert "BSL080" not in _codes(diags)
+
+
+class TestBsl081LongMethodChain:
+    def test_long_chain_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Результат = А.Б().В().Г().Д().Е().Ж();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL081"})
+        assert "BSL081" in _codes(diags)
+
+    def test_short_chain_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Результат = А.Б().В();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL081"})
+        assert "BSL081" not in _codes(diags)
+
+
+class TestBsl082MissingNewlineAtEof:
+    def test_missing_newline_detected(self, tmp_path: Path) -> None:
+        p = tmp_path / "t.bsl"
+        p.write_bytes("А = 1;".encode("utf-8"))  # no trailing newline
+        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        diags = DiagnosticEngine(select={"BSL082"}).check_file(str(p))
+        assert any(d.code == "BSL082" for d in diags)
+
+    def test_file_with_newline_ok(self, tmp_path: Path) -> None:
+        content = "А = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL082"})
+        assert "BSL082" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 80)}
+        expected = {f"BSL{i:03d}" for i in range(1, 83)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
