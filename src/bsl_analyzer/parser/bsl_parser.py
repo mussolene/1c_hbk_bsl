@@ -136,9 +136,10 @@ class BslParser:
     def _collect_errors(self, node: Any, errors: list[dict]) -> None:
         """Recursively collect ERROR and MISSING nodes from a tree-sitter tree."""
         if node.type in ("ERROR", "error") or node.is_missing:
-            # Skip lone trailing `;` after block-ending keywords.
-            # tree-sitter-bsl grammar does not accept КонецЦикла;/КонецПроцедуры;/
-            # КонецФункции; but real-world BSL code often has them — not an error.
+            # Skip lone `;` ERROR nodes — this is a bug in tree-sitter-bsl:
+            # the grammar incorrectly rejects trailing semicolons after
+            # КонецЦикла/КонецПроцедуры/КонецФункции even though BSL requires
+            # a semicolon at the end of every statement including block closers.
             text = node.text if isinstance(node.text, bytes) else b""
             if text.strip() == b";":
                 for child in node.children:
