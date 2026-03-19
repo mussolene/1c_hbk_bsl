@@ -90,6 +90,7 @@ from lsprotocol.types import (
     InlayHintKind,
     InlayHintParams,
     Location,
+    LocationLink,
     MarkupContent,
     MarkupKind,
     Position,
@@ -365,40 +366,68 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
 @server.feature(TEXT_DOCUMENT_DEFINITION)
 def on_definition(
     ls: BslLanguageServer, params: DefinitionParams
-) -> list[Location] | None:
+) -> list[LocationLink] | None:
     """
-    Resolve the definition of the symbol at the cursor position.
+    Resolve the definition of the symbol at the cursor.
 
-    TODO: Extract the word at cursor from the cached document content
-    and perform a fuzzy lookup in the symbol index.
+    Returns LocationLink (preferred over Location) so VSCode can:
+    - highlight the origin word at the call site (originSelectionRange)
+    - show the full function/procedure body in the Peek Definition widget
+      (targetRange spans from the keyword line to КонецПроцедуры)
+    - highlight only the name in the peek header (targetSelectionRange)
+
+    Peek Definition:  Alt+F12
+    Go to Definition: F12  (navigates when one result, shows picker otherwise)
     """
     uri = params.text_document.uri
     pos = params.position
 
-    # Extract word at cursor
     content = ls._docs.get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
 
-    symbols = ls.symbol_index.find_symbol(word, limit=5)
+    symbols = ls.symbol_index.find_symbol(word, limit=10)
     if not symbols:
         return None
 
-    locations = []
+    # Build the origin selection range (the word the user clicked on)
+    origin_range = _word_range_at_position(content, pos.line, pos.character)
+
+    links: list[LocationLink] = []
     for sym in symbols:
         sym_path = sym["file_path"]
-        line = max(0, sym["line"] - 1)
-        locations.append(
-            Location(
-                uri=_path_to_uri(sym_path),
-                range=Range(
-                    start=Position(line=line, character=sym["character"]),
-                    end=Position(line=line, character=sym["character"] + len(sym["name"])),
-                ),
+        name_line = max(0, sym["line"] - 1)
+        name_char = sym["character"]
+        name_len = len(sym["name"])
+
+        # targetSelectionRange — just the name (highlighted in peek header)
+        target_sel = Range(
+            start=Position(line=name_line, character=name_char),
+            end=Position(line=name_line, character=name_char + name_len),
+        )
+
+        # targetRange — the full body of the procedure/function so the peek
+        # widget shows the complete implementation in context.
+        end_line = sym.get("end_line")
+        end_char = sym.get("end_character", 0)
+        if end_line and end_line > sym["line"]:
+            target_range = Range(
+                start=Position(line=name_line, character=0),
+                end=Position(line=max(0, end_line - 1), character=end_char),
+            )
+        else:
+            target_range = target_sel  # fallback: same as name range
+
+        links.append(
+            LocationLink(
+                target_uri=_path_to_uri(sym_path),
+                target_range=target_range,
+                target_selection_range=target_sel,
+                origin_selection_range=origin_range,
             )
         )
-    return locations
+    return links
 
 
 # ---------------------------------------------------------------------------
@@ -936,6 +965,27 @@ def _word_at_position(content: str, line: int, character: int) -> str:
         end += 1
 
     return text[start:end]
+
+
+def _word_range_at_position(content: str, line: int, character: int) -> Range:
+    """Return the LSP Range that covers the identifier at the given position.
+
+    Used as ``originSelectionRange`` in LocationLink so VSCode highlights the
+    call-site word when the user invokes Go-to-Definition / Peek Definition.
+    """
+    lines = content.splitlines()
+    if line >= len(lines):
+        return Range(start=Position(line=line, character=character),
+                     end=Position(line=line, character=character))
+    text = lines[line]
+    start = character
+    while start > 0 and (text[start - 1].isalnum() or text[start - 1] == "_"):
+        start -= 1
+    end = character
+    while end < len(text) and (text[end].isalnum() or text[end] == "_"):
+        end += 1
+    return Range(start=Position(line=line, character=start),
+                 end=Position(line=line, character=end))
 
 
 # ---------------------------------------------------------------------------
