@@ -1,0 +1,10 @@
+.vscode/**
+.vscode-test/**
+src/**
+.gitignore
+tsconfig.json
+**/*.map
+**/*.ts
+!out/**
+# node_modules is NOT excluded — vsce bundles only production dependencies
+# bin/ is INCLUDED — contains the native binary for this platform

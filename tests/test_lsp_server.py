@@ -192,14 +192,28 @@ class TestHandlerFunctions:
         assert ls._docs["file:///test.bsl"] == "new content"
 
     def test_on_did_save_publishes_diagnostics(self, tmp_path, monkeypatch) -> None:
+        import threading
         from unittest.mock import MagicMock
 
         from bsl_analyzer.lsp.server import _path_to_uri, on_did_save
+
+        # Run background threads synchronously so the assertion fires in time
+        class _SyncThread:
+            def __init__(self, target, args=(), kwargs=None, daemon=None):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        monkeypatch.setattr(threading, "Thread", _SyncThread)
+
         ls = self._make_server(tmp_path, monkeypatch)
         bsl = tmp_path / "module.bsl"
         bsl.write_text("А = 1;\n", encoding="utf-8")
         params = MagicMock()
         params.text_document.uri = _path_to_uri(str(bsl))
+        params.text = None
         on_did_save(ls, params)
         ls.publish_diagnostics.assert_called()
 
@@ -556,3 +570,72 @@ class TestCodeAction:
         params.context.diagnostics = [diag]
         result = on_code_action(ls, params)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Selection Range
+# ---------------------------------------------------------------------------
+
+
+class TestSelectionRange:
+    """Tests for _build_selection_range helper."""
+
+    def test_procedure_block(self) -> None:
+        from bsl_analyzer.lsp.server import _build_selection_range
+
+        lines = [
+            "Процедура МойМетод()",   # 0
+            "    Если А > 0 Тогда",   # 1
+            "        Б = 1;",         # 2
+            "    КонецЕсли;",         # 3
+            "КонецПроцедуры",         # 4
+        ]
+        sr = _build_selection_range(lines, cursor_line=2)
+        assert sr is not None
+        # Innermost: current line
+        assert sr.range.start.line == 2
+        assert sr.range.end.line == 2
+        # Parent: enclosing Если block (lines 1-3)
+        assert sr.parent is not None
+        assert sr.parent.range.start.line == 1
+        assert sr.parent.range.end.line == 3
+        # Grandparent: Процедура block (lines 0-4)
+        assert sr.parent.parent is not None
+        assert sr.parent.parent.range.start.line == 0
+        assert sr.parent.parent.range.end.line == 4
+
+    def test_empty_document(self) -> None:
+        from bsl_analyzer.lsp.server import _build_selection_range
+
+        result = _build_selection_range([], cursor_line=0)
+        assert result is None
+
+    def test_cursor_outside_any_block(self) -> None:
+        from bsl_analyzer.lsp.server import _build_selection_range
+
+        lines = ["А = 1;", "Б = 2;"]
+        sr = _build_selection_range(lines, cursor_line=0)
+        # Should at least return the current-line range
+        assert sr is not None
+        assert sr.range.start.line == 0
+        assert sr.range.end.line == 0
+
+    def test_english_keywords(self) -> None:
+        from bsl_analyzer.lsp.server import _build_selection_range
+
+        lines = [
+            "Function MyFunc()",   # 0
+            "    Return 0;",       # 1
+            "EndFunction",         # 2
+        ]
+        sr = _build_selection_range(lines, cursor_line=1)
+        assert sr is not None
+        # Walk up to find Function block
+        node = sr
+        found = False
+        while node:
+            if node.range.start.line == 0 and node.range.end.line == 2:
+                found = True
+                break
+            node = node.parent
+        assert found

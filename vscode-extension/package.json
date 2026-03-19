@@ -1,7 +1,7 @@
 {
   "name": "bsl-analyzer",
   "displayName": "BSL Analyzer (1C)",
-  "description": "Language support for 1C BSL: go-to-definition, hover, workspace symbols, diagnostics",
+  "description": "Language support for 1C BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename and more",
   "version": "0.1.0",
   "publisher": "bsl-analyzer",
   "license": "MIT",
@@ -9,37 +9,48 @@
     "type": "git",
     "url": "https://github.com/your-org/1c_hbk_bsl"
   },
+  "bugs": {
+    "url": "https://github.com/your-org/1c_hbk_bsl/issues"
+  },
+  "homepage": "https://github.com/your-org/1c_hbk_bsl#readme",
+  "galleryBanner": {
+    "color": "#1e3a5f",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Programming Languages",
-    "Linters"
+    "Linters",
+    "Formatters",
+    "Snippets"
   ],
   "keywords": [
-    "1C",
-    "BSL",
-    "1C Enterprise",
-    "OneScript"
+    "1C", "BSL", "1C Enterprise", "OneScript", "bsl-language-server"
   ],
-  "activationEvents": [
-    "onLanguage:bsl"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
       {
         "id": "bsl",
-        "aliases": [
-          "BSL",
-          "1C Enterprise Script",
-          "OneScript"
-        ],
-        "extensions": [
-          ".bsl",
-          ".os"
-        ],
+        "aliases": ["BSL", "1C Enterprise Script", "OneScript"],
+        "extensions": [".bsl", ".os"],
         "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "bsl",
+        "scopeName": "source.bsl",
+        "path": "./syntaxes/bsl.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl.json"
       }
     ],
     "commands": [
@@ -80,13 +91,58 @@
         "bslAnalyzer.indexDbPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the SQLite index database. Defaults to bsl_index.sqlite in the workspace."
+          "description": "Path to the SQLite index database. Defaults to bsl_index.sqlite in the workspace root."
         },
         "bslAnalyzer.logLevel": {
           "type": "string",
           "enum": ["debug", "info", "warning", "error"],
           "default": "info",
           "description": "Log level for the BSL analyzer language server."
+        },
+        "bslAnalyzer.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable real-time diagnostics (linting) as you type."
+        },
+        "bslAnalyzer.diagnostics.select": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Run only the listed diagnostic rule codes. Empty = all rules."
+        },
+        "bslAnalyzer.diagnostics.ignore": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Suppress the listed diagnostic rule codes."
+        },
+        "bslAnalyzer.format.indentSize": {
+          "type": "number",
+          "default": 4,
+          "description": "Number of spaces per indentation level when formatting BSL code."
+        },
+        "bslAnalyzer.inlayHints.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show parameter name hints at function call sites."
+        },
+        "bslAnalyzer.semanticTokens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable semantic token coloring (layered on top of syntax highlighting)."
+        },
+        "[bsl]": {
+          "type": "object",
+          "default": {
+            "editor.formatOnSave": true,
+            "editor.defaultFormatter": "bsl-analyzer.bsl-analyzer",
+            "editor.semanticHighlighting.enabled": true,
+            "editor.inlayHints.enabled": "on",
+            "editor.tabSize": 4,
+            "editor.insertSpaces": true
+          },
+          "description": "Default editor settings for BSL files (applied automatically).",
+          "scope": "language-overridable"
         }
       }
     }

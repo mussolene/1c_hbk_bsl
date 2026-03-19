@@ -1,199 +1,145 @@
 # BSL Analyzer
 
-Static analysis toolkit for **1C Enterprise BSL** language.
+Языковой сервер, линтер и MCP-сервер для **1C Enterprise / BSL** (язык 1С:Предприятие).
 
-Three interfaces powered by a single shared symbol index:
-
-| Interface  | Command                  | Client           |
-|------------|--------------------------|------------------|
-| MCP server | `bsl-analyzer --mcp`     | Claude           |
-| LSP server | `bsl-analyzer --lsp`     | VSCode / Cursor  |
-| CLI linter | `bsl-analyzer --check`   | CI / terminal    |
-
-**Performance:** ~600 files/sec with `--jobs 4` · ~80 MB RAM · Python 3.11+
+[![CI](https://github.com/your-org/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/1c_hbk_bsl/actions/workflows/ci.yml)
+[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/bsl-analyzer.bsl-analyzer)](https://marketplace.visualstudio.com/items?itemName=bsl-analyzer.bsl-analyzer)
+[![PyPI](https://img.shields.io/pypi/v/bsl-analyzer)](https://pypi.org/project/bsl-analyzer/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## Quick Start
+## Возможности
+
+| Функция | Описание |
+|---|---|
+| **Подсветка синтаксиса** | TextMate-грамматика: процедуры, функции, директивы `&НаКлиенте`, аннотации, встроенные запросы |
+| **Диагностики в реальном времени** | Ошибки и предупреждения по мере ввода (дебаунс 0.6 с), 30+ правил |
+| **Переход к определению** | `F12` — перейти к объявлению функции / процедуры / переменной |
+| **Поиск использований** | `Shift+F12` — все места вызова символа по всему воркспейсу |
+| **Граф вызовов** | `Shift+Alt+H` — иерархия входящих и исходящих вызовов |
+| **Hover-документация** | Сигнатура + doc-комментарий при наведении на имя символа |
+| **Автодополнение** | 500+ глобальных функций платформы + символы воркспейса |
+| **Переименование** | `F2` — безопасное переименование символа во всём воркспейсе |
+| **Форматирование** | `Shift+Alt+F` / Format on Save |
+| **Семантические токены** | Расширенная подсветка поверх TextMate-грамматики |
+| **Inlay Hints** | Подсказки имён параметров в вызовах функций |
+| **Snippets** | 219 сниппетов: процедуры, функции, все типы метаданных 1С (RU + EN) |
+| **MCP-сервер** | Поиск символов, граф вызовов, диагностики для AI-агентов (Claude и др.) |
+| **CLI-линтер** | `bsl-analyzer --check` для использования в CI |
+| **Инкрементальная индексация** | SQLite-индекс, обновляется только при изменении файлов |
+
+**Производительность:** ~600 файлов/сек · <100 мс запуска · ~80 МБ RAM
+
+---
+
+## Установка в VSCode
+
+Установите расширение из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=bsl-analyzer.bsl-analyzer):
+
+```
+ext install bsl-analyzer.bsl-analyzer
+```
+
+При первом открытии `.bsl` файла расширение автоматически скачает серверный бинарник.
+
+Для ручной настройки добавьте в `.vscode/settings.json`:
+
+```json
+{
+  "[bsl]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "bsl-analyzer.bsl-analyzer",
+    "editor.tabSize": 4
+  },
+  "bslAnalyzer.indexDbPath": "${workspaceFolder}/bsl_index.sqlite"
+}
+```
+
+---
+
+## CLI
 
 ```bash
 pip install bsl-analyzer
+# или
+uv tool install bsl-analyzer
 
-# Lint a project
-bsl-analyzer --check /path/to/1c/project
+# Линтинг проекта
+bsl-analyzer --check /path/to/1c-project
 
-# Start MCP server for Claude
+# MCP-сервер для Claude
 bsl-analyzer --mcp --port 8051
 
-# Start LSP server (stdio) for VSCode/Cursor
+# LSP-сервер для VSCode/Cursor
 bsl-analyzer --lsp
-```
 
-With [uv](https://docs.astral.sh/uv/) (recommended):
-
-```bash
-uv tool install bsl-analyzer
+# Предварительная индексация большого репозитория
+bsl-analyzer --index /path/to/1c-project
 ```
 
 ---
 
-## CLI Linter
+## Настройки VSCode
 
-```bash
-# Check current directory (auto-discovers .bsl and .os files)
-bsl-analyzer --check .
+| Параметр | По умолчанию | Описание |
+|---|---|---|
+| `bslAnalyzer.serverPath` | `bsl-analyzer` | Путь к исполняемому файлу сервера |
+| `bslAnalyzer.indexDbPath` | `<workspace>/bsl_index.sqlite` | Путь к SQLite-индексу |
+| `bslAnalyzer.logLevel` | `info` | Уровень логирования |
+| `bslAnalyzer.diagnostics.enabled` | `true` | Диагностики в реальном времени |
+| `bslAnalyzer.diagnostics.select` | `[]` | Запустить только указанные правила |
+| `bslAnalyzer.diagnostics.ignore` | `[]` | Игнорировать указанные правила |
+| `bslAnalyzer.format.indentSize` | `4` | Размер отступа |
+| `bslAnalyzer.inlayHints.enabled` | `true` | Подсказки имён параметров |
+| `bslAnalyzer.semanticTokens.enabled` | `true` | Семантическая подсветка |
 
-# Select specific rules
-bsl-analyzer --check src/ --select BSL001,BSL011,BSL012
+---
 
-# Ignore rules
-bsl-analyzer --check . --ignore BSL014,BSL023
+## Правила диагностик
 
-# JSON output (for CI / dashboards)
-bsl-analyzer --check . --format json > issues.json
+| Код | Уровень | Название | Описание |
+|---|---|---|---|
+| BSL001 | ERR | ParseError | Синтаксическая ошибка (tree-sitter) |
+| BSL002 | WRN | MethodSize | Метод длиннее 200 строк |
+| BSL004 | WRN | EmptyCodeBlock | Пустой блок `Исключение` |
+| BSL005 | WRN | HardcodeNetworkAddress | Захардкоженный IP / URL |
+| BSL011 | WRN | CognitiveComplexity | Когнитивная сложность > 15 |
+| BSL012 | WRN | HardcodeCredentials | Захардкоженный пароль / токен |
+| BSL019 | WRN | CyclomaticComplexity | Цикломатическая сложность > 10 |
+| BSL033 | ERR | QueryInLoop | Запрос внутри цикла |
+| BSL050 | WRN | LargeTransaction | `НачатьТранзакцию` без Зафиксировать/Отменить |
+| BSL051 | WRN | UnreachableCode | Код после безусловного `Возврат` |
+| BSL053 | WRN | ExecuteDynamic | `Выполнить()` — динамическое исполнение кода |
 
-# SARIF output (GitHub Code Scanning / GitLab SAST)
-bsl-analyzer --check . --format sarif > results.sarif
+Полный список: `bsl-analyzer --list-rules`
 
-# SonarQube Generic Issue Import
-bsl-analyzer --check . --format sonarqube --sonar-root /project > sonar.json
-
-# Parallel workers
-bsl-analyzer --check . --jobs 8
-
-# Never fail CI (collect metrics but exit 0)
-bsl-analyzer --check . --exit-zero
-
-# Watch mode — re-lint on every save
-bsl-analyzer --watch src/
-```
-
-**Exit codes:** `0` = clean · `1` = issues found · `2` = internal error
-
-### Inline suppression
+### Подавление в коде
 
 ```bsl
 Пароль = "dev_only";  // noqa: BSL012
-Пароль = "dev_only";  // bsl-disable: BSL012
-Пароль = "dev_only";  // noqa          ← suppresses ALL rules on this line
-```
-
-### Output format (text)
-
-```
-src/Orders.bsl:145:0: W BSL002 Procedure 'ОбработатьЗаказ' is 215 lines long (max 200)
-src/Utils.bsl:78:4:  W BSL004 Empty exception handler: Except block has no statements.
-src/Utils.bsl:92:0:  E BSL012 Possible hardcoded credential: Пароль = "..."
+Пароль = "dev_only";  // noqa  ← все правила на этой строке
 ```
 
 ---
 
-## Configuration File
-
-Create `bsl-analyzer.toml` in your project root (or use `[tool.bsl-analyzer]` in
-`pyproject.toml`):
-
-```toml
-# bsl-analyzer.toml
-select = []                  # [] = all rules (default)
-ignore = ["BSL014", "BSL023"]
-exclude = ["vendor", "tests/fixtures"]
-format = "text"              # text | json | sonarqube | sarif
-jobs = 0                     # 0 = auto
-exit-zero = false
-
-# Per-file overrides
-[per-file-ignores]
-"legacy_*.bsl" = ["BSL012", "BSL035"]
-"*test*.bsl"   = ["BSL002"]
-
-# Threshold overrides
-max-line-length = 120
-max-proc-lines  = 200
-max-cognitive-complexity = 15
-max-mccabe-complexity    = 10
-max-nesting-depth        = 4
-max-params               = 7
-max-returns              = 3
-max-bool-ops             = 3
-min-duplicate-uses       = 3
-```
-
----
-
-## Baseline (gradual adoption)
-
-Start with a clean baseline so only *new* issues break the build:
+## MCP-сервер для AI-агентов
 
 ```bash
-# 1. Record all current issues as baseline
-bsl-analyzer --check . --update-baseline bsl-baseline.json
-
-# 2. Commit bsl-baseline.json
-git add bsl-baseline.json && git commit -m "chore: add BSL analyzer baseline"
-
-# 3. In CI — only NEW issues fail the build
-bsl-analyzer --check . --baseline bsl-baseline.json
-
-# 4. After fixing issues, shrink the baseline
-bsl-analyzer --check . --update-baseline bsl-baseline.json
+bsl-analyzer --mcp --port 8051
 ```
 
----
+В `claude_desktop_config.json`:
 
-## Built-in Rules
-
-55 rules (BSL001–BSL055) covering syntax, size, complexity, security, and style.
-
-Run `bsl-analyzer --list-rules` for the full table.
-
-### Rule categories
-
-| Category     | Rules                   | Description                                  |
-|--------------|-------------------------|----------------------------------------------|
-| Syntax       | BSL001                  | Parser errors                                |
-| Size         | BSL002, BSL015, BSL031, BSL043 | Method/param count limits          |
-| Complexity   | BSL011, BSL019, BSL020  | Cognitive / McCabe / nesting depth           |
-| Security     | BSL005, BSL006, BSL012, BSL053 | Hardcoded secrets, paths, exec()    |
-| Error handling | BSL004, BSL028, BSL034, BSL049 | Empty catch, missing try, raise  |
-| Design       | BSL003, BSL032, BSL042, BSL044, BSL050 | API contracts, transactions |
-| Performance  | BSL033, BSL038          | Query-in-loop, string concat in loop         |
-| Style        | BSL013, BSL014, BSL023–BSL026, BSL055 | Comments, line length      |
-| Deprecated   | BSL017, BSL022, BSL041  | Outdated APIs                                |
-| Suspicious   | BSL009, BSL010, BSL051, BSL052 | Self-assign, dead code, literals    |
-
-### Selected rules
-
-| Code   | Sev | Name                        | Description                                             |
-|--------|-----|-----------------------------|---------------------------------------------------------|
-| BSL001 | ERR | ParseError                  | Syntax error detected by tree-sitter                   |
-| BSL002 | WRN | MethodSize                  | Method longer than 200 lines                            |
-| BSL004 | WRN | EmptyCodeBlock              | Empty `Исключение` block                               |
-| BSL005 | WRN | HardcodeNetworkAddress      | Hardcoded IP / URL                                      |
-| BSL011 | WRN | CognitiveComplexity         | Cognitive complexity > 15                               |
-| BSL012 | WRN | HardcodeCredentials         | Hardcoded password / token / secret                     |
-| BSL019 | WRN | CyclomaticComplexity        | McCabe complexity > 10                                  |
-| BSL033 | ERR | QueryInLoop                 | DB query inside a loop (critical performance issue)     |
-| BSL042 | WRN | EmptyExportMethod           | Exported method has no body                             |
-| BSL049 | INF | UnconditionalRaise          | `ВызватьИсключение` outside `Попытка`                  |
-| BSL050 | WRN | LargeTransaction            | `НачатьТранзакцию` without matching commit/rollback    |
-| BSL051 | WRN | UnreachableCode             | Code after unconditional `Возврат`/`ВызватьИсключение` |
-| BSL052 | WRN | UselessCondition            | `Если Истина/Ложь Тогда` — condition is constant       |
-| BSL053 | WRN | ExecuteDynamic              | `Выполнить()` — dynamic code execution security risk    |
-
----
-
-## SonarQube Integration
-
-```bash
-bsl-analyzer --check . --format sonarqube --sonar-root /project > bsl-issues.json
+```json
+{
+  "mcpServers": {
+    "bsl-analyzer": { "url": "http://localhost:8051/mcp" }
+  }
+}
 ```
 
-In `sonar-project.properties`:
-
-```properties
-sonar.externalIssuesReportPaths=bsl-issues.json
-```
+Доступные инструменты: `bsl_find_symbol`, `bsl_callers`, `bsl_callees`, `bsl_diagnostics`, `bsl_definition`, `bsl_file_symbols`, `bsl_status`, `bsl_check_file`, `bsl_list_rules`
 
 ---
 
@@ -213,104 +159,41 @@ sonar.externalIssuesReportPaths=bsl-issues.json
 
 ---
 
-## MCP Server (for Claude)
+## Архитектура
 
-Start the server:
+```
+bsl-analyzer/
+├── src/bsl_analyzer/
+│   ├── parser/       # tree-sitter BSL
+│   ├── analysis/     # символы, граф вызовов, диагностики
+│   ├── indexer/      # инкрементальный SQLite-индекс (FTS5)
+│   ├── lsp/          # pygls LSP-сервер
+│   ├── mcp/          # MCP-сервер (fastmcp)
+│   └── cli/          # CLI-интерфейс
+└── vscode-extension/
+    ├── src/          # TypeScript LanguageClient
+    ├── syntaxes/     # TextMate грамматика
+    └── snippets/     # 219 сниппетов
+```
+
+**Бинарник** собирается через [Nuitka](https://nuitka.net/) — standalone, ~40 МБ, не требует Python.
+
+---
+
+## Разработка
 
 ```bash
-bsl-analyzer --mcp --port 8051
-```
-
-Configure in Claude Desktop / Cursor (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "bsl-analyzer": {
-      "url": "http://localhost:8051/mcp"
-    }
-  }
-}
-```
-
-Available tools:
-
-| Tool                  | Description                                            |
-|-----------------------|--------------------------------------------------------|
-| `bsl_status`          | Index health check (symbol count, last commit)         |
-| `bsl_find_symbol`     | Search symbols by name (exact or prefix)               |
-| `bsl_file_symbols`    | All symbols defined in a file                          |
-| `bsl_callers`         | Who calls a given procedure/function                   |
-| `bsl_callees`         | What a procedure/function calls                        |
-| `bsl_diagnostics`     | Run lint rules on a file or directory                  |
-| `bsl_definition`      | Definition location(s) of a symbol                     |
-| `bsl_index_file`      | Force re-index a single file                           |
-| `bsl_check_file`      | Run lint rules with select/ignore filters              |
-| `bsl_list_rules`      | List all rules (with optional tag filter)              |
-
----
-
-## LSP Server (for VSCode / Cursor)
-
-```bash
-bsl-analyzer --lsp
-```
-
-Capabilities:
-
-| Feature                   | Status |
-|---------------------------|--------|
-| Go to definition          | ✓      |
-| Hover (signature + doc)   | ✓      |
-| Document symbols          | ✓      |
-| Workspace symbol search   | ✓      |
-| Completions               | ✓      |
-| Find references           | ✓      |
-| Diagnostics on save       | ✓      |
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│                  bsl-analyzer                   │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ MCP HTTP │  │ LSP stdio│  │ CLI --check   │  │
-│  └────┬─────┘  └────┬─────┘  └──────┬────────┘  │
-│       └─────────────┴───────────────┘            │
-│                Analysis Layer                    │
-│     DiagnosticEngine (55 rules, BSL001–BSL055)   │
-│     symbols · call_graph · platform_api          │
-│                Indexer Layer                     │
-│       IncrementalIndexer · FileWatcher           │
-│              SymbolIndex (SQLite FTS5)           │
-│                Parser Layer                      │
-│      BslParser (tree-sitter-bsl) + regex         │
-└─────────────────────────────────────────────────┘
+git clone https://github.com/your-org/1c_hbk_bsl
+cd 1c_hbk_bsl
+make install    # установить зависимости
+make test       # запустить тесты
+make lint       # ruff check
+make build      # собрать бинарник (Nuitka)
+make lsp        # запустить LSP-сервер из исходников
 ```
 
 ---
 
-## Development
+## Лицензия
 
-```bash
-git clone https://github.com/your-org/bsl-analyzer
-cd bsl-analyzer
-uv pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Lint
-ruff check src/ tests/
-
-# Full check with coverage
-pytest --cov=src/bsl_analyzer --cov-report=term-missing
-```
-
----
-
-## License
-
-MIT
+MIT © 2024 BSL Analyzer Contributors

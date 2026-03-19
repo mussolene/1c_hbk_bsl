@@ -27,6 +27,8 @@ from __future__ import annotations
 import logging
 import os
 import re as _re
+import threading
+import urllib.parse
 from pathlib import Path
 
 from lsprotocol.types import (
@@ -50,6 +52,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_RANGE_FORMATTING,
     TEXT_DOCUMENT_REFERENCES,
     TEXT_DOCUMENT_RENAME,
+    TEXT_DOCUMENT_SELECTION_RANGE,
     TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
     WORKSPACE_SYMBOL,
     CallHierarchyIncomingCall,
@@ -94,11 +97,15 @@ from lsprotocol.types import (
     Range,
     ReferenceParams,
     RenameParams,
+    SaveOptions,
+    SelectionRange,
+    SelectionRangeParams,
     SemanticTokens,
     SemanticTokensLegend,
     SemanticTokensParams,
     SymbolInformation,
     SymbolKind,
+    TextDocumentSyncKind,
     TextEdit,
     WorkspaceEdit,
     WorkspaceSymbolParams,
@@ -138,9 +145,9 @@ _KIND_MAP = {
 
 
 def _uri_to_path(uri: str) -> str:
-    """Convert a file:// URI to an absolute local path."""
+    """Convert a file:// URI to an absolute local path (cross-platform)."""
     if uri.startswith("file://"):
-        return uri[7:]  # crude but works for Linux/macOS; use urllib for Windows
+        return urllib.parse.unquote(urllib.parse.urlparse(uri).path)
     return uri
 
 
@@ -153,7 +160,11 @@ class BslLanguageServer(LanguageServer):
     """Extended LanguageServer with BSL-specific state."""
 
     def __init__(self) -> None:
-        super().__init__("bsl-analyzer", "v0.1.0")
+        super().__init__(
+            "bsl-analyzer",
+            "v0.1.0",
+            text_document_sync_kind=TextDocumentSyncKind.Full,
+        )
         db_path = os.environ.get("INDEX_DB_PATH", "bsl_index.sqlite")
         self.symbol_index = SymbolIndex(db_path=db_path)
         self.parser = BslParser()
@@ -162,6 +173,8 @@ class BslLanguageServer(LanguageServer):
         self.platform_api: PlatformApi = get_platform_api()
         # In-memory document cache: uri → content
         self._docs: dict[str, str] = {}
+        # Debounce timers for diagnostics: uri → Timer
+        self._diag_timers: dict[str, threading.Timer] = {}
 
 
 server = BslLanguageServer()
@@ -193,7 +206,6 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
             except Exception as exc:
                 logger.error("LSP: indexing failed: %s", exc)
 
-        import threading
         threading.Thread(target=_do_index, daemon=True).start()
 
 
@@ -204,34 +216,65 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
 
 @server.feature(TEXT_DOCUMENT_DID_OPEN)
 def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> None:
-    """Cache document content on open."""
+    """Cache document content on open and run initial diagnostics."""
     doc = params.text_document
     ls._docs[doc.uri] = doc.text
     logger.debug("LSP: opened %s", doc.uri)
+    path = _uri_to_path(doc.uri)
+    threading.Thread(
+        target=_publish_diagnostics, args=(ls, doc.uri, path), daemon=True
+    ).start()
+
+
+_DIAG_DEBOUNCE_SECS = 0.6
 
 
 @server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) -> None:
-    """Update cached content on every change."""
+    """Update cached content and schedule debounced diagnostics."""
     uri = params.text_document.uri
     for change in params.content_changes:
-        # Full document sync — replace entire content
         ls._docs[uri] = change.text
     logger.debug("LSP: changed %s", uri)
 
+    # Cancel previous pending timer for this URI
+    old_timer = ls._diag_timers.pop(uri, None)
+    if old_timer is not None:
+        old_timer.cancel()
 
-@server.feature(TEXT_DOCUMENT_DID_SAVE)
+    path = _uri_to_path(uri)
+
+    def _run() -> None:
+        ls._diag_timers.pop(uri, None)
+        _publish_diagnostics(ls, uri, path)
+
+    timer = threading.Timer(_DIAG_DEBOUNCE_SECS, _run)
+    ls._diag_timers[uri] = timer
+    timer.start()
+
+
+@server.feature(TEXT_DOCUMENT_DID_SAVE, SaveOptions(include_text=True))
 def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> None:
     """Re-index file and publish diagnostics on save."""
     uri = params.text_document.uri
     path = _uri_to_path(uri)
 
-    # Re-index this file
-    result = ls.indexer.index_file(path)
-    logger.debug("LSP: re-indexed %s: %s", path, result)
+    # Update cache from saved text if provided
+    if params.text is not None:
+        ls._docs[uri] = params.text
 
-    # Run diagnostics
-    _publish_diagnostics(ls, uri, path)
+    # Cancel any pending debounce timer — save supersedes it
+    old_timer = ls._diag_timers.pop(uri, None)
+    if old_timer is not None:
+        old_timer.cancel()
+
+    # Re-index and run diagnostics in background
+    def _run() -> None:
+        result = ls.indexer.index_file(path)
+        logger.debug("LSP: re-indexed %s: %s", path, result)
+        _publish_diagnostics(ls, uri, path)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
@@ -656,8 +699,9 @@ def on_call_hierarchy_outgoing(
     """Return all callees of the given symbol (outgoing calls)."""
     caller_uri = params.item.uri
     caller_file = _uri_to_path(caller_uri)
+    caller_name = params.item.name
 
-    callees = ls.symbol_index.find_callees(caller_file)
+    callees = ls.symbol_index.find_callees(caller_file, caller_name=caller_name)
     if not callees:
         return None
 
@@ -1236,6 +1280,165 @@ def on_code_action(
         )
 
     return actions if actions else None
+
+
+# ---------------------------------------------------------------------------
+# Selection Range (Shift+Alt+→ smart expand)
+# ---------------------------------------------------------------------------
+
+# BSL block openers → their matching closers (lowercase)
+_BLOCK_PAIRS: dict[str, str] = {
+    "процедура": "конецпроцедуры",
+    "функция": "конецфункции",
+    "если": "конецесли",
+    "для": "конеццикла",
+    "пока": "конеццикла",
+    "попытка": "конецпопытки",
+    "procedure": "endprocedure",
+    "function": "endfunction",
+    "if": "endif",
+    "for": "enddo",
+    "while": "enddo",
+    "try": "endtry",
+}
+_BLOCK_OPENERS = frozenset(_BLOCK_PAIRS)
+_BLOCK_CLOSERS = frozenset(_BLOCK_PAIRS.values())
+
+
+def _first_word(line: str) -> str:
+    """Return first identifier on the line, lowercased."""
+    m = _re.match(r"[^\S\n]*([А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z0-9_]*)", line)
+    return m.group(1).lower() if m else ""
+
+
+def _build_selection_range(
+    lines: list[str], cursor_line: int
+) -> SelectionRange | None:
+    """
+    Return a chain of SelectionRange nodes for the cursor position:
+      word → current line → enclosing block → outer block → …
+    """
+    n = len(lines)
+    if cursor_line >= n:
+        return None
+
+    ranges: list[tuple[int, int]] = []
+
+    # 1. Current line (inner-most range)
+    ranges.append((cursor_line, cursor_line))
+
+    # 2. Walk outward: find enclosing blocks using a stack
+    #    We scan from line 0 upward to cursor to build nesting stack,
+    #    then from cursor downward to find matching closers.
+    stack: list[int] = []  # line numbers of openers above cursor
+    for i in range(cursor_line):
+        fw = _first_word(lines[i])
+        if fw in _BLOCK_OPENERS:
+            stack.append(i)
+        elif fw in _BLOCK_CLOSERS and stack:
+            stack.pop()
+
+    # stack now contains unmatched openers (innermost last)
+    for opener_line in reversed(stack):
+        opener_fw = _first_word(lines[opener_line])
+        closer_kw = _BLOCK_PAIRS.get(opener_fw, "")
+        # Find the matching closer after cursor
+        depth = 0
+        closer_line = None
+        for j in range(opener_line + 1, n):
+            fw = _first_word(lines[j])
+            if fw == opener_fw:
+                depth += 1
+            elif fw == closer_kw:
+                if depth == 0:
+                    closer_line = j
+                    break
+                depth -= 1
+        if closer_line is not None:
+            ranges.append((opener_line, closer_line))
+
+    if not ranges:
+        return None
+
+    # Build chain from innermost → outermost
+    result: SelectionRange | None = None
+    for start_l, end_l in reversed(ranges):
+        end_char = len(lines[end_l]) if end_l < n else 0
+        r = Range(
+            start=Position(line=start_l, character=0),
+            end=Position(line=end_l, character=end_char),
+        )
+        result = SelectionRange(range=r, parent=result)
+
+    return result
+
+
+@server.feature(TEXT_DOCUMENT_SELECTION_RANGE)
+def on_selection_range(
+    ls: BslLanguageServer, params: SelectionRangeParams
+) -> list[SelectionRange] | None:
+    """Return BSL-aware selection ranges for each requested position."""
+    doc = ls.workspace.get_text_document(params.text_document.uri)
+    lines = doc.source.splitlines() if doc.source else []
+    if not lines:
+        return None
+
+    result: list[SelectionRange] = []
+    for pos in params.positions:
+        sr = _build_selection_range(lines, pos.line)
+        if sr:
+            result.append(sr)
+
+    return result if result else None
+
+
+# ---------------------------------------------------------------------------
+# Custom BSL requests (used by VSCode extension commands)
+# ---------------------------------------------------------------------------
+
+
+@server.feature("bsl/status")
+def on_bsl_status(ls: BslLanguageServer, params: object) -> dict:  # type: ignore[type-arg]
+    """Return index statistics for the status bar."""
+    stats = ls.symbol_index.get_stats()
+    return {
+        "ready": True,
+        "symbol_count": stats.get("symbol_count", 0),
+        "file_count": stats.get("file_count", 0),
+    }
+
+
+@server.feature("bsl/reindexWorkspace")
+def on_bsl_reindex_workspace(ls: BslLanguageServer, params: dict) -> dict:  # type: ignore[type-arg]
+    """Re-index the entire workspace (triggered from VSCode command)."""
+    root = params.get("root", "")
+    if not root or not Path(root).is_dir():
+        return {"success": False, "error": f"Invalid root: {root}"}
+
+    import threading
+
+    def _do() -> None:
+        try:
+            ls.indexer.index_workspace(root, force=True)
+            logger.info("LSP: reindex complete for %s", root)
+        except Exception as exc:
+            logger.error("LSP: reindex failed: %s", exc)
+
+    threading.Thread(target=_do, daemon=True).start()
+    return {"success": True}
+
+
+@server.feature("bsl/reindexFile")
+def on_bsl_reindex_file(ls: BslLanguageServer, params: dict) -> dict:  # type: ignore[type-arg]
+    """Re-index a single file (triggered from VSCode command)."""
+    file_path = params.get("filePath", "")
+    if not file_path or not Path(file_path).is_file():
+        return {"success": False, "error": f"File not found: {file_path}"}
+    try:
+        ls.indexer.index_file(file_path)
+        return {"success": True}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
 
 # ---------------------------------------------------------------------------

@@ -48,14 +48,14 @@ BUILD_OUT = $(DIST_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
 build:
 	@echo "→ Компиляция через Nuitka ($(PLATFORM))..."
 	@mkdir -p $(DIST_DIR)
-	python -m nuitka \
+	.venv/bin/python -m nuitka \
 		--standalone \
 		--onefile \
 		--output-filename=$(BIN_NAME)$(BIN_SUFFIX) \
 		--output-dir=$(DIST_DIR) \
 		--include-package=bsl_analyzer \
 		--include-package=tree_sitter \
-		--include-package=tree_sitter_languages \
+		--include-package=tree_sitter_bsl \
 		--include-package=fastmcp \
 		--include-package=pygls \
 		--include-package=watchfiles \
@@ -70,7 +70,7 @@ build:
 # Быстрая сборка без --onefile (для отладки, быстрее компилируется)
 build-dev:
 	@mkdir -p $(DIST_DIR)
-	python -m nuitka \
+	.venv/bin/python -m nuitka \
 		--standalone \
 		--output-dir=$(DIST_DIR)/dev \
 		--include-package=bsl_analyzer \

@@ -1,0 +1,30 @@
+{
+  "comments": {
+    "lineComment": "//"
+  },
+  "brackets": [
+    ["(", ")"],
+    ["[", "]"]
+  ],
+  "autoClosingPairs": [
+    { "open": "(", "close": ")" },
+    { "open": "[", "close": "]" },
+    { "open": "\"", "close": "\"", "notIn": ["string"] }
+  ],
+  "surroundingPairs": [
+    ["(", ")"],
+    ["[", "]"],
+    ["\"", "\""]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "(?i)^\\s*(Процедура|Функция|Если.*Тогда|ИначеЕсли.*Тогда|Иначе|Для.*Цикл|Пока.*Цикл|Попытка|Исключение|Procedure|Function|If.*Then|ElsIf.*Then|Else|For.*Do|While.*Do|Try|Except)\\b",
+    "decreaseIndentPattern": "(?i)^\\s*(КонецПроцедуры|КонецФункции|КонецЕсли|КонецЦикла|КонецПопытки|ИначеЕсли|Иначе|Исключение|EndProcedure|EndFunction|EndIf|EndDo|EndTry|ElsIf|Else|Except)\\b"
+  },
+  "wordPattern": "[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z0-9_]*",
+  "folding": {
+    "markers": {
+      "start": "(?i)^\\s*#(Область|Region)\\b",
+      "end": "(?i)^\\s*#(КонецОбласти|EndRegion)\\b"
+    }
+  }
+}

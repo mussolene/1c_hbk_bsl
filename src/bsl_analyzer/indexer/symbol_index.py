@@ -343,15 +343,36 @@ class SymbolIndex:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def find_callees(self, caller_file: str, caller_line: int | None = None) -> list[dict[str, Any]]:
+    def find_callees(
+        self,
+        caller_file: str,
+        caller_name: str | None = None,
+        caller_line: int | None = None,
+    ) -> list[dict[str, Any]]:
         """
-        Find all symbols called from *caller_file* (optionally at a specific line).
+        Find all symbols called from *caller_file*.
+
+        When *caller_name* is given, filters to calls made by that function
+        (by matching the ``caller_name`` column in the calls table).
+        When *caller_line* is given instead, uses a ±15-line window.
 
         Returns dicts with: caller_file, caller_line, callee_name + resolved definition.
         """
         conn = self._conn()
-        if caller_line is not None:
-            # Within a 30-line window around the line
+        if caller_name is not None:
+            rows = conn.execute(
+                """
+                SELECT c.callee_name, c.caller_line, c.callee_args_count,
+                       s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
+                FROM calls c
+                LEFT JOIN symbols s ON LOWER(s.name) = LOWER(c.callee_name)
+                WHERE c.caller_file = ?
+                  AND LOWER(c.caller_name) = LOWER(?)
+                ORDER BY c.caller_line
+                """,
+                (caller_file, caller_name),
+            ).fetchall()
+        elif caller_line is not None:
             rows = conn.execute(
                 """
                 SELECT c.callee_name, c.caller_line, c.callee_args_count,

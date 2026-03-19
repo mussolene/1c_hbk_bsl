@@ -1,60 +1,96 @@
 /**
  * BSL Analyzer VSCode Extension
  *
- * Connects VSCode to the bsl-analyzer LSP server.
- * The server is launched as a child process running `bsl-analyzer --lsp`,
- * or optionally via `docker exec` when useDocker is enabled.
+ * Launch strategy (in order):
+ *   1. Binary bundled in extension's bin/ directory
+ *   2. Path explicitly set in bslAnalyzer.serverPath
+ *   3. bsl-analyzer on system PATH
+ *   4. Auto-download from GitHub Releases (first activation only)
+ *
+ * No Python runtime required at run time — only the compiled native binary.
  */
 
+import * as fs from "fs";
+import * as https from "https";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
+  Executable,
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
   TransportKind,
-  Executable,
 } from "vscode-languageclient/node";
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const EXTENSION_ID = "bslAnalyzer";
+const CLIENT_ID = "bslAnalyzer";
+const CLIENT_NAME = "BSL Analyzer";
+const BINARY_NAME = process.platform === "win32" ? "bsl-analyzer.exe" : "bsl-analyzer";
+
+/** GitHub release tag to download when no binary is found locally. */
+const RELEASE_TAG = "v0.1.0";
+
+/** Map from Node platform+arch → asset filename in GitHub Releases. */
+const PLATFORM_ASSETS: Record<string, string> = {
+  "darwin-arm64": "bsl-analyzer-darwin-arm64",
+  "darwin-x64":   "bsl-analyzer-darwin-x64",
+  "linux-x64":    "bsl-analyzer-linux-x64",
+  "win32-x64":    "bsl-analyzer-win32-x64.exe",
+};
+
+// ---------------------------------------------------------------------------
+// Module-level state
+// ---------------------------------------------------------------------------
+
 let client: LanguageClient | undefined;
+let statusBarItem: vscode.StatusBarItem | undefined;
 
 // ---------------------------------------------------------------------------
 // Activation
 // ---------------------------------------------------------------------------
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const config = vscode.workspace.getConfiguration("bslAnalyzer");
+  // Status bar
+  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBarItem.command = `${EXTENSION_ID}.showStatus`;
+  statusBarItem.text = "$(loading~spin) BSL";
+  statusBarItem.tooltip = "BSL Analyzer — click to show index status";
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
 
-  const serverOptions = buildServerOptions(config);
+  // Resolve binary path (download if needed)
+  const binaryPath = await resolveBinaryPath(context);
+  if (!binaryPath) {
+    vscode.window.showErrorMessage(
+      "BSL Analyzer: could not find or download the server binary. " +
+      "Set bslAnalyzer.serverPath manually in settings."
+    );
+    return;
+  }
+
+  const config = vscode.workspace.getConfiguration(EXTENSION_ID);
+  const serverOptions = buildServerOptions(binaryPath, config);
   const clientOptions = buildClientOptions();
 
-  client = new LanguageClient(
-    "bslAnalyzer",
-    "BSL Analyzer",
-    serverOptions,
-    clientOptions
-  );
+  client = new LanguageClient(CLIENT_ID, CLIENT_NAME, serverOptions, clientOptions);
 
-  // Register commands
+  // Commands
   context.subscriptions.push(
-    vscode.commands.registerCommand("bslAnalyzer.reindexWorkspace", async () => {
-      await reindexWorkspace(config);
-    }),
-    vscode.commands.registerCommand(
-      "bslAnalyzer.reindexCurrentFile",
-      async () => {
-        await reindexCurrentFile(config);
-      }
-    ),
-    vscode.commands.registerCommand("bslAnalyzer.showStatus", async () => {
-      await showStatus();
-    })
+    vscode.commands.registerCommand(`${EXTENSION_ID}.reindexWorkspace`, reindexWorkspace),
+    vscode.commands.registerCommand(`${EXTENSION_ID}.reindexCurrentFile`, reindexCurrentFile),
+    vscode.commands.registerCommand(`${EXTENSION_ID}.showStatus`, showStatus),
   );
 
-  // Start the language client (this also launches the server process)
   await client.start();
 
-  vscode.window.showInformationMessage("BSL Analyzer is active.");
+  updateStatusBar();
+  const interval = setInterval(updateStatusBar, 30_000);
+  context.subscriptions.push({ dispose: () => clearInterval(interval) });
 }
 
 // ---------------------------------------------------------------------------
@@ -69,48 +105,212 @@ export async function deactivate(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Binary resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve path to the bsl-analyzer binary using the priority chain:
+ *   settings → bundled → PATH → auto-download.
+ *
+ * Explicit settings override comes first so developers can point at a
+ * freshly-built binary or the Python venv entry-point without repackaging.
+ */
+async function resolveBinaryPath(context: vscode.ExtensionContext): Promise<string | null> {
+  const config = vscode.workspace.getConfiguration(EXTENSION_ID);
+
+  // 1. Explicit settings override (highest priority)
+  const configured = config.get<string>("serverPath", "");
+  if (configured && configured !== "bsl-analyzer") {
+    if (fs.existsSync(configured) && isExecutable(configured)) {
+      return configured;
+    }
+    vscode.window.showWarningMessage(
+      `BSL Analyzer: configured serverPath "${configured}" not found, falling back.`
+    );
+  }
+
+  // 2. Bundled binary alongside the extension
+  const bundled = path.join(context.extensionPath, "bin", BINARY_NAME);
+  if (fs.existsSync(bundled) && isExecutable(bundled)) {
+    return bundled;
+  }
+
+  // 3. System PATH
+  const onPath = findOnPath(BINARY_NAME);
+  if (onPath) {
+    return onPath;
+  }
+
+  // 4. Previously downloaded into global storage
+  const downloaded = path.join(context.globalStorageUri.fsPath, "bin", BINARY_NAME);
+  if (fs.existsSync(downloaded) && isExecutable(downloaded)) {
+    return downloaded;
+  }
+
+  // 5. Offer to download
+  const choice = await vscode.window.showInformationMessage(
+    `BSL Analyzer server binary not found. Download ${RELEASE_TAG} automatically?`,
+    "Download",
+    "Set Path Manually",
+  );
+
+  if (choice === "Download") {
+    return downloadBinary(context, downloaded);
+  }
+
+  if (choice === "Set Path Manually") {
+    const result = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      openLabel: "Select bsl-analyzer binary",
+      filters: process.platform === "win32" ? { Executable: ["exe"] } : {},
+    });
+    if (result && result[0]) {
+      await config.update("serverPath", result[0].fsPath, vscode.ConfigurationTarget.Global);
+      return result[0].fsPath;
+    }
+  }
+
+  return null;
+}
+
+function isExecutable(filePath: string): boolean {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function findOnPath(name: string): string | null {
+  const dirs = (process.env.PATH ?? "").split(path.delimiter);
+  for (const dir of dirs) {
+    const full = path.join(dir, name);
+    if (fs.existsSync(full) && isExecutable(full)) {
+      return full;
+    }
+  }
+  return null;
+}
+
+async function downloadBinary(
+  _context: vscode.ExtensionContext,
+  destPath: string,
+): Promise<string | null> {
+  const platformKey = `${process.platform}-${os.arch()}`;
+  const assetName = PLATFORM_ASSETS[platformKey];
+
+  if (!assetName) {
+    vscode.window.showErrorMessage(
+      `BSL Analyzer: no pre-built binary for platform "${platformKey}". ` +
+      `Install manually and set bslAnalyzer.serverPath.`
+    );
+    return null;
+  }
+
+  const repoOwner = "your-org";
+  const repoName = "1c_hbk_bsl";
+  const url = `https://github.com/${repoOwner}/${repoName}/releases/download/${RELEASE_TAG}/${assetName}`;
+
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `BSL Analyzer: Downloading server binary (${RELEASE_TAG})…`,
+      cancellable: false,
+    },
+    async (progress) => {
+      try {
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        await httpDownload(url, destPath, (pct) => {
+          progress.report({ increment: pct, message: `${pct}%` });
+        });
+        fs.chmodSync(destPath, 0o755);
+        vscode.window.showInformationMessage("BSL Analyzer: binary downloaded successfully.");
+        return destPath;
+      } catch (err) {
+        vscode.window.showErrorMessage(`BSL Analyzer: download failed: ${err}`);
+        return null;
+      }
+    }
+  );
+}
+
+function httpDownload(
+  url: string,
+  dest: string,
+  onProgress: (pct: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const follow = (u: string) => {
+      https.get(u, (res) => {
+        // Follow redirects (GitHub releases redirect to cdn)
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          follow(res.headers.location!);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const total = parseInt(res.headers["content-length"] ?? "0", 10);
+        let received = 0;
+        const out = fs.createWriteStream(dest);
+        res.on("data", (chunk: Buffer) => {
+          received += chunk.length;
+          if (total > 0) {
+            onProgress(Math.round((received / total) * 100));
+          }
+          out.write(chunk);
+        });
+        res.on("end", () => { out.end(); resolve(); });
+        res.on("error", reject);
+        out.on("error", reject);
+      }).on("error", reject);
+    };
+    follow(url);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Server options
 // ---------------------------------------------------------------------------
 
 function buildServerOptions(
-  config: vscode.WorkspaceConfiguration
+  binaryPath: string,
+  config: vscode.WorkspaceConfiguration,
 ): ServerOptions {
   const useDocker = config.get<boolean>("useDocker", false);
-  const containerName = config.get<string>(
-    "dockerContainer",
-    "bsl-analyzer-default"
-  );
-  const serverPath = config.get<string>("serverPath", "bsl-analyzer");
+  const containerName = config.get<string>("dockerContainer", "bsl-analyzer-default");
+
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    LOG_LEVEL: config.get<string>("logLevel", "info"),
+    INDEX_DB_PATH: resolveIndexDbPath(config),
+  };
+
+  const select = config.get<string[]>("diagnostics.select", []);
+  const ignore = config.get<string[]>("diagnostics.ignore", []);
+  if (select.length > 0) { env["BSL_SELECT"] = select.join(","); }
+  if (ignore.length > 0) { env["BSL_IGNORE"] = ignore.join(","); }
 
   if (useDocker) {
-    // Run `docker exec -i <container> bsl-analyzer --lsp` on stdio
-    const dockerServer: Executable = {
+    const srv: Executable = {
       command: "docker",
       args: ["exec", "-i", containerName, "bsl-analyzer", "--lsp"],
       transport: TransportKind.stdio,
     };
-    return {
-      run: dockerServer,
-      debug: dockerServer,
-    };
+    return { run: srv, debug: srv };
   }
 
-  // Use the local binary
-  const localServer: Executable = {
-    command: serverPath,
+  const srv: Executable = {
+    command: binaryPath,
     args: ["--lsp"],
     transport: TransportKind.stdio,
-    options: {
-      env: {
-        ...process.env,
-        LOG_LEVEL: config.get<string>("logLevel", "info"),
-        INDEX_DB_PATH: resolveIndexDbPath(config),
-      },
-    },
+    options: { env },
   };
   return {
-    run: localServer,
-    debug: { ...localServer, args: ["--lsp", "--log-level", "debug"] },
+    run: srv,
+    debug: { ...srv, args: ["--lsp", "--log-level", "debug"] },
   };
 }
 
@@ -120,14 +320,12 @@ function buildServerOptions(
 
 function buildClientOptions(): LanguageClientOptions {
   return {
-    // Activate for .bsl and .os files
     documentSelector: [
       { scheme: "file", language: "bsl" },
       { scheme: "file", pattern: "**/*.bsl" },
       { scheme: "file", pattern: "**/*.os" },
     ],
     synchronize: {
-      // Watch for changes to .bsl/.os files in the workspace
       fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{bsl,os}"),
     },
   };
@@ -137,79 +335,76 @@ function buildClientOptions(): LanguageClientOptions {
 // Commands
 // ---------------------------------------------------------------------------
 
-async function reindexWorkspace(
-  config: vscode.WorkspaceConfiguration
-): Promise<void> {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders || workspaceFolders.length === 0) {
+async function reindexWorkspace(): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
     vscode.window.showWarningMessage("No workspace folder open.");
     return;
   }
-  const root = workspaceFolders[0].uri.fsPath;
+  const root = folders[0].uri.fsPath;
   await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "BSL Analyzer: Reindexing workspace…",
-      cancellable: false,
-    },
+    { location: vscode.ProgressLocation.Notification, title: "BSL Analyzer: Reindexing…", cancellable: false },
     async () => {
-      // Send a custom LSP request to trigger reindex
-      if (client) {
-        try {
-          await client.sendRequest("bsl/reindexWorkspace", { root });
-          vscode.window.showInformationMessage(
-            "BSL Analyzer: Workspace reindex complete."
-          );
-        } catch {
-          // Fallback: open terminal and run CLI
-          const terminal = vscode.window.createTerminal("BSL Reindex");
-          terminal.sendText(`bsl-analyzer --index "${root}" --force`);
-          terminal.show();
-        }
+      if (!client) { return; }
+      try {
+        await client.sendRequest("bsl/reindexWorkspace", { root });
+        vscode.window.showInformationMessage("BSL Analyzer: Workspace reindex complete.");
+        updateStatusBar();
+      } catch {
+        const terminal = vscode.window.createTerminal("BSL Reindex");
+        terminal.sendText(`bsl-analyzer --index "${root}" --force`);
+        terminal.show();
       }
     }
   );
 }
 
-async function reindexCurrentFile(
-  config: vscode.WorkspaceConfiguration
-): Promise<void> {
+async function reindexCurrentFile(): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  if (!editor) {
-    vscode.window.showWarningMessage("No active editor.");
-    return;
-  }
-  const filePath = editor.document.uri.fsPath;
-  if (client) {
-    try {
-      await client.sendRequest("bsl/reindexFile", { filePath });
-      vscode.window.showInformationMessage(
-        `BSL Analyzer: Reindexed ${path.basename(filePath)}.`
-      );
-    } catch (err) {
-      vscode.window.showErrorMessage(`BSL Analyzer: Reindex failed: ${err}`);
-    }
+  if (!editor) { vscode.window.showWarningMessage("No active editor."); return; }
+  if (!client) { return; }
+  try {
+    await client.sendRequest("bsl/reindexFile", { filePath: editor.document.uri.fsPath });
+    vscode.window.showInformationMessage(
+      `BSL Analyzer: Reindexed ${path.basename(editor.document.uri.fsPath)}.`
+    );
+  } catch (err) {
+    vscode.window.showErrorMessage(`BSL Analyzer: Reindex failed: ${err}`);
   }
 }
 
 async function showStatus(): Promise<void> {
-  if (!client) {
-    vscode.window.showWarningMessage("BSL Analyzer is not running.");
-    return;
-  }
+  if (!client) { vscode.window.showWarningMessage("BSL Analyzer is not running."); return; }
   try {
-    const status = await client.sendRequest<{
-      ready: boolean;
-      symbol_count: number;
-      file_count: number;
-      last_commit?: string;
-    }>("bsl/status", {});
-    vscode.window.showInformationMessage(
-      `BSL Index: ${status.symbol_count} symbols in ${status.file_count} files` +
-        (status.last_commit ? ` (commit ${status.last_commit.substring(0, 8)})` : "")
+    const status = await client.sendRequest<{ ready: boolean; symbol_count: number; file_count: number }>(
+      "bsl/status", {}
     );
+    vscode.window.showInformationMessage(
+      `BSL Index: ${status.symbol_count} symbols in ${status.file_count} files`
+    );
+    if (statusBarItem) {
+      statusBarItem.text = `$(database) BSL: ${status.symbol_count}`;
+    }
   } catch (err) {
     vscode.window.showErrorMessage(`BSL Analyzer: Status request failed: ${err}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Status bar
+// ---------------------------------------------------------------------------
+
+async function updateStatusBar(): Promise<void> {
+  if (!client || !statusBarItem) { return; }
+  try {
+    const status = await client.sendRequest<{ symbol_count: number; file_count: number }>(
+      "bsl/status", {}
+    );
+    statusBarItem.text = `$(database) BSL: ${status.symbol_count}`;
+    statusBarItem.tooltip = `BSL Analyzer: ${status.symbol_count} symbols in ${status.file_count} files`;
+  } catch {
+    statusBarItem.text = "$(warning) BSL";
+    statusBarItem.tooltip = "BSL Analyzer: server not responding";
   }
 }
 
@@ -217,13 +412,9 @@ async function showStatus(): Promise<void> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function resolveIndexDbPath(
-  config: vscode.WorkspaceConfiguration
-): string {
+function resolveIndexDbPath(config: vscode.WorkspaceConfiguration): string {
   const configured = config.get<string>("indexDbPath", "");
-  if (configured) {
-    return configured;
-  }
+  if (configured) { return configured; }
   const folders = vscode.workspace.workspaceFolders;
   if (folders && folders.length > 0) {
     return path.join(folders[0].uri.fsPath, "bsl_index.sqlite");

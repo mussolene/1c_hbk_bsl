@@ -21,7 +21,8 @@ htmlcov/
 
 # Node.js / VSCode Extension
 node_modules/
-out/
+vscode-extension/out/
+vscode-extension/bin/
 *.vsix
 *.js.map
 
