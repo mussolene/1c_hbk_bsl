@@ -124,3 +124,83 @@ class TestBslParserProcedureCount:
         assert len(found) >= 2, (
             f"Expected to find at least 2 known procedure names, found: {found}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Query strings
+# ---------------------------------------------------------------------------
+
+
+class TestQueryStrings:
+    """Tests that query string constants are well-formed and importable."""
+
+    def test_procedures_query_is_nonempty(self) -> None:
+        from bsl_analyzer.parser.queries import PROCEDURES_QUERY
+
+        assert isinstance(PROCEDURES_QUERY, str)
+        assert len(PROCEDURES_QUERY.strip()) > 0
+
+    def test_procedures_query_contains_procedure_definition(self) -> None:
+        from bsl_analyzer.parser.queries import PROCEDURES_QUERY
+
+        assert "procedure_definition" in PROCEDURES_QUERY
+
+    def test_calls_query_is_nonempty(self) -> None:
+        from bsl_analyzer.parser.queries import CALLS_QUERY
+
+        assert isinstance(CALLS_QUERY, str)
+        assert len(CALLS_QUERY.strip()) > 0
+
+    def test_calls_query_contains_method_call(self) -> None:
+        from bsl_analyzer.parser.queries import CALLS_QUERY
+
+        assert "method_call" in CALLS_QUERY
+
+    def test_variables_query_is_nonempty(self) -> None:
+        from bsl_analyzer.parser.queries import VARIABLES_QUERY
+
+        assert isinstance(VARIABLES_QUERY, str)
+        assert len(VARIABLES_QUERY.strip()) > 0
+
+    def test_variables_query_contains_var_definition(self) -> None:
+        from bsl_analyzer.parser.queries import VARIABLES_QUERY
+
+        assert "var_definition" in VARIABLES_QUERY
+
+    def test_regions_query_is_nonempty(self) -> None:
+        from bsl_analyzer.parser.queries import REGIONS_QUERY
+
+        assert isinstance(REGIONS_QUERY, str)
+        assert len(REGIONS_QUERY.strip()) > 0
+
+    def test_try_except_query_is_nonempty(self) -> None:
+        from bsl_analyzer.parser.queries import TRY_EXCEPT_QUERY
+
+        assert isinstance(TRY_EXCEPT_QUERY, str)
+        assert len(TRY_EXCEPT_QUERY.strip()) > 0
+
+    def test_return_query_is_nonempty(self) -> None:
+        from bsl_analyzer.parser.queries import RETURN_QUERY
+
+        assert isinstance(RETURN_QUERY, str)
+        assert len(RETURN_QUERY.strip()) > 0
+
+    def test_all_queries_importable(self) -> None:
+        from bsl_analyzer.parser.queries import (
+            CALLS_QUERY,
+            PROCEDURES_QUERY,
+            REGIONS_QUERY,
+            RETURN_QUERY,
+            TRY_EXCEPT_QUERY,
+            VARIABLES_QUERY,
+        )
+
+        for q in (
+            PROCEDURES_QUERY,
+            CALLS_QUERY,
+            VARIABLES_QUERY,
+            REGIONS_QUERY,
+            TRY_EXCEPT_QUERY,
+            RETURN_QUERY,
+        ):
+            assert isinstance(q, str) and q.strip()
