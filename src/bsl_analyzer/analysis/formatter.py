@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import re
-from typing import NamedTuple
-
 
 # ---------------------------------------------------------------------------
 # Keyword normalization tables
@@ -167,9 +165,10 @@ _PREPROCESSOR_PATTERN = re.compile(
 
 # Comparison operators pattern (longer first to avoid <> being split into < >)
 _CMP_OP_RE = re.compile(r"\s*(<>|<=|>=|<|>)\s*")
-# Assignment / arithmetic operators handled separately
-_ARITH_OP_RE = re.compile(r"(?<![<>])(\s*)([+\-*/%])(\s*)(?![=])")
+# Assignment = (not preceded by < > ! : and not followed by >)
 _EQ_OP_RE = re.compile(r"(?<![!<>=:])(\s*)(=)(\s*)(?![>])")
+# Arithmetic operators +, -, *, / — but not unary minus at line start or after ( , =
+_ARITH_OP_RE = re.compile(r"(?<=[\w\d\)])\s*([+\-*/])\s*(?=[\w\d\(\"А-ЯЁа-яё])", re.UNICODE)
 
 # Canonical case for preprocessor words
 _PP_CANONICAL: dict[str, str] = {
@@ -178,12 +177,6 @@ _PP_CANONICAL: dict[str, str] = {
     "region": "#Region",
     "endregion": "#EndRegion",
 }
-
-
-class _TextEdit(NamedTuple):
-    start_line: int
-    end_line: int
-    new_text: str
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +240,9 @@ def _add_operator_spaces(code: str, in_proc_header: bool) -> str:
     # Skip = spacing inside proc headers (default param values like А = 0)
     if not in_proc_header:
         result = _EQ_OP_RE.sub(lambda m: f" {m.group(2)} ", result)
+
+    # Arithmetic operators (only between operands, not unary)
+    result = _ARITH_OP_RE.sub(lambda m: f" {m.group(1)} ", result)
 
     # Normalise multiple spaces to single
     result = re.sub(r"  +", " ", result)
