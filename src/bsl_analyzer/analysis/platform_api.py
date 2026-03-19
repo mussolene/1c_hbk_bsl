@@ -843,13 +843,35 @@ class PlatformApi:
             self._type_index[t.name_en.lower()] = t.name
 
     def _load_from_dir(self, data_dir: Path) -> None:
-        """Load JSON type definitions from *data_dir*."""
+        """Load JSON type/globals definitions from *data_dir*.
+
+        Files starting with ``_`` are treated as global-function lists
+        (array of ``{"name", "kind", "signature", "description", "returns"}``).
+        All other ``*.json`` files are type definitions.
+        """
         if not data_dir.is_dir():
             return
         for json_file in sorted(data_dir.glob("*.json")):
             try:
-                td = json.loads(json_file.read_text(encoding="utf-8"))
-                self._register_type(td)
+                raw = json.loads(json_file.read_text(encoding="utf-8"))
+                if isinstance(raw, list):
+                    # Global functions / variables list (_globals.json)
+                    for entry in raw:
+                        if not isinstance(entry, dict) or not entry.get("name"):
+                            continue
+                        kind = entry.get("kind", "function")
+                        if kind in ("function", "variable"):
+                            self._globals.append(
+                                ApiMethod(
+                                    name=entry["name"],
+                                    name_en=entry.get("name_en", ""),
+                                    signature=entry.get("signature", entry["name"] + "()"),
+                                    description=entry.get("description", ""),
+                                    returns=entry.get("returns", ""),
+                                )
+                            )
+                else:
+                    self._register_type(raw)
             except Exception:  # noqa: BLE001
                 pass  # silently skip malformed files
 

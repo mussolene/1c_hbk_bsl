@@ -54,9 +54,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Data files downloaded at runtime — not committed
-data/platform_api/*.json
-data/platform_api/*.xml
+# Vision/planning documents — local only
+docs/VISION.md
 
 # Logs
 *.log

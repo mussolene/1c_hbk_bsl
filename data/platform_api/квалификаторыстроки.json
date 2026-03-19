@@ -1,0 +1,21 @@
+{
+  "name": "КвалификаторыСтроки",
+  "name_en": "StringQualifiers",
+  "kind": "class",
+  "description": "Используется для описания допустимых значений строкового типа.",
+  "methods": [],
+  "properties": [
+    {
+      "name": "Длина",
+      "name_en": "Length",
+      "description": "Содержит длину строки в символах. Строка неограниченной длины имеет длину строки, равную 0.",
+      "read_only": false
+    },
+    {
+      "name": "ДопустимаяДлина",
+      "name_en": "AllowedLength",
+      "description": "Содержит вариант ограничения длины строки.",
+      "read_only": false
+    }
+  ]
+}

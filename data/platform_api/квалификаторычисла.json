@@ -1,0 +1,27 @@
+{
+  "name": "КвалификаторыЧисла",
+  "name_en": "NumberQualifiers",
+  "kind": "class",
+  "description": "Используется для описания допустимых значений числового типа.",
+  "methods": [],
+  "properties": [
+    {
+      "name": "ДопустимыйЗнак",
+      "name_en": "AllowedSign",
+      "description": "Определяет допустимый знак числа.",
+      "read_only": false
+    },
+    {
+      "name": "Разрядность",
+      "name_en": "Digits",
+      "description": "Содержит общее количество разрядов числа (количество разрядов целой части плюс количество разрядов дробной части).",
+      "read_only": false
+    },
+    {
+      "name": "РазрядностьДробнойЧасти",
+      "name_en": "FractionDigits",
+      "description": "Содержит число разрядов дробной части.",
+      "read_only": false
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "name": "ЭлементZipФайла",
+  "name_en": "ZipFileEntry",
+  "kind": "class",
+  "description": "Предназначен для описания элемента в ZIP-файле.",
+  "methods": [],
+  "properties": [
+    {
+      "name": "ВремяИзменения",
+      "name_en": "Modified",
+      "description": "Содержит время изменения файла.",
+      "read_only": false
+    },
+    {
+      "name": "Зашифрован",
+      "name_en": "Encrypted",
+      "description": "Содержит признак зашифрованности файла. Истина - зашифрован.",
+      "read_only": false
+    },
+    {
+      "name": "Имя",
+      "name_en": "Name",
+      "description": "Содержит имя файла.",
+      "read_only": false
+    },
+    {
+      "name": "ИмяБезРасширения",
+      "name_en": "BaseName",
+      "description": "Имя файла без расширения.",
+      "read_only": false
+    },
+    {
+      "name": "ИсходноеИмя",
+      "name_en": "OriginalName",
+      "description": "Содержит имя файла.",
+      "read_only": false
+    },
+    {
+      "name": "ИсходноеИмяБезРасширения",
+      "name_en": "OriginalBaseName",
+      "description": "Имя файла без расширения.",
+      "read_only": false
+    },
+    {
+      "name": "ИсходноеПолноеИмя",
+      "name_en": "OriginalFullName",
+      "description": "Содержит полное имя файла, включая путь.",
+      "read_only": false
+    },
+    {
+      "name": "ИсходноеРасширение",
+      "name_en": "OriginalExtension",
+      "description": "Содержит расширение файла.",
+      "read_only": false
+    },
+    {
+      "name": "ИсходныйПуть",
+      "name_en": "OriginalPath",
+      "description": "Содержит путь файла.",
+      "read_only": false
+    },
+    {
+      "name": "Невидимый",
+      "name_en": "Hidden",
+      "description": "Указывает, установлен ли у файла флаг \"Невидимый\". Истина - установлен.",
+      "read_only": false
+    },
+    {
+      "name": "ПолноеИмя",
+      "name_en": "FullName",
+      "description": "Содержит полное имя файла, включая путь.",
+      "read_only": false
+    },
+    {
+      "name": "Путь",
+      "name_en": "Path",
+      "description": "Содержит путь файла.",
+      "read_only": false
+    },
+    {
+      "name": "РазмерНесжатого",
+      "name_en": "UncompressedSize",
+      "description": "Содержит размер исходного файла на диске.",
+      "read_only": false
+    },
+    {
+      "name": "РазмерСжатого",
+      "name_en": "CompressedSize",
+      "description": "Содержит размер файла в архиве.",
+      "read_only": false
+    },
+    {
+      "name": "Расширение",
+      "name_en": "Extension",
+      "description": "Содержит расширение файла.",
+      "read_only": false
+    },
+    {
+      "name": "ТолькоЧтение",
+      "name_en": "ReadOnly",
+      "description": "Содержит признак того, что у файла установлен признак \"Только чтение\". Истина - установлен признак \"Только чтение\".",
+      "read_only": false
+    }
+  ]
+}

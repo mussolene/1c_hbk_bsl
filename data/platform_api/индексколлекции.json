@@ -1,0 +1,8 @@
+{
+  "name": "ИндексКоллекции",
+  "name_en": "CollectionIndex",
+  "kind": "class",
+  "description": "Индекс коллекции.",
+  "methods": [],
+  "properties": []
+}

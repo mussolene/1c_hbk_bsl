@@ -1,0 +1,15 @@
+{
+  "name": "КвалификаторыДаты",
+  "name_en": "DateQualifiers",
+  "kind": "class",
+  "description": "Используется для описания допустимых значений типа",
+  "methods": [],
+  "properties": [
+    {
+      "name": "ЧастиДаты",
+      "name_en": "DateFractions",
+      "description": "Определяет допустимые части даты.",
+      "read_only": false
+    }
+  ]
+}

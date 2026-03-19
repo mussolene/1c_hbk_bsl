@@ -2022,7 +2022,7 @@ _RE_NEGATIVE_CONDITION = re.compile(
 )
 
 # Выполнить() / Execute() — dynamic code execution (BSL098)
-_RE_EXECUTE = re.compile(r'\b(?:Выполнить|Execute)\s*\(', re.IGNORECASE)
+_RE_EXECUTE = re.compile(r'(?<!\.)(?:Выполнить|Execute)\s*\(', re.IGNORECASE)
 
 # Exported Перем declaration (BSL108): Перем X Экспорт
 _RE_EXPORTED_VAR = re.compile(
@@ -2389,7 +2389,7 @@ class DiagnosticEngine:
     MAX_RETURNS: int = 3
     MAX_COGNITIVE_COMPLEXITY: int = 15
     MAX_MCCABE_COMPLEXITY: int = 10
-    MAX_NESTING_DEPTH: int = 4
+    MAX_NESTING_DEPTH: int = 5
     MAX_LINE_LENGTH: int = 120
     MAX_OPTIONAL_PARAMS: int = 3
     MAX_PARAMS: int = 7
@@ -6664,13 +6664,13 @@ class DiagnosticEngine:
     # BSL101 — Too deep nesting
     # ------------------------------------------------------------------
 
-    _MAX_NESTING_DEPTH = 5
+    _MAX_NESTING_DEPTH = 6
 
     # Keywords that increase nesting depth
     _NESTING_OPEN = re.compile(
-        r'^\s*(?:Если|If|ИначеЕсли|ElsIf|Иначе|Else|'
+        r'^\s*(?:Если|If|'
         r'Для|For|ДляКаждого|ForEach|Пока|While|'
-        r'Попытка|Try|Исключение|Except)\b',
+        r'Попытка|Try)\b',
         re.IGNORECASE,
     )
     _NESTING_CLOSE = re.compile(
@@ -7678,7 +7678,7 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         for proc in procs:
             pattern = re.compile(
-                r'\b' + re.escape(proc.name) + r'\s*\(',
+                r'(?<![.\w])' + re.escape(proc.name) + r'\s*\(',
                 re.IGNORECASE,
             )
             body_lines = lines[proc.start_idx + 1 : proc.end_idx]

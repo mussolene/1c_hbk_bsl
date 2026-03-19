@@ -1,0 +1,37 @@
+{
+  "name": "ИндексыКоллекции",
+  "name_en": "CollectionIndexes",
+  "kind": "class",
+  "description": "Список индексов коллекции.",
+  "methods": [
+    {
+      "name": "Добавить",
+      "name_en": "Add",
+      "signature": "Добавить(Колонки: Строка): ИндексКоллекции",
+      "description": "Добавляет индекс в список индексов коллекции.",
+      "returns": "ИндексКоллекции"
+    },
+    {
+      "name": "Количество",
+      "name_en": "Count",
+      "signature": "Количество()",
+      "description": "Получает количество индексов в коллекции.",
+      "returns": "Число"
+    },
+    {
+      "name": "Очистить",
+      "name_en": "Clear",
+      "signature": "Очистить()",
+      "description": "Удаляет все индексы коллекции.",
+      "returns": ""
+    },
+    {
+      "name": "Удалить",
+      "name_en": "Delete",
+      "signature": "Удалить(Индекс: ИндексКоллекции)",
+      "description": "Удаляет индекс из коллекции.",
+      "returns": ""
+    }
+  ],
+  "properties": []
+}

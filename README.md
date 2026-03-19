@@ -211,3 +211,16 @@ make lsp        # запустить LSP-сервер из исходников
 ## Лицензия
 
 MIT © 2024 BSL Analyzer Contributors
+
+---
+
+## Используемые проекты
+
+| Проект | Лицензия | Использование |
+|--------|----------|---------------|
+| [vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl) | MIT | Данные Platform API (`bslGlobals.json`) — глобальные функции, типы, перечисления |
+| [tree-sitter-bsl](https://github.com/1c-syntax/tree-sitter-bsl) | MIT | Парсер / грамматика BSL для синтаксического анализа |
+| [pygls](https://github.com/openlawlibrary/pygls) | Apache 2.0 | LSP-сервер (Python Language Server Protocol framework) |
+| [lsprotocol](https://github.com/microsoft/lsprotocol) | MIT | LSP-типы (Python) |
+| [fastmcp](https://github.com/jlowin/fastmcp) | Apache 2.0 | MCP-сервер |
+| [bsl-language-server](https://github.com/1c-syntax/bsl-language-server) | LGPL v3 | Справочник диагностик BSL (коды BSL*) — код не используется |

@@ -1,0 +1,45 @@
+{
+  "name": "Символы",
+  "name_en": "Chars",
+  "kind": "class",
+  "description": "Определяет набор специальных символов. Значения этого набора имеют тип",
+  "methods": [],
+  "properties": [
+    {
+      "name": "ВК",
+      "name_en": "CR",
+      "description": "Возврат каретки.",
+      "read_only": false
+    },
+    {
+      "name": "ВТаб",
+      "name_en": "VTab",
+      "description": "Символ табуляции (вертикальной).",
+      "read_only": false
+    },
+    {
+      "name": "НПП",
+      "name_en": "NBSp",
+      "description": "Неразрывный пробел. Пробел, по которому не должен выполняться перенос на другую строку или другое разбиение текста при форматировании.",
+      "read_only": false
+    },
+    {
+      "name": "ПС",
+      "name_en": "LF",
+      "description": "Перевод строки.",
+      "read_only": false
+    },
+    {
+      "name": "ПФ",
+      "name_en": "FF",
+      "description": "Перевод формы (страницы).",
+      "read_only": false
+    },
+    {
+      "name": "Таб",
+      "name_en": "Tab",
+      "description": "Символ табуляции (горизонтальной).",
+      "read_only": false
+    }
+  ]
+}

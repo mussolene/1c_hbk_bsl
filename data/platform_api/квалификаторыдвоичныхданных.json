@@ -1,0 +1,21 @@
+{
+  "name": "КвалификаторыДвоичныхДанных",
+  "name_en": "BinaryDataQualifiers",
+  "kind": "class",
+  "description": "Используется для описания допустимых значений двоичных данных.",
+  "methods": [],
+  "properties": [
+    {
+      "name": "Длина",
+      "name_en": "Length",
+      "description": "Содержит максимальную длину двоичных данных. 0 - длина неограниченна.",
+      "read_only": false
+    },
+    {
+      "name": "ДопустимаяДлина",
+      "name_en": "AllowedLength",
+      "description": "Содержит допустимую длину двоичных данных.",
+      "read_only": false
+    }
+  ]
+}
