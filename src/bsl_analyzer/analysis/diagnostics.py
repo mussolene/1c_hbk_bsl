@@ -2376,7 +2376,13 @@ class DiagnosticEngine:
     # Can be re-enabled via select= or by removing from this set.
     DEFAULT_DISABLED: frozenset[str] = frozenset(
         {
+            "BSL120",  # TrailingWhitespace — triggers on every empty indent line; noisy in diffs
             "BSL121",  # TabIndentation — style preference, not an error
+            "BSL013",  # CommentedCode — high false-positive rate, clutters output
+            "BSL023",  # ServiceTag — personal/team-specific markers (TODO/FIXME style)
+            "BSL074",  # TodoComment — same as BSL023, personal preference
+            "BSL024",  # SpaceAtStartComment — minor style, enforced by formatter instead
+            "BSL136",  # MissingSpaceBeforeComment — ditto
         }
     )
 
