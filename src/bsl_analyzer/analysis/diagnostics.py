@@ -636,6 +636,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MINOR",
         "tags": ["style", "defensive-programming"],
     },
+    "BSL074": {
+        "name": "TodoComment",
+        "description": "TODO/FIXME/HACK comment found — unresolved technical debt",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["style", "maintenance"],
+    },
+    "BSL075": {
+        "name": "GlobalVariableModification",
+        "description": "Method modifies a module-level variable — prefer explicit parameters/return",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "maintainability"],
+    },
+    "BSL076": {
+        "name": "NegativeConditionFirst",
+        "description": "Condition starts with НЕ/Not — prefer positive form for readability",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
 }
 
 
@@ -690,6 +714,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL071": "Extract the number to a named constant: Конст МаксКоличество = 100;",
     "BSL072": "Use МассивСтрок = Новый Массив; and join with СтрСоединить() after the loop.",
     "BSL073": "Add an Иначе branch to handle unexpected values explicitly.",
+    "BSL074": "Resolve the TODO/FIXME or create a task in your issue tracker.",
+    "BSL075": "Pass the variable as a parameter or return it as a function result.",
+    "BSL076": "Rewrite as a positive condition: НЕ А → use the positive predicate if available.",
 }
 
 
@@ -1176,19 +1203,17 @@ _RE_EXECUTABLE_LINE = re.compile(
     re.IGNORECASE,
 )
 
-# Magic number literal (BSL071) — integer or float not 0 or 1
-_RE_MAGIC_NUMBER = re.compile(
-    r'(?<![.\w\d])(?!0\b|1\b)(\d+(?:\.\d+)?)(?![\w\d.])',
-)
-
-# String concatenation in loop: variable + " (BSL072)
-_RE_STR_CONCAT = re.compile(
-    r'\w+\s*\+\s*(?:"[^"]*"|\'[^\']*\')',
+# TODO/FIXME/HACK comment (BSL074)
+_RE_TODO_COMMENT = re.compile(
+    r'//\s*(?:TODO|FIXME|HACK|XXX)\b',
     re.IGNORECASE,
 )
 
-# Иначе/Else branch detection (BSL073)
-_RE_ELSE = re.compile(r'^\s*(?:Иначе|Else)\b(?!\s*(?:Если|If)\b)', re.IGNORECASE)
+# Negative condition: line starts an Если/ElsIf and condition begins with НЕ/Not (BSL076)
+_RE_NEGATIVE_CONDITION = re.compile(
+    r'^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(?:НЕ|Not)\b',
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
@@ -1640,6 +1665,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl072_string_concat_in_loop(path, lines))
         if self._rule_enabled("BSL073"):
             diagnostics.extend(self._rule_bsl073_missing_else_branch(path, lines))
+        if self._rule_enabled("BSL074"):
+            diagnostics.extend(self._rule_bsl074_todo_comment(path, lines))
+        if self._rule_enabled("BSL075"):
+            diagnostics.extend(self._rule_bsl075_global_variable_modification(path, lines, procs))
+        if self._rule_enabled("BSL076"):
+            diagnostics.extend(self._rule_bsl076_negative_condition_first(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -4331,10 +4362,10 @@ class DiagnosticEngine:
             if re.match(r'^\s*(?:Конст|Const)\b', line, re.IGNORECASE):
                 continue
             for m in _RE_MAGIC_NUMBER.finditer(line):
-                num = m.group(1)
+                num = m.group(0).strip()
                 if num in self._MAGIC_NUMBER_ALLOWED:
                     continue
-                col = m.start(1)
+                col = m.start()
                 # Skip if it looks like part of a method name or string position
                 pre = line[:col]
                 if pre.rstrip().endswith('"') or pre.rstrip().endswith("'"):
@@ -4460,6 +4491,133 @@ class DiagnosticEngine:
                 i = j + 1
                 continue
             i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL074 — TODO/FIXME/HACK comment
+    # ------------------------------------------------------------------
+
+    def _rule_bsl074_todo_comment(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag TODO, FIXME, HACK, XXX markers in comments as technical debt."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            m = _RE_TODO_COMMENT.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL074",
+                        message=(
+                            f"Technical debt marker '{m.group().strip()}' found — "
+                            "resolve the issue or track it in an issue tracker."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL075 — Method modifies module-level variable
+    # ------------------------------------------------------------------
+
+    def _rule_bsl075_global_variable_modification(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag assignments inside a method body to variables that appear to be
+        module-level (i.e., declared outside any method via Перем at module level).
+        """
+        if not procs:
+            return []
+        # Collect module-level Перем declarations
+        first_proc_start = min(p.start_idx for p in procs)
+        module_vars: set[str] = set()
+        for idx in range(first_proc_start):
+            m = _RE_VAR_DECL.match(lines[idx])
+            if m:
+                # Extract variable names: Перем А, Б, В;
+                rest = lines[idx][m.end():].rstrip().rstrip(";")
+                for name in re.split(r'\s*,\s*', rest):
+                    name = name.strip()
+                    if name:
+                        module_vars.add(name.lower())
+
+        if not module_vars:
+            return []
+
+        # Assignment pattern: variable = ...
+        _RE_ASSIGN = re.compile(r'^\s*(\w+)\s*=(?!=)', re.IGNORECASE)
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            # Collect local Перем declarations within this method
+            body_start = proc.start_idx + 1
+            local_vars: set[str] = set()
+            for idx in range(body_start, min(proc.end_idx, len(lines))):
+                lm = _RE_VAR_DECL.match(lines[idx])
+                if lm:
+                    rest = lines[idx][lm.end():].rstrip().rstrip(";")
+                    for nm in re.split(r'\s*,\s*', rest):
+                        nm = nm.strip()
+                        if nm:
+                            local_vars.add(nm.lower())
+
+            # Also treat parameters as local
+            param_vars: set[str] = {p.lower() for p in proc.params}
+
+            for idx in range(body_start, min(proc.end_idx, len(lines))):
+                am = _RE_ASSIGN.match(lines[idx])
+                if am:
+                    var_name = am.group(1).lower()
+                    if var_name in module_vars and var_name not in local_vars and var_name not in param_vars:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=len(lines[idx]) - len(lines[idx].lstrip()),
+                                end_line=idx + 1,
+                                end_character=am.end(),
+                                severity=Severity.INFORMATION,
+                                code="BSL075",
+                                message=(
+                                    f"Method modifies module-level variable '{am.group(1)}' — "
+                                    "prefer passing it as a parameter or returning it."
+                                ),
+                            )
+                        )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL076 — Negative condition first
+    # ------------------------------------------------------------------
+
+    def _rule_bsl076_negative_condition_first(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Если/ИначеЕсли conditions that start with НЕ/Not."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_NEGATIVE_CONDITION.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL076",
+                        message=(
+                            "Condition starts with НЕ/Not — consider rewriting "
+                            "as a positive condition for better readability."
+                        ),
+                    )
+                )
         return diags
 
 

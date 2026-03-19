@@ -2183,9 +2183,94 @@ class TestBsl073MissingElseBranch:
         assert "BSL073" not in _codes(diags)
 
 
+class TestBsl074TodoComment:
+    def test_todo_detected(self, tmp_path: Path) -> None:
+        content = "// TODO: refactor this\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL074"})
+        assert "BSL074" in _codes(diags)
+
+    def test_fixme_detected(self, tmp_path: Path) -> None:
+        content = "// FIXME: broken edge case\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL074"})
+        assert "BSL074" in _codes(diags)
+
+    def test_regular_comment_no_warning(self, tmp_path: Path) -> None:
+        content = "// Обычный комментарий\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL074"})
+        assert "BSL074" not in _codes(diags)
+
+
+class TestBsl075GlobalVariableModification:
+    def test_module_var_modified_in_method(self, tmp_path: Path) -> None:
+        content = """\
+Перем Счётчик;
+
+Процедура Увеличить()
+    Счётчик = Счётчик + 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL075"})
+        assert "BSL075" in _codes(diags)
+
+    def test_local_param_assignment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(Значение)
+    Значение = Значение + 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL075"})
+        assert "BSL075" not in _codes(diags)
+
+    def test_no_module_vars_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL075"})
+        assert "BSL075" not in _codes(diags)
+
+
+class TestBsl076NegativeConditionFirst:
+    def test_not_condition_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если НЕ А Тогда
+        Б = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL076"})
+        assert "BSL076" in _codes(diags)
+
+    def test_positive_condition_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А Тогда
+        Б = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL076"})
+        assert "BSL076" not in _codes(diags)
+
+    def test_elseif_negative_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А, Б)
+    Если А Тогда
+        В = 1;
+    ИначеЕсли НЕ Б Тогда
+        В = 2;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL076"})
+        assert "BSL076" in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 74)}
+        expected = {f"BSL{i:03d}" for i in range(1, 77)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
