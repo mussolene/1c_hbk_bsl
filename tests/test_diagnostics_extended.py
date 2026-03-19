@@ -2399,7 +2399,7 @@ class TestBsl081LongMethodChain:
 class TestBsl082MissingNewlineAtEof:
     def test_missing_newline_detected(self, tmp_path: Path) -> None:
         p = tmp_path / "t.bsl"
-        p.write_bytes("А = 1;".encode("utf-8"))  # no trailing newline
+        p.write_bytes("А = 1;".encode())  # no trailing newline
         from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL082"}).check_file(str(p))
         assert any(d.code == "BSL082" for d in diags)
@@ -2701,9 +2701,106 @@ class TestBsl094NoopAssignment:
         assert "BSL094" not in _codes(diags)
 
 
+class TestBsl095MultipleStatementsOnOneLine:
+    def test_two_stmts_on_one_line_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 1; Б = 2;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL095"})
+        assert "BSL095" in _codes(diags)
+
+    def test_single_stmt_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL095"})
+        assert "BSL095" not in _codes(diags)
+
+    def test_comment_line_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    // А = 1; Б = 2;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL095"})
+        assert "BSL095" not in _codes(diags)
+
+
+class TestBsl096UndocumentedExportMethod:
+    def test_export_without_comment_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура ОткрытьФорму() Экспорт
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL096"})
+        assert "BSL096" in _codes(diags)
+
+    def test_export_with_comment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+// Открывает форму
+Процедура ОткрытьФорму() Экспорт
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL096"})
+        assert "BSL096" not in _codes(diags)
+
+    def test_non_export_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура ВнутренняяПроцедура()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL096"})
+        assert "BSL096" not in _codes(diags)
+
+
+class TestBsl097UseOfCurrentDate:
+    def test_current_date_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Д = ТекущаяДата();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" in _codes(diags)
+
+    def test_current_date_english_detected(self, tmp_path: Path) -> None:
+        content = """\
+Procedure Test()
+    D = CurrentDate();
+EndProcedure
+"""
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" in _codes(diags)
+
+    def test_session_date_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Д = ТекущаяДатаСеанса();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" not in _codes(diags)
+
+    def test_comment_line_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    // Д = ТекущаяДата();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 95)}
+        expected = {f"BSL{i:03d}" for i in range(1, 98)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

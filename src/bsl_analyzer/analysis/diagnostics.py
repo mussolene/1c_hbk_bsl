@@ -804,6 +804,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "suspicious"],
     },
+    "BSL095": {
+        "name": "MultipleStatementsOnOneLine",
+        "description": "Two or more executable statements on a single line — split into separate lines",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL096": {
+        "name": "UndocumentedExportMethod",
+        "description": "Export method has no preceding comment block",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["style", "documentation"],
+    },
+    "BSL097": {
+        "name": "UseOfCurrentDate",
+        "description": "ТекущаяДата()/CurrentDate() returns server time — use ТекущаяДатаСеанса() for session time",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["correctness", "suspicious"],
+    },
 }
 
 
@@ -879,6 +903,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL092": "Remove the empty Иначе or add a comment explaining why it is intentionally empty.",
     "BSL093": "Use ЗначениеЗаполнено() or explicit '= Неопределено' comparison instead of NULL.",
     "BSL094": "Remove the no-op assignment: += 0 or *= 1 has no effect.",
+    "BSL095": "Split the line into separate statements for readability.",
+    "BSL096": "Add a // Description comment block before the Export method.",
+    "BSL097": "Replace ТекущаяДата() with ТекущаяДатаСеанса() for consistent session-based time.",
 }
 
 
@@ -1362,6 +1389,18 @@ _RE_VAR_DECL = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
 # Executable code (not comment, not blank, not Перем, not proc header)
 _RE_EXECUTABLE_LINE = re.compile(
     r'^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)',
+    re.IGNORECASE,
+)
+
+# Multiple statements on one line (BSL095): two assignments/calls separated by ;
+# Simplified: a non-empty statement before ; and another after on the same line
+_RE_MULTI_STMT = re.compile(
+    r';\s*\w',  # ; followed by word char on same line
+)
+
+# ТекущаяДата() (BSL097)
+_RE_CURRENT_DATE = re.compile(
+    r'\b(?:ТекущаяДата|CurrentDate)\s*\(',
     re.IGNORECASE,
 )
 
@@ -1942,6 +1981,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl093_comparison_to_null(path, lines))
         if self._rule_enabled("BSL094"):
             diagnostics.extend(self._rule_bsl094_noop_assignment(path, lines))
+        if self._rule_enabled("BSL095"):
+            diagnostics.extend(self._rule_bsl095_multiple_statements_on_one_line(path, lines))
+        if self._rule_enabled("BSL096"):
+            diagnostics.extend(self._rule_bsl096_undocumented_export_method(path, lines, procs))
+        if self._rule_enabled("BSL097"):
+            diagnostics.extend(self._rule_bsl097_use_of_current_date(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -5594,6 +5639,117 @@ class DiagnosticEngine:
                         message=(
                             f"No-op compound assignment '{m.group().strip()}' — "
                             "this operation has no effect."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL095 — Multiple statements on one line
+    # ------------------------------------------------------------------
+
+    # Lines that are allowed to have ; mid-line (for/each, string literals etc.)
+    _MULTI_STMT_SKIP = re.compile(
+        r'^\s*(?:Для|For|ДляКаждого|ForEach|Пока|While|#)',
+        re.IGNORECASE,
+    )
+
+    def _rule_bsl095_multiple_statements_on_one_line(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines that appear to contain two or more executable statements."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if self._MULTI_STMT_SKIP.match(line):
+                continue
+            # Skip lines that are purely structural keywords
+            if not _RE_MULTI_STMT.search(stripped):
+                continue
+            # Must have content before and after the semicolon
+            parts = stripped.split(";")
+            executable = [p.strip() for p in parts if p.strip() and not p.strip().startswith("//")]
+            if len(executable) >= 2:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL095",
+                        message=(
+                            "Multiple statements on one line — "
+                            "split into separate lines for readability."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL096 — Export method with no comment block
+    # ------------------------------------------------------------------
+
+    def _rule_bsl096_undocumented_export_method(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag Export methods that have no comment block preceding them."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.is_export:
+                continue
+            # Look at up to 5 lines before the header
+            start = max(0, proc.start_idx - 5)
+            preceding = lines[start: proc.start_idx]
+            has_comment = any(ln.strip().startswith("//") for ln in preceding)
+            if not has_comment:
+                header = lines[proc.start_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL096",
+                        message=(
+                            f"Export method '{proc.name}' has no preceding comment block — "
+                            "add a // description for API consumers."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL097 — Use of ТекущаяДата() / CurrentDate()
+    # ------------------------------------------------------------------
+
+    def _rule_bsl097_use_of_current_date(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag ТекущаяДата()/CurrentDate() — recommend ТекущаяДатаСеанса()."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_CURRENT_DATE.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL097",
+                        message=(
+                            f"'{m.group().rstrip('(')}' returns server time — "
+                            "use ТекущаяДатаСеанса() for consistent session-based time."
                         ),
                     )
                 )

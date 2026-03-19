@@ -7,7 +7,6 @@ and a real filesystem); instead we test the debounce helpers directly.
 
 from __future__ import annotations
 
-import threading
 import time
 from unittest.mock import MagicMock
 

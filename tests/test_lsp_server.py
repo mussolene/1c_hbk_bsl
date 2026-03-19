@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # URI helpers
 # ---------------------------------------------------------------------------
@@ -42,14 +41,12 @@ class TestUriHelpers:
 
 class TestBslLanguageServerInit:
     def test_server_is_created(self, tmp_path: Path, monkeypatch: object) -> None:
-        import os
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
         assert ls is not None
 
     def test_server_has_diagnostics_engine(self, tmp_path: Path, monkeypatch: object) -> None:
-        import os
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
         from bsl_analyzer.lsp.server import BslLanguageServer
@@ -57,7 +54,6 @@ class TestBslLanguageServerInit:
         assert isinstance(ls.diagnostics_engine, DiagnosticEngine)
 
     def test_server_has_empty_docs_cache(self, tmp_path: Path, monkeypatch: object) -> None:
-        import os
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
@@ -72,7 +68,6 @@ class TestBslLanguageServerInit:
 class TestPublishDiagnostics:
     def test_publish_diagnostics_runs_engine(self, tmp_path: Path, monkeypatch) -> None:
         """_publish_diagnostics should not raise for a valid BSL file."""
-        import os
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         bsl = tmp_path / "mod.bsl"
         bsl.write_text('Пароль = "секрет123";\n', encoding="utf-8")
