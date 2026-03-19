@@ -756,6 +756,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "INFO",
         "tags": ["style", "documentation"],
     },
+    "BSL089": {
+        "name": "TransactionInLoop",
+        "description": "НачатьТранзакцию/BeginTransaction called inside a loop — move outside",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance", "correctness"],
+    },
+    "BSL090": {
+        "name": "HardcodedConnectionString",
+        "description": "Hardcoded database connection string or DSN in source code",
+        "severity": "WARNING",
+        "sonar_type": "VULNERABILITY",
+        "sonar_severity": "MAJOR",
+        "tags": ["security", "maintainability"],
+    },
+    "BSL091": {
+        "name": "RedundantElseAfterReturn",
+        "description": "Иначе/Else after Возврат/Return is redundant — remove the Else block",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
 }
 
 
@@ -825,6 +849,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL086": "Collect IDs in a list, then make a single batched HTTP request outside the loop.",
     "BSL087": "Create the object once before the loop and reuse it, or use a factory method.",
     "BSL088": "Add a // Parameters section to the comment before the Export method.",
+    "BSL089": "Move НачатьТранзакцию/ЗафиксироватьТранзакцию outside the loop.",
+    "BSL090": "Move connection strings to environment variables or configuration parameters.",
+    "BSL091": "Remove the Иначе keyword — the code after the Если block is only reached when the condition is false.",
 }
 
 
@@ -1310,6 +1337,21 @@ _RE_EXECUTABLE_LINE = re.compile(
     r'^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)',
     re.IGNORECASE,
 )
+
+# Transaction begin in loop (BSL089)
+_RE_BEGIN_TRANSACTION = re.compile(
+    r'\b(?:НачатьТранзакцию|BeginTransaction)\s*\(',
+    re.IGNORECASE,
+)
+
+# Hardcoded connection string patterns (BSL090)
+_RE_CONNECTION_STRING = re.compile(
+    r'(?:Server\s*=|DSN\s*=|Driver\s*=|Database\s*=|Uid\s*=|Pwd\s*=)',
+    re.IGNORECASE,
+)
+
+# Else after Return detection (BSL091)
+_RE_RETURN_STMT = re.compile(r'^\s*(?:Возврат|Return)\b', re.IGNORECASE)
 
 # HTTP request in loop (BSL086) — ПолучитьДанные, ВыполнитьЗапросHTTP, HTTPЗапрос etc.
 _RE_HTTP_REQUEST = re.compile(
@@ -1850,6 +1892,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl087_object_creation_in_loop(path, lines))
         if self._rule_enabled("BSL088"):
             diagnostics.extend(self._rule_bsl088_missing_parameter_comment(path, lines, procs))
+        if self._rule_enabled("BSL089"):
+            diagnostics.extend(self._rule_bsl089_transaction_in_loop(path, lines))
+        if self._rule_enabled("BSL090"):
+            diagnostics.extend(self._rule_bsl090_hardcoded_connection_string(path, lines))
+        if self._rule_enabled("BSL091"):
+            diagnostics.extend(self._rule_bsl091_redundant_else_after_return(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -5259,6 +5307,146 @@ class DiagnosticEngine:
                         ),
                     )
                 )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL089 — Transaction begun inside a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl089_transaction_in_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag НачатьТранзакцию/BeginTransaction calls inside a loop body."""
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_LOOP_OPEN.match(lines[i]):
+                depth = 1
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_LOOP_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_LOOP_CLOSE.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        m = _RE_BEGIN_TRANSACTION.search(lines[j])
+                        if m:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=j + 1,
+                                    character=m.start(),
+                                    end_line=j + 1,
+                                    end_character=m.end(),
+                                    severity=Severity.WARNING,
+                                    code="BSL089",
+                                    message=(
+                                        "НачатьТранзакцию/BeginTransaction inside a loop — "
+                                        "move the transaction outside to avoid N nested transactions."
+                                    ),
+                                )
+                            )
+                    j += 1
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL090 — Hardcoded connection string
+    # ------------------------------------------------------------------
+
+    def _rule_bsl090_hardcoded_connection_string(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag possible hardcoded database connection strings in string literals."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if not line.strip() or line.strip().startswith("//"):
+                continue
+            # Only flag inside string literals (rough: line contains quotes)
+            if '"' not in line:
+                continue
+            m = _RE_CONNECTION_STRING.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL090",
+                        message=(
+                            f"Possible hardcoded connection string parameter '{m.group().strip()}' — "
+                            "move to environment variables or configuration."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL091 — Redundant Else after Return
+    # ------------------------------------------------------------------
+
+    def _rule_bsl091_redundant_else_after_return(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag Иначе/Else blocks that immediately follow a Возврат/Return in the preceding
+        Если/Then block — the Иначе is redundant since the Return already exits.
+        """
+        if not procs:
+            return []
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_IF_OPEN.match(lines[i]):
+                depth = 1
+                last_return_before_else: int | None = None
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_IF_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_ENDIF.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        if _RE_RETURN_STMT.match(lines[j]):
+                            last_return_before_else = j
+                        elif (_RE_ELSE.match(lines[j]) or _RE_ELSEIF.match(lines[j])):
+                            if last_return_before_else is not None:
+                                # Else/ElseIf after a Return — redundant
+                                if _RE_ELSE.match(lines[j]):
+                                    diags.append(
+                                        Diagnostic(
+                                            file=path,
+                                            line=j + 1,
+                                            character=len(lines[j]) - len(lines[j].lstrip()),
+                                            end_line=j + 1,
+                                            end_character=len(lines[j].rstrip()),
+                                            severity=Severity.INFORMATION,
+                                            code="BSL091",
+                                            message=(
+                                                "Иначе/Else after Возврат/Return is redundant — "
+                                                "remove Иначе and dedent the block."
+                                            ),
+                                        )
+                                    )
+                            last_return_before_else = None
+                        else:
+                            # Non-return, non-branch statement resets
+                            stripped = lines[j].strip()
+                            if stripped and not stripped.startswith("//"):
+                                last_return_before_else = None
+                    j += 1
+                i = j + 1
+                continue
+            i += 1
         return diags
 
 

@@ -2565,9 +2565,86 @@ class TestBsl088MissingParameterComment:
         assert "BSL088" not in _codes(diags)
 
 
+class TestBsl089TransactionInLoop:
+    def test_transaction_in_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        НачатьТранзакцию();
+        ЗафиксироватьТранзакцию();
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL089"})
+        assert "BSL089" in _codes(diags)
+
+    def test_transaction_outside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    НачатьТранзакцию();
+    А = 1;
+    ЗафиксироватьТранзакцию();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL089"})
+        assert "BSL089" not in _codes(diags)
+
+
+class TestBsl090HardcodedConnectionString:
+    def test_dsn_detected(self, tmp_path: Path) -> None:
+        content = 'Строка = "Server=myserver;Database=mydb;Uid=user;Pwd=pass";\n'
+        diags = _check(content, tmp_path, select={"BSL090"})
+        assert "BSL090" in _codes(diags)
+
+    def test_no_connection_string_no_warning(self, tmp_path: Path) -> None:
+        content = 'Строка = "Обычная строка без параметров подключения";\n'
+        diags = _check(content, tmp_path, select={"BSL090"})
+        assert "BSL090" not in _codes(diags)
+
+
+class TestBsl091RedundantElseAfterReturn:
+    def test_else_after_return_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Если А > 0 Тогда
+        Возврат Истина;
+    Иначе
+        Возврат Ложь;
+    КонецЕсли;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL091"})
+        assert "BSL091" in _codes(diags)
+
+    def test_else_without_prior_return_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А > 0 Тогда
+        Б = 1;
+    Иначе
+        Б = 2;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL091"})
+        assert "BSL091" not in _codes(diags)
+
+    def test_no_else_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(А)
+    Если А > 0 Тогда
+        Возврат Истина;
+    КонецЕсли;
+    Возврат Ложь;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL091"})
+        assert "BSL091" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 89)}
+        expected = {f"BSL{i:03d}" for i in range(1, 92)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
