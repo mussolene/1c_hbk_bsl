@@ -2,7 +2,7 @@
   "name": "bsl-analyzer",
   "displayName": "BSL Analyzer (1C)",
   "description": "Language support for 1C BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename and more",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "mussolene",
   "icon": "icon.png",
   "license": "MIT",

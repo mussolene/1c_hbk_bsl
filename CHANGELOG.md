@@ -5,16 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-03-19
 
 ### Added
-- BSLLS block-level suppression compatible with `1c-syntax/bsl-language-server`:
-  - `// BSLLS:RuleName-off` / `// BSLLS:RuleName-on` — disable/re-enable specific rule
-  - `// BSLLS-off` / `// BSLLS-on` — disable/re-enable all diagnostics
-  - Russian flags supported: `-выкл` / `-вкл`
-  - 50+ BSLLS diagnostic names mapped to BSL rule codes (`_BSLLS_NAME_TO_CODE`)
-  - Multiple rules can be independently nested and toggled
-  - 8 new tests covering all suppression scenarios
+- `diagnostics_ru.py` — полная русская локализация 147 диагностических правил в панели Problems:
+  - Заголовок на русском (`title`) + рекомендация что делать (`hint` со значком 💡)
+  - Поддержка 50+ правил BSL001–BSL147
+  - Извлечение конкретных значений из английских сообщений (имена переменных, счётчики)
+- Hover-карточки полностью на русском: «Определено в», «Возвращает», «Вызывается в N местах»
+- Поддержка методов через точку (`Объект.Метод()`): поиск в типах платформы
+- Quick-fix действия (`Cmd+.`): BSLLS-off/on вокруг строки, noqa-комментарий, для всего файла
+- `DiagnosticEngine.DEFAULT_DISABLED` — правила отключённые по умолчанию (аналогично BSL LS):
+  - `BSL121` (TabIndentation) — табуляция не ошибка, стилистика
+
+### Fixed
+- Критическая ошибка производительности: `find_symbol` не использовал B-tree индекс из-за `LOWER()` —
+  добавлена предвычисленная колонка `name_lower`, запрос ускорен с 5 с до <5 мс
+- `idx_calls_callee` указывал на неверную колонку → `find_callers` занимал 32 с; исправлено до 13 мс
+- `ORDER BY` в `find_symbol` вызывал создание временного B-tree на 3000+ строках (484 мс → 3 мс)
+- `publish_diagnostics` pygls 2.0: `ls.publish_diagnostics()` → `ls.text_document_publish_diagnostics()`
+- Форматтер: операторы препроцессора `#Если/#КонецЕсли` не влияют на отступы основного модуля
+- Форматтер: при выделении фрагмента форматируется только он (range formatting с контекстом)
+- Форматтер: добавлена поддержка `Выбор/Когда/КонецВыбора`
+- Подавлены лишние предупреждения `Cancel notification for unknown message id` в Output
+- Исправлены 6 неверных маппингов в `diagnostics_ru.py`:
+  - BSL018, BSL021, BSL028, BSL034, BSL047, BSL054 теперь соответствуют реальным правилам
+- Миграция БД переведена в фоновый поток — LSP сервер не блокируется при старте
 
 ## [0.2.0] - 2026-03-19
 
@@ -57,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Nuitka build system for standalone native binary (~40 MB)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mussolene/1c_hbk_bsl/releases/tag/v0.1.0

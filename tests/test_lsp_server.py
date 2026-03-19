@@ -76,16 +76,16 @@ class TestPublishDiagnostics:
 
         from bsl_analyzer.lsp.server import BslLanguageServer, _path_to_uri, _publish_diagnostics
         ls = BslLanguageServer()
-        # Replace the publish_diagnostics method with a mock to capture calls
-        ls.publish_diagnostics = MagicMock()
+        # Replace the pygls 2.0 publish method with a mock to capture calls
+        ls.text_document_publish_diagnostics = MagicMock()
 
         uri = _path_to_uri(str(bsl))
         _publish_diagnostics(ls, uri, str(bsl))
 
-        ls.publish_diagnostics.assert_called_once()
-        call_args = ls.publish_diagnostics.call_args
-        published_uri = call_args[0][0]
-        assert published_uri == uri
+        ls.text_document_publish_diagnostics.assert_called_once()
+        call_args = ls.text_document_publish_diagnostics.call_args
+        params = call_args[0][0]
+        assert params.uri == uri
 
     def test_publish_diagnostics_missing_file_no_crash(self, tmp_path: Path, monkeypatch) -> None:
         """_publish_diagnostics should swallow errors for nonexistent files."""
@@ -94,7 +94,7 @@ class TestPublishDiagnostics:
 
         from bsl_analyzer.lsp.server import BslLanguageServer, _publish_diagnostics
         ls = BslLanguageServer()
-        ls.publish_diagnostics = MagicMock()
+        ls.text_document_publish_diagnostics = MagicMock()
         # Path does not exist — engine should raise, but _publish_diagnostics catches it
         _publish_diagnostics(ls, "file:///nonexistent.bsl", "/nonexistent.bsl")
         # Should not raise; publish_diagnostics may or may not be called
@@ -163,7 +163,7 @@ class TestHandlerFunctions:
 
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
-        ls.publish_diagnostics = MagicMock()
+        ls.text_document_publish_diagnostics = MagicMock()
         return ls
 
     def test_on_did_open_caches_content(self, tmp_path, monkeypatch) -> None:
@@ -199,7 +199,7 @@ class TestHandlerFunctions:
 
         # Run background threads synchronously so the assertion fires in time
         class _SyncThread:
-            def __init__(self, target, args=(), kwargs=None, daemon=None):
+            def __init__(self, target, args=(), kwargs=None, daemon=None, name=None):
                 self._target = target
                 self._args = args
 
@@ -215,7 +215,7 @@ class TestHandlerFunctions:
         params.text_document.uri = _path_to_uri(str(bsl))
         params.text = None
         on_did_save(ls, params)
-        ls.publish_diagnostics.assert_called()
+        ls.text_document_publish_diagnostics.assert_called()
 
     def test_on_definition_no_word_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
@@ -352,7 +352,7 @@ class TestFormatting:
 
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
-        ls.publish_diagnostics = MagicMock()
+        ls.text_document_publish_diagnostics = MagicMock()
         return ls
 
     def test_formatting_normalises_keywords(self, tmp_path, monkeypatch) -> None:
@@ -420,7 +420,7 @@ class TestDocumentHighlight:
 
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
-        ls.publish_diagnostics = MagicMock()
+        ls.text_document_publish_diagnostics = MagicMock()
         return ls
 
     def test_highlight_finds_occurrences(self, tmp_path, monkeypatch) -> None:
@@ -462,7 +462,7 @@ class TestFoldingRange:
 
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
-        ls.publish_diagnostics = MagicMock()
+        ls.text_document_publish_diagnostics = MagicMock()
         return ls
 
     def test_folding_procedure(self, tmp_path, monkeypatch) -> None:
@@ -520,7 +520,7 @@ class TestSemanticTokens:
 
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
-        ls.publish_diagnostics = MagicMock()
+        ls.text_document_publish_diagnostics = MagicMock()
         return ls
 
     def test_semantic_tokens_returns_data(self, tmp_path, monkeypatch) -> None:
@@ -559,7 +559,7 @@ class TestCodeAction:
 
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
-        ls.publish_diagnostics = MagicMock()
+        ls.text_document_publish_diagnostics = MagicMock()
         return ls
 
     def test_code_action_for_known_diagnostic(self, tmp_path, monkeypatch) -> None:
@@ -567,15 +567,20 @@ class TestCodeAction:
 
         from bsl_analyzer.lsp.server import on_code_action
         ls = self._make_server(tmp_path, monkeypatch)
+        # Populate _docs so line-range check works
+        ls._docs["file:///test.bsl"] = "А = 1;  // код\nБ = 2;\n"
         params = MagicMock()
         params.text_document.uri = "file:///test.bsl"
         diag = MagicMock()
         diag.code = "BSL009"
+        diag.range.start.line = 0
         params.context.diagnostics = [diag]
         result = on_code_action(ls, params)
         assert result is not None
-        assert len(result) == 1
-        assert "trailing" in result[0].title.lower()
+        assert len(result) >= 1
+        # Should have noqa action
+        titles = [a.title for a in result]
+        assert any("игнор" in t.lower() for t in titles)
 
     def test_code_action_unknown_diagnostic_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
@@ -583,11 +588,13 @@ class TestCodeAction:
         from bsl_analyzer.lsp.server import on_code_action
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()
-        params.text_document.uri = "file:///test.bsl"
+        params.text_document.uri = "file:///unknown.bsl"  # not in _docs → empty content
         diag = MagicMock()
         diag.code = "BSL999"
+        diag.range.start.line = 0
         params.context.diagnostics = [diag]
         result = on_code_action(ls, params)
+        # No doc content → no line actions, no format action → None
         assert result is None
 
 

@@ -2372,6 +2372,14 @@ class DiagnosticEngine:
         engine = DiagnosticEngine(max_proc_lines=300, max_cognitive_complexity=20)
     """
 
+    # Rules disabled by default (like BSL LS defaults).
+    # Can be re-enabled via select= or by removing from this set.
+    DEFAULT_DISABLED: frozenset[str] = frozenset(
+        {
+            "BSL121",  # TabIndentation — style preference, not an error
+        }
+    )
+
     # Default thresholds (class-level — can override in __init__)
     MAX_PROC_LINES: int = 200
     MAX_RETURNS: int = 3
@@ -2406,7 +2414,10 @@ class DiagnosticEngine:
     ) -> None:
         self._parser = parser or BslParser()
         self._select: set[str] | None = {c.upper() for c in select} if select else None
-        self._ignore: set[str] = {c.upper() for c in ignore} if ignore else set()
+        # Merge user ignores with DEFAULT_DISABLED; select= overrides DEFAULT_DISABLED
+        _user_ignore: set[str] = {c.upper() for c in ignore} if ignore else set()
+        _effective_defaults = self.DEFAULT_DISABLED - (self._select or set())
+        self._ignore: set[str] = _user_ignore | _effective_defaults
         self.max_proc_lines = max_proc_lines
         self.max_returns = max_returns
         self.max_cognitive_complexity = max_cognitive_complexity

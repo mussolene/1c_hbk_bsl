@@ -65,6 +65,11 @@ def _run_lsp() -> None:
         stream=sys.stderr,
         force=True,
     )
+    # "Cancel notification for unknown message id" — normal race condition when
+    # VSCode cancels a request that the server already answered.  These are not
+    # errors; suppress them so the output channel stays clean.
+    logging.getLogger("pygls.protocol.json_rpc").setLevel(logging.ERROR)
+    logging.getLogger("pygls.protocol").setLevel(logging.ERROR)
     from bsl_analyzer.lsp.server import start_lsp_server
     start_lsp_server()
 

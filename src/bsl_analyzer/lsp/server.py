@@ -113,6 +113,7 @@ from lsprotocol.types import (
 )
 from lsprotocol.types import (
     Diagnostic as LspDiagnostic,
+    PublishDiagnosticsParams,
 )
 
 try:
@@ -126,6 +127,7 @@ from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
 from bsl_analyzer.indexer.db_path import resolve_index_db_path
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
+from bsl_analyzer.lsp.diagnostics_ru import translate_message
 from bsl_analyzer.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -348,12 +350,14 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
                 ),
                 severity=_SEV_MAP.get(d.severity, DiagnosticSeverity.Warning),
                 code=d.code,
-                message=d.message,
+                message=translate_message(d.code, d.message),
                 source="bsl-analyzer",
             )
             for d in issues
         ]
-        ls.publish_diagnostics(uri, lsp_diags)
+        ls.text_document_publish_diagnostics(
+            PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags)
+        )
     except Exception as exc:
         logger.error("LSP: diagnostics failed for %s: %s", path, exc)
 
@@ -387,7 +391,9 @@ def on_definition(
     if not word:
         return None
 
-    symbols = ls.symbol_index.find_symbol(word, limit=10)
+    # Для методов через точку (Объект.Метод) ищем по всему индексу — без фильтра файла.
+    # Если курсор на левой части (Объект) — пробуем и её тоже.
+    symbols = ls.symbol_index.find_symbol(word, limit=20)
     if not symbols:
         return None
 
@@ -435,15 +441,34 @@ def on_definition(
 # ---------------------------------------------------------------------------
 
 
+_KIND_RU: dict[str, str] = {
+    "procedure": "процедура",
+    "function": "функция",
+    "variable": "переменная",
+    "unknown": "символ",
+}
+
+_API_KIND_RU: dict[str, str] = {
+    "class": "класс",
+    "enum": "перечисление",
+    "global": "глобальный объект",
+    "collection": "коллекция",
+}
+
+
+def _hover_markdown(parts: list[str]) -> Hover:
+    return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts)))
+
+
 @server.feature(TEXT_DOCUMENT_HOVER)
 def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     """
-    Show symbol signature and doc comment on hover.
+    Показывает сигнатуру и документацию символа при наведении.
 
-    Resolution order:
-    1. Workspace symbol index (user-defined procedures/functions)
-    2. Platform API global functions
-    3. Platform API types
+    Порядок поиска:
+    1. Символы рабочего пространства (пользовательские процедуры/функции)
+    2. Глобальные функции платформы 1С
+    3. Типы платформы (по имени типа или по имени метода/свойства)
     """
     uri = params.text_document.uri
     pos = params.position
@@ -452,44 +477,101 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     if not word:
         return None
 
-    # 1. Workspace symbol
-    symbols = ls.symbol_index.find_symbol(word, limit=1)
+    left_word = _left_word_at_position(content, pos.line, pos.character)
+
+    # 1. Символы рабочего пространства
+    symbols = ls.symbol_index.find_symbol(word, limit=5)
     if symbols:
         sym = symbols[0]
-        parts = [f"```bsl\n{sym.get('signature', sym['name'])}\n```"]
+        kind_ru = _KIND_RU.get(sym.get("kind", ""), "символ")
+        sig = sym.get("signature") or sym["name"]
+        parts: list[str] = [f"```bsl\n{sig}\n```"]
         doc = sym.get("doc_comment")
         if doc:
             parts.append(doc)
-        parts.append(f"*Defined in* `{Path(sym['file_path']).name}:{sym['line']}`")
-        return Hover(
-            contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts))
-        )
+        if len(symbols) == 1:
+            file_name = Path(sym["file_path"]).name
+            parts.append(f"*Определено в* `{file_name}`, строка {sym['line']}")
+        else:
+            locations = "\n".join(
+                f"- `{Path(s['file_path']).name}`, строка {s['line']}" for s in symbols
+            )
+            parts.append(f"*Определено в {len(symbols)} местах:*\n{locations}")
+        # Количество мест вызова (быстрый COUNT — без загрузки всех строк)
+        caller_count = ls.symbol_index.find_callers_count(word)
+        if caller_count:
+            parts.append(f"*Вызывается в {caller_count} местах*")
+        return _hover_markdown(parts)
 
-    # 2. Platform global function
+    # 2. Глобальная функция платформы 1С
     global_fn = ls.platform_api.find_global(word)
     if global_fn:
         parts = [f"```bsl\n{global_fn.signature or global_fn.name}\n```"]
         if global_fn.description:
             parts.append(global_fn.description)
         if global_fn.returns:
-            parts.append(f"**Returns:** `{global_fn.returns}`")
-        parts.append("*1C Platform built-in*")
-        return Hover(
-            contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts))
-        )
+            parts.append(f"**Возвращает:** `{global_fn.returns}`")
+        parts.append("*Встроенная функция платформы 1С*")
+        return _hover_markdown(parts)
 
-    # 3. Platform type
+    # 3. Тип платформы (по имени типа)
     api_type = ls.platform_api.find_type(word)
     if api_type:
-        method_names = ", ".join(m.name for m in api_type.methods[:5])
-        parts = [f"**{api_type.name}** *(1C {api_type.kind})*"]
+        kind_ru = _API_KIND_RU.get(api_type.kind, api_type.kind)
+        parts = [f"**{api_type.name}** *({kind_ru} платформы 1С)*"]
         if api_type.description:
             parts.append(api_type.description)
-        if method_names:
-            parts.append(f"*Methods:* {method_names}{'...' if len(api_type.methods) > 5 else ''}")
-        return Hover(
-            contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts))
-        )
+        if api_type.methods:
+            method_names = ", ".join(m.name for m in api_type.methods[:6])
+            suffix = "..." if len(api_type.methods) > 6 else ""
+            parts.append(f"*Методы:* {method_names}{suffix}")
+        if api_type.properties:
+            prop_names = ", ".join(p.name for p in api_type.properties[:4])
+            suffix = "..." if len(api_type.properties) > 4 else ""
+            parts.append(f"*Свойства:* {prop_names}{suffix}")
+        return _hover_markdown(parts)
+
+    # 4. Метод/свойство типа платформы (через точку или по имени)
+    #    Сначала уточняем тип по левому слову (если есть точка)
+    type_methods = []
+    if left_word:
+        parent_type = ls.platform_api.find_type(left_word)
+        if parent_type:
+            # Ищем конкретный метод в конкретном типе
+            word_lo = word.lower()
+            for m in parent_type.methods:
+                if m.name.lower() == word_lo or (m.name_en and m.name_en.lower() == word_lo):
+                    type_methods = [(parent_type, m)]
+                    break
+            if not type_methods:
+                for p in parent_type.properties:
+                    if p.name.lower() == word_lo or (p.name_en and p.name_en.lower() == word_lo):
+                        parts = [f"**{p.name}** *(свойство {parent_type.name})*"]
+                        if p.description:
+                            parts.append(p.description)
+                        if p.read_only:
+                            parts.append("*Только для чтения*")
+                        return _hover_markdown(parts)
+
+    if not type_methods:
+        type_methods = ls.platform_api.find_type_method(word)
+
+    if type_methods:
+        # Берём первый результат для сигнатуры/описания
+        first_type, first_method = type_methods[0]
+        sig = first_method.signature or f"{first_method.name}()"
+        parts = [f"```bsl\n{sig}\n```"]
+        if first_method.description:
+            parts.append(first_method.description)
+        if first_method.returns:
+            parts.append(f"**Возвращает:** `{first_method.returns}`")
+        if len(type_methods) == 1:
+            parts.append(f"*Метод типа* **{first_type.name}**")
+        else:
+            type_names = ", ".join(f"**{t.name}**" for t, _ in type_methods)
+            parts.append(f"*Метод типов:* {type_names}")
+        parts.append("*Встроенный метод платформы 1С*")
+        return _hover_markdown(parts)
 
     return None
 
@@ -967,6 +1049,36 @@ def _word_at_position(content: str, line: int, character: int) -> str:
     return text[start:end]
 
 
+def _left_word_at_position(content: str, line: int, character: int) -> str:
+    """Extract the identifier immediately to the LEFT of the dot before `character`.
+
+    For `Объект.Метод(` with cursor on «Метод», returns «Объект».
+    Returns empty string if there is no dot-separated left-hand identifier.
+    """
+    lines = content.splitlines()
+    if line >= len(lines):
+        return ""
+    text = lines[line]
+
+    # Find start of the current word
+    start = character
+    while start > 0 and (text[start - 1].isalnum() or text[start - 1] == "_"):
+        start -= 1
+
+    # Check that the character right before start is a dot
+    if start == 0 or text[start - 1] != ".":
+        return ""
+
+    # Walk left past the dot to extract the previous identifier
+    dot_pos = start - 1
+    lend = dot_pos
+    lstart = lend
+    while lstart > 0 and (text[lstart - 1].isalnum() or text[lstart - 1] == "_"):
+        lstart -= 1
+
+    return text[lstart:lend]
+
+
 def _word_range_at_position(content: str, line: int, character: int) -> Range:
     """Return the LSP Range that covers the identifier at the given position.
 
@@ -1354,38 +1466,125 @@ def on_inlay_hint(
 # ---------------------------------------------------------------------------
 
 # Map diagnostic code → fix description
-_FIX_DESCRIPTIONS: dict[str, str] = {
-    "BSL009": "Remove trailing whitespace",
-    "BSL010": "Add newline at end of file",
-    "BSL055": "Remove commented-out code",
-    "BSL060": "Fix TabIndentation → spaces",
-}
+# ---------------------------------------------------------------------------
+# Reverse BSLLS name map: BSL code → BSLLS name (for suppression comments)
+# ---------------------------------------------------------------------------
+
+def _build_code_to_bslls() -> dict[str, str]:
+    try:
+        from bsl_analyzer.analysis.diagnostics import _BSLLS_NAME_TO_CODE
+        result: dict[str, str] = {}
+        for name, code in _BSLLS_NAME_TO_CODE.items():
+            if code not in result:
+                result[code] = name
+        return result
+    except Exception:
+        return {}
+
+_CODE_TO_BSLLS_NAME: dict[str, str] = _build_code_to_bslls()
 
 
 @server.feature(TEXT_DOCUMENT_CODE_ACTION)
 def on_code_action(
     ls: BslLanguageServer, params: CodeActionParams
 ) -> list[CodeAction] | None:
-    """Return quick-fix code actions for diagnostics in the given range."""
+    """
+    Возвращает действия быстрого исправления для диагностик в указанном диапазоне.
+
+    Для каждой диагностики предлагается:
+    1. Игнорировать строку — добавляет // noqa: BSLxxx в конец строки
+    2. Игнорировать правило в блоке — оборачивает строку // BSLLS:Name-off / -on
+    3. Игнорировать правило во всём файле — добавляет // BSLLS:Name-off в начало файла
+    Дополнительно: Переформатировать документ (если он не в нормальной форме)
+    """
     actions: list[CodeAction] = []
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    doc_lines = content.splitlines()
 
     for diag in params.context.diagnostics:
         code = str(diag.code) if diag.code else ""
-        description = _FIX_DESCRIPTIONS.get(code)
-        if not description:
+        try:
+            diag_line = int(diag.range.start.line)
+        except (TypeError, ValueError):
             continue
-        actions.append(
-            CodeAction(
-                title=description,
+
+        if 0 <= diag_line < len(doc_lines):
+            line_text = doc_lines[diag_line]
+            line_end_char = len(line_text)
+            indent = len(line_text) - len(line_text.lstrip())
+            pad = " " * indent
+
+            # ── 1. Игнорировать строку (noqa) ──────────────────────────────
+            noqa_suffix = f"  // noqa: {code}" if code else "  // noqa"
+            actions.append(CodeAction(
+                title=f"Игнорировать эту строку ({code})" if code else "Игнорировать эту строку",
                 kind=CodeActionKind.QuickFix,
                 diagnostics=[diag],
-                command={
-                    "title": description,
-                    "command": f"bsl-analyzer.fix.{code.lower()}",
-                    "arguments": [params.text_document.uri],
-                },
-            )
-        )
+                edit=WorkspaceEdit(changes={uri: [TextEdit(
+                    range=Range(
+                        start=Position(line=diag_line, character=line_end_char),
+                        end=Position(line=diag_line, character=line_end_char),
+                    ),
+                    new_text=noqa_suffix,
+                )]}),
+            ))
+
+            # ── 2. Обернуть правило BSLLS-off / -on ────────────────────────
+            bslls_name = _CODE_TO_BSLLS_NAME.get(code)
+            if bslls_name:
+                # Insert before current line and after current line
+                insert_before = Position(line=diag_line, character=0)
+                insert_after = Position(line=diag_line + 1, character=0)
+                actions.append(CodeAction(
+                    title=f"Отключить {code} для этой строки (BSLLS-off/on)",
+                    kind=CodeActionKind.QuickFix,
+                    diagnostics=[diag],
+                    edit=WorkspaceEdit(changes={uri: [
+                        TextEdit(
+                            range=Range(start=insert_before, end=insert_before),
+                            new_text=f"{pad}// BSLLS:{bslls_name}-off\n",
+                        ),
+                        TextEdit(
+                            range=Range(start=insert_after, end=insert_after),
+                            new_text=f"{pad}// BSLLS:{bslls_name}-on\n",
+                        ),
+                    ]}),
+                ))
+
+                # ── 3. Отключить правило во всём файле ─────────────────────
+                actions.append(CodeAction(
+                    title=f"Отключить {code} в этом файле (BSLLS-off)",
+                    kind=CodeActionKind.QuickFix,
+                    diagnostics=[diag],
+                    edit=WorkspaceEdit(changes={uri: [TextEdit(
+                        range=Range(
+                            start=Position(line=0, character=0),
+                            end=Position(line=0, character=0),
+                        ),
+                        new_text=f"// BSLLS:{bslls_name}-off\n",
+                    )]}),
+                ))
+
+    # ── 4. Переформатировать документ (если есть что форматировать) ────────
+    if content:
+        try:
+            from bsl_analyzer.analysis.formatter import default_formatter
+            formatted = default_formatter.format(content)
+            if formatted != content:
+                actions.append(CodeAction(
+                    title="Переформатировать документ",
+                    kind=CodeActionKind.SourceFixAll,
+                    edit=WorkspaceEdit(changes={uri: [TextEdit(
+                        range=Range(
+                            start=Position(line=0, character=0),
+                            end=Position(line=len(doc_lines), character=0),
+                        ),
+                        new_text=formatted,
+                    )]}),
+                ))
+        except Exception:
+            pass
 
     return actions if actions else None
 

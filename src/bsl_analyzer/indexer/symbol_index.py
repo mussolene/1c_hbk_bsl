@@ -28,6 +28,7 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS symbols (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
+    name_lower  TEXT NOT NULL DEFAULT '',  -- casefold(name) for fast case-insensitive lookup
     file_path   TEXT NOT NULL,
     line        INTEGER NOT NULL,
     character   INTEGER NOT NULL DEFAULT 0,
@@ -41,9 +42,7 @@ CREATE TABLE IF NOT EXISTS symbols (
     indexed_at  REAL NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);
-CREATE INDEX IF NOT EXISTS idx_symbols_file      ON symbols(file_path);
-CREATE INDEX IF NOT EXISTS idx_symbols_name_file ON symbols(name, file_path);
+CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
 
 -- FTS5 virtual table for fast substring/prefix search
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
@@ -71,16 +70,16 @@ CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS calls (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    caller_file  TEXT NOT NULL,
-    caller_line  INTEGER NOT NULL,
-    caller_name  TEXT,               -- name of the containing procedure/function
-    callee_name  TEXT NOT NULL,
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    caller_file       TEXT NOT NULL,
+    caller_line       INTEGER NOT NULL,
+    caller_name       TEXT,               -- name of the containing procedure/function
+    callee_name       TEXT NOT NULL,
+    callee_name_lower TEXT NOT NULL DEFAULT '',  -- casefold(callee_name)
     callee_args_count INTEGER DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee_name);
-CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller_file, caller_line);
+CREATE INDEX IF NOT EXISTS idx_calls_caller      ON calls(caller_file, caller_line);
 CREATE INDEX IF NOT EXISTS idx_calls_caller_name ON calls(caller_name);
 
 CREATE TABLE IF NOT EXISTS git_state (
@@ -108,7 +107,50 @@ class SymbolIndex:
         self._mem_conn: sqlite3.Connection | None = None
         conn = self._conn()
         conn.executescript(SCHEMA_SQL)
+        self._migrate_sync(conn)
         conn.commit()
+        # Heavy data migrations (index build / data population) run in background
+        # so they don't block LSP startup.
+        threading.Thread(target=self._migrate_background, daemon=True,
+                         name="bsl-db-migrate").start()
+
+    def _migrate_sync(self, conn: sqlite3.Connection) -> None:
+        """Fast, structural-only migrations that must complete before the server starts."""
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(symbols)")}
+        if "name_lower" not in existing:
+            conn.execute("ALTER TABLE symbols ADD COLUMN name_lower TEXT NOT NULL DEFAULT ''")
+
+        existing_calls = {row[1] for row in conn.execute("PRAGMA table_info(calls)")}
+        if "callee_name_lower" not in existing_calls:
+            conn.execute("ALTER TABLE calls ADD COLUMN callee_name_lower TEXT NOT NULL DEFAULT ''")
+
+    def _migrate_background(self) -> None:
+        """Heavy migrations: index creation and data population, run in background thread."""
+        if self.db_path == ":memory:":
+            return
+        try:
+            conn = self._conn()
+            # Symbols: name_lower index (fast — index already built or instant for empty table)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_symbols_name_lower ON symbols(name_lower)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_symbols_name_file ON symbols(name_lower, file_path)")
+            # Populate name_lower for existing rows that have empty value
+            conn.execute("UPDATE symbols SET name_lower = LOWER(name) WHERE name_lower = ''")
+
+            # Calls: drop old index on callee_name (useless after migration to callee_name_lower)
+            old_idx = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_calls_callee'"
+            ).fetchone()
+            if old_idx and old_idx[0] and "callee_name_lower" not in old_idx[0]:
+                conn.execute("DROP INDEX idx_calls_callee")
+            # Create correct index on callee_name_lower
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee_name_lower)")
+            conn.execute("UPDATE calls SET callee_name_lower = LOWER(callee_name) WHERE callee_name_lower = ''")
+
+            # Help query planner
+            conn.execute("ANALYZE symbols")
+            conn.execute("ANALYZE calls")
+        except Exception:
+            pass  # Non-fatal; will retry next startup
 
     # ------------------------------------------------------------------
     # Connection management
@@ -124,6 +166,9 @@ class SymbolIndex:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-131072")   # 128 MB page cache per connection
+        conn.execute("PRAGMA mmap_size=1073741824")  # 1 GB memory-mapped I/O
+        conn.execute("PRAGMA temp_store=MEMORY")
         # Override SQLite LOWER with Python's Unicode-aware casefold so that
         # Cyrillic (and other non-ASCII) characters are handled correctly.
         conn.create_function("LOWER", 1, lambda x: x.casefold() if isinstance(x, str) else x)
@@ -193,15 +238,16 @@ class SymbolIndex:
             conn.executemany(
                 """
                 INSERT INTO symbols
-                    (name, file_path, line, character, end_line, end_character,
+                    (name, name_lower, file_path, line, character, end_line, end_character,
                      kind, is_export, container, signature, doc_comment, indexed_at)
                 VALUES
-                    (:name, :file_path, :line, :character, :end_line, :end_character,
+                    (:name, :name_lower, :file_path, :line, :character, :end_line, :end_character,
                      :kind, :is_export, :container, :signature, :doc_comment, :indexed_at)
                 """,
                 [
                     {
                         "name": s.get("name", ""),
+                        "name_lower": s.get("name", "").casefold(),
                         "file_path": file_path,
                         "line": s.get("line", 0),
                         "character": s.get("character", 0),
@@ -221,8 +267,8 @@ class SymbolIndex:
             # Insert new calls
             conn.executemany(
                 """
-                INSERT INTO calls (caller_file, caller_line, caller_name, callee_name, callee_args_count)
-                VALUES (:caller_file, :caller_line, :caller_name, :callee_name, :callee_args_count)
+                INSERT INTO calls (caller_file, caller_line, caller_name, callee_name, callee_name_lower, callee_args_count)
+                VALUES (:caller_file, :caller_line, :caller_name, :callee_name, :callee_name_lower, :callee_args_count)
                 """,
                 [
                     {
@@ -230,6 +276,7 @@ class SymbolIndex:
                         "caller_line": c.get("caller_line", 0),
                         "caller_name": c.get("caller_name"),
                         "callee_name": c.get("callee_name", ""),
+                        "callee_name_lower": c.get("callee_name", "").casefold(),
                         "callee_args_count": c.get("callee_args_count", 0),
                     }
                     for c in calls
@@ -303,17 +350,19 @@ class SymbolIndex:
             }
             rows = conn.execute(sql, params).fetchall()
         else:
+            # Use pre-computed name_lower for index-assisted case-insensitive lookup.
+            # No ORDER BY — avoids temp B-tree sort on large result sets (e.g. Записать: 3000+ rows).
+            # The index scan order is already deterministic enough for IDE hover/definition use.
             sql = """
                 SELECT * FROM symbols
-                WHERE LOWER(name) = LOWER(:name)
+                WHERE name_lower = :name_lower
                   AND (:file_filter IS NULL OR file_path LIKE :file_like)
-                ORDER BY file_path, line
                 LIMIT :limit
             """
             rows = conn.execute(
                 sql,
                 {
-                    "name": name,
+                    "name_lower": name.casefold(),
                     "file_filter": file_filter,
                     "file_like": f"%{file_filter}%" if file_filter else None,
                     "limit": limit,
@@ -321,6 +370,15 @@ class SymbolIndex:
             ).fetchall()
 
         return [dict(row) for row in rows]
+
+    def find_callers_count(self, callee_name: str) -> int:
+        """Return the total number of call sites for *callee_name* (fast COUNT query)."""
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT COUNT(*) FROM calls WHERE callee_name_lower = ?",
+            (callee_name.casefold(),),
+        ).fetchone()
+        return int(row[0]) if row else 0
 
     def find_callers(self, callee_name: str, limit: int = 50) -> list[dict[str, Any]]:
         """
@@ -334,12 +392,12 @@ class SymbolIndex:
             SELECT c.caller_file, c.caller_line, c.caller_name, c.callee_name,
                    s.signature as caller_signature
             FROM calls c
-            LEFT JOIN symbols s ON s.name = c.caller_name AND s.file_path = c.caller_file
-            WHERE LOWER(c.callee_name) = LOWER(?)
+            LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower AND s.file_path = c.caller_file
+            WHERE c.callee_name_lower = ?
             ORDER BY c.caller_file, c.caller_line
             LIMIT ?
             """,
-            (callee_name, limit),
+            (callee_name.casefold(), limit),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -365,9 +423,9 @@ class SymbolIndex:
                 SELECT c.callee_name, c.caller_line, c.callee_args_count,
                        s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
                 FROM calls c
-                LEFT JOIN symbols s ON LOWER(s.name) = LOWER(c.callee_name)
+                LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
                 WHERE c.caller_file = ?
-                  AND LOWER(c.caller_name) = LOWER(?)
+                  AND c.caller_name = ?
                 ORDER BY c.caller_line
                 """,
                 (caller_file, caller_name),
@@ -378,7 +436,7 @@ class SymbolIndex:
                 SELECT c.callee_name, c.caller_line, c.callee_args_count,
                        s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
                 FROM calls c
-                LEFT JOIN symbols s ON LOWER(s.name) = LOWER(c.callee_name)
+                LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
                 WHERE c.caller_file = ?
                   AND c.caller_line BETWEEN ? AND ?
                 ORDER BY c.caller_line
@@ -391,7 +449,7 @@ class SymbolIndex:
                 SELECT c.callee_name, c.caller_line, c.callee_args_count,
                        s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
                 FROM calls c
-                LEFT JOIN symbols s ON LOWER(s.name) = LOWER(c.callee_name)
+                LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
                 WHERE c.caller_file = ?
                 ORDER BY c.caller_line
                 """,

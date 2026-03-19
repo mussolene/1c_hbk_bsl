@@ -35,6 +35,9 @@ _KEYWORDS: dict[str, str] = {
     "перем": "Перем",
     "экспорт": "Экспорт",
     "новый": "Новый",
+    "выбор": "Выбор",
+    "когда": "Когда",
+    "конецвыбора": "КонецВыбора",
     "выполнить": "Выполнить",
     "истина": "Истина",
     "ложь": "Ложь",
@@ -67,6 +70,9 @@ _KEYWORDS: dict[str, str] = {
     "var": "Var",
     "export": "Export",
     "new": "New",
+    "case": "Case",
+    "when": "When",
+    "endcase": "EndCase",
     "execute": "Execute",
     "true": "True",
     "false": "False",
@@ -110,12 +116,16 @@ _DEDENT_BEFORE: frozenset[str] = frozenset(
         "enddo",
         "конецпопытки",
         "endtry",
+        "конецвыбора",
+        "endcase",
         "иначеесли",
         "elsif",
         "иначе",
         "else",
         "исключение",
         "except",
+        "когда",
+        "when",
     ]
 )
 
@@ -128,6 +138,8 @@ _INDENT_AFTER_STARTS: frozenset[str] = frozenset(
         "function",
         "попытка",
         "try",
+        "выбор",
+        "case",
     ]
 )
 
@@ -150,13 +162,18 @@ _SAME_LEVEL_OPENERS: frozenset[str] = frozenset(
         "else",
         "исключение",
         "except",
+        "когда",
+        "when",
     ]
 )
 
-# Preprocessor directives — kept as-is except case normalisation of the tag
+# Preprocessor directives — any line starting with # followed by a letter.
+# These include #Область/#Region (folding) and #Если/#КонецЕсли (conditionals).
+# They are output at the current indent level but do NOT change the indent counter —
+# preprocessor structure is orthogonal to the runtime code structure.
 _PREPROCESSOR_PATTERN = re.compile(
-    r"^(\s*)(#(Область|КонецОбласти|Region|EndRegion))(.*)",
-    re.IGNORECASE,
+    r"^(\s*)(#[А-ЯЁа-яёA-Za-z][А-ЯЁа-яёA-Za-z]*)(.*)",
+    re.IGNORECASE | re.UNICODE,
 )
 
 # ---------------------------------------------------------------------------
@@ -176,6 +193,15 @@ _PP_CANONICAL: dict[str, str] = {
     "конецобласти": "#КонецОбласти",
     "region": "#Region",
     "endregion": "#EndRegion",
+    "если": "#Если",
+    "иначеесли": "#ИначеЕсли",
+    "иначе": "#Иначе",
+    "конецесли": "#КонецЕсли",
+    "if": "#If",
+    "elseif": "#ElseIf",
+    "else": "#Else",
+    "endif": "#EndIf",
+    "использоватьрасширение": "#ИспользоватьРасширение",
 }
 
 
@@ -311,7 +337,7 @@ class BslFormatter:
     def format(self, content: str, indent_size: int = 4) -> str:  # noqa: A003
         """Format an entire BSL source file."""
         lines = content.splitlines()
-        formatted = self._format_lines(lines, indent_size=indent_size)
+        formatted, _ = self._format_lines(lines, indent_size=indent_size)
         # Normalise trailing empty lines: max 2 consecutive blanks
         result = self._normalize_blank_lines(formatted)
         # Ensure single trailing newline
@@ -327,27 +353,56 @@ class BslFormatter:
     ) -> str:
         """Format lines [start_line, end_line] (0-based, inclusive).
 
-        Returns the formatted text for the requested range only
+        Determines the correct indent level at start_line by scanning the
+        preceding lines as context, then formats only the selected range.
+        Unselected lines are never modified.
+
+        Returns the formatted text for the range only
         (TextEdit-compatible: replace lines start_line..end_line with this text).
         """
         all_lines = content.splitlines()
-        # Format the whole file to get correct indentation context
-        formatted_all = self._format_lines(all_lines, indent_size=indent_size)
-        formatted_lines = formatted_all.splitlines()
-        # Clamp range
         s = max(0, start_line)
-        e = min(len(formatted_lines) - 1, end_line)
-        selected = formatted_lines[s : e + 1]
-        return "\n".join(selected) + "\n"
+        e = min(len(all_lines) - 1, end_line)
+
+        # Build indent context by dry-running the formatter on preceding lines
+        initial_indent = self._indent_at(all_lines, s, indent_size)
+
+        # Format only the selected slice with that initial indent
+        selected = all_lines[s : e + 1]
+        formatted, _ = self._format_lines(selected, indent_size=indent_size,
+                                          initial_indent=initial_indent)
+        return formatted + "\n"
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _format_lines(self, lines: list[str], indent_size: int) -> str:
-        """Core formatting pass: keyword normalisation, indentation, spacing."""
-        output: list[str] = []
-        current_indent = 0
+    def _indent_at(self, lines: list[str], target: int, indent_size: int) -> int:  # noqa: ARG002
+        """Return the indent level that would be active just before line *target*."""
+        _, final = self._format_lines(lines[:target], indent_size=indent_size,
+                                      initial_indent=0, output=False)
+        return final
+
+    def _format_lines(
+        self,
+        lines: list[str],
+        indent_size: int,
+        initial_indent: int = 0,
+        output: bool = True,
+    ) -> tuple[str, int]:
+        """Core formatting pass: keyword normalisation, indentation, spacing.
+
+        Args:
+            lines:          Lines to format.
+            indent_size:    Spaces per indent level.
+            initial_indent: Indent level at the start of this slice.
+            output:         If False, only track indent (dry run — for context building).
+
+        Returns:
+            (formatted_text, final_indent_level)
+        """
+        result: list[str] = []
+        current_indent = initial_indent
 
         for raw_line in lines:
             # 1. Strip trailing whitespace
@@ -356,49 +411,53 @@ class BslFormatter:
             # 2. Get stripped content
             stripped = _strip_indent(line)
 
-            # 3. Skip blank lines (handled later by blank-line normalisation)
+            # 3. Blank lines — preserve as-is
             if not stripped:
-                output.append("")
+                if output:
+                    result.append("")
                 continue
 
-            # 4. Check if line is a pure comment
+            # 4. Pure comment line
             is_comment_line = stripped.startswith("//")
 
-            # 5. Check preprocessor directive
+            # 5. Preprocessor directive (#Если, #Область, #Region, …)
             pp_match = _PREPROCESSOR_PATTERN.match(stripped)
 
             if is_comment_line:
-                # Normalise indent only; keep comment text verbatim
-                indented = " " * (current_indent * indent_size) + stripped
-                output.append(indented)
+                if output:
+                    result.append(" " * (current_indent * indent_size) + stripped)
                 continue
 
             if pp_match:
-                # Preprocessor — normalise tag case, keep rest
-                tag = pp_match.group(2)
-                rest = pp_match.group(4)
-                canonical_tag = _PP_CANONICAL.get(tag.lstrip("#").lower(), tag)
-                indented = " " * (current_indent * indent_size) + canonical_tag + rest
-                output.append(indented)
+                # Normalise the directive tag; output at current indent.
+                # Do NOT change current_indent — preprocessor structure is
+                # orthogonal to runtime code indentation.
+                if output:
+                    tag = pp_match.group(2)
+                    rest = pp_match.group(3)
+                    canonical = _PP_CANONICAL.get(tag.lstrip("#").lower(), tag)
+                    result.append(" " * (current_indent * indent_size) + canonical + rest)
                 continue
 
-            # 6. Normalise keywords and operator spacing (respecting string/comment tokens)
-            processed = self._process_code_line(stripped, in_proc_header=_is_proc_or_func_header(stripped))
+            # 6. Normalise keywords and operator spacing
+            processed = self._process_code_line(
+                stripped, in_proc_header=_is_proc_or_func_header(stripped)
+            )
 
-            # 7. Determine indent adjustments using the processed line
+            # 7. Determine indent adjustments
             proc_stripped = _strip_indent(processed)
             dedent_before, indent_after = _indent_control(proc_stripped)
 
             if dedent_before:
                 current_indent = max(0, current_indent - 1)
 
-            indented_line = " " * (current_indent * indent_size) + proc_stripped
-            output.append(indented_line)
+            if output:
+                result.append(" " * (current_indent * indent_size) + proc_stripped)
 
             if indent_after:
                 current_indent += 1
 
-        return "\n".join(output)
+        return "\n".join(result), current_indent
 
     def _process_code_line(self, stripped: str, in_proc_header: bool) -> str:
         """Apply keyword normalisation and operator spacing to a single stripped line."""

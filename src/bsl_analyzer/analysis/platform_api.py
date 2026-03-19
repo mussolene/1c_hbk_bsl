@@ -678,6 +678,32 @@ class PlatformApi:
                 return m
         return None
 
+    def find_type_method(self, method_name: str) -> list[tuple[ApiType, ApiMethod]]:
+        """Find all platform types that have a method with the given name (case-insensitive).
+
+        Returns list of (ApiType, ApiMethod) pairs — there can be multiple since
+        many types share method names (e.g. «Выбрать», «Добавить», «Количество»).
+        """
+        name_lo = method_name.lower()
+        results: list[tuple[ApiType, ApiMethod]] = []
+        for t in self._types.values():
+            for m in t.methods:
+                if m.name.lower() == name_lo or (m.name_en and m.name_en.lower() == name_lo):
+                    results.append((t, m))
+                    break
+        return results
+
+    def find_type_property(self, prop_name: str) -> list[tuple[ApiType, ApiProperty]]:
+        """Find all platform types that have a property with the given name (case-insensitive)."""
+        name_lo = prop_name.lower()
+        results: list[tuple[ApiType, ApiProperty]] = []
+        for t in self._types.values():
+            for p in t.properties:
+                if p.name.lower() == name_lo or (p.name_en and p.name_en.lower() == name_lo):
+                    results.append((t, p))
+                    break
+        return results
+
     def get_method_completions(self, type_name: str) -> list[dict]:
         """Return completion items for methods of a given type."""
         t = self.find_type(type_name)

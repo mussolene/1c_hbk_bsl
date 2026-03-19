@@ -26,10 +26,17 @@ vscode-extension/bin/
 *.vsix
 *.js.map
 
-# SQLite index databases
+# SQLite index databases and WAL files
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 *.db
+
+# Cross-compile / alternative dist directories
+dist_pi/
+dist_win/
+dist_linux/
 
 # Docker
 .env
