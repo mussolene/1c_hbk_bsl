@@ -324,3 +324,235 @@ class TestHandlerFunctions:
         result = on_completion(ls, params)
         # Dot completion — returns CompletionList
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Formatting
+# ---------------------------------------------------------------------------
+
+
+class TestFormatting:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import BslLanguageServer
+        ls = BslLanguageServer()
+        ls.publish_diagnostics = MagicMock()
+        return ls
+
+    def test_formatting_normalises_keywords(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = "процедура Тест()\nконецпроцедуры\n"
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.options.tab_size = 4
+        result = on_formatting(ls, params)
+        assert result is not None
+        assert any("Процедура" in e.new_text for e in result)
+
+    def test_formatting_empty_doc_returns_none(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///nonexistent.bsl"
+        params.options.tab_size = 4
+        result = on_formatting(ls, params)
+        assert result is None
+
+    def test_formatting_already_formatted_returns_empty(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        code = "Процедура Тест()\nКонецПроцедуры\n"
+        ls._docs["file:///test.bsl"] = code
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.options.tab_size = 4
+        result = on_formatting(ls, params)
+        assert result == []
+
+    def test_range_formatting(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from lsprotocol.types import Position, Range
+        from bsl_analyzer.lsp.server import on_range_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = "процедура Тест()\nконецпроцедуры\n"
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.options.tab_size = 4
+        params.range = Range(start=Position(line=0, character=0), end=Position(line=0, character=20))
+        result = on_range_formatting(ls, params)
+        assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Document Highlight
+# ---------------------------------------------------------------------------
+
+
+class TestDocumentHighlight:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import BslLanguageServer
+        ls = BslLanguageServer()
+        ls.publish_diagnostics = MagicMock()
+        return ls
+
+    def test_highlight_finds_occurrences(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_document_highlight
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = "МояПерем = 1;\nА = МояПерем;\n"
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.position.line = 0
+        params.position.character = 3
+        result = on_document_highlight(ls, params)
+        assert result is not None
+        assert len(result) >= 2  # two occurrences of МояПерем
+
+    def test_highlight_empty_word_returns_none(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_document_highlight
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.position.line = 0
+        params.position.character = 0
+        result = on_document_highlight(ls, params)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Folding Ranges
+# ---------------------------------------------------------------------------
+
+
+class TestFoldingRange:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import BslLanguageServer
+        ls = BslLanguageServer()
+        ls.publish_diagnostics = MagicMock()
+        return ls
+
+    def test_folding_procedure(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_folding_range
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = (
+            "Процедура Тест()\n"
+            "    А = 1;\n"
+            "КонецПроцедуры\n"
+        )
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        result = on_folding_range(ls, params)
+        assert result is not None
+        assert any(r.start_line == 0 and r.end_line == 2 for r in result)
+
+    def test_folding_region(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_folding_range
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = (
+            "#Область МояОбласть\n"
+            "А = 1;\n"
+            "#КонецОбласти\n"
+        )
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        result = on_folding_range(ls, params)
+        assert result is not None
+        assert len(result) >= 1
+
+    def test_folding_empty_doc_returns_none(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_folding_range
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///empty.bsl"
+        result = on_folding_range(ls, params)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Semantic Tokens
+# ---------------------------------------------------------------------------
+
+
+class TestSemanticTokens:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import BslLanguageServer
+        ls = BslLanguageServer()
+        ls.publish_diagnostics = MagicMock()
+        return ls
+
+    def test_semantic_tokens_returns_data(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_semantic_tokens_full
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = "Процедура Тест()\n    А = 1;\nКонецПроцедуры\n"
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        result = on_semantic_tokens_full(ls, params)
+        assert result is not None
+        assert len(result.data) > 0
+        assert len(result.data) % 5 == 0  # each token is 5 integers
+
+    def test_semantic_tokens_empty_returns_none(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_semantic_tokens_full
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///empty.bsl"
+        result = on_semantic_tokens_full(ls, params)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Code Action
+# ---------------------------------------------------------------------------
+
+
+class TestCodeAction:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import BslLanguageServer
+        ls = BslLanguageServer()
+        ls.publish_diagnostics = MagicMock()
+        return ls
+
+    def test_code_action_for_known_diagnostic(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_code_action
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        diag = MagicMock()
+        diag.code = "BSL009"
+        params.context.diagnostics = [diag]
+        result = on_code_action(ls, params)
+        assert result is not None
+        assert len(result) == 1
+        assert "trailing" in result[0].title.lower()
+
+    def test_code_action_unknown_diagnostic_returns_none(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_code_action
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        diag = MagicMock()
+        diag.code = "BSL999"
+        params.context.diagnostics = [diag]
+        result = on_code_action(ls, params)
+        assert result is None

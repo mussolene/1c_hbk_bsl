@@ -7,6 +7,16 @@ Capabilities implemented:
   - textDocument/documentSymbol
   - workspace/symbol
   - textDocument/publishDiagnostics  (on save)
+  - textDocument/completion  (global functions + workspace symbols + member access)
+  - textDocument/references
+  - textDocument/rename + textDocument/prepareRename
+  - callHierarchy/prepare + callHierarchy/incomingCalls + callHierarchy/outgoingCalls
+  - textDocument/formatting + textDocument/rangeFormatting
+  - textDocument/semanticTokens/full
+  - textDocument/inlayHint
+  - textDocument/documentHighlight
+  - textDocument/foldingRange
+  - textDocument/codeAction
 
 Run with:
     bsl-analyzer --lsp
@@ -16,19 +26,41 @@ from __future__ import annotations
 
 import logging
 import os
+import re as _re
 from pathlib import Path
 
 from lsprotocol.types import (
+    CALL_HIERARCHY_INCOMING_CALLS,
+    CALL_HIERARCHY_OUTGOING_CALLS,
     INITIALIZE,
+    TEXT_DOCUMENT_CODE_ACTION,
     TEXT_DOCUMENT_COMPLETION,
     TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
+    TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT,
     TEXT_DOCUMENT_DOCUMENT_SYMBOL,
+    TEXT_DOCUMENT_FOLDING_RANGE,
+    TEXT_DOCUMENT_FORMATTING,
     TEXT_DOCUMENT_HOVER,
+    TEXT_DOCUMENT_INLAY_HINT,
+    TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY,
+    TEXT_DOCUMENT_PREPARE_RENAME,
+    TEXT_DOCUMENT_RANGE_FORMATTING,
     TEXT_DOCUMENT_REFERENCES,
+    TEXT_DOCUMENT_RENAME,
+    TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
     WORKSPACE_SYMBOL,
+    CallHierarchyIncomingCall,
+    CallHierarchyIncomingCallsParams,
+    CallHierarchyItem,
+    CallHierarchyOutgoingCall,
+    CallHierarchyOutgoingCallsParams,
+    CallHierarchyPrepareParams,
+    CodeAction,
+    CodeActionKind,
+    CodeActionParams,
     CompletionItem,
     CompletionItemKind,
     CompletionList,
@@ -38,19 +70,37 @@ from lsprotocol.types import (
     DidChangeTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
+    DocumentFormattingParams,
+    DocumentHighlight,
+    DocumentHighlightKind,
+    DocumentHighlightParams,
+    DocumentRangeFormattingParams,
     DocumentSymbol,
     DocumentSymbolParams,
+    FoldingRange,
+    FoldingRangeKind,
+    FoldingRangeParams,
     Hover,
     HoverParams,
     InitializeParams,
+    InlayHint,
+    InlayHintKind,
+    InlayHintParams,
     Location,
     MarkupContent,
     MarkupKind,
     Position,
+    PrepareRenameParams,
     Range,
     ReferenceParams,
+    RenameParams,
+    SemanticTokens,
+    SemanticTokensLegend,
+    SemanticTokensParams,
     SymbolInformation,
     SymbolKind,
+    TextEdit,
+    WorkspaceEdit,
     WorkspaceSymbolParams,
 )
 from lsprotocol.types import (
@@ -63,6 +113,7 @@ except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
 from bsl_analyzer.analysis.diagnostics import DiagnosticEngine, Severity
+from bsl_analyzer.analysis.formatter import default_formatter
 from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
@@ -439,6 +490,212 @@ def on_references(
 
 
 # ---------------------------------------------------------------------------
+# Rename
+# ---------------------------------------------------------------------------
+
+
+@server.feature(TEXT_DOCUMENT_PREPARE_RENAME)
+def on_prepare_rename(
+    ls: BslLanguageServer, params: PrepareRenameParams
+) -> Range | None:
+    """Check whether the symbol under the cursor can be renamed."""
+    uri = params.text_document.uri
+    pos = params.position
+    content = ls._docs.get(uri, "")
+    word = _word_at_position(content, pos.line, pos.character)
+    if not word:
+        return None
+
+    symbols = ls.symbol_index.find_symbol(word, limit=1)
+    if not symbols:
+        return None
+
+    # Return the range of the word under the cursor
+    lines = content.splitlines()
+    text = lines[pos.line] if pos.line < len(lines) else ""
+    start_ch = pos.character
+    while start_ch > 0 and (text[start_ch - 1].isalnum() or text[start_ch - 1] == "_"):
+        start_ch -= 1
+    end_ch = pos.character
+    while end_ch < len(text) and (text[end_ch].isalnum() or text[end_ch] == "_"):
+        end_ch += 1
+
+    return Range(
+        start=Position(line=pos.line, character=start_ch),
+        end=Position(line=pos.line, character=end_ch),
+    )
+
+
+@server.feature(TEXT_DOCUMENT_RENAME)
+def on_rename(
+    ls: BslLanguageServer, params: RenameParams
+) -> WorkspaceEdit | None:
+    """Rename the symbol under the cursor across the whole workspace."""
+    uri = params.text_document.uri
+    pos = params.position
+    new_name = params.new_name
+    content = ls._docs.get(uri, "")
+    word = _word_at_position(content, pos.line, pos.character)
+    if not word:
+        return None
+
+    # Collect all locations: definitions + call sites
+    changes: dict[str, list[TextEdit]] = {}
+
+    def _add_edit(file_uri: str, line: int, character: int) -> None:
+        edit = TextEdit(
+            range=Range(
+                start=Position(line=line, character=character),
+                end=Position(line=line, character=character + len(word)),
+            ),
+            new_text=new_name,
+        )
+        changes.setdefault(file_uri, []).append(edit)
+
+    # Definitions
+    for sym in ls.symbol_index.find_symbol(word, limit=50):
+        line = max(0, sym["line"] - 1)
+        _add_edit(_path_to_uri(sym["file_path"]), line, sym["character"])
+
+    # Call sites
+    for c in ls.symbol_index.find_callers(word, limit=500):
+        line = max(0, c["caller_line"] - 1)
+        _add_edit(_path_to_uri(c["caller_file"]), line, 0)
+
+    if not changes:
+        return None
+
+    return WorkspaceEdit(changes=changes)
+
+
+# ---------------------------------------------------------------------------
+# Call Hierarchy
+# ---------------------------------------------------------------------------
+
+
+def _sym_to_call_hierarchy_item(sym: dict, ls: BslLanguageServer) -> CallHierarchyItem:
+    """Convert a symbol dict from the index into a CallHierarchyItem."""
+    line = max(0, sym["line"] - 1)
+    end_line = max(line, sym.get("end_line", sym["line"]) - 1)
+    r = Range(
+        start=Position(line=line, character=sym["character"]),
+        end=Position(line=end_line, character=sym.get("end_character", 0)),
+    )
+    return CallHierarchyItem(
+        name=sym["name"],
+        kind=_KIND_MAP.get(sym["kind"], SymbolKind.Function),
+        uri=_path_to_uri(sym["file_path"]),
+        range=r,
+        selection_range=r,
+        detail=sym.get("signature") or "",
+    )
+
+
+@server.feature(TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY)
+def on_prepare_call_hierarchy(
+    ls: BslLanguageServer, params: CallHierarchyPrepareParams
+) -> list[CallHierarchyItem] | None:
+    """Prepare call hierarchy for the symbol under the cursor."""
+    uri = params.text_document.uri
+    pos = params.position
+    content = ls._docs.get(uri, "")
+    word = _word_at_position(content, pos.line, pos.character)
+    if not word:
+        return None
+
+    symbols = ls.symbol_index.find_symbol(word, limit=5)
+    if not symbols:
+        return None
+
+    return [_sym_to_call_hierarchy_item(sym, ls) for sym in symbols]
+
+
+@server.feature(CALL_HIERARCHY_INCOMING_CALLS)
+def on_call_hierarchy_incoming(
+    ls: BslLanguageServer, params: CallHierarchyIncomingCallsParams
+) -> list[CallHierarchyIncomingCall] | None:
+    """Return all callers of the given symbol (incoming calls)."""
+    item_name = params.item.name
+    callers = ls.symbol_index.find_callers(item_name, limit=200)
+    if not callers:
+        return None
+
+    result: list[CallHierarchyIncomingCall] = []
+    for c in callers:
+        caller_line = max(0, c["caller_line"] - 1)
+        call_range = Range(
+            start=Position(line=caller_line, character=0),
+            end=Position(line=caller_line, character=len(item_name)),
+        )
+        # Build a minimal CallHierarchyItem for the caller function
+        caller_syms = ls.symbol_index.find_symbol(c["caller_name"], limit=1)
+        if caller_syms:
+            from_item = _sym_to_call_hierarchy_item(caller_syms[0], ls)
+        else:
+            # Caller not in symbol index — build a stub item
+            from_item = CallHierarchyItem(
+                name=c["caller_name"] or "<unknown>",
+                kind=SymbolKind.Function,
+                uri=_path_to_uri(c["caller_file"]),
+                range=call_range,
+                selection_range=call_range,
+            )
+        result.append(
+            CallHierarchyIncomingCall(
+                from_=from_item,
+                from_ranges=[call_range],
+            )
+        )
+    return result
+
+
+@server.feature(CALL_HIERARCHY_OUTGOING_CALLS)
+def on_call_hierarchy_outgoing(
+    ls: BslLanguageServer, params: CallHierarchyOutgoingCallsParams
+) -> list[CallHierarchyOutgoingCall] | None:
+    """Return all callees of the given symbol (outgoing calls)."""
+    caller_uri = params.item.uri
+    caller_file = _uri_to_path(caller_uri)
+
+    callees = ls.symbol_index.find_callees(caller_file)
+    if not callees:
+        return None
+
+    result: list[CallHierarchyOutgoingCall] = []
+    for c in callees:
+        call_line = max(0, c["caller_line"] - 1)
+        call_range = Range(
+            start=Position(line=call_line, character=0),
+            end=Position(line=call_line, character=len(c["callee_name"])),
+        )
+        # Resolve callee definition
+        callee_syms = ls.symbol_index.find_symbol(c["callee_name"], limit=1)
+        if callee_syms:
+            to_item = _sym_to_call_hierarchy_item(callee_syms[0], ls)
+        else:
+            callee_file = c.get("callee_file") or caller_file
+            callee_def_line = max(0, (c.get("callee_line") or 1) - 1)
+            callee_range = Range(
+                start=Position(line=callee_def_line, character=0),
+                end=Position(line=callee_def_line, character=len(c["callee_name"])),
+            )
+            to_item = CallHierarchyItem(
+                name=c["callee_name"],
+                kind=SymbolKind.Function,
+                uri=_path_to_uri(callee_file),
+                range=callee_range,
+                selection_range=callee_range,
+            )
+        result.append(
+            CallHierarchyOutgoingCall(
+                to=to_item,
+                from_ranges=[call_range],
+            )
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Completion
 # ---------------------------------------------------------------------------
 
@@ -577,6 +834,413 @@ def _word_at_position(content: str, line: int, character: int) -> str:
         end += 1
 
     return text[start:end]
+
+
+# ---------------------------------------------------------------------------
+# Code Formatting
+# ---------------------------------------------------------------------------
+
+
+@server.feature(TEXT_DOCUMENT_FORMATTING)
+def on_formatting(
+    ls: BslLanguageServer, params: DocumentFormattingParams
+) -> list[TextEdit] | None:
+    """Format the entire document."""
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+    indent_size = params.options.tab_size if params.options else 4
+    try:
+        formatted = default_formatter.format(content, indent_size=indent_size)
+    except Exception as exc:
+        logger.error("LSP: formatting failed for %s: %s", uri, exc)
+        return None
+    if formatted == content:
+        return []
+    lines = content.splitlines()
+    return [
+        TextEdit(
+            range=Range(
+                start=Position(line=0, character=0),
+                end=Position(line=len(lines), character=0),
+            ),
+            new_text=formatted,
+        )
+    ]
+
+
+@server.feature(TEXT_DOCUMENT_RANGE_FORMATTING)
+def on_range_formatting(
+    ls: BslLanguageServer, params: DocumentRangeFormattingParams
+) -> list[TextEdit] | None:
+    """Format the selected range."""
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+    indent_size = params.options.tab_size if params.options else 4
+    r = params.range
+    try:
+        formatted_range = default_formatter.format_range(
+            content,
+            start_line=r.start.line,
+            end_line=r.end.line,
+            indent_size=indent_size,
+        )
+    except Exception as exc:
+        logger.error("LSP: range formatting failed for %s: %s", uri, exc)
+        return None
+    return [
+        TextEdit(
+            range=Range(
+                start=Position(line=r.start.line, character=0),
+                end=Position(line=r.end.line + 1, character=0),
+            ),
+            new_text=formatted_range,
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Document Highlight (highlight all occurrences of symbol under cursor)
+# ---------------------------------------------------------------------------
+
+_IDENT_BOUNDARY_RE = __import__("re").compile(r"[А-ЯЁа-яёA-Za-z_]\w*", __import__("re").UNICODE)
+
+
+@server.feature(TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
+def on_document_highlight(
+    ls: BslLanguageServer, params: DocumentHighlightParams
+) -> list[DocumentHighlight] | None:
+    """Highlight all occurrences of the symbol under the cursor in the document."""
+    uri = params.text_document.uri
+    pos = params.position
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+    word = _word_at_position(content, pos.line, pos.character)
+    if not word:
+        return None
+
+    highlights: list[DocumentHighlight] = []
+    import re
+    pattern = re.compile(
+        r"(?<![А-ЯЁа-яёA-Za-z_\d])" + re.escape(word) + r"(?![А-ЯЁа-яёA-Za-z_\d])",
+        re.IGNORECASE | re.UNICODE,
+    )
+    for line_idx, line_text in enumerate(content.splitlines()):
+        for m in pattern.finditer(line_text):
+            highlights.append(
+                DocumentHighlight(
+                    range=Range(
+                        start=Position(line=line_idx, character=m.start()),
+                        end=Position(line=line_idx, character=m.end()),
+                    ),
+                    kind=DocumentHighlightKind.Text,
+                )
+            )
+    return highlights if highlights else None
+
+
+# ---------------------------------------------------------------------------
+# Folding Ranges (#Область / Процедура / Если / Для / Попытка)
+# ---------------------------------------------------------------------------
+
+_FOLD_OPEN_RE = _re.compile(
+    r"^\s*(?:"
+    r"#(?:Область|Region)\b"
+    r"|(?:Процедура|Функция|Procedure|Function)\b"
+    r"|(?:Если|If)\b.*(?:Тогда|Then)\s*$"
+    r"|(?:Для|ДляКаждого|For|ForEach|Пока|While)\b.*(?:Цикл|Do)\s*$"
+    r"|(?:Попытка|Try)\s*$"
+    r")",
+    _re.IGNORECASE,
+)
+
+_FOLD_CLOSE_RE = _re.compile(
+    r"^\s*(?:"
+    r"#(?:КонецОбласти|EndRegion)\b"
+    r"|(?:КонецПроцедуры|EndProcedure|КонецФункции|EndFunction)\b"
+    r"|(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b"
+    r")",
+    _re.IGNORECASE,
+)
+
+_REGION_OPEN_RE = _re.compile(r"^\s*#(?:Область|Region)\b", _re.IGNORECASE)
+
+
+@server.feature(TEXT_DOCUMENT_FOLDING_RANGE)
+def on_folding_range(
+    ls: BslLanguageServer, params: FoldingRangeParams
+) -> list[FoldingRange] | None:
+    """Return folding ranges for BSL block structures."""
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+
+    lines = content.splitlines()
+    stack: list[tuple[int, str]] = []  # (start_line, kind)
+    ranges: list[FoldingRange] = []
+
+    for idx, line in enumerate(lines):
+        if _FOLD_OPEN_RE.match(line):
+            kind = FoldingRangeKind.Region if _REGION_OPEN_RE.match(line) else None
+            stack.append((idx, kind))
+        elif _FOLD_CLOSE_RE.match(line) and stack:
+            start_line, kind = stack.pop()
+            if idx > start_line:
+                ranges.append(
+                    FoldingRange(
+                        start_line=start_line,
+                        end_line=idx,
+                        kind=kind,
+                    )
+                )
+
+    return ranges if ranges else None
+
+
+# ---------------------------------------------------------------------------
+# Semantic Tokens (syntax highlighting via LSP)
+# ---------------------------------------------------------------------------
+
+# Token types (indices must match the legend order)
+_ST_KEYWORD = 0
+_ST_FUNCTION = 1
+_ST_VARIABLE = 2
+_ST_STRING = 3
+_ST_NUMBER = 4
+_ST_COMMENT = 5
+_ST_OPERATOR = 6
+
+_SEMANTIC_LEGEND = SemanticTokensLegend(
+    token_types=["keyword", "function", "variable", "string", "number", "comment", "operator"],
+    token_modifiers=["declaration", "definition", "readonly", "static", "deprecated"],
+)
+
+_ST_KEYWORD_RE = _re.compile(
+    r"(?<![А-ЯЁа-яёA-Za-z_\d])("
+    r"Процедура|КонецПроцедуры|Функция|КонецФункции"
+    r"|Если|ИначеЕсли|Иначе|КонецЕсли|Тогда"
+    r"|Для|Каждого|Из|По|Пока|Цикл|КонецЦикла"
+    r"|Попытка|Исключение|КонецПопытки"
+    r"|Возврат|Прервать|Продолжить|Новый|Перем|Экспорт"
+    r"|Истина|Ложь|Неопределено|Null"
+    r"|И|Или|Не"
+    r"|Procedure|EndProcedure|Function|EndFunction"
+    r"|If|ElsIf|Else|EndIf|Then"
+    r"|For|Each|In|To|While|Do|EndDo"
+    r"|Try|Except|EndTry"
+    r"|Return|Break|Continue|New|Var|Export"
+    r"|True|False|Undefined|And|Or|Not"
+    r")(?![А-ЯЁа-яёA-Za-z_\d])",
+    _re.UNICODE,
+)
+_ST_NUMBER_RE = _re.compile(r"\b\d+(?:\.\d+)?\b")
+_ST_STRING_RE = _re.compile(r'"[^"]*"')
+_ST_COMMENT_RE = _re.compile(r"//.*$")
+_ST_CALL_RE = _re.compile(r"([А-ЯЁа-яёA-Za-z_]\w*)\s*\(", _re.UNICODE)
+
+
+@server.feature(
+    TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
+    SemanticTokensLegend(
+        token_types=_SEMANTIC_LEGEND.token_types,
+        token_modifiers=_SEMANTIC_LEGEND.token_modifiers,
+    ),
+)
+def on_semantic_tokens_full(
+    ls: BslLanguageServer, params: SemanticTokensParams
+) -> SemanticTokens | None:
+    """Return semantic tokens for the entire document."""
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+
+    data: list[int] = []
+    prev_line = 0
+    prev_start = 0
+
+    def _emit(line: int, start: int, length: int, token_type: int, modifiers: int = 0) -> None:
+        nonlocal prev_line, prev_start
+        delta_line = line - prev_line
+        delta_start = start if delta_line > 0 else start - prev_start
+        data.extend([delta_line, delta_start, length, token_type, modifiers])
+        prev_line = line
+        prev_start = start
+
+    # Collect all tokens per line, sorted by start position
+    for line_idx, line_text in enumerate(content.splitlines()):
+        tokens: list[tuple[int, int, int]] = []  # (start, length, type)
+
+        # Comments — scan first so we know their range
+        cm = _ST_COMMENT_RE.search(line_text)
+        comment_start = cm.start() if cm else len(line_text)
+        if cm:
+            tokens.append((cm.start(), len(cm.group()), _ST_COMMENT))
+
+        # Only scan code before the comment
+        code_part = line_text[:comment_start]
+
+        # String literals
+        string_ranges = [(m.start(), m.end()) for m in _ST_STRING_RE.finditer(code_part)]
+        for sr_start, sr_end in string_ranges:
+            tokens.append((sr_start, sr_end - sr_start, _ST_STRING))
+
+        def _in_string(pos: int, sr: list = string_ranges) -> bool:  # noqa: B008
+            return any(s <= pos < e for s, e in sr)
+
+        # Numbers
+        for m in _ST_NUMBER_RE.finditer(code_part):
+            if not _in_string(m.start()):
+                tokens.append((m.start(), len(m.group()), _ST_NUMBER))
+
+        # Keywords
+        for m in _ST_KEYWORD_RE.finditer(code_part):
+            if not _in_string(m.start()):
+                tokens.append((m.start(), len(m.group()), _ST_KEYWORD))
+
+        # Function calls
+        for m in _ST_CALL_RE.finditer(code_part):
+            if not _in_string(m.start(1)):
+                tokens.append((m.start(1), len(m.group(1)), _ST_FUNCTION))
+
+        # Sort by start position, deduplicate (prefer earlier type in priority)
+        tokens.sort(key=lambda t: t[0])
+        seen_starts: set[int] = set()
+        for start, length, ttype in tokens:
+            if start not in seen_starts:
+                seen_starts.add(start)
+                _emit(line_idx, start, length, ttype)
+
+    if not data:
+        return None
+    return SemanticTokens(data=data)
+
+
+# ---------------------------------------------------------------------------
+# Inlay Hints (parameter name hints at call sites)
+# ---------------------------------------------------------------------------
+
+
+@server.feature(TEXT_DOCUMENT_INLAY_HINT)
+def on_inlay_hint(
+    ls: BslLanguageServer, params: InlayHintParams
+) -> list[InlayHint] | None:
+    """Show parameter name hints at function call sites."""
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+
+    r = params.range
+    lines = content.splitlines()
+    hints: list[InlayHint] = []
+
+    # Pattern: identifier followed by '(' — find calls and match to known symbols
+    call_re = _re.compile(r"([А-ЯЁа-яёA-Za-z_]\w*)\s*\(([^)]*)\)", _re.UNICODE)
+
+    for line_idx in range(r.start.line, min(r.end.line + 1, len(lines))):
+        line_text = lines[line_idx]
+        for m in call_re.finditer(line_text):
+            func_name = m.group(1)
+            args_text = m.group(2).strip()
+            if not args_text:
+                continue
+
+            # Look up symbol to get parameter names
+            syms = ls.symbol_index.find_symbol(func_name, limit=1)
+            if not syms:
+                continue
+            sig = syms[0].get("signature") or ""
+            # Extract param names from signature: FuncName(Param1, Param2 = default)
+            import re as _re_inner
+            param_match = _re_inner.search(r"\(([^)]*)\)", sig)
+            if not param_match:
+                continue
+            params_str = param_match.group(1)
+            param_names = [
+                p.strip().split("=")[0].strip().lstrip("&").split()[0]
+                for p in params_str.split(",")
+                if p.strip()
+            ]
+            if not param_names:
+                continue
+
+            # Split args by comma (naive — doesn't handle nested calls)
+            args = [a.strip() for a in args_text.split(",")]
+
+            # Emit hint for each positional arg
+            arg_start = m.start(2)
+            pos_in_args = 0
+            for i, arg in enumerate(args):
+                if i >= len(param_names):
+                    break
+                param_name = param_names[i]
+                if not param_name or param_name == arg:
+                    pos_in_args += len(arg) + 1
+                    continue
+                char = arg_start + pos_in_args
+                hints.append(
+                    InlayHint(
+                        position=Position(line=line_idx, character=char),
+                        label=f"{param_name}:",
+                        kind=InlayHintKind.Parameter,
+                        padding_right=True,
+                    )
+                )
+                pos_in_args += len(arg) + 1
+
+    return hints if hints else None
+
+
+# ---------------------------------------------------------------------------
+# Code Actions (quick fixes from diagnostics)
+# ---------------------------------------------------------------------------
+
+# Map diagnostic code → fix description
+_FIX_DESCRIPTIONS: dict[str, str] = {
+    "BSL009": "Remove trailing whitespace",
+    "BSL010": "Add newline at end of file",
+    "BSL055": "Remove commented-out code",
+    "BSL060": "Fix TabIndentation → spaces",
+}
+
+
+@server.feature(TEXT_DOCUMENT_CODE_ACTION)
+def on_code_action(
+    ls: BslLanguageServer, params: CodeActionParams
+) -> list[CodeAction] | None:
+    """Return quick-fix code actions for diagnostics in the given range."""
+    actions: list[CodeAction] = []
+
+    for diag in params.context.diagnostics:
+        code = str(diag.code) if diag.code else ""
+        description = _FIX_DESCRIPTIONS.get(code)
+        if not description:
+            continue
+        actions.append(
+            CodeAction(
+                title=description,
+                kind=CodeActionKind.QuickFix,
+                diagnostics=[diag],
+                command={
+                    "title": description,
+                    "command": f"bsl-analyzer.fix.{code.lower()}",
+                    "arguments": [params.text_document.uri],
+                },
+            )
+        )
+
+    return actions if actions else None
+
+
+# ---------------------------------------------------------------------------
+# Server startup
+# ---------------------------------------------------------------------------
 
 
 def start_lsp_server() -> None:
