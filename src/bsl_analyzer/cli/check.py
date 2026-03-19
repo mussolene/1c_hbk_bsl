@@ -90,6 +90,7 @@ def check(
     update_baseline: str | None = None,
     config: BslConfig | None = None,
     stats: bool = False,
+    show_fix: bool = False,
 ) -> int:
     """
     Run BSL lint rules on all .bsl/.os files under *paths*.
@@ -162,7 +163,7 @@ def check(
     elif effective_format == "sarif":
         _print_sarif(all_diagnostics, sonar_root)
     else:
-        _print_text(all_diagnostics)
+        _print_text(all_diagnostics, show_fix=show_fix)
         if not all_diagnostics:
             console.print(
                 f"[green]All clean.[/green] Checked {len(all_files)} file(s)."
@@ -214,14 +215,27 @@ def list_rules() -> None:
 # ---------------------------------------------------------------------------
 
 
+_PROGRESS_THRESHOLD = 20  # show progress bar only for larger batches
+
+
 def _run_checks(
     files: list[str],
     select: set[str] | None,
     ignore: set[str] | None,
     jobs: int,
     config: BslConfig | None = None,
+    show_progress: bool = True,
 ) -> tuple[list[Diagnostic], bool]:
     """Run checks in parallel (or serial if jobs=1). Returns (diagnostics, error_flag)."""
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+
     cfg = config or _EMPTY
     engine_kw = cfg.engine_kwargs()
 
@@ -237,34 +251,64 @@ def _run_checks(
 
     all_diagnostics: list[Diagnostic] = []
     error_occurred = False
+    use_progress = show_progress and len(files) >= _PROGRESS_THRESHOLD
 
-    if workers == 1 or len(files) <= 1:
-        engine = _make_engine()
-        for fp in files:
-            try:
-                per_file_extra = cfg.get_file_ignores(fp)
-                if per_file_extra:
-                    all_diagnostics.extend(_make_engine(per_file_extra).check_file(fp))
-                else:
-                    all_diagnostics.extend(engine.check_file(fp))
-            except Exception as exc:
-                console.print(f"[red]Error checking {fp}: {exc}[/red]")
-                error_occurred = True
-    else:
-        # Each thread gets its own engine (BslParser is not thread-safe to share)
-        def _check_one(fp: str) -> list[Diagnostic]:
-            per_file_extra = cfg.get_file_ignores(fp)
-            return _make_engine(per_file_extra).check_file(fp)
+    progress_ctx: Any = (
+        Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        )
+        if use_progress
+        else None
+    )
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_check_one, fp): fp for fp in files}
-            for future in as_completed(futures):
-                fp = futures[future]
+    def _run(task_id: Any = None) -> None:
+        nonlocal error_occurred
+        if workers == 1 or len(files) <= 1:
+            engine = _make_engine()
+            for fp in files:
                 try:
-                    all_diagnostics.extend(future.result())
+                    per_file_extra = cfg.get_file_ignores(fp)
+                    result = (
+                        _make_engine(per_file_extra).check_file(fp)
+                        if per_file_extra
+                        else engine.check_file(fp)
+                    )
+                    all_diagnostics.extend(result)
                 except Exception as exc:
                     console.print(f"[red]Error checking {fp}: {exc}[/red]")
                     error_occurred = True
+                if task_id is not None and progress_ctx is not None:
+                    progress_ctx.advance(task_id)
+        else:
+            def _check_one(fp: str) -> list[Diagnostic]:
+                return _make_engine(cfg.get_file_ignores(fp)).check_file(fp)
+
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_check_one, fp): fp for fp in files}
+                for future in as_completed(futures):
+                    fp = futures[future]
+                    try:
+                        all_diagnostics.extend(future.result())
+                    except Exception as exc:
+                        console.print(f"[red]Error checking {fp}: {exc}[/red]")
+                        error_occurred = True
+                    if task_id is not None and progress_ctx is not None:
+                        progress_ctx.advance(task_id)
+
+    if progress_ctx is not None:
+        with progress_ctx:
+            task_id = progress_ctx.add_task(
+                f"[cyan]Checking {len(files)} files…", total=len(files)
+            )
+            _run(task_id)
+    else:
+        _run()
 
     all_diagnostics.sort(key=lambda d: (d.file, d.line, d.character))
     return all_diagnostics, error_occurred
@@ -275,8 +319,10 @@ def _run_checks(
 # ---------------------------------------------------------------------------
 
 
-def _print_text(diagnostics: list[Diagnostic]) -> None:
+def _print_text(diagnostics: list[Diagnostic], show_fix: bool = False) -> None:
     """Print ruff/flake8-style text output to stderr."""
+    from bsl_analyzer.analysis.diagnostics import RULE_FIX_HINTS
+
     for d in diagnostics:
         abbr, style = _SEV_STYLE.get(d.severity, ("?", "white"))
         line_str = f"{d.file}:{d.line}:{d.character}: {abbr} {d.code} {d.message}"
@@ -284,6 +330,8 @@ def _print_text(diagnostics: list[Diagnostic]) -> None:
         offset = len(d.file) + len(str(d.line)) + len(str(d.character)) + 4
         text.stylize(style, offset)
         console.print(text, highlight=False)
+        if show_fix and d.code in RULE_FIX_HINTS:
+            console.print(f"  [dim]fix:[/dim] {RULE_FIX_HINTS[d.code]}", highlight=False)
 
 
 def _print_json(diagnostics: list[Diagnostic]) -> None:

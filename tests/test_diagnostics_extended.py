@@ -1671,6 +1671,84 @@ class TestBsl058QueryWithoutWhere:
 
 
 # ---------------------------------------------------------------------------
+# BSL059 — BooleanLiteralComparison
+# ---------------------------------------------------------------------------
+
+
+class TestBsl059BooleanLiteralComparison:
+    def test_comparison_with_true_detected(self, tmp_path: Path) -> None:
+        content = "Если А = Истина Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL059"})
+        assert "BSL059" in _codes(diags)
+
+    def test_comparison_with_false_detected(self, tmp_path: Path) -> None:
+        content = "Если Флаг = Ложь Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL059"})
+        assert "BSL059" in _codes(diags)
+
+    def test_plain_bool_no_warning(self, tmp_path: Path) -> None:
+        content = "Если Флаг Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL059"})
+        assert "BSL059" not in _codes(diags)
+
+    def test_in_comment_no_warning(self, tmp_path: Path) -> None:
+        content = "// Если А = Истина Тогда\n"
+        diags = _check(content, tmp_path, select={"BSL059"})
+        assert "BSL059" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL060 — DoubleNegation
+# ---------------------------------------------------------------------------
+
+
+class TestBsl060DoubleNegation:
+    def test_double_negation_detected(self, tmp_path: Path) -> None:
+        content = "Если НЕ НЕ Флаг Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL060"})
+        assert "BSL060" in _codes(diags)
+
+    def test_single_negation_no_warning(self, tmp_path: Path) -> None:
+        content = "Если НЕ Флаг Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL060"})
+        assert "BSL060" not in _codes(diags)
+
+    def test_in_comment_no_warning(self, tmp_path: Path) -> None:
+        content = "// НЕ НЕ Флаг\n"
+        diags = _check(content, tmp_path, select={"BSL060"})
+        assert "BSL060" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL061 — AbruptLoopExit
+# ---------------------------------------------------------------------------
+
+
+class TestBsl061AbruptLoopExit:
+    def test_break_as_last_stmt_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Для Каждого Элемент Из Список Цикл
+                ОбработатьЭлемент(Элемент);
+                Прервать;
+            КонецЦикла;
+        """
+        diags = _check(content, tmp_path, select={"BSL061"})
+        assert "BSL061" in _codes(diags)
+
+    def test_break_in_middle_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Для Каждого Элемент Из Список Цикл
+                Если УсловиеВыхода(Элемент) Тогда
+                    Прервать;
+                КонецЕсли;
+                ОбработатьЭлемент(Элемент);
+            КонецЦикла;
+        """
+        diags = _check(content, tmp_path, select={"BSL061"})
+        assert "BSL061" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # Metadata completeness
 # ---------------------------------------------------------------------------
 
@@ -1678,6 +1756,6 @@ class TestBsl058QueryWithoutWhere:
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 59)}
+        expected = {f"BSL{i:03d}" for i in range(1, 62)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

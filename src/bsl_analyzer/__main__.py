@@ -71,6 +71,7 @@ def _run_check(
     baseline: str | None,
     update_baseline: str | None,
     stats: bool,
+    show_fix: bool,
 ) -> int:
     from bsl_analyzer.cli.check import check
     from bsl_analyzer.cli.config import load_config
@@ -91,6 +92,7 @@ def _run_check(
         update_baseline=update_baseline,
         config=cfg,
         stats=stats,
+        show_fix=show_fix,
     )
 
 
@@ -351,6 +353,12 @@ Examples:
         default=False,
         help="Print a machine-readable JSON stats summary to stdout after checking",
     )
+    parser.add_argument(
+        "--show-fix",
+        action="store_true",
+        default=False,
+        help="Show actionable fix hints below each issue in text output",
+    )
 
     # Index options
     parser.add_argument(
@@ -391,6 +399,7 @@ Examples:
                 baseline=args.baseline,
                 update_baseline=args.update_baseline,
                 stats=args.stats,
+                show_fix=args.show_fix,
             )
         )
 

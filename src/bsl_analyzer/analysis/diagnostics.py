@@ -516,6 +516,69 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["performance", "sql"],
     },
+    "BSL059": {
+        "name": "BooleanLiteralComparison",
+        "description": "Comparison to boolean literal (А = Истина / А = Ложь) — use the expression directly",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL060": {
+        "name": "DoubleNegation",
+        "description": "НЕ НЕ expression — double negation cancels out, use the expression directly",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability", "suspicious"],
+    },
+    "BSL061": {
+        "name": "AbruptLoopExit",
+        "description": "Прервать/Break as the last statement of a loop body — consider restructuring the condition",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["style", "readability"],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Fix hints — actionable one-line suggestions keyed by rule code
+# ---------------------------------------------------------------------------
+
+RULE_FIX_HINTS: dict[str, str] = {
+    "BSL002": "Extract logic into smaller helper procedures/functions.",
+    "BSL004": "Add error logging: Сообщить(ОписаниеОшибки()) or re-raise with context.",
+    "BSL005": "Move URL/IP to a constant, configuration parameter, or InfoBase settings.",
+    "BSL006": "Use relative paths or store the path in a configuration parameter.",
+    "BSL007": "Remove the unused variable declaration.",
+    "BSL009": "Check for copy-paste error — both sides of '=' are identical.",
+    "BSL010": "Remove the redundant 'Возврат;' at the end of the Procedure.",
+    "BSL011": "Decompose into smaller methods; extract nested conditions to named variables.",
+    "BSL012": "Move credentials to OS environment variables or 1C InfoBase settings.",
+    "BSL013": "Delete or restore the commented-out code block.",
+    "BSL014": "Break the long line using BSL | continuation or an intermediate variable.",
+    "BSL015": "Reduce optional parameters or introduce a parameter struct/object.",
+    "BSL018": "Use 'ВызватьИсключение НовоеИсключение(\"...\");' instead of a string literal.",
+    "BSL022": "Replace Предупреждение() with asynchronous ShowMessageBox().",
+    "BSL027": "Replace Перейти/Goto with a structured loop or conditional.",
+    "BSL028": "Wrap risky operations in Попытка...Исключение...КонецПопытки.",
+    "BSL033": "Move the query outside the loop; collect data first, then iterate.",
+    "BSL035": "Extract the repeated string to a named constant.",
+    "BSL037": "Rename the variable — it shadows a built-in platform function.",
+    "BSL038": "Build parts in an array and use СтрСоединить() at the end.",
+    "BSL042": "Implement the method body or remove the Export keyword.",
+    "BSL044": "Add 'Возврат <value>;' — Function callers expect a non-Undefined result.",
+    "BSL046": "Add 'Иначе' branch to handle all cases explicitly.",
+    "BSL047": "Use ТекущаяУниверсальнаяДата() for UTC-safe timestamps.",
+    "BSL049": "Wrap in 'Если <guard> Тогда ... КонецЕсли' before raising.",
+    "BSL050": "Ensure every code path ends with ЗафиксироватьТранзакцию() or ОтменитьТранзакцию().",
+    "BSL051": "Remove the unreachable code or restructure the control flow.",
+    "BSL052": "Remove the constant condition — the branch always/never executes.",
+    "BSL053": "Replace Выполнить() with explicit method calls or a strategy pattern.",
+    "BSL057": "Replace with asynchronous ПоказатьВводЗначения() or use a form.",
+    "BSL058": "Add a WHERE/ГДЕ clause or use ПЕРВЫЕ N to limit returned rows.",
 }
 
 
@@ -887,6 +950,22 @@ _RE_IF_LITERAL = re.compile(
     r'^\s*(?:Если|If)\s+(?:Истина|True|Ложь|False)\b',
     re.IGNORECASE,
 )
+
+# Boolean literal comparison: А = Истина / А = Ложь (both sides)
+_RE_BOOL_LITERAL_CMP = re.compile(
+    r'(?:=|<>)\s*(?:Истина|True|Ложь|False)(?=\s|;|\)|\Z)'
+    r'|(?:Истина|True|Ложь|False)\s*(?:=|<>)',
+    re.IGNORECASE,
+)
+
+# Double negation НЕ НЕ / Not Not
+_RE_DOUBLE_NEGATION = re.compile(
+    r'\b(?:НЕ|Not)\s+(?:НЕ|Not)\b',
+    re.IGNORECASE,
+)
+
+# Прервать/Break as last statement before КонецЦикла
+_RE_BREAK = re.compile(r'^\s*(?:Прервать|Break)\s*;?\s*$', re.IGNORECASE)
 
 # Deprecated modal input dialogs
 _RE_INPUT_DIALOG = re.compile(
@@ -1363,6 +1442,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl057_deprecated_input_dialog(path, lines))
         if self._rule_enabled("BSL058"):
             diagnostics.extend(self._rule_bsl058_query_without_where(path, lines))
+        if self._rule_enabled("BSL059"):
+            diagnostics.extend(self._rule_bsl059_bool_literal_comparison(path, lines))
+        if self._rule_enabled("BSL060"):
+            diagnostics.extend(self._rule_bsl060_double_negation(path, lines))
+        if self._rule_enabled("BSL061"):
+            diagnostics.extend(self._rule_bsl061_abrupt_loop_exit(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -3394,6 +3479,122 @@ class DiagnosticEngine:
                 blank_run = 0
         return diags
 
+
+    # ------------------------------------------------------------------
+    # BSL059 — Boolean literal comparison
+    # ------------------------------------------------------------------
+
+    def _rule_bsl059_bool_literal_comparison(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag А = Истина / А = Ложь — use the boolean expression directly."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.lstrip().startswith("//"):
+                continue
+            m = _RE_BOOL_LITERAL_CMP.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL059",
+                        message=(
+                            "Comparison to boolean literal — "
+                            "use the expression directly: "
+                            "'Если А Тогда' instead of 'Если А = Истина Тогда'."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL060 — Double negation
+    # ------------------------------------------------------------------
+
+    def _rule_bsl060_double_negation(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag НЕ НЕ / Not Not — double negation always cancels out."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.lstrip().startswith("//"):
+                continue
+            m = _RE_DOUBLE_NEGATION.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL060",
+                        message=(
+                            "Double negation 'НЕ НЕ ...' — "
+                            "the two negations cancel out; use the expression directly."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL061 — Прервать as last loop body statement
+    # ------------------------------------------------------------------
+
+    def _rule_bsl061_abrupt_loop_exit(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag Прервать/Break as the very last non-blank statement before КонецЦикла.
+        The loop could be rewritten with a proper loop condition instead.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_LOOP_OPEN.match(lines[i]):
+                # Walk to matching КонецЦикла
+                depth = 1
+                loop_start = i
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_LOOP_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_LOOP_CLOSE.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    j += 1
+                # Find last non-blank statement before j
+                end_idx = j
+                k = end_idx - 1
+                while k > loop_start and not lines[k].strip():
+                    k -= 1
+                if k > loop_start and _RE_BREAK.match(lines[k]):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=k + 1,
+                            character=len(lines[k]) - len(lines[k].lstrip()),
+                            end_line=k + 1,
+                            end_character=len(lines[k]),
+                            severity=Severity.INFORMATION,
+                            code="BSL061",
+                            message=(
+                                "Прервать/Break is the last statement of the loop body — "
+                                "consider using a proper loop condition instead."
+                            ),
+                        )
+                    )
+                i = end_idx + 1
+                continue
+            i += 1
+        return diags
 
     # ------------------------------------------------------------------
     # BSL056 — Short method name (< 3 chars)

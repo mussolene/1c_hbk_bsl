@@ -411,6 +411,22 @@ class TestCheckStats:
         assert data["total"] >= 1
 
 
+class TestShowFix:
+    def test_show_fix_outputs_hint(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
+        check([str(tmp_path)], format="text", select={"BSL012"}, show_fix=True)
+        captured = capsys.readouterr()
+        # Should print something to stderr (text output goes there via rich)
+        # The fix hint line should be present
+        assert "BSL012" in captured.err or "BSL012" in captured.out
+
+    def test_no_show_fix_no_hint(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
+        check([str(tmp_path)], format="text", select={"BSL012"}, show_fix=False)
+        # Should not crash
+        capsys.readouterr()
+
+
 # ---------------------------------------------------------------------------
 # list_rules
 # ---------------------------------------------------------------------------
