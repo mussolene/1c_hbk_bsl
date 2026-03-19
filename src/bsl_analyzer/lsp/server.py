@@ -2119,20 +2119,25 @@ def on_inlay_hint(
             if not param_names:
                 continue
 
-            # Split args by comma (naive — doesn't handle nested calls)
-            args = [a.strip() for a in args_text.split(",")]
+            # Split args by comma keeping raw (unstripped) chunks to track real offsets
+            raw_args = m.group(2).split(",")
 
-            # Emit hint for each positional arg
+            # Emit hint for each positional arg.
+            # Track offset in the raw group(2) text to correctly handle ", " separators
+            # and multi-byte Cyrillic characters (Python len() counts code points, matching
+            # LSP UTF-16 for BMP characters).
             arg_start = m.start(2)
-            pos_in_args = 0
-            for i, arg in enumerate(args):
+            pos_in_raw = 0
+            for i, raw_arg in enumerate(raw_args):
                 if i >= len(param_names):
                     break
+                arg_stripped = raw_arg.strip()
+                leading = len(raw_arg) - len(raw_arg.lstrip())
                 param_name = param_names[i]
-                if not param_name or param_name == arg:
-                    pos_in_args += len(arg) + 1
+                if not param_name or param_name.casefold() == arg_stripped.casefold():
+                    pos_in_raw += len(raw_arg) + 1  # +1 for ','
                     continue
-                char = arg_start + pos_in_args
+                char = arg_start + pos_in_raw + leading
                 hints.append(
                     InlayHint(
                         position=Position(line=line_idx, character=char),
@@ -2141,7 +2146,7 @@ def on_inlay_hint(
                         padding_right=True,
                     )
                 )
-                pos_in_args += len(arg) + 1
+                pos_in_raw += len(raw_arg) + 1  # +1 for ','
 
     return hints if hints else None
 
