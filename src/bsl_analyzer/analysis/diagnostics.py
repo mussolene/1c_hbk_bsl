@@ -612,6 +612,30 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["suspicious", "correctness"],
     },
+    "BSL071": {
+        "name": "MagicNumber",
+        "description": "Magic number literal used directly in code — extract to a named constant",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "maintainability"],
+    },
+    "BSL072": {
+        "name": "StringConcatenationInLoop",
+        "description": "String concatenation with '+' inside a loop — use an array and StrConcat",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance"],
+    },
+    "BSL073": {
+        "name": "MissingElseBranch",
+        "description": "Если/If statement has no Иначе/Else branch — may miss unexpected values",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "defensive-programming"],
+    },
 }
 
 
@@ -663,6 +687,9 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL068": "Replace long ИначеЕсли chain with a dictionary/map lookup or polymorphism.",
     "BSL069": "Add a Прервать or exit condition to prevent an infinite loop.",
     "BSL070": "Add a comment or remove the empty loop body.",
+    "BSL071": "Extract the number to a named constant: Конст МаксКоличество = 100;",
+    "BSL072": "Use МассивСтрок = Новый Массив; and join with СтрСоединить() after the loop.",
+    "BSL073": "Add an Иначе branch to handle unexpected values explicitly.",
 }
 
 
@@ -1149,6 +1176,20 @@ _RE_EXECUTABLE_LINE = re.compile(
     re.IGNORECASE,
 )
 
+# Magic number literal (BSL071) — integer or float not 0 or 1
+_RE_MAGIC_NUMBER = re.compile(
+    r'(?<![.\w\d])(?!0\b|1\b)(\d+(?:\.\d+)?)(?![\w\d.])',
+)
+
+# String concatenation in loop: variable + " (BSL072)
+_RE_STR_CONCAT = re.compile(
+    r'\w+\s*\+\s*(?:"[^"]*"|\'[^\']*\')',
+    re.IGNORECASE,
+)
+
+# Иначе/Else branch detection (BSL073)
+_RE_ELSE = re.compile(r'^\s*(?:Иначе|Else)\b(?!\s*(?:Если|If)\b)', re.IGNORECASE)
+
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
@@ -1593,6 +1634,12 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl069_infinite_loop(path, lines))
         if self._rule_enabled("BSL070"):
             diagnostics.extend(self._rule_bsl070_empty_loop_body(path, lines))
+        if self._rule_enabled("BSL071"):
+            diagnostics.extend(self._rule_bsl071_magic_number(path, lines, procs))
+        if self._rule_enabled("BSL072"):
+            diagnostics.extend(self._rule_bsl072_string_concat_in_loop(path, lines))
+        if self._rule_enabled("BSL073"):
+            diagnostics.extend(self._rule_bsl073_missing_else_branch(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -4244,6 +4291,169 @@ class DiagnosticEngine:
                             message=(
                                 "Loop body contains no executable statements. "
                                 "Add a comment explaining intent or remove the loop."
+                            ),
+                        )
+                    )
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL071 — Magic number literal
+    # ------------------------------------------------------------------
+
+    # Numbers always allowed (too common/obvious to flag)
+    _MAGIC_NUMBER_ALLOWED: frozenset[str] = frozenset({"0", "1", "2", "-1", "100"})
+
+    def _rule_bsl071_magic_number(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag numeric literals (other than 0, 1, 2, 100, -1) used directly
+        inside method bodies. Constants and module-level assignments are excluded.
+        """
+        if not procs:
+            return []
+        # Build a set of line ranges that are inside procedure/function bodies
+        body_ranges: list[tuple[int, int]] = [
+            (proc.start_idx + 1, proc.end_idx) for proc in procs
+        ]
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            # Only flag inside method bodies
+            if not any(start <= idx < end for start, end in body_ranges):
+                continue
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            # Skip constant declarations: Конст Х = 100;
+            if re.match(r'^\s*(?:Конст|Const)\b', line, re.IGNORECASE):
+                continue
+            for m in _RE_MAGIC_NUMBER.finditer(line):
+                num = m.group(1)
+                if num in self._MAGIC_NUMBER_ALLOWED:
+                    continue
+                col = m.start(1)
+                # Skip if it looks like part of a method name or string position
+                pre = line[:col]
+                if pre.rstrip().endswith('"') or pre.rstrip().endswith("'"):
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=col,
+                        end_line=idx + 1,
+                        end_character=col + len(num),
+                        severity=Severity.INFORMATION,
+                        code="BSL071",
+                        message=(
+                            f"Magic number '{num}' — extract to a named constant "
+                            "for better readability and maintainability."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL072 — String concatenation inside a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl072_string_concat_in_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag lines inside a loop body that concatenate a variable with a string literal
+        using '+'. This is an O(n²) operation — collect into an array and join instead.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_LOOP_OPEN.match(lines[i]):
+                depth = 1
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_LOOP_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_LOOP_CLOSE.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        stripped = lines[j].strip()
+                        if stripped and not stripped.startswith("//"):
+                            if _RE_STR_CONCAT.search(lines[j]):
+                                diags.append(
+                                    Diagnostic(
+                                        file=path,
+                                        line=j + 1,
+                                        character=len(lines[j]) - len(lines[j].lstrip()),
+                                        end_line=j + 1,
+                                        end_character=len(lines[j].rstrip()),
+                                        severity=Severity.WARNING,
+                                        code="BSL072",
+                                        message=(
+                                            "String concatenation with '+' inside a loop "
+                                            "is O(n²). Use an array and СтрСоединить()."
+                                        ),
+                                    )
+                                )
+                    j += 1
+                i = j + 1
+                continue
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL073 — Если/If without Иначе/Else
+    # ------------------------------------------------------------------
+
+    MAX_IF_DEPTH_FOR_ELSE_CHECK: int = 1  # only top-level if-blocks
+
+    def _rule_bsl073_missing_else_branch(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """
+        Flag top-level Если/If blocks that have at least one ИначеЕсли but no Иначе/Else.
+        Pure 'Если ... Тогда ... КонецЕсли' without any ИначеЕсли are not flagged.
+        """
+        diags: list[Diagnostic] = []
+        i = 0
+        while i < len(lines):
+            if _RE_IF_OPEN.match(lines[i]):
+                if_start = i
+                depth = 1
+                has_elseif = False
+                has_else = False
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    if _RE_IF_OPEN.match(lines[j]):
+                        depth += 1
+                    elif _RE_ENDIF.match(lines[j]):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        if _RE_ELSEIF.match(lines[j]):
+                            has_elseif = True
+                        elif _RE_ELSE.match(lines[j]):
+                            has_else = True
+                    j += 1
+                if has_elseif and not has_else:
+                    header = lines[if_start]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=if_start + 1,
+                            character=len(header) - len(header.lstrip()),
+                            end_line=if_start + 1,
+                            end_character=len(header.rstrip()),
+                            severity=Severity.INFORMATION,
+                            code="BSL073",
+                            message=(
+                                "Если/If with ИначеЕсли/ElsIf branches but no Иначе/Else — "
+                                "add a default Иначе branch for unexpected values."
                             ),
                         )
                     )

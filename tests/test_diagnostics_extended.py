@@ -2079,9 +2079,113 @@ class TestBsl070EmptyLoopBody:
 # ---------------------------------------------------------------------------
 
 
+class TestBsl071MagicNumber:
+    def test_magic_number_in_method_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если А > 42 Тогда
+        Б = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL071"})
+        assert "BSL071" in _codes(diags)
+
+    def test_common_numbers_not_flagged(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 0;
+    Б = 1;
+    В = 2;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL071"})
+        assert "BSL071" not in _codes(diags)
+
+    def test_no_method_body_not_flagged(self, tmp_path: Path) -> None:
+        content = "А = 42;\n"
+        diags = _check(content, tmp_path, select={"BSL071"})
+        assert "BSL071" not in _codes(diags)
+
+
+class TestBsl072StringConcatInLoop:
+    def test_concat_in_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        Результат = Результат + "строка";
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL072"})
+        assert "BSL072" in _codes(diags)
+
+    def test_concat_outside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Результат = Результат + "строка";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL072"})
+        assert "BSL072" not in _codes(diags)
+
+    def test_numeric_add_in_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для А = 1 По 10 Цикл
+        Сумма = Сумма + А;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL072"})
+        assert "BSL072" not in _codes(diags)
+
+
+class TestBsl073MissingElseBranch:
+    def test_if_with_elseif_no_else_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А = 1 Тогда
+        Б = 1;
+    ИначеЕсли А = 2 Тогда
+        Б = 2;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL073"})
+        assert "BSL073" in _codes(diags)
+
+    def test_if_with_elseif_and_else_ok(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А = 1 Тогда
+        Б = 1;
+    ИначеЕсли А = 2 Тогда
+        Б = 2;
+    Иначе
+        Б = 0;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL073"})
+        assert "BSL073" not in _codes(diags)
+
+    def test_simple_if_without_elseif_no_warning(self, tmp_path: Path) -> None:
+        """Pure Если...Тогда...КонецЕсли without any ИначеЕсли is not flagged."""
+        content = """\
+Процедура Тест(А)
+    Если А = 1 Тогда
+        Б = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL073"})
+        assert "BSL073" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 71)}
+        expected = {f"BSL{i:03d}" for i in range(1, 74)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
