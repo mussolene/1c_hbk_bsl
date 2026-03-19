@@ -908,6 +908,86 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "suspicious"],
     },
+    "BSL108": {
+        "name": "UseOfGlobalVariables",
+        "description": "Module-level exported variable — avoid mutable shared state",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["design", "suspicious"],
+    },
+    "BSL109": {
+        "name": "NegativeConditionalReturn",
+        "description": "Если НЕ ... Тогда Возврат — invert the condition to reduce nesting",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL110": {
+        "name": "StringConcatInLoop",
+        "description": "String concatenation inside a loop — use a list and join instead",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance", "correctness"],
+    },
+    "BSL111": {
+        "name": "MixedLanguageIdentifiers",
+        "description": "Identifier mixes Cyrillic and Latin characters — use one script consistently",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["style", "suspicious"],
+    },
+    "BSL112": {
+        "name": "UnterminatedTransaction",
+        "description": "НачатьТранзакцию() without matching ЗафиксироватьТранзакцию/ОтменитьТранзакцию",
+        "severity": "ERROR",
+        "sonar_type": "BUG",
+        "sonar_severity": "CRITICAL",
+        "tags": ["correctness", "data-integrity"],
+    },
+    "BSL113": {
+        "name": "AssignmentInCondition",
+        "description": "Assignment operator inside an Если condition — likely a typo for comparison",
+        "severity": "WARNING",
+        "sonar_type": "BUG",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
+    "BSL114": {
+        "name": "EmptyModule",
+        "description": "Module contains no executable code — remove or populate it",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "suspicious"],
+    },
+    "BSL115": {
+        "name": "ChainedNegation",
+        "description": "Double negation НЕ НЕ — simplify to the positive condition",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["correctness", "readability"],
+    },
+    "BSL116": {
+        "name": "UseOfObsoleteIterator",
+        "description": "Use of obsolete iteration pattern — prefer ДляКаждого/ForEach",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["style", "readability"],
+    },
+    "BSL117": {
+        "name": "ProcedureCalledAsFunction",
+        "description": "Result of a procedure call is used in an expression — procedures do not return values",
+        "severity": "ERROR",
+        "sonar_type": "BUG",
+        "sonar_severity": "CRITICAL",
+        "tags": ["correctness", "suspicious"],
+    },
 }
 
 
@@ -996,6 +1076,16 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL105": "Remove Приостановить() from server-side code; use asynchronous patterns instead.",
     "BSL106": "Move the query outside the loop or rewrite using batch operations.",
     "BSL107": "Remove the empty Тогда branch or add the missing logic.",
+    "BSL108": "Remove the exported module variable and pass the value as a parameter instead.",
+    "BSL109": "Invert the condition and remove the guard-clause nesting.",
+    "BSL110": "Collect parts into a list (Массив) and use СтрСоединить() after the loop.",
+    "BSL111": "Rename the identifier to use a single script (all Cyrillic or all Latin).",
+    "BSL112": "Wrap the НачатьТранзакцию block in a Попытка and always call ЗафиксироватьТранзакцию or ОтменитьТранзакцию.",
+    "BSL113": "Replace the assignment '=' with a comparison operator '=' inside the condition.",
+    "BSL114": "Populate the module with code or delete it.",
+    "BSL115": "Simplify НЕ НЕ to the positive form of the condition.",
+    "BSL116": "Replace the Для i = 0 По ... pattern with ДляКаждого where applicable.",
+    "BSL117": "Check whether you intended to call a Функция instead of a Процедура.",
 }
 
 
@@ -1582,6 +1672,37 @@ _RE_NEGATIVE_CONDITION = re.compile(
 # Выполнить() / Execute() — dynamic code execution (BSL098)
 _RE_EXECUTE = re.compile(r'\b(?:Выполнить|Execute)\s*\(', re.IGNORECASE)
 
+# Exported Перем declaration (BSL108): Перем X Экспорт
+_RE_EXPORTED_VAR = re.compile(
+    r'^\s*(?:Перем|Var)\b[^;]*\bЭкспорт\b',
+    re.IGNORECASE,
+)
+
+# String self-concatenation in loop: А = А + "..." or А = А + Б (BSL110)
+_RE_STR_CONCAT_SELF = re.compile(
+    r'^\s*(\w+)\s*=\s*\1\s*\+\s*(?:"[^"]*"|\w)',
+    re.IGNORECASE,
+)
+
+# Mixed Cyrillic+Latin identifier (BSL111)
+# Matches a sequence where Cyrillic and Latin characters are interleaved
+_RE_MIXED_IDENT = re.compile(
+    r'(?:[А-ЯЁа-яё]+[A-Za-z]|[A-Za-z]+[А-ЯЁа-яё])\w*',
+)
+
+# Assignment inside Если condition: Если Х = (expression without comparison operator) (BSL113)
+# Detect patterns like: Если А = Б(  — i.e. = followed by a function call or bare word
+_RE_ASSIGN_IN_COND = re.compile(
+    r'^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+\w+\s*=\s*\w',
+    re.IGNORECASE,
+)
+
+# Double negation: НЕ НЕ or Not Not (BSL115)
+_RE_DOUBLE_NEGATION = re.compile(
+    r'\b(?:НЕ|Not)\s+(?:НЕ|Not)\b',
+    re.IGNORECASE,
+)
+
 # Hardcoded file path in string literal (BSL100)
 _RE_HARDCODED_PATH = re.compile(
     r'"(?:[A-Za-z]:\\|/(?:home|usr|etc|var|opt|tmp)/)[^"]*"',
@@ -2125,6 +2246,26 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl106_query_in_loop(path, lines))
         if self._rule_enabled("BSL107"):
             diagnostics.extend(self._rule_bsl107_empty_then_branch(path, lines))
+        if self._rule_enabled("BSL108"):
+            diagnostics.extend(self._rule_bsl108_use_of_global_variables(path, lines))
+        if self._rule_enabled("BSL109"):
+            diagnostics.extend(self._rule_bsl109_negative_conditional_return(path, lines))
+        if self._rule_enabled("BSL110"):
+            diagnostics.extend(self._rule_bsl110_string_concat_in_loop(path, lines))
+        if self._rule_enabled("BSL111"):
+            diagnostics.extend(self._rule_bsl111_mixed_language_identifiers(path, lines))
+        if self._rule_enabled("BSL112"):
+            diagnostics.extend(self._rule_bsl112_unterminated_transaction(path, lines))
+        if self._rule_enabled("BSL113"):
+            diagnostics.extend(self._rule_bsl113_assignment_in_condition(path, lines))
+        if self._rule_enabled("BSL114"):
+            diagnostics.extend(self._rule_bsl114_empty_module(path, lines))
+        if self._rule_enabled("BSL115"):
+            diagnostics.extend(self._rule_bsl115_chained_negation(path, lines))
+        if self._rule_enabled("BSL116"):
+            diagnostics.extend(self._rule_bsl116_use_of_obsolete_iterator(path, lines))
+        if self._rule_enabled("BSL117"):
+            diagnostics.extend(self._rule_bsl117_procedure_called_as_function(path, lines, procs))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -6248,6 +6389,357 @@ class DiagnosticEngine:
                         message=(
                             "Empty Тогда branch — "
                             "add the missing logic or remove the branch."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL108 — Exported module-level variable
+    # ------------------------------------------------------------------
+
+    def _rule_bsl108_use_of_global_variables(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag module-level Перем declarations that are exported."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_EXPORTED_VAR.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL108",
+                        message=(
+                            "Exported module variable introduces mutable shared state — "
+                            "pass the value as a parameter instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL109 — Negative conditional guard return
+    # ------------------------------------------------------------------
+
+    def _rule_bsl109_negative_conditional_return(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Если НЕ ... Тогда / Возврат pattern (guard clause with inverted cond)."""
+        diags: list[Diagnostic] = []
+        n = len(lines)
+        for idx, line in enumerate(lines):
+            if not _RE_NEGATIVE_CONDITION.match(line):
+                continue
+            # Next non-blank non-comment line should be a bare return
+            next_idx = idx + 1
+            while next_idx < n and (
+                not lines[next_idx].strip() or lines[next_idx].strip().startswith("//")
+            ):
+                next_idx += 1
+            if next_idx >= n:
+                continue
+            if _RE_RETURN_STMT.match(lines[next_idx]):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL109",
+                        message=(
+                            "Guard-clause with НЕ — "
+                            "invert the condition to reduce nesting."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL110 — String self-concatenation inside a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl110_string_concat_in_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag А = А + '...' patterns inside a loop body."""
+        diags: list[Diagnostic] = []
+        loop_depth = 0
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if _RE_LOOP_OPEN.match(line) or _RE_LOOP_FOR.match(line):
+                loop_depth += 1
+            elif _RE_LOOP_ENDDO.match(line):
+                loop_depth = max(0, loop_depth - 1)
+            elif loop_depth > 0:
+                m = _RE_STR_CONCAT_SELF.match(line)
+                if m:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=len(line) - len(line.lstrip()),
+                            end_line=idx + 1,
+                            end_character=len(line.rstrip()),
+                            severity=Severity.WARNING,
+                            code="BSL110",
+                            message=(
+                                "String self-concatenation inside a loop — "
+                                "collect parts in a list and join after the loop."
+                            ),
+                        )
+                    )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL111 — Mixed-language identifier
+    # ------------------------------------------------------------------
+
+    def _rule_bsl111_mixed_language_identifiers(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag identifiers that mix Cyrillic and Latin characters."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_MIXED_IDENT.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL111",
+                        message=(
+                            f"Identifier '{m.group()}' mixes Cyrillic and Latin — "
+                            "use one script consistently."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL112 — Unterminated transaction
+    # ------------------------------------------------------------------
+
+    def _rule_bsl112_unterminated_transaction(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag НачатьТранзакцию() calls that have no matching commit/rollback."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if not _RE_BEGIN_TRANSACTION.search(line):
+                continue
+            # Scan the rest of the procedure/function for commit or rollback
+            found_end = False
+            for j in range(idx + 1, len(lines)):
+                jline = lines[j].strip()
+                if _RE_COMMIT_TRANSACTION.search(jline):
+                    found_end = True
+                    break
+                # Stop at the end of the enclosing procedure/function
+                if re.match(
+                    r'(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)',
+                    jline,
+                    re.IGNORECASE,
+                ):
+                    break
+            if not found_end:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.ERROR,
+                        code="BSL112",
+                        message=(
+                            "НачатьТранзакцию() has no matching "
+                            "ЗафиксироватьТранзакцию()/ОтменитьТранзакцию() in the same scope."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL113 — Assignment inside Если condition
+    # ------------------------------------------------------------------
+
+    def _rule_bsl113_assignment_in_condition(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Если/ИначеЕсли lines that look like they use = for assignment."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_ASSIGN_IN_COND.match(line):
+                # Exclude lines that already contain a comparison operator (<>, >=, <=)
+                if re.search(r'<>|>=|<=', line):
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL113",
+                        message=(
+                            "Possible assignment inside condition — "
+                            "use a comparison operator instead of '='."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL114 — Empty module
+    # ------------------------------------------------------------------
+
+    def _rule_bsl114_empty_module(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag modules with no executable code (only blanks/comments)."""
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("//") and not stripped.startswith("#"):
+                return []
+        # All lines are blank/comment/region
+        return [
+            Diagnostic(
+                file=path,
+                line=1,
+                character=0,
+                end_line=1,
+                end_character=0,
+                severity=Severity.INFORMATION,
+                code="BSL114",
+                message="Module contains no executable code — populate or remove it.",
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # BSL115 — Double negation (НЕ НЕ)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl115_chained_negation(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag НЕ НЕ / Not Not double negation."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_DOUBLE_NEGATION.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL115",
+                        message=(
+                            "Double negation НЕ НЕ — "
+                            "simplify to the positive condition."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL116 — Obsolete indexed iterator (Для И = 0 По ... Цикл)
+    # ------------------------------------------------------------------
+
+    _RE_FOR_INDEX = re.compile(
+        r'^\s*(?:Для|For)\s+\w+\s*=\s*\d+\s+(?:По|To)\b',
+        re.IGNORECASE,
+    )
+
+    def _rule_bsl116_use_of_obsolete_iterator(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag indexed Для loops when a ДляКаждого pattern is available."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if self._RE_FOR_INDEX.match(line):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.INFORMATION,
+                        code="BSL116",
+                        message=(
+                            "Indexed Для loop — "
+                            "prefer ДляКаждого/ForEach when iterating collections."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL117 — Procedure called as function (result used in expression)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl117_procedure_called_as_function(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag calls to known Процедура where the return value is used."""
+        # Build set of procedure names (not functions)
+        procedure_names = {
+            p.name.lower() for p in procs if p.kind == "procedure"
+        }
+        if not procedure_names:
+            return []
+        # Pattern: Var = ProcName(
+        _re_proc_as_func = re.compile(
+            r'^\s*\w+\s*=\s*(' + '|'.join(re.escape(n) for n in procedure_names) + r')\s*\(',
+            re.IGNORECASE,
+        )
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _re_proc_as_func.match(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.ERROR,
+                        code="BSL117",
+                        message=(
+                            f"'{m.group(1)}' is a Процедура — "
+                            "it does not return a value; check whether you meant a Функция."
                         ),
                     )
                 )

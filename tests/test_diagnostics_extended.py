@@ -3010,9 +3010,195 @@ class TestBsl107EmptyThenBranch:
         assert "BSL107" not in _codes(diags)
 
 
+class TestBsl108UseOfGlobalVariables:
+    def test_exported_var_detected(self, tmp_path: Path) -> None:
+        content = "Перем ГлобальнаяПеременная Экспорт;\n"
+        diags = _check(content, tmp_path, select={"BSL108"})
+        assert "BSL108" in _codes(diags)
+
+    def test_non_exported_var_no_warning(self, tmp_path: Path) -> None:
+        content = "Перем ЛокальнаяПеременная;\n"
+        diags = _check(content, tmp_path, select={"BSL108"})
+        assert "BSL108" not in _codes(diags)
+
+
+class TestBsl109NegativeConditionalReturn:
+    def test_not_condition_with_return_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если НЕ А > 0 Тогда
+        Возврат;
+    КонецЕсли;
+    // основная логика
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL109"})
+        assert "BSL109" in _codes(diags)
+
+    def test_not_condition_without_return_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если НЕ А > 0 Тогда
+        Б = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL109"})
+        assert "BSL109" not in _codes(diags)
+
+
+class TestBsl110StringConcatInLoop:
+    def test_concat_in_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока Условие Цикл
+        Строка = Строка + "часть";
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL110"})
+        assert "BSL110" in _codes(diags)
+
+    def test_concat_outside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Строка = Строка + "часть";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL110"})
+        assert "BSL110" not in _codes(diags)
+
+
+class TestBsl111MixedLanguageIdentifiers:
+    def test_mixed_ident_detected(self, tmp_path: Path) -> None:
+        content = "ИмяName = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL111"})
+        assert "BSL111" in _codes(diags)
+
+    def test_pure_cyrillic_no_warning(self, tmp_path: Path) -> None:
+        content = "Имя = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL111"})
+        assert "BSL111" not in _codes(diags)
+
+    def test_pure_latin_no_warning(self, tmp_path: Path) -> None:
+        content = "Name = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL111"})
+        assert "BSL111" not in _codes(diags)
+
+
+class TestBsl112UnterminatedTransaction:
+    def test_begin_without_commit_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    НачатьТранзакцию();
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL112"})
+        assert "BSL112" in _codes(diags)
+
+    def test_begin_with_commit_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    НачатьТранзакцию();
+    А = 1;
+    ЗафиксироватьТранзакцию();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL112"})
+        assert "BSL112" not in _codes(diags)
+
+
+class TestBsl113AssignmentInCondition:
+    def test_assignment_in_if_detected(self, tmp_path: Path) -> None:
+        content = "Если А = Б Тогда\n    В = 1;\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL113"})
+        assert "BSL113" in _codes(diags)
+
+    def test_comparison_operator_no_warning(self, tmp_path: Path) -> None:
+        content = "Если А <> Б Тогда\n    В = 1;\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL113"})
+        assert "BSL113" not in _codes(diags)
+
+
+class TestBsl114EmptyModule:
+    def test_only_comments_detected(self, tmp_path: Path) -> None:
+        content = "// Просто комментарий\n"
+        diags = _check(content, tmp_path, select={"BSL114"})
+        assert "BSL114" in _codes(diags)
+
+    def test_module_with_code_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL114"})
+        assert "BSL114" not in _codes(diags)
+
+
+class TestBsl115ChainedNegation:
+    def test_double_negation_detected(self, tmp_path: Path) -> None:
+        content = "Если НЕ НЕ А Тогда\n    Б = 1;\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL115"})
+        assert "BSL115" in _codes(diags)
+
+    def test_single_negation_no_warning(self, tmp_path: Path) -> None:
+        content = "Если НЕ А Тогда\n    Б = 1;\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL115"})
+        assert "BSL115" not in _codes(diags)
+
+
+class TestBsl116UseOfObsoleteIterator:
+    def test_indexed_for_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Для И = 0 По 10 Цикл
+        А = 1;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL116"})
+        assert "BSL116" in _codes(diags)
+
+    def test_foreach_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    ДляКаждого Элемент Из Список Цикл
+        А = 1;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL116"})
+        assert "BSL116" not in _codes(diags)
+
+
+class TestBsl117ProcedureCalledAsFunction:
+    def test_proc_result_used_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура ВыполнитьДействие()
+КонецПроцедуры
+
+Процедура Тест()
+    Рез = ВыполнитьДействие();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL117"})
+        assert "BSL117" in _codes(diags)
+
+    def test_function_result_used_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Функция ПолучитьЗначение()
+    Возврат 42;
+КонецФункции
+
+Процедура Тест()
+    Рез = ПолучитьЗначение();
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL117"})
+        assert "BSL117" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 108)}
+        expected = {f"BSL{i:03d}" for i in range(1, 118)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
