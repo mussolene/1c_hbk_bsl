@@ -828,6 +828,86 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_severity": "MINOR",
         "tags": ["correctness", "suspicious"],
     },
+    "BSL098": {
+        "name": "UseOfExecute",
+        "description": "Выполнить()/Execute() executes code from a string — security and maintainability risk",
+        "severity": "WARNING",
+        "sonar_type": "VULNERABILITY",
+        "sonar_severity": "MAJOR",
+        "tags": ["security", "suspicious"],
+    },
+    "BSL099": {
+        "name": "TooManyParameters",
+        "description": "Procedure/function has too many parameters — split into a structure or separate methods",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["design", "complexity"],
+    },
+    "BSL100": {
+        "name": "HardcodedFilePath",
+        "description": "Hardcoded file path in a string literal — use a parameter or configuration value",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["portability", "suspicious"],
+    },
+    "BSL101": {
+        "name": "TooDeepNesting",
+        "description": "Code nesting depth exceeds the allowed maximum — refactor into smaller functions",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["complexity", "readability"],
+    },
+    "BSL102": {
+        "name": "LargeModule",
+        "description": "Module exceeds the maximum allowed number of lines — split into smaller modules",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MINOR",
+        "tags": ["design", "complexity"],
+    },
+    "BSL103": {
+        "name": "UseOfEval",
+        "description": "Вычислить()/Eval() evaluates a dynamic expression — security and maintainability risk",
+        "severity": "WARNING",
+        "sonar_type": "VULNERABILITY",
+        "sonar_severity": "MAJOR",
+        "tags": ["security", "suspicious"],
+    },
+    "BSL104": {
+        "name": "MissingModuleComment",
+        "description": "Module has no comment header at the top — add a description of its purpose",
+        "severity": "INFORMATION",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "INFO",
+        "tags": ["style", "documentation"],
+    },
+    "BSL105": {
+        "name": "UseOfSleep",
+        "description": "Приостановить()/Sleep() blocks the current thread — avoid in server-side code",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance", "suspicious"],
+    },
+    "BSL106": {
+        "name": "QueryInLoop",
+        "description": "SQL query (ВЫБРАТЬ/SELECT) inside a loop — move outside the loop or use batch queries",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["performance", "correctness"],
+    },
+    "BSL107": {
+        "name": "EmptyThenBranch",
+        "description": "Empty Тогда branch in Если statement — remove the branch or add meaningful code",
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["correctness", "suspicious"],
+    },
 }
 
 
@@ -906,6 +986,16 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL095": "Split the line into separate statements for readability.",
     "BSL096": "Add a // Description comment block before the Export method.",
     "BSL097": "Replace ТекущаяДата() with ТекущаяДатаСеанса() for consistent session-based time.",
+    "BSL098": "Refactor to avoid dynamic code execution — use explicit calls instead of Выполнить().",
+    "BSL099": "Consolidate parameters into a structure (Структура) or split into separate methods.",
+    "BSL100": "Replace hardcoded path with a configuration parameter or constant.",
+    "BSL101": "Extract nested logic into a separate helper procedure or function.",
+    "BSL102": "Split the module into smaller focused modules with clear responsibilities.",
+    "BSL103": "Replace Вычислить() with explicit conditional logic or a lookup table.",
+    "BSL104": "Add a // Module description comment block at the top of the file.",
+    "BSL105": "Remove Приостановить() from server-side code; use asynchronous patterns instead.",
+    "BSL106": "Move the query outside the loop or rewrite using batch operations.",
+    "BSL107": "Remove the empty Тогда branch or add the missing logic.",
 }
 
 
@@ -1489,6 +1579,34 @@ _RE_NEGATIVE_CONDITION = re.compile(
     re.IGNORECASE,
 )
 
+# Выполнить() / Execute() — dynamic code execution (BSL098)
+_RE_EXECUTE = re.compile(r'\b(?:Выполнить|Execute)\s*\(', re.IGNORECASE)
+
+# Hardcoded file path in string literal (BSL100)
+_RE_HARDCODED_PATH = re.compile(
+    r'"(?:[A-Za-z]:\\|/(?:home|usr|etc|var|opt|tmp)/)[^"]*"',
+    re.IGNORECASE,
+)
+
+# Loop opening / closing for QueryInLoop and TooDeepNesting tracking
+_RE_LOOP_FOR = re.compile(
+    r'^\s*(?:Для|For|ДляКаждого|ForEach)\b',
+    re.IGNORECASE,
+)
+_RE_LOOP_ENDDO = re.compile(r'^\s*(?:КонецЦикла|EndDo)\b', re.IGNORECASE)
+
+# SQL query start (BSL106)
+_RE_SQL_SELECT = re.compile(r'(?:ВЫБРАТЬ|SELECT)\b', re.IGNORECASE)
+
+# Вычислить() / Eval() — dynamic expression evaluation (BSL103)
+_RE_EVAL = re.compile(r'\b(?:Вычислить|Eval)\s*\(', re.IGNORECASE)
+
+# Приостановить() / Sleep() (BSL105)
+_RE_SLEEP = re.compile(r'\b(?:Приостановить|Sleep)\s*\(', re.IGNORECASE)
+
+# Тогда — Then keyword for EmptyThenBranch (BSL107)
+_RE_THEN = re.compile(r'\b(?:Тогда|Then)\s*$', re.IGNORECASE)
+
 # ---------------------------------------------------------------------------
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
@@ -1987,6 +2105,26 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl096_undocumented_export_method(path, lines, procs))
         if self._rule_enabled("BSL097"):
             diagnostics.extend(self._rule_bsl097_use_of_current_date(path, lines))
+        if self._rule_enabled("BSL098"):
+            diagnostics.extend(self._rule_bsl098_use_of_execute(path, lines))
+        if self._rule_enabled("BSL099"):
+            diagnostics.extend(self._rule_bsl099_too_many_parameters(path, lines, procs))
+        if self._rule_enabled("BSL100"):
+            diagnostics.extend(self._rule_bsl100_hardcoded_file_path(path, lines))
+        if self._rule_enabled("BSL101"):
+            diagnostics.extend(self._rule_bsl101_too_deep_nesting(path, lines))
+        if self._rule_enabled("BSL102"):
+            diagnostics.extend(self._rule_bsl102_large_module(path, lines))
+        if self._rule_enabled("BSL103"):
+            diagnostics.extend(self._rule_bsl103_use_of_eval(path, lines))
+        if self._rule_enabled("BSL104"):
+            diagnostics.extend(self._rule_bsl104_missing_module_comment(path, lines))
+        if self._rule_enabled("BSL105"):
+            diagnostics.extend(self._rule_bsl105_use_of_sleep(path, lines))
+        if self._rule_enabled("BSL106"):
+            diagnostics.extend(self._rule_bsl106_query_in_loop(path, lines))
+        if self._rule_enabled("BSL107"):
+            diagnostics.extend(self._rule_bsl107_empty_then_branch(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -5750,6 +5888,366 @@ class DiagnosticEngine:
                         message=(
                             f"'{m.group().rstrip('(')}' returns server time — "
                             "use ТекущаяДатаСеанса() for consistent session-based time."
+                        ),
+                    )
+                )
+        return diags
+
+
+    # ------------------------------------------------------------------
+    # BSL098 — Use of Выполнить() / Execute()
+    # ------------------------------------------------------------------
+
+    def _rule_bsl098_use_of_execute(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Выполнить()/Execute() — dynamic code execution."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_EXECUTE.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL098",
+                        message=(
+                            f"'{m.group().rstrip('(')}()' executes code from a string — "
+                            "refactor to use explicit calls instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL099 — Too many parameters
+    # ------------------------------------------------------------------
+
+    _MAX_PARAMS = 7
+
+    def _rule_bsl099_too_many_parameters(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Flag procedures/functions with more than MAX_PARAMS parameters."""
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if len(proc.params) > self._MAX_PARAMS:
+                header = lines[proc.start_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=proc.header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=len(header.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL099",
+                        message=(
+                            f"'{proc.name}' has {len(proc.params)} parameters "
+                            f"(max {self._MAX_PARAMS}) — consolidate into a structure."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL100 — Hardcoded file path
+    # ------------------------------------------------------------------
+
+    def _rule_bsl100_hardcoded_file_path(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag string literals containing hardcoded file system paths."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_HARDCODED_PATH.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL100",
+                        message=(
+                            "Hardcoded file path detected — "
+                            "use a configuration parameter or constant instead."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL101 — Too deep nesting
+    # ------------------------------------------------------------------
+
+    _MAX_NESTING_DEPTH = 5
+
+    # Keywords that increase nesting depth
+    _NESTING_OPEN = re.compile(
+        r'^\s*(?:Если|If|ИначеЕсли|ElsIf|Иначе|Else|'
+        r'Для|For|ДляКаждого|ForEach|Пока|While|'
+        r'Попытка|Try|Исключение|Except)\b',
+        re.IGNORECASE,
+    )
+    _NESTING_CLOSE = re.compile(
+        r'^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b',
+        re.IGNORECASE,
+    )
+
+    def _rule_bsl101_too_deep_nesting(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag lines where the structural nesting depth exceeds the maximum."""
+        diags: list[Diagnostic] = []
+        depth = 0
+        reported: set[int] = set()
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            # Decrease depth on closing keywords before reporting
+            if self._NESTING_CLOSE.match(line):
+                depth = max(0, depth - 1)
+            if depth > self._MAX_NESTING_DEPTH and idx not in reported:
+                reported.add(idx)
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL101",
+                        message=(
+                            f"Nesting depth {depth} exceeds maximum "
+                            f"{self._MAX_NESTING_DEPTH} — extract to a helper function."
+                        ),
+                    )
+                )
+            # Increase depth on opening keywords after reporting
+            if self._NESTING_OPEN.match(line):
+                depth += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL102 — Large module
+    # ------------------------------------------------------------------
+
+    _MAX_MODULE_LINES = 500
+
+    def _rule_bsl102_large_module(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag modules with more than MAX_MODULE_LINES non-blank lines."""
+        total = len(lines)
+        if total <= self._MAX_MODULE_LINES:
+            return []
+        return [
+            Diagnostic(
+                file=path,
+                line=1,
+                character=0,
+                end_line=1,
+                end_character=0,
+                severity=Severity.INFORMATION,
+                code="BSL102",
+                message=(
+                    f"Module has {total} lines "
+                    f"(max {self._MAX_MODULE_LINES}) — split into smaller modules."
+                ),
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # BSL103 — Use of Вычислить() / Eval()
+    # ------------------------------------------------------------------
+
+    def _rule_bsl103_use_of_eval(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Вычислить()/Eval() — dynamic expression evaluation."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_EVAL.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL103",
+                        message=(
+                            f"'{m.group().rstrip('(')}()' evaluates a dynamic expression — "
+                            "replace with explicit conditional logic."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL104 — Missing module comment header
+    # ------------------------------------------------------------------
+
+    def _rule_bsl104_missing_module_comment(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag modules that have no comment block in the first 5 lines."""
+        if not lines:
+            return []
+        first_lines = lines[:5]
+        has_comment = any(ln.strip().startswith("//") for ln in first_lines)
+        if has_comment:
+            return []
+        # Skip empty files or files that start with a region
+        first_non_blank = next(
+            (ln.strip() for ln in lines if ln.strip()), ""
+        )
+        if first_non_blank.startswith("#"):
+            return []
+        return [
+            Diagnostic(
+                file=path,
+                line=1,
+                character=0,
+                end_line=1,
+                end_character=0,
+                severity=Severity.INFORMATION,
+                code="BSL104",
+                message=(
+                    "Module has no comment header — "
+                    "add a // description of the module's purpose."
+                ),
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # BSL105 — Use of Приостановить() / Sleep()
+    # ------------------------------------------------------------------
+
+    def _rule_bsl105_use_of_sleep(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Приостановить()/Sleep() — blocks the current thread."""
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            m = _RE_SLEEP.search(line)
+            if m:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL105",
+                        message=(
+                            f"'{m.group().rstrip('(')}()' blocks the current thread — "
+                            "avoid in server-side code."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL106 — Query (ВЫБРАТЬ/SELECT) inside a loop
+    # ------------------------------------------------------------------
+
+    def _rule_bsl106_query_in_loop(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag SQL queries that appear inside a Цикл/EndDo loop."""
+        diags: list[Diagnostic] = []
+        loop_depth = 0
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                # Track loop depth even on blank/comment lines? No — skip
+                continue
+            if _RE_LOOP_OPEN.match(line) or _RE_LOOP_FOR.match(line):
+                loop_depth += 1
+            elif _RE_LOOP_ENDDO.match(line):
+                loop_depth = max(0, loop_depth - 1)
+            elif loop_depth > 0 and _RE_SQL_SELECT.search(line):
+                m = _RE_SQL_SELECT.search(line)
+                assert m is not None
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL106",
+                        message=(
+                            "SQL query inside a loop — "
+                            "move outside the loop or use batch operations."
+                        ),
+                    )
+                )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL107 — Empty Тогда branch in Если statement
+    # ------------------------------------------------------------------
+
+    def _rule_bsl107_empty_then_branch(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag Если ... Тогда blocks whose body is empty (next non-blank is КонецЕсли/ИначеЕсли/Иначе)."""
+        diags: list[Diagnostic] = []
+        n = len(lines)
+        for idx, line in enumerate(lines):
+            if not _RE_THEN.search(line):
+                continue
+            if line.strip().startswith("//"):
+                continue
+            # Look ahead for the first non-blank, non-comment line
+            next_idx = idx + 1
+            while next_idx < n and (
+                not lines[next_idx].strip() or lines[next_idx].strip().startswith("//")
+            ):
+                next_idx += 1
+            if next_idx >= n:
+                continue
+            is_empty = (
+                _RE_ENDIF.match(lines[next_idx])
+                or _RE_ELSEIF.match(lines[next_idx])
+                or _RE_ELSE.match(lines[next_idx])
+            )
+            if is_empty:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=idx + 1,
+                        end_character=len(line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL107",
+                        message=(
+                            "Empty Тогда branch — "
+                            "add the missing logic or remove the branch."
                         ),
                     )
                 )

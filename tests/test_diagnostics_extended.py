@@ -2798,9 +2798,221 @@ EndProcedure
         assert "BSL097" not in _codes(diags)
 
 
+class TestBsl098UseOfExecute:
+    def test_execute_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Выполнить("А = 1;");
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL098"})
+        assert "BSL098" in _codes(diags)
+
+    def test_comment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    // Выполнить("А = 1;");
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL098"})
+        assert "BSL098" not in _codes(diags)
+
+    def test_no_execute_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL098"})
+        assert "BSL098" not in _codes(diags)
+
+
+class TestBsl099TooManyParameters:
+    def test_eight_params_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А, Б, В, Г, Д, Е, Ж, З)
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL099"})
+        assert "BSL099" in _codes(diags)
+
+    def test_seven_params_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А, Б, В, Г, Д, Е, Ж)
+    А = 1;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL099"})
+        assert "BSL099" not in _codes(diags)
+
+
+class TestBsl100HardcodedFilePath:
+    def test_windows_path_detected(self, tmp_path: Path) -> None:
+        content = 'Путь = "C:\\Users\\test\\file.txt";\n'
+        diags = _check(content, tmp_path, select={"BSL100"})
+        assert "BSL100" in _codes(diags)
+
+    def test_unix_path_detected(self, tmp_path: Path) -> None:
+        content = 'Путь = "/home/user/file.txt";\n'
+        diags = _check(content, tmp_path, select={"BSL100"})
+        assert "BSL100" in _codes(diags)
+
+    def test_relative_path_no_warning(self, tmp_path: Path) -> None:
+        content = 'Путь = "documents/file.txt";\n'
+        diags = _check(content, tmp_path, select={"BSL100"})
+        assert "BSL100" not in _codes(diags)
+
+
+class TestBsl101TooDeepNesting:
+    def test_deep_nesting_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если А Тогда
+        Если Б Тогда
+            Если В Тогда
+                Если Г Тогда
+                    Если Д Тогда
+                        Если Е Тогда
+                            Х = 1;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+            КонецЕсли;
+        КонецЕсли;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL101"})
+        assert "BSL101" in _codes(diags)
+
+    def test_shallow_nesting_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если А Тогда
+        Если Б Тогда
+            Х = 1;
+        КонецЕсли;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL101"})
+        assert "BSL101" not in _codes(diags)
+
+
+class TestBsl102LargeModule:
+    def test_large_module_detected(self, tmp_path: Path) -> None:
+        lines = ["А = 1;\n"] * 501
+        content = "".join(lines)
+        diags = _check(content, tmp_path, select={"BSL102"})
+        assert "BSL102" in _codes(diags)
+
+    def test_small_module_no_warning(self, tmp_path: Path) -> None:
+        content = "А = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL102"})
+        assert "BSL102" not in _codes(diags)
+
+
+class TestBsl103UseOfEval:
+    def test_eval_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Рез = Вычислить("1 + 2");
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL103"})
+        assert "BSL103" in _codes(diags)
+
+    def test_comment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    // Рез = Вычислить("1 + 2");
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL103"})
+        assert "BSL103" not in _codes(diags)
+
+
+class TestBsl104MissingModuleComment:
+    def test_no_comment_detected(self, tmp_path: Path) -> None:
+        content = "А = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL104"})
+        assert "BSL104" in _codes(diags)
+
+    def test_comment_at_top_no_warning(self, tmp_path: Path) -> None:
+        content = "// Описание модуля\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL104"})
+        assert "BSL104" not in _codes(diags)
+
+
+class TestBsl105UseOfSleep:
+    def test_sleep_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Приостановить(1000);
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL105"})
+        assert "BSL105" in _codes(diags)
+
+    def test_comment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    // Приостановить(1000);
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL105"})
+        assert "BSL105" not in _codes(diags)
+
+
+class TestBsl106QueryInLoop:
+    def test_select_in_while_loop_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока Условие Цикл
+        Запрос = "ВЫБРАТЬ * ИЗ Таблица";
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL106"})
+        assert "BSL106" in _codes(diags)
+
+    def test_select_outside_loop_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = "ВЫБРАТЬ * ИЗ Таблица";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL106"})
+        assert "BSL106" not in _codes(diags)
+
+
+class TestBsl107EmptyThenBranch:
+    def test_empty_then_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А > 0 Тогда
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL107"})
+        assert "BSL107" in _codes(diags)
+
+    def test_then_with_code_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(А)
+    Если А > 0 Тогда
+        Б = 1;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL107"})
+        assert "BSL107" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from bsl_analyzer.analysis.diagnostics import RULE_METADATA
-        expected = {f"BSL{i:03d}" for i in range(1, 98)}
+        expected = {f"BSL{i:03d}" for i in range(1, 108)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"
