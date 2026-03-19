@@ -380,6 +380,40 @@ class SymbolIndex:
         ).fetchone()
         return int(row[0]) if row else 0
 
+    def find_callers_count_non_recursive(self, callee_name: str) -> int:
+        """Count call sites for *callee_name*, excluding recursive self-calls."""
+        conn = self._conn()
+        name_lo = callee_name.casefold()
+        row = conn.execute(
+            """
+            SELECT COUNT(*) FROM calls
+            WHERE callee_name_lower = ?
+              AND (caller_name IS NULL OR LOWER(caller_name) != ?)
+            """,
+            (name_lo, name_lo),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def find_unused_symbols(self, file_path: str) -> list[dict[str, Any]]:
+        """Return non-export procedures/functions in *file_path* with zero non-recursive callers."""
+        conn = self._conn()
+        rows = conn.execute(
+            """
+            SELECT s.* FROM symbols s
+            WHERE s.file_path = ?
+              AND s.kind IN ('procedure', 'function')
+              AND s.is_export = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM calls c
+                  WHERE c.callee_name_lower = s.name_lower
+                    AND (c.caller_name IS NULL OR LOWER(c.caller_name) != s.name_lower)
+              )
+            ORDER BY s.line
+            """,
+            (file_path,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def find_callers(self, callee_name: str, limit: int = 50) -> list[dict[str, Any]]:
         """
         Find all call sites that call *callee_name*.

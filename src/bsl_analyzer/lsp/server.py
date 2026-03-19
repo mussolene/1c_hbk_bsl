@@ -11,7 +11,7 @@ Capabilities implemented:
   - textDocument/references
   - textDocument/rename + textDocument/prepareRename
   - callHierarchy/prepare + callHierarchy/incomingCalls + callHierarchy/outgoingCalls
-  - textDocument/formatting + textDocument/rangeFormatting
+  - textDocument/formatting + textDocument/rangeFormatting + textDocument/onTypeFormatting
   - textDocument/semanticTokens/full
   - textDocument/inlayHint
   - textDocument/documentHighlight
@@ -51,6 +51,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_INLAY_HINT,
     TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY,
     TEXT_DOCUMENT_PREPARE_RENAME,
+    TEXT_DOCUMENT_ON_TYPE_FORMATTING,
     TEXT_DOCUMENT_RANGE_FORMATTING,
     TEXT_DOCUMENT_REFERENCES,
     TEXT_DOCUMENT_RENAME,
@@ -72,6 +73,7 @@ from lsprotocol.types import (
     CompletionParams,
     DefinitionParams,
     DiagnosticSeverity,
+    DiagnosticTag,
     DidChangeTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
@@ -79,6 +81,8 @@ from lsprotocol.types import (
     DocumentHighlight,
     DocumentHighlightKind,
     DocumentHighlightParams,
+    DocumentOnTypeFormattingOptions,
+    DocumentOnTypeFormattingParams,
     DocumentRangeFormattingParams,
     DocumentSymbol,
     DocumentSymbolParams,
@@ -124,7 +128,11 @@ except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
 from bsl_analyzer.analysis.diagnostics import DiagnosticEngine, Severity
-from bsl_analyzer.analysis.formatter import default_formatter
+from bsl_analyzer.analysis.formatter import (
+    default_formatter,
+    _DEDENT_BEFORE,
+    _get_stripped_keyword,
+)
 from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
 from bsl_analyzer.indexer.db_path import resolve_index_db_path
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
@@ -373,6 +381,30 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
             )
             for d in issues
         ]
+
+        # Unused (dead) function detection: private symbols with no callers
+        # Uses DiagnosticTag.Unnecessary → VSCode renders them as dimmed text
+        try:
+            for sym in ls.symbol_index.find_unused_symbols(path):
+                name = sym.get("name", "")
+                sym_line = max(0, sym["line"] - 1)
+                sym_char = sym.get("character", 0)
+                lsp_diags.append(
+                    LspDiagnostic(
+                        range=Range(
+                            start=Position(line=sym_line, character=sym_char),
+                            end=Position(line=sym_line, character=sym_char + len(name)),
+                        ),
+                        severity=DiagnosticSeverity.Hint,
+                        code="BSL-DEAD",
+                        message=f"«{name}» не используется в проекте",
+                        source="bsl-analyzer",
+                        tags=[DiagnosticTag.Unnecessary],
+                    )
+                )
+        except Exception as exc:
+            logger.debug("LSP: unused detection failed for %s: %s", path, exc)
+
         ls.text_document_publish_diagnostics(
             PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags)
         )
@@ -482,33 +514,32 @@ def _format_doc_comment(raw: str) -> str:
     """Strip BSL ``// `` line prefixes and render the doc comment as Markdown.
 
     Input:  '// Описание.\\n//\\n// Параметры:\\n//   А - Тип - Описание'
-    Output: 'Описание.\\n\\n**Параметры:**\\n- А — Тип — Описание'
+    Output: 'Описание.\\n\\n**Параметры:**\\n- А - Тип - Описание'
     """
-    lines = []
+    in_section = False  # True after a section header line (Параметры: etc.)
+    lines: list[str] = []
     for line in raw.splitlines():
         stripped = line.strip()
-        # Remove leading // and optional single space
+        # Strip the // prefix (and one optional space) to get the text content
         if stripped.startswith("///"):
             text = stripped[3:].lstrip()
         elif stripped.startswith("//"):
-            text = stripped[2:]
-            if text.startswith(" "):
-                text = text[1:]
+            text = stripped[2:].lstrip()  # strip ALL leading spaces after //
         else:
             text = stripped
 
-        # Convert section headers
+        # Section headers
         if _re.match(r"^Параметры:\s*$", text, _re.IGNORECASE):
-            lines.append("\n**Параметры:**")
+            lines.append("**Параметры:**")
+            in_section = True
         elif _re.match(r"^Возвращаемое значение:\s*$", text, _re.IGNORECASE):
-            lines.append("\n**Возвращаемое значение:**")
-        elif _re.match(r"^Описание\s", text, _re.IGNORECASE):
-            # "Описание МойМетод." → keep as-is (first line)
-            lines.append(text)
+            lines.append("**Возвращаемое значение:**")
+            in_section = True
         elif text == "":
+            in_section = False
             lines.append("")  # blank line
-        elif lines and lines[-1].endswith("**"):
-            # Line after a section header — format as list item
+        elif in_section:
+            # Parameter / return-value entry — format as Markdown list item
             lines.append(f"- {text}")
         else:
             lines.append(text)
@@ -1366,6 +1397,70 @@ def on_range_formatting(
                 end=Position(line=r.end.line + 1, character=0),
             ),
             new_text=formatted_range,
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
+# On-type formatting (auto-indent on Enter)
+# ---------------------------------------------------------------------------
+
+
+@server.feature(
+    TEXT_DOCUMENT_ON_TYPE_FORMATTING,
+    DocumentOnTypeFormattingOptions(first_trigger_character="\n"),
+)
+def on_type_formatting(
+    ls: BslLanguageServer, params: DocumentOnTypeFormattingParams
+) -> list[TextEdit] | None:
+    """Auto-indent the new line when the user presses Enter.
+
+    Computes the correct BSL indent level using the formatter's internal
+    ``_indent_at`` logic (respects Процедура/КонецПроцедуры, Если/КонецЕсли, etc.)
+    and returns a single TextEdit that replaces the line's leading whitespace.
+    """
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+
+    indent_size = (params.options.tab_size if params.options else None) or 4
+    lines = content.splitlines()
+
+    # position.line is the newly-created line (where the cursor landed after Enter).
+    new_line_idx = params.position.line
+    if new_line_idx <= 0 or new_line_idx > len(lines):
+        return None
+
+    # Compute expected indent level from all lines above the new one
+    context = lines[:new_line_idx]
+    indent_level = default_formatter._indent_at(context, len(context), indent_size)
+
+    # If the new line already contains a keyword that dedents (КонецЕсли, Иначе, …),
+    # reduce the indent level by one so the keyword aligns with its opener
+    current_line = lines[new_line_idx] if new_line_idx < len(lines) else ""
+    stripped = current_line.lstrip()
+    if stripped:
+        first_kw = _get_stripped_keyword(stripped)
+        if first_kw in _DEDENT_BEFORE:
+            indent_level = max(0, indent_level - 1)
+
+    wanted = " " * (indent_level * indent_size)
+
+    # Current leading whitespace on the new line
+    current_indent_len = len(current_line) - len(stripped) if stripped else len(current_line)
+    current_indent = current_line[:current_indent_len]
+
+    if current_indent == wanted:
+        return []  # already correct — nothing to do
+
+    return [
+        TextEdit(
+            range=Range(
+                start=Position(line=new_line_idx, character=0),
+                end=Position(line=new_line_idx, character=current_indent_len),
+            ),
+            new_text=wanted,
         )
     ]
 

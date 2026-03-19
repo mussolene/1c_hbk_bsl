@@ -563,3 +563,78 @@ class TestGetModuleExports:
         results = symbol_index.get_module_exports("мойМОДУЛЬ")
         names = [r["name"] for r in results]
         assert "Метод" in names
+
+
+# ---------------------------------------------------------------------------
+# find_unused_symbols + find_callers_count_non_recursive (Unused detection)
+# ---------------------------------------------------------------------------
+
+
+class TestFindUnusedSymbols:
+    _FILE = "/workspace/module.bsl"
+    _CALLER_FILE = "/workspace/caller.bsl"
+
+    def _sym(self, name: str, kind: str = "function", is_export: bool = False) -> dict:
+        return {
+            "name": name,
+            "line": 1,
+            "character": 0,
+            "end_line": 5,
+            "end_character": 0,
+            "kind": kind,
+            "is_export": is_export,
+            "signature": f"{name}()",
+            "doc_comment": None,
+        }
+
+    def test_unused_private_function_detected(self, symbol_index: SymbolIndex) -> None:
+        symbol_index.upsert_file(self._FILE, [self._sym("НеВызывается")], [])
+        unused = symbol_index.find_unused_symbols(self._FILE)
+        assert any(u["name"] == "НеВызывается" for u in unused)
+
+    def test_used_function_not_in_unused(self, symbol_index: SymbolIndex) -> None:
+        symbol_index.upsert_file(self._FILE, [self._sym("Вызывается")], [])
+        symbol_index.upsert_file(
+            self._CALLER_FILE,
+            [self._sym("КаллерМетод")],
+            [{"caller_file": self._CALLER_FILE, "caller_line": 10,
+              "caller_name": "КаллерМетод", "callee_name": "Вызывается",
+              "callee_args_count": 0}],
+        )
+        unused = symbol_index.find_unused_symbols(self._FILE)
+        assert not any(u["name"] == "Вызывается" for u in unused)
+
+    def test_export_function_not_in_unused(self, symbol_index: SymbolIndex) -> None:
+        symbol_index.upsert_file(self._FILE, [self._sym("ЭкспортМетод", is_export=True)], [])
+        unused = symbol_index.find_unused_symbols(self._FILE)
+        assert not any(u["name"] == "ЭкспортМетод" for u in unused)
+
+    def test_recursive_function_is_unused(self, symbol_index: SymbolIndex) -> None:
+        """A function that only calls itself counts as unused."""
+        symbol_index.upsert_file(self._FILE, [self._sym("Рекурсия")], [])
+        symbol_index.upsert_file(
+            self._FILE,
+            [self._sym("Рекурсия")],
+            [{"caller_file": self._FILE, "caller_line": 3,
+              "caller_name": "Рекурсия", "callee_name": "Рекурсия",
+              "callee_args_count": 0}],
+        )
+        unused = symbol_index.find_unused_symbols(self._FILE)
+        assert any(u["name"] == "Рекурсия" for u in unused)
+
+    def test_non_recursive_count_zero_for_unused(self, symbol_index: SymbolIndex) -> None:
+        symbol_index.upsert_file(self._FILE, [self._sym("Функция1")], [])
+        count = symbol_index.find_callers_count_non_recursive("Функция1")
+        assert count == 0
+
+    def test_non_recursive_count_positive_for_used(self, symbol_index: SymbolIndex) -> None:
+        symbol_index.upsert_file(self._FILE, [self._sym("Функция2")], [])
+        symbol_index.upsert_file(
+            self._CALLER_FILE,
+            [self._sym("Другая")],
+            [{"caller_file": self._CALLER_FILE, "caller_line": 5,
+              "caller_name": "Другая", "callee_name": "Функция2",
+              "callee_args_count": 0}],
+        )
+        count = symbol_index.find_callers_count_non_recursive("Функция2")
+        assert count == 1

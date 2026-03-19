@@ -821,3 +821,100 @@ class TestGenerateDocComment:
         result = _generate_doc_comment(lines[0], 0, lines)
         assert result is not None
         assert "Параметры" not in result
+
+
+# ---------------------------------------------------------------------------
+# on_type_formatting (auto-indent on Enter)
+# ---------------------------------------------------------------------------
+
+
+class TestOnTypeFormatting:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import BslLanguageServer
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        return ls
+
+    def test_indents_inside_procedure(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_type_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        # User pressed Enter after "Процедура Тест()" — cursor is on line 1 (empty)
+        content = "Процедура Тест()\n\nКонецПроцедуры\n"
+        ls._docs["file:///test.bsl"] = content
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.position.line = 1
+        params.options.tab_size = 4
+        result = on_type_formatting(ls, params)
+        assert result is not None
+        # Should produce 4-space indent
+        assert any(e.new_text == "    " for e in result)
+
+    def test_dedents_konets_procedure(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_type_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        # КонецПроцедуры should be at indent 0
+        content = "Процедура Тест()\n    КонецПроцедуры\n"
+        ls._docs["file:///test.bsl"] = content
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.position.line = 1
+        params.options.tab_size = 4
+        result = on_type_formatting(ls, params)
+        assert result is not None
+        assert any(e.new_text == "" for e in result)
+
+    def test_empty_content_returns_none(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_type_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///empty.bsl"
+        params.position.line = 1
+        params.options.tab_size = 4
+        result = on_type_formatting(ls, params)
+        assert result is None
+
+    def test_nested_if_indents_body(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        from bsl_analyzer.lsp.server import on_type_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        content = "Процедура Тест()\n    Если А > 0 Тогда\n\n    КонецЕсли;\nКонецПроцедуры\n"
+        ls._docs["file:///test.bsl"] = content
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.position.line = 2  # blank line inside Если
+        params.options.tab_size = 4
+        result = on_type_formatting(ls, params)
+        assert result is not None
+        assert any(e.new_text == "        " for e in result)  # 8 spaces (2 levels)
+
+
+# ---------------------------------------------------------------------------
+# _format_doc_comment hover rendering
+# ---------------------------------------------------------------------------
+
+
+class TestFormatDocComment:
+    def test_strips_slashes(self) -> None:
+        from bsl_analyzer.lsp.server import _format_doc_comment
+        raw = "// Описание функции."
+        result = _format_doc_comment(raw)
+        assert result == "Описание функции."
+
+    def test_params_section_as_list(self) -> None:
+        from bsl_analyzer.lsp.server import _format_doc_comment
+        raw = "// Описание.\n//\n// Параметры:\n//   А - Тип - Описание"
+        result = _format_doc_comment(raw)
+        assert "**Параметры:**" in result
+        assert "- А - Тип - Описание" in result
+
+    def test_blank_lines_collapsed(self) -> None:
+        from bsl_analyzer.lsp.server import _format_doc_comment
+        raw = "// А\n//\n//\n// Б"
+        result = _format_doc_comment(raw)
+        assert "\n\n\n" not in result
