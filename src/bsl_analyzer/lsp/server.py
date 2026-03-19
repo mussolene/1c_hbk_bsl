@@ -56,7 +56,10 @@ from lsprotocol.types import (
 from lsprotocol.types import (
     Diagnostic as LspDiagnostic,
 )
-from pygls.server import LanguageServer
+try:
+    from pygls.server import LanguageServer  # pygls < 1.2
+except ImportError:
+    from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
 from bsl_analyzer.analysis.diagnostics import DiagnosticEngine, Severity
 from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
