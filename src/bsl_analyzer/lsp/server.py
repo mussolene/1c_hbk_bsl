@@ -579,7 +579,9 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     left_word = _left_word_at_position(content, pos.line, pos.character)
 
     # 1. Символы рабочего пространства
-    symbols = ls.symbol_index.find_symbol(word, limit=5)
+    # Skip workspace/global lookup when cursor is on a member (Obj.Word) —
+    # workspace FTS is expensive and irrelevant for dot-access method names.
+    symbols = ls.symbol_index.find_symbol(word, limit=5) if not left_word else []
     if symbols:
         sym = symbols[0]
         kind_ru = _KIND_RU.get(sym.get("kind", ""), "символ")
@@ -602,8 +604,8 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
             parts.append(f"*Вызывается в {caller_count} местах*")
         return _hover_markdown(parts)
 
-    # 2. Глобальная функция платформы 1С
-    global_fn = ls.platform_api.find_global(word)
+    # 2. Глобальная функция платформы 1С (не применимо к вызовам через точку)
+    global_fn = ls.platform_api.find_global(word) if not left_word else None
     if global_fn:
         parts = [f"```bsl\n{global_fn.signature or global_fn.name}\n```"]
         if global_fn.description:

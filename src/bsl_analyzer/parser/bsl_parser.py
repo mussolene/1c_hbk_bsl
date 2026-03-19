@@ -136,13 +136,21 @@ class BslParser:
     def _collect_errors(self, node: Any, errors: list[dict]) -> None:
         """Recursively collect ERROR and MISSING nodes from a tree-sitter tree."""
         if node.type in ("ERROR", "error") or node.is_missing:
+            # Skip lone trailing `;` after block-ending keywords.
+            # tree-sitter-bsl grammar does not accept КонецЦикла;/КонецПроцедуры;/
+            # КонецФункции; but real-world BSL code often has them — not an error.
+            text = node.text if isinstance(node.text, bytes) else b""
+            if text.strip() == b";":
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
             errors.append(
                 {
                     "line": node.start_point[0] + 1,
                     "column": node.start_point[1],
                     "end_line": node.end_point[0] + 1,
                     "end_column": node.end_point[1],
-                    "message": f"Syntax error near '{node.text.decode('utf-8', errors='replace')[:40]}'",
+                    "message": f"Syntax error near '{text.decode('utf-8', errors='replace')[:40]}'",
                 }
             )
         for child in node.children:
