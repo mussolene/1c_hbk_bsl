@@ -217,6 +217,8 @@ make lsp        # запустить LSP-сервер из исходников
 
 MIT © 2024 BSL Analyzer Contributors
 
+Полный перечень зависимостей и заметки по лицензированию: [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md). Источники данных `data/`: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Аудит секретов: [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).
+
 ---
 
 ## Используемые проекты

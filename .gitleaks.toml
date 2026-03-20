@@ -1,0 +1,14 @@
+# Gitleaks: reduce false positives from intentional BSL test fixtures (fake tokens).
+# Run: gitleaks detect --source . --verbose
+# See: https://github.com/gitleaks/gitleaks
+
+title = "bsl-analyzer"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Diagnostic tests include fake token/password strings to assert BSL012 behavior"
+paths = [
+  '''tests/test_diagnostics_extended\.py''',
+]

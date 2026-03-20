@@ -36,8 +36,23 @@ const CLIENT_ID = "bslAnalyzer";
 const CLIENT_NAME = "BSL Analyzer";
 const BINARY_NAME = process.platform === "win32" ? "bsl-analyzer.exe" : "bsl-analyzer";
 
-/** GitHub release tag to download when no binary is found locally. */
-const RELEASE_TAG = "v0.2.0";
+/**
+ * Release tag on GitHub (`v` + extension version from package.json next to this build).
+ * Keeps fallback download aligned with the published VSIX version.
+ */
+function readExtensionReleaseTag(extensionPath: string): string {
+  try {
+    const pkgPath = path.join(extensionPath, "package.json");
+    const raw = fs.readFileSync(pkgPath, "utf8");
+    const pkg = JSON.parse(raw) as { version?: string };
+    if (pkg.version && /^\d+\.\d+/.test(pkg.version)) {
+      return `v${pkg.version}`;
+    }
+  } catch {
+    // ignore
+  }
+  return "v0.0.0";
+}
 
 /** Map from Node platform+arch → asset filename in GitHub Releases. */
 const PLATFORM_ASSETS: Record<string, string> = {
@@ -149,6 +164,7 @@ export async function deactivate(): Promise<void> {
  * binary outside the extension (e.g. `pip install` / `uv tool` / local build).
  */
 async function resolveBinaryPath(context: vscode.ExtensionContext): Promise<string | null> {
+  const releaseTag = readExtensionReleaseTag(context.extensionPath);
   const config = vscode.workspace.getConfiguration(EXTENSION_ID);
 
   // 1. Explicit settings override (highest priority)
@@ -176,13 +192,13 @@ async function resolveBinaryPath(context: vscode.ExtensionContext): Promise<stri
 
   // 4. Offer to download
   const choice = await vscode.window.showInformationMessage(
-    `BSL Analyzer server binary not found. Download ${RELEASE_TAG} automatically?`,
+    `BSL Analyzer server binary not found. Download ${releaseTag} automatically?`,
     "Download",
     "Set Path Manually",
   );
 
   if (choice === "Download") {
-    return downloadBinary(context, downloaded);
+    return downloadBinary(downloaded, releaseTag);
   }
 
   if (choice === "Set Path Manually") {
@@ -209,10 +225,7 @@ function isExecutable(filePath: string): boolean {
   }
 }
 
-async function downloadBinary(
-  _context: vscode.ExtensionContext,
-  destPath: string,
-): Promise<string | null> {
+async function downloadBinary(destPath: string, releaseTag: string): Promise<string | null> {
   const platformKey = `${process.platform}-${os.arch()}`;
   const assetName = PLATFORM_ASSETS[platformKey];
 
@@ -226,12 +239,12 @@ async function downloadBinary(
 
   const repoOwner = "mussolene";
   const repoName = "1c_hbk_bsl";
-  const url = `https://github.com/${repoOwner}/${repoName}/releases/download/${RELEASE_TAG}/${assetName}`;
+  const url = `https://github.com/${repoOwner}/${repoName}/releases/download/${releaseTag}/${assetName}`;
 
   return vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: `BSL Analyzer: Downloading server binary (${RELEASE_TAG})…`,
+      title: `BSL Analyzer: Downloading server binary (${releaseTag})…`,
       cancellable: false,
     },
     async (progress) => {
