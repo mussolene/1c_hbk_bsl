@@ -68,6 +68,7 @@ class ApiType:
     description: str = ""
     methods: list[ApiMethod] = field(default_factory=list)
     properties: list[ApiProperty] = field(default_factory=list)
+    constructors: list[str] = field(default_factory=list)  # constructor signature strings
 
 
 # ---------------------------------------------------------------------------
@@ -836,6 +837,7 @@ class PlatformApi:
             description=td.get("description", ""),
             methods=methods,
             properties=properties,
+            constructors=td.get("constructors", []),
         )
         self._types[t.name] = t
         self._type_index[t.name.lower()] = t.name

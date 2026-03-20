@@ -31,6 +31,7 @@ import threading
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from lsprotocol.types import (
     CALL_HIERARCHY_INCOMING_CALLS,
@@ -603,10 +604,19 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
 
     left_word = _left_word_at_position(content, pos.line, pos.character)
 
+    # Detect `Новый TypeName` context: check word immediately before cursor on same line.
+    lines = content.splitlines()
+    _cur_line = lines[pos.line] if pos.line < len(lines) else ""
+    _before_word = _cur_line[:pos.character - len(word)].rstrip()
+    _after_new = _re.search(
+        r"(?:Новый|New)\s*$", _before_word, _re.IGNORECASE | _re.UNICODE
+    ) is not None
+
     # 0. Local variable scope (parameters, Перем, loop vars, assignments).
     #    Check before workspace index — locals shadow global names.
-    #    Skip when cursor is on the right side of a dot (member access).
-    if not left_word:
+    #    Skip when cursor is on the right side of a dot (member access)
+    #    and skip when we are in `Новый TypeName` context.
+    if not left_word and not _after_new:
         try:
             _tree = ls.parser.parse_content(content, file_path=uri)
             _local_vars = _extract_scope_vars(_tree, pos.line)
@@ -629,9 +639,16 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
             pass
 
     # 1. Символы рабочего пространства
-    # Skip workspace/global lookup when cursor is on a member (Obj.Word) —
-    # workspace FTS is expensive and irrelevant for dot-access method names.
-    symbols = ls.symbol_index.find_symbol(word, limit=5) if not left_word else []
+    # Skip workspace/global lookup when:
+    #   - cursor is on a member (Obj.Word) — FTS irrelevant for dot-access
+    #   - cursor is in `Новый TypeName` context — always a platform type
+    #   - word is a known platform TYPE name — type info takes priority
+    _is_platform_type = ls.platform_api.find_type(word) is not None
+    symbols = (
+        ls.symbol_index.find_symbol(word, limit=5)
+        if not left_word and not _after_new and not _is_platform_type
+        else []
+    )
     if symbols:
         sym = symbols[0]
         kind_ru = _KIND_RU.get(sym.get("kind", ""), "символ")
@@ -672,9 +689,13 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
         parts = [f"**{api_type.name}** *({kind_ru} платформы 1С)*"]
         if api_type.description:
             parts.append(api_type.description)
+        # Show constructor signatures when in `Новый TypeName` context or hovering the type name
+        if api_type.constructors:
+            ctors = "\n".join(f"```bsl\n{c}\n```" for c in api_type.constructors)
+            parts.append(f"**Конструкторы:**\n{ctors}")
         if api_type.methods:
-            method_names = ", ".join(m.name for m in api_type.methods[:6])
-            suffix = "..." if len(api_type.methods) > 6 else ""
+            method_names = ", ".join(m.name for m in api_type.methods[:8])
+            suffix = f"... (+{len(api_type.methods) - 8})" if len(api_type.methods) > 8 else ""
             parts.append(f"*Методы:* {method_names}{suffix}")
         if api_type.properties:
             prop_names = ", ".join(p.name for p in api_type.properties[:4])
@@ -1377,7 +1398,7 @@ _META_COLLECTIONS: dict[str, str] = {
     "commonmodules": "ОбщиеМодули",
 }
 
-_META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, Any] = {}  # filled lazily below
+_META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, object] = {}  # unused; placeholder
 
 
 def _meta_dot_completions(
