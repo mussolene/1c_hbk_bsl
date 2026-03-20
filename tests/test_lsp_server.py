@@ -704,29 +704,42 @@ class TestMakeSnippet:
 
 
 class TestInferType:
+    def _parse(self, content: str):
+        from bsl_analyzer.parser.bsl_parser import BslParser
+        parser = BslParser()
+        return parser.parse_content(content, file_path="test.bsl")
+
     def test_infer_novyi_pattern(self) -> None:
-        from bsl_analyzer.lsp.server import _infer_type_from_content
+        from bsl_analyzer.analysis.type_inference import BslTypeEngine
 
         content = "Зап = Новый Запрос();\n"
-        assert _infer_type_from_content(content, "Зап") == "Запрос"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Зап", 0) == "Запрос"
 
     def test_infer_english_new(self) -> None:
-        from bsl_analyzer.lsp.server import _infer_type_from_content
+        from bsl_analyzer.analysis.type_inference import BslTypeEngine
 
         content = "Req = New HTTPRequest(url);\n"
-        assert _infer_type_from_content(content, "Req") == "HTTPRequest"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Req", 0) == "HTTPRequest"
 
     def test_infer_returns_none(self) -> None:
-        from bsl_analyzer.lsp.server import _infer_type_from_content
+        from bsl_analyzer.analysis.type_inference import BslTypeEngine
 
         content = "А = 1;\n"
-        assert _infer_type_from_content(content, "НесуществующаяПеремен") is None
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("НесуществующаяПеремен", 0) is None
 
     def test_infer_case_insensitive(self) -> None:
-        from bsl_analyzer.lsp.server import _infer_type_from_content
+        from bsl_analyzer.analysis.type_inference import BslTypeEngine
 
         content = "зап = НОВЫЙ Запрос();\n"
-        assert _infer_type_from_content(content, "ЗАП") == "Запрос"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("ЗАП", 0) == "Запрос"
 
 
 # ---------------------------------------------------------------------------
