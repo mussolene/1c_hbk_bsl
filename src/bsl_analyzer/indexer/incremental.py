@@ -8,8 +8,10 @@ so only modified .bsl/.os files are re-parsed on each run.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +47,8 @@ class IncrementalIndexer:
         self.index = index or SymbolIndex(db_path=db_path)
         self._parser = BslParser()
         self._on_progress = on_progress
+        # Parsing can be parallelized, writes stay serialized in SymbolIndex.
+        self._parse_workers = max(1, int(os.environ.get("BSL_INDEX_PARSE_WORKERS", "4")))
 
     # ------------------------------------------------------------------
     # Public API
@@ -174,13 +178,11 @@ class IncrementalIndexer:
             Dict with ``symbols`` and ``calls`` counts, plus ``error`` if failed.
         """
         try:
-            tree = self._parser.parse_file(path)
-            symbols = extract_symbols(tree, file_path=path)
-            calls = extract_calls(tree, file_path=path)
-
-            sym_dicts = [_symbol_to_dict(s) for s in symbols]
-            call_dicts = [_call_to_dict(c) for c in calls]
-
+            parsed = self._parse_file(path)
+            if "error" in parsed:
+                return {"symbols": 0, "calls": 0, "error": parsed["error"]}
+            sym_dicts = parsed["symbols"]
+            call_dicts = parsed["calls"]
             self.index.upsert_file(path, sym_dicts, call_dicts)
             return {"symbols": len(sym_dicts), "calls": len(call_dicts)}
 
@@ -196,6 +198,7 @@ class IncrementalIndexer:
         indexed = 0
         skipped = 0
         errors = 0
+        _ = workspace  # reserved for future workspace-scoped policies
 
         with Progress(
             TextColumn("[bold blue]{task.description}"),
@@ -205,27 +208,43 @@ class IncrementalIndexer:
             transient=True,
         ) as progress:
             task = progress.add_task("Indexing BSL files", total=len(files))
-
+            existing: list[str] = []
             for path in files:
-                progress.update(task, description=f"[bold blue]{Path(path).name}")
-
                 if not Path(path).exists():
                     # File was deleted — remove from index
                     self.index.remove_file(path)
                     skipped += 1
+                    if self._on_progress:
+                        self._on_progress(indexed + skipped + errors, len(files), path)
                     progress.advance(task)
                     continue
+                existing.append(path)
 
-                result = self.index_file(path)
-                if "error" in result:
-                    errors += 1
-                else:
-                    indexed += 1
+            # Parallel parsing with serialized writes to SQLite index.
+            with ThreadPoolExecutor(max_workers=self._parse_workers) as pool:
+                futures = {pool.submit(self._parse_file, path): path for path in existing}
+                for fut in as_completed(futures):
+                    path = futures[fut]
+                    progress.update(task, description=f"[bold blue]{Path(path).name}")
+                    try:
+                        parsed = fut.result()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error("Failed to parse %s: %s", path, exc)
+                        errors += 1
+                        progress.advance(task)
+                        if self._on_progress:
+                            self._on_progress(indexed + skipped + errors, len(files), path)
+                        continue
 
-                if self._on_progress:
-                    self._on_progress(indexed + skipped + errors, len(files), path)
+                    if "error" in parsed:
+                        errors += 1
+                    else:
+                        self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
+                        indexed += 1
 
-                progress.advance(task)
+                    if self._on_progress:
+                        self._on_progress(indexed + skipped + errors, len(files), path)
+                    progress.advance(task)
 
         logger.info(
             "Indexing complete: %d indexed, %d skipped, %d errors",
@@ -234,6 +253,19 @@ class IncrementalIndexer:
             errors,
         )
         return {"indexed": indexed, "skipped": skipped, "errors": errors}
+
+    def _parse_file(self, path: str) -> dict[str, Any]:
+        """Parse one file and return prepared symbol/call dict lists."""
+        try:
+            tree = self._parser.parse_file(path)
+            symbols = extract_symbols(tree, file_path=path)
+            calls = extract_calls(tree, file_path=path)
+            return {
+                "symbols": [_symbol_to_dict(s) for s in symbols],
+                "calls": [_call_to_dict(c) for c in calls],
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
 
     @staticmethod
     def _find_all_bsl_files(workspace: str) -> list[str]:
