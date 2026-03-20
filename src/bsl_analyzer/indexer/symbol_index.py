@@ -134,10 +134,22 @@ class SymbolIndex:
         # In-memory DBs are connection-scoped; keep per-instance connection to
         # avoid test isolation issues with the thread-local pool.
         self._mem_conn: sqlite3.Connection | None = None
-        conn = self._conn()
-        conn.executescript(SCHEMA_SQL)
-        self._migrate_sync(conn)
-        conn.commit()
+        try:
+            conn = self._conn()
+            conn.executescript(SCHEMA_SQL)
+            self._migrate_sync(conn)
+            conn.commit()
+        except sqlite3.OperationalError:
+            # Fallback for restricted/unstable filesystems where on-disk DB is not writable.
+            if self.db_path != ":memory:":
+                self.db_path = ":memory:"
+                self._mem_conn = None
+                conn = self._conn()
+                conn.executescript(SCHEMA_SQL)
+                self._migrate_sync(conn)
+                conn.commit()
+            else:
+                raise
         # Heavy data migrations (index build / data population) run in background
         # so they don't block LSP startup.
         threading.Thread(target=self._migrate_background, daemon=True,
@@ -222,11 +234,20 @@ class SymbolIndex:
             isolation_level=None,  # autocommit; we manage transactions manually
         )
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-131072")   # 128 MB page cache per connection
-        conn.execute("PRAGMA mmap_size=1073741824")  # 1 GB memory-mapped I/O
-        conn.execute("PRAGMA temp_store=MEMORY")
+        def _safe_pragma(sql: str) -> None:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError:
+                # Keep connection usable even when a particular pragma is unsupported.
+                pass
+
+        # Some filesystems/sandboxes do not support WAL; fallback to DELETE journal.
+        _safe_pragma("PRAGMA journal_mode=WAL")
+        _safe_pragma("PRAGMA journal_mode=DELETE")
+        _safe_pragma("PRAGMA synchronous=NORMAL")
+        _safe_pragma("PRAGMA cache_size=-131072")   # 128 MB page cache per connection
+        _safe_pragma("PRAGMA mmap_size=1073741824")  # 1 GB memory-mapped I/O
+        _safe_pragma("PRAGMA temp_store=MEMORY")
         # Override SQLite LOWER with Python's Unicode-aware casefold so that
         # Cyrillic (and other non-ASCII) characters are handled correctly.
         conn.create_function("LOWER", 1, lambda x: x.casefold() if isinstance(x, str) else x)

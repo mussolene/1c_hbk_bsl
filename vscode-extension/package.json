@@ -30,7 +30,12 @@
   "keywords": [
     "1C", "BSL", "1C Enterprise", "OneScript", "bsl-language-server"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:bsl",
+    "onCommand:bslAnalyzer.reindexWorkspace",
+    "onCommand:bslAnalyzer.reindexCurrentFile",
+    "onCommand:bslAnalyzer.showStatus"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
