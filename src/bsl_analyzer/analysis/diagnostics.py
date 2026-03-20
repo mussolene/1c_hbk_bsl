@@ -4117,7 +4117,7 @@ class DiagnosticEngine:
             "BSL180",  # DisableSafeMode — TODO
             "BSL181",  # DuplicatedInsertionIntoCollection — TODO
             "BSL182",  # ExcessiveAutoTestCheck — TODO
-            "BSL183",  # ExecuteExternalCode — TODO
+            # "BSL183" enabled — ExecuteExternalCode implemented
             "BSL184",  # ExecuteExternalCodeInCommonModule — TODO
             "BSL185",  # ExternalAppStarting — TODO
             # "BSL186" enabled — ExtraCommas implemented
@@ -4142,7 +4142,7 @@ class DiagnosticEngine:
             "BSL205",  # IsInRoleMethod — TODO
             "BSL206",  # JoinWithSubQuery — TODO
             "BSL207",  # JoinWithVirtualTable — TODO
-            "BSL208",  # LatinAndCyrillicSymbolInWord — TODO
+            # "BSL208" enabled — LatinAndCyrillicSymbolInWord implemented
             "BSL209",  # LogicalOrInJoinQuerySection — TODO
             "BSL210",  # LogicalOrInTheWhereSectionOfQuery — TODO
             "BSL211",  # MetadataObjectNameLength — TODO
@@ -4164,7 +4164,7 @@ class DiagnosticEngine:
             # "BSL227" enabled — OneStatementPerLine implemented
             "BSL228",  # OrderOfParams — TODO
             "BSL229",  # OrdinaryAppSupport — TODO
-            "BSL230",  # PairingBrokenTransaction — TODO
+            # "BSL230" enabled — PairingBrokenTransaction implemented
             "BSL231",  # PrivilegedModuleMethodCall — TODO
             "BSL232",  # ProtectedModule — TODO
             "BSL233",  # PublicMethodsDescription — TODO
@@ -4174,7 +4174,7 @@ class DiagnosticEngine:
             "BSL237",  # RedundantAccessToObject — TODO
             "BSL238",  # RefOveruse — TODO
             "BSL239",  # ReservedParameterNames — TODO
-            "BSL240",  # RewriteMethodParameter — TODO
+            # "BSL240" enabled — RewriteMethodParameter implemented
             "BSL241",  # SameMetadataObjectAndChildNames — TODO
             "BSL242",  # ScheduledJobHandler — TODO
             "BSL243",  # SelfInsertion — TODO
@@ -4197,9 +4197,9 @@ class DiagnosticEngine:
             "BSL260",  # UnsafeFindByCode — TODO
             "BSL261",  # UnsafeSafeModeMethodCall — TODO
             "BSL262",  # UsageWriteLogEvent — TODO
-            "BSL263",  # UseLessForEach — TODO
+            # "BSL263" enabled — UseLessForEach implemented
             "BSL264",  # UseSystemInformation — TODO
-            "BSL265",  # UselessTernaryOperator — TODO
+            # "BSL265" enabled — UselessTernaryOperator implemented
             "BSL266",  # UsingCancelParameter — TODO
             "BSL267",  # UsingExternalCodeTools — TODO
             "BSL268",  # UsingFindElementByString — TODO
@@ -4655,6 +4655,18 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl227_one_statement_per_line(path, lines, procs))
         if self._rule_enabled("BSL258"):
             diagnostics.extend(self._rule_bsl258_union_without_all(path, lines))
+        if self._rule_enabled("BSL183"):
+            diagnostics.extend(self._rule_bsl183_execute_external_code(path, lines))
+        if self._rule_enabled("BSL208"):
+            diagnostics.extend(self._rule_bsl208_latin_and_cyrillic_in_word(path, lines, procs))
+        if self._rule_enabled("BSL230"):
+            diagnostics.extend(self._rule_bsl230_pairing_broken_transaction(path, lines, procs))
+        if self._rule_enabled("BSL240"):
+            diagnostics.extend(self._rule_bsl240_rewrite_method_parameter(path, lines, procs))
+        if self._rule_enabled("BSL263"):
+            diagnostics.extend(self._rule_bsl263_useless_for_each(path, lines, procs))
+        if self._rule_enabled("BSL265"):
+            diagnostics.extend(self._rule_bsl265_useless_ternary_operator(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -10709,6 +10721,302 @@ class DiagnosticEngine:
                     message=(
                         "«ОБЪЕДИНИТЬ» без «ВСЕ» выполняет дедупликацию — "
                         "используйте «ОБЪЕДИНИТЬ ВСЕ» если дубли допустимы"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL183 — ExecuteExternalCode
+    # ------------------------------------------------------------------
+
+    def _rule_bsl183_execute_external_code(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect Выполнить()/Execute() with non-literal arguments."""
+        diags: list[Diagnostic] = []
+        # Выполнить("literal") is less dangerous; Выполнить(var) is suspicious
+        _re_exec = re.compile(
+            r"\b(?:Выполнить|Execute)\s*\((.{0,80})\)",
+            re.IGNORECASE | re.UNICODE,
+        )
+        _re_literal = re.compile(r'^\s*"[^"]*"\s*$')
+        _re_comment = re.compile(r"^\s*//")
+
+        for idx, line in enumerate(lines):
+            if _re_comment.match(line):
+                continue
+            for m in _re_exec.finditer(line):
+                arg = m.group(1).strip()
+                if not _re_literal.match(arg):  # non-literal argument
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL183",
+                        message=(
+                            "«Выполнить()» с динамическим аргументом — "
+                            "потенциальная угроза безопасности"
+                        ),
+                    ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL208 — LatinAndCyrillicSymbolInWord
+    # ------------------------------------------------------------------
+
+    def _rule_bsl208_latin_and_cyrillic_in_word(
+        self, path: str, lines: list[str], procs: list[Any]
+    ) -> list[Diagnostic]:
+        """Detect identifiers mixing Latin and Cyrillic characters."""
+        diags: list[Diagnostic] = []
+        _re_word = re.compile(r"\b[a-zA-ZА-ЯЁа-яё_][a-zA-ZА-ЯЁа-яё0-9_]*\b", re.UNICODE)
+        _re_has_latin = re.compile(r"[a-zA-Z]")
+        _re_has_cyrillic = re.compile(r"[А-ЯЁа-яё]")
+        _re_comment = re.compile(r"^\s*//")
+        # Known mixed-script platform identifiers to skip
+        _WHITELIST = frozenset({"УстановитьHTTPСоединение", "HTTPСоединение", "НСтр"})
+
+        for idx, line in enumerate(lines):
+            if _re_comment.match(line):
+                continue
+            clean = re.sub(r'"[^"]*"', '""', line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+            for m in _re_word.finditer(clean):
+                word = m.group()
+                if word in _WHITELIST:
+                    continue
+                if _re_has_latin.search(word) and _re_has_cyrillic.search(word):
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL208",
+                        message=(
+                            f"Идентификатор «{word}» содержит кириллицу и латиницу "
+                            "одновременно — визуально неотличимо от другого имени"
+                        ),
+                    ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL230 — PairingBrokenTransaction
+    # ------------------------------------------------------------------
+
+    def _rule_bsl230_pairing_broken_transaction(
+        self, path: str, lines: list[str], procs: list[Any]
+    ) -> list[Diagnostic]:
+        """Detect unbalanced Begin/Commit/Rollback transaction calls."""
+        diags: list[Diagnostic] = []
+        _re_begin = re.compile(r"\b(?:НачатьТранзакцию|BeginTransaction)\s*\(", re.IGNORECASE)
+        _re_commit = re.compile(r"\b(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(", re.IGNORECASE)
+        _re_rollback = re.compile(r"\b(?:ОтменитьТранзакцию|RollbackTransaction)\s*\(", re.IGNORECASE)
+        _re_comment = re.compile(r"^\s*//")
+
+        for proc in procs:
+            begin_count = 0
+            commit_count = 0
+            rollback_count = 0
+            begin_line = None
+
+            for li in range(proc.start_idx, proc.end_idx):
+                if li >= len(lines):
+                    break
+                line = lines[li]
+                if _re_comment.match(line):
+                    continue
+                if _re_begin.search(line):
+                    begin_count += 1
+                    if begin_line is None:
+                        begin_line = li
+                if _re_commit.search(line):
+                    commit_count += 1
+                if _re_rollback.search(line):
+                    rollback_count += 1
+
+            if begin_count > 0 and commit_count == 0 and rollback_count == 0:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=(begin_line or proc.start_idx) + 1,
+                    character=0,
+                    end_line=(begin_line or proc.start_idx) + 1,
+                    end_character=len(lines[begin_line or proc.start_idx]),
+                    severity=Severity.ERROR,
+                    code="BSL230",
+                    message=(
+                        "НачатьТранзакцию() без соответствующего "
+                        "ЗафиксироватьТранзакцию() или ОтменитьТранзакцию()"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL240 — RewriteMethodParameter
+    # ------------------------------------------------------------------
+
+    def _rule_bsl240_rewrite_method_parameter(
+        self, path: str, lines: list[str], procs: list[Any]
+    ) -> list[Diagnostic]:
+        """Detect parameter overwritten before being read."""
+        diags: list[Diagnostic] = []
+        _re_assign = re.compile(
+            r"^\s*(\w+)\s*=\s*(?!.*\b\1\b)",  # LHS = expr not containing LHS
+            re.UNICODE,
+        )
+        _re_comment = re.compile(r"^\s*//")
+        _re_param_header = re.compile(
+            r"^\s*(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\(([^)]*)\)",
+            re.IGNORECASE | re.UNICODE,
+        )
+
+        for proc in procs:
+            header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+            hm = _re_param_header.match(header_line)
+            if not hm:
+                continue
+            # Extract parameter names (skip Знач/Val prefix)
+            raw_params = hm.group(1)
+            param_names: set[str] = set()
+            for part in raw_params.split(","):
+                part = part.strip()
+                part = re.sub(r"^\s*(?:Знач|Val)\s+", "", part, flags=re.IGNORECASE)
+                name = part.split("=")[0].strip()
+                if name:
+                    param_names.add(name.casefold())
+
+            if not param_names:
+                continue
+
+            # Find params reassigned before use in first non-blank body lines
+            for li in range(proc.start_idx + 1, min(proc.start_idx + 15, proc.end_idx)):
+                if li >= len(lines):
+                    break
+                line = lines[li]
+                if _re_comment.match(line) or not line.strip():
+                    continue
+                am = _re_assign.match(line)
+                if am:
+                    lhs = am.group(1).casefold()
+                    if lhs in param_names:
+                        # Check the RHS doesn't mention the param itself
+                        rhs = line[am.end():].strip()
+                        if lhs not in rhs.casefold():
+                            diags.append(Diagnostic(
+                                file=path,
+                                line=li + 1,
+                                character=am.start(),
+                                end_line=li + 1,
+                                end_character=am.end(),
+                                severity=Severity.WARNING,
+                                code="BSL240",
+                                message=(
+                                    f"Параметр «{am.group(1)}» перезаписывается "
+                                    "до первого использования — вероятно ошибка"
+                                ),
+                            ))
+                            param_names.discard(lhs)
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL263 — UseLessForEach
+    # ------------------------------------------------------------------
+
+    def _rule_bsl263_useless_for_each(
+        self, path: str, lines: list[str], procs: list[Any]
+    ) -> list[Diagnostic]:
+        """Detect For Each loops where the iteration variable is never used in the body."""
+        diags: list[Diagnostic] = []
+        _re_foreach = re.compile(
+            r"^\s*(?:Для\s+Каждого|For\s+Each)\s+(\w+)\s+(?:Из|In)\b",
+            re.IGNORECASE | re.UNICODE,
+        )
+        _re_end_loop = re.compile(r"^\s*(?:КонецЦикла|EndDo)\b", re.IGNORECASE)
+        _re_comment = re.compile(r"^\s*//")
+
+        i = 0
+        while i < len(lines):
+            m = _re_foreach.match(lines[i])
+            if m:
+                iter_var = m.group(1).casefold()
+                body_lines: list[str] = []
+                depth = 1
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    bl = lines[j]
+                    if _re_foreach.match(bl):
+                        depth += 1
+                    elif _re_end_loop.match(bl):
+                        depth -= 1
+                    if depth >= 1:
+                        body_lines.append(bl)
+                    j += 1
+
+                # Check if iter_var is used in body
+                var_used = False
+                for bl in body_lines:
+                    if _re_comment.match(bl):
+                        continue
+                    clean = re.sub(r'"[^"]*"', '""', bl)
+                    if re.search(r'\b' + re.escape(iter_var) + r'\b', clean, re.IGNORECASE):
+                        var_used = True
+                        break
+
+                if not var_used and body_lines:
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=i + 1,
+                        character=0,
+                        end_line=i + 1,
+                        end_character=len(lines[i]),
+                        severity=Severity.WARNING,
+                        code="BSL263",
+                        message=(
+                            f"Переменная «{m.group(1)}» в «Для Каждого» "
+                            "нигде не используется в теле цикла"
+                        ),
+                    ))
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL265 — UselessTernaryOperator
+    # ------------------------------------------------------------------
+
+    def _rule_bsl265_useless_ternary_operator(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect ?(cond, Истина, Ложь) or ?(cond, Ложь, Истина) — return condition directly."""
+        diags: list[Diagnostic] = []
+        # ?(cond, Истина, Ложь) → return cond; ?(cond, Ложь, Истина) → return НЕ cond
+        _re_ternary = re.compile(
+            r"\?\s*\([^,]+,\s*(?:Истина|True|Ложь|False)\s*,\s*(?:Истина|True|Ложь|False)\s*\)",
+            re.IGNORECASE | re.UNICODE,
+        )
+        _re_comment = re.compile(r"^\s*//")
+
+        for idx, line in enumerate(lines):
+            if _re_comment.match(line):
+                continue
+            m = _re_ternary.search(line)
+            if m:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.WARNING,
+                    code="BSL265",
+                    message=(
+                        "Тернарный оператор возвращает Истина/Ложь — "
+                        "замените на само условие"
                     ),
                 ))
         return diags
