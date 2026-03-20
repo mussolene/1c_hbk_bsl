@@ -86,7 +86,7 @@ bsl-analyzer --index /path/to/1c-project
 
 | Параметр | По умолчанию | Описание |
 |---|---|---|
-| `bslAnalyzer.serverPath` | `bsl-analyzer` | Путь к исполняемому файлу сервера |
+| `bslAnalyzer.serverPath` | `bsl-analyzer` | Путь к бинарнику сервера; значение по умолчанию не подставляет путь из системного `PATH` — укажите полный путь к своему `bsl-analyzer`, либо используйте бинарник из VSIX / скачанный расширением |
 | `bslAnalyzer.indexDbPath` | *(пусто)* → `.git/bsl_index.sqlite` или `~/.cache/bsl-analyzer/…` | Явный путь к SQLite-индексу (необязательно) |
 | `bslAnalyzer.logLevel` | `info` | Уровень логирования |
 | `bslAnalyzer.diagnostics.enabled` | `true` | Диагностики в реальном времени |

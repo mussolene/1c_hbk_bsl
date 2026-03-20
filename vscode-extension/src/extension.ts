@@ -2,10 +2,10 @@
  * BSL Analyzer VSCode Extension
  *
  * Launch strategy (in order):
- *   1. Binary bundled in extension's bin/ directory
- *   2. Path explicitly set in bslAnalyzer.serverPath
- *   3. bsl-analyzer on system PATH
- *   4. Auto-download from GitHub Releases (first activation only)
+ *   1. Path explicitly set in bslAnalyzer.serverPath (if not a bare placeholder)
+ *   2. Binary bundled in extension's bin/ directory
+ *   3. Previously downloaded binary in global storage
+ *   4. Prompt to download from GitHub Releases (first activation only)
  *
  * No Python runtime required at run time — only the compiled native binary.
  */
@@ -143,10 +143,10 @@ export async function deactivate(): Promise<void> {
 
 /**
  * Resolve path to the bsl-analyzer binary using the priority chain:
- *   settings → bundled → PATH → auto-download.
+ *   settings → bundled → cached download → prompt to download.
  *
- * Explicit settings override comes first so developers can point at a
- * freshly-built binary or the Python venv entry-point without repackaging.
+ * System PATH is not searched — use an explicit `serverPath` to point at a
+ * binary outside the extension (e.g. `pip install` / `uv tool` / local build).
  */
 async function resolveBinaryPath(context: vscode.ExtensionContext): Promise<string | null> {
   const config = vscode.workspace.getConfiguration(EXTENSION_ID);
@@ -168,19 +168,13 @@ async function resolveBinaryPath(context: vscode.ExtensionContext): Promise<stri
     return bundled;
   }
 
-  // 3. System PATH
-  const onPath = findOnPath(BINARY_NAME);
-  if (onPath) {
-    return onPath;
-  }
-
-  // 4. Previously downloaded into global storage
+  // 3. Previously downloaded into global storage
   const downloaded = path.join(context.globalStorageUri.fsPath, "bin", BINARY_NAME);
   if (fs.existsSync(downloaded) && isExecutable(downloaded)) {
     return downloaded;
   }
 
-  // 5. Offer to download
+  // 4. Offer to download
   const choice = await vscode.window.showInformationMessage(
     `BSL Analyzer server binary not found. Download ${RELEASE_TAG} automatically?`,
     "Download",
@@ -213,17 +207,6 @@ function isExecutable(filePath: string): boolean {
   } catch {
     return false;
   }
-}
-
-function findOnPath(name: string): string | null {
-  const dirs = (process.env.PATH ?? "").split(path.delimiter);
-  for (const dir of dirs) {
-    const full = path.join(dir, name);
-    if (fs.existsSync(full) && isExecutable(full)) {
-      return full;
-    }
-  }
-  return null;
 }
 
 async function downloadBinary(

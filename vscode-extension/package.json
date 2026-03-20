@@ -2,7 +2,7 @@
   "name": "bsl-analyzer",
   "displayName": "BSL Analyzer (1C)",
   "description": "Language support for 1C BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename and more",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "publisher": "mussolene",
   "icon": "icon.png",
   "license": "MIT",
@@ -99,7 +99,7 @@
         "bslAnalyzer.serverPath": {
           "type": "string",
           "default": "bsl-analyzer",
-          "description": "Path to the bsl-analyzer executable. Leave as 'bsl-analyzer' to use the version on PATH."
+          "description": "Path to the bsl-analyzer executable. Default placeholder skips this override; the extension uses the bundled or downloaded binary unless you set a real filesystem path here."
         },
         "bslAnalyzer.useDocker": {
           "type": "boolean",

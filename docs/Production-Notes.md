@@ -12,10 +12,11 @@ This runbook covers production usage of:
   - `onCommand:bslAnalyzer.reindexCurrentFile`
   - `onCommand:bslAnalyzer.showStatus`
 - Server binary resolution order:
-  1. `bslAnalyzer.serverPath` (explicit setting)
+  1. `bslAnalyzer.serverPath` (explicit filesystem path; default placeholder does not override)
   2. bundled extension binary
-  3. system `bsl-analyzer` on `PATH`
-  4. release download fallback (if supported for platform)
+  3. previously downloaded binary in extension global storage
+  4. release download fallback (if supported for platform)  
+  (System `PATH` is not searched — set `serverPath` to a `bsl-analyzer` from `pip`/`uv`/build output if needed.)
 
 ## LSP Parity Checklist
 - Navigation: definition, references, rename, call hierarchy
