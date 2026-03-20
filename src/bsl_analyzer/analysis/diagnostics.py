@@ -4087,7 +4087,7 @@ class DiagnosticEngine:
             "BSL150",  # BadWords — TODO
             # "BSL151" enabled — BeginTransactionBeforeTryCatch implemented
             "BSL152",  # CachedPublic — TODO
-            "BSL153",  # CanonicalSpellingKeywords — TODO
+            # "BSL153" enabled — CanonicalSpellingKeywords implemented
             "BSL154",  # CodeAfterAsyncCall — TODO
             "BSL155",  # CodeBlockBeforeSub — TODO
             "BSL156",  # CodeOutOfRegion — TODO
@@ -4133,7 +4133,7 @@ class DiagnosticEngine:
             "BSL196",  # GlobalContextMethodCollision8312 — TODO
             # "BSL197" enabled — IfElseDuplicatedCodeBlock implemented
             # "BSL198" enabled — IfElseDuplicatedCondition implemented
-            "BSL199",  # IfElseIfEndsWithElse — TODO
+            # "BSL199" enabled — IfElseIfEndsWithElse implemented
             "BSL200",  # IncorrectLineBreak — TODO
             "BSL201",  # IncorrectUseLikeInQuery — TODO
             "BSL202",  # IncorrectUseOfStrTemplate — TODO
@@ -4150,7 +4150,7 @@ class DiagnosticEngine:
             "BSL213",  # MissingCommonModuleMethod — TODO
             "BSL214",  # MissingEventSubscriptionHandler — TODO
             "BSL215",  # MissingParameterDescription — TODO
-            "BSL216",  # MissingSpace — TODO
+            # "BSL216" enabled — MissingSpace implemented
             "BSL217",  # MissingTempStorageDeletion — TODO
             "BSL218",  # MissingTemporaryFileDeletion — TODO
             "BSL219",  # MissingVariablesDescription — TODO
@@ -4189,7 +4189,7 @@ class DiagnosticEngine:
             "BSL252",  # ThisObjectAssign — TODO
             "BSL253",  # TimeoutsInExternalResources — TODO
             "BSL254",  # TransferringParametersBetweenClientAndServer — TODO
-            "BSL255",  # TryNumber — TODO
+            # "BSL255" enabled — TryNumber implemented
             "BSL256",  # Typo — TODO
             # "BSL257" enabled — UnaryPlusInConcatenation implemented
             # "BSL258" enabled — UnionAll implemented
@@ -4667,6 +4667,14 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl263_useless_for_each(path, lines, procs))
         if self._rule_enabled("BSL265"):
             diagnostics.extend(self._rule_bsl265_useless_ternary_operator(path, lines))
+        if self._rule_enabled("BSL153"):
+            diagnostics.extend(self._rule_bsl153_canonical_spelling_keywords(path, lines))
+        if self._rule_enabled("BSL199"):
+            diagnostics.extend(self._rule_bsl199_if_else_if_ends_with_else(path, lines))
+        if self._rule_enabled("BSL216"):
+            diagnostics.extend(self._rule_bsl216_missing_space(path, lines))
+        if self._rule_enabled("BSL255"):
+            diagnostics.extend(self._rule_bsl255_try_number(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -10723,6 +10731,213 @@ class DiagnosticEngine:
                         "используйте «ОБЪЕДИНИТЬ ВСЕ» если дубли допустимы"
                     ),
                 ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL153 — CanonicalSpellingKeywords
+    # ------------------------------------------------------------------
+
+    # BSL canonical keyword forms (title case)
+    _CANONICAL_KEYWORDS: dict[str, str] = {
+        "если": "Если", "иначеесли": "ИначеЕсли", "иначе": "Иначе",
+        "конецесли": "КонецЕсли", "для": "Для", "каждого": "Каждого",
+        "из": "Из", "цикл": "Цикл", "конеццикла": "КонецЦикла",
+        "пока": "Пока", "прервать": "Прервать", "продолжить": "Продолжить",
+        "попытка": "Попытка", "исключение": "Исключение",
+        "конецпопытки": "КонецПопытки", "вызватьисключение": "ВызватьИсключение",
+        "возврат": "Возврат", "перейти": "Перейти",
+        "процедура": "Процедура", "функция": "Функция",
+        "конецпроцедуры": "КонецПроцедуры", "конецфункции": "КонецФункции",
+        "перем": "Перем", "тогда": "Тогда", "по": "По", "новый": "Новый",
+        "экспорт": "Экспорт", "знач": "Знач", "не": "Не", "и": "И",
+        "или": "Или", "истина": "Истина", "ложь": "Ложь",
+        "неопределено": "Неопределено", "null": "Null",
+        # English equivalents — only flag non-canonical English
+        "if": "Если", "elseif": "ИначеЕсли", "else": "Иначе",
+        "endif": "КонецЕсли",
+    }
+    # Only flag words that differ in case from their canonical form
+    _CANONICAL_RE = re.compile(
+        r'\b(?:' + '|'.join(re.escape(k) for k in _CANONICAL_KEYWORDS) + r')\b',
+        re.IGNORECASE | re.UNICODE,
+    )
+
+    def _rule_bsl153_canonical_spelling_keywords(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect BSL keywords not written in canonical title-case form."""
+        diags: list[Diagnostic] = []
+        _re_comment = re.compile(r"^\s*//")
+
+        for idx, line in enumerate(lines):
+            if _re_comment.match(line):
+                continue
+            # Remove string literals
+            clean = re.sub(r'"[^"]*"', '""', line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+
+            for m in self._CANONICAL_RE.finditer(clean):
+                word = m.group()
+                canonical = self._CANONICAL_KEYWORDS.get(word.lower())
+                if canonical and word != canonical:
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL153",
+                        message=(
+                            f"Ключевое слово «{word}» должно быть «{canonical}»"
+                        ),
+                    ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL199 — IfElseIfEndsWithElse
+    # ------------------------------------------------------------------
+
+    def _rule_bsl199_if_else_if_ends_with_else(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """If/ElseIf chain must end with an Else branch."""
+        diags: list[Diagnostic] = []
+        _re_if = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE)
+        _re_elseif = re.compile(r"^\s*(?:ИначеЕсли|ElseIf)\b", re.IGNORECASE)
+        _re_else = re.compile(r"^\s*(?:Иначе|Else)\b(?!\s*(?:Если|If)\b)", re.IGNORECASE)
+        _re_endif = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
+
+        i = 0
+        while i < len(lines):
+            if not _re_if.match(lines[i]):
+                i += 1
+                continue
+
+            has_elseif = False
+            has_else = False
+            if_line = i
+            depth = 1
+            j = i + 1
+            while j < len(lines) and depth > 0:
+                bl = lines[j]
+                if _re_if.match(bl):
+                    depth += 1
+                elif _re_endif.match(bl):
+                    depth -= 1
+                elif depth == 1:
+                    if _re_elseif.match(bl):
+                        has_elseif = True
+                    elif _re_else.match(bl):
+                        has_else = True
+                j += 1
+
+            if has_elseif and not has_else:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=if_line + 1,
+                    character=0,
+                    end_line=if_line + 1,
+                    end_character=len(lines[if_line]),
+                    severity=Severity.INFORMATION,
+                    code="BSL199",
+                    message=(
+                        "Цепочка «Если/ИначеЕсли» не завершается веткой «Иначе» — "
+                        "добавьте обработку неожиданных значений"
+                    ),
+                ))
+            i = j
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL216 — MissingSpace
+    # ------------------------------------------------------------------
+
+    def _rule_bsl216_missing_space(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect missing spaces around assignment and comparison operators."""
+        diags: list[Diagnostic] = []
+        _re_comment = re.compile(r"^\s*//")
+        # Pattern: identifier=expression without spaces (but not ==, :=, >=, <=, !=)
+        _re_no_space = re.compile(
+            r"(?<=[а-яёА-ЯЁa-zA-Z0-9_\)])=(?!=)(?=[а-яёА-ЯЁa-zA-Z0-9_\"'(])"
+            r"|(?<=[а-яёА-ЯЁa-zA-Z0-9_\)])(?<![<>!])=(?!=)|"
+            r"(?<![<>=!])=(?!=)(?=[а-яёА-ЯЁa-zA-Z])",
+            re.UNICODE,
+        )
+        # Simpler: detect Var=Value without spaces (assignment without space)
+        _re_assign_nospace = re.compile(
+            r"\b(\w+)=(\w)",
+            re.UNICODE,
+        )
+
+        for idx, line in enumerate(lines):
+            if _re_comment.match(line):
+                continue
+            clean = re.sub(r'"[^"]*"', '""', line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+            # Skip procedure/function headers
+            if re.match(r"^\s*(?:Процедура|Функция|Procedure|Function)\b", clean, re.IGNORECASE):
+                continue
+            m = _re_assign_nospace.search(clean)
+            if m:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.INFORMATION,
+                    code="BSL216",
+                    message=(
+                        "Пропущен пробел вокруг оператора «=» — "
+                        "добавьте пробелы для читаемости"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL255 — TryNumber
+    # ------------------------------------------------------------------
+
+    def _rule_bsl255_try_number(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect Число()/Number() conversions inside Try/Except blocks."""
+        diags: list[Diagnostic] = []
+        _re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+        _re_endtry = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+        _re_except = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
+        _re_number = re.compile(r"\b(?:Число|Number)\s*\(", re.IGNORECASE)
+
+        in_try_body = False
+        for idx, line in enumerate(lines):
+            if _re_try.match(line):
+                in_try_body = True
+            elif _re_except.match(line) or _re_endtry.match(line):
+                in_try_body = False
+
+            if in_try_body:
+                m = _re_number.search(line)
+                if m:
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.WARNING,
+                        code="BSL255",
+                        message=(
+                            "«Число()» внутри блока «Попытка» — "
+                            "используйте проверку перед конвертацией"
+                        ),
+                    ))
         return diags
 
     # ------------------------------------------------------------------
