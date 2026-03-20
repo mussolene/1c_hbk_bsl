@@ -4106,7 +4106,7 @@ class DiagnosticEngine:
             "BSL169",  # CompilationDirectiveLost — TODO
             "BSL170",  # CompilationDirectiveNeedLess — TODO
             "BSL171",  # CrazyMultilineString — TODO
-            "BSL172",  # DataExchangeLoading — TODO
+            # "BSL172" enabled — DataExchangeLoading implemented
             # "BSL173" enabled — DeletingCollectionItem implemented
             "BSL174",  # DenyIncompleteValues — TODO
             "BSL175",  # DeprecatedAttributes8312 — TODO
@@ -4120,7 +4120,7 @@ class DiagnosticEngine:
             "BSL183",  # ExecuteExternalCode — TODO
             "BSL184",  # ExecuteExternalCodeInCommonModule — TODO
             "BSL185",  # ExternalAppStarting — TODO
-            "BSL186",  # ExtraCommas — TODO
+            # "BSL186" enabled — ExtraCommas implemented
             "BSL187",  # FieldsFromJoinsWithoutIsNull — TODO
             "BSL188",  # FileSystemAccess — TODO
             "BSL189",  # ForbiddenMetadataName — TODO
@@ -4131,8 +4131,8 @@ class DiagnosticEngine:
             "BSL194",  # FunctionReturnsSamePrimitive — TODO
             "BSL195",  # GetFormMethod — TODO
             "BSL196",  # GlobalContextMethodCollision8312 — TODO
-            "BSL197",  # IfElseDuplicatedCodeBlock — TODO
-            "BSL198",  # IfElseDuplicatedCondition — TODO
+            # "BSL197" enabled — IfElseDuplicatedCodeBlock implemented
+            # "BSL198" enabled — IfElseDuplicatedCondition implemented
             "BSL199",  # IfElseIfEndsWithElse — TODO
             "BSL200",  # IncorrectLineBreak — TODO
             "BSL201",  # IncorrectUseLikeInQuery — TODO
@@ -4161,7 +4161,7 @@ class DiagnosticEngine:
             "BSL224",  # NestedFunctionInParameters — TODO
             "BSL225",  # NumberOfValuesInStructureConstructor — TODO
             "BSL226",  # OSUsersMethod — TODO
-            "BSL227",  # OneStatementPerLine — TODO
+            # "BSL227" enabled — OneStatementPerLine implemented
             "BSL228",  # OrderOfParams — TODO
             "BSL229",  # OrdinaryAppSupport — TODO
             "BSL230",  # PairingBrokenTransaction — TODO
@@ -4192,7 +4192,7 @@ class DiagnosticEngine:
             "BSL255",  # TryNumber — TODO
             "BSL256",  # Typo — TODO
             # "BSL257" enabled — UnaryPlusInConcatenation implemented
-            "BSL258",  # UnionAll — TODO
+            # "BSL258" enabled — UnionAll implemented
             "BSL259",  # UnknownPreprocessorSymbol — TODO
             "BSL260",  # UnsafeFindByCode — TODO
             "BSL261",  # UnsafeSafeModeMethodCall — TODO
@@ -4643,6 +4643,18 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl257_unary_plus_in_concatenation(path, lines))
         if self._rule_enabled("BSL279"):
             diagnostics.extend(self._rule_bsl279_yo_letter_usage(path, lines))
+        if self._rule_enabled("BSL172"):
+            diagnostics.extend(self._rule_bsl172_data_exchange_loading(path, lines, procs))
+        if self._rule_enabled("BSL186"):
+            diagnostics.extend(self._rule_bsl186_extra_commas(path, lines))
+        if self._rule_enabled("BSL197"):
+            diagnostics.extend(self._rule_bsl197_if_else_duplicated_code_block(path, lines))
+        if self._rule_enabled("BSL198"):
+            diagnostics.extend(self._rule_bsl198_if_else_duplicated_condition(path, lines))
+        if self._rule_enabled("BSL227"):
+            diagnostics.extend(self._rule_bsl227_one_statement_per_line(path, lines, procs))
+        if self._rule_enabled("BSL258"):
+            diagnostics.extend(self._rule_bsl258_union_without_all(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -10393,6 +10405,312 @@ class DiagnosticEngine:
                                 ))
                     j += 1
             i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL172 — DataExchangeLoading
+    # ------------------------------------------------------------------
+
+    def _rule_bsl172_data_exchange_loading(
+        self, path: str, lines: list[str], procs: list[Any]
+    ) -> list[Diagnostic]:
+        """Handlers ПередЗаписью/ПриЗаписи must check ОбменДаннымиЗагрузка flag."""
+        diags: list[Diagnostic] = []
+        _re_handler = re.compile(
+            r"^\s*(?:Процедура|Procedure)\s+"
+            r"(?:ПередЗаписью|BeforeWrite|ПриЗаписи|OnWrite|"
+            r"ОбработкаПроверкиЗаполнения|CheckFilling)\s*\(",
+            re.IGNORECASE | re.UNICODE,
+        )
+        _re_exchange = re.compile(
+            r"(?:ОбменДаннымиЗагрузка|DataExchangeLoad)\b",
+            re.IGNORECASE,
+        )
+
+        for proc in procs:
+            start = proc.start_idx
+            line = lines[start] if start < len(lines) else ""
+            if not _re_handler.match(line):
+                continue
+            # Check if any line in the proc body references ОбменДаннымиЗагрузка
+            body_lines = lines[start:proc.end_idx]
+            has_check = any(_re_exchange.search(bl) for bl in body_lines)
+            if not has_check:
+                m = _re_handler.match(line)
+                diags.append(Diagnostic(
+                    file=path,
+                    line=start + 1,
+                    character=m.start() if m else 0,
+                    end_line=start + 1,
+                    end_character=m.end() if m else len(line),
+                    severity=Severity.WARNING,
+                    code="BSL172",
+                    message=(
+                        "Обработчик не проверяет «ОбменДаннымиЗагрузка» — "
+                        "добавьте проверку в начало метода"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL186 — ExtraCommas
+    # ------------------------------------------------------------------
+
+    def _rule_bsl186_extra_commas(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect trailing commas in method calls or declarations."""
+        diags: list[Diagnostic] = []
+        # Trailing comma before ) or ; is suspicious
+        _re_trailing = re.compile(r",\s*[)\];]")
+        _re_comment = re.compile(r"^\s*//")
+
+        for idx, line in enumerate(lines):
+            if _re_comment.match(line):
+                continue
+            clean = re.sub(r'"[^"]*"', '""', line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+            m = _re_trailing.search(clean)
+            if m:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.start() + 1,
+                    severity=Severity.WARNING,
+                    code="BSL186",
+                    message="Лишняя запятая перед закрывающей скобкой или точкой с запятой",
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL197 — IfElseDuplicatedCodeBlock
+    # ------------------------------------------------------------------
+
+    def _rule_bsl197_if_else_duplicated_code_block(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect identical code blocks in consecutive If/ElseIf branches."""
+        diags: list[Diagnostic] = []
+        _re_if = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE)
+        _re_elseif = re.compile(r"^\s*(?:ИначеЕсли|ElseIf)\b", re.IGNORECASE)
+        _re_else = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
+        _re_endif = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
+
+        i = 0
+        while i < len(lines):
+            if not _re_if.match(lines[i]):
+                i += 1
+                continue
+
+            # Collect branches: list of (start_line, list_of_body_lines)
+            branches: list[tuple[int, list[str]]] = []
+            branch_start = i
+            depth = 1
+            j = i + 1
+            current_body: list[str] = []
+
+            while j < len(lines) and depth > 0:
+                bl = lines[j]
+                if _re_if.match(bl):
+                    depth += 1
+                elif _re_endif.match(bl):
+                    depth -= 1
+                    if depth == 0:
+                        branches.append((branch_start, current_body[:]))
+                        break
+                if depth == 1 and (_re_elseif.match(bl) or _re_else.match(bl)):
+                    branches.append((branch_start, current_body[:]))
+                    current_body = []
+                    branch_start = j
+                else:
+                    if depth == 1:
+                        current_body.append(bl.strip())
+                j += 1
+
+            # Check for duplicate bodies (normalize whitespace)
+            seen: dict[str, int] = {}
+            for b_start, b_body in branches:
+                key = "\n".join(b_body)
+                if len(b_body) >= 1 and key and key in seen:
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=b_start + 1,
+                        character=0,
+                        end_line=b_start + 1,
+                        end_character=len(lines[b_start]),
+                        severity=Severity.WARNING,
+                        code="BSL197",
+                        message=(
+                            "Тело этой ветки «ИначеЕсли/Иначе» идентично "
+                            f"телу ветки на строке {seen[key] + 1}"
+                        ),
+                    ))
+                else:
+                    seen[key] = b_start
+            i = j + 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL198 — IfElseDuplicatedCondition
+    # ------------------------------------------------------------------
+
+    def _rule_bsl198_if_else_duplicated_condition(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect duplicate conditions in If/ElseIf chain."""
+        diags: list[Diagnostic] = []
+        _re_if = re.compile(
+            r"^\s*(?:Если|If)\s+(.+?)\s+(?:Тогда|Then)\b",
+            re.IGNORECASE | re.UNICODE,
+        )
+        _re_elseif = re.compile(
+            r"^\s*(?:ИначеЕсли|ElseIf)\s+(.+?)\s+(?:Тогда|Then)\b",
+            re.IGNORECASE | re.UNICODE,
+        )
+        _re_endif = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
+
+        i = 0
+        while i < len(lines):
+            m = _re_if.match(lines[i])
+            if not m:
+                i += 1
+                continue
+
+            conditions: dict[str, int] = {m.group(1).strip().casefold(): i}
+            depth = 1
+            j = i + 1
+            while j < len(lines) and depth > 0:
+                bl = lines[j]
+                if _re_if.match(bl):
+                    depth += 1
+                elif _re_endif.match(bl):
+                    depth -= 1
+                elif depth == 1:
+                    em = _re_elseif.match(bl)
+                    if em:
+                        cond = em.group(1).strip().casefold()
+                        if cond in conditions:
+                            diags.append(Diagnostic(
+                                file=path,
+                                line=j + 1,
+                                character=0,
+                                end_line=j + 1,
+                                end_character=len(bl),
+                                severity=Severity.WARNING,
+                                code="BSL198",
+                                message=(
+                                    f"Условие «ИначеЕсли» совпадает с условием "
+                                    f"на строке {conditions[cond] + 1} — ветка недостижима"
+                                ),
+                            ))
+                        else:
+                            conditions[cond] = j
+                j += 1
+            i = j + 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL227 — OneStatementPerLine
+    # ------------------------------------------------------------------
+
+    def _rule_bsl227_one_statement_per_line(
+        self, path: str, lines: list[str], procs: list[Any]
+    ) -> list[Diagnostic]:
+        """Detect multiple statements (semicolons) on one line inside procedures."""
+        diags: list[Diagnostic] = []
+        _re_comment = re.compile(r"^\s*//")
+        _re_header = re.compile(
+            r"^\s*(?:Процедура|Функция|Procedure|Function|"
+            r"КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b",
+            re.IGNORECASE,
+        )
+
+        # Build set of lines that are inside procedure bodies
+        proc_lines: set[int] = set()
+        for proc in procs:
+            for li in range(proc.start_idx + 1, proc.end_idx):
+                proc_lines.add(li)
+
+        for idx, line in enumerate(lines):
+            if idx not in proc_lines:
+                continue
+            if _re_comment.match(line) or _re_header.match(line):
+                continue
+            # Remove string literals and count semicolons
+            clean = re.sub(r'"[^"]*"', '""', line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+            # Count semicolons not inside parentheses
+            depth = 0
+            semi_count = 0
+            for ch in clean:
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                elif ch == ";" and depth == 0:
+                    semi_count += 1
+            if semi_count >= 2:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=0,
+                    end_line=idx + 1,
+                    end_character=len(line),
+                    severity=Severity.INFORMATION,
+                    code="BSL227",
+                    message=(
+                        "Несколько операторов на одной строке "
+                        "— разместите каждый на отдельной строке"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL258 — UnionAll
+    # ------------------------------------------------------------------
+
+    def _rule_bsl258_union_without_all(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect ОБЪЕДИНИТЬ/UNION without ALL in query strings."""
+        diags: list[Diagnostic] = []
+        # ОБЪЕДИНИТЬ not followed by ВСЕ (after optional whitespace)
+        _re_union = re.compile(
+            r"\b(?:ОБЪЕДИНИТЬ|UNION)\b(?!\s+(?:ВСЕ|ALL)\b)",
+            re.IGNORECASE,
+        )
+        in_query = False
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            # Detect query string start/end heuristic
+            if '|"' in line or line.strip().startswith("|"):
+                in_query = True
+            if stripped.endswith('";') or (stripped.endswith('"') and "ВЫБРАТЬ" not in stripped):
+                in_query = False
+
+            # Check for UNION/ОБЪЕДИНИТЬ
+            check_line = line if in_query else line
+            m = _re_union.search(check_line)
+            if m:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.WARNING,
+                    code="BSL258",
+                    message=(
+                        "«ОБЪЕДИНИТЬ» без «ВСЕ» выполняет дедупликацию — "
+                        "используйте «ОБЪЕДИНИТЬ ВСЕ» если дубли допустимы"
+                    ),
+                ))
         return diags
 
     # ------------------------------------------------------------------
