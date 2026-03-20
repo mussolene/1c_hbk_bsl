@@ -484,9 +484,9 @@ def translate_message(code: str, original_message: str) -> str:
 
 # Шаблоны для извлечения специфических значений из английских сообщений.
 # Каждый элемент: (code, regex_pattern, lambda для форматирования)
-import re as _re
+import re as _re  # noqa: E402
 
-_EXTRACT_PATTERNS: list[tuple[str, "_re.Pattern[str]", object]] = [
+_EXTRACT_PATTERNS: list[tuple[str, _re.Pattern[str], object]] = [
     ("BSL002", _re.compile(r"'([^']+)' is (\d+) lines"), lambda m: f"'{m.group(1)}' — {m.group(2)} строк"),
     ("BSL003", _re.compile(r"'([^']+)' is in API"), lambda m: f"'{m.group(1)}'"),
     ("BSL007", _re.compile(r"variable '([^']+)'", _re.IGNORECASE), lambda m: f"'{m.group(1)}'"),

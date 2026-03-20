@@ -56,7 +56,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Return-type table  (object_type.method_name → return_type, all lower-case)
 # ---------------------------------------------------------------------------
@@ -144,7 +143,7 @@ class TypeScope:
     Scopes are chained: look-up walks the parent chain until a match is found.
     """
     _vars: dict[str, str] = field(default_factory=dict)
-    parent: "TypeScope | None" = None
+    parent: TypeScope | None = None
 
     def set(self, name: str, type_name: str) -> None:
         if type_name:

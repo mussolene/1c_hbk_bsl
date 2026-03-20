@@ -3243,6 +3243,12 @@ _RE_GOTO = re.compile(
     re.IGNORECASE,
 )
 
+# BSL113 — assignment (=) inside Если/ИначеЕсли condition
+_RE_ASSIGN_IN_COND = re.compile(
+    r"^\s*(?:Если|ИначеЕсли|ElseIf|If)\b.*(?<![<>!])=(?![=>])",
+    re.IGNORECASE,
+)
+
 # Magic number: numeric literal not 0/1/-1, not in a comment or string
 # A simplified heuristic: standalone number after =, (, or operator
 _RE_MAGIC_NUMBER = re.compile(
@@ -10390,7 +10396,6 @@ class DiagnosticEngine:
             if m:
                 iter_var = m.group(1).casefold()
                 collection = m.group(2).casefold()
-                loop_start = i
                 depth = 1
                 j = i + 1
                 while j < len(lines) and depth > 0:

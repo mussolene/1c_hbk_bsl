@@ -34,17 +34,12 @@ from pathlib import Path
 from typing import Any
 
 from lsprotocol.types import (
-    TEXT_DOCUMENT_CODE_LENS,
-    CodeLens,
-    CodeLensParams,
-    Command,
     CALL_HIERARCHY_INCOMING_CALLS,
     CALL_HIERARCHY_OUTGOING_CALLS,
     INITIALIZE,
     TEXT_DOCUMENT_CODE_ACTION,
+    TEXT_DOCUMENT_CODE_LENS,
     TEXT_DOCUMENT_COMPLETION,
-    CompletionOptions,
-    InsertTextFormat,
     TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_OPEN,
@@ -55,9 +50,9 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_FORMATTING,
     TEXT_DOCUMENT_HOVER,
     TEXT_DOCUMENT_INLAY_HINT,
+    TEXT_DOCUMENT_ON_TYPE_FORMATTING,
     TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY,
     TEXT_DOCUMENT_PREPARE_RENAME,
-    TEXT_DOCUMENT_ON_TYPE_FORMATTING,
     TEXT_DOCUMENT_RANGE_FORMATTING,
     TEXT_DOCUMENT_REFERENCES,
     TEXT_DOCUMENT_RENAME,
@@ -73,9 +68,13 @@ from lsprotocol.types import (
     CodeAction,
     CodeActionKind,
     CodeActionParams,
+    CodeLens,
+    CodeLensParams,
+    Command,
     CompletionItem,
     CompletionItemKind,
     CompletionList,
+    CompletionOptions,
     CompletionParams,
     DefinitionParams,
     DiagnosticSeverity,
@@ -101,12 +100,14 @@ from lsprotocol.types import (
     InlayHint,
     InlayHintKind,
     InlayHintParams,
+    InsertTextFormat,
     Location,
     LocationLink,
     MarkupContent,
     MarkupKind,
     Position,
     PrepareRenameParams,
+    PublishDiagnosticsParams,
     Range,
     ReferenceParams,
     RenameParams,
@@ -125,7 +126,6 @@ from lsprotocol.types import (
 )
 from lsprotocol.types import (
     Diagnostic as LspDiagnostic,
-    PublishDiagnosticsParams,
 )
 
 try:
@@ -133,25 +133,26 @@ try:
 except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
-from bsl_analyzer.analysis.type_inference import BslTypeEngine, RETURN_TYPE_MAP as _TYPE_RETURN_MAP
 from bsl_analyzer.analysis.diagnostics import (
+    RULE_METADATA,
     DiagnosticEngine,
     Severity,
-    RULE_METADATA,
-    _find_procedures_from_tree,
     _calc_cognitive_complexity,
     _calc_mccabe_complexity,
+    _find_procedures_from_tree,
 )
 from bsl_analyzer.analysis.formatter import (
-    default_formatter,
     _DEDENT_BEFORE,
     _get_stripped_keyword,
+    default_formatter,
 )
 from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
+from bsl_analyzer.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
+from bsl_analyzer.analysis.type_inference import BslTypeEngine
 from bsl_analyzer.indexer.db_path import resolve_index_db_path
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
-from bsl_analyzer.lsp.diagnostics_ru import translate_message, DIAGNOSTICS_RU
+from bsl_analyzer.lsp.diagnostics_ru import DIAGNOSTICS_RU, translate_message
 from bsl_analyzer.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -1415,10 +1416,10 @@ _META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, object] = {}  # unused; placehol
 
 
 def _meta_dot_completions(
-    ls: "BslLanguageServer",
+    ls: BslLanguageServer,
     obj_name: str,
     member_prefix: str,
-) -> list["CompletionItem"]:
+) -> list[CompletionItem]:
     """
     Return metadata-based completion items for ``obj_name.member_prefix``.
 

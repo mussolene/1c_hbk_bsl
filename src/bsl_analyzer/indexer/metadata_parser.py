@@ -158,7 +158,7 @@ def parse_object_xml(xml_path: str | Path, kind: str, object_name: str) -> MetaO
     """
     obj = MetaObject(name=object_name, kind=kind, file_path=str(xml_path))
     try:
-        tree = ET.parse(str(xml_path))
+        tree = ET.parse(str(xml_path))  # noqa: S314
         root = tree.getroot()
     except Exception as exc:
         logger.debug("Failed to parse %s: %s", xml_path, exc)
@@ -314,7 +314,7 @@ def parse_form_xml(xml_path: str | Path, object_name: str, object_kind: str,
     """
     members: list[MetaMember] = []
     try:
-        tree = ET.parse(str(xml_path))
+        tree = ET.parse(str(xml_path))  # noqa: S314
         root = tree.getroot()
     except Exception as exc:
         logger.debug("Failed to parse form %s: %s", xml_path, exc)
