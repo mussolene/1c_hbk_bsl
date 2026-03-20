@@ -3,8 +3,15 @@
 src/**
 .gitignore
 tsconfig.json
+webpack.config.js
+eslint.config.mjs
+.prettierrc.json
+node_modules/**
+*.sqlite
+*.sqlite-journal
 **/*.map
 **/*.ts
 !out/**
-# node_modules is NOT excluded — vsce bundles only production dependencies
-# bin/ is INCLUDED — contains the native binary for this platform
+# README.md and LICENSE are included for Marketplace and legal clarity
+# Dependencies are bundled into out/extension.js (webpack); do not ship node_modules
+# bin/ is INCLUDED — native bsl-analyzer for platform-specific release VSIX

@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from bsl_analyzer.analysis.diagnostics import RULE_METADATA
+
 # ---------------------------------------------------------------------------
 # BSL rule descriptions in Russian
 # Идентификаторы и описания соответствуют diagnostics.py RULE_METADATA
@@ -102,8 +104,12 @@ DIAGNOSTICS_RU: dict[str, dict[str, str]] = {
     },
     # BSL018 — RaiseExceptionWithLiteral
     "BSL018": {
-        "title": "ВызватьИсключение со строковым литералом",
-        "hint": "Используйте НовоеИсключение() для структурированной информации об ошибке.",
+        "title": "«ВызватьИсключение» только со строковым литералом",
+        "hint": (
+            "Для структурированного описания используйте расширенный синтаксис оператора "
+            "с платформы 8.3.21+ (категория, код, доп. сведения, причина) или сформируйте "
+            "текст в переменной/выражении."
+        ),
     },
     # BSL019 — CyclomaticComplexity
     "BSL019": {
@@ -367,8 +373,11 @@ DIAGNOSTICS_RU: dict[str, dict[str, str]] = {
     },
     # BSL049 — UnconditionalExceptionRaise
     "BSL049": {
-        "title": "Безусловный «ВызватьИсключение»",
-        "hint": "Оберните в условие или убедитесь, что исключение действительно уместно.",
+        "title": "«ВызватьИсключение» на уровне тела метода вне Попытка",
+        "hint": (
+            "Добавьте проверку перед вызовом, перенесите в вложенный блок (Если/Пока) "
+            "или оставьте только если завершение метода всегда допустимо."
+        ),
     },
     # BSL056 — ShortMethodName
     "BSL056": {
@@ -450,6 +459,111 @@ DIAGNOSTICS_RU: dict[str, dict[str, str]] = {
         "title": "Открытие формы в серверном коде",
         "hint": "Переместите ОткрытьФорму() на клиентскую сторону — на сервере интерфейс недоступен.",
     },
+    # BSL151 — BeginTransactionBeforeTryCatch
+    "BSL151": {
+        "title": "НачатьТранзакцию должна быть перед блоком Попытка",
+        "hint": "Ставьте НачатьТранзакцию непосредственно перед Попытка...Исключение.",
+    },
+    # BSL153 — CanonicalSpellingKeywords
+    "BSL153": {
+        "title": "Ключевое слово написано не в канонической форме",
+        "hint": "Используйте стандартное написание ключевых слов 1С (регистр и форма).",
+    },
+    # BSL157 — CommitTransactionOutsideTryCatch
+    "BSL157": {
+        "title": "ЗафиксироватьТранзакцию вне блока Попытка",
+        "hint": "Вызов ЗафиксироватьТранзакцию должен находиться внутри защищенного Try/Except блока.",
+    },
+    # BSL172 — DataExchangeLoading
+    "BSL172": {
+        "title": "Нет проверки признака ОбменДаннымиЗагрузка",
+        "hint": "В обработчиках изменения данных проверьте флаг ОбменДаннымиЗагрузка.",
+    },
+    # BSL173 — DeletingCollectionItem
+    "BSL173": {
+        "title": "Удаление элемента коллекции внутри Для Каждого",
+        "hint": "Не удаляйте элементы в Для Каждого; используйте индексный обход или буфер.",
+    },
+    # BSL183 — ExecuteExternalCode
+    "BSL183": {
+        "title": "Выполнение внешнего кода через Выполнить()",
+        "hint": "Избегайте выполнения произвольного кода; это риск безопасности.",
+    },
+    # BSL186 — ExtraCommas
+    "BSL186": {
+        "title": "Лишняя запятая",
+        "hint": "Уберите хвостовую или лишнюю запятую в вызове/объявлении.",
+    },
+    # BSL197 — IfElseDuplicatedCodeBlock
+    "BSL197": {
+        "title": "Дублирующийся код в ветках Если/ИначеЕсли",
+        "hint": "Вынесите общий блок в отдельную ветку или метод.",
+    },
+    # BSL198 — IfElseDuplicatedCondition
+    "BSL198": {
+        "title": "Дублирующееся условие в цепочке Если/ИначеЕсли",
+        "hint": "Проверьте логику: дублирующая ветка недостижима.",
+    },
+    # BSL199 — IfElseIfEndsWithElse
+    "BSL199": {
+        "title": "Цепочка Если/ИначеЕсли без завершающего Иначе",
+        "hint": "Добавьте Иначе для обработки непредусмотренных случаев.",
+    },
+    # BSL208 — LatinAndCyrillicSymbolInWord
+    "BSL208": {
+        "title": "Смешение латиницы и кириллицы в идентификаторе",
+        "hint": "Используйте только один алфавит в имени, чтобы избежать визуальных ошибок.",
+    },
+    # BSL216 — MissingSpace
+    "BSL216": {
+        "title": "Пропущен пробел",
+        "hint": "Добавьте пробел до/после оператора или ключевого слова по стилю.",
+    },
+    # BSL227 — OneStatementPerLine
+    "BSL227": {
+        "title": "Несколько операторов в одной строке",
+        "hint": "Оставляйте один оператор на строку для читаемости.",
+    },
+    # BSL230 — PairingBrokenTransaction
+    "BSL230": {
+        "title": "Нарушена парность вызовов транзакции",
+        "hint": "Проверьте пары НачатьТранзакцию/ЗафиксироватьТранзакцию/ОтменитьТранзакцию.",
+    },
+    # BSL240 — RewriteMethodParameter
+    "BSL240": {
+        "title": "Параметр метода перезаписывается до чтения",
+        "hint": "Вероятная ошибка: используйте параметр до присваивания или заведите новую переменную.",
+    },
+    # BSL255 — TryNumber
+    "BSL255": {
+        "title": "Преобразование числа внутри Попытка",
+        "hint": "Преобразования чисел лучше обрабатывать явно, без сокрытия ошибок через Попытка.",
+    },
+    # BSL257 — UnaryPlusInConcatenation
+    "BSL257": {
+        "title": "Унарный плюс в конкатенации строк",
+        "hint": "Уберите лишний унарный плюс: это чаще всего опечатка.",
+    },
+    # BSL258 — UnionAll
+    "BSL258": {
+        "title": "Используется ОБЪЕДИНИТЬ без ВСЕ",
+        "hint": "Если дедупликация не нужна, используйте ОБЪЕДИНИТЬ ВСЕ для производительности.",
+    },
+    # BSL263 — UseLessForEach
+    "BSL263": {
+        "title": "Бесполезный цикл Для Каждого",
+        "hint": "Тело цикла не использует элемент итерации; упростите или перепишите цикл.",
+    },
+    # BSL265 — UselessTernaryOperator
+    "BSL265": {
+        "title": "Бесполезный тернарный оператор",
+        "hint": "Тернарный оператор возвращает условие напрямую; замените на само условие.",
+    },
+    # BSL279 — YoLetterUsage
+    "BSL279": {
+        "title": "Использование буквы «ё»",
+        "hint": "Для единообразия используйте «е» в идентификаторах и строках.",
+    },
 }
 
 
@@ -457,12 +571,13 @@ def translate_message(code: str, original_message: str) -> str:
     """
     Возвращает русское сообщение для диагностики.
 
-    Для известных правил подставляет российский заголовок и рекомендацию.
-    Для неизвестных возвращает оригинальное английское сообщение.
+    Для известных правил подставляет русский заголовок и рекомендацию.
+    Для неизвестных пытается вернуть понятную русскую формулировку
+    на основе метаданных правила.
     """
     info = DIAGNOSTICS_RU.get(code)
     if not info:
-        return original_message
+        return _fallback_ru_message(code, original_message)
 
     title = info["title"]
     hint = info.get("hint", "")
@@ -480,6 +595,18 @@ def translate_message(code: str, original_message: str) -> str:
         msg += f"\n💡 {hint}"
 
     return msg
+
+
+def localize_rule_title(code: str) -> str:
+    """Русский заголовок правила для UI/CodeAction (best-effort)."""
+    info = DIAGNOSTICS_RU.get(code)
+    if info and info.get("title"):
+        return info["title"]
+    md = RULE_METADATA.get(code, {})
+    desc = str(md.get("description", "")).strip()
+    if desc:
+        return _localize_generic_text(desc)
+    return code
 
 
 # Шаблоны для извлечения специфических значений из английских сообщений.
@@ -518,3 +645,42 @@ def _extract_specific(code: str, message: str) -> str:
             except Exception:
                 pass
     return ""
+
+
+def _fallback_ru_message(code: str, original_message: str) -> str:
+    md = RULE_METADATA.get(code, {})
+    desc = str(md.get("description", "")).strip()
+    if desc:
+        return _localize_generic_text(desc)
+    return _localize_generic_text(original_message)
+
+
+def _localize_generic_text(text: str) -> str:
+    """Упрощенная локализация типовых английских формулировок."""
+    replacements = (
+        ("must be", "должен быть"),
+        ("should be", "должен быть"),
+        ("is not", "не"),
+        ("is never", "никогда не"),
+        ("inside", "внутри"),
+        ("outside", "вне"),
+        ("found", "обнаружен"),
+        ("missing", "отсутствует"),
+        ("duplicate", "дублирующийся"),
+        ("duplicates", "дублирует"),
+        ("without", "без"),
+        ("with", "с"),
+        ("before", "перед"),
+        ("after", "после"),
+        ("inside a loop", "внутри цикла"),
+        ("in a loop", "в цикле"),
+        ("security risk", "риск безопасности"),
+        ("readability", "читаемость"),
+        ("reduces readability", "снижает читаемость"),
+        ("likely a mistake", "вероятная ошибка"),
+        ("for consistency", "для единообразия"),
+    )
+    out = text
+    for src, dst in replacements:
+        out = out.replace(src, dst)
+    return out

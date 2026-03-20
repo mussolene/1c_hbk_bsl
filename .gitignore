@@ -64,6 +64,8 @@ logs/
 # Temporary files
 tmp/
 .tmp/
+.tmp_format_cmp/
 ._tmp_debug/
 ._tmp_mcp_debug/
 ._tmp_mcp_debug2/
+.nosync/

@@ -626,7 +626,7 @@ class TestBsl018RaiseWithLiteral:
                 ВызватьИсключение "Ошибка";
             КонецПроцедуры
         """
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL018"})
         bsl018 = [d for d in diags if d.code == "BSL018"]
         assert len(bsl018) >= 1
 
@@ -636,21 +636,31 @@ class TestBsl018RaiseWithLiteral:
                 Raise "Error message";
             EndProcedure
         """
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL018"})
         assert "BSL018" in _codes(diags)
 
     def test_raise_with_variable_no_warning(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
-                ВызватьИсключение НовоеИсключение("Ошибка");
+                Текст = "Ошибка";
+                ВызватьИсключение Текст;
             КонецПроцедуры
         """
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL018"})
+        assert "BSL018" not in _codes(diags)
+
+    def test_raise_with_concatenated_message_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ВызватьИсключение "Префикс: " + Строка(ТипЗнч(А));
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL018"})
         assert "BSL018" not in _codes(diags)
 
     def test_raise_in_comment_no_warning(self, tmp_path: Path) -> None:
         content = '// ВызватьИсключение "Ошибка";\n'
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL018"})
         assert "BSL018" not in _codes(diags)
 
 
@@ -1114,6 +1124,17 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3)
         assert "BSL035" not in _codes(diags)
 
+    def test_duplicate_only_on_raise_lines_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ВызватьИсключение "ОченьДлиннаяСтрока";
+                ВызватьИсключение "ОченьДлиннаяСтрока";
+                ВызватьИсключение "ОченьДлиннаяСтрока";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, min_duplicate_uses=3)
+        assert "BSL035" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL036 — ComplexCondition
@@ -1465,6 +1486,17 @@ class TestBsl049UnconditionalRaise:
                 Исключение
                     Сообщить(ОписаниеОшибки());
                 КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL049"})
+        assert "BSL049" not in _codes(diags)
+
+    def test_raise_inside_nested_block_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(А)
+                Если А Тогда
+                    ВызватьИсключение "Ошибка";
+                КонецЕсли;
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL049"})

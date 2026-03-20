@@ -5,9 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2026-03-20
+
+### Changed
+- Расширение VS Code: активация по `onLanguage:bsl` и `onCommand:*` вместо `*` (производительность).
+- Сборка VSIX: убран флаг `--allow-star-activation` у `vsce` (больше не нужен).
+
+### Fixed
+- Синхронизированы версии Python-пакета (`pyproject.toml`, `__version__`) и расширения (`package.json`).
+
 ## [0.3.0] - 2026-03-19
 
 ### Added
+- `vscode-extension/README.md`, `vscode-extension/LICENSE` (MIT) — документация и лицензия внутри VSIX; сборка расширения через **webpack** (`npm run compile`), в CI добавлены `npm run typecheck` и `--no-dependencies` / `--allow-star-activation` для `vsce package`.
 - `diagnostics_ru.py` — полная русская локализация 147 диагностических правил в панели Problems:
   - Заголовок на русском (`title`) + рекомендация что делать (`hint` со значком 💡)
   - Поддержка 50+ правил BSL001–BSL147
@@ -17,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quick-fix действия (`Cmd+.`): BSLLS-off/on вокруг строки, noqa-комментарий, для всего файла
 - `DiagnosticEngine.DEFAULT_DISABLED` — правила отключённые по умолчанию (аналогично BSL LS):
   - `BSL121` (TabIndentation) — табуляция не ошибка, стилистика
+
+### Changed
+- **BSL018** (RaiseWithLiteral): отключено по умолчанию; подсказки ссылаются на расширенный синтаксис `ВызватьИсключение` (8.3.21+), без `НовоеИсключение()`; включение — через `select`/настройки движка.
+- **RULE_METADATA[`name`]**: приведены к именам диагностик **BSL Language Server** (`*Diagnostic` без суффикса), в духе копирования справочника BSLLS; прямая карта `_BSLLS_NAME_TO_CODE` только для подавлений `// BSLLS:…` и внешних отчётов — без лишних синонимов-ключей.
 
 ### Fixed
 - Критическая ошибка производительности: `find_symbol` не использовал B-tree индекс из-за `LOWER()` —

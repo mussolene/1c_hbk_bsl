@@ -34,14 +34,15 @@ class IncrementalIndexer:
     Indexes a BSL workspace into a :class:`SymbolIndex`.
 
     Args:
-        db_path:    Path to the SQLite index database.
+        db_path:    Path to the SQLite index database. ``None`` uses the same
+            default as :class:`SymbolIndex`.
         index:      Existing SymbolIndex instance (overrides db_path).
         on_progress: Optional callback ``fn(current, total, file_path)`` for progress.
     """
 
     def __init__(
         self,
-        db_path: str = "bsl_index.sqlite",
+        db_path: str | None = None,
         index: SymbolIndex | None = None,
         on_progress: Callable[[int, int, str], None] | None = None,
     ) -> None:

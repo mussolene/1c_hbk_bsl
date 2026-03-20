@@ -90,6 +90,20 @@ SymbolIndex.find_symbol() — FTS5 or exact lookup
 Formatted response (dict / LSP Location)
 ```
 
+## Formatting
+
+`textDocument/formatting` and `textDocument/rangeFormatting` use `BslFormatter`
+(`src/bsl_analyzer/analysis/formatter.py`).
+
+- **Structural block indent:** tree-sitter AST walk (`formatter_structural.py`),
+  merged with a keyword heuristic for blank/comment/`#` lines and when the parse
+  tree is a regex stub or contains ERROR nodes.
+- **Multi-line expression indent (BSL LS style):** extra level after a bare `=`
+  until `;`, leading `.` chains, operator context for `Если`/`Пока`/`Для` until
+  `Тогда`/`Цикл`, procedure signature tracking — line-based state in `formatter.py`.
+- **Future:** optional token-space rules (parity with BSL LS `FormatProvider`) on
+  the same AST as diagnostics.
+
 ## SQLite Schema
 
 ### `symbols`

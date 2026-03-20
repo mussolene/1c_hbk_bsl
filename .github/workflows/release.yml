@@ -137,7 +137,11 @@ jobs:
         working-directory: vscode-extension
         run: npm ci
 
-      - name: Compile TypeScript
+      - name: Typecheck extension (tsc --noEmit)
+        working-directory: vscode-extension
+        run: npm run typecheck
+
+      - name: Webpack bundle (extension.js)
         working-directory: vscode-extension
         run: npm run compile
 
@@ -166,6 +170,7 @@ jobs:
         working-directory: vscode-extension
         run: |
           npx vsce package \
+            --no-dependencies \
             --target ${{ matrix.target }} \
             --out bsl-analyzer-${{ steps.version.outputs.version }}-${{ matrix.target }}.vsix
 
@@ -255,13 +260,6 @@ jobs:
           files: release-assets/*
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: artifacts/python-wheel/
-        env:
-          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
 
       - name: Setup Node for vsce
         uses: actions/setup-node@v4

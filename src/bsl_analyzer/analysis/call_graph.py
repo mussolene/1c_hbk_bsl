@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from bsl_analyzer.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+
 if TYPE_CHECKING:
     from bsl_analyzer.indexer.symbol_index import SymbolIndex
 
@@ -77,9 +79,17 @@ def extract_calls(tree: Any, file_path: str) -> list[Call]:
 # Tree-sitter extraction
 # ---------------------------------------------------------------------------
 
+def _root_source_lines(root: Any) -> list[str]:
+    full = getattr(root, "text", None) or b""
+    if isinstance(full, bytes):
+        return full.decode("utf-8", errors="replace").splitlines()
+    return str(full).splitlines()
+
+
 def _extract_from_ts(root: Any, file_path: str) -> list[Call]:
+    lines = _root_source_lines(root)
     calls: list[Call] = []
-    _visit_for_calls(root, calls, file_path, container=None)
+    _visit_for_calls(root, calls, file_path, container=None, lines=lines)
     return calls
 
 
@@ -88,6 +98,7 @@ def _visit_for_calls(
     calls: list[Call],
     file_path: str,
     container: str | None,
+    lines: list[str],
 ) -> None:
     node_type = node.type if hasattr(node, "type") else ""
 
@@ -104,15 +115,17 @@ def _visit_for_calls(
     # direct:  method_call { identifier, arguments }
     # chained: call_expression { access, ".", method_call }
     if node_type == "method_call":
-        call = _ts_method_call_to_record(node, file_path, container)
+        call = _ts_method_call_to_record(node, file_path, container, lines)
         if call:
             calls.append(call)
 
     for child in node.children:
-        _visit_for_calls(child, calls, file_path, container)
+        _visit_for_calls(child, calls, file_path, container, lines)
 
 
-def _ts_method_call_to_record(node: Any, file_path: str, container: str | None) -> Call | None:
+def _ts_method_call_to_record(
+    node: Any, file_path: str, container: str | None, lines: list[str]
+) -> Call | None:
     callee_name = ""
     args_count = 0
 
@@ -130,10 +143,14 @@ def _ts_method_call_to_record(node: Any, file_path: str, container: str | None) 
     if not callee_name or callee_name.lower() in _BSL_KEYWORDS:
         return None
 
+    line_idx = node.start_point[0]
+    line_text = lines[line_idx] if line_idx < len(lines) else ""
+    caller_character = utf8_byte_offset_to_lsp_character(line_text, node.start_point[1])
+
     return Call(
         caller_file=file_path,
         caller_line=node.start_point[0] + 1,
-        caller_character=node.start_point[1],
+        caller_character=caller_character,
         caller_name=container,
         callee_name=callee_name,
         callee_args_count=args_count,

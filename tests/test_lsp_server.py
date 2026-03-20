@@ -99,6 +99,42 @@ class TestPublishDiagnostics:
         _publish_diagnostics(ls, "file:///nonexistent.bsl", "/nonexistent.bsl")
         # Should not raise; publish_diagnostics may or may not be called
 
+    def test_publish_diagnostics_unused_separate_source_and_information(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Dead-code hints use a distinct Problems source and Information severity."""
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        bsl = tmp_path / "mod.bsl"
+        bsl.write_text(
+            "Функция НеВызывается()\nВозврат 0;\nКонецФункции\n",
+            encoding="utf-8",
+        )
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DiagnosticSeverity, DiagnosticTag
+
+        from bsl_analyzer.lsp.server import (
+            BslLanguageServer,
+            _path_to_uri,
+            _publish_diagnostics,
+        )
+
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        ls.symbol_index.find_unused_symbols = lambda _path: [
+            {"name": "НеВызывается", "line": 1, "character": 8},
+        ]
+        uri = _path_to_uri(str(bsl))
+        _publish_diagnostics(ls, uri, str(bsl))
+        params = ls.text_document_publish_diagnostics.call_args[0][0]
+        dead = [d for d in params.diagnostics if d.code == "BSL-DEAD"]
+        assert len(dead) == 1
+        assert dead[0].source == "bsl-analyzer · unused"
+        assert dead[0].severity == DiagnosticSeverity.Information
+        assert dead[0].tags and DiagnosticTag.Unnecessary in dead[0].tags
+        lint_sources = {d.source for d in params.diagnostics if d.code != "BSL-DEAD"}
+        assert lint_sources <= {"bsl-analyzer"}
+
 
 # ---------------------------------------------------------------------------
 # Utility functions
@@ -545,6 +581,26 @@ class TestFormatting:
         result = on_range_formatting(ls, params)
         assert result is not None
 
+    def test_range_formatting_end_exclusive_does_not_touch_next_line(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import Position, Range
+
+        from bsl_analyzer.lsp.server import on_range_formatting
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = "процедура Тест()\nа=1;\nб=2;\nконецпроцедуры\n"
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.options.tab_size = 4
+        # Select only line 1 (end is exclusive at line 2, char 0)
+        params.range = Range(start=Position(line=1, character=0), end=Position(line=2, character=0))
+        result = on_range_formatting(ls, params)
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].range.start.line == 1
+        assert result[0].range.end.line == 2
+        assert "Б = 2;" not in result[0].new_text
+
 
 # ---------------------------------------------------------------------------
 # Document Highlight
@@ -734,6 +790,33 @@ class TestCodeAction:
         result = on_code_action(ls, params)
         # No doc content → no line actions, no format action → None
         assert result is None
+
+    def test_bslls_quickfix_preserves_tab_indent(self, tmp_path, monkeypatch) -> None:
+        """BSLLS-off/on inserts must keep tabs from the diagnostic line, not expand to spaces."""
+        from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import on_code_action
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = "file:///t.bsl"
+        ls._docs[uri] = "\tА = А;\nСтрока2\n"
+        params = MagicMock()
+        params.text_document.uri = uri
+        diag = MagicMock()
+        diag.code = "BSL009"
+        diag.range.start.line = 0
+        params.context.diagnostics = [diag]
+        params.range = MagicMock()
+        params.range.start.line = 0
+        result = on_code_action(ls, params)
+        assert result
+        texts: list[str] = []
+        for action in result:
+            changes = getattr(action.edit, "changes", None) or {}
+            for edits in changes.values():
+                for te in edits:
+                    texts.append(te.new_text)
+        assert any(t.startswith("\t// BSLLS:") for t in texts), texts
 
 
 # ---------------------------------------------------------------------------
@@ -1030,6 +1113,15 @@ class TestGenerateDocComment:
         result = _generate_doc_comment(lines[0], 0, lines)
         assert result is not None
         assert "Параметры" not in result
+
+    def test_preserves_tab_indent(self) -> None:
+        from bsl_analyzer.lsp.server import _generate_doc_comment
+
+        lines = ["\tПроцедура МойМетод(А)\n", "\tКонецПроцедуры\n"]
+        result = _generate_doc_comment(lines[0], 0, lines)
+        assert result is not None
+        assert result.startswith("\t//")
+        assert "\n\t//" in result
 
 
 # ---------------------------------------------------------------------------

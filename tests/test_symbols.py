@@ -322,3 +322,22 @@ class TestExtractSymbolsRealParser:
 
         lines = [s.line for s in result]
         assert lines == sorted(lines)
+
+    def test_cyrillic_function_name_character_is_lsp_column(self) -> None:
+        """Symbol.character must be UTF-16/LSP column, not tree-sitter UTF-8 byte offset."""
+        from bsl_analyzer.analysis.symbols import extract_symbols
+        from bsl_analyzer.parser.bsl_parser import BslParser
+
+        src = (
+            "Функция ИННСертификата(СубъектСертификата)\n"
+            '\tВозврат "";\n'
+            "КонецФункции\n"
+        )
+        parser = BslParser()
+        tree = parser.parse_content(src, "t.bsl")
+        result = extract_symbols(tree, file_path="t.bsl")
+        fns = [s for s in result if s.kind == "function" and s.name == "ИННСертификата"]
+        assert len(fns) == 1
+        sym = fns[0]
+        line = src.splitlines()[sym.line - 1]
+        assert line[sym.character : sym.character + len(sym.name)] == sym.name

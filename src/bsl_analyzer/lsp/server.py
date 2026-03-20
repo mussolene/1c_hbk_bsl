@@ -151,13 +151,14 @@ from bsl_analyzer.analysis.formatter import (
     _get_stripped_keyword,
     default_formatter,
 )
+from bsl_analyzer.analysis.lsp_positions import utf16_len
 from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
 from bsl_analyzer.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
 from bsl_analyzer.analysis.type_inference import BslTypeEngine
 from bsl_analyzer.indexer.db_path import resolve_index_db_path
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
-from bsl_analyzer.lsp.diagnostics_ru import DIAGNOSTICS_RU, translate_message
+from bsl_analyzer.lsp.diagnostics_ru import localize_rule_title, translate_message
 from bsl_analyzer.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -169,6 +170,10 @@ _SEV_MAP = {
     Severity.INFORMATION: DiagnosticSeverity.Information,
     Severity.HINT: DiagnosticSeverity.Hint,
 }
+
+# Problems panel: distinct `source` values so VS Code / Cursor can group by Source.
+_DIAG_SOURCE_LINT = "bsl-analyzer"
+_DIAG_SOURCE_UNUSED = "bsl-analyzer · unused"
 
 # Map symbol kind strings → LSP SymbolKind
 _KIND_MAP = {
@@ -431,13 +436,14 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
                 severity=_SEV_MAP.get(d.severity, DiagnosticSeverity.Warning),
                 code=d.code,
                 message=translate_message(d.code, d.message),
-                source="bsl-analyzer",
+                source=_DIAG_SOURCE_LINT,
             )
             for d in issues
         ]
 
         # Unused (dead) function detection: private symbols with no callers
-        # Uses DiagnosticTag.Unnecessary → VSCode renders them as dimmed text
+        # Information severity + separate source → visible in Problems (group by Source);
+        # DiagnosticTag.Unnecessary → dimmed text in the editor.
         try:
             for sym in ls.symbol_index.find_unused_symbols(path):
                 name = sym.get("name", "")
@@ -447,12 +453,12 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
                     LspDiagnostic(
                         range=Range(
                             start=Position(line=sym_line, character=sym_char),
-                            end=Position(line=sym_line, character=sym_char + len(name)),
+                            end=Position(line=sym_line, character=sym_char + utf16_len(name)),
                         ),
-                        severity=DiagnosticSeverity.Hint,
+                        severity=DiagnosticSeverity.Information,
                         code="BSL-DEAD",
-                        message=f"«{name}» не используется в проекте",
-                        source="bsl-analyzer",
+                        message=f"Неиспользуемая функция или метод: «{name}»",
+                        source=_DIAG_SOURCE_UNUSED,
                         tags=[DiagnosticTag.Unnecessary],
                     )
                 )
@@ -1411,18 +1417,19 @@ def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str])
         return None
     if line_idx > 0 and all_lines[line_idx - 1].strip().startswith("//"):
         return None  # already documented
-    indent = " " * (len(header_line) - len(header_line.lstrip()))
+    # Preserve exact leading whitespace (tabs vs spaces) — do not replace with spaces.
+    prefix = header_line[: len(header_line) - len(header_line.lstrip())]
     func_name, params_str = m.group(1), m.group(2).strip()
-    lines = [f"{indent}// Описание {func_name}."]
+    lines = [f"{prefix}// Описание {func_name}."]
     if params_str:
-        lines += [f"{indent}//", f"{indent}// Параметры:"]
+        lines += [f"{prefix}//", f"{prefix}// Параметры:"]
         for p in params_str.split(","):
             name = p.strip().split("=")[0].strip()
             # Strip leading Знач/Val keyword
             name = _re.sub(r"(?i)^(Знач|Val)\s+", "", name)
             if name:
-                lines.append(f"{indent}//   {name} - Тип - Описание")
-    lines.append(f"{indent}//")
+                lines.append(f"{prefix}//   {name} - Тип - Описание")
+    lines.append(f"{prefix}//")
     return "\n".join(lines) + "\n"
 
 
@@ -1913,8 +1920,13 @@ def on_formatting(
     if not content:
         return None
     indent_size = params.options.tab_size if params.options else 4
+    insert_spaces = _resolve_insert_spaces(params.options, default=True)
     try:
-        formatted = default_formatter.format(content, indent_size=indent_size)
+        formatted = default_formatter.format(
+            content,
+            indent_size=indent_size,
+            insert_spaces=insert_spaces,
+        )
     except Exception as exc:
         logger.error("LSP: formatting failed for %s: %s", uri, exc)
         return None
@@ -1942,22 +1954,37 @@ def on_range_formatting(
     if not content:
         return None
     indent_size = params.options.tab_size if params.options else 4
+    insert_spaces = _resolve_insert_spaces(params.options, default=True)
     r = params.range
+    start_line = max(0, int(r.start.line))
+    end_line = max(0, int(r.end.line))
+    # LSP range end is exclusive. For line-based replacement this means:
+    # if end is at column 0 on a later line, that line is not part of selection.
+    if end_line > start_line and int(r.end.character) == 0:
+        end_line -= 1
+    if end_line < start_line:
+        return []
+
+    original_lines = content.splitlines()
+    original_slice = "\n".join(original_lines[start_line : end_line + 1]) + "\n"
     try:
         formatted_range = default_formatter.format_range(
             content,
-            start_line=r.start.line,
-            end_line=r.end.line,
+            start_line=start_line,
+            end_line=end_line,
             indent_size=indent_size,
+            insert_spaces=insert_spaces,
         )
     except Exception as exc:
         logger.error("LSP: range formatting failed for %s: %s", uri, exc)
         return None
+    if formatted_range == original_slice:
+        return []
     return [
         TextEdit(
             range=Range(
-                start=Position(line=r.start.line, character=0),
-                end=Position(line=r.end.line + 1, character=0),
+                start=Position(line=start_line, character=0),
+                end=Position(line=end_line + 1, character=0),
             ),
             new_text=formatted_range,
         )
@@ -1988,6 +2015,7 @@ def on_type_formatting(
         return None
 
     indent_size = (params.options.tab_size if params.options else None) or 4
+    insert_spaces = _resolve_insert_spaces(params.options, default=True)
     lines = content.splitlines()
 
     # position.line is the newly-created line (where the cursor landed after Enter).
@@ -1995,9 +2023,14 @@ def on_type_formatting(
     if new_line_idx <= 0 or new_line_idx > len(lines):
         return None
 
-    # Compute expected indent level from all lines above the new one
-    context = lines[:new_line_idx]
-    indent_level = default_formatter._indent_at(context, len(context), indent_size)
+    # Compute expected indent level for the new line (full document AST + continuation)
+    indent_level = default_formatter._indent_at(
+        lines,
+        new_line_idx,
+        indent_size,
+        insert_spaces=insert_spaces,
+        full_text=content,
+    )
 
     # If the new line already contains a keyword that dedents (КонецЕсли, Иначе, …),
     # reduce the indent level by one so the keyword aligns with its opener
@@ -2008,7 +2041,7 @@ def on_type_formatting(
         if first_kw in _DEDENT_BEFORE:
             indent_level = max(0, indent_level - 1)
 
-    wanted = " " * (indent_level * indent_size)
+    wanted = (" " * (indent_level * indent_size)) if insert_spaces else ("\t" * indent_level)
 
     # Current leading whitespace on the new line
     current_indent_len = len(current_line) - len(stripped) if stripped else len(current_line)
@@ -2026,6 +2059,16 @@ def on_type_formatting(
             new_text=wanted,
         )
     ]
+
+
+def _resolve_insert_spaces(options: Any, default: bool = False) -> bool:
+    """Resolve LSP formatting option safely with sane default."""
+    if options is None:
+        return default
+    value = getattr(options, "insert_spaces", None)
+    if isinstance(value, bool):
+        return value
+    return default
 
 
 # ---------------------------------------------------------------------------
@@ -2512,10 +2555,10 @@ def on_code_action(
         if 0 <= diag_line < len(doc_lines):
             line_text = doc_lines[diag_line]
             line_end_char = len(line_text)
-            indent = len(line_text) - len(line_text.lstrip())
-            pad = " " * indent
+            # Match diagnostic line indent (tabs/spaces as in source), not N spaces.
+            pad = line_text[: len(line_text) - len(line_text.lstrip())]
             rule_name = RULE_METADATA.get(code, {}).get("name", "")
-            rule_desc_ru = DIAGNOSTICS_RU.get(code, {}).get("title", "")
+            rule_desc_ru = localize_rule_title(code)
             display_name = rule_desc_ru or rule_name or code
 
             # ── 1. Игнорировать строку (noqa) ──────────────────────────────

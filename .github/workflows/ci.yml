@@ -58,6 +58,10 @@ jobs:
         working-directory: vscode-extension
         run: npm ci
 
-      - name: Compile TypeScript
+      - name: Typecheck extension (tsc --noEmit)
+        working-directory: vscode-extension
+        run: npm run typecheck
+
+      - name: Webpack bundle (extension.js)
         working-directory: vscode-extension
         run: npm run compile

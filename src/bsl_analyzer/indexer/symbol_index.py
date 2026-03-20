@@ -13,10 +13,13 @@ Thread-safety is achieved via threading.local() connection pool.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import time
 from typing import Any
+
+from bsl_analyzer.indexer.db_path import resolve_index_db_path
 
 # Each thread gets its own connection to avoid SQLite thread-safety issues.
 _local = threading.local()
@@ -125,12 +128,14 @@ class SymbolIndex:
     Persistent SQLite-backed index of BSL symbols and call-graph edges.
 
     Args:
-        db_path: Path to the SQLite database file.
-                 Use ``":memory:"`` for in-memory (tests).
+        db_path: Path to the SQLite database file. ``None`` uses
+            :func:`~bsl_analyzer.indexer.db_path.resolve_index_db_path` with
+            ``os.getcwd()`` (typically ``.git/bsl_index.sqlite`` or
+            ``~/.cache/bsl-analyzer/…``). Use ``":memory:"`` for in-memory (tests).
     """
 
-    def __init__(self, db_path: str = "bsl_index.sqlite") -> None:
-        self.db_path = db_path
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = db_path if db_path is not None else resolve_index_db_path(os.getcwd())
         # In-memory DBs are connection-scoped; keep per-instance connection to
         # avoid test isolation issues with the thread-local pool.
         self._mem_conn: sqlite3.Connection | None = None

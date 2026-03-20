@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from bsl_analyzer.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+
 # Regex fallbacks (used when tree-sitter node types differ)
 _RE_PROC_HEADER = re.compile(
     r"^(?:Процедура|Procedure|Функция|Function)\s+"
@@ -123,7 +125,7 @@ def _visit_node(
         return
 
     if node_type in ("var_definition", "var_statement"):
-        sym = _ts_var_to_symbol(node, file_path, container)
+        sym = _ts_var_to_symbol(node, file_path, source_lines, container)
         if sym:
             symbols.append(sym)
         return
@@ -140,6 +142,7 @@ def _ts_proc_to_symbol(
 ) -> Symbol | None:
     """Convert a procedure/function tree-sitter node to a Symbol."""
     name = ""
+    name_col_byte = node.start_point[1]
     params: list[str] = []
     is_export = False
 
@@ -147,6 +150,7 @@ def _ts_proc_to_symbol(
         ct = child.type
         if ct == "identifier":
             name = _node_text(child)
+            name_col_byte = child.start_point[1]
         elif ct == "parameters":
             params = [_node_text(p) for p in child.children if p.type == "parameter"]
         elif ct == "EXPORT_KEYWORD":
@@ -162,11 +166,16 @@ def _ts_proc_to_symbol(
 
     doc_comment = _extract_doc_comment(source_lines, start_line - 1)
 
+    line_idx = start_line - 1
+    line_text = source_lines[line_idx] if 0 <= line_idx < len(source_lines) else ""
+    # Identifier column: tree-sitter uses UTF-8 byte offset; LSP expects UTF-16 character offset.
+    character = utf8_byte_offset_to_lsp_character(line_text, name_col_byte)
+
     return Symbol(
         name=name,
         kind=kind,
         line=start_line,
-        character=node.start_point[1],
+        character=character,
         end_line=end_line,
         end_character=node.end_point[1],
         is_export=is_export,
@@ -177,7 +186,9 @@ def _ts_proc_to_symbol(
     )
 
 
-def _ts_var_to_symbol(node: Any, file_path: str, container: str | None) -> Symbol | None:
+def _ts_var_to_symbol(
+    node: Any, file_path: str, source_lines: list[str], container: str | None
+) -> Symbol | None:
     """Convert a var declaration tree-sitter node to a Symbol."""
     name = ""
     is_export = False
@@ -191,11 +202,15 @@ def _ts_var_to_symbol(node: Any, file_path: str, container: str | None) -> Symbo
     if not name:
         return None
 
+    line_idx = node.start_point[0]
+    line_text = source_lines[line_idx] if 0 <= line_idx < len(source_lines) else ""
+    character = utf8_byte_offset_to_lsp_character(line_text, node.start_point[1])
+
     return Symbol(
         name=name,
         kind="variable",
         line=node.start_point[0] + 1,
-        character=node.start_point[1],
+        character=character,
         end_line=node.end_point[0] + 1,
         end_character=node.end_point[1],
         is_export=is_export,

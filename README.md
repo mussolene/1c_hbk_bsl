@@ -52,9 +52,11 @@ ext install mussolene.bsl-analyzer
     "editor.defaultFormatter": "mussolene.bsl-analyzer",
     "editor.tabSize": 4
   },
-  "bslAnalyzer.indexDbPath": "${workspaceFolder}/bsl_index.sqlite"
+  "bslAnalyzer.indexDbPath": "/path/to/custom/bsl_index.sqlite"
 }
 ```
+
+По умолчанию путь к БД не задаётся: индекс лежит в `.git/bsl_index.sqlite` (внутри репозитория git не попадает в коммиты) или в `~/.cache/bsl-analyzer/<хэш>/`, если папка не в git.
 
 ---
 
@@ -85,7 +87,7 @@ bsl-analyzer --index /path/to/1c-project
 | Параметр | По умолчанию | Описание |
 |---|---|---|
 | `bslAnalyzer.serverPath` | `bsl-analyzer` | Путь к исполняемому файлу сервера |
-| `bslAnalyzer.indexDbPath` | `<workspace>/bsl_index.sqlite` | Путь к SQLite-индексу |
+| `bslAnalyzer.indexDbPath` | *(пусто)* → `.git/bsl_index.sqlite` или `~/.cache/bsl-analyzer/…` | Явный путь к SQLite-индексу (необязательно) |
 | `bslAnalyzer.logLevel` | `info` | Уровень логирования |
 | `bslAnalyzer.diagnostics.enabled` | `true` | Диагностики в реальном времени |
 | `bslAnalyzer.diagnostics.select` | `[]` | Запустить только указанные правила |
@@ -93,6 +95,8 @@ bsl-analyzer --index /path/to/1c-project
 | `bslAnalyzer.format.indentSize` | `4` | Размер отступа |
 | `bslAnalyzer.inlayHints.enabled` | `true` | Подсказки имён параметров |
 | `bslAnalyzer.semanticTokens.enabled` | `true` | Семантическая подсветка |
+
+**Панель Problems:** включите группировку по **источнику** (меню вида в заголовке Problems) — правила линтера идут как `bsl-analyzer`, неиспользуемые в проекте процедуры и функции (после индексации) — отдельной группой `bsl-analyzer · unused` (код `BSL-DEAD`, подсветка «лишнего» кода в редакторе сохраняется).
 
 ---
 
@@ -103,14 +107,15 @@ bsl-analyzer --index /path/to/1c-project
 | BSL001 | ERR | ParseError | Синтаксическая ошибка (tree-sitter) |
 | BSL002 | WRN | MethodSize | Метод длиннее 200 строк |
 | BSL004 | WRN | EmptyCodeBlock | Пустой блок `Исключение` |
-| BSL005 | WRN | HardcodeNetworkAddress | Захардкоженный IP / URL |
+| BSL005 | WRN | UsingHardcodeNetworkAddress | Захардкоженный IP / URL |
 | BSL011 | WRN | CognitiveComplexity | Когнитивная сложность > 15 |
-| BSL012 | WRN | HardcodeCredentials | Захардкоженный пароль / токен |
+| BSL012 | WRN | UsingHardcodeSecretInformation | Захардкоженный пароль / токен |
 | BSL019 | WRN | CyclomaticComplexity | Цикломатическая сложность > 10 |
-| BSL033 | ERR | QueryInLoop | Запрос внутри цикла |
+| BSL033 | ERR | CreateQueryInCycle | Запрос внутри цикла |
+| BSL-DEAD | INF | *(индекс)* | Неиспользуемая неэкспортная процедура/функция (нет вызовов в проекте) |
 | BSL050 | WRN | LargeTransaction | `НачатьТранзакцию` без Зафиксировать/Отменить |
 | BSL051 | WRN | UnreachableCode | Код после безусловного `Возврат` |
-| BSL053 | WRN | ExecuteDynamic | `Выполнить()` — динамическое исполнение кода |
+| BSL053 | WRN | ExecuteExternalCode | `Выполнить()` — динамическое исполнение кода |
 
 Полный список: `bsl-analyzer --list-rules`
 

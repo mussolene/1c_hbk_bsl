@@ -2,7 +2,7 @@
   "name": "bsl-analyzer",
   "displayName": "BSL Analyzer (1C)",
   "description": "Language support for 1C BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename and more",
-  "version": "0.6.0",
+  "version": "0.6.5",
   "publisher": "mussolene",
   "icon": "icon.png",
   "license": "MIT",
@@ -28,21 +28,33 @@
     "Snippets"
   ],
   "keywords": [
-    "1C", "BSL", "1C Enterprise", "OneScript", "bsl-language-server"
+    "1C",
+    "BSL",
+    "1C Enterprise",
+    "OneScript",
+    "bsl-language-server"
   ],
+  "main": "./out/extension.js",
   "activationEvents": [
     "onLanguage:bsl",
     "onCommand:bslAnalyzer.reindexWorkspace",
     "onCommand:bslAnalyzer.reindexCurrentFile",
-    "onCommand:bslAnalyzer.showStatus"
+    "onCommand:bslAnalyzer.showStatus",
+    "onCommand:bslAnalyzer.showOutput"
   ],
-  "main": "./out/extension.js",
   "contributes": {
     "languages": [
       {
         "id": "bsl",
-        "aliases": ["BSL", "1C Enterprise Script", "OneScript"],
-        "extensions": [".bsl", ".os"],
+        "aliases": [
+          "BSL",
+          "1C Enterprise Script",
+          "OneScript"
+        ],
+        "extensions": [
+          ".bsl",
+          ".os"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -74,6 +86,11 @@
         "command": "bslAnalyzer.showStatus",
         "title": "BSL Analyzer: Show Index Status",
         "category": "BSL"
+      },
+      {
+        "command": "bslAnalyzer.showOutput",
+        "title": "BSL Analyzer: Show Server Log",
+        "category": "BSL"
       }
     ],
     "configuration": {
@@ -97,11 +114,16 @@
         "bslAnalyzer.indexDbPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the SQLite index database. Defaults to bsl_index.sqlite in the workspace root."
+          "description": "SQLite index path. Leave empty: server stores the index under .git/bsl_index.sqlite (git repo) or ~/.cache/bsl-analyzer/<id>/ (otherwise). Set only to force a custom location."
         },
         "bslAnalyzer.logLevel": {
           "type": "string",
-          "enum": ["debug", "info", "warning", "error"],
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error"
+          ],
           "default": "info",
           "description": "Log level for the BSL analyzer language server."
         },
@@ -112,13 +134,17 @@
         },
         "bslAnalyzer.diagnostics.select": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Run only the listed diagnostic rule codes. Empty = all rules."
         },
         "bslAnalyzer.diagnostics.ignore": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Suppress the listed diagnostic rule codes."
         },
@@ -136,38 +162,44 @@
           "type": "boolean",
           "default": true,
           "description": "Enable semantic token coloring (layered on top of syntax highlighting)."
-        },
-        "[bsl]": {
-          "type": "object",
-          "default": {
-            "editor.formatOnSave": true,
-            "editor.defaultFormatter": "mussolene.bsl-analyzer",
-            "editor.semanticHighlighting.enabled": true,
-            "editor.inlayHints.enabled": "on",
-            "editor.tabSize": 4,
-            "editor.insertSpaces": true
-          },
-          "description": "Default editor settings for BSL files (applied automatically).",
-          "scope": "language-overridable"
         }
+      }
+    },
+    "configurationDefaults": {
+      "[bsl]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "mussolene.bsl-analyzer",
+        "editor.semanticHighlighting.enabled": true,
+        "editor.inlayHints.enabled": "on",
+        "editor.tabSize": 4,
+        "editor.insertSpaces": false
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "typecheck": "tsc --noEmit -p ./",
+    "lint": "eslint .",
     "pretest": "npm run compile",
     "test": "node ./out/test/runTest.js",
-    "package": "vsce package"
+    "package": "vsce package --no-dependencies",
+    "package:vsix": "vsce package --no-dependencies -o bsl-analyzer-${npm_package_version}.vsix"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.28.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.3.0",
-    "typescript": "^5.3.0"
+    "eslint": "^9.28.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.3.0",
+    "typescript-eslint": "^8.34.0",
+    "webpack": "^5.105.4",
+    "webpack-cli": "^6.0.1"
   }
 }

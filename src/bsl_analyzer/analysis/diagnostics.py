@@ -9,19 +9,19 @@ BSL001  ParseError              — Syntax error detected by tree-sitter
 BSL002  MethodSize              — Procedure/function longer than N lines (default 200)
 BSL003  NonExportMethodsInApiRegion — Method in API region without Export keyword
 BSL004  EmptyCodeBlock          — Empty exception handler
-BSL005  HardcodeNetworkAddress  — Hardcoded IP address or URL
-BSL006  HardcodePath            — Hardcoded file system path
-BSL007  UnusedLocalVariable     — Local variable declared but never referenced
-BSL008  TooManyReturnStatements — More than N return statements in one method (default 3)
-BSL009  SelfAssign              — Variable assigned to itself (Х = Х)
-BSL010  UselessReturn           — Redundant Возврат at the end of a Procedure
-BSL011  CognitiveComplexity     — Method cognitive complexity exceeds threshold (default 15)
-BSL012  HardcodeCredentials     — Possible hardcoded password / token / secret
-BSL013  CommentedCode           — Block of commented-out source code
-BSL014  LineTooLong             — Line exceeds maximum length (default 120)
-BSL015  NumberOfOptionalParams  — Too many optional parameters (default 3)
-BSL016  NonStandardRegion       — Region name not in the standard BSL vocabulary
-BSL017  ExportMethodsInCommandModule — Export modifier in a command or form module
+BSL005  UsingHardcodeNetworkAddress — Hardcoded IP address or URL (BSLLS name)
+BSL006  UsingHardcodePath           — Hardcoded file system path (BSLLS name)
+BSL007  UnusedLocalVariable         — Local variable declared but never referenced
+BSL008  TooManyReturns              — More than N return statements in one method (default 3)
+BSL009  SelfAssign                  — Variable assigned to itself (Х = Х)
+BSL010  UselessReturn               — Redundant Возврат at the end of a Procedure
+BSL011  CognitiveComplexity         — Method cognitive complexity exceeds threshold (default 15)
+BSL012  UsingHardcodeSecretInformation — Possible hardcoded password / token / secret
+BSL013  CommentedCode               — Block of commented-out source code
+BSL014  LineLength                  — Line exceeds maximum length (default 120)
+BSL015  NumberOfOptionalParams      — Too many optional parameters (default 3)
+BSL016  NonStandardRegion           — Region name not in the standard BSL vocabulary
+BSL017  CommandModuleExportMethods  — Export modifier in a command or form module
 
 Suppression
 -----------
@@ -46,8 +46,9 @@ BSL Language Server (BSLLS) block suppression — compatible with existing
         // BSLLS:MethodSize-выкл
         // BSLLS:MethodSize-вкл
 
-    BSLLS diagnostic names are mapped to their BSL code equivalents
-    (see _BSLLS_NAME_TO_CODE). Unknown names are silently ignored.
+    BSLLS diagnostic names are mapped to BSL codes via _BSLLS_NAME_TO_CODE
+    (copy BSLLS rule names; add a line only when you add or alias a rule).
+    Unknown names in comments are ignored.
 
 Engine-level rule selection::
 
@@ -103,7 +104,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["error-handling"],
     },
     "BSL005": {
-        "name": "HardcodeNetworkAddress",
+        "name": "UsingHardcodeNetworkAddress",
         "description": "Hardcoded IP address or URL found in source",
         "severity": "WARNING",
         "sonar_type": "VULNERABILITY",
@@ -111,7 +112,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["security", "hardware-related"],
     },
     "BSL006": {
-        "name": "HardcodePath",
+        "name": "UsingHardcodePath",
         "description": "Hardcoded file-system path found in source",
         "severity": "WARNING",
         "sonar_type": "VULNERABILITY",
@@ -127,7 +128,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["unused"],
     },
     "BSL008": {
-        "name": "TooManyReturnStatements",
+        "name": "TooManyReturns",
         "description": "Method has more return statements than the allowed maximum",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -159,7 +160,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["brain-overload", "complexity"],
     },
     "BSL012": {
-        "name": "HardcodeCredentials",
+        "name": "UsingHardcodeSecretInformation",
         "description": "Possible hardcoded password, token, or secret",
         "severity": "ERROR",
         "sonar_type": "VULNERABILITY",
@@ -175,7 +176,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["unused"],
     },
     "BSL014": {
-        "name": "LineTooLong",
+        "name": "LineLength",
         "description": "Line exceeds the maximum allowed length",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -199,7 +200,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["convention"],
     },
     "BSL017": {
-        "name": "ExportMethodsInCommandModule",
+        "name": "CommandModuleExportMethods",
         "description": "Export modifier should not be used in command or form modules",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -208,7 +209,10 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL018": {
         "name": "RaiseExceptionWithLiteral",
-        "description": "ВызватьИсключение/Raise used with a string literal instead of an exception object",
+        "description": (
+            "ВызватьИсключение/Raise with only a string literal — optional extended syntax "
+            "(8.3.21+) or a non-literal expression for richer error context"
+        ),
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
@@ -223,7 +227,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["brain-overload", "complexity"],
     },
     "BSL020": {
-        "name": "ExcessiveNesting",
+        "name": "NestedStatements",
         "description": "Code block nesting depth exceeds the allowed maximum",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -263,7 +267,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["convention", "style"],
     },
     "BSL025": {
-        "name": "MissingSemicolon",
+        "name": "EmptyStatement",
         "description": "Statement is not terminated with a semicolon",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -279,7 +283,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["unused"],
     },
     "BSL027": {
-        "name": "UseGotoOperator",
+        "name": "UsingGoto",
         "description": "Перейти/Goto statement makes control flow hard to follow",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -287,7 +291,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["design", "brain-overload"],
     },
     "BSL028": {
-        "name": "MissingCodeTryCatch",
+        "name": "MissingCodeTryCatchEx",
         "description": "Method body contains no error handling (Try/Except) for potentially risky operations",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -303,7 +307,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["convention", "readability"],
     },
     "BSL030": {
-        "name": "LineEndsWithSemicolon",
+        "name": "SemicolonPresence",
         "description": "Procedure/function header line ends with a semicolon (not needed in BSL)",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -319,7 +323,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["design", "brain-overload"],
     },
     "BSL032": {
-        "name": "FunctionReturnValue",
+        "name": "FunctionShouldHaveReturn",
         "description": "Function may exit without returning a value (missing Возврат)",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -327,7 +331,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["suspicious", "design"],
     },
     "BSL033": {
-        "name": "QueryInLoop",
+        "name": "CreateQueryInCycle",
         "description": "Query execution inside a loop — severe performance risk in 1C",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -351,7 +355,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["convention", "readability"],
     },
     "BSL036": {
-        "name": "ComplexCondition",
+        "name": "IfConditionComplexity",
         "description": "Condition expression has too many boolean operators",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -399,7 +403,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["deprecated", "ui"],
     },
     "BSL042": {
-        "name": "EmptyExportMethod",
+        "name": "UnusedLocalMethod",
         "description": "Exported method has no meaningful body (empty stub)",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -439,7 +443,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["design", "defensive-programming"],
     },
     "BSL047": {
-        "name": "DateTimeNow",
+        "name": "MagicDate",
         "description": "ТекущаяДата()/CurrentDate() returns local server time — use CurrentUniversalDate() for UTC-safe code",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -456,7 +460,10 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL049": {
         "name": "UnconditionalExceptionRaise",
-        "description": "ВызватьИсключение/Raise outside a Попытка/Try block is unconditional — consider using a guard condition",
+        "description": (
+            "ВызватьИсключение/Raise at procedure body base indent outside Попытка/Try "
+            "always terminates the call — use a guard or a nested conditional block"
+        ),
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
@@ -479,7 +486,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["suspicious", "dead-code"],
     },
     "BSL052": {
-        "name": "UselessCondition",
+        "name": "IdenticalExpressions",
         "description": "Condition is always True or always False (literal Истина/Ложь/True/False)",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -487,7 +494,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["suspicious", "logic"],
     },
     "BSL053": {
-        "name": "ExecuteDynamic",
+        "name": "ExecuteExternalCode",
         "description": "Выполнить()/Execute() runs dynamically constructed code — security and maintenance risk",
         "severity": "WARNING",
         "sonar_type": "VULNERABILITY",
@@ -495,7 +502,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["security", "design"],
     },
     "BSL054": {
-        "name": "ModuleLevelVariable",
+        "name": "ExportVariables",
         "description": "Module-level Перем/Var declaration creates shared mutable state — prefer local variables",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -503,7 +510,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["design", "global-state"],
     },
     "BSL055": {
-        "name": "ConsecutiveBlankLines",
+        "name": "ConsecutiveEmptyLines",
         "description": "More than 2 consecutive blank lines reduce readability",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -543,7 +550,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "readability"],
     },
     "BSL060": {
-        "name": "DoubleNegation",
+        "name": "DoubleNegatives",
         "description": "НЕ НЕ expression — double negation cancels out, use the expression directly",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -559,7 +566,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "readability"],
     },
     "BSL062": {
-        "name": "UnusedParameter",
+        "name": "UnusedParameters",
         "description": "Procedure/function parameter is never referenced in the method body",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -583,7 +590,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness", "design"],
     },
     "BSL065": {
-        "name": "MissingExportComment",
+        "name": "MissingReturnedValueDescription",
         "description": "Exported method has no preceding description comment (// or ///)",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -591,7 +598,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["design", "documentation"],
     },
     "BSL066": {
-        "name": "DeprecatedPlatformMethod",
+        "name": "DeprecatedFind",
         "description": "Call to a deprecated 1C platform method that has a modern replacement",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -663,7 +670,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "maintenance"],
     },
     "BSL075": {
-        "name": "GlobalVariableModification",
+        "name": "ExportVariables",
         "description": "Method modifies a module-level variable — prefer explicit parameters/return",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -679,7 +686,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "readability"],
     },
     "BSL077": {
-        "name": "SelectStar",
+        "name": "SelectTopWithoutOrderBy",
         "description": "SELECT */ВЫБРАТЬ * in a query — enumerate columns explicitly",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -703,7 +710,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "brain-overload"],
     },
     "BSL080": {
-        "name": "SilentCatch",
+        "name": "EmptyCodeBlock",
         "description": "Exception handler ignores the error — no ИнформацияОбОшибке or re-raise",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -735,7 +742,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["maintainability", "style"],
     },
     "BSL084": {
-        "name": "FunctionWithNoReturn",
+        "name": "FunctionShouldHaveReturn",
         "description": "Функция/Function has no Возврат with a value — should be Процедура",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -743,7 +750,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness"],
     },
     "BSL085": {
-        "name": "LiteralBooleanCondition",
+        "name": "IdenticalExpressions",
         "description": "Если Истина/Ложь Тогда — constant condition always true or false",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -767,7 +774,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["performance"],
     },
     "BSL088": {
-        "name": "MissingParameterComment",
+        "name": "MissingReturnedValueDescription",
         "description": "Export method has parameters but no // Parameters: comment in header",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -783,7 +790,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["performance", "correctness"],
     },
     "BSL090": {
-        "name": "HardcodedConnectionString",
+        "name": "UsingHardcodeSecretInformation",
         "description": "Hardcoded database connection string or DSN in source code",
         "severity": "WARNING",
         "sonar_type": "VULNERABILITY",
@@ -799,7 +806,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "readability"],
     },
     "BSL092": {
-        "name": "EmptyElseBlock",
+        "name": "EmptyCodeBlock",
         "description": "Empty Иначе/Else block — remove it or add a comment explaining intent",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -815,7 +822,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness", "suspicious"],
     },
     "BSL094": {
-        "name": "AssignmentToItself",
+        "name": "SelfAssign",
         "description": "Compound assignment where left and right sides match (А += 0, А *= 1)",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -831,7 +838,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "readability"],
     },
     "BSL096": {
-        "name": "UndocumentedExportMethod",
+        "name": "MissingReturnedValueDescription",
         "description": "Export method has no preceding comment block",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -839,7 +846,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "documentation"],
     },
     "BSL097": {
-        "name": "UseOfCurrentDate",
+        "name": "DeprecatedCurrentDate",
         "description": "ТекущаяДата()/CurrentDate() returns server time — use ТекущаяДатаСеанса() for session time",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -855,7 +862,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["security", "suspicious"],
     },
     "BSL099": {
-        "name": "TooManyParameters",
+        "name": "NumberOfParams",
         "description": "Procedure/function has too many parameters — split into a structure or separate methods",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -863,7 +870,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["design", "complexity"],
     },
     "BSL100": {
-        "name": "HardcodedFilePath",
+        "name": "UsingHardcodePath",
         "description": "Hardcoded file path in a string literal — use a parameter or configuration value",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -871,7 +878,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["portability", "suspicious"],
     },
     "BSL101": {
-        "name": "TooDeepNesting",
+        "name": "NestedStatements",
         "description": "Code nesting depth exceeds the allowed maximum — refactor into smaller functions",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -911,7 +918,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["performance", "suspicious"],
     },
     "BSL106": {
-        "name": "QueryInLoop",
+        "name": "CreateQueryInCycle",
         "description": "SQL query (ВЫБРАТЬ/SELECT) inside a loop — move outside the loop or use batch queries",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -919,7 +926,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["performance", "correctness"],
     },
     "BSL107": {
-        "name": "EmptyThenBranch",
+        "name": "EmptyCodeBlock",
         "description": "Empty Тогда branch in Если statement — remove the branch or add meaningful code",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -927,7 +934,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness", "suspicious"],
     },
     "BSL108": {
-        "name": "UseOfGlobalVariables",
+        "name": "ExportVariables",
         "description": "Module-level exported variable — avoid mutable shared state",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -983,7 +990,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "suspicious"],
     },
     "BSL115": {
-        "name": "ChainedNegation",
+        "name": "DoubleNegatives",
         "description": "Double negation НЕ НЕ — simplify to the positive condition",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -1007,7 +1014,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness", "suspicious"],
     },
     "BSL118": {
-        "name": "FunctionReturnsNothing",
+        "name": "FunctionShouldHaveReturn",
         "description": "Функция body has no Возврат with a value — returns Неопределено implicitly",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -1015,7 +1022,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness", "suspicious"],
     },
     "BSL119": {
-        "name": "LineTooLong",
+        "name": "LineLength",
         "description": "Line length exceeds 120 characters — split into multiple lines",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -1039,7 +1046,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style"],
     },
     "BSL122": {
-        "name": "UnusedParameter",
+        "name": "UnusedParameters",
         "description": "Parameter declared in the signature is never referenced in the body",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
@@ -1047,7 +1054,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness", "design"],
     },
     "BSL123": {
-        "name": "CommentedOutCode",
+        "name": "CommentedCode",
         "description": "Comment line appears to contain commented-out code — remove or restore",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -1087,7 +1094,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "readability"],
     },
     "BSL128": {
-        "name": "DeadCodeAfterReturn",
+        "name": "UnreachableCode",
         "description": "Unreachable code after unconditional Возврат at the top level of a function/procedure body",
         "severity": "WARNING",
         "sonar_type": "BUG",
@@ -1103,7 +1110,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["correctness", "suspicious"],
     },
     "BSL130": {
-        "name": "LongCommentLine",
+        "name": "LineLength",
         "description": "Comment line exceeds 120 characters — split into multiple shorter lines",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -1119,7 +1126,7 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style"],
     },
     "BSL132": {
-        "name": "RepeatedStringLiteral",
+        "name": "DuplicateStringLiteral",
         "description": "String literal appears 4 or more times in the file — extract to a named constant",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
@@ -2461,7 +2468,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL015": "Слишком много необязательных параметров",
     "BSL016": "Нестандартная область",
     "BSL017": "Экспортный метод в модуле команды или формы",
-    "BSL018": "Оператор «ВызватьИсключение» со строковым литералом",
+    "BSL018": "«ВызватьИсключение» только со строковым литералом",
     "BSL019": "Цикломатическая сложность метода превышает допустимый порог",
     "BSL020": "Превышена допустимая вложенность операторов",
     "BSL021": "Параметр «Знач» не используется внутри метода",
@@ -2492,7 +2499,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL046": "Отсутствует ветка «Иначе»",
     "BSL047": "Магическая дата «ТекущаяДата»",
     "BSL048": "Пустой файл",
-    "BSL049": "Безусловный оператор «ВызватьИсключение»",
+    "BSL049": "«ВызватьИсключение» на уровне тела метода вне Попытка",
     "BSL050": "Длинная транзакция",
     "BSL051": "Недостижимый код",
     "BSL052": "Условие всегда истинно или всегда ложно",
@@ -2676,7 +2683,7 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL013": "Delete or restore the commented-out code block.",
     "BSL014": "Break the long line using BSL | continuation or an intermediate variable.",
     "BSL015": "Reduce optional parameters or introduce a parameter struct/object.",
-    "BSL018": "Use 'ВызватьИсключение НовоеИсключение(\"...\");' instead of a string literal.",
+    "BSL018": "Prefer extended ВызватьИсключение(..., category, code, ...) (8.3.21+) or a variable, not a bare literal.",
     "BSL022": "Replace Предупреждение() with asynchronous ShowMessageBox().",
     "BSL027": "Replace Перейти/Goto with a structured loop or conditional.",
     "BSL028": "Wrap risky operations in Попытка...Исключение...КонецПопытки.",
@@ -2887,6 +2894,24 @@ _RE_END_TRY = re.compile(
 )
 _RE_BLANK_OR_COMMENT = re.compile(r"^\s*(?://.*)?$")
 
+
+def _proc_body_base_indent(lines: list[str], proc: _ProcInfo) -> int:
+    """Indent (column width) of the first non-blank, non-comment body line after the header."""
+    for i in range(proc.start_idx + 1, min(proc.end_idx + 1, len(lines))):
+        line = lines[i]
+        if _RE_BLANK_OR_COMMENT.match(line):
+            continue
+        return len(line) - len(line.lstrip())
+    return 0
+
+
+def _line_starts_with_raise_statement(line: str) -> bool:
+    """True if the line begins with ВызватьИсключение/Raise (not a // comment)."""
+    if line.strip().startswith("//"):
+        return False
+    return bool(_RE_RAISE.match(line))
+
+
 # Regions
 _RE_REGION_OPEN = re.compile(
     r"^\s*#(?:Область|Region)\s+(?P<name>\S+)",
@@ -2970,10 +2995,10 @@ _CC_ELSE = re.compile(
     re.IGNORECASE,
 )
 
-# ВызватьИсключение / Raise with a string literal (anti-pattern)
-_RE_RAISE_LITERAL = re.compile(
-    r'^\s*(?:ВызватьИсключение|Raise)\s+"',
-    re.IGNORECASE | re.MULTILINE,
+# BSL018: only a *single* string literal then `;` (no `+` concatenation / НСтр / etc.)
+_RE_RAISE_SIMPLE_STRING_ONLY = re.compile(
+    r'^\s*(?:ВызватьИсключение|Raise)\s+"[^"]*"\s*;\s*(?://.*)?$',
+    re.IGNORECASE,
 )
 
 # McCabe: decision-point keywords
@@ -3007,8 +3032,10 @@ _RE_BSLLS = re.compile(
     re.IGNORECASE,
 )
 
-# Mapping from BSL Language Server diagnostic names → our BSL codes.
-# Used to translate // BSLLS:<Name>-off/on comments into BSL rule suppressions.
+# BSLLS diagnostic name → our BSL code (for // BSLLS:<Name>-off and Sonar rule names).
+# Policy: copy names from bsl-language-server (*Diagnostic without suffix); one primary
+# key per BSLLS rule. Add an extra key only if BSLLS/docs use a real alternate spelling
+# and users need it in suppression comments — avoid duplicate aliases «на всякий случай».
 _BSLLS_NAME_TO_CODE: dict[str, str] = {
     # ── Exact name matches ────────────────────────────────────────────────
     "ParseError":                  "BSL001",
@@ -3033,35 +3060,32 @@ _BSLLS_NAME_TO_CODE: dict[str, str] = {
     "UsingThisForm":               "BSL040",
     "UnreachableCode":             "BSL051",
     "ProcedureReturnsValue":       "BSL064",
-    # ── Name differences between BSLLS and our codebase ───────────────────
-    "UsingHardcodeNetworkAddress":    "BSL005",   # our: HardcodeNetworkAddress
-    "UsingHardcodePath":              "BSL006",   # our: HardcodePath
-    "TooManyReturns":                 "BSL008",   # our: TooManyReturnStatements
-    "UsingHardcodeSecretInformation": "BSL012",   # our: HardcodeCredentials
-    "LineLength":                     "BSL014",   # our: LineTooLong
-    "CommandModuleExportMethods":     "BSL017",   # our: ExportMethodsInCommandModule
-    "NestedStatements":               "BSL020",   # our: ExcessiveNesting
-    "UsingGoto":                      "BSL027",   # our: UseGotoOperator
-    "MissingCodeTryCatchEx":          "BSL028",   # our: MissingCodeTryCatch
-    "FunctionShouldHaveReturn":       "BSL032",   # our: FunctionReturnValue
-    "CreateQueryInCycle":             "BSL033",   # our: QueryInLoop
-    "QueryInCycle":                   "BSL033",   # alternate BSLLS name
-    "IfConditionComplexity":          "BSL036",   # our: ComplexCondition
-    "ConsecutiveEmptyLines":          "BSL055",   # our: ConsecutiveBlankLines
-    "DoubleNegatives":                "BSL060",   # our: DoubleNegation
-    "UnusedParameters":               "BSL062",   # our: UnusedParameter
-    "MissingReturnedValueDescription":"BSL065",   # our: MissingExportComment
-    "DeprecatedFind":                 "BSL066",   # our: DeprecatedPlatformMethod
-    "MagicDate":                      "BSL047",   # our: DateTimeNow
-    "DeprecatedCurrentDate":          "BSL097",   # our: UseOfCurrentDate
-    "ExportVariables":                "BSL054",   # our: ModuleLevelVariable
-    "SelectTopWithoutOrderBy":        "BSL077",   # our: SelectStar
-    "EmptyStatement":                 "BSL025",   # our: MissingSemicolon
-    "SemicolonPresence":              "BSL030",   # our: LineEndsWithSemicolon
-    "IdenticalExpressions":           "BSL052",   # our: UselessCondition
-    "TooManyReturnStatements":        "BSL008",   # BSL LS alternate form
-    "DuplicateRegion":                "BSL026",   # maps to EmptyRegion rule
-    "UnusedLocalMethod":              "BSL042",   # our: EmptyExportMethod
+    # ── BSLLS names (RULE_METADATA["name"] matches these) ─────────────────
+    "UsingHardcodeNetworkAddress":    "BSL005",
+    "UsingHardcodePath":              "BSL006",
+    "TooManyReturns":                 "BSL008",
+    "UsingHardcodeSecretInformation": "BSL012",
+    "LineLength":                     "BSL014",
+    "CommandModuleExportMethods":     "BSL017",
+    "NestedStatements":               "BSL020",
+    "UsingGoto":                      "BSL027",
+    "MissingCodeTryCatchEx":          "BSL028",
+    "FunctionShouldHaveReturn":       "BSL032",
+    "CreateQueryInCycle":             "BSL033",
+    "IfConditionComplexity":          "BSL036",
+    "ConsecutiveEmptyLines":          "BSL055",
+    "DoubleNegatives":                "BSL060",
+    "UnusedParameters":               "BSL062",
+    "MissingReturnedValueDescription": "BSL065",
+    "DeprecatedFind":                 "BSL066",
+    "MagicDate":                      "BSL047",
+    "DeprecatedCurrentDate":          "BSL097",
+    "ExportVariables":                "BSL054",
+    "SelectTopWithoutOrderBy":        "BSL077",
+    "EmptyStatement":                 "BSL025",
+    "SemicolonPresence":              "BSL030",
+    "IdenticalExpressions":           "BSL052",
+    "UnusedLocalMethod":              "BSL042",
     # ── BSL148–BSL279 stub mappings ──────────────────────────────────────────
     "AllFunctionPathMustHaveReturn":          "BSL148",
     "AssignAliasFieldsInQuery":               "BSL149",
@@ -4078,6 +4102,7 @@ class DiagnosticEngine:
         {
             # ── BSL001–BSL070 noise/style preferences ──────────────────────
             "BSL013",  # CommentedCode — high false-positive rate
+            "BSL018",  # RaiseWithLiteral — opt-in; bare literals are normal; extended syntax is optional
             "BSL074",  # TodoComment — duplicate of BSL023
             "BSL120",  # TrailingWhitespace — noisy in diffs
             "BSL121",  # TabIndentation — style preference
@@ -5329,17 +5354,16 @@ class DiagnosticEngine:
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
         """
-        Detect ``ВызватьИсключение "строка"`` — raising with a raw string.
+        Detect ``ВызватьИсключение "строка";`` — only a string literal after the keyword.
 
-        Recommended pattern is to use an exception object::
-
-            ВызватьИсключение НовоеИсключение("Описание ошибки");
+        Richer context: extended ``ВызватьИсключение`` syntax with optional category, code,
+        additional info, and cause (platform 8.3.21+), or a non-literal expression.
         """
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
                 continue
-            if _RE_RAISE_LITERAL.match(line):
+            if _RE_RAISE_SIMPLE_STRING_ONLY.match(line):
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -5350,8 +5374,10 @@ class DiagnosticEngine:
                         severity=Severity.WARNING,
                         code="BSL018",
                         message=(
-                            "ВызватьИсключение used with a string literal. "
-                            "Consider using НовоеИсключение() for structured error information."
+                            "ВызватьИсключение used with only a string literal. "
+                            "For structured error data, use the extended "
+                            "ВызватьИсключение(...); syntax (8.3.21+) or build the text "
+                            "in a variable/expression."
                         ),
                     )
                 )
@@ -5999,8 +6025,12 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         for val, count in counts.items():
             if count >= self.min_duplicate_uses:
+                pos_list = positions[val]
+                # Same user-facing error text repeated only on raise lines — low value to dedupe
+                if all(_line_starts_with_raise_statement(lines[ln - 1]) for ln, _ in pos_list):
+                    continue
                 # Report second occurrence onward
-                for line_no, col in positions[val][1:]:
+                for line_no, col in pos_list[1:]:
                     diags.append(
                         Diagnostic(
                             file=path,
@@ -6509,9 +6539,9 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         """
-        Flag ВызватьИсключение/Raise statements that appear *outside* any
-        Попытка...Исключение block.  These are unconditional throws that will
-        always terminate the call — usually a bug or forgotten guard.
+        Flag ВызватьИсключение/Raise at the *procedure body base* indent, outside any
+        Попытка...Исключение block. Nested blocks (Если/Пока/…) use deeper indent and
+        are skipped — the raise is only reached when that control flow runs.
         """
         diags: list[Diagnostic] = []
         _re_try_open = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
@@ -6519,6 +6549,7 @@ class DiagnosticEngine:
 
         for proc in procs:
             body_lines = lines[proc.start_idx : proc.end_idx + 1]
+            base_indent = _proc_body_base_indent(lines, proc)
             try_depth = 0
             for rel_idx, line in enumerate(body_lines):
                 if _re_try_open.match(line):
@@ -6526,6 +6557,9 @@ class DiagnosticEngine:
                 elif _re_try_close.match(line):
                     try_depth = max(0, try_depth - 1)
                 elif try_depth == 0 and _RE_RAISE.match(line):
+                    raise_indent = len(line) - len(line.lstrip())
+                    if base_indent and raise_indent > base_indent:
+                        continue
                     abs_idx = proc.start_idx + rel_idx
                     diags.append(
                         Diagnostic(
@@ -6537,8 +6571,9 @@ class DiagnosticEngine:
                             severity=Severity.INFORMATION,
                             code="BSL049",
                             message=(
-                                "ВызватьИсключение/Raise outside a Попытка/Try block "
-                                "is unconditional — wrap in a guard condition."
+                                "ВызватьИсключение/Raise at method body level (outside "
+                                "Попытка/Try) always terminates the call — add a guard "
+                                "or move into a conditional/nested block."
                             ),
                         )
                     )

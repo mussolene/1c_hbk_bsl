@@ -74,6 +74,16 @@ class TestIndentation:
         lines = result.splitlines()
         assert lines[1].startswith("    ")
 
+    def test_if_then_same_line_splits_body_to_next_line(self) -> None:
+        """One-line ``Если … Тогда <stmt>`` becomes two lines so body indents vertically."""
+        f = BslFormatter()
+        result = f.format("Если А > 0 Тогда Б = 1;\nКонецЕсли;\n")
+        lines = result.splitlines()
+        assert "Тогда" in lines[0] and "Б = 1" not in lines[0]
+        assert lines[1].strip().startswith("Б = 1")
+        assert lines[1].startswith("    ")
+        assert "КонецЕсли" in lines[2]
+
     def test_nested_indent(self) -> None:
         f = BslFormatter()
         code = "Процедура Тест()\nЕсли А > 0 Тогда\nБ = 1;\nКонецЕсли;\nКонецПроцедуры\n"
@@ -98,6 +108,25 @@ class TestIndentation:
         lines = result.splitlines()
         assert lines[1].startswith("  ")
         assert not lines[1].startswith("    ")
+
+    def test_multiline_function_params_double_indent(self) -> None:
+        """Parameters on new lines after ``Функция Имя(`` get an extra indent level (BSL-LS style)."""
+        f = BslFormatter()
+        code = (
+            "Функция Имя(\n"
+            "Параметр1,\n"
+            "Параметр2)\n"
+            "Возврат 0;\n"
+            "КонецФункции\n"
+        )
+        result = f.format(code)
+        lines = result.splitlines()
+        assert lines[0].strip().startswith("Функция Имя(")
+        # Block inside function (+1) + wrapped param list (+1) → 8 spaces
+        assert lines[1].startswith("        "), repr(lines[1])
+        assert lines[2].startswith("        ")
+        # Body: single level inside function
+        assert lines[3].startswith("    ")
 
 
 class TestOperatorSpacing:
@@ -149,6 +178,28 @@ class TestFormatRange:
         result = f.format_range(code, start_line=0, end_line=0)
         assert result.endswith("\n")
 
+    def test_multiline_elseif_condition_does_not_shift_function_tail(self) -> None:
+        f = BslFormatter()
+        code = (
+            "Функция Тест()\n"
+            "\tЕсли А Тогда\n"
+            "\t\tВозврат 1;\n"
+            "\tИначеЕсли Б\n"
+            "\t\tИЛИ В Тогда\n"
+            "\t\tВозврат 2;\n"
+            "\tИначе\n"
+            "\t\tВозврат 3;\n"
+            "\tКонецЕсли;\n"
+            "КонецФункции\n"
+            "&НаКлиенте\n"
+            "Функция Следующая()\n"
+            "\tВозврат 0;\n"
+            "КонецФункции\n"
+        )
+        result = f.format(code, indent_size=4, insert_spaces=False)
+        assert "\n\t&НаКлиенте\n" not in result
+        assert "\n&НаКлиенте\n" in result
+
 
 class TestComments:
     def test_comment_line_preserved(self) -> None:
@@ -161,6 +212,26 @@ class TestComments:
         f = BslFormatter()
         result = f.format("А = 1; // процедура\n")
         assert "// процедура" in result
+
+
+class TestBslContinuationIndent:
+    """Extra indent rules aligned with BSL Language Server (assign / dot chains)."""
+
+    def test_assignment_continuation_indents_next_line(self) -> None:
+        f = BslFormatter()
+        code = "Процедура Тест()\nА = Б +\nВ;\nКонецПроцедуры\n"
+        result = f.format(code)
+        lines = result.splitlines()
+        # Continuation line after bare = should be one level deeper than body
+        assert lines[2].startswith("        "), lines[2]
+
+    def test_dot_chain_line_gets_extra_indent(self) -> None:
+        f = BslFormatter()
+        code = "Процедура Тест()\nЧтоТо\n    .Метод();\nКонецПроцедуры\n"
+        result = f.format(code)
+        lines = result.splitlines()
+        assert ".Метод();" in lines[2]
+        assert lines[2].startswith("        "), lines[2]
 
 
 class TestPreprocessor:

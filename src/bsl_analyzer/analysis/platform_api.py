@@ -93,9 +93,6 @@ _BUILTIN_GLOBALS: list[dict] = [
     {"name": "ИнформацияОбОшибке", "name_en": "ErrorInfo",
      "signature": "ИнформацияОбОшибке() → ИнформацияОбОшибке",
      "description": "Возвращает объект с детальной информацией об ошибке"},
-    {"name": "НовоеИсключение", "name_en": "CreateException",
-     "signature": "НовоеИсключение(Описание, Причина?) → Исключение",
-     "description": "Создаёт объект исключения для ВызватьИсключение"},
     # Type checking
     {"name": "ТипЗнч", "name_en": "TypeOf",
      "signature": "ТипЗнч(Значение) → Тип",

@@ -19,9 +19,13 @@ import {
   Executable,
   LanguageClient,
   LanguageClientOptions,
+  RevealOutputChannelOn,
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+
+/** Shared log channel (also passed to LanguageClient for stderr/LSP trace). */
+let logChannel: vscode.OutputChannel | undefined;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -55,6 +59,11 @@ let statusBarItem: vscode.StatusBarItem | undefined;
 // ---------------------------------------------------------------------------
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  const channel = vscode.window.createOutputChannel("BSL Analyzer");
+  logChannel = channel;
+  context.subscriptions.push(channel);
+  logLine("Extension activating…");
+
   // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = `${EXTENSION_ID}.showStatus`;
@@ -66,16 +75,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Resolve binary path (download if needed)
   const binaryPath = await resolveBinaryPath(context);
   if (!binaryPath) {
-    vscode.window.showErrorMessage(
+    const msg =
       "BSL Analyzer: could not find or download the server binary. " +
-      "Set bslAnalyzer.serverPath manually in settings."
-    );
+      "Set bslAnalyzer.serverPath manually in settings.";
+    logLine(msg);
+    channel.show(true);
+    vscode.window.showErrorMessage(msg);
     return;
   }
+  logLine(`binary: ${binaryPath}`);
+  logLine(
+    `workspaceFolders: ${vscode.workspace.workspaceFolders?.map((f) => f.uri.fsPath).join(", ") ?? "(none)"}`,
+  );
 
   const config = vscode.workspace.getConfiguration(EXTENSION_ID);
   const serverOptions = buildServerOptions(binaryPath, config);
-  const clientOptions = buildClientOptions();
+  const clientOptions = buildClientOptions(channel);
 
   client = new LanguageClient(CLIENT_ID, CLIENT_NAME, serverOptions, clientOptions);
 
@@ -84,9 +99,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(`${EXTENSION_ID}.reindexWorkspace`, reindexWorkspace),
     vscode.commands.registerCommand(`${EXTENSION_ID}.reindexCurrentFile`, reindexCurrentFile),
     vscode.commands.registerCommand(`${EXTENSION_ID}.showStatus`, showStatus),
+    vscode.commands.registerCommand(`${EXTENSION_ID}.showOutput`, () => {
+      logChannel?.show(true);
+    }),
   );
 
-  await client.start();
+  try {
+    logLine("Starting language client…");
+    await client.start();
+    logLine("Language client started.");
+  } catch (err) {
+    const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+    logLine(`client.start() failed:\n${detail}`);
+    logChannel?.show(true);
+    vscode.window.showErrorMessage(
+      `BSL Analyzer: server failed to start. See Output → "BSL Analyzer". ${err instanceof Error ? err.message : err}`,
+      "Open Log",
+    ).then((choice) => {
+      if (choice === "Open Log") { logChannel?.show(true); }
+    });
+    return;
+  }
 
   updateStatusBar();
   const interval = setInterval(updateStatusBar, 30_000);
@@ -281,12 +314,20 @@ function buildServerOptions(
 ): ServerOptions {
   const useDocker = config.get<boolean>("useDocker", false);
   const containerName = config.get<string>("dockerContainer", "bsl-analyzer-default");
+  const indexDb = resolveIndexDbPath(config);
+  logLine(
+    indexDb.trim()
+      ? `INDEX_DB_PATH (env): ${indexDb}`
+      : "INDEX_DB_PATH: (unset — server uses .git/bsl_index.sqlite or ~/.cache/bsl-analyzer/…)",
+  );
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     LOG_LEVEL: config.get<string>("logLevel", "info"),
-    INDEX_DB_PATH: resolveIndexDbPath(config),
   };
+  if (indexDb.trim()) {
+    env.INDEX_DB_PATH = indexDb;
+  }
 
   const select = config.get<string[]>("diagnostics.select", []);
   const ignore = config.get<string[]>("diagnostics.ignore", []);
@@ -302,11 +343,16 @@ function buildServerOptions(
     return { run: srv, debug: srv };
   }
 
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const srv: Executable = {
     command: binaryPath,
     args: ["--lsp"],
     transport: TransportKind.stdio,
-    options: { env },
+    options: {
+      env,
+      // Helps onefile/relative paths; harmless when unset.
+      ...(workspaceRoot ? { cwd: workspaceRoot } : {}),
+    },
   };
   return {
     run: srv,
@@ -318,16 +364,35 @@ function buildServerOptions(
 // Client options
 // ---------------------------------------------------------------------------
 
-function buildClientOptions(): LanguageClientOptions {
+function buildClientOptions(outputChannel: vscode.OutputChannel): LanguageClientOptions {
   return {
+    // Include common 1C extension language ids so LSP binds even if another ext. set the mode.
     documentSelector: [
       { scheme: "file", language: "bsl" },
+      { scheme: "file", language: "1c-bsl" },
+      { scheme: "file", language: "1c" },
       { scheme: "file", pattern: "**/*.bsl" },
       { scheme: "file", pattern: "**/*.os" },
     ],
-    synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{bsl,os}"),
+    outputChannel,
+    revealOutputChannelOn: RevealOutputChannelOn.Error,
+    initializationFailedHandler: (error) => {
+      const text = error instanceof Error ? error.stack ?? error.message : String(error);
+      logLine(`LSP initialization failed:\n${text}`);
+      outputChannel.show(true);
+      vscode.window.showErrorMessage(
+        `BSL Analyzer: LSP init failed — ${error instanceof Error ? error.message : error}`,
+        "Open Log",
+      ).then((c) => { if (c === "Open Log") { outputChannel.show(true); } });
+      return false;
     },
+    ...(vscode.workspace.workspaceFolders?.length
+      ? {
+          synchronize: {
+            fileEvents: vscode.workspace.createFileSystemWatcher("**/*.{bsl,os}"),
+          },
+        }
+      : {}),
   };
 }
 
@@ -412,12 +477,18 @@ async function updateStatusBar(): Promise<void> {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function logLine(message: string): void {
+  const line = `[${new Date().toISOString()}] ${message}`;
+  logChannel?.appendLine(line);
+  console.log(line);
+}
+
 function resolveIndexDbPath(config: vscode.WorkspaceConfiguration): string {
-  const configured = config.get<string>("indexDbPath", "");
-  if (configured) { return configured; }
-  const folders = vscode.workspace.workspaceFolders;
-  if (folders && folders.length > 0) {
-    return path.join(folders[0].uri.fsPath, "bsl_index.sqlite");
+  const configured = (config.get<string>("indexDbPath", "") ?? "").trim();
+  if (configured) {
+    return configured;
   }
-  return "bsl_index.sqlite";
+  // Empty: do not set INDEX_DB_PATH — Python resolves to `.git/bsl_index.sqlite`
+  // (inside a git repo) or `~/.cache/bsl-analyzer/<hash>/bsl_index.sqlite`.
+  return "";
 }
