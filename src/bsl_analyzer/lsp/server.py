@@ -458,26 +458,35 @@ def on_definition(
 
     # 1. Check local scope first (parameters, Перем, loop vars, assignments).
     #    Local variables shadow same-named globals — resolve them without index.
-    try:
-        _tree = ls.parser.parse_content(content, file_path=uri)
-        local_vars = _extract_scope_vars(_tree, pos.line)
-        for lv in local_vars:
-            if lv.name.casefold() == word.casefold():
-                decl_line = lv.line - 1  # 0-based
-                decl_char = lv.character
-                name_end = decl_char + len(lv.name)
-                r = Range(
-                    start=Position(line=decl_line, character=decl_char),
-                    end=Position(line=decl_line, character=name_end),
-                )
-                return [LocationLink(
-                    target_uri=uri,
-                    target_range=r,
-                    target_selection_range=r,
-                    origin_selection_range=origin_range,
-                )]
-    except Exception:
-        pass
+    #    EXCEPTION: if the cursor is on a function call (word followed by '('),
+    #    skip local variable lookup so `Foo = Foo()` navigates to the function.
+    _line_text = content.splitlines()[pos.line] if pos.line < len(content.splitlines()) else ""
+    _word_end = pos.character
+    while _word_end < len(_line_text) and (_line_text[_word_end].isalnum() or _line_text[_word_end] == "_"):
+        _word_end += 1
+    _after = _line_text[_word_end:].lstrip()
+    _is_call = _after.startswith("(")
+    if not _is_call:
+        try:
+            _tree = ls.parser.parse_content(content, file_path=uri)
+            local_vars = _extract_scope_vars(_tree, pos.line)
+            for lv in local_vars:
+                if lv.name.casefold() == word.casefold():
+                    decl_line = lv.line - 1  # 0-based
+                    decl_char = lv.character
+                    name_end = decl_char + len(lv.name)
+                    r = Range(
+                        start=Position(line=decl_line, character=decl_char),
+                        end=Position(line=decl_line, character=name_end),
+                    )
+                    return [LocationLink(
+                        target_uri=uri,
+                        target_range=r,
+                        target_selection_range=r,
+                        origin_selection_range=origin_range,
+                    )]
+        except Exception:
+            pass
 
     # 2. Workspace symbol index (procedures, functions, exported variables)
     symbols = ls.symbol_index.find_symbol(word, limit=20)

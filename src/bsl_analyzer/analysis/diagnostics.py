@@ -4085,13 +4085,13 @@ class DiagnosticEngine:
             "BSL148",  # AllFunctionPathMustHaveReturn — TODO
             "BSL149",  # AssignAliasFieldsInQuery — TODO
             "BSL150",  # BadWords — TODO
-            "BSL151",  # BeginTransactionBeforeTryCatch — TODO
+            # "BSL151" enabled — BeginTransactionBeforeTryCatch implemented
             "BSL152",  # CachedPublic — TODO
             "BSL153",  # CanonicalSpellingKeywords — TODO
             "BSL154",  # CodeAfterAsyncCall — TODO
             "BSL155",  # CodeBlockBeforeSub — TODO
             "BSL156",  # CodeOutOfRegion — TODO
-            "BSL157",  # CommitTransactionOutsideTryCatch — TODO
+            # "BSL157" enabled — CommitTransactionOutsideTryCatch implemented
             "BSL158",  # CommonModuleAssign — TODO
             "BSL159",  # CommonModuleInvalidType — TODO
             "BSL160",  # CommonModuleMissingAPI — TODO
@@ -4107,7 +4107,7 @@ class DiagnosticEngine:
             "BSL170",  # CompilationDirectiveNeedLess — TODO
             "BSL171",  # CrazyMultilineString — TODO
             "BSL172",  # DataExchangeLoading — TODO
-            "BSL173",  # DeletingCollectionItem — TODO
+            # "BSL173" enabled — DeletingCollectionItem implemented
             "BSL174",  # DenyIncompleteValues — TODO
             "BSL175",  # DeprecatedAttributes8312 — TODO
             "BSL176",  # DeprecatedMethodCall — TODO
@@ -4191,7 +4191,7 @@ class DiagnosticEngine:
             "BSL254",  # TransferringParametersBetweenClientAndServer — TODO
             "BSL255",  # TryNumber — TODO
             "BSL256",  # Typo — TODO
-            "BSL257",  # UnaryPlusInConcatenation — TODO
+            # "BSL257" enabled — UnaryPlusInConcatenation implemented
             "BSL258",  # UnionAll — TODO
             "BSL259",  # UnknownPreprocessorSymbol — TODO
             "BSL260",  # UnsafeFindByCode — TODO
@@ -4213,7 +4213,7 @@ class DiagnosticEngine:
             "BSL276",  # WrongUseFunctionProceedWithCall — TODO
             "BSL277",  # WrongUseOfRollbackTransactionMethod — TODO
             "BSL278",  # WrongWebServiceHandler — TODO
-            "BSL279",  # YoLetterUsage — TODO
+            # "BSL279" enabled — YoLetterUsage implemented
         }
     )
 
@@ -4633,6 +4633,16 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl146_module_initialization_code(path, lines, procs))
         if self._rule_enabled("BSL147"):
             diagnostics.extend(self._rule_bsl147_use_of_ui_call(path, lines))
+        if self._rule_enabled("BSL151"):
+            diagnostics.extend(self._rule_bsl151_begin_transaction_before_try(path, lines))
+        if self._rule_enabled("BSL157"):
+            diagnostics.extend(self._rule_bsl157_commit_transaction_outside_try(path, lines))
+        if self._rule_enabled("BSL173"):
+            diagnostics.extend(self._rule_bsl173_deleting_collection_item(path, lines, procs))
+        if self._rule_enabled("BSL257"):
+            diagnostics.extend(self._rule_bsl257_unary_plus_in_concatenation(path, lines))
+        if self._rule_enabled("BSL279"):
+            diagnostics.extend(self._rule_bsl279_yo_letter_usage(path, lines))
 
         # Apply inline suppressions and sort
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
@@ -10226,6 +10236,240 @@ class DiagnosticEngine:
                         ),
                     )
                 )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL151 — BeginTransactionBeforeTryCatch
+    # ------------------------------------------------------------------
+
+    def _rule_bsl151_begin_transaction_before_try(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """НачатьТранзакцию()/BeginTransaction() must be immediately before Попытка/Try."""
+        diags: list[Diagnostic] = []
+        _re_begin = re.compile(
+            r"^\s*(?:НачатьТранзакцию|BeginTransaction)\s*\(",
+            re.IGNORECASE,
+        )
+        _re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+        _re_comment = re.compile(r"^\s*//")
+
+        for idx, line in enumerate(lines):
+            if _re_begin.search(line):
+                # Look for Try as the next non-blank, non-comment line
+                found_try = False
+                for j in range(idx + 1, min(idx + 5, len(lines))):
+                    nl = lines[j]
+                    if _re_comment.match(nl) or not nl.strip():
+                        continue
+                    found_try = _re_try.match(nl) is not None
+                    break
+                if not found_try:
+                    col = len(line) - len(line.lstrip())
+                    m = _re_begin.search(line)
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=m.start() if m else col,
+                        end_line=idx + 1,
+                        end_character=(m.end() if m else col + 20),
+                        severity=Severity.ERROR,
+                        code="BSL151",
+                        message=(
+                            "НачатьТранзакцию() должна находиться непосредственно "
+                            "перед блоком Попытка"
+                        ),
+                    ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL157 — CommitTransactionOutsideTryCatch
+    # ------------------------------------------------------------------
+
+    def _rule_bsl157_commit_transaction_outside_try(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """ЗафиксироватьТранзакцию()/CommitTransaction() must be inside a Try block."""
+        diags: list[Diagnostic] = []
+        _re_commit = re.compile(
+            r"^\s*(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(",
+            re.IGNORECASE,
+        )
+        _re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+        _re_except = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
+        _re_end_try = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+
+        for idx, line in enumerate(lines):
+            if not _re_commit.search(line):
+                continue
+            # Check if we are inside a Попытка block by scanning backwards
+            depth = 0
+            inside_try = False
+            for j in range(idx - 1, max(-1, idx - 200), -1):
+                bl = lines[j]
+                if _re_end_try.match(bl):
+                    depth += 1
+                elif _re_try.match(bl):
+                    if depth == 0:
+                        inside_try = True
+                        break
+                    depth -= 1
+            if not inside_try:
+                m = _re_commit.search(line)
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start() if m else 0,
+                    end_line=idx + 1,
+                    end_character=m.end() if m else len(line),
+                    severity=Severity.ERROR,
+                    code="BSL157",
+                    message=(
+                        "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
+                        "Попытка (перед Исключение)"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL173 — DeletingCollectionItem
+    # ------------------------------------------------------------------
+
+    def _rule_bsl173_deleting_collection_item(
+        self, path: str, lines: list[str], procs: list[Any]
+    ) -> list[Diagnostic]:
+        """Detect deletion of a collection item inside a Для Каждого/For Each loop."""
+        diags: list[Diagnostic] = []
+        _re_foreach = re.compile(
+            r"^\s*(?:Для\s+Каждого|For\s+Each)\s+(\w+)\s+(?:Из|In)\s+(\w+(?:\.\w+)*)",
+            re.IGNORECASE | re.UNICODE,
+        )
+        _re_end_loop = re.compile(
+            r"^\s*(?:КонецЦикла|EndDo)\b", re.IGNORECASE
+        )
+        _re_delete = re.compile(
+            r"(\w+(?:\.\w+)*)\s*\.\s*(?:Удалить|Delete)\s*\(",
+            re.IGNORECASE | re.UNICODE,
+        )
+
+        i = 0
+        while i < len(lines):
+            m = _re_foreach.match(lines[i])
+            if m:
+                iter_var = m.group(1).casefold()
+                collection = m.group(2).casefold()
+                loop_start = i
+                depth = 1
+                j = i + 1
+                while j < len(lines) and depth > 0:
+                    bl = lines[j]
+                    if _re_foreach.match(bl):
+                        depth += 1
+                    elif _re_end_loop.match(bl):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    if depth == 1:
+                        dm = _re_delete.search(bl)
+                        if dm:
+                            # object before .Удалить must match collection
+                            obj = dm.group(1).casefold().split(".")[-1]
+                            arg_start = bl.find("(", dm.end() - 1) + 1
+                            arg_end = bl.find(")", arg_start) if arg_start > 0 else -1
+                            arg = bl[arg_start:arg_end].strip().casefold() if arg_end > arg_start else ""
+                            if obj == collection or arg == iter_var:
+                                diags.append(Diagnostic(
+                                    file=path,
+                                    line=j + 1,
+                                    character=dm.start(),
+                                    end_line=j + 1,
+                                    end_character=dm.end(),
+                                    severity=Severity.ERROR,
+                                    code="BSL173",
+                                    message=(
+                                        "Удаление элемента коллекции внутри цикла "
+                                        "«Для Каждого» может привести к ошибке"
+                                    ),
+                                ))
+                    j += 1
+            i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL257 — UnaryPlusInConcatenation
+    # ------------------------------------------------------------------
+
+    def _rule_bsl257_unary_plus_in_concatenation(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect unary + used as concatenation operator (likely a mistake)."""
+        diags: list[Diagnostic] = []
+        # Pattern: string literal or identifier followed by +identifier (no spaces make it look unary)
+        # The typical mistake: "Text" +Переменная  or  Str + +Value
+        _re_unary = re.compile(
+            r'(?:"[^"]*"|\'[^\']*\'|\b\w+\b)\s*\+\s*\+',
+            re.UNICODE,
+        )
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("//"):
+                continue
+            # Remove string literals before checking to avoid false positives
+            clean = re.sub(r'"[^"]*"', '""', line)
+            m = _re_unary.search(clean)
+            if m:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.WARNING,
+                    code="BSL257",
+                    message=(
+                        "Унарный «+» перед значением при конкатенации — "
+                        "вероятно опечатка"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL279 — YoLetterUsage
+    # ------------------------------------------------------------------
+
+    def _rule_bsl279_yo_letter_usage(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect use of letter «ё» in identifiers (BSL convention: use «е»)."""
+        diags: list[Diagnostic] = []
+        _re_yo = re.compile(r"[ёЁ]", re.UNICODE)
+        _re_comment = re.compile(r"^\s*//")
+        # Pattern to match identifiers (words) containing ё
+        _re_id_yo = re.compile(r"\b\w*[ёЁ]\w*\b", re.UNICODE)
+
+        for idx, line in enumerate(lines):
+            if _re_comment.match(line):
+                continue
+            # Remove string literals
+            clean = re.sub(r'"[^"]*"', '""', line)
+            # Remove inline comments
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+            for m in _re_id_yo.finditer(clean):
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.INFORMATION,
+                    code="BSL279",
+                    message=(
+                        f"Идентификатор «{m.group()}» содержит букву «ё» — "
+                        "используйте «е» для совместимости"
+                    ),
+                ))
         return diags
 
 
