@@ -48,7 +48,8 @@ class IncrementalIndexer:
         self._parser = BslParser()
         self._on_progress = on_progress
         # Parsing can be parallelized, writes stay serialized in SymbolIndex.
-        self._parse_workers = max(1, int(os.environ.get("BSL_INDEX_PARSE_WORKERS", "4")))
+        # Keep sequential mode by default to ensure fast/clean LSP shutdown.
+        self._parse_workers = max(1, int(os.environ.get("BSL_INDEX_PARSE_WORKERS", "1")))
 
     # ------------------------------------------------------------------
     # Public API
@@ -220,31 +221,45 @@ class IncrementalIndexer:
                     continue
                 existing.append(path)
 
-            # Parallel parsing with serialized writes to SQLite index.
-            with ThreadPoolExecutor(max_workers=self._parse_workers) as pool:
-                futures = {pool.submit(self._parse_file, path): path for path in existing}
-                for fut in as_completed(futures):
-                    path = futures[fut]
+            if self._parse_workers <= 1:
+                # Default mode: sequential parse+write for predictable shutdown behavior.
+                for path in existing:
                     progress.update(task, description=f"[bold blue]{Path(path).name}")
-                    try:
-                        parsed = fut.result()
-                    except Exception as exc:  # noqa: BLE001
-                        logger.error("Failed to parse %s: %s", path, exc)
-                        errors += 1
-                        progress.advance(task)
-                        if self._on_progress:
-                            self._on_progress(indexed + skipped + errors, len(files), path)
-                        continue
-
+                    parsed = self._parse_file(path)
                     if "error" in parsed:
                         errors += 1
                     else:
                         self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
                         indexed += 1
-
                     if self._on_progress:
                         self._on_progress(indexed + skipped + errors, len(files), path)
                     progress.advance(task)
+            else:
+                # Opt-in mode: parallel parsing with serialized writes to SQLite index.
+                with ThreadPoolExecutor(max_workers=self._parse_workers) as pool:
+                    futures = {pool.submit(self._parse_file, path): path for path in existing}
+                    for fut in as_completed(futures):
+                        path = futures[fut]
+                        progress.update(task, description=f"[bold blue]{Path(path).name}")
+                        try:
+                            parsed = fut.result()
+                        except Exception as exc:  # noqa: BLE001
+                            logger.error("Failed to parse %s: %s", path, exc)
+                            errors += 1
+                            progress.advance(task)
+                            if self._on_progress:
+                                self._on_progress(indexed + skipped + errors, len(files), path)
+                            continue
+
+                        if "error" in parsed:
+                            errors += 1
+                        else:
+                            self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
+                            indexed += 1
+
+                        if self._on_progress:
+                            self._on_progress(indexed + skipped + errors, len(files), path)
+                        progress.advance(task)
 
         logger.info(
             "Indexing complete: %d indexed, %d skipped, %d errors",
