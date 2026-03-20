@@ -652,8 +652,9 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
                     _lv_kind = _kind_map.get(_lv.kind, "переменная")
                     _parts: list[str] = [f"```bsl\n{_lv.name}\n```"]
                     _parts.append(f"*{_lv_kind}*, объявлена на строке {_lv.line}")
-                    if _lv.type_hint:
-                        _parts.append(f"**Тип:** `{_lv.type_hint}`")
+                    _type = _lv.type_hint or _infer_type_from_content(content, _lv.name)
+                    if _type:
+                        _parts.append(f"**Тип:** `{_type}`")
                     return _hover_markdown(_parts)
         except Exception:
             pass
@@ -1372,14 +1373,117 @@ _RE_NEW_ASSIGN = _re.compile(
     _re.IGNORECASE | _re.MULTILINE | _re.UNICODE,
 )
 
+# Pattern: Var = Object.Method(...)  — for return-type inference
+_RE_METHOD_ASSIGN = _re.compile(
+    r"(?:^|;)\s*(\w+)\s*=\s*(\w+)\s*\.\s*(\w+)\s*\(",
+    _re.IGNORECASE | _re.MULTILINE | _re.UNICODE,
+)
+
+# Return-type table: "typename.methodname" (lower) → return type (canonical RU)
+_RETURN_TYPE_MAP: dict[str, str] = {
+    # Запрос
+    "запрос.выполнить":                        "РезультатЗапроса",
+    "query.execute":                           "РезультатЗапроса",
+    # РезультатЗапроса
+    "результатзапроса.выбрать":                "ВыборкаИзРезультатаЗапроса",
+    "queryresult.choose":                      "ВыборкаИзРезультатаЗапроса",
+    "результатзапроса.выгрузить":              "ТаблицаЗначений",
+    "queryresult.unload":                      "ТаблицаЗначений",
+    # ТаблицаЗначений
+    "таблицазначений.найти":                   "СтрокаТаблицыЗначений",
+    "valuetable.find":                         "СтрокаТаблицыЗначений",
+    "таблицазначений.добавить":                "СтрокаТаблицыЗначений",
+    "valuetable.add":                          "СтрокаТаблицыЗначений",
+    "таблицазначений.вставить":                "СтрокаТаблицыЗначений",
+    "valuetable.insert":                       "СтрокаТаблицыЗначений",
+    "таблицазначений.скопировать":             "ТаблицаЗначений",
+    "valuetable.copy":                         "ТаблицаЗначений",
+    # Справочник
+    "справочникменеджер.создатьэлемент":       "СправочникОбъект",
+    "catalogmanager.createnewitem":            "СправочникОбъект",
+    "справочникменеджер.найти":                "СправочникСсылка",
+    "catalogmanager.find":                     "СправочникСсылка",
+    "справочникменеджер.найтипокоду":          "СправочникСсылка",
+    "catalogmanager.findbycode":               "СправочникСсылка",
+    "справочникменеджер.найтипонаименованию":  "СправочникСсылка",
+    "catalogmanager.findbydescription":        "СправочникСсылка",
+    "справочникссылка.получитьобъект":         "СправочникОбъект",
+    "catalogref.getobject":                    "СправочникОбъект",
+    # Документ
+    "документменеджер.создатьдокумент":        "ДокументОбъект",
+    "documentmanager.createnewdocument":       "ДокументОбъект",
+    "документссылка.получитьобъект":           "ДокументОбъект",
+    "documentref.getobject":                   "ДокументОбъект",
+    # РегистрСведений
+    "регистрсведенийменеджер.создатьзапись":   "РегистрСведенийЗапись",
+    "informationregistermanager.createrecordset": "РегистрСведенийЗапись",
+    # Список значений
+    "списокзначений.найтипозначению":          "ЭлементСпискаЗначений",
+    "valuelist.findbyvalue":                   "ЭлементСпискаЗначений",
+    "списокзначений.добавить":                 "ЭлементСпискаЗначений",
+    "valuelist.add":                           "ЭлементСпискаЗначений",
+    # Структура
+    "структура.скопировать":                   "Структура",
+    # Менеджер временных таблиц
+    "менеджервременныхтаблиц":                 "МенеджерВременныхТаблиц",
+    # HTTP
+    "httpsоединение.получить":                 "HTTPОтвет",
+    "httpconnection.get":                      "HTTPОтвет",
+    "httpsоединение.отправить":                "HTTPОтвет",
+    "httpconnection.post":                     "HTTPОтвет",
+    # XML
+    "чтениеxml.прочитать":                     "ЧтениеXML",
+    # Файл
+    "файл":                                    "Файл",
+    # Дерево значений
+    "деревозначений.строки":                   "КоллекцияСтрокДереваЗначений",
+    # ТаблицаФормы
+    "таблицаформы.найти":                      "СтрокаТаблицыФормы",
+}
+
+
+def _build_type_env(content: str) -> dict[str, str]:
+    """
+    Build a var_name→type_name map for all assignments in *content*.
+
+    Two-pass approach:
+    - Pass 1: direct «Var = Новый Type()» assignments (type is explicit)
+    - Pass 2: «Var = Object.Method()» — resolve Object's type from pass-1 env,
+              then look up the method return type in _RETURN_TYPE_MAP.
+
+    Returns: lower-cased var_name → canonical type name.
+    """
+    env: dict[str, str] = {}
+
+    # Pass 1 — Новый Type()
+    for m in _RE_NEW_ASSIGN.finditer(content):
+        env[m.group(1).casefold()] = m.group(2)
+
+    # Pass 2 — Object.Method()  (iterate a few times to resolve chains)
+    for _ in range(3):
+        changed = False
+        for m in _RE_METHOD_ASSIGN.finditer(content):
+            lhs = m.group(1).casefold()
+            if lhs in env:
+                continue  # already resolved
+            obj_lo = m.group(2).casefold()
+            method_lo = m.group(3).casefold()
+            # Resolve object's own type (may come from pass-1 or earlier pass-2)
+            obj_type_lo = env.get(obj_lo, obj_lo).casefold()
+            key = f"{obj_type_lo}.{method_lo}"
+            ret = _RETURN_TYPE_MAP.get(key)
+            if ret:
+                env[lhs] = ret
+                changed = True
+        if not changed:
+            break
+
+    return env
+
 
 def _infer_type_from_content(content: str, var_name: str) -> str | None:
-    """Infer BSL type from `VarName = Новый TypeName()` assignment pattern."""
-    var_lo = var_name.casefold()
-    for m in _RE_NEW_ASSIGN.finditer(content):
-        if m.group(1).casefold() == var_lo:
-            return m.group(2)
-    return None
+    """Infer BSL type for *var_name* using the full type environment."""
+    return _build_type_env(content).get(var_name.casefold())
 
 
 # 1C global collection names (both RU and EN variants) → canonical Russian name
@@ -1579,13 +1683,31 @@ def _collect_local_vars(node: Any, up_to_line0: int, result: list[_LocalVar]) ->
             if child.type == "identifier" and target_node is None:
                 target_node = child
             elif child.type == "expression":
-                # Look for Новый TypeName to capture the type
                 for ec in child.children:
                     if ec.type == "new_expression":
+                        # Новый TypeName() → type_hint = TypeName
                         for nc in ec.children:
                             if nc.type == "identifier":
                                 type_hint = _ast_node_text(nc)
                                 break
+                    elif ec.type in ("method_call", "call_expression"):
+                        # Object.Method() → look up return type
+                        # Walk to find object name and method name
+                        parts: list[str] = []
+                        for mc in ec.children:
+                            if mc.type in ("identifier", "member_expression"):
+                                parts.append(_ast_node_text(mc))
+                        if len(parts) >= 2:
+                            # parts[-2] = object, parts[-1] = method (approx)
+                            obj_lo = parts[-2].casefold()
+                            method_lo = parts[-1].split("(")[0].casefold()
+                            # Try to resolve object type from already-seen vars
+                            obj_type = next(
+                                (v.type_hint for v in result if v.name.casefold() == obj_lo and v.type_hint),
+                                obj_lo,
+                            )
+                            key = f"{obj_type.casefold()}.{method_lo}"
+                            type_hint = _RETURN_TYPE_MAP.get(key, "")
         if target_node is not None:
             result.append(_LocalVar(
                 name=_ast_node_text(target_node),
