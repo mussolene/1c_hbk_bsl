@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Any
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
@@ -48,8 +49,7 @@ class IncrementalIndexer:
         self._parser = BslParser()
         self._on_progress = on_progress
         # Parsing can be parallelized, writes stay serialized in SymbolIndex.
-        # Keep sequential mode by default to ensure fast/clean LSP shutdown.
-        self._parse_workers = max(1, int(os.environ.get("BSL_INDEX_PARSE_WORKERS", "1")))
+        self._parse_workers = max(1, int(os.environ.get("BSL_INDEX_PARSE_WORKERS", "4")))
 
     # ------------------------------------------------------------------
     # Public API
@@ -221,8 +221,8 @@ class IncrementalIndexer:
                     continue
                 existing.append(path)
 
-            if self._parse_workers <= 1:
-                # Default mode: sequential parse+write for predictable shutdown behavior.
+            if self._parse_workers <= 1 or len(existing) <= 1:
+                # Sequential mode.
                 for path in existing:
                     progress.update(task, description=f"[bold blue]{Path(path).name}")
                     parsed = self._parse_file(path)
@@ -235,31 +235,52 @@ class IncrementalIndexer:
                         self._on_progress(indexed + skipped + errors, len(files), path)
                     progress.advance(task)
             else:
-                # Opt-in mode: parallel parsing with serialized writes to SQLite index.
-                with ThreadPoolExecutor(max_workers=self._parse_workers) as pool:
-                    futures = {pool.submit(self._parse_file, path): path for path in existing}
-                    for fut in as_completed(futures):
-                        path = futures[fut]
-                        progress.update(task, description=f"[bold blue]{Path(path).name}")
+                # Parallel parse with daemon workers to avoid stop-timeout regressions
+                # during LSP process shutdown.
+                work_q: Queue[str] = Queue()
+                out_q: Queue[tuple[str, dict[str, Any]]] = Queue()
+                for path in existing:
+                    work_q.put(path)
+
+                def _worker() -> None:
+                    while True:
                         try:
-                            parsed = fut.result()
-                        except Exception as exc:  # noqa: BLE001
-                            logger.error("Failed to parse %s: %s", path, exc)
-                            errors += 1
-                            progress.advance(task)
-                            if self._on_progress:
-                                self._on_progress(indexed + skipped + errors, len(files), path)
-                            continue
+                            p = work_q.get_nowait()
+                        except Empty:
+                            return
+                        try:
+                            out_q.put((p, self._parse_file(p)))
+                        finally:
+                            work_q.task_done()
 
-                        if "error" in parsed:
-                            errors += 1
-                        else:
-                            self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
-                            indexed += 1
+                worker_count = min(self._parse_workers, len(existing))
+                workers: list[threading.Thread] = []
+                for i in range(worker_count):
+                    t = threading.Thread(
+                        target=_worker,
+                        daemon=True,
+                        name=f"bsl-index-parse-{i + 1}",
+                    )
+                    t.start()
+                    workers.append(t)
 
-                        if self._on_progress:
-                            self._on_progress(indexed + skipped + errors, len(files), path)
-                        progress.advance(task)
+                processed = 0
+                while processed < len(existing):
+                    path, parsed = out_q.get()
+                    progress.update(task, description=f"[bold blue]{Path(path).name}")
+                    if "error" in parsed:
+                        errors += 1
+                    else:
+                        self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
+                        indexed += 1
+
+                    if self._on_progress:
+                        self._on_progress(indexed + skipped + errors, len(files), path)
+                    progress.advance(task)
+                    processed += 1
+
+                for t in workers:
+                    t.join(timeout=0.1)
 
         logger.info(
             "Indexing complete: %d indexed, %d skipped, %d errors",
