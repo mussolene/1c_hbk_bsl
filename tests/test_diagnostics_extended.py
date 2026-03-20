@@ -3190,15 +3190,20 @@ class TestBsl112UnterminatedTransaction:
 
 
 class TestBsl113AssignmentInCondition:
-    def test_assignment_in_if_detected(self, tmp_path: Path) -> None:
+    """BSL113 was removed: '=' in BSL conditions is always comparison, never assignment.
+    BSL does not support assignment-expressions, so the rule had zero valid use cases."""
+
+    def test_bsl113_never_triggers(self, tmp_path: Path) -> None:
+        # '=' in Если is comparison — must NOT be flagged
         content = "Если А = Б Тогда\n    В = 1;\nКонецЕсли;\n"
         diags = _check(content, tmp_path, select={"BSL113"})
-        assert "BSL113" in _codes(diags)
-
-    def test_comparison_operator_no_warning(self, tmp_path: Path) -> None:
-        content = "Если А <> Б Тогда\n    В = 1;\nКонецЕсли;\n"
-        diags = _check(content, tmp_path, select={"BSL113"})
         assert "BSL113" not in _codes(diags)
+
+    def test_parenthesised_condition_no_parse_error(self, tmp_path: Path) -> None:
+        # tree-sitter-bsl grammar bug: Если (А = Б) was falsely flagged BSL001
+        content = "Если (А = Б) Тогда\n    В = 1;\nКонецЕсли;\n"
+        diags = _check(content, tmp_path)
+        assert "BSL001" not in _codes(diags)
 
 
 class TestBsl114EmptyModule:

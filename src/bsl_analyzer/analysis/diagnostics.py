@@ -2042,12 +2042,9 @@ _RE_MIXED_IDENT = re.compile(
     r'(?:[А-ЯЁа-яё]+[A-Za-z]|[A-Za-z]+[А-ЯЁа-яё])\w*',
 )
 
-# Assignment inside Если condition: Если Х = (expression without comparison operator) (BSL113)
-# Detect patterns like: Если А = Б(  — i.e. = followed by a function call or bare word
-_RE_ASSIGN_IN_COND = re.compile(
-    r'^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+\w+\s*=\s*\w',
-    re.IGNORECASE,
-)
+# BSL113 removed: in BSL '=' is ALWAYS a comparison operator, never assignment.
+# Assignment is a statement-level construct only — there are no assignment
+# expressions, so "assignment in condition" is impossible in BSL by design.
 
 # Double negation: НЕ НЕ or Not Not (BSL115)
 _RE_DOUBLE_NEGATION = re.compile(
@@ -2819,8 +2816,8 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl111_mixed_language_identifiers(path, lines))
         if self._rule_enabled("BSL112"):
             diagnostics.extend(self._rule_bsl112_unterminated_transaction(path, lines))
-        if self._rule_enabled("BSL113"):
-            diagnostics.extend(self._rule_bsl113_assignment_in_condition(path, lines))
+        # BSL113 (AssignmentInCondition) removed — not applicable to BSL
+        # where '=' is always comparison, never assignment-as-expression.
         if self._rule_enabled("BSL114"):
             diagnostics.extend(self._rule_bsl114_empty_module(path, lines))
         if self._rule_enabled("BSL115"):

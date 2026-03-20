@@ -138,14 +138,29 @@ class BslParser:
     # Для/ДляКаждого loops already accept the trailing semicolon correctly.
     _WHILE_LOOP_NODE_TYPES = frozenset({"while_statement"})
 
+    # tree-sitter-bsl grammar bug: parenthesised Если conditions are valid BSL:
+    #   Если (А = Б) Тогда     — lone '(' and ')' ERROR nodes, parent = if_statement
+    # The grammar only accepts bare expressions, not a leading '(' group.
+    _IF_NODE_TYPES = frozenset({"if_statement", "elsif_clause"})
+
     def _collect_errors(self, node: Any, errors: list[dict]) -> None:
         """Recursively collect ERROR and MISSING nodes from a tree-sitter tree."""
         if node.type in ("ERROR", "error") or node.is_missing:
             text = node.text if isinstance(node.text, bytes) else b""
+            text_stripped = text.strip()
             # Suppress lone ';' that follows a while_statement — grammar bug.
             # КонецПроцедуры/КонецФункции have no trailing semicolon in BSL,
             # so those remain valid errors and must NOT be suppressed.
-            if text.strip() == b";" and self._prev_sibling_type(node) in self._WHILE_LOOP_NODE_TYPES:
+            if text_stripped == b";" and self._prev_sibling_type(node) in self._WHILE_LOOP_NODE_TYPES:
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
+            # Suppress lone '(' and ')' ERROR nodes inside an if_statement subtree
+            # — grammar bug: tree-sitter-bsl rejects parenthesised conditions like
+            # `Если (А = Б) Тогда` even though they are valid BSL.
+            # The '(' is a direct child of if_statement; the paired ')' may be
+            # buried deeper (e.g. inside binary_expression), so we walk ancestors.
+            if text_stripped in (b"(", b")") and self._ancestor_is_if(node):
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
@@ -170,6 +185,18 @@ class BslParser:
         children = list(parent.children)
         idx = next((i for i, c in enumerate(children) if c.id == node.id), -1)
         return children[idx - 1].type if idx > 0 else ""
+
+    def _ancestor_is_if(self, node: Any) -> bool:
+        """Return True if any ancestor node is an if_statement or elsif_clause."""
+        current = getattr(node, "parent", None)
+        while current is not None:
+            if current.type in self._IF_NODE_TYPES:
+                return True
+            # Stop searching beyond procedure/function boundaries
+            if current.type in ("procedure_definition", "function_definition", "module"):
+                return False
+            current = getattr(current, "parent", None)
+        return False
 
 
 # ---------------------------------------------------------------------------
