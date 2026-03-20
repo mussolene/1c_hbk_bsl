@@ -480,6 +480,44 @@ class TestIncrementalIndexerExtended:
 
         assert len(progress_calls) >= 1
 
+    def test_index_workspace_many_files_stress(
+        self, symbol_index: SymbolIndex, tmp_path: Path
+    ) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+
+        # Create many small modules to emulate a larger workspace.
+        file_count = 120
+        for i in range(file_count):
+            p = tmp_path / f"mod_{i:03d}.bsl"
+            p.write_text(
+                f"Процедура Тест{i}()\n    Сообщить(\"{i}\");\nКонецПроцедуры\n",
+                encoding="utf-8",
+            )
+
+        indexer = IncrementalIndexer(index=symbol_index)
+
+        mock_progress_instance = MagicMock()
+        mock_progress_instance.__enter__ = MagicMock(return_value=mock_progress_instance)
+        mock_progress_instance.__exit__ = MagicMock(return_value=False)
+        mock_progress_instance.add_task = MagicMock(return_value=0)
+        mock_progress_instance.update = MagicMock()
+        mock_progress_instance.advance = MagicMock()
+
+        with patch(
+            "bsl_analyzer.indexer.incremental.Progress",
+            return_value=mock_progress_instance,
+        ):
+            result = indexer.index_workspace(str(tmp_path), force=True)
+
+        assert result["errors"] == 0
+        # At least all created files should be processed.
+        assert result["indexed"] >= file_count
+        # Spot-check that symbols are queryable after bulk indexing.
+        sym = symbol_index.find_symbol("Тест42", limit=1)
+        assert len(sym) == 1
+
 
 # ---------------------------------------------------------------------------
 # get_module_exports (Iteration 2)
