@@ -21,12 +21,12 @@ jobs:
       matrix:
         include:
           - target: darwin-arm64
-            runner: macos-14          # Apple Silicon — 3 cores
+            runner: macos-26          # Apple Silicon — 3 cores
             asset: bsl-analyzer-darwin-arm64
             jobs: 3
             cache_path: ~/Library/Caches/Nuitka
           - target: darwin-x64
-            runner: macos-13          # Intel — 3 cores
+            runner: macos-26-intel    # Intel — 3 cores
             asset: bsl-analyzer-darwin-x64
             jobs: 3
             cache_path: ~/Library/Caches/Nuitka
