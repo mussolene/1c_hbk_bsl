@@ -176,6 +176,74 @@ class TestBslHover:
         assert "found" in result
 
 
+class TestBsl1cHelpTools:
+    def test_1c_help_search_keyword_is_proxied_and_sorted(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from bsl_analyzer.mcp import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            assert tool_name == "search_1c_help_keyword"
+            assert arguments["query"] == "тест"
+            assert arguments["limit"] == 2
+            # Intentionally unsorted: should be sorted by (path, text)
+            return [
+                {"path": "b/1", "text": "B"},
+                {"path": "a/1", "text": "A"},
+            ]
+
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+
+        app = _make_app(tmp_path)
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        res1 = tools["bsl_1c_help_search_keyword"].fn(query="тест", limit=2)
+        assert res1["cached"] is False
+        assert [r["path"] for r in res1["results"]] == ["a/1", "b/1"]
+
+        res2 = tools["bsl_1c_help_search_keyword"].fn(query="тест", limit=2)
+        assert res2["cached"] is True
+
+    def test_1c_help_get_topic_is_proxied_and_cached(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from bsl_analyzer.mcp import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            assert tool_name == "get_1c_help_topic"
+            assert arguments["path"] == "docs/some_topic"
+            return [{"text": "HELLO_TOPIC"}]
+
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+
+        app = _make_app(tmp_path)
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        res1 = tools["bsl_1c_help_get_topic"].fn(path="docs/some_topic")
+        assert res1["cached"] is False
+        assert res1["text"] == "HELLO_TOPIC"
+
+        res2 = tools["bsl_1c_help_get_topic"].fn(path="docs/some_topic")
+        assert res2["cached"] is True
+        assert res2["text"] == "HELLO_TOPIC"
+
+
 class TestBslReferences:
     def test_references_unknown(self, tmp_path) -> None:
         app = _make_app(tmp_path)
@@ -331,3 +399,65 @@ class TestBslWorkspaceScan:
         tools = {t.name: t for t in asyncio.run(app.list_tools())}
         result = tools["bsl_workspace_scan"].fn(directory=str(tmp_path / "nope"))
         assert "error" in result
+
+
+class TestMcpMultiProject:
+    def test_multi_project_index_isolation_by_workspace_root(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """
+        Regression test for multi-workspace MCP usage.
+
+        We index two independent workspaces in the same MCP process and verify
+        symbol lookups are isolated by `workspace_root`.
+        """
+        monkeypatch.delenv("INDEX_DB_PATH", raising=False)
+        monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path))
+
+        # Ensure server module import resolves INDEX_DB_PATH via a local `.git/`
+        # directory (no writes to ~/.cache inside sandboxed CI).
+        (tmp_path / ".git").mkdir(parents=True, exist_ok=True)
+
+        ws1 = tmp_path / "ws1"
+        ws2 = tmp_path / "ws2"
+        (ws1 / ".git").mkdir(parents=True, exist_ok=True)
+        (ws2 / ".git").mkdir(parents=True, exist_ok=True)
+
+        f1 = ws1 / "a.bsl"
+        f2 = ws2 / "b.bsl"
+        f1.write_text("Процедура ТолькоWS1()\nКонецПроцедуры\n", encoding="utf-8")
+        f2.write_text("Процедура ТолькоWS2()\nКонецПроцедуры\n", encoding="utf-8")
+
+        from bsl_analyzer.mcp.server import create_mcp_app
+
+        app = create_mcp_app()
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+
+        # Index both workspaces (separate DBs via .git/bsl_index.sqlite).
+        tools["bsl_index_file"].fn(
+            file_path=str(f1), workspace_root=str(ws1)
+        )
+        tools["bsl_index_file"].fn(
+            file_path=str(f2), workspace_root=str(ws2)
+        )
+
+        r1 = tools["bsl_find_symbol"].fn(
+            name="ТолькоWS1", workspace_root=str(ws1)
+        )
+        r1_wrong = tools["bsl_find_symbol"].fn(
+            name="ТолькоWS1", workspace_root=str(ws2)
+        )
+
+        r2 = tools["bsl_find_symbol"].fn(
+            name="ТолькоWS2", workspace_root=str(ws2)
+        )
+        r2_wrong = tools["bsl_find_symbol"].fn(
+            name="ТолькоWS2", workspace_root=str(ws1)
+        )
+
+        assert r1["count"] >= 1
+        assert r1_wrong["count"] == 0
+        assert r2["count"] >= 1
+        assert r2_wrong["count"] == 0

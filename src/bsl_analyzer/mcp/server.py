@@ -26,9 +26,13 @@ bsl_meta_index      — trigger metadata re-indexing from XML config export
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+import threading
+import urllib.request
+from collections import OrderedDict
 from pathlib import Path
 from typing import Annotated
 
@@ -45,33 +49,126 @@ from bsl_analyzer.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
 
+# MCP JSON contract version.
+# Intended for assistant/clients to understand which response shape to expect.
+MCP_CONTRACT_VERSION = "0.1.0"
+
 # ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
 
-_WORKSPACE = os.environ.get("WORKSPACE_ROOT", os.getcwd())
+_WORKSPACE = os.path.abspath(os.environ.get("WORKSPACE_ROOT", os.getcwd()))
 
 # Resolve DB path: INDEX_DB_PATH env → .git/bsl_index.sqlite → ~/.cache/bsl-analyzer/<hash>/
 _DB_PATH = resolve_index_db_path(_WORKSPACE)
 
+# LRU caches for multi-project runs in a single MCP process.
+_CACHE_LIMIT = int(os.environ.get("MCP_INDEX_CACHE_LIMIT", "4"))
+_cache_lock = threading.RLock()
+_index_cache: OrderedDict[str, SymbolIndex] = OrderedDict()
+_indexer_cache: OrderedDict[str, IncrementalIndexer] = OrderedDict()
+
+# Backward-compatible module-level singletons (used by unit tests).
 _index: SymbolIndex | None = None
 _indexer: IncrementalIndexer | None = None
+
 _parser: BslParser | None = None
 _engine: DiagnosticEngine | None = None
 
+# ---------------------------------------------------------------------------
+# Optional 1c-help MCP proxy (for AI context / snippets)
+# ---------------------------------------------------------------------------
 
-def _get_index() -> SymbolIndex:
-    global _index
-    if _index is None:
-        _index = SymbolIndex(db_path=_DB_PATH)
-    return _index
+# 1c-help provides an MCP server (see external-help-service project).
+# We proxy its "search_1c_help_keyword" and "get_1c_help_topic" tools.
+_ONEC_HELP_MCP_BASE = os.environ.get("ONEC_HELP_MCP_BASE", "http://localhost:8050/mcp")
+_ONEC_HELP_HEADERS = {
+    "Accept": "application/json, text/event-stream",
+    "Content-Type": "application/json",
+}
+
+_help_keyword_cache: dict[tuple[str, int], list[dict]] = {}
+_help_topic_cache: dict[str, str] = {}
 
 
-def _get_indexer() -> IncrementalIndexer:
-    global _indexer
-    if _indexer is None:
-        _indexer = IncrementalIndexer(index=_get_index())
-    return _indexer
+def _post_1c_help_tool(tool_name: str, arguments: dict[str, object], timeout: float = 5.0) -> list[dict]:
+    """Call 1c-help MCP tool and return the parsed `content` list (best-effort)."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": tool_name, "arguments": arguments},
+    }
+    req = urllib.request.Request(  # noqa: S310
+        _ONEC_HELP_MCP_BASE,
+        data=json.dumps(payload).encode(),
+        headers=dict(_ONEC_HELP_HEADERS),
+        method="POST",
+    )
+    # 1c-help MCP uses SSE-like responses (lines starting with "data: ").
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        raw = resp.read().decode("utf-8", errors="replace")
+    for line in raw.splitlines():
+        if not line.startswith("data: "):
+            continue
+        parsed = json.loads(line[6:])
+        content = parsed.get("result", {}).get("content", [])
+        if isinstance(content, list):
+            return [c for c in content if isinstance(c, dict)]
+    return []
+
+
+def _get_index(workspace_root: str | None = None) -> SymbolIndex:
+    if workspace_root is None:
+        global _index
+        if _index is None:
+            _index = SymbolIndex(db_path=_DB_PATH)
+        return _index
+
+    ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+    db_path = resolve_index_db_path(ws)
+
+    with _cache_lock:
+        existing = _index_cache.get(db_path)
+        if existing is not None:
+            _index_cache.move_to_end(db_path)
+            return existing
+
+        index = SymbolIndex(db_path=db_path)
+        _index_cache[db_path] = index
+        _index_cache.move_to_end(db_path)
+
+        while len(_index_cache) > _CACHE_LIMIT:
+            _, evicted = _index_cache.popitem(last=False)
+            evicted.close()
+
+        return index
+
+
+def _get_indexer(workspace_root: str | None = None) -> IncrementalIndexer:
+    if workspace_root is None:
+        global _indexer
+        if _indexer is None:
+            _indexer = IncrementalIndexer(index=_get_index())
+        return _indexer
+
+    ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+    db_path = resolve_index_db_path(ws)
+
+    with _cache_lock:
+        existing = _indexer_cache.get(db_path)
+        if existing is not None:
+            _indexer_cache.move_to_end(db_path)
+            return existing
+
+        indexer = IncrementalIndexer(index=_get_index(ws))
+        _indexer_cache[db_path] = indexer
+        _indexer_cache.move_to_end(db_path)
+
+        while len(_indexer_cache) > _CACHE_LIMIT:
+            _indexer_cache.popitem(last=False)
+
+        return indexer
 
 
 def _get_parser() -> BslParser:
@@ -106,18 +203,55 @@ def create_mcp_app() -> FastMCP:
     )
 
     # ------------------------------------------------------------------
+    # bsl_contract_version — contract & versioning
+    # ------------------------------------------------------------------
+    @mcp.tool(description="Return MCP JSON response contract version for bsl-analyzer tools.")
+    def bsl_contract_version() -> dict:
+        return {
+            "schema_version": MCP_CONTRACT_VERSION,
+            "server": "bsl-analyzer",
+            "tools": [
+                "bsl_status",
+                "bsl_find_symbol",
+                "bsl_file_symbols",
+                "bsl_callers",
+                "bsl_callees",
+                "bsl_diagnostics",
+                "bsl_definition",
+                "bsl_check_file",
+                "bsl_list_rules",
+                "bsl_index_file",
+                "bsl_hover",
+                "bsl_references",
+                "bsl_read_file",
+                "bsl_search",
+                "bsl_format",
+                "bsl_rename",
+                "bsl_fix",
+                "bsl_workspace_scan",
+                "bsl_meta_object",
+                "bsl_meta_collection",
+                "bsl_meta_index",
+            ],
+        }
+
+    # ------------------------------------------------------------------
     # bsl_status
     # ------------------------------------------------------------------
 
     @mcp.tool(description="Return current indexing status: files indexed, last commit, ready state.")
-    def bsl_status() -> dict:
+    def bsl_status(
+        workspace_root: Annotated[str | None, "Workspace root for the index (defaults to server WORKSPACE_ROOT)"] = None,
+    ) -> dict:
         """
         Check the health of the BSL symbol index.
 
         Returns stats: symbol count, file count, last indexed git commit, workspace root.
         Call this first to confirm the index is populated before searching.
         """
-        stats = _get_index().get_stats()
+        ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+        index = _get_index(workspace_root)
+        stats = index.get_stats()
         return {
             "ready": stats["symbol_count"] > 0,
             "symbol_count": stats["symbol_count"],
@@ -126,8 +260,8 @@ def create_mcp_app() -> FastMCP:
             "meta_object_count": stats.get("meta_object_count", 0),
             "last_commit": stats["last_commit"],
             "indexed_at": stats["indexed_at"],
-            "workspace_root": stats["workspace_root"] or _WORKSPACE,
-            "db_path": _DB_PATH,
+            "workspace_root": stats["workspace_root"] or ws,
+            "db_path": getattr(index, "db_path", resolve_index_db_path(ws)),
         }
 
     # ------------------------------------------------------------------
@@ -147,6 +281,9 @@ def create_mcp_app() -> FastMCP:
         ] = None,
         limit: Annotated[int, "Maximum results to return (default 20)"] = 20,
         fuzzy: Annotated[bool, "Use FTS prefix match instead of exact name match"] = False,
+        workspace_root: Annotated[
+            str | None, "Workspace root for index (defaults to server WORKSPACE_ROOT)"
+        ] = None,
     ) -> dict:
         """
         Search the symbol index for procedures, functions, or variables matching *name*.
@@ -161,7 +298,9 @@ def create_mcp_app() -> FastMCP:
             Dict with ``count`` and ``symbols`` list, each having:
             name, kind, file_path, line, signature, is_export, doc_comment.
         """
-        rows = _get_index().find_symbol(name, file_filter=file_filter, limit=limit, fuzzy=fuzzy)
+        rows = _get_index(workspace_root).find_symbol(
+            name, file_filter=file_filter, limit=limit, fuzzy=fuzzy
+        )
         return {
             "count": len(rows),
             "symbols": [
@@ -189,14 +328,17 @@ def create_mcp_app() -> FastMCP:
     )
     def bsl_file_symbols(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving workspace-relative paths"
+        ] = None,
     ) -> dict:
         """
         Return every symbol defined in *file_path*, ordered by line.
 
         Useful for building a quick outline of a module.
         """
-        path = _resolve_path(file_path)
-        rows = _get_index().get_file_symbols(path)
+        path = _resolve_path(file_path, workspace_root=workspace_root)
+        rows = _get_index(workspace_root).get_file_symbols(path)
         return {
             "file_path": path,
             "count": len(rows),
@@ -226,6 +368,9 @@ def create_mcp_app() -> FastMCP:
     def bsl_callers(
         symbol_name: Annotated[str, "Name of the procedure or function to find callers of"],
         depth: Annotated[int, "How many levels of callers to traverse (default 3)"] = 3,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving index DB and relative file paths"
+        ] = None,
     ) -> dict:
         """
         Return a tree of callers for *symbol_name* up to *depth* levels deep.
@@ -234,7 +379,7 @@ def create_mcp_app() -> FastMCP:
             symbol_name: The procedure/function whose callers you want.
             depth:       Recursion depth for the callers tree (default 3).
         """
-        graph = build_call_graph(_get_index(), symbol_name, depth=depth)
+        graph = build_call_graph(_get_index(workspace_root), symbol_name, depth=depth)
         return {
             "symbol_name": symbol_name,
             "definition": graph["definition"],
@@ -254,6 +399,9 @@ def create_mcp_app() -> FastMCP:
     def bsl_callees(
         symbol_name: Annotated[str, "Name of the procedure or function to inspect"],
         depth: Annotated[int, "How many call levels to traverse (default 3)"] = 3,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving index DB and relative file paths"
+        ] = None,
     ) -> dict:
         """
         Return the list of symbols called by *symbol_name*.
@@ -262,7 +410,7 @@ def create_mcp_app() -> FastMCP:
             symbol_name: The procedure/function to inspect.
             depth:       How deep to follow the call chain (default 3).
         """
-        graph = build_call_graph(_get_index(), symbol_name, depth=depth)
+        graph = build_call_graph(_get_index(workspace_root), symbol_name, depth=depth)
         return {
             "symbol_name": symbol_name,
             "definition": graph["definition"],
@@ -281,6 +429,9 @@ def create_mcp_app() -> FastMCP:
     )
     def bsl_diagnostics(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving workspace-relative file paths"
+        ] = None,
     ) -> dict:
         """
         Run the DiagnosticEngine on *file_path* and return all issues.
@@ -289,7 +440,7 @@ def create_mcp_app() -> FastMCP:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
             Each diagnostic has: file, line, character, severity, code, message.
         """
-        path = _resolve_path(file_path)
+        path = _resolve_path(file_path, workspace_root=workspace_root)
         issues = _get_engine().check_file(path)
         return {
             "file_path": path,
@@ -310,6 +461,9 @@ def create_mcp_app() -> FastMCP:
         file_filter: Annotated[
             str | None, "Optional: restrict to files whose path contains this string"
         ] = None,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving index DB and relative paths"
+        ] = None,
     ) -> dict:
         """
         Look up where *symbol_name* is defined in the index.
@@ -317,7 +471,9 @@ def create_mcp_app() -> FastMCP:
         Returns a list of definition locations (file, line, signature).
         Multiple results possible if the name is defined in multiple files.
         """
-        rows = _get_index().find_symbol(symbol_name, file_filter=file_filter, limit=10)
+        rows = _get_index(workspace_root).find_symbol(
+            symbol_name, file_filter=file_filter, limit=10
+        )
         return {
             "symbol_name": symbol_name,
             "count": len(rows),
@@ -346,6 +502,9 @@ def create_mcp_app() -> FastMCP:
     )
     def bsl_check_file(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving workspace-relative file paths"
+        ] = None,
         select: Annotated[
             str | None,
             "Comma-separated rule codes to enable (e.g. 'BSL001,BSL012'). "
@@ -373,7 +532,7 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
         """
-        path = _resolve_path(file_path)
+        path = _resolve_path(file_path, workspace_root=workspace_root)
         select_set: set[str] | None = (
             {c.strip().upper() for c in select.split(",") if c.strip()} if select else None
         )
@@ -437,6 +596,9 @@ def create_mcp_app() -> FastMCP:
     )
     def bsl_index_file(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving workspace-relative paths"
+        ] = None,
     ) -> dict:
         """
         Parse *file_path* and update the symbol index.
@@ -444,8 +606,8 @@ def create_mcp_app() -> FastMCP:
         Returns the number of symbols and call edges indexed.
         This is a mutating operation — it modifies the SQLite database.
         """
-        path = _resolve_path(file_path)
-        result = _get_indexer().index_file(path)
+        path = _resolve_path(file_path, workspace_root=workspace_root)
+        result = _get_indexer(workspace_root).index_file(path)
         return {
             "file_path": path,
             "symbols_indexed": result.get("symbols", 0),
@@ -465,6 +627,9 @@ def create_mcp_app() -> FastMCP:
     )
     def bsl_hover(
         symbol_name: Annotated[str, "Symbol name to look up"],
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving the workspace index"
+        ] = None,
     ) -> dict:
         """
         Return hover-style documentation for *symbol_name*.
@@ -475,7 +640,7 @@ def create_mcp_app() -> FastMCP:
         """
         from bsl_analyzer.analysis.platform_api import get_platform_api
 
-        index = _get_index()
+        index = _get_index(workspace_root)
         syms = index.find_symbol(symbol_name, limit=1)
         if syms:
             s = syms[0]
@@ -518,6 +683,71 @@ def create_mcp_app() -> FastMCP:
         return {"found": False, "symbol_name": symbol_name}
 
     # ------------------------------------------------------------------
+    # bsl_1c_help (proxy for 1c-help MCP)
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        description=(
+            "Search 1C help content by keyword (proxy to 1c-help MCP). "
+            "Returns a deterministic sorted list of snippets for assistant context."
+        )
+    )
+    def bsl_1c_help_search_keyword(
+        query: Annotated[str, "Search query"],
+        limit: Annotated[int, "Max number of results (default 3)"] = 3,
+    ) -> dict:
+        cache_key = (query, int(limit))
+        cached = _help_keyword_cache.get(cache_key)
+        if cached is not None:
+            return {"query": query, "limit": int(limit), "results": cached, "cached": True}
+
+        try:
+            raw_results = _post_1c_help_tool(
+                "search_1c_help_keyword", {"query": query, "limit": int(limit)}
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("1c-help MCP keyword search failed: %s", exc)
+            return {
+                "query": query,
+                "limit": int(limit),
+                "results": [],
+                "error": str(exc),
+                "cached": False,
+            }
+
+        # Make ordering deterministic for assistant consumption.
+        results = sorted(
+            raw_results,
+            key=lambda r: (str(r.get("path", "")), str(r.get("text", ""))),
+        )
+        _help_keyword_cache[cache_key] = results
+        return {"query": query, "limit": int(limit), "results": results, "cached": False}
+
+    @mcp.tool(
+        description=(
+            "Get a full 1C help topic by path (proxy to 1c-help MCP). "
+            "Returns extracted text suitable for assistant context."
+        )
+    )
+    def bsl_1c_help_get_topic(path: Annotated[str, "Topic path (as used by 1c-help)"]) -> dict:
+        cached = _help_topic_cache.get(path)
+        if cached is not None:
+            return {"path": path, "text": cached, "cached": True}
+
+        try:
+            content = _post_1c_help_tool("get_1c_help_topic", {"path": path})
+            text = ""
+            if content:
+                # 1c-help returns a list; we take the first item.
+                text = str(content[0].get("text", ""))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("1c-help MCP get_topic failed: %s", exc)
+            return {"path": path, "text": "", "error": str(exc), "cached": False}
+
+        _help_topic_cache[path] = text
+        return {"path": path, "text": text, "cached": False}
+
+    # ------------------------------------------------------------------
     # bsl_references
     # ------------------------------------------------------------------
 
@@ -531,12 +761,15 @@ def create_mcp_app() -> FastMCP:
         symbol_name: Annotated[str, "Symbol name to find all references for"],
         include_definitions: Annotated[bool, "Include definition locations (default True)"] = True,
         limit: Annotated[int, "Max call sites to return (default 100)"] = 100,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving the workspace index"
+        ] = None,
     ) -> dict:
         """
         Return all locations where *symbol_name* appears in the codebase:
         its definition(s) and every call site.
         """
-        index = _get_index()
+        index = _get_index(workspace_root)
         definitions = index.find_symbol(symbol_name, limit=10) if include_definitions else []
         callers = index.find_callers(symbol_name, limit=limit)
         return {
@@ -575,6 +808,9 @@ def create_mcp_app() -> FastMCP:
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         start_line: Annotated[int | None, "First line to return (1-based, inclusive)"] = None,
         end_line: Annotated[int | None, "Last line to return (1-based, inclusive)"] = None,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving workspace-relative paths"
+        ] = None,
     ) -> dict:
         """
         Read *file_path* and return its content (or a line slice).
@@ -587,7 +823,7 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with ``content``, ``total_lines``, ``start_line``, ``end_line``.
         """
-        path = _resolve_path(file_path)
+        path = _resolve_path(file_path, workspace_root=workspace_root)
         try:
             text = Path(path).read_text(encoding="utf-8")
         except OSError as exc:
@@ -625,6 +861,9 @@ def create_mcp_app() -> FastMCP:
         file_filter: Annotated[str | None, "Restrict to files whose path contains this string"] = None,
         case_sensitive: Annotated[bool, "Case-sensitive text search (default False)"] = False,
         limit: Annotated[int, "Max results per search type (default 20)"] = 20,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving index DB and scanning files"
+        ] = None,
     ) -> dict:
         """
         Search the workspace for *query*.
@@ -634,9 +873,12 @@ def create_mcp_app() -> FastMCP:
         search_type='both'    — runs both and merges results.
         """
         results: dict = {"query": query, "search_type": search_type}
+        ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
 
         if search_type in ("symbol", "both"):
-            rows = _get_index().find_symbol(query, file_filter=file_filter, limit=limit, fuzzy=True)
+            rows = _get_index(workspace_root).find_symbol(
+                query, file_filter=file_filter, limit=limit, fuzzy=True
+            )
             results["symbols"] = [
                 {
                     "name": r["name"],
@@ -656,7 +898,7 @@ def create_mcp_app() -> FastMCP:
                 results["text_error"] = f"Invalid regex: {exc}"
                 return results
 
-            workspace = Path(_WORKSPACE)
+            workspace = Path(ws)
             bsl_files = list(workspace.rglob("*.bsl")) if workspace.is_dir() else []
             if file_filter:
                 bsl_files = [f for f in bsl_files if file_filter in str(f)]
@@ -700,6 +942,9 @@ def create_mcp_app() -> FastMCP:
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         write: Annotated[bool, "If True, write the formatted content back to the file"] = False,
         indent_size: Annotated[int, "Spaces per indent level (default 4)"] = 4,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving workspace-relative file paths"
+        ] = None,
     ) -> dict:
         """
         Format *file_path* with the BSL formatter.
@@ -712,7 +957,7 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with ``formatted`` text, ``changed`` flag, and (if write=True) ``written``.
         """
-        path = _resolve_path(file_path)
+        path = _resolve_path(file_path, workspace_root=workspace_root)
         try:
             original = Path(path).read_text(encoding="utf-8")
         except OSError as exc:
@@ -753,6 +998,9 @@ def create_mcp_app() -> FastMCP:
         old_name: Annotated[str, "Current symbol name"],
         new_name: Annotated[str, "New symbol name"],
         apply: Annotated[bool, "If True, actually write changes to files (default False — dry run)"] = False,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving the index DB and file edits"
+        ] = None,
     ) -> dict:
         """
         Rename *old_name* to *new_name* across the workspace.
@@ -769,7 +1017,7 @@ def create_mcp_app() -> FastMCP:
         if not re.match(r"^[А-ЯЁа-яёA-Za-z_]\w*$", new_name, re.UNICODE):
             return {"error": f"'{new_name}' is not a valid BSL identifier"}
 
-        index = _get_index()
+        index = _get_index(workspace_root)
         definitions = index.find_symbol(old_name, limit=50)
         callers = index.find_callers(old_name, limit=1000)
 
@@ -839,6 +1087,9 @@ def create_mcp_app() -> FastMCP:
             str | None,
             "Comma-separated rule codes to fix (e.g. 'BSL009,BSL010'). Default: all fixable.",
         ] = None,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving workspace-relative file paths"
+        ] = None,
     ) -> dict:
         """
         Run the FixEngine on *file_path* and return fixed content.
@@ -846,7 +1097,7 @@ def create_mcp_app() -> FastMCP:
         Fixable rules: BSL009 (trailing whitespace), BSL010 (missing EOF newline),
         BSL055 (commented-out code removal), BSL060 (tab → spaces).
         """
-        path = _resolve_path(file_path)
+        path = _resolve_path(file_path, workspace_root=workspace_root)
         if not Path(path).exists():
             return {"error": f"File not found: {path}", "file_path": path}
 
@@ -904,6 +1155,9 @@ def create_mcp_app() -> FastMCP:
         directory: Annotated[str | None, "Directory to scan (default: WORKSPACE_ROOT)"] = None,
         max_files: Annotated[int, "Maximum files to include in result (default 200)"] = 200,
         include_metrics: Annotated[bool, "Include line/symbol counts per file (default True)"] = True,
+        workspace_root: Annotated[
+            str | None, "Workspace root for resolving relative paths"
+        ] = None,
     ) -> dict:
         """
         Walk *directory* and list all .bsl files with optional per-file metrics.
@@ -912,7 +1166,8 @@ def create_mcp_app() -> FastMCP:
             Dict with ``file_count``, ``total_lines``, and ``files`` list.
             Each file entry has: path, size_bytes, line_count, symbol_count (if indexed).
         """
-        root = Path(_resolve_path(directory or _WORKSPACE))
+        ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+        root = Path(_resolve_path(directory, workspace_root=workspace_root)) if directory else Path(ws)
         if not root.is_dir():
             return {"error": f"Not a directory: {root}"}
 
@@ -920,7 +1175,7 @@ def create_mcp_app() -> FastMCP:
         total_lines = 0
         files_info: list[dict] = []
 
-        index = _get_index()
+        index = _get_index(workspace_root)
 
         for bsl_file in bsl_files[:max_files]:
             entry: dict = {
@@ -968,6 +1223,9 @@ def create_mcp_app() -> FastMCP:
             "Optional: filter members by kind: 'attribute', 'tabular_section', "
             "'ts_attribute', 'form_attribute', 'form_command'",
         ] = None,
+        workspace_root: Annotated[
+            str | None, "Workspace root for selecting the metadata index DB"
+        ] = None,
     ) -> dict:
         """
         Return metadata members (attributes, tabular sections, form data) for a 1C config object.
@@ -979,7 +1237,7 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with object info and list of members.
         """
-        index = _get_index()
+        index = _get_index(workspace_root)
         obj_info = index.find_meta_object(name)
         if obj_info is None:
             return {"error": f"Metadata object '{name}' not found. Is 1C config indexed?"}
@@ -1027,6 +1285,9 @@ def create_mcp_app() -> FastMCP:
         ],
         prefix: Annotated[str, "Optional name prefix to filter results"] = "",
         limit: Annotated[int, "Maximum results (default 100)"] = 100,
+        workspace_root: Annotated[
+            str | None, "Workspace root for selecting the metadata index DB"
+        ] = None,
     ) -> dict:
         """
         List metadata objects in a 1C global collection.
@@ -1039,7 +1300,7 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with collection name and list of objects.
         """
-        index = _get_index()
+        index = _get_index(workspace_root)
         if not index.has_metadata():
             return {
                 "error": "No metadata indexed. Is a 1C configuration export present in workspace?"
@@ -1072,6 +1333,12 @@ def create_mcp_app() -> FastMCP:
         workspace: Annotated[
             str | None, "Workspace path to index (defaults to server WORKSPACE_ROOT)"
         ] = None,
+        workspace_root: Annotated[
+            str | None, "Workspace root alias for multi-project MCP"
+        ] = None,
+        config_root: Annotated[
+            str | None, "Explicit 1C config root (Configuration.xml folder) override"
+        ] = None,
     ) -> dict:
         """
         Re-index 1C configuration metadata from XML export.
@@ -1083,9 +1350,9 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with objects count, members count, or error.
         """
-        ws = workspace or _WORKSPACE
-        indexer = _get_indexer()
-        return indexer.index_metadata(ws)
+        ws = os.path.abspath(workspace_root or workspace or _WORKSPACE)
+        indexer = _get_indexer(ws)
+        return indexer.index_metadata(ws, config_root=config_root)
 
     return mcp
 
@@ -1095,7 +1362,7 @@ def create_mcp_app() -> FastMCP:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_path(file_path: str) -> str:
+def _resolve_path(file_path: str, workspace_root: str | None = None) -> str:
     """
     Resolve *file_path* to an absolute path.
 
@@ -1104,4 +1371,5 @@ def _resolve_path(file_path: str) -> str:
     p = Path(file_path)
     if p.is_absolute():
         return str(p)
-    return str(Path(_WORKSPACE) / file_path)
+    ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+    return str(Path(ws) / file_path)

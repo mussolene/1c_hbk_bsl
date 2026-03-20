@@ -102,9 +102,9 @@ class McpClient:
         headers = dict(MCP_HEADERS)
         if self._session_id:
             headers["mcp-session-id"] = self._session_id
-        req = urllib.request.Request(MCP_BASE, data=body, headers=headers, method="POST")
+        req = urllib.request.Request(MCP_BASE, data=body, headers=headers, method="POST")  # noqa: S310
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
                 # Capture session id
                 if not self._session_id:
                     self._session_id = resp.headers.get("mcp-session-id")

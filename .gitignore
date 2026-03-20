@@ -64,3 +64,6 @@ logs/
 # Temporary files
 tmp/
 .tmp/
+._tmp_debug/
+._tmp_mcp_debug/
+._tmp_mcp_debug2/

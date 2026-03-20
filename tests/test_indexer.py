@@ -63,12 +63,14 @@ SAMPLE_SYMBOLS = [
 SAMPLE_CALLS = [
     {
         "caller_line": 25,
+        "caller_character": 12,
         "caller_name": "ОбработатьЗаказ",
         "callee_name": "ВалидироватьСтроки",
         "callee_args_count": 1,
     },
     {
         "caller_line": 30,
+        "caller_character": 8,
         "caller_name": "ОбработатьЗаказ",
         "callee_name": "ЗаписатьЛог",
         "callee_args_count": 2,
@@ -153,6 +155,7 @@ class TestFindCallers:
         caller = callers[0]
         assert caller["callee_name"] == "ВалидироватьСтроки"
         assert caller["caller_name"] == "ОбработатьЗаказ"
+        assert caller["caller_character"] == 12
 
     def test_find_callers_no_results(self, symbol_index: SymbolIndex) -> None:
         callers = symbol_index.find_callers("НесуществующаяФункция")

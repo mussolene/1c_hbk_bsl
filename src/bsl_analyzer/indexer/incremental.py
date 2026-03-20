@@ -90,7 +90,7 @@ class IncrementalIndexer:
 
         return result
 
-    def index_metadata(self, workspace: str) -> dict:
+    def index_metadata(self, workspace: str, config_root: str | None = None) -> dict:
         """
         Find and index 1C configuration metadata (XML export) within *workspace*.
 
@@ -98,7 +98,9 @@ class IncrementalIndexer:
             Dict with ``objects`` and ``members`` counts, or ``{"skipped": True}`` if no config found.
         """
         workspace = str(Path(workspace).resolve())
-        config_root = find_config_root(workspace)
+        config_root = (
+            str(Path(config_root).resolve()) if config_root else find_config_root(workspace)
+        )
         if config_root is None:
             logger.debug("No 1C config root found in %s — skipping metadata indexing", workspace)
             return {"skipped": True}
@@ -282,6 +284,7 @@ def _call_to_dict(call: Any) -> dict:  # noqa: ANN401
     """Convert a Call dataclass to a plain dict for the index."""
     return {
         "caller_line": call.caller_line,
+        "caller_character": getattr(call, "caller_character", 0),
         "caller_name": call.caller_name,
         "callee_name": call.callee_name,
         "callee_args_count": call.callee_args_count,

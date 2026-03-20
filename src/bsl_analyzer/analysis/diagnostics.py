@@ -3943,6 +3943,65 @@ def _find_regions(content: str) -> list[_RegionInfo]:
     return result
 
 
+def _find_regions_from_tree(tree: Any) -> list[_RegionInfo]:
+    """
+    Extract #Область/#Region blocks from a tree-sitter AST.
+
+    Returns an empty list if *tree* is not a real tree-sitter tree
+    (fallback to regex is expected).
+    """
+
+    root = getattr(tree, "root_node", None)
+    if root is None or not isinstance(getattr(root, "text", None), bytes):
+        return []
+
+    opens: list[tuple[int, str]] = []
+    closes: list[int] = []
+
+    def visit(node: Any) -> None:
+        if getattr(node, "type", None) == "preprocessor":
+            child_types = {getattr(c, "type", None) for c in getattr(node, "children", [])}
+
+            start_idx = node.start_point[0] if getattr(node, "start_point", None) else 0
+
+            if "PREPROC_REGION_KEYWORD" in child_types:
+                region_name = ""
+                seen_keyword = False
+                for c in getattr(node, "children", []):
+                    if getattr(c, "type", None) == "PREPROC_REGION_KEYWORD":
+                        seen_keyword = True
+                        continue
+                    if seen_keyword and getattr(c, "type", None) == "identifier":
+                        region_name = _ts_node_text(c)
+                        break
+                opens.append((start_idx, region_name))
+                return
+
+            if "PREPROC_ENDREGION_KEYWORD" in child_types:
+                closes.append(node.start_point[0])
+                return
+
+        for child in getattr(node, "children", []):
+            visit(child)
+
+    visit(root)
+
+    closes_sorted = sorted(closes)
+    used_closes: set[int] = set()
+
+    result: list[_RegionInfo] = []
+    for start_idx, name in sorted(opens, key=lambda x: x[0]):
+        end_idx = start_idx + 1
+        for c in closes_sorted:
+            if c > start_idx and c not in used_closes:
+                end_idx = c
+                used_closes.add(c)
+                break
+        result.append(_RegionInfo(name=name, start_idx=start_idx, end_idx=end_idx))
+
+    return result
+
+
 def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -> int:
     """
     Calculate simplified Cognitive Complexity for a procedure body.
@@ -4257,6 +4316,9 @@ class DiagnosticEngine:
     ) -> None:
         self._parser = parser or BslParser()
         self._select: set[str] | None = {c.upper() for c in select} if select else None
+        # Instrumentation for benchmarks/debug: where we switched to fallback parsing.
+        # Populated on each check_* call.
+        self.last_metrics: dict[str, Any] = {}
         # Merge user ignores with DEFAULT_DISABLED; select= overrides DEFAULT_DISABLED
         _user_ignore: set[str] = {c.upper() for c in ignore} if ignore else set()
         _effective_defaults = self.DEFAULT_DISABLED - (self._select or set())
@@ -4340,8 +4402,32 @@ class DiagnosticEngine:
         # Precompute structural info once (shared across rules).
         # Prefer AST-based extraction (handles multi-line signatures, exact
         # boundaries); fall back to regex when tree-sitter is unavailable.
-        procs = _find_procedures_from_tree(tree) or _find_procedures(content)
-        regions = _find_regions(content)
+        tree_is_ts = (
+            hasattr(tree, "root_node")
+            and hasattr(tree.root_node, "text")
+            and isinstance(tree.root_node.text, (bytes, bytearray))
+        )
+        procs_from_tree = _find_procedures_from_tree(tree)
+        procs = procs_from_tree or _find_procedures(content)
+        proc_source = "ast" if procs_from_tree else "regex"
+        regex_fallback_procs_used = 0 if procs_from_tree else 1
+        regions_from_tree = _find_regions_from_tree(tree) if tree_is_ts else []
+        regions_source = "ast" if regions_from_tree else "regex"
+        regex_fallback_regions_used = 0 if regions_from_tree else 1
+        self.last_metrics = {
+            "tree_is_ts": bool(tree_is_ts),
+            "proc_source": proc_source,
+            "regions_source": regions_source,
+            "regex_fallback_procs_used": regex_fallback_procs_used,
+            "regex_fallback_regions_used": regex_fallback_regions_used,
+        }
+        regions = regions_from_tree or _find_regions(content)
+        self.last_metrics.update(
+            {
+                "procs_count": len(procs),
+                "regions_count": len(regions),
+            }
+        )
 
         diagnostics: list[Diagnostic] = []
 

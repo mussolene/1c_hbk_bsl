@@ -257,6 +257,83 @@ class TestHandlerFunctions:
         result = on_hover(ls, params)
         assert result is None
 
+    def test_on_hover_metadata_member_resolves_object_from_chain(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import on_hover
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = "file:///test.bsl"
+        ls._docs[uri] = "Справочники.Контрагенты.Товары.Сумма;\n"
+
+        # Emulate metadata availability with chain-aware object resolution.
+        ls.symbol_index.has_metadata = lambda: True
+        ls.symbol_index.find_meta_object = lambda name: {"name": name} if name == "Контрагенты" else None
+        ls.symbol_index.get_meta_members = lambda obj, prefix="": (
+            [
+                {
+                    "name": "Сумма",
+                    "kind": "ts_attribute",
+                    "type_info": "Число(15,2)",
+                    "synonym_ru": "Сумма",
+                    "object_name": "Контрагенты",
+                    "object_kind": "Catalog",
+                }
+            ]
+            if obj == "Контрагенты"
+            else []
+        )
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = ls._docs[uri].index("Сумма") + 2
+        result = on_hover(ls, params)
+        assert result is not None
+        assert "Число(15,2)" in str(result.contents)
+
+    def test_on_signature_help_empty_doc_returns_none(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import on_signature_help
+        ls = self._make_server(tmp_path, monkeypatch)
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.position.line = 0
+        params.position.character = 0
+        result = on_signature_help(ls, params)
+        assert result is None
+
+    def test_on_signature_help_platform_function_active_param(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import on_signature_help
+        ls = self._make_server(tmp_path, monkeypatch)
+        content = 'Сообщить("Привет", Статус);\\n'
+        uri = "file:///test.bsl"
+        ls._docs[uri] = content
+
+        line_text = content.splitlines()[0]
+        cursor_char = line_text.index(",") + 1  # after comma between args
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = cursor_char
+
+        result = on_signature_help(ls, params)
+        assert result is not None
+        assert len(result.signatures) == 1
+        assert result.active_parameter == 1
+        assert result.signatures[0].parameters is not None
+        labels = [p.label for p in result.signatures[0].parameters]
+        assert "ТекстСообщения" in labels
+        assert "Статус?" in labels
+
     def test_on_document_symbol_empty_index(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
@@ -299,6 +376,29 @@ class TestHandlerFunctions:
         result = on_references(ls, params)
         assert result is None
 
+    def test_on_references_uses_caller_character(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import on_references
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = "file:///test.bsl"
+        ls._docs[uri] = "МойВызов();\n"
+
+        ls.symbol_index.find_callers = lambda name, limit=200: [  # type: ignore[method-assign]
+            {"caller_file": "/workspace/a.bsl", "caller_line": 3, "caller_character": 10}
+        ]
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = 2
+        params.context.include_declaration = False
+        result = on_references(ls, params)
+        assert result is not None
+        assert result[0].range.start.character == 10
+        assert result[0].range.end.character == 18  # 10 + len("МойВызов")
+
     def test_on_completion_empty_content(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
@@ -338,6 +438,44 @@ class TestHandlerFunctions:
         result = on_completion(ls, params)
         # Dot completion — returns CompletionList
         assert result is not None
+
+    def test_on_completion_metadata_chain_uses_base_object(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import on_completion
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = "file:///test.bsl"
+        ls._docs[uri] = "Справочники.Контрагенты.Товары.Су\n"
+
+        ls.symbol_index.has_metadata = lambda: True
+        ls.symbol_index.find_meta_object = lambda name: {"name": name} if name == "Контрагенты" else None
+        ls.symbol_index.find_meta_objects_by_collection = lambda collection, prefix="": []
+        ls.symbol_index.get_meta_members = lambda obj, prefix="": (
+            [
+                {
+                    "name": "Сумма",
+                    "kind": "ts_attribute",
+                    "type_info": "Число(15,2)",
+                    "synonym_ru": "Сумма",
+                    "object_name": "Контрагенты",
+                    "object_kind": "Catalog",
+                }
+            ]
+            if obj == "Контрагенты" and prefix == "Су"
+            else []
+        )
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = len(ls._docs[uri].rstrip("\n"))
+        result = on_completion(ls, params)
+        assert result is not None
+        labels = [i.label for i in result.items]
+        assert "Сумма" in labels
 
 
 # ---------------------------------------------------------------------------
@@ -674,28 +812,84 @@ class TestSelectionRange:
 
 class TestMakeSnippet:
     def test_snippet_helper_with_params(self) -> None:
-        from bsl_analyzer.lsp.server import _make_snippet
         from lsprotocol.types import InsertTextFormat
+
+        from bsl_analyzer.lsp.server import _make_snippet
 
         insert, fmt = _make_snippet("Найти", "Найти(Знач, Кол?)")
         assert fmt == InsertTextFormat.Snippet
         assert insert == "Найти(${1:Знач}, ${2:Кол?})$0"
 
     def test_snippet_helper_no_params(self) -> None:
-        from bsl_analyzer.lsp.server import _make_snippet
         from lsprotocol.types import InsertTextFormat
+
+        from bsl_analyzer.lsp.server import _make_snippet
 
         insert, fmt = _make_snippet("Выполнить", "Выполнить()")
         assert fmt == InsertTextFormat.Snippet
         assert insert == "Выполнить()$0"
 
     def test_snippet_helper_no_signature(self) -> None:
-        from bsl_analyzer.lsp.server import _make_snippet
         from lsprotocol.types import InsertTextFormat
+
+        from bsl_analyzer.lsp.server import _make_snippet
 
         insert, fmt = _make_snippet("Количество", None)
         assert fmt == InsertTextFormat.PlainText
         assert insert == "Количество"
+
+
+# ---------------------------------------------------------------------------
+# _schedule_workspace_reindex helper (Iteration 5)
+# ---------------------------------------------------------------------------
+
+
+class TestWorkspaceReindexSingleFlight:
+    def test_schedule_sets_pending_when_running(self) -> None:
+        import threading
+
+        from bsl_analyzer.lsp.server import _schedule_workspace_reindex
+
+        class _LS:
+            def __init__(self) -> None:
+                self._reindex_lock = threading.Lock()
+                self._reindex_running = True
+                self._reindex_pending = False
+
+        ls = _LS()
+        _schedule_workspace_reindex(ls, "/workspace", reason="test")
+        assert ls._reindex_pending is True
+
+    def test_schedule_runs_once_when_idle(self) -> None:
+        import threading
+        import time
+
+        from bsl_analyzer.lsp.server import _schedule_workspace_reindex
+
+        class _Indexer:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def index_workspace(self, workspace_root: str, force: bool = False) -> None:
+                self.calls += 1
+
+        class _SymbolIndex:
+            def get_stats(self) -> dict[str, int]:
+                return {"symbol_count": 1, "file_count": 1}
+
+        class _LS:
+            def __init__(self) -> None:
+                self._reindex_lock = threading.Lock()
+                self._reindex_running = False
+                self._reindex_pending = False
+                self.indexer = _Indexer()
+                self.symbol_index = _SymbolIndex()
+
+        ls = _LS()
+        _schedule_workspace_reindex(ls, "/workspace", reason="test")
+        time.sleep(0.1)
+        assert ls.indexer.calls == 1
+        assert ls._reindex_running is False
 
 
 # ---------------------------------------------------------------------------
@@ -749,8 +943,9 @@ class TestInferType:
 
 class TestNodeToDict:
     def test_node_to_dict_basic(self) -> None:
-        from bsl_analyzer.lsp.server import _node_to_dict
         from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import _node_to_dict
 
         node = MagicMock()
         node.type = "module"
@@ -767,8 +962,9 @@ class TestNodeToDict:
         assert "children" not in result
 
     def test_node_to_dict_max_depth(self) -> None:
-        from bsl_analyzer.lsp.server import _node_to_dict
         from unittest.mock import MagicMock
+
+        from bsl_analyzer.lsp.server import _node_to_dict
 
         def _make_node(depth_remaining):
             node = MagicMock()
@@ -845,6 +1041,7 @@ class TestOnTypeFormatting:
     def _make_server(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import BslLanguageServer
         ls = BslLanguageServer()
         ls.text_document_publish_diagnostics = MagicMock()
@@ -852,6 +1049,7 @@ class TestOnTypeFormatting:
 
     def test_indents_inside_procedure(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_type_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         # User pressed Enter after "Процедура Тест()" — cursor is on line 1 (empty)
@@ -868,6 +1066,7 @@ class TestOnTypeFormatting:
 
     def test_dedents_konets_procedure(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_type_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         # КонецПроцедуры should be at indent 0
@@ -883,6 +1082,7 @@ class TestOnTypeFormatting:
 
     def test_empty_content_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_type_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         params = MagicMock()
@@ -894,6 +1094,7 @@ class TestOnTypeFormatting:
 
     def test_nested_if_indents_body(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
+
         from bsl_analyzer.lsp.server import on_type_formatting
         ls = self._make_server(tmp_path, monkeypatch)
         content = "Процедура Тест()\n    Если А > 0 Тогда\n\n    КонецЕсли;\nКонецПроцедуры\n"

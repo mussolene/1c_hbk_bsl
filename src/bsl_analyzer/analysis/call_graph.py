@@ -41,6 +41,7 @@ class Call:
     caller_line: int  # 1-based
     caller_name: str | None  # enclosing procedure/function name
     callee_name: str
+    caller_character: int = 0  # 0-based column of callee token
     callee_args_count: int = 0
 
 
@@ -132,6 +133,7 @@ def _ts_method_call_to_record(node: Any, file_path: str, container: str | None) 
     return Call(
         caller_file=file_path,
         caller_line=node.start_point[0] + 1,
+        caller_character=node.start_point[1],
         caller_name=container,
         callee_name=callee_name,
         callee_args_count=args_count,
@@ -189,6 +191,7 @@ def _extract_from_source(content: str, file_path: str) -> list[Call]:
                 Call(
                     caller_file=file_path,
                     caller_line=line_idx + 1,
+                    caller_character=m.start("name"),
                     caller_name=current_proc,
                     callee_name=name,
                     callee_args_count=args_count,

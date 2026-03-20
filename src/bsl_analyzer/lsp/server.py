@@ -58,6 +58,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_RENAME,
     TEXT_DOCUMENT_SELECTION_RANGE,
     TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
+    TEXT_DOCUMENT_SIGNATURE_HELP,
     WORKSPACE_SYMBOL,
     CallHierarchyIncomingCall,
     CallHierarchyIncomingCallsParams,
@@ -105,6 +106,7 @@ from lsprotocol.types import (
     LocationLink,
     MarkupContent,
     MarkupKind,
+    ParameterInformation,
     Position,
     PrepareRenameParams,
     PublishDiagnosticsParams,
@@ -117,6 +119,9 @@ from lsprotocol.types import (
     SemanticTokens,
     SemanticTokensLegend,
     SemanticTokensParams,
+    SignatureHelp,
+    SignatureHelpParams,
+    SignatureInformation,
     SymbolInformation,
     SymbolKind,
     TextDocumentSyncKind,
@@ -204,6 +209,10 @@ class BslLanguageServer(LanguageServer):
         self._docs: dict[str, str] = {}
         # Debounce timers for diagnostics: uri → Timer
         self._diag_timers: dict[str, threading.Timer] = {}
+        # Single-flight guard for workspace reindex.
+        self._reindex_lock = threading.Lock()
+        self._reindex_running = False
+        self._reindex_pending = False
 
 
 server = BslLanguageServer()
@@ -232,16 +241,8 @@ def _start_branch_watcher(ls: BslLanguageServer, workspace_root: str) -> None:
             logger.info("LSP: watching %s for branch changes", git_head)
             for _ in watch(str(git_head), stop_event=None):
                 branch = _current_branch(git_head)
-                logger.warning("LSP: branch changed → %s — re-indexing %s", branch, workspace_root)
-                try:
-                    ls.indexer.index_workspace(workspace_root, force=False)
-                    stats = ls.symbol_index.get_stats()
-                    logger.warning(
-                        "LSP: re-index complete: %d symbols in %d files",
-                        stats["symbol_count"], stats["file_count"],
-                    )
-                except Exception as exc:
-                    logger.error("LSP: re-index after branch switch failed: %s", exc)
+                logger.warning("LSP: branch changed → %s — scheduling re-index %s", branch, workspace_root)
+                _schedule_workspace_reindex(ls, workspace_root, reason=f"branch:{branch}")
         except Exception as exc:
             logger.error("LSP: branch watcher crashed: %s", exc)
 
@@ -257,6 +258,52 @@ def _current_branch(git_head: Path) -> str:
         return content[:8]  # detached HEAD — show short hash
     except OSError:
         return "unknown"
+
+
+def _schedule_workspace_reindex(
+    ls: BslLanguageServer,
+    workspace_root: str,
+    reason: str = "manual",
+) -> None:
+    """Schedule workspace reindex with single-flight semantics.
+
+    If a reindex is already running, we only mark one pending pass and return.
+    """
+    with ls._reindex_lock:
+        if ls._reindex_running:
+            ls._reindex_pending = True
+            logger.debug("LSP: re-index already running; mark pending (%s)", reason)
+            return
+        ls._reindex_running = True
+        ls._reindex_pending = False
+
+    def _worker() -> None:
+        try:
+            while True:
+                try:
+                    ls.indexer.index_workspace(workspace_root, force=False)
+                    stats = ls.symbol_index.get_stats()
+                    logger.info(
+                        "LSP: re-index complete (%s): %d symbols in %d files",
+                        reason,
+                        stats["symbol_count"],
+                        stats["file_count"],
+                    )
+                except Exception as exc:
+                    logger.error("LSP: re-index failed (%s): %s", reason, exc)
+
+                with ls._reindex_lock:
+                    if ls._reindex_pending:
+                        ls._reindex_pending = False
+                        continue
+                    ls._reindex_running = False
+                    break
+        finally:
+            with ls._reindex_lock:
+                if ls._reindex_running and not ls._reindex_pending:
+                    ls._reindex_running = False
+
+    threading.Thread(target=_worker, daemon=True, name="bsl-workspace-reindex").start()
 
 
 # ---------------------------------------------------------------------------
@@ -282,16 +329,8 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
             ls.symbol_index = SymbolIndex(db_path=db_path)
             ls.indexer = IncrementalIndexer(index=ls.symbol_index)
 
-        logger.info("LSP: starting background index of %s (db: %s)", workspace_root, db_path)
-
-        def _do_index() -> None:
-            try:
-                ls.indexer.index_workspace(workspace_root, force=False)
-                logger.info("LSP: indexing complete")
-            except Exception as exc:
-                logger.error("LSP: indexing failed: %s", exc)
-
-        threading.Thread(target=_do_index, daemon=True).start()
+        logger.info("LSP: scheduling background index of %s (db: %s)", workspace_root, db_path)
+        _schedule_workspace_reindex(ls, workspace_root, reason="initialize")
         _start_branch_watcher(ls, workspace_root)
 
 
@@ -788,7 +827,8 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
 
         # 5b. Hovering over a metadata member (e.g. 'Контрагенты.НаименованиеПолное')
         if left_word:
-            members = ls.symbol_index.get_meta_members(left_word, word)
+            meta_obj_name = _metadata_object_name_from_chain(ls, _before_word) or left_word
+            members = ls.symbol_index.get_meta_members(meta_obj_name, word)
             word_lo = word.casefold()
             for m in members:
                 if m["name"].casefold() == word_lo:
@@ -922,12 +962,13 @@ def on_references(
     callers = ls.symbol_index.find_callers(word, limit=200)
     for c in callers:
         line = max(0, c["caller_line"] - 1)
+        ch = _call_char_from_row(c)
         locations.append(
             Location(
                 uri=_path_to_uri(c["caller_file"]),
                 range=Range(
-                    start=Position(line=line, character=0),
-                    end=Position(line=line, character=len(word)),
+                    start=Position(line=line, character=ch),
+                    end=Position(line=line, character=ch + len(word)),
                 ),
             )
         )
@@ -1006,7 +1047,7 @@ def on_rename(
     # Call sites
     for c in ls.symbol_index.find_callers(word, limit=500):
         line = max(0, c["caller_line"] - 1)
-        _add_edit(_path_to_uri(c["caller_file"]), line, 0)
+        _add_edit(_path_to_uri(c["caller_file"]), line, _call_char_from_row(c))
 
     if not changes:
         return None
@@ -1035,6 +1076,12 @@ def _sym_to_call_hierarchy_item(sym: dict, ls: BslLanguageServer) -> CallHierarc
         selection_range=r,
         detail=sym.get("signature") or "",
     )
+
+
+def _call_char_from_row(call_row: dict[str, Any]) -> int:
+    """Return best-effort call-site column from index row."""
+    char = int(call_row.get("caller_character", 0) or 0)
+    return char if char >= 0 else 0
 
 
 @server.feature(TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY)
@@ -1069,9 +1116,10 @@ def on_call_hierarchy_incoming(
     result: list[CallHierarchyIncomingCall] = []
     for c in callers:
         caller_line = max(0, c["caller_line"] - 1)
+        caller_char = _call_char_from_row(c)
         call_range = Range(
-            start=Position(line=caller_line, character=0),
-            end=Position(line=caller_line, character=len(item_name)),
+            start=Position(line=caller_line, character=caller_char),
+            end=Position(line=caller_line, character=caller_char + len(item_name)),
         )
         # Build a minimal CallHierarchyItem for the caller function
         caller_syms = ls.symbol_index.find_symbol(c["caller_name"], limit=1)
@@ -1111,9 +1159,10 @@ def on_call_hierarchy_outgoing(
     result: list[CallHierarchyOutgoingCall] = []
     for c in callees:
         call_line = max(0, c["caller_line"] - 1)
+        call_char = _call_char_from_row(c)
         call_range = Range(
-            start=Position(line=call_line, character=0),
-            end=Position(line=call_line, character=len(c["callee_name"])),
+            start=Position(line=call_line, character=call_char),
+            end=Position(line=call_line, character=call_char + len(c["callee_name"])),
         )
         # Resolve callee definition
         callee_syms = ls.symbol_index.find_symbol(c["callee_name"], limit=1)
@@ -1272,7 +1321,8 @@ def on_completion(
 
         # ---- metadata: Контрагенты. → attributes/TS; Справочники. → names ---
         if not items:
-            items = _meta_dot_completions(ls, obj_name, member_prefix)
+            meta_obj_name = _metadata_object_name_from_chain(ls, before_dot) or obj_name
+            items = _meta_dot_completions(ls, meta_obj_name, member_prefix)
 
         # Return member completions even if empty (no global pollution on `.`)
         return CompletionList(is_incomplete=False, items=items)
@@ -1415,6 +1465,38 @@ _META_COLLECTIONS: dict[str, str] = {
 _META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, object] = {}  # unused; placeholder
 
 
+def _metadata_object_name_from_chain(
+    ls: BslLanguageServer,
+    chain_expr: str,
+) -> str | None:
+    """Resolve a metadata object name from a dotted expression.
+
+    Examples:
+    - ``Справочники.Контрагенты`` -> ``Контрагенты``
+    - ``Справочники.Контрагенты.Товары`` -> ``Контрагенты``
+    - ``Контрагенты.Товары`` -> ``Контрагенты`` (if object exists)
+    """
+    if not chain_expr or not hasattr(ls, "symbol_index") or not ls.symbol_index.has_metadata():
+        return None
+
+    tokens = _re.findall(r"[А-ЯЁа-яёA-Za-z_]\w*", chain_expr)
+    if not tokens:
+        return None
+
+    # Case 1: known global metadata collection path.
+    if len(tokens) >= 2 and _META_COLLECTIONS.get(tokens[0].casefold()):
+        second = tokens[1]
+        if ls.symbol_index.find_meta_object(second):
+            return second
+
+    # Case 2: fallback — pick first token in the chain that is a known metadata object.
+    for tok in tokens:
+        if ls.symbol_index.find_meta_object(tok):
+            return tok
+
+    return None
+
+
 def _meta_dot_completions(
     ls: BslLanguageServer,
     obj_name: str,
@@ -1442,12 +1524,17 @@ def _meta_dot_completions(
     if collection:
         for meta_obj in ls.symbol_index.find_meta_objects_by_collection(collection, member_prefix):
             label = meta_obj["name"]
-            detail = meta_obj.get("synonym_ru", "")
+            kind = meta_obj.get("kind", "")
+            synonym = meta_obj.get("synonym_ru", "")
+            detail_parts = [kind] if kind else []
+            if synonym and synonym != label:
+                detail_parts.append(f"Синоним: {synonym}")
             items.append(
                 CompletionItem(
                     label=label,
                     kind=CompletionItemKind.Module,
-                    detail=detail or meta_obj.get("kind", ""),
+                    detail=" | ".join(detail_parts),
+                    documentation=f"Объект метаданных коллекции `{collection}`",
                     insert_text=label,
                 )
             )
@@ -1463,16 +1550,26 @@ def _meta_dot_completions(
             ck = CompletionItemKind.Event
         else:
             ck = CompletionItemKind.Field
-        detail_parts = []
+        kind_ru = {
+            "attribute": "Реквизит",
+            "tabular_section": "Табличная часть",
+            "ts_attribute": "Реквизит ТЧ",
+            "form_attribute": "Реквизит формы",
+            "form_command": "Команда формы",
+        }.get(kind_str, kind_str)
+        detail_parts = [kind_ru]
         if member.get("type_info"):
-            detail_parts.append(member["type_info"])
-        if member.get("synonym_ru"):
+            detail_parts.append(f"Тип: {member['type_info']}")
+        if member.get("synonym_ru") and member["synonym_ru"] != label:
             detail_parts.append(member["synonym_ru"])
         items.append(
             CompletionItem(
                 label=label,
                 kind=ck,
                 detail=" | ".join(detail_parts),
+                documentation=(
+                    f"{kind_ru} объекта `{member.get('object_kind', '')}.{member.get('object_name', obj_name)}`"
+                ),
                 insert_text=label,
             )
         )
@@ -2244,6 +2341,124 @@ def on_inlay_hint(
                 pos_in_raw += len(raw_arg) + 1  # +1 for ','
 
     return hints if hints else None
+
+
+# ---------------------------------------------------------------------------
+# Signature Help (parameter list on call sites)
+# ---------------------------------------------------------------------------
+
+def _count_commas_outside_strings(text: str) -> int:
+    """Count commas not inside double-quoted string literals."""
+    in_string = False
+    commas = 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            if ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == ",":
+            commas += 1
+        i += 1
+    return commas
+
+
+def _parse_signature_params(sig: str | None) -> list[str]:
+    if not sig:
+        return []
+    m = _re.search(r"\(([^)]*)\)", sig)
+    if not m:
+        return []
+    inside = m.group(1).strip()
+    if not inside:
+        return []
+    return [p.strip() for p in inside.split(",") if p.strip()]
+
+
+def _param_label(param: str) -> str:
+    # Normalize common BSL signature tokens: remove `Знач/Val` and optional markers.
+    p = param.strip()
+    p = p.lstrip("&").strip()
+    p = _re.sub(r"^(?:Знач|Val)\s+", "", p, flags=_re.IGNORECASE)
+    p = p.split("=", 1)[0].strip()
+    # Examples:
+    #   "ТекстСообщения" → "ТекстСообщения"
+    #   "Параметр1 (опционально)" → "Параметр1"
+    parts = p.split()
+    return parts[0] if parts else ""
+
+
+@server.feature(TEXT_DOCUMENT_SIGNATURE_HELP)
+def on_signature_help(
+    ls: BslLanguageServer, params: SignatureHelpParams
+) -> SignatureHelp | None:
+    """Show signature and active parameter for the call under the cursor."""
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+
+    pos = params.position
+    lines = content.splitlines()
+    if pos.line >= len(lines):
+        return None
+
+    line_text = lines[pos.line]
+    cursor_char = min(pos.character, len(line_text))
+    before_cursor = line_text[:cursor_char]
+
+    # Find the last simple call name directly before the cursor on the same line.
+    call_re = _re.compile(r"([А-ЯЁа-яёA-Za-z_]\w*)\s*\(")
+    matches = list(call_re.finditer(before_cursor))
+    if not matches:
+        return None
+    m = matches[-1]
+    func_name = m.group(1)
+    open_paren_idx = m.end() - 1  # points to '('
+
+    args_before = line_text[open_paren_idx + 1 : cursor_char]
+    comma_count = _count_commas_outside_strings(args_before)
+    active_param = comma_count
+
+    # Resolve signature (workspace first, then platform API).
+    sym = ls.symbol_index.find_symbol(func_name, limit=1)
+    signature_text: str | None = None
+    doc: str | None = None
+    if sym:
+        signature_text = sym[0].get("signature") or ""
+        doc = sym[0].get("doc_comment") or None
+    else:
+        api_method = ls.platform_api.find_global(func_name)
+        if api_method:
+            signature_text = getattr(api_method, "signature", None) or ""
+            doc = getattr(api_method, "description", None) or None
+
+    param_defs = _parse_signature_params(signature_text)
+    param_labels = [_param_label(p) for p in param_defs]
+    param_labels = [pl for pl in param_labels if pl]
+    param_infos = [ParameterInformation(label=pl) for pl in param_labels]
+
+    if param_infos:
+        active_param = min(max(active_param, 0), len(param_infos) - 1)
+    else:
+        active_param = 0
+
+    signature_info = SignatureInformation(
+        label=f"{func_name}",
+        documentation=doc or None,
+        parameters=param_infos or None,
+        active_parameter=active_param,
+    )
+
+    return SignatureHelp(
+        signatures=[signature_info],
+        active_signature=0,
+        active_parameter=active_param,
+    )
 
 
 # ---------------------------------------------------------------------------

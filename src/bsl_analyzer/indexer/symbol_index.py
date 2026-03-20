@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS calls (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     caller_file       TEXT NOT NULL,
     caller_line       INTEGER NOT NULL,
+    caller_character  INTEGER NOT NULL DEFAULT 0,
     caller_name       TEXT,               -- name of the containing procedure/function
     callee_name       TEXT NOT NULL,
     callee_name_lower TEXT NOT NULL DEFAULT '',  -- casefold(callee_name)
@@ -149,6 +150,8 @@ class SymbolIndex:
             conn.execute("ALTER TABLE symbols ADD COLUMN name_lower TEXT NOT NULL DEFAULT ''")
 
         existing_calls = {row[1] for row in conn.execute("PRAGMA table_info(calls)")}
+        if "caller_character" not in existing_calls:
+            conn.execute("ALTER TABLE calls ADD COLUMN caller_character INTEGER NOT NULL DEFAULT 0")
         if "callee_name_lower" not in existing_calls:
             conn.execute("ALTER TABLE calls ADD COLUMN callee_name_lower TEXT NOT NULL DEFAULT ''")
 
@@ -237,11 +240,13 @@ class SymbolIndex:
                 self._mem_conn = self._make_conn()
             return self._mem_conn
 
-        conn: sqlite3.Connection | None = getattr(_local, "conn", None)
-        if conn is None or self._is_closed(conn):
-            conn = self._make_conn()
-            _local.conn = conn
-        return conn
+        conn_map: dict[str, sqlite3.Connection] = getattr(_local, "conn_map", {})
+        existing = conn_map.get(self.db_path)
+        if existing is None or self._is_closed(existing):
+            existing = self._make_conn()
+            conn_map[self.db_path] = existing
+            _local.conn_map = conn_map
+        return existing
 
     @staticmethod
     def _is_closed(conn: sqlite3.Connection) -> bool:
@@ -258,10 +263,12 @@ class SymbolIndex:
                 self._mem_conn.close()
             self._mem_conn = None
         else:
-            conn: sqlite3.Connection | None = getattr(_local, "conn", None)
+            conn_map: dict[str, sqlite3.Connection] = getattr(_local, "conn_map", {})
+            conn = conn_map.get(self.db_path)
             if conn and not self._is_closed(conn):
                 conn.close()
-                _local.conn = None
+            conn_map.pop(self.db_path, None)
+            _local.conn_map = conn_map
 
     # ------------------------------------------------------------------
     # Write operations
@@ -322,13 +329,20 @@ class SymbolIndex:
             # Insert new calls
             conn.executemany(
                 """
-                INSERT INTO calls (caller_file, caller_line, caller_name, callee_name, callee_name_lower, callee_args_count)
-                VALUES (:caller_file, :caller_line, :caller_name, :callee_name, :callee_name_lower, :callee_args_count)
+                INSERT INTO calls (
+                    caller_file, caller_line, caller_character, caller_name,
+                    callee_name, callee_name_lower, callee_args_count
+                )
+                VALUES (
+                    :caller_file, :caller_line, :caller_character, :caller_name,
+                    :callee_name, :callee_name_lower, :callee_args_count
+                )
                 """,
                 [
                     {
                         "caller_file": file_path,
                         "caller_line": c.get("caller_line", 0),
+                        "caller_character": c.get("caller_character", 0),
                         "caller_name": c.get("caller_name"),
                         "callee_name": c.get("callee_name", ""),
                         "callee_name_lower": c.get("callee_name", "").casefold(),
@@ -478,7 +492,7 @@ class SymbolIndex:
         conn = self._conn()
         rows = conn.execute(
             """
-            SELECT c.caller_file, c.caller_line, c.caller_name, c.callee_name,
+            SELECT c.caller_file, c.caller_line, c.caller_character, c.caller_name, c.callee_name,
                    s.signature as caller_signature
             FROM calls c
             LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower AND s.file_path = c.caller_file
@@ -509,7 +523,7 @@ class SymbolIndex:
         if caller_name is not None:
             rows = conn.execute(
                 """
-                SELECT c.callee_name, c.caller_line, c.callee_args_count,
+                SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
                        s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
                 FROM calls c
                 LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
@@ -522,7 +536,7 @@ class SymbolIndex:
         elif caller_line is not None:
             rows = conn.execute(
                 """
-                SELECT c.callee_name, c.caller_line, c.callee_args_count,
+                SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
                        s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
                 FROM calls c
                 LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
@@ -535,7 +549,7 @@ class SymbolIndex:
         else:
             rows = conn.execute(
                 """
-                SELECT c.callee_name, c.caller_line, c.callee_args_count,
+                SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
                        s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
                 FROM calls c
                 LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower

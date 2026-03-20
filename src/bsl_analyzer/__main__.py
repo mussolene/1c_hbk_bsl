@@ -296,6 +296,71 @@ def _run_index(workspace: str, force: bool) -> None:
     indexer.index_workspace(workspace, force=force)
 
 
+def _run_bench(workspace: str) -> int:
+    """
+    Run lightweight cold/warm indexing + diagnostics benchmark.
+
+    Output is JSON to stdout so it can be captured in CI and compared across commits.
+    """
+    import json
+    import time
+
+    from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+    from bsl_analyzer.indexer.db_path import resolve_index_db_path
+    from bsl_analyzer.indexer.incremental import IncrementalIndexer
+
+    workspace = os.path.abspath(workspace)
+    db_path = resolve_index_db_path(workspace)
+
+    # Pick a representative file for diagnostics timing.
+    files = IncrementalIndexer._find_all_bsl_files(workspace)
+    sample_file = files[0] if files else None
+
+    # Cold index (force full reindex).
+    if db_path != ":memory:":
+        try:
+            if os.path.exists(db_path) and os.path.isfile(db_path):
+                os.remove(db_path)
+        except OSError:
+            # Non-fatal: benchmark still continues with existing db state.
+            pass
+
+    indexer = IncrementalIndexer(db_path=db_path)
+    t0 = time.perf_counter()
+    cold_result = indexer.index_workspace(workspace, force=True)
+    cold_wall_s = time.perf_counter() - t0
+
+    # Warm index (incremental check; should be near-instant if HEAD unchanged).
+    t1 = time.perf_counter()
+    warm_result = indexer.index_workspace(workspace, force=False)
+    warm_wall_s = time.perf_counter() - t1
+
+    # Diagnostics on sample file.
+    diag_payload: dict[str, object] = {"sample_file": sample_file}
+    if sample_file:
+        engine = DiagnosticEngine()
+        t2 = time.perf_counter()
+        _ = engine.check_file(sample_file)
+        diag_wall_s = time.perf_counter() - t2
+        diag_payload.update(
+            {
+                "diag_wall_s": diag_wall_s,
+                "diagnostics_metrics": engine.last_metrics,
+            }
+        )
+
+    payload = {
+        "workspace": workspace,
+        "db_path": db_path,
+        "cold_index": {"wall_s": cold_wall_s, **cold_result},
+        "warm_index": {"wall_s": warm_wall_s, **warm_result},
+        "diagnostics_bench": diag_payload,
+        "timestamp": time.time(),
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _parse_codes(raw: str | None) -> set[str] | None:
     """Parse a comma-separated list of rule codes, or return None."""
     if not raw:
@@ -352,6 +417,13 @@ Examples:
         nargs="?",
         const=os.getcwd(),
         help="Index/reindex workspace (current dir if omitted)",
+    )
+    mode_group.add_argument(
+        "--bench",
+        metavar="PATH",
+        nargs="?",
+        const=os.getcwd(),
+        help="Run indexing+diagnostics benchmarks and print JSON",
     )
     mode_group.add_argument(
         "--list-rules",
@@ -514,6 +586,9 @@ Examples:
 
     elif args.mcp:
         _run_mcp(args.port, stdio=args.stdio, workspace=os.path.abspath(args.workspace))
+
+    elif getattr(args, "bench", None) is not None:
+        sys.exit(_run_bench(args.bench))
 
     elif args.check is not None:
         paths = args.check if args.check else [os.getcwd()]

@@ -146,7 +146,7 @@ def load_bsl_globals(path: str | None) -> dict:
         return json.loads(Path(path).read_text(encoding="utf-8"))
 
     print(f"Downloading from {BSL_GLOBALS_URL}")
-    with urllib.request.urlopen(BSL_GLOBALS_URL, timeout=30) as resp:
+    with urllib.request.urlopen(BSL_GLOBALS_URL, timeout=30) as resp:  # noqa: S310
         data = resp.read()
     print(f"Downloaded {len(data):,} bytes")
     return json.loads(data)
@@ -197,11 +197,11 @@ def main() -> None:
         len(json.loads((OUTPUT_DIR / f"{n.lower()}.json").read_text()).get("methods", []))
         for n in classes
     )
-    print(f"\nDone:")
+    print("\nDone:")
     print(f"  {len(classes)} type files in data/platform_api/")
     print(f"  {total_methods} methods total")
     print(f"  {len(converted_globals)} global functions/variables in _globals.json")
-    print(f"\nCommit data/platform_api/ to include in LSP server.")
+    print("\nCommit data/platform_api/ to include in LSP server.")
 
 
 if __name__ == "__main__":
