@@ -18,6 +18,19 @@ _RE_PROC_HEADER = re.compile(
     re.IGNORECASE,
 )
 _RE_DOC_LINE = re.compile(r"^\s*//\s?(?P<text>.*)$")
+_RE_CYRILLIC = re.compile(r"[А-ЯЁа-яё]")
+
+
+def _proc_signature(kind: str, name: str, params: str | list[str], is_export: bool) -> str:
+    """Build a procedure/function signature using RU or EN keywords based on the name script."""
+    params_str = ", ".join(params) if isinstance(params, list) else params
+    if _RE_CYRILLIC.search(name):
+        kw = "Функция" if kind == "function" else "Процедура"
+        exp = " Экспорт" if is_export else ""
+    else:
+        kw = "Function" if kind == "function" else "Procedure"
+        exp = " Export" if is_export else ""
+    return f"{kw} {name}({params_str}){exp}"
 
 
 @dataclass
@@ -145,9 +158,7 @@ def _ts_proc_to_symbol(
     kind = "function" if node.type == "function_definition" else "procedure"
     start_line = node.start_point[0] + 1
     end_line = node.end_point[0] + 1
-    signature = f"{kind.capitalize()} {name}({', '.join(params)})"
-    if is_export:
-        signature += " Export"
+    signature = _proc_signature(kind, name, params, is_export)
 
     doc_comment = _extract_doc_comment(source_lines, start_line - 1)
 
@@ -247,9 +258,7 @@ def _extract_from_source(content: str, file_path: str) -> list[Symbol]:
                 end_line_idx = ep
                 break
 
-        signature = f"{kind.capitalize()} {name}({params_str})"
-        if is_export:
-            signature += " Export"
+        signature = _proc_signature(kind, name, params_str, is_export)
 
         doc_comment = _extract_doc_comment(lines, line_idx)
 

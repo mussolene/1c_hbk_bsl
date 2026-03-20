@@ -34,6 +34,10 @@ from pathlib import Path
 from typing import Any
 
 from lsprotocol.types import (
+    TEXT_DOCUMENT_CODE_LENS,
+    CodeLens,
+    CodeLensParams,
+    Command,
     CALL_HIERARCHY_INCOMING_CALLS,
     CALL_HIERARCHY_OUTGOING_CALLS,
     INITIALIZE,
@@ -129,7 +133,14 @@ try:
 except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
-from bsl_analyzer.analysis.diagnostics import DiagnosticEngine, Severity
+from bsl_analyzer.analysis.diagnostics import (
+    DiagnosticEngine,
+    Severity,
+    RULE_METADATA,
+    _find_procedures_from_tree,
+    _calc_cognitive_complexity,
+    _calc_mccabe_complexity,
+)
 from bsl_analyzer.analysis.formatter import (
     default_formatter,
     _DEDENT_BEFORE,
@@ -139,7 +150,7 @@ from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
 from bsl_analyzer.indexer.db_path import resolve_index_db_path
 from bsl_analyzer.indexer.incremental import IncrementalIndexer
 from bsl_analyzer.indexer.symbol_index import SymbolIndex
-from bsl_analyzer.lsp.diagnostics_ru import translate_message
+from bsl_analyzer.lsp.diagnostics_ru import translate_message, DIAGNOSTICS_RU
 from bsl_analyzer.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -1732,6 +1743,45 @@ def _word_range_at_position(content: str, line: int, character: int) -> Range:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Code Lens — cognitive / cyclomatic complexity above each procedure
+# ---------------------------------------------------------------------------
+
+@server.feature(TEXT_DOCUMENT_CODE_LENS)
+def on_code_lens(
+    ls: BslLanguageServer, params: CodeLensParams
+) -> list[CodeLens] | None:
+    """Return code lenses showing cognitive and cyclomatic complexity above each method."""
+    uri = params.text_document.uri
+    content = ls._docs.get(uri, "")
+    if not content:
+        return None
+    try:
+        tree = ls.parser.parse_content(content, file_path=uri)
+        procs = _find_procedures_from_tree(tree)
+        lines = content.splitlines()
+    except Exception:
+        return None
+
+    result: list[CodeLens] = []
+    for proc in procs:
+        cc = _calc_cognitive_complexity(lines, proc.start_idx, proc.end_idx)
+        mc = _calc_mccabe_complexity(lines, proc.start_idx, proc.end_idx)
+        line = proc.start_idx  # 0-based header line
+        r = Range(start=Position(line=line, character=0), end=Position(line=line, character=0))
+        # Cognitive complexity lens
+        cc_label = f"Когнитивная сложность: {cc}"
+        result.append(CodeLens(range=r, command=Command(title=cc_label, command="")))
+        # Cyclomatic complexity lens
+        mc_label = f"Цикломатическая сложность: {mc}"
+        result.append(CodeLens(range=r, command=Command(title=mc_label, command="")))
+    return result or None
+
+
+# ---------------------------------------------------------------------------
+# Code Formatting
+# ---------------------------------------------------------------------------
+
 @server.feature(TEXT_DOCUMENT_FORMATTING)
 def on_formatting(
     ls: BslLanguageServer, params: DocumentFormattingParams
@@ -2225,30 +2275,66 @@ def on_code_action(
             line_end_char = len(line_text)
             indent = len(line_text) - len(line_text.lstrip())
             pad = " " * indent
+            rule_name = RULE_METADATA.get(code, {}).get("name", "")
+            rule_desc_ru = DIAGNOSTICS_RU.get(code, {}).get("title", "")
+            display_name = rule_desc_ru or rule_name or code
 
             # ── 1. Игнорировать строку (noqa) ──────────────────────────────
-            noqa_suffix = f"  // noqa: {code}" if code else "  // noqa"
-            actions.append(CodeAction(
-                title=f"Игнорировать эту строку ({code})" if code else "Игнорировать эту строку",
-                kind=CodeActionKind.QuickFix,
-                diagnostics=[diag],
-                edit=WorkspaceEdit(changes={uri: [TextEdit(
-                    range=Range(
-                        start=Position(line=diag_line, character=line_end_char),
-                        end=Position(line=diag_line, character=line_end_char),
-                    ),
-                    new_text=noqa_suffix,
-                )]}),
-            ))
+            # If the line already has a noqa comment, append the code to it.
+            _noqa_existing = _re.search(
+                r"//\s*noqa:\s*([\w,\s]+?)\s*$", line_text, _re.IGNORECASE
+            )
+            if _noqa_existing and code:
+                _existing_codes = [c.strip() for c in _noqa_existing.group(1).split(",")]
+                if code not in _existing_codes:
+                    _new_comment = f"  // noqa: {', '.join(_existing_codes + [code])}"
+                    actions.append(CodeAction(
+                        title=f"Добавить {code} к noqa-комментарию",
+                        kind=CodeActionKind.QuickFix,
+                        diagnostics=[diag],
+                        edit=WorkspaceEdit(changes={uri: [TextEdit(
+                            range=Range(
+                                start=Position(line=diag_line, character=_noqa_existing.start()),
+                                end=Position(line=diag_line, character=line_end_char),
+                            ),
+                            new_text=_new_comment,
+                        )]}),
+                    ))
+            else:
+                noqa_suffix = f"  // noqa: {code}" if code else "  // noqa"
+                noqa_title = f"Игнорировать строку — {display_name}" if display_name != code else f"Игнорировать строку ({code})"
+                actions.append(CodeAction(
+                    title=noqa_title,
+                    kind=CodeActionKind.QuickFix,
+                    diagnostics=[diag],
+                    edit=WorkspaceEdit(changes={uri: [TextEdit(
+                        range=Range(
+                            start=Position(line=diag_line, character=line_end_char),
+                            end=Position(line=diag_line, character=line_end_char),
+                        ),
+                        new_text=noqa_suffix,
+                    )]}),
+                ))
 
             # ── 2. Обернуть правило BSLLS-off / -on ────────────────────────
             bslls_name = _CODE_TO_BSLLS_NAME.get(code)
             if bslls_name:
-                # Insert before current line and after current line
                 insert_before = Position(line=diag_line, character=0)
-                insert_after = Position(line=diag_line + 1, character=0)
+                # For the last line of the file, append to the current line
+                if diag_line + 1 >= len(doc_lines):
+                    after_range = Range(
+                        start=Position(line=diag_line, character=line_end_char),
+                        end=Position(line=diag_line, character=line_end_char),
+                    )
+                    after_new_text = f"\n{pad}// BSLLS:{bslls_name}-on"
+                else:
+                    after_range = Range(
+                        start=Position(line=diag_line + 1, character=0),
+                        end=Position(line=diag_line + 1, character=0),
+                    )
+                    after_new_text = f"{pad}// BSLLS:{bslls_name}-on\n"
                 actions.append(CodeAction(
-                    title=f"Отключить {code} для этой строки (BSLLS-off/on)",
+                    title=f"Отключить «{display_name}» для этой строки (BSLLS-off/on)",
                     kind=CodeActionKind.QuickFix,
                     diagnostics=[diag],
                     edit=WorkspaceEdit(changes={uri: [
@@ -2256,16 +2342,13 @@ def on_code_action(
                             range=Range(start=insert_before, end=insert_before),
                             new_text=f"{pad}// BSLLS:{bslls_name}-off\n",
                         ),
-                        TextEdit(
-                            range=Range(start=insert_after, end=insert_after),
-                            new_text=f"{pad}// BSLLS:{bslls_name}-on\n",
-                        ),
+                        TextEdit(range=after_range, new_text=after_new_text),
                     ]}),
                 ))
 
                 # ── 3. Отключить правило во всём файле ─────────────────────
                 actions.append(CodeAction(
-                    title=f"Отключить {code} в этом файле (BSLLS-off)",
+                    title=f"Отключить «{display_name}» в этом файле (BSLLS-off)",
                     kind=CodeActionKind.QuickFix,
                     diagnostics=[diag],
                     edit=WorkspaceEdit(changes={uri: [TextEdit(

@@ -1250,6 +1250,94 @@ RULE_METADATA: dict[str, dict] = {
 
 
 # ---------------------------------------------------------------------------
+# Russian descriptions (taken from BSL Language Server ru-locale)
+# Keys that are absent will fall back to the English description in RULE_METADATA.
+# ---------------------------------------------------------------------------
+
+RULE_DESCRIPTIONS_RU: dict[str, str] = {
+    "BSL001": "Синтаксическая ошибка",
+    "BSL002": "Метод слишком длинный",
+    "BSL003": "Неэкспортный метод в области программного интерфейса",
+    "BSL004": "Пустой блок обработки исключений",
+    "BSL005": "Использование жёсткого кодирования сетевых адресов",
+    "BSL006": "Использование жёстко заданных путей к файлам",
+    "BSL007": "Неиспользуемая локальная переменная",
+    "BSL008": "Слишком много операторов «Возврат»",
+    "BSL009": "Присвоение переменной самой себе",
+    "BSL010": "Бессмысленный оператор «Возврат»",
+    "BSL011": "Когнитивная сложность метода превышает допустимый порог",
+    "BSL012": "Жёстко закодированные пароли или ключи",
+    "BSL013": "Закомментированный код",
+    "BSL014": "Строка слишком длинная",
+    "BSL015": "Слишком много необязательных параметров",
+    "BSL016": "Нестандартная область",
+    "BSL017": "Экспортный метод в модуле команды или формы",
+    "BSL018": "Оператор «ВызватьИсключение» со строковым литералом",
+    "BSL019": "Цикломатическая сложность метода превышает допустимый порог",
+    "BSL020": "Превышена допустимая вложенность операторов",
+    "BSL021": "Параметр «Знач» не используется внутри метода",
+    "BSL022": "Устаревший метод «Предупреждение»",
+    "BSL023": "Служебный тег в комментарии",
+    "BSL024": "Комментарий без пробела после «//»",
+    "BSL025": "Отсутствует точка с запятой в конце оператора",
+    "BSL026": "Пустая область",
+    "BSL027": "Использование оператора «Перейти»",
+    "BSL028": "Код без обработки исключений",
+    "BSL029": "Магическое число",
+    "BSL030": "Точка с запятой в конце строки объявления процедуры",
+    "BSL031": "Слишком много параметров",
+    "BSL032": "Функция может не возвращать значение",
+    "BSL033": "Запрос в цикле",
+    "BSL034": "Переменная ИнформацияОбОшибке() не используется",
+    "BSL035": "Дублированный строковый литерал",
+    "BSL036": "Сложное условие",
+    "BSL037": "Имя метода совпадает с именем встроенной функции платформы",
+    "BSL038": "Конкатенация строк в цикле",
+    "BSL039": "Вложенный тернарный оператор",
+    "BSL040": "Использование «ЭтаФорма» вне обработчика событий",
+    "BSL041": "Устаревший вызов с ОписаниеОповещения к модальному окну",
+    "BSL042": "Пустой экспортный метод",
+    "BSL043": "Слишком много локальных переменных",
+    "BSL044": "Функция не возвращает значение",
+    "BSL045": "Многострочная строка через конкатенацию",
+    "BSL046": "Отсутствует ветка «Иначе»",
+    "BSL047": "Магическая дата «ТекущаяДата»",
+    "BSL048": "Пустой файл",
+    "BSL049": "Безусловный оператор «ВызватьИсключение»",
+    "BSL050": "Длинная транзакция",
+    "BSL051": "Недостижимый код",
+    "BSL052": "Условие всегда истинно или всегда ложно",
+    "BSL053": "Использование «Выполнить» с динамическим кодом",
+    "BSL054": "Переменная на уровне модуля",
+    "BSL055": "Несколько последовательных пустых строк",
+    "BSL056": "Слишком короткое имя метода",
+    "BSL057": "Устаревшие методы ввода данных (ВвестиЗначение и т.д.)",
+    "BSL058": "Запрос без условия WHERE",
+    "BSL059": "Сравнение с булевым литералом",
+    "BSL060": "Двойное отрицание",
+    "BSL061": "Оператор «Прервать» в конце тела цикла",
+    "BSL062": "Неиспользуемый параметр",
+    "BSL063": "Слишком большой модуль",
+    "BSL064": "Процедура возвращает значение",
+    "BSL065": "Экспортный метод без описания",
+    "BSL066": "Вызов устаревшего метода платформы",
+    "BSL067": "Объявление «Перем» после исполняемого кода",
+    "BSL068": "Слишком много ветвей «ИначеЕсли»",
+    "BSL069": "Бесконечный цикл",
+    "BSL070": "Пустое тело цикла",
+    "BSL077": "Запрос ВЫБРАТЬ * — перечислите колонки явно",
+    "BSL097": "Использование «ТекущаяДата» — замените на «ТекущаяДатаСеанса»",
+    "BSL111": "Смешение кириллицы и латиницы в имени идентификатора",
+    "BSL117": "Результат вызова процедуры используется в выражении",
+    "BSL125": "Оператор «Прервать» вне цикла",
+    "BSL126": "Оператор «Продолжить» вне цикла",
+    "BSL133": "Обязательный параметр после необязательного",
+    "BSL140": "Ветка «ИначеЕсли» после безусловного «Иначе» — недостижима",
+    "BSL143": "Одинаковое условие в цепочке «Если/ИначеЕсли»",
+    "BSL147": "Открытие формы в серверном коде",
+}
+
+# ---------------------------------------------------------------------------
 # Fix hints — actionable one-line suggestions keyed by rule code
 # ---------------------------------------------------------------------------
 
@@ -2458,15 +2546,86 @@ class DiagnosticEngine:
         engine = DiagnosticEngine(max_proc_lines=300, max_cognitive_complexity=20)
     """
 
-    # Rules disabled by default (like BSL LS defaults).
-    # Can be re-enabled via select= or by removing from this set.
+    # Rules disabled by default.
+    #
+    # Strategy:
+    #  - BSL001–BSL070: keep enabled (direct BSL-LS equivalents).
+    #  - BSL071–BSL147: disabled unless they are unique critical checks with
+    #    no earlier equivalent (BSL077, BSL097, BSL111, BSL117, BSL125, BSL126,
+    #    BSL133, BSL140, BSL143, BSL147 stay ON).
+    #  - A few BSL001-BSL070 that are high-noise are also in this set.
     DEFAULT_DISABLED: frozenset[str] = frozenset(
         {
-            "BSL120",  # TrailingWhitespace — triggers on every empty indent line; noisy in diffs
-            "BSL121",  # TabIndentation — style preference, not an error
-            "BSL013",  # CommentedCode — high false-positive rate, clutters output
-            "BSL074",  # TodoComment — duplicate of BSL023, personal preference
-            "BSL136",  # MissingSpaceBeforeComment — enforced by formatter instead
+            # ── BSL001–BSL070 noise/style preferences ──────────────────────
+            "BSL013",  # CommentedCode — high false-positive rate
+            "BSL074",  # TodoComment — duplicate of BSL023
+            "BSL120",  # TrailingWhitespace — noisy in diffs
+            "BSL121",  # TabIndentation — style preference
+            "BSL136",  # MissingSpaceBeforeComment — enforced by formatter
+            # ── BSL071–BSL147 duplicates (earlier BSL-LS rule takes priority) ─
+            "BSL071",  # MagicNumber — duplicate of BSL029
+            "BSL072",  # StringConcatenationInLoop — duplicate of BSL038
+            "BSL073",  # MissingElseBranch — duplicate of BSL046
+            "BSL075",  # GlobalVariableModification — duplicate of BSL054
+            "BSL076",  # NegativeConditionFirst — no BSL-LS equivalent
+            "BSL078",  # RaiseWithoutMessage — duplicate of BSL018
+            "BSL079",  # UsingGoto — duplicate of BSL027
+            "BSL080",  # SilentCatch — duplicate of BSL004
+            "BSL081",  # LongMethodChain — no BSL-LS equivalent
+            "BSL082",  # MissingNewlineAtEndOfFile — no BSL-LS equivalent
+            "BSL083",  # TooManyModuleVariables — duplicate of BSL043
+            "BSL084",  # FunctionWithNoReturn — duplicate of BSL032
+            "BSL085",  # LiteralBooleanCondition — duplicate of BSL052
+            "BSL086",  # HttpRequestInLoop — no direct BSL-LS equivalent
+            "BSL087",  # ObjectCreationInLoop — no BSL-LS equivalent
+            "BSL088",  # MissingParameterComment — duplicate of BSL065
+            "BSL089",  # TransactionInLoop — duplicate of BSL050
+            "BSL090",  # HardcodedConnectionString — duplicate of BSL012
+            "BSL091",  # RedundantElseAfterReturn — no BSL-LS equivalent
+            "BSL092",  # EmptyElseBlock — duplicate of BSL004
+            "BSL093",  # ComparisonToNull — no BSL-LS equivalent
+            "BSL094",  # AssignmentToItself — duplicate of BSL009
+            "BSL095",  # MultipleStatementsOnOneLine — no BSL-LS equivalent
+            "BSL096",  # UndocumentedExportMethod — duplicate of BSL065
+            "BSL098",  # UseOfExecute — duplicate of BSL053
+            "BSL099",  # TooManyParameters — duplicate of BSL031
+            "BSL100",  # HardcodedFilePath — duplicate of BSL006
+            "BSL101",  # TooDeepNesting — duplicate of BSL020
+            "BSL102",  # LargeModule — duplicate of BSL063
+            "BSL103",  # UseOfEval — duplicate of BSL053
+            "BSL104",  # MissingModuleComment — no BSL-LS equivalent
+            "BSL105",  # UseOfSleep — no direct BSL-LS equivalent
+            "BSL106",  # QueryInLoop — duplicate of BSL033
+            "BSL107",  # EmptyThenBranch — duplicate of BSL004
+            "BSL108",  # UseOfGlobalVariables — duplicate of BSL054
+            "BSL109",  # NegativeConditionalReturn — no BSL-LS equivalent
+            "BSL110",  # StringConcatInLoop — duplicate of BSL038
+            "BSL112",  # UnterminatedTransaction — duplicate of BSL050
+            "BSL113",  # AssignmentInCondition — semantically invalid for BSL
+            "BSL114",  # EmptyModule — duplicate of BSL048
+            "BSL115",  # ChainedNegation — duplicate of BSL060
+            "BSL116",  # UseOfObsoleteIterator — no BSL-LS equivalent
+            "BSL118",  # FunctionReturnsNothing — duplicate of BSL032
+            "BSL119",  # LineTooLong — duplicate of BSL014
+            "BSL122",  # UnusedParameter — duplicate of BSL062
+            "BSL123",  # CommentedOutCode — duplicate of BSL013
+            "BSL124",  # ShortProcedureName — duplicate of BSL056
+            "BSL127",  # MultipleReturnValues — no BSL-LS equivalent
+            "BSL128",  # DeadCodeAfterReturn — duplicate of BSL051
+            "BSL129",  # RecursiveCall — no BSL-LS equivalent
+            "BSL130",  # LongCommentLine — duplicate of BSL014
+            "BSL131",  # EmptyRegion — duplicate of BSL026
+            "BSL132",  # RepeatedStringLiteral — duplicate of BSL035
+            "BSL134",  # CyclomaticComplexity — duplicate of BSL019
+            "BSL135",  # NestedFunctionCalls — no BSL-LS equivalent
+            "BSL137",  # UseOfFindByDescription — no direct BSL-LS equivalent
+            "BSL138",  # UseOfDebugOutput — no BSL-LS equivalent
+            "BSL139",  # TooLongParameterName — no BSL-LS equivalent
+            "BSL141",  # MagicBooleanReturn — no BSL-LS equivalent
+            "BSL142",  # LargeParameterDefaultValue — no BSL-LS equivalent
+            "BSL144",  # UnnecessaryParentheses — no BSL-LS equivalent
+            "BSL145",  # StringFormatInsteadOfConcat — no BSL-LS equivalent
+            "BSL146",  # ModuleInitializationCode — no BSL-LS equivalent
         }
     )
 

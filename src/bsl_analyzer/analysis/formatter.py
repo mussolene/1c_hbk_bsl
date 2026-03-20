@@ -259,16 +259,18 @@ def _normalize_keywords_in_code(code: str) -> str:
 
 
 def _add_operator_spaces(code: str, in_proc_header: bool) -> str:
-    """Add spaces around binary operators in a code segment."""
+    """Add spaces around comparison and assignment operators in a code segment.
+
+    Arithmetic operators (+, -, *, /) are intentionally NOT touched —
+    BSL-LS formatter does not add spaces around them, and doing so
+    incorrectly modifies expressions like ``Array[i-1]`` or date offsets.
+    """
     # Comparison operators first (handles <>, <=, >= before < and >)
     result = _CMP_OP_RE.sub(lambda m: f" {m.group(1)} ", code)
 
     # Skip = spacing inside proc headers (default param values like А = 0)
     if not in_proc_header:
         result = _EQ_OP_RE.sub(lambda m: f" {m.group(2)} ", result)
-
-    # Arithmetic operators (only between operands, not unary)
-    result = _ARITH_OP_RE.sub(lambda m: f" {m.group(1)} ", result)
 
     # Normalise multiple spaces to single
     result = re.sub(r"  +", " ", result)
