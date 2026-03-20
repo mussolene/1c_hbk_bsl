@@ -12,7 +12,7 @@ This document records automated checks run against this repository. Re-run after
 | Result | Detail |
 |--------|--------|
 | **Real secrets** | None identified. |
-| **False positive (before allowlist)** | `tests/test_diagnostics_extended.py` line ~327: test string `token = "abcdefghij0123456789"` triggered `generic-api-key`. This is **intentional** fake input for the `UsingHardcodeSecretInformation` diagnostic tests. |
+| **False positive (before allowlist)** | `tests/test_diagnostics_extended.py` line ~327: a `token = "…"` assignment with a long alphanumeric placeholder triggered `generic-api-key`. This is **intentional** fake input for the `UsingHardcodeSecretInformation` diagnostic tests. |
 
 ### Manual history probes
 

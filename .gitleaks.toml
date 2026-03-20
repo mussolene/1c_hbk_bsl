@@ -12,3 +12,9 @@ description = "Diagnostic tests include fake token/password strings to assert BS
 paths = [
   '''tests/test_diagnostics_extended\.py''',
 ]
+
+[[allowlists]]
+description = "Audit doc describes Gitleaks false positives; must not trip generic-api-key on quoted examples"
+paths = [
+  '''docs/SECURITY_AUDIT\.md''',
+]
