@@ -127,12 +127,18 @@ class TestPublishDiagnostics:
         uri = _path_to_uri(str(bsl))
         _publish_diagnostics(ls, uri, str(bsl))
         params = ls.text_document_publish_diagnostics.call_args[0][0]
-        dead = [d for d in params.diagnostics if d.code == "BSL-DEAD"]
+
+        def _is_dead(diag: object) -> bool:
+            data = getattr(diag, "data", None)
+            return isinstance(data, dict) and data.get("bsl") == "BSL-DEAD"
+
+        dead = [d for d in params.diagnostics if _is_dead(d)]
         assert len(dead) == 1
+        assert dead[0].code == "UnusedPrivateMethod"
         assert dead[0].source == "onec-hbk-bsl · unused"
         assert dead[0].severity == DiagnosticSeverity.Information
         assert dead[0].tags and DiagnosticTag.Unnecessary in dead[0].tags
-        lint_sources = {d.source for d in params.diagnostics if d.code != "BSL-DEAD"}
+        lint_sources = {d.source for d in params.diagnostics if not _is_dead(d)}
         assert lint_sources <= {"onec-hbk-bsl"}
 
 

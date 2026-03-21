@@ -69,6 +69,7 @@ from lsprotocol.types import (
     CodeAction,
     CodeActionKind,
     CodeActionParams,
+    CodeDescription,
     CodeLens,
     CodeLensParams,
     Command,
@@ -138,13 +139,17 @@ try:
 except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
+from onec_hbk_bsl.analysis.bsl_string_split import split_commas_outside_double_quotes
 from onec_hbk_bsl.analysis.diagnostics import (
+    _BSLLS_NAME_TO_CODE,
     RULE_METADATA,
     DiagnosticEngine,
     Severity,
     _calc_cognitive_complexity,
     _calc_mccabe_complexity,
     _find_procedures_from_tree,
+    display_name_for_rule_code,
+    parse_env_rule_filters,
 )
 from onec_hbk_bsl.analysis.formatter import (
     _DEDENT_BEFORE,
@@ -177,7 +182,7 @@ _SEV_MAP = {
     Severity.HINT: DiagnosticSeverity.Hint,
 }
 
-# Problems panel: distinct `source` values so VS Code / Cursor can group by Source.
+# Problems panel: single source for grouping; rule identity is `code` (BSLLS-style name).
 _DIAG_SOURCE_LINT = "onec-hbk-bsl"
 _DIAG_SOURCE_UNUSED = "onec-hbk-bsl · unused"
 
@@ -201,6 +206,33 @@ def _path_to_uri(path: str) -> str:
     return f"file://{path}"
 
 
+def _internal_rule_code_from_lsp_diagnostic(diag: LspDiagnostic) -> str:
+    """Resolve stable internal id (``BSL###`` or ``BSL-DEAD``) from a published diagnostic."""
+    data = getattr(diag, "data", None)
+    if isinstance(data, dict) and "bsl" in data:
+        return str(data["bsl"])
+    c = diag.code
+    if c is None:
+        return ""
+    if isinstance(c, int):
+        return str(c)
+    s = str(c).strip()
+    if _re.match(r"^BSL\d{3}$", s, _re.IGNORECASE):
+        return s.upper()
+    if s.upper() in ("BSL-DEAD",):
+        return "BSL-DEAD"
+    return _BSLLS_NAME_TO_CODE.get(s, s)
+
+
+def _lsp_diagnostic_code_fields(internal_code: str) -> tuple[str, CodeDescription | None]:
+    """Public ``code`` for Problems (BSLLS-style name) + optional URN for internal id."""
+    public = display_name_for_rule_code(internal_code)
+    if internal_code == "BSL-DEAD":
+        public = "UnusedPrivateMethod"
+    urn = f"urn:onec-hbk-bsl:rule:{internal_code}"
+    return public, CodeDescription(href=urn)
+
+
 class BslLanguageServer(LanguageServer):
     """Extended LanguageServer with BSL-specific state."""
 
@@ -213,7 +245,13 @@ class BslLanguageServer(LanguageServer):
         db_path = resolve_index_db_path(os.getcwd())
         self.symbol_index = SymbolIndex(db_path=db_path)
         self.parser = BslParser()
-        self.diagnostics_engine = DiagnosticEngine(parser=self.parser, symbol_index=self.symbol_index)
+        _sel, _ign = parse_env_rule_filters()
+        self.diagnostics_engine = DiagnosticEngine(
+            parser=self.parser,
+            symbol_index=self.symbol_index,
+            select=_sel,
+            ignore=_ign,
+        )
         self.indexer = IncrementalIndexer(index=self.symbol_index)
         self.platform_api: PlatformApi = get_platform_api()
         # In-memory document cache: uri → content
@@ -433,28 +471,32 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
             issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
         else:
             issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
-        lsp_diags = [
-            LspDiagnostic(
-                range=Range(
-                    start=Position(line=d.line - 1, character=d.character),
-                    end=Position(line=d.end_line - 1, character=d.end_character),
-                ),
-                severity=_SEV_MAP.get(d.severity, DiagnosticSeverity.Warning),
-                code=d.code,
-                message=translate_message(d.code, d.message),
-                source=_DIAG_SOURCE_LINT,
+        lsp_diags: list[LspDiagnostic] = []
+        for d in issues:
+            pub, code_desc = _lsp_diagnostic_code_fields(d.code)
+            lsp_diags.append(
+                LspDiagnostic(
+                    range=Range(
+                        start=Position(line=d.line - 1, character=d.character),
+                        end=Position(line=d.end_line - 1, character=d.end_character),
+                    ),
+                    severity=_SEV_MAP.get(d.severity, DiagnosticSeverity.Warning),
+                    code=pub,
+                    code_description=code_desc,
+                    message=translate_message(d.code, d.message),
+                    source=_DIAG_SOURCE_LINT,
+                    data={"bsl": d.code},
+                )
             )
-            for d in issues
-        ]
 
-        # Unused (dead) function detection: private symbols with no callers
-        # Information severity + separate source → visible in Problems (group by Source);
-        # DiagnosticTag.Unnecessary → dimmed text in the editor.
+        # Unused (dead) function detection: private symbols with no callers.
+        # Information + separate source (Problems groups by Source); Unnecessary → dimmed in editor.
         try:
             for sym in ls.symbol_index.find_unused_symbols(path):
                 name = sym.get("name", "")
                 sym_line = max(0, sym["line"] - 1)
                 sym_char = sym.get("character", 0)
+                dead_pub, dead_desc = _lsp_diagnostic_code_fields("BSL-DEAD")
                 lsp_diags.append(
                     LspDiagnostic(
                         range=Range(
@@ -462,10 +504,12 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
                             end=Position(line=sym_line, character=sym_char + utf16_len(name)),
                         ),
                         severity=DiagnosticSeverity.Information,
-                        code="BSL-DEAD",
+                        code=dead_pub,
+                        code_description=dead_desc,
                         message=f"Неиспользуемая функция или метод: «{name}»",
                         source=_DIAG_SOURCE_UNUSED,
                         tags=[DiagnosticTag.Unnecessary],
+                        data={"bsl": "BSL-DEAD"},
                     )
                 )
         except Exception as exc:
@@ -1446,7 +1490,7 @@ def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str])
     lines = [f"{prefix}// Описание {func_name}."]
     if params_str:
         lines += [f"{prefix}//", f"{prefix}// Параметры:"]
-        for p in params_str.split(","):
+        for p in split_commas_outside_double_quotes(params_str):
             name = p.strip().split("=")[0].strip()
             # Strip leading Знач/Val keyword
             name = _re.sub(r"(?i)^(Знач|Val)\s+", "", name)
@@ -1800,7 +1844,7 @@ def _make_snippet(label: str, signature: str | None) -> tuple[str, InsertTextFor
     m = re.search(r"\(([^)]*)\)", signature)
     if not m or not m.group(1).strip():
         return f"{label}()$0", InsertTextFormat.Snippet
-    params = [p.strip() for p in m.group(1).split(",")]
+    params = [p.strip() for p in split_commas_outside_double_quotes(m.group(1))]
     snippet_params = ", ".join(f"${{{i + 1}:{p}}}" for i, p in enumerate(params))
     return f"{label}({snippet_params})$0", InsertTextFormat.Snippet
 
@@ -2358,14 +2402,14 @@ def on_inlay_hint(
             params_str = param_match.group(1)
             param_names = [
                 p.strip().split("=")[0].strip().lstrip("&").split()[0]
-                for p in params_str.split(",")
+                for p in split_commas_outside_double_quotes(params_str)
                 if p.strip()
             ]
             if not param_names:
                 continue
 
             # Split args by comma keeping raw (unstripped) chunks to track real offsets
-            raw_args = m.group(2).split(",")
+            raw_args = split_commas_outside_double_quotes(m.group(2))
 
             # Emit hint for each positional arg.
             # Track offset in the raw group(2) text to correctly handle ", " separators
@@ -2429,7 +2473,7 @@ def _parse_signature_params(sig: str | None) -> list[str]:
     inside = m.group(1).strip()
     if not inside:
         return []
-    return [p.strip() for p in inside.split(",") if p.strip()]
+    return [p.strip() for p in split_commas_outside_double_quotes(inside) if p.strip()]
 
 
 def _param_label(param: str) -> str:
@@ -2556,7 +2600,7 @@ def on_code_action(
     doc_lines = content.splitlines()
 
     for diag in params.context.diagnostics:
-        code = str(diag.code) if diag.code else ""
+        code = _internal_rule_code_from_lsp_diagnostic(diag)
         try:
             diag_line = int(diag.range.start.line)
         except (TypeError, ValueError):
@@ -2651,6 +2695,23 @@ def on_code_action(
                         new_text=f"// BSLLS:{bslls_name}-off\n",
                     )]}),
                 ))
+
+            # ── BSL065: вставить блок описания экспортного метода ─────────────
+            if code == "BSL065":
+                doc_fix = _generate_doc_comment(doc_lines[diag_line], diag_line, doc_lines)
+                if doc_fix:
+                    actions.append(CodeAction(
+                        title="Вставить описание экспортного метода (// …)",
+                        kind=CodeActionKind.QuickFix,
+                        diagnostics=[diag],
+                        edit=WorkspaceEdit(changes={uri: [TextEdit(
+                            range=Range(
+                                start=Position(line=diag_line, character=0),
+                                end=Position(line=diag_line, character=0),
+                            ),
+                            new_text=doc_fix,
+                        )]}),
+                    ))
 
     # ── 4. Сгенерировать комментарий к методу ──────────────────────────────
     try:

@@ -362,10 +362,13 @@ def _run_bench(workspace: str) -> int:
 
 
 def _parse_codes(raw: str | None) -> set[str] | None:
-    """Parse a comma-separated list of rule codes, or return None."""
+    """Parse comma-separated rule tokens (``BSL###`` or BSLLS names), or return None."""
     if not raw:
         return None
-    return {c.strip().upper() for c in raw.split(",") if c.strip()}
+    from onec_hbk_bsl.analysis.diagnostics import normalize_rule_code_set
+
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    return normalize_rule_code_set(parts)
 
 
 def main() -> None:
@@ -376,7 +379,7 @@ def main() -> None:
         epilog="""
 Examples:
   onec-hbk-bsl --check .                              Check current directory
-  onec-hbk-bsl --check src/ --select BSL001,BSL002
+  onec-hbk-bsl --check src/ --select BSL001,MethodSize
   onec-hbk-bsl --check . --ignore BSL014 --format json > issues.json
   onec-hbk-bsl --check . --format sonarqube --sonar-root /project > sonar.json
   onec-hbk-bsl --check . --format sarif > results.sarif

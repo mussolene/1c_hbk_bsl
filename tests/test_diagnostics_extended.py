@@ -1929,6 +1929,20 @@ class TestBsl062UnusedParameter:
         diags = _check(content, tmp_path, select={"BSL062"})
         assert "BSL062" not in _codes(diags)
 
+    def test_comma_in_default_string_does_not_create_spurious_param(self, tmp_path: Path) -> None:
+        """Regression: naive split(',') saw `Р = ","` as two params and flagged ``"``."""
+        content = """\
+            Функция РазделитьСтрокуЛок(Знач Строка, Разделитель = ",", ВключатьПустые = Истина)
+                Если ВключатьПустые Тогда
+                    Возврат Строка;
+                Иначе
+                    Возврат Разделитель;
+                КонецЕсли;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL063 — LargeModule

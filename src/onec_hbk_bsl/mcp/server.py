@@ -8,7 +8,7 @@ bsl_find_symbol     — search symbols by name
 bsl_file_symbols    — list all symbols in a file
 bsl_callers         — who calls a given function
 bsl_callees         — what a function calls
-bsl_diagnostics     — lint issues in a file
+bsl_diagnostics     — lint issues (LSP-parity: env filters, index, rule_name + code)
 bsl_definition      — find definition location(s)
 bsl_index_file      — force-reindex a single file
 bsl_hover           — symbol signature + doc comment
@@ -39,7 +39,12 @@ from typing import Annotated
 from fastmcp import FastMCP
 
 from onec_hbk_bsl.analysis.call_graph import build_call_graph
-from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA, DiagnosticEngine
+from onec_hbk_bsl.analysis.diagnostics import (
+    RULE_METADATA,
+    DiagnosticEngine,
+    normalize_rule_code_set,
+    parse_env_rule_filters,
+)
 from onec_hbk_bsl.analysis.fix_engine import apply_fixes as _apply_fixes
 from onec_hbk_bsl.analysis.formatter import default_formatter
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
@@ -74,7 +79,6 @@ _index: SymbolIndex | None = None
 _indexer: IncrementalIndexer | None = None
 
 _parser: BslParser | None = None
-_engine: DiagnosticEngine | None = None
 
 # ---------------------------------------------------------------------------
 # Optional 1c-help MCP proxy (for AI context / snippets)
@@ -179,11 +183,29 @@ def _get_parser() -> BslParser:
     return _parser
 
 
-def _get_engine() -> DiagnosticEngine:
-    global _engine
-    if _engine is None:
-        _engine = DiagnosticEngine(parser=_get_parser())
-    return _engine
+def _mcp_diagnostic_list(issues: list[object]) -> list[dict]:
+    """JSON diagnostics aligned with LSP: internal ``code`` + ``rule_name`` (BSLLS-style)."""
+    return [d.to_dict(include_rule_name=True) for d in issues]
+
+
+def _resolve_mcp_check_file_select_ignore(
+    select: str | None,
+    ignore: str | None,
+) -> tuple[set[str] | None, set[str] | None]:
+    """
+    Tool parameters override environment when non-empty; otherwise use
+    ``BSL_SELECT`` / ``BSL_IGNORE`` (same as LSP).
+    """
+    env_sel, env_ign = parse_env_rule_filters()
+    if select and select.strip():
+        sel = normalize_rule_code_set(select.split(","))
+    else:
+        sel = env_sel
+    if ignore and ignore.strip():
+        ign = normalize_rule_code_set(ignore.split(","))
+    else:
+        ign = env_ign
+    return sel, ign
 
 
 # ---------------------------------------------------------------------------
@@ -437,17 +459,28 @@ def create_mcp_app() -> FastMCP:
         """
         Run the DiagnosticEngine on *file_path* and return all issues.
 
+        Uses the same rule selection as LSP: environment ``BSL_SELECT`` /
+        ``BSL_IGNORE``, the workspace index for metadata-aware rules (e.g. BSL280),
+        and includes ``rule_name`` (BSLLS-style) next to internal ``code``.
+
         Returns:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
-            Each diagnostic has: file, line, character, severity, code, message.
+            Each diagnostic has: file, line, character, severity, code, rule_name, message.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
-        issues = _get_engine().check_file(path)
+        env_sel, env_ign = parse_env_rule_filters()
+        engine = DiagnosticEngine(
+            parser=_get_parser(),
+            symbol_index=_get_index(workspace_root),
+            select=env_sel,
+            ignore=env_ign,
+        )
+        issues = engine.check_file(path)
         return {
             "file_path": path,
             "count": len(issues),
             "has_errors": any(d.severity.name == "ERROR" for d in issues),
-            "diagnostics": [d.to_dict() for d in issues],
+            "diagnostics": _mcp_diagnostic_list(issues),
         }
 
     # ------------------------------------------------------------------
@@ -498,7 +531,8 @@ def create_mcp_app() -> FastMCP:
     @mcp.tool(
         description=(
             "Run BSL lint rules on a file with optional rule selection/ignore. "
-            "Returns structured diagnostics list. Supports all BSL001–BSL021 rules."
+            "Empty select/ignore falls back to BSL_SELECT/BSL_IGNORE env (same as LSP). "
+            "Accepts BSL### or BSLLS names. Diagnostics include rule_name + code."
         )
     )
     def bsl_check_file(
@@ -508,13 +542,13 @@ def create_mcp_app() -> FastMCP:
         ] = None,
         select: Annotated[
             str | None,
-            "Comma-separated rule codes to enable (e.g. 'BSL001,BSL012'). "
-            "If omitted, all rules run.",
+            "Comma-separated rules (BSL### or BSLLS names). "
+            "If omitted, uses BSL_SELECT env (same as LSP); if env unset, all rules.",
         ] = None,
         ignore: Annotated[
             str | None,
-            "Comma-separated rule codes to skip (e.g. 'BSL014'). "
-            "Ignored when *select* is provided.",
+            "Comma-separated rules to skip. "
+            "If omitted, uses BSL_IGNORE env (same as LSP).",
         ] = None,
     ) -> dict:
         """
@@ -527,26 +561,26 @@ def create_mcp_app() -> FastMCP:
 
         Args:
             file_path: Path to the .bsl source file.
-            select:    Whitelist of rule codes (comma-separated).
-            ignore:    Blacklist of rule codes (comma-separated).
+            select:    Whitelist; empty → ``BSL_SELECT`` env (LSP parity).
+            ignore:    Blacklist; empty → ``BSL_IGNORE`` env (LSP parity).
 
         Returns:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
-        select_set: set[str] | None = (
-            {c.strip().upper() for c in select.split(",") if c.strip()} if select else None
+        select_set, ignore_set = _resolve_mcp_check_file_select_ignore(select, ignore)
+        engine = DiagnosticEngine(
+            parser=_get_parser(),
+            symbol_index=_get_index(workspace_root),
+            select=select_set,
+            ignore=ignore_set,
         )
-        ignore_set: set[str] | None = (
-            {c.strip().upper() for c in ignore.split(",") if c.strip()} if ignore else None
-        )
-        engine = DiagnosticEngine(select=select_set, ignore=ignore_set)
         issues = engine.check_file(path)
         return {
             "file_path": path,
             "count": len(issues),
             "has_errors": any(d.severity.name == "ERROR" for d in issues),
-            "diagnostics": [d.to_dict() for d in issues],
+            "diagnostics": _mcp_diagnostic_list(issues),
         }
 
     # ------------------------------------------------------------------
@@ -1086,7 +1120,7 @@ def create_mcp_app() -> FastMCP:
         write: Annotated[bool, "Write fixed content back to file (default False — dry run)"] = False,
         rules: Annotated[
             str | None,
-            "Comma-separated rule codes to fix (e.g. 'BSL009,BSL010'). Default: all fixable.",
+            "Comma-separated rules to fix (BSL### or BSLLS names). Default: all fixable.",
         ] = None,
         workspace_root: Annotated[
             str | None, "Workspace root for resolving workspace-relative file paths"
@@ -1103,12 +1137,15 @@ def create_mcp_app() -> FastMCP:
             return {"error": f"File not found: {path}", "file_path": path}
 
         fixable_codes = {"BSL009", "BSL010", "BSL055", "BSL060"}
-        select_set: set[str] | None = (
-            {c.strip().upper() for c in rules.split(",") if c.strip()} if rules else None
-        )
+        select_set = normalize_rule_code_set(rules.split(",")) if rules else None
         run_codes = (select_set & fixable_codes) if select_set else fixable_codes
 
-        engine = DiagnosticEngine(select=run_codes)
+        engine = DiagnosticEngine(
+            parser=_get_parser(),
+            symbol_index=_get_index(workspace_root),
+            select=run_codes,
+            ignore=None,
+        )
         issues = engine.check_file(path)
         fixable = [d for d in issues if d.code in fixable_codes]
 

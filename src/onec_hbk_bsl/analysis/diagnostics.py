@@ -58,12 +58,15 @@ Engine-level rule selection::
 
 from __future__ import annotations
 
+import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
+from onec_hbk_bsl.analysis.bsl_string_split import split_commas_outside_double_quotes
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 # ---------------------------------------------------------------------------
@@ -2831,8 +2834,8 @@ class Diagnostic:
     code: str           # e.g. "BSL001"
     message: str
 
-    def to_dict(self) -> dict:
-        return {
+    def to_dict(self, *, include_rule_name: bool = False) -> dict:
+        d = {
             "file": self.file,
             "line": self.line,
             "character": self.character,
@@ -2842,6 +2845,9 @@ class Diagnostic:
             "code": self.code,
             "message": self.message,
         }
+        if include_rule_name:
+            d["rule_name"] = display_name_for_rule_code(self.code)
+        return d
 
     def __str__(self) -> str:
         return (
@@ -3252,6 +3258,86 @@ _BSLLS_NAME_TO_CODE: dict[str, str] = {
     "YoLetterUsage":                          "BSL279",
     "UnknownMetadataObjectReference":         "BSL280",
 }
+
+# ---------------------------------------------------------------------------
+# Rule code normalization (BSL### and BSLLS names in select/ignore / CLI / LSP)
+# ---------------------------------------------------------------------------
+
+_RE_BSL_CODE_TOKEN = re.compile(r"^BSL\d{3}$", re.IGNORECASE)
+
+# casefold BSLLS name -> canonical BSL code (first registered alias wins)
+_BSLLS_NAME_FOLD_TO_CODE: dict[str, str] = {}
+for _bsl_name, _bsl_code in _BSLLS_NAME_TO_CODE.items():
+    _fold = _bsl_name.casefold()
+    if _fold not in _BSLLS_NAME_FOLD_TO_CODE:
+        _BSLLS_NAME_FOLD_TO_CODE[_fold] = _bsl_code
+
+# BSL### -> primary BSLLS name for display (first key in map order)
+_CODE_TO_PRIMARY_BSLLS_NAME: dict[str, str] = {}
+for _bsl_name, _bsl_code in _BSLLS_NAME_TO_CODE.items():
+    if _bsl_code not in _CODE_TO_PRIMARY_BSLLS_NAME:
+        _CODE_TO_PRIMARY_BSLLS_NAME[_bsl_code] = _bsl_name
+
+
+def resolve_rule_token_to_code(token: str) -> str | None:
+    """Map one CLI/settings token to canonical ``BSL###``, or None if unknown."""
+    t = (token or "").strip()
+    if not t:
+        return None
+    if _RE_BSL_CODE_TOKEN.match(t):
+        return t.upper()
+    if t in _BSLLS_NAME_TO_CODE:
+        return _BSLLS_NAME_TO_CODE[t]
+    folded = t.casefold()
+    return _BSLLS_NAME_FOLD_TO_CODE.get(folded)
+
+
+def normalize_rule_code_set(tokens: Iterable[str] | None) -> set[str] | None:
+    """
+    Normalize select/ignore lists: accept both ``BSL###`` and BSLLS diagnostic names.
+
+    Unknown tokens are skipped. Returns None if the result is empty.
+    """
+    if tokens is None:
+        return None
+    out: set[str] = set()
+    for raw in tokens:
+        if raw is None:
+            continue
+        s = str(raw).strip()
+        if not s:
+            continue
+        for part in s.replace(",", " ").split():
+            c = resolve_rule_token_to_code(part)
+            if c:
+                out.add(c)
+    return out if out else None
+
+
+def display_name_for_rule_code(code: str) -> str:
+    """Public rule name for LSP/UI: BSLLS name when known, else RULE_METADATA name, else code."""
+    primary = _CODE_TO_PRIMARY_BSLLS_NAME.get(code)
+    if primary:
+        return primary
+    meta = RULE_METADATA.get(code)
+    if meta:
+        return str(meta.get("name", code))
+    return code
+
+
+def parse_env_rule_filters() -> tuple[set[str] | None, set[str] | None]:
+    """
+    Read ``BSL_SELECT`` / ``BSL_IGNORE`` from the environment.
+
+    Same semantics as the LSP server and VS Code extension (comma-separated
+    ``BSL###`` or BSLLS diagnostic names).
+    """
+    raw_sel = os.environ.get("BSL_SELECT", "").strip()
+    raw_ign = os.environ.get("BSL_IGNORE", "").strip()
+    select = normalize_rule_code_set(raw_sel.split(",")) if raw_sel else None
+    ignore = normalize_rule_code_set(raw_ign.split(",")) if raw_ign else None
+    return select, ignore
+
 
 # Deprecated dialog: Предупреждение(...) / Warning(...)
 _RE_DEPRECATED_MSG = re.compile(
@@ -3822,7 +3908,7 @@ def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
     Handles: ``Знач Param``, ``Param = "Default"``, and combinations.
     """
     result: list[tuple[str, bool, bool]] = []
-    for raw in params_str.split(","):
+    for raw in split_commas_outside_double_quotes(params_str):
         raw = raw.strip()
         if not raw:
             continue
@@ -4374,12 +4460,14 @@ class DiagnosticEngine:
     ) -> None:
         self._parser = parser or BslParser()
         self._symbol_index = symbol_index
-        self._select: set[str] | None = {c.upper() for c in select} if select else None
+        self._select: set[str] | None = (
+            normalize_rule_code_set(select) if select else None
+        )
         # Instrumentation for benchmarks/debug: where we switched to fallback parsing.
         # Populated on each check_* call.
         self.last_metrics: dict[str, Any] = {}
         # Merge user ignores with DEFAULT_DISABLED; select= overrides DEFAULT_DISABLED
-        _user_ignore: set[str] = {c.upper() for c in ignore} if ignore else set()
+        _user_ignore: set[str] = normalize_rule_code_set(ignore) if ignore else set()
         _effective_defaults = self.DEFAULT_DISABLED - (self._select or set())
         self._ignore: set[str] = _user_ignore | _effective_defaults
         self.max_proc_lines = max_proc_lines
@@ -7134,45 +7222,38 @@ class DiagnosticEngine:
         """
         Flag method parameters that are never referenced in the method body.
 
-        Heuristic: scan the body lines for the parameter name as a word token.
+        Uses parameter names from the tree-sitter AST (``proc.params``), not a regex split
+        on commas — defaults like ``Р = ","`` contain commas that must not split the list.
+
+        Heuristic: scan the body for the parameter name as a word token.
         Excludes parameters that start with '_' (convention for intentionally unused).
         """
         diags: list[Diagnostic] = []
         for proc in procs:
+            if not proc.params:
+                continue
             header_line = lines[proc.start_idx]
-            m = _RE_PROC_HEADER.search(header_line)
-            if not m:
-                continue
-            params_str = m.group("params")
-            if not params_str.strip():
-                continue
-            # Parse parameter names (ignore default values, Val keyword)
-            parsed_params: list[str] = []
-            for raw_param in params_str.split(","):
-                # Strip Знач/Val and default value
-                token = re.sub(r'=.*$', '', raw_param, flags=re.IGNORECASE)
-                token = re.sub(r'\b(?:Знач|Val)\b', '', token, flags=re.IGNORECASE).strip()
-                if not token:
-                    continue
-                name = token.split()[0] if token.split() else ""
-                if name and not name.startswith("_"):
-                    parsed_params.append(name)
-            # Body lines (excluding header and closing line)
             body_lines = lines[proc.start_idx + 1: proc.end_idx]
             body_text = "\n".join(body_lines)
             header_lineno = proc.start_idx + 1  # 1-based
-            for param_name in parsed_params:
-                if not re.search(r'\b' + re.escape(param_name) + r'\b', body_text, re.IGNORECASE):
+            for param_name in proc.params:
+                if param_name.startswith("_"):
+                    continue
+                if not re.search(
+                    r"\b" + re.escape(param_name) + r"\b", body_text, re.IGNORECASE
+                ):
                     diags.append(
                         Diagnostic(
                             file=path,
                             line=header_lineno,
-                            character=0,
+                            character=proc.header_col,
                             end_line=header_lineno,
-                            end_character=len(header_line),
+                            end_character=len(header_line.rstrip()),
                             severity=Severity.WARNING,
                             code="BSL062",
-                            message=f"Parameter '{param_name}' is never used in the method body.",
+                            message=(
+                                f"Parameter '{param_name}' is never used in the method body."
+                            ),
                         )
                     )
         return diags
@@ -10226,7 +10307,7 @@ class DiagnosticEngine:
             if not m_header:
                 continue
             params_str = m_header.group("params") or ""
-            for raw in params_str.split(","):
+            for raw in split_commas_outside_double_quotes(params_str):
                 raw = raw.strip()
                 if not raw:
                     continue
@@ -11280,18 +11361,21 @@ class DiagnosticEngine:
 
         for proc in procs:
             header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-            hm = _re_param_header.match(header_line)
-            if not hm:
-                continue
-            # Extract parameter names (skip Знач/Val prefix)
-            raw_params = hm.group(1)
             param_names: set[str] = set()
-            for part in raw_params.split(","):
-                part = part.strip()
-                part = re.sub(r"^\s*(?:Знач|Val)\s+", "", part, flags=re.IGNORECASE)
-                name = part.split("=")[0].strip()
-                if name:
-                    param_names.add(name.casefold())
+            proc_params = getattr(proc, "params", None)
+            if proc_params:
+                param_names = {n.casefold() for n in proc_params if n}
+            else:
+                hm = _re_param_header.match(header_line)
+                if not hm:
+                    continue
+                raw_params = hm.group(1)
+                for part in split_commas_outside_double_quotes(raw_params):
+                    part = part.strip()
+                    part = re.sub(r"^\s*(?:Знач|Val)\s+", "", part, flags=re.IGNORECASE)
+                    name = part.split("=")[0].strip()
+                    if name:
+                        param_names.add(name.casefold())
 
             if not param_names:
                 continue
