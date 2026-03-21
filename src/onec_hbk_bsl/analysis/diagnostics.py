@@ -2442,6 +2442,17 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "convention"],
         "implemented": False,
     },
+    "BSL280": {
+        "name": "UnknownMetadataObjectReference",
+        "description": (
+            "Metadata collection chain names an object not found in the indexed configuration export"
+        ),
+        "severity": "WARNING",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
+        "tags": ["metadata", "correctness"],
+        "implemented": True,
+    },
 }
 
 
@@ -2664,6 +2675,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL277": "ОтменитьТранзакцию вызвана вне блока Исключение",
     "BSL278": "Обработчик веб-сервиса имеет некорректную сигнатуру",
     "BSL279": "Использование буквы «ё» в идентификаторах",
+    "BSL280": "Ссылка на отсутствующий в конфигурации объект метаданных",
 }
 
 # ---------------------------------------------------------------------------
@@ -3238,6 +3250,7 @@ _BSLLS_NAME_TO_CODE: dict[str, str] = {
     "WrongUseOfRollbackTransactionMethod":    "BSL277",
     "WrongWebServiceHandler":                 "BSL278",
     "YoLetterUsage":                          "BSL279",
+    "UnknownMetadataObjectReference":         "BSL280",
 }
 
 # Deprecated dialog: Предупреждение(...) / Warning(...)
@@ -4357,8 +4370,10 @@ class DiagnosticEngine:
         max_bool_ops: int = MAX_BOOL_OPS,
         min_duplicate_uses: int = MIN_DUPLICATE_USES,
         max_module_lines: int = MAX_MODULE_LINES,
+        symbol_index: Any | None = None,
     ) -> None:
         self._parser = parser or BslParser()
+        self._symbol_index = symbol_index
         self._select: set[str] | None = {c.upper() for c in select} if select else None
         # Instrumentation for benchmarks/debug: where we switched to fallback parsing.
         # Populated on each check_* call.
@@ -4386,12 +4401,16 @@ class DiagnosticEngine:
             return False
         return code not in self._ignore
 
-    def check_content(self, path: str, content: str) -> list[Diagnostic]:
+    def check_content(
+        self, path: str, content: str, *, symbol_index: Any | None = None,
+    ) -> list[Diagnostic]:
         """
         Run all enabled diagnostic rules on *content* (pre-loaded string).
 
         Useful for LSP in-memory documents: avoids a second disk read and
         ensures diagnostics reflect the current editor state, not the saved file.
+
+        *symbol_index* is optional; when set, enables metadata-aware rules (e.g. BSL280).
         """
         try:
             tree = self._parser.parse_content(content, file_path=path)
@@ -4403,9 +4422,11 @@ class DiagnosticEngine:
                     message=f"Failed to parse content: {exc}",
                 )
             ]
-        return self._run_rules(path, content, tree)
+        return self._run_rules(path, content, tree, symbol_index=symbol_index)
 
-    def check_file(self, path: str, tree: Any | None = None) -> list[Diagnostic]:
+    def check_file(
+        self, path: str, tree: Any | None = None, *, symbol_index: Any | None = None,
+    ) -> list[Diagnostic]:
         """
         Run all enabled diagnostic rules on *path*.
 
@@ -4413,6 +4434,8 @@ class DiagnosticEngine:
         suppress matching diagnostics for their line.
 
         Returns list of Diagnostic objects sorted by (line, character).
+
+        *symbol_index* is optional; when set, enables metadata-aware rules (e.g. BSL280).
         """
         if tree is None:
             try:
@@ -4436,10 +4459,18 @@ class DiagnosticEngine:
                     message=f"Cannot read file: {exc}",
                 )
             ]
-        return self._run_rules(path, content, tree)
+        return self._run_rules(path, content, tree, symbol_index=symbol_index)
 
-    def _run_rules(self, path: str, content: str, tree: Any) -> list[Diagnostic]:
+    def _run_rules(
+        self,
+        path: str,
+        content: str,
+        tree: Any,
+        *,
+        symbol_index: Any | None = None,
+    ) -> list[Diagnostic]:
         """Execute all enabled rules and return filtered, sorted diagnostics."""
+        idx = symbol_index if symbol_index is not None else self._symbol_index
         lines = content.splitlines()
         suppressions = _parse_suppressions(lines)
 
@@ -4779,6 +4810,10 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl257_unary_plus_in_concatenation(path, lines))
         if self._rule_enabled("BSL279"):
             diagnostics.extend(self._rule_bsl279_yo_letter_usage(path, lines))
+        if self._rule_enabled("BSL280") and idx is not None:
+            from onec_hbk_bsl.analysis.metadata_refs import diagnostics_unknown_metadata_objects
+
+            diagnostics.extend(diagnostics_unknown_metadata_objects(path, content, idx))
         if self._rule_enabled("BSL172"):
             diagnostics.extend(self._rule_bsl172_data_exchange_loading(path, lines, procs))
         if self._rule_enabled("BSL186"):

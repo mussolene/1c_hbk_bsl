@@ -628,7 +628,7 @@ class SymbolIndex:
         Returns:
             Total number of members upserted.
         """
-        from onec_hbk_bsl.indexer.metadata_parser import _KIND_TO_COLLECTION  # noqa: PLC0415
+        from onec_hbk_bsl.indexer.metadata_registry import KIND_TO_COLLECTION  # noqa: PLC0415
 
         conn = self._conn()
         now = time.time()
@@ -639,7 +639,7 @@ class SymbolIndex:
             conn.execute("DELETE FROM meta_objects")
 
             for obj in meta_objects:
-                collection = _KIND_TO_COLLECTION.get(obj.kind, "")
+                collection = KIND_TO_COLLECTION.get(obj.kind, "")
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO meta_objects

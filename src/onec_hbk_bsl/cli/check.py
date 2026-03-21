@@ -49,6 +49,8 @@ from onec_hbk_bsl.analysis.diagnostics import (
     Severity,
 )
 from onec_hbk_bsl.cli.config import _EMPTY, BslConfig
+from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
+from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 console = Console(stderr=True)
 
@@ -306,11 +308,18 @@ def _run_checks(
     cfg = config or _EMPTY
     engine_kw = cfg.engine_kwargs()
 
+    shared_symbol_index: SymbolIndex | None = None
+    try:
+        shared_symbol_index = SymbolIndex(db_path=resolve_index_db_path(os.getcwd()))
+    except Exception:
+        shared_symbol_index = None
+
     def _make_engine(extra_ignore: set[str] | None = None) -> DiagnosticEngine:
         effective_ignore = (ignore or set()) | (extra_ignore or set())
         return DiagnosticEngine(
             select=select,
             ignore=effective_ignore or None,
+            symbol_index=shared_symbol_index,
             **engine_kw,
         )
 

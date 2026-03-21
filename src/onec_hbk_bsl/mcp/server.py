@@ -21,7 +21,7 @@ bsl_fix             — apply auto-fixes to a file (trailing ws, tabs, etc.)
 bsl_workspace_scan  — list BSL files + quick metrics for a directory
 bsl_meta_object     — 1C config metadata: attributes/TS/forms for an object
 bsl_meta_collection — list objects in a 1C global collection (Справочники, etc.)
-bsl_meta_index      — trigger metadata re-indexing from XML config export
+bsl_meta_index      — trigger metadata re-indexing from XML config export (+ kind registry snapshot)
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from onec_hbk_bsl.analysis.fix_engine import apply_fixes as _apply_fixes
 from onec_hbk_bsl.analysis.formatter import default_formatter
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+from onec_hbk_bsl.indexer.metadata_registry import defs_snapshot
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -1352,7 +1353,10 @@ def create_mcp_app() -> FastMCP:
         """
         ws = os.path.abspath(workspace_root or workspace or _WORKSPACE)
         indexer = _get_indexer(ws)
-        return indexer.index_metadata(ws, config_root=config_root)
+        result = indexer.index_metadata(ws, config_root=config_root)
+        if isinstance(result, dict):
+            result["metadata_kind_registry"] = defs_snapshot()
+        return result
 
     return mcp
 

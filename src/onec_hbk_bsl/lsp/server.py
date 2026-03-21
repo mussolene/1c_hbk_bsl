@@ -157,6 +157,12 @@ from onec_hbk_bsl.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN
 from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+from onec_hbk_bsl.indexer.metadata_registry import (
+    ALL_COLLECTION_NAMES_RU,
+    META_COLLECTION_ALIASES,
+    METADATA_ROOT_NAME,
+    METADATA_ROOT_NAME_CF,
+)
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_title, translate_message
 from onec_hbk_bsl.parser.bsl_parser import BslParser
@@ -207,7 +213,7 @@ class BslLanguageServer(LanguageServer):
         db_path = resolve_index_db_path(os.getcwd())
         self.symbol_index = SymbolIndex(db_path=db_path)
         self.parser = BslParser()
-        self.diagnostics_engine = DiagnosticEngine(parser=self.parser)
+        self.diagnostics_engine = DiagnosticEngine(parser=self.parser, symbol_index=self.symbol_index)
         self.indexer = IncrementalIndexer(index=self.symbol_index)
         self.platform_api: PlatformApi = get_platform_api()
         # In-memory document cache: uri → content
@@ -424,9 +430,9 @@ def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
     try:
         cached = ls._docs.get(uri)
         if cached is not None:
-            issues = ls.diagnostics_engine.check_content(path, cached)
+            issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
         else:
-            issues = ls.diagnostics_engine.check_file(path)
+            issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
         lsp_diags = [
             LspDiagnostic(
                 range=Range(
@@ -816,6 +822,23 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
 
     # 5. Метаданные конфигурации 1С
     if hasattr(ls, "symbol_index") and ls.symbol_index.has_metadata():
+        # 5a0. Root property Метаданные
+        if not left_word and word.casefold() == METADATA_ROOT_NAME_CF:
+            return _hover_markdown(
+                [
+                    f"**{METADATA_ROOT_NAME}** *(глобальное свойство)*",
+                    "Доступ к метаданным текущей конфигурации: коллекции объектов "
+                    "(`Справочники`, `Документы`, `РегистрыСведений`, …).",
+                ]
+            )
+        # 5a0b. Named collection (Справочники, Документы, …)
+        if not left_word and word in ALL_COLLECTION_NAMES_RU:
+            return _hover_markdown(
+                [
+                    f"**{word}** *(коллекция метаданных)*",
+                    f"Соответствует `Метаданные.{word}` — перечисление объектов этой коллекции.",
+                ]
+            )
         # 5a. Hovering over a metadata object name (e.g. 'Контрагенты')
         if not left_word:
             meta_obj = ls.symbol_index.find_meta_object(word)
@@ -1433,42 +1456,6 @@ def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str])
     return "\n".join(lines) + "\n"
 
 
-# 1C global collection names (both RU and EN variants) → canonical Russian name
-_META_COLLECTIONS: dict[str, str] = {
-    "справочники": "Справочники",
-    "catalogs": "Справочники",
-    "документы": "Документы",
-    "documents": "Документы",
-    "обработки": "Обработки",
-    "dataprocessors": "Обработки",
-    "отчеты": "Отчеты",
-    "reports": "Отчеты",
-    "регистрысведений": "РегистрыСведений",
-    "informationregisters": "РегистрыСведений",
-    "регистрынакопления": "РегистрыНакопления",
-    "accumulationregisters": "РегистрыНакопления",
-    "регистрыбухгалтерии": "РегистрыБухгалтерии",
-    "accountingregisters": "РегистрыБухгалтерии",
-    "регистрырасчета": "РегистрыРасчета",
-    "calculationregisters": "РегистрыРасчета",
-    "планыобмена": "ПланыОбмена",
-    "exchangeplans": "ПланыОбмена",
-    "бизнеспроцессы": "БизнесПроцессы",
-    "businessprocesses": "БизнесПроцессы",
-    "задачи": "Задачи",
-    "tasks": "Задачи",
-    "планысчетов": "ПланыСчетов",
-    "chartsofaccounts": "ПланыСчетов",
-    "планывидоврасчета": "ПланыВидовРасчета",
-    "chartsofcalculationtypes": "ПланыВидовРасчета",
-    "планывидоххарактеристик": "ПланыВидовХарактеристик",
-    "chartsofcharacteristictypes": "ПланыВидовХарактеристик",
-    "перечисления": "Перечисления",
-    "enums": "Перечисления",
-    "общиемодули": "ОбщиеМодули",
-    "commonmodules": "ОбщиеМодули",
-}
-
 _META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, object] = {}  # unused; placeholder
 
 
@@ -1490,8 +1477,15 @@ def _metadata_object_name_from_chain(
     if not tokens:
         return None
 
+    # Case 0: Метаданные.Коллекция.Объект
+    if len(tokens) >= 3 and tokens[0].casefold() == METADATA_ROOT_NAME_CF:
+        if META_COLLECTION_ALIASES.get(tokens[1].casefold()) and ls.symbol_index.find_meta_object(
+            tokens[2]
+        ):
+            return tokens[2]
+
     # Case 1: known global metadata collection path.
-    if len(tokens) >= 2 and _META_COLLECTIONS.get(tokens[0].casefold()):
+    if len(tokens) >= 2 and META_COLLECTION_ALIASES.get(tokens[0].casefold()):
         second = tokens[1]
         if ls.symbol_index.find_meta_object(second):
             return second
@@ -1526,8 +1520,24 @@ def _meta_dot_completions(
     items: list[CompletionItem] = []
     obj_lo = obj_name.casefold()
 
+    # Case 0: Метаданные. → canonical collection names
+    if obj_lo == METADATA_ROOT_NAME_CF:
+        for coll in ALL_COLLECTION_NAMES_RU:
+            if member_prefix and not coll.casefold().startswith(member_prefix.casefold()):
+                continue
+            items.append(
+                CompletionItem(
+                    label=coll,
+                    kind=CompletionItemKind.Module,
+                    detail="Коллекция метаданных",
+                    documentation=f"Глобальная коллекция (`{METADATA_ROOT_NAME}.{coll}`)",
+                    insert_text=coll,
+                )
+            )
+        return items
+
     # Case 1: global collection name
-    collection = _META_COLLECTIONS.get(obj_lo)
+    collection = META_COLLECTION_ALIASES.get(obj_lo)
     if collection:
         for meta_obj in ls.symbol_index.find_meta_objects_by_collection(collection, member_prefix):
             label = meta_obj["name"]

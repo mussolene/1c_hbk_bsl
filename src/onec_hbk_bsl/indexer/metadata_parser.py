@@ -4,10 +4,8 @@ Parser for 1C configuration XML export (Выгрузка конфигураци�
 Extracts object attributes (requisites), tabular sections, and form attributes/commands
 from the standard Configurator XML export format.
 
-Supported object types: Catalog, Document, DataProcessor, InformationRegister,
-AccumulationRegister, AccountingRegister, ExchangePlan, BusinessProcess, Task,
-ChartOfAccounts, ChartOfCalculationTypes, ChartOfCharacteristicTypes,
-Enum, CommonModule, Report, Subsystem.
+Supported folders/kinds are listed in ``metadata_registry.FOLDER_TO_KIND`` (Designer XML
+export), including registers, Web/HTTP services, constants, subsystems, roles, and more.
 
 Returns lightweight dataclasses consumed by SymbolIndex.upsert_metadata().
 """
@@ -18,6 +16,12 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from onec_hbk_bsl.indexer.metadata_registry import (
+    FOLDER_TO_KIND,
+    KIND_TO_COLLECTION,
+    xml_root_tags_for_kind,
+)
+
 try:
     import defusedxml.ElementTree as ET
 except ImportError:
@@ -25,53 +29,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Backward-compatible names (used by symbol_index / tests)
+_FOLDER_TO_KIND = FOLDER_TO_KIND
+_KIND_TO_COLLECTION = KIND_TO_COLLECTION
+
 # -----------------------------------------------------------------------
 # Public dataclasses
 # -----------------------------------------------------------------------
-
-# 1C object type folder names → canonical kind
-_FOLDER_TO_KIND: dict[str, str] = {
-    "Catalogs": "Catalog",
-    "Documents": "Document",
-    "DataProcessors": "DataProcessor",
-    "Reports": "Report",
-    "InformationRegisters": "InformationRegister",
-    "AccumulationRegisters": "AccumulationRegister",
-    "AccountingRegisters": "AccountingRegister",
-    "CalculationRegisters": "CalculationRegister",
-    "ExchangePlans": "ExchangePlan",
-    "BusinessProcesses": "BusinessProcess",
-    "Tasks": "Task",
-    "ChartsOfAccounts": "ChartOfAccounts",
-    "ChartsOfCalculationTypes": "ChartOfCalculationTypes",
-    "ChartsOfCharacteristicTypes": "ChartOfCharacteristicTypes",
-    "Enums": "Enum",
-    "CommonModules": "CommonModule",
-    "Subsystems": "Subsystem",
-    "Constants": "Constant",
-    "Sequences": "Sequence",
-    "DefinedTypes": "DefinedType",
-}
-
-# Global 1C manager collections — available as `Справочники.НазваниеОбъекта`
-_KIND_TO_COLLECTION: dict[str, str] = {
-    "Catalog": "Справочники",
-    "Document": "Документы",
-    "DataProcessor": "Обработки",
-    "Report": "Отчеты",
-    "InformationRegister": "РегистрыСведений",
-    "AccumulationRegister": "РегистрыНакопления",
-    "AccountingRegister": "РегистрыБухгалтерии",
-    "CalculationRegister": "РегистрыРасчета",
-    "ExchangePlan": "ПланыОбмена",
-    "BusinessProcess": "БизнесПроцессы",
-    "Task": "Задачи",
-    "ChartOfAccounts": "ПланыСчетов",
-    "ChartOfCalculationTypes": "ПланыВидовРасчета",
-    "ChartOfCharacteristicTypes": "ПланыВидовХарактеристик",
-    "Enum": "Перечисления",
-    "CommonModule": "ОбщиеМодули",
-}
 
 
 @dataclass
@@ -165,14 +129,11 @@ def parse_object_xml(xml_path: str | Path, kind: str, object_name: str) -> MetaO
         return obj
 
     # Find the top-level object element (Catalog, Document, etc.)
+    allowed_tags = xml_root_tags_for_kind(kind)
     obj_elem = None
     for child in root:
         tag_local = _strip_ns(child.tag)
-        if tag_local in (kind, "Catalog", "Document", "DataProcessor", "InformationRegister",
-                         "AccumulationRegister", "AccountingRegister", "ExchangePlan",
-                         "BusinessProcess", "Task", "ChartOfAccounts", "ChartOfCalculationTypes",
-                         "ChartOfCharacteristicTypes", "Enum", "Report", "Sequence",
-                         "CalculationRegister", "CommonModule", "Subsystem", "Constant"):
+        if tag_local in allowed_tags:
             obj_elem = child
             break
 
@@ -363,29 +324,53 @@ def parse_form_xml(xml_path: str | Path, object_name: str, object_kind: str,
 # Config root discovery and full crawl
 # -----------------------------------------------------------------------
 
-def find_config_root(workspace: str | Path) -> Path | None:
+def find_config_root(workspace: str | Path, *, max_depth: int = 12) -> Path | None:
     """
     Search for a 1C configuration root directory within *workspace*.
 
     A config root is any directory containing a ``Configuration.xml`` file.
-    Returns the first match found (breadth-first, up to 5 levels deep).
+    Returns the first match found (breadth-first, up to *max_depth* levels deep).
     """
     workspace_path = Path(workspace)
     # Check workspace itself first
     if (workspace_path / "Configuration.xml").exists():
         return workspace_path
 
-    # BFS up to depth 5
     queue: list[tuple[Path, int]] = [(workspace_path, 0)]
     while queue:
         current, depth = queue.pop(0)
-        if depth > 5:
+        if depth > max_depth:
             continue
         try:
             for child in current.iterdir():
                 if child.is_dir():
                     if (child / "Configuration.xml").exists():
                         return child
+                    queue.append((child, depth + 1))
+        except PermissionError:
+            continue
+    return None
+
+
+def find_edt_configuration_marker(workspace: str | Path, *, max_depth: int = 14) -> Path | None:
+    """
+    Detect EDT project layout: ``.../Configuration/Configuration.mdo``.
+
+    Our crawler targets Designer XML export (``Configuration.xml`` + type folders);
+    EDT sources are not parsed here. This helper only *locates* an EDT marker for diagnostics.
+    """
+    workspace_path = Path(workspace)
+    queue: list[tuple[Path, int]] = [(workspace_path, 0)]
+    while queue:
+        current, depth = queue.pop(0)
+        if depth > max_depth:
+            continue
+        mdo = current / "Configuration" / "Configuration.mdo"
+        if mdo.is_file():
+            return mdo
+        try:
+            for child in current.iterdir():
+                if child.is_dir():
                     queue.append((child, depth + 1))
         except PermissionError:
             continue

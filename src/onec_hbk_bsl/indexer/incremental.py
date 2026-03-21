@@ -20,7 +20,11 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 
 from onec_hbk_bsl.analysis.call_graph import extract_calls
 from onec_hbk_bsl.analysis.symbols import extract_symbols
-from onec_hbk_bsl.indexer.metadata_parser import crawl_config, find_config_root
+from onec_hbk_bsl.indexer.metadata_parser import (
+    crawl_config,
+    find_config_root,
+    find_edt_configuration_marker,
+)
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -108,6 +112,17 @@ class IncrementalIndexer:
             str(Path(config_root).resolve()) if config_root else find_config_root(workspace)
         )
         if config_root is None:
+            edt_mdo = find_edt_configuration_marker(workspace)
+            if edt_mdo is not None:
+                logger.debug(
+                    "EDT project marker found at %s — XML crawl not applicable; export to files first",
+                    edt_mdo,
+                )
+                return {
+                    "skipped": True,
+                    "reason": "edt_layout_detected",
+                    "edt_configuration_mdo": str(edt_mdo),
+                }
             logger.debug("No 1C config root found in %s — skipping metadata indexing", workspace)
             return {"skipped": True}
 
