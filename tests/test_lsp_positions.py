@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bsl_analyzer.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
 
 
 def test_utf8_byte_offset_cyrillic_function_header() -> None:

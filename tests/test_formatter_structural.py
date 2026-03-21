@@ -1,8 +1,8 @@
 """Tests for tree-sitter structural indent (formatter_structural)."""
 from __future__ import annotations
 
-from bsl_analyzer.analysis.formatter_structural import ast_structural_indent_levels, tree_has_errors
-from bsl_analyzer.parser.bsl_parser import BslParser
+from onec_hbk_bsl.analysis.formatter_structural import ast_structural_indent_levels, tree_has_errors
+from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 
 def test_ast_indent_procedure_and_if() -> None:

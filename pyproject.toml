@@ -3,9 +3,9 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bsl-analyzer"
+name = "onec-hbk-bsl"
 version = "0.6.7"
-description = "BSL (1C Enterprise) analyzer: MCP server, LSP server, and CLI linter"
+description = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
 license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,21 +31,21 @@ build = [
 ]
 
 [project.scripts]
-bsl-analyzer = "bsl_analyzer.__main__:main"
+onec-hbk-bsl = "onec_hbk_bsl.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=src/bsl_analyzer --cov-report=term-missing --cov-fail-under=50"
+addopts = "-v --cov=src/onec_hbk_bsl --cov-report=term-missing --cov-fail-under=50"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
 omit = [
     "*/tests/*",
 ]
-source = ["src/bsl_analyzer"]
+source = ["src/onec_hbk_bsl"]
 
 [tool.ruff]
 line-length = 100
@@ -66,7 +66,7 @@ ignore = [
 "tests/*" = ["S101"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["bsl_analyzer"]
+known-first-party = ["onec_hbk_bsl"]
 
 [tool.ruff.format]
 quote-style = "double"

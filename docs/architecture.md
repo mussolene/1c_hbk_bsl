@@ -7,13 +7,13 @@ providing three interfaces over a single shared symbol index:
 
 1. **MCP server** — exposes BSL analysis tools to Claude via FastMCP
 2. **LSP server** — powers VSCode/Cursor with go-to-definition, hover, and diagnostics
-3. **CLI linter** — ruff-style `bsl-analyzer --check` command
+3. **CLI linter** — ruff-style `onec-hbk-bsl --check` command
 
 ## Component Diagram
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                      bsl-analyzer process                    │
+│                      onec-hbk-bsl process                    │
 │                                                              │
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────────┐ │
 │  │  --mcp   │   │  --lsp   │   │  --check / --index       │ │
@@ -93,7 +93,7 @@ Formatted response (dict / LSP Location)
 ## Formatting
 
 `textDocument/formatting` and `textDocument/rangeFormatting` use `BslFormatter`
-(`src/bsl_analyzer/analysis/formatter.py`).
+(`src/onec_hbk_bsl/analysis/formatter.py`).
 
 - **Structural block indent:** tree-sitter AST walk (`formatter_structural.py`),
   merged with a keyword heuristic for blank/comment/`#` lines and when the parse

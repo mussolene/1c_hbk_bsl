@@ -1,4 +1,4 @@
-# Contributing to BSL Analyzer
+# Contributing to 1C HBK BSL
 
 Thank you for your interest in contributing!
 
@@ -30,9 +30,21 @@ uv pip install -e ".[dev]"
 
 ```bash
 cd vscode-extension
-npm install
+npm ci
 npm run compile
 ```
+
+### Локальный VSIX и бинарник сервера
+
+Бинарник для расширения лежит в **`vscode-extension/bin/`** (каталог в `.gitignore`). Чтобы в VSIX не попал устаревший файл, после **`make build`** всегда копируйте артефакт из `dist/`:
+
+- **`make extension-bin`** — `make build` и копирование `dist/onec-hbk-bsl*` → `vscode-extension/bin/`
+- **`make sync-extension-bin`** — только копирование (если `make build` уже выполняли)
+- **`make vsix`** — `extension-bin`, затем `npm run compile` и `vsce package` → `vscode-extension/onec-hbk-bsl-<version>-local.vsix`
+
+Перед первым `make vsix` установите зависимости: `cd vscode-extension && npm ci`.
+
+На **Windows** без GNU Make: скопируйте `dist\onec-hbk-bsl.exe` в `vscode-extension\bin\onec-hbk-bsl.exe`, затем `cd vscode-extension && npm run compile && npx @vscode/vsce package --no-dependencies`.
 
 ## Running Tests
 
@@ -41,7 +53,7 @@ npm run compile
 pytest
 
 # With coverage report
-pytest --cov=src/bsl_analyzer --cov-report=html
+pytest --cov=src/onec_hbk_bsl --cov-report=html
 
 # Single test file
 pytest tests/test_diagnostics.py -v
@@ -66,7 +78,7 @@ The ruff configuration is in `pyproject.toml` under `[tool.ruff]`.
 
 ## Adding a New Diagnostic Rule
 
-1. Open `src/bsl_analyzer/analysis/diagnostics.py`
+1. Open `src/onec_hbk_bsl/analysis/diagnostics.py`
 2. Add a new regex pattern constant (e.g. `_RE_MY_PATTERN = re.compile(...)`)
 3. Add a new private method `_rule_bslXXX_description(self, path, content) -> list[Diagnostic]`
 4. Call it inside `check_file()`

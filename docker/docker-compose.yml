@@ -6,11 +6,11 @@ volumes:
     driver: local
 
 services:
-  bsl-analyzer:
+  onec-hbk-bsl:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: "bsl-analyzer-${PROJECT_NAME:-default}"
+    container_name: "onec-hbk-bsl-${PROJECT_NAME:-default}"
     restart: unless-stopped
 
     mem_limit: 512m
@@ -24,7 +24,7 @@ services:
 
     environment:
       WORKSPACE_ROOT: "${WORKSPACE_ROOT:-/workspace}"
-      INDEX_DB_PATH: "${INDEX_DB_PATH:-/data/bsl_index.sqlite}"
+      INDEX_DB_PATH: "${INDEX_DB_PATH:-/data/onec-hbk-bsl_index.sqlite}"
       MCP_PORT: "${MCP_PORT:-8051}"
       LOG_LEVEL: "${LOG_LEVEL:-info}"
       GIT_DIFF_BASE: "${GIT_DIFF_BASE:-HEAD}"
@@ -48,4 +48,4 @@ services:
     # Optional: run a full reindex on startup before starting the MCP server
     # Uncomment to enable:
     # command: >
-    #   sh -c "bsl-analyzer --index /workspace --force && bsl-analyzer --mcp"
+    #   sh -c "onec-hbk-bsl --index /workspace --force && onec-hbk-bsl --mcp"

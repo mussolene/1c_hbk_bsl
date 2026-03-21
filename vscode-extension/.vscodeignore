@@ -14,4 +14,4 @@ node_modules/**
 !out/**
 # README.md and LICENSE are included for Marketplace and legal clarity
 # Dependencies are bundled into out/extension.js (webpack); do not ship node_modules
-# bin/ is INCLUDED — native bsl-analyzer for platform-specific release VSIX
+# bin/ is INCLUDED — native onec-hbk-bsl for platform-specific release VSIX

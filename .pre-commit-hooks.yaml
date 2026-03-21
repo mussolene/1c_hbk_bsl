@@ -1,19 +1,19 @@
-- id: bsl-analyzer
-  name: BSL Analyzer
+- id: onec-hbk-bsl
+  name: 1C HBK BSL
   description: Lint BSL (1C Enterprise) source files
   language: python
   types: [file]
   files: '\.(bsl|os)$'
-  entry: bsl-analyzer --check
+  entry: onec-hbk-bsl --check
   args: []
   pass_filenames: true
 
-- id: bsl-analyzer-select
-  name: BSL Analyzer (critical rules only)
+- id: onec-hbk-bsl-select
+  name: 1C HBK BSL (critical rules only)
   description: Run only critical BSL rules (BSL001, BSL012, BSL053)
   language: python
   types: [file]
   files: '\.(bsl|os)$'
-  entry: bsl-analyzer --check
+  entry: onec-hbk-bsl --check
   args: [--select, "BSL001,BSL012,BSL053"]
   pass_filenames: true

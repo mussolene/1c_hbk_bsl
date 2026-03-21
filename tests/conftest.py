@@ -1,5 +1,5 @@
 """
-pytest fixtures for bsl_analyzer tests.
+pytest fixtures for onec_hbk_bsl tests.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from bsl_analyzer.indexer.symbol_index import SymbolIndex
+from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 # Absolute path to the sample BSL fixture
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -46,9 +46,9 @@ def populated_index(symbol_index: SymbolIndex, sample_bsl_path: str) -> SymbolIn
     """
     Return a SymbolIndex pre-populated with the symbols from sample.bsl.
     """
-    from bsl_analyzer.analysis.call_graph import extract_calls
-    from bsl_analyzer.analysis.symbols import extract_symbols
-    from bsl_analyzer.parser.bsl_parser import BslParser
+    from onec_hbk_bsl.analysis.call_graph import extract_calls
+    from onec_hbk_bsl.analysis.symbols import extract_symbols
+    from onec_hbk_bsl.parser.bsl_parser import BslParser
 
     parser = BslParser()
     tree = parser.parse_file(sample_bsl_path)

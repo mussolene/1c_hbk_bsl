@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from bsl_analyzer.indexer.watcher import FileWatcher
+from onec_hbk_bsl.indexer.watcher import FileWatcher
 
 
 class TestFileWatcherInit:

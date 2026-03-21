@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bsl_analyzer.analysis.diagnostics import Diagnostic, DiagnosticEngine, Severity
-from bsl_analyzer.analysis.fix_engine import (
+from onec_hbk_bsl.analysis.diagnostics import Diagnostic, DiagnosticEngine, Severity
+from onec_hbk_bsl.analysis.fix_engine import (
     FIXABLE_RULES,
     FixResult,
     _fix_bsl009_self_assign,
@@ -230,7 +230,7 @@ class TestApplyFixes:
 
 class TestCheckFixFlag:
     def test_fix_flag_removes_self_assign(self, tmp_path: Path) -> None:
-        from bsl_analyzer.cli.check import check
+        from onec_hbk_bsl.cli.check import check
 
         p = _write(tmp_path, "t.bsl", "А = А;\n")
         rc = check([str(tmp_path)], format="text", select={"BSL009"}, fix=True)
@@ -239,7 +239,7 @@ class TestCheckFixFlag:
         assert rc == 0  # fixed, so no remaining issues
 
     def test_fix_flag_reports_unfixable_issues(self, tmp_path: Path) -> None:
-        from bsl_analyzer.cli.check import check
+        from onec_hbk_bsl.cli.check import check
 
         long_line = "А" * 150 + ";\n"
         _write(tmp_path, "t.bsl", long_line)

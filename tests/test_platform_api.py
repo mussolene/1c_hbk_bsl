@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from bsl_analyzer.analysis.platform_api import PlatformApi, get_platform_api
+from onec_hbk_bsl.analysis.platform_api import PlatformApi, get_platform_api
 
 # ---------------------------------------------------------------------------
 # Fixtures

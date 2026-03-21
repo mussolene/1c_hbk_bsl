@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bsl_analyzer.indexer.symbol_index import SymbolIndex
+from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -238,7 +238,7 @@ class TestIncrementalIndexer:
     def test_index_file_populates_index(
         self, symbol_index: SymbolIndex, sample_bsl_path: str
     ) -> None:
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         indexer = IncrementalIndexer(index=symbol_index)
         result = indexer.index_file(sample_bsl_path)
@@ -250,7 +250,7 @@ class TestIncrementalIndexer:
         assert stats["symbol_count"] > 0
 
     def test_index_file_missing_path(self, symbol_index: SymbolIndex) -> None:
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         indexer = IncrementalIndexer(index=symbol_index)
         result = indexer.index_file("/no/such/file.bsl")
@@ -265,7 +265,7 @@ class TestIncrementalIndexer:
 
 class TestIncrementalIndexerExtended:
     def test_find_all_bsl_files_finds_bsl(self, tmp_path: Path) -> None:
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         src = tmp_path / "src"
         src.mkdir()
@@ -280,21 +280,21 @@ class TestIncrementalIndexerExtended:
         assert not any("notes.txt" in f for f in files)
 
     def test_find_all_bsl_files_includes_os_extension(self, tmp_path: Path) -> None:
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         (tmp_path / "script.os").write_text("", encoding="utf-8")
         files = IncrementalIndexer._find_all_bsl_files(str(tmp_path))
         assert any("script.os" in f for f in files)
 
     def test_get_current_commit_non_git_dir(self, tmp_path: Path) -> None:
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         result = IncrementalIndexer._get_current_commit(str(tmp_path))
         # Non-git directory returns None
         assert result is None
 
     def test_get_current_commit_git_dir(self) -> None:
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         # The project itself is a git repo
         project_root = str(Path(__file__).parent.parent)
@@ -307,7 +307,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         bsl_file = tmp_path / "changed.bsl"
         bsl_file.write_text("Процедура П()\nКонецПроцедуры\n", encoding="utf-8")
@@ -330,7 +330,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         bsl_file = tmp_path / "fallback.bsl"
         bsl_file.write_text("Процедура П()\nКонецПроцедуры\n", encoding="utf-8")
@@ -355,7 +355,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         bsl_file = tmp_path / "nofallback.bsl"
         bsl_file.write_text("Процедура П()\nКонецПроцедуры\n", encoding="utf-8")
@@ -374,7 +374,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         indexer = IncrementalIndexer(index=symbol_index)
 
@@ -386,7 +386,7 @@ class TestIncrementalIndexerExtended:
         mock_progress_instance.advance = MagicMock()
 
         with patch(
-            "bsl_analyzer.indexer.incremental.Progress",
+            "onec_hbk_bsl.indexer.incremental.Progress",
             return_value=mock_progress_instance,
         ):
             result = indexer.index_workspace(temp_workspace, force=True)
@@ -399,7 +399,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         fake_commit = "deadbeef1234567890"
         symbol_index.save_commit(fake_commit, workspace_root=str(tmp_path))
@@ -407,7 +407,7 @@ class TestIncrementalIndexerExtended:
         indexer = IncrementalIndexer(index=symbol_index)
 
         with patch(
-            "bsl_analyzer.indexer.incremental.IncrementalIndexer._get_current_commit",
+            "onec_hbk_bsl.indexer.incremental.IncrementalIndexer._get_current_commit",
             return_value=fake_commit,
         ):
             result = indexer.index_workspace(str(tmp_path), force=False)
@@ -419,7 +419,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         nonexistent = str(tmp_path / "gone.bsl")
         indexer = IncrementalIndexer(index=symbol_index)
@@ -432,7 +432,7 @@ class TestIncrementalIndexerExtended:
         mock_progress_instance.advance = MagicMock()
 
         with patch(
-            "bsl_analyzer.indexer.incremental.Progress",
+            "onec_hbk_bsl.indexer.incremental.Progress",
             return_value=mock_progress_instance,
         ):
             result = indexer._index_files([nonexistent], workspace=str(tmp_path))
@@ -443,7 +443,7 @@ class TestIncrementalIndexerExtended:
     def test_index_file_with_calls_count(
         self, symbol_index: SymbolIndex, sample_bsl_path: str
     ) -> None:
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         indexer = IncrementalIndexer(index=symbol_index)
         result = indexer.index_file(sample_bsl_path)
@@ -456,7 +456,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         progress_calls: list = []
 
@@ -473,7 +473,7 @@ class TestIncrementalIndexerExtended:
         mock_progress_instance.advance = MagicMock()
 
         with patch(
-            "bsl_analyzer.indexer.incremental.Progress",
+            "onec_hbk_bsl.indexer.incremental.Progress",
             return_value=mock_progress_instance,
         ):
             indexer.index_workspace(temp_workspace, force=True)
@@ -485,7 +485,7 @@ class TestIncrementalIndexerExtended:
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        from bsl_analyzer.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 
         # Create many small modules to emulate a larger workspace.
         file_count = 120
@@ -506,7 +506,7 @@ class TestIncrementalIndexerExtended:
         mock_progress_instance.advance = MagicMock()
 
         with patch(
-            "bsl_analyzer.indexer.incremental.Progress",
+            "onec_hbk_bsl.indexer.incremental.Progress",
             return_value=mock_progress_instance,
         ):
             result = indexer.index_workspace(str(tmp_path), force=True)

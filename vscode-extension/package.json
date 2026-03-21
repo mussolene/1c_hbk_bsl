@@ -1,7 +1,7 @@
 {
-  "name": "bsl-analyzer",
-  "displayName": "BSL Analyzer (1C)",
-  "description": "Language support for 1C BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename and more",
+  "name": "1c-hbk-bsl",
+  "displayName": "1C HBK BSL",
+  "description": "1C Enterprise BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename, and more",
   "version": "0.6.7",
   "publisher": "mussolene",
   "icon": "icon.png",
@@ -15,7 +15,7 @@
   },
   "homepage": "https://github.com/mussolene/1c_hbk_bsl#readme",
   "galleryBanner": {
-    "color": "#1e3a5f",
+    "color": "#1565C0",
     "theme": "dark"
   },
   "engines": {
@@ -32,16 +32,10 @@
     "BSL",
     "1C Enterprise",
     "OneScript",
+    "1C HBK",
     "bsl-language-server"
   ],
   "main": "./out/extension.js",
-  "activationEvents": [
-    "onLanguage:bsl",
-    "onCommand:bslAnalyzer.reindexWorkspace",
-    "onCommand:bslAnalyzer.reindexCurrentFile",
-    "onCommand:bslAnalyzer.showStatus",
-    "onCommand:bslAnalyzer.showOutput"
-  ],
   "contributes": {
     "languages": [
       {
@@ -73,50 +67,50 @@
     ],
     "commands": [
       {
-        "command": "bslAnalyzer.reindexWorkspace",
-        "title": "BSL Analyzer: Reindex Workspace",
-        "category": "BSL"
+        "command": "onecHbkBsl.reindexWorkspace",
+        "title": "1C HBK BSL: Reindex Workspace",
+        "category": "1C HBK BSL"
       },
       {
-        "command": "bslAnalyzer.reindexCurrentFile",
-        "title": "BSL Analyzer: Reindex Current File",
-        "category": "BSL"
+        "command": "onecHbkBsl.reindexCurrentFile",
+        "title": "1C HBK BSL: Reindex Current File",
+        "category": "1C HBK BSL"
       },
       {
-        "command": "bslAnalyzer.showStatus",
-        "title": "BSL Analyzer: Show Index Status",
-        "category": "BSL"
+        "command": "onecHbkBsl.showStatus",
+        "title": "1C HBK BSL: Show Index Status",
+        "category": "1C HBK BSL"
       },
       {
-        "command": "bslAnalyzer.showOutput",
-        "title": "BSL Analyzer: Show Server Log",
-        "category": "BSL"
+        "command": "onecHbkBsl.showOutput",
+        "title": "1C HBK BSL: Show Server Log",
+        "category": "1C HBK BSL"
       }
     ],
     "configuration": {
-      "title": "BSL Analyzer",
+      "title": "1C HBK BSL",
       "properties": {
-        "bslAnalyzer.serverPath": {
+        "onecHbkBsl.serverPath": {
           "type": "string",
-          "default": "bsl-analyzer",
-          "description": "Path to the bsl-analyzer executable. Default placeholder skips this override; the extension uses the bundled or downloaded binary unless you set a real filesystem path here."
+          "default": "onec-hbk-bsl",
+          "description": "Path to the onec-hbk-bsl executable. Default placeholder skips this override; the extension uses the bundled or downloaded binary unless you set a real filesystem path here."
         },
-        "bslAnalyzer.useDocker": {
+        "onecHbkBsl.useDocker": {
           "type": "boolean",
           "default": false,
-          "description": "Run bsl-analyzer inside Docker instead of a local binary."
+          "description": "Run onec-hbk-bsl inside Docker instead of a local binary."
         },
-        "bslAnalyzer.dockerContainer": {
+        "onecHbkBsl.dockerContainer": {
           "type": "string",
-          "default": "bsl-analyzer-default",
-          "description": "Docker container name to use when bslAnalyzer.useDocker is true."
+          "default": "onec-hbk-bsl-default",
+          "description": "Docker container name to use when onecHbkBsl.useDocker is true."
         },
-        "bslAnalyzer.indexDbPath": {
+        "onecHbkBsl.indexDbPath": {
           "type": "string",
           "default": "",
-          "description": "SQLite index path. Leave empty: server stores the index under .git/bsl_index.sqlite (git repo) or ~/.cache/bsl-analyzer/<id>/ (otherwise). Set only to force a custom location."
+          "description": "SQLite index path. Leave empty: server stores the index under .git/onec-hbk-bsl_index.sqlite (git repo) or ~/.cache/onec-hbk-bsl/<id>/ (otherwise). Set only to force a custom location."
         },
-        "bslAnalyzer.logLevel": {
+        "onecHbkBsl.logLevel": {
           "type": "string",
           "enum": [
             "debug",
@@ -125,14 +119,14 @@
             "error"
           ],
           "default": "info",
-          "description": "Log level for the BSL analyzer language server."
+          "description": "Log level for the 1C HBK BSL language server."
         },
-        "bslAnalyzer.diagnostics.enabled": {
+        "onecHbkBsl.diagnostics.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable real-time diagnostics (linting) as you type."
         },
-        "bslAnalyzer.diagnostics.select": {
+        "onecHbkBsl.diagnostics.select": {
           "type": "array",
           "items": {
             "type": "string"
@@ -140,7 +134,7 @@
           "default": [],
           "description": "Run only the listed diagnostic rule codes. Empty = all rules."
         },
-        "bslAnalyzer.diagnostics.ignore": {
+        "onecHbkBsl.diagnostics.ignore": {
           "type": "array",
           "items": {
             "type": "string"
@@ -148,17 +142,17 @@
           "default": [],
           "description": "Suppress the listed diagnostic rule codes."
         },
-        "bslAnalyzer.format.indentSize": {
+        "onecHbkBsl.format.indentSize": {
           "type": "number",
           "default": 4,
           "description": "Number of spaces per indentation level when formatting BSL code."
         },
-        "bslAnalyzer.inlayHints.enabled": {
+        "onecHbkBsl.inlayHints.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Show parameter name hints at function call sites."
         },
-        "bslAnalyzer.semanticTokens.enabled": {
+        "onecHbkBsl.semanticTokens.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable semantic token coloring (layered on top of syntax highlighting)."
@@ -168,7 +162,8 @@
     "configurationDefaults": {
       "[bsl]": {
         "editor.formatOnSave": true,
-        "editor.defaultFormatter": "mussolene.bsl-analyzer",
+        "editor.formatOnType": true,
+        "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
         "editor.semanticHighlighting.enabled": true,
         "editor.inlayHints.enabled": "on",
         "editor.tabSize": 4,
@@ -184,8 +179,8 @@
     "lint": "eslint .",
     "pretest": "npm run compile",
     "test": "node ./out/test/runTest.js",
-    "package": "vsce package --no-dependencies",
-    "package:vsix": "vsce package --no-dependencies -o bsl-analyzer-${npm_package_version}.vsix"
+    "package": "unset npm_config_devdir NPM_CONFIG_DEVDIR; npx @vscode/vsce package --no-dependencies",
+    "package:vsix": "unset npm_config_devdir NPM_CONFIG_DEVDIR; npx @vscode/vsce package --no-dependencies -o 1c-hbk-bsl-${npm_package_version}.vsix"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
@@ -195,6 +190,7 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.3.0",
+    "@vscode/vsce": "^3.7.1",
     "eslint": "^9.28.0",
     "ts-loader": "^9.5.4",
     "typescript": "^5.3.0",

@@ -1,10 +1,10 @@
 # Third-party notices
 
-This project (**bsl-analyzer**) is distributed under the [MIT License](../LICENSE). It builds on many open-source packages. This file summarizes **runtime** and **tooling** dependencies for compliance review. It is not legal advice.
+This project (**onec-hbk-bsl**) is distributed under the [MIT License](../LICENSE). It builds on many open-source packages. This file summarizes **runtime** and **tooling** dependencies for compliance review. It is not legal advice.
 
 ## Regenerate (Python)
 
-Runtime-only tree (matches `pip install bsl-analyzer` / `uv pip install -e .` without dev extras):
+Runtime-only tree (matches `pip install onec-hbk-bsl` / `uv pip install -e .` without dev extras):
 
 ```bash
 uv venv /tmp/bsl-lic-tmp -p 3.11
@@ -76,4 +76,4 @@ DevDependencies (webpack, typescript, eslint, etc.) are used only at build time 
 
 ## MIT compatibility
 
-All identified **runtime** dependencies used to deliver **bsl-analyzer** and the **published VSIX** are under permissive licenses commonly considered **compatible** with distributing this project under MIT, subject to retaining copyright notices where required (Apache-2.0, BSD, etc.). **GPL/LGPL** does not apply to the shipped Python wheel’s dependency tree as of the last automated scan; the **bsl-language-server** relationship is documentary/reference only.
+All identified **runtime** dependencies used to deliver **onec-hbk-bsl** and the **published VSIX** are under permissive licenses commonly considered **compatible** with distributing this project under MIT, subject to retaining copyright notices where required (Apache-2.0, BSD, etc.). **GPL/LGPL** does not apply to the shipped Python wheel’s dependency tree as of the last automated scan; the **bsl-language-server** relationship is documentary/reference only.

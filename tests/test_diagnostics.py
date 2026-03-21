@@ -13,7 +13,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from bsl_analyzer.analysis.diagnostics import Diagnostic, DiagnosticEngine, Severity
+from onec_hbk_bsl.analysis.diagnostics import Diagnostic, DiagnosticEngine, Severity
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -39,7 +39,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Runtime environment (overridden via docker-compose / -e flags)
 ENV WORKSPACE_ROOT=/workspace
-ENV INDEX_DB_PATH=/data/bsl_index.sqlite
+ENV INDEX_DB_PATH=/data/onec-hbk-bsl_index.sqlite
 ENV MCP_PORT=8051
 ENV LOG_LEVEL=info
 
@@ -54,4 +54,4 @@ EXPOSE 8051
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${MCP_PORT:-8051}/health')" || exit 1
 
-CMD ["bsl-analyzer", "--mcp"]
+CMD ["onec-hbk-bsl", "--mcp"]

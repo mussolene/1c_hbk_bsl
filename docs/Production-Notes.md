@@ -2,21 +2,21 @@
 
 ## Scope
 This runbook covers production usage of:
-- `bsl-analyzer` server (LSP + MCP + diagnostics/indexing)
+- `onec-hbk-bsl` server (LSP + MCP + diagnostics/indexing)
 - `vscode-extension` activation and binary startup behavior
 
 ## Startup And Activation
 - VSCode extension activates on:
   - `onLanguage:bsl`
-  - `onCommand:bslAnalyzer.reindexWorkspace`
-  - `onCommand:bslAnalyzer.reindexCurrentFile`
-  - `onCommand:bslAnalyzer.showStatus`
+  - `onCommand:onecHbkBsl.reindexWorkspace`
+  - `onCommand:onecHbkBsl.reindexCurrentFile`
+  - `onCommand:onecHbkBsl.showStatus`
 - Server binary resolution order:
-  1. `bslAnalyzer.serverPath` (explicit filesystem path; default placeholder does not override)
+  1. `onecHbkBsl.serverPath` (explicit filesystem path; default placeholder does not override)
   2. bundled extension binary
   3. previously downloaded binary in extension global storage
   4. release download fallback (if supported for platform)  
-  (System `PATH` is not searched — set `serverPath` to a `bsl-analyzer` from `pip`/`uv`/build output if needed.)
+  (System `PATH` is not searched — set `serverPath` to a `onec-hbk-bsl` from `pip`/`uv`/build output if needed.)
 
 ## LSP Parity Checklist
 - Navigation: definition, references, rename, call hierarchy
@@ -47,7 +47,7 @@ This runbook covers production usage of:
 ## Operational Commands
 - Lint: `ruff check`
 - Tests + coverage gate: `PYTHONPATH=src pytest -q`
-- Benchmarks: `PYTHONPATH=src python -m bsl_analyzer --bench <workspace>`
+- Benchmarks: `PYTHONPATH=src python -m onec_hbk_bsl --bench <workspace>`
 - VSCode extension compile: `npm run compile` (in `vscode-extension`)
 
 ## Release Go/No-Go

@@ -1,10 +1,10 @@
-# BSL Analyzer
+# 1C HBK BSL
 
 Языковой сервер, линтер и MCP-сервер для **1C Enterprise / BSL** (язык 1С:Предприятие).
 
 [![CI](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml)
-[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/mussolene.bsl-analyzer)](https://marketplace.visualstudio.com/items?itemName=mussolene.bsl-analyzer)
-[![PyPI](https://img.shields.io/pypi/v/bsl-analyzer)](https://pypi.org/project/bsl-analyzer/)
+[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/mussolene.1c-hbk-bsl)](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl)
+[![PyPI](https://img.shields.io/pypi/v/onec-hbk-bsl)](https://pypi.org/project/onec-hbk-bsl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -26,7 +26,7 @@
 | **Inlay Hints** | Подсказки имён параметров в вызовах функций |
 | **Snippets** | 219 сниппетов: процедуры, функции, все типы метаданных 1С (RU + EN) |
 | **MCP-сервер** | Поиск символов, граф вызовов, диагностики для AI-агентов (Claude и др.) |
-| **CLI-линтер** | `bsl-analyzer --check` для использования в CI |
+| **CLI-линтер** | `onec-hbk-bsl --check` для использования в CI |
 | **Инкрементальная индексация** | SQLite-индекс, обновляется только при изменении файлов |
 
 **Производительность:** ~600 файлов/сек · <100 мс запуска · ~80 МБ RAM
@@ -35,10 +35,10 @@
 
 ## Установка в VSCode
 
-Установите расширение из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.bsl-analyzer):
+Установите расширение из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl):
 
 ```
-ext install mussolene.bsl-analyzer
+ext install mussolene.1c-hbk-bsl
 ```
 
 При первом открытии `.bsl` файла расширение автоматически скачает серверный бинарник.
@@ -49,35 +49,35 @@ ext install mussolene.bsl-analyzer
 {
   "[bsl]": {
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "mussolene.bsl-analyzer",
+    "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
     "editor.tabSize": 4
   },
-  "bslAnalyzer.indexDbPath": "/path/to/custom/bsl_index.sqlite"
+  "onecHbkBsl.indexDbPath": "/path/to/custom/onec-hbk-bsl_index.sqlite"
 }
 ```
 
-По умолчанию путь к БД не задаётся: индекс лежит в `.git/bsl_index.sqlite` (внутри репозитория git не попадает в коммиты) или в `~/.cache/bsl-analyzer/<хэш>/`, если папка не в git.
+По умолчанию путь к БД не задаётся: индекс лежит в `.git/onec-hbk-bsl_index.sqlite` (внутри репозитория git не попадает в коммиты) или в `~/.cache/onec-hbk-bsl/<хэш>/`, если папка не в git. Ранее использовалось имя `bsl_index.sqlite` — оно по-прежнему подхватывается, если файл уже есть.
 
 ---
 
 ## CLI
 
 ```bash
-pip install bsl-analyzer
+pip install onec-hbk-bsl
 # или
-uv tool install bsl-analyzer
+uv tool install onec-hbk-bsl
 
 # Линтинг проекта
-bsl-analyzer --check /path/to/1c-project
+onec-hbk-bsl --check /path/to/1c-project
 
 # MCP-сервер для Claude
-bsl-analyzer --mcp --port 8051
+onec-hbk-bsl --mcp --port 8051
 
 # LSP-сервер для VSCode/Cursor
-bsl-analyzer --lsp
+onec-hbk-bsl --lsp
 
 # Предварительная индексация большого репозитория
-bsl-analyzer --index /path/to/1c-project
+onec-hbk-bsl --index /path/to/1c-project
 ```
 
 ---
@@ -86,17 +86,17 @@ bsl-analyzer --index /path/to/1c-project
 
 | Параметр | По умолчанию | Описание |
 |---|---|---|
-| `bslAnalyzer.serverPath` | `bsl-analyzer` | Путь к бинарнику сервера; значение по умолчанию не подставляет путь из системного `PATH` — укажите полный путь к своему `bsl-analyzer`, либо используйте бинарник из VSIX / скачанный расширением |
-| `bslAnalyzer.indexDbPath` | *(пусто)* → `.git/bsl_index.sqlite` или `~/.cache/bsl-analyzer/…` | Явный путь к SQLite-индексу (необязательно) |
-| `bslAnalyzer.logLevel` | `info` | Уровень логирования |
-| `bslAnalyzer.diagnostics.enabled` | `true` | Диагностики в реальном времени |
-| `bslAnalyzer.diagnostics.select` | `[]` | Запустить только указанные правила |
-| `bslAnalyzer.diagnostics.ignore` | `[]` | Игнорировать указанные правила |
-| `bslAnalyzer.format.indentSize` | `4` | Размер отступа |
-| `bslAnalyzer.inlayHints.enabled` | `true` | Подсказки имён параметров |
-| `bslAnalyzer.semanticTokens.enabled` | `true` | Семантическая подсветка |
+| `onecHbkBsl.serverPath` | `onec-hbk-bsl` | Путь к бинарнику сервера; значение по умолчанию не подставляет путь из системного `PATH` — укажите полный путь к своему `onec-hbk-bsl`, либо используйте бинарник из VSIX / скачанный расширением |
+| `onecHbkBsl.indexDbPath` | *(пусто)* → `.git/onec-hbk-bsl_index.sqlite` или `~/.cache/onec-hbk-bsl/…` | Явный путь к SQLite-индексу (необязательно) |
+| `onecHbkBsl.logLevel` | `info` | Уровень логирования |
+| `onecHbkBsl.diagnostics.enabled` | `true` | Диагностики в реальном времени |
+| `onecHbkBsl.diagnostics.select` | `[]` | Запустить только указанные правила |
+| `onecHbkBsl.diagnostics.ignore` | `[]` | Игнорировать указанные правила |
+| `onecHbkBsl.format.indentSize` | `4` | Размер отступа |
+| `onecHbkBsl.inlayHints.enabled` | `true` | Подсказки имён параметров |
+| `onecHbkBsl.semanticTokens.enabled` | `true` | Семантическая подсветка |
 
-**Панель Problems:** включите группировку по **источнику** (меню вида в заголовке Problems) — правила линтера идут как `bsl-analyzer`, неиспользуемые в проекте процедуры и функции (после индексации) — отдельной группой `bsl-analyzer · unused` (код `BSL-DEAD`, подсветка «лишнего» кода в редакторе сохраняется).
+**Панель Problems:** включите группировку по **источнику** (меню вида в заголовке Problems) — правила линтера идут как `onec-hbk-bsl`, неиспользуемые в проекте процедуры и функции (после индексации) — отдельной группой `onec-hbk-bsl · unused` (код `BSL-DEAD`, подсветка «лишнего» кода в редакторе сохраняется).
 
 ---
 
@@ -117,7 +117,7 @@ bsl-analyzer --index /path/to/1c-project
 | BSL051 | WRN | UnreachableCode | Код после безусловного `Возврат` |
 | BSL053 | WRN | ExecuteExternalCode | `Выполнить()` — динамическое исполнение кода |
 
-Полный список: `bsl-analyzer --list-rules`
+Полный список: `onec-hbk-bsl --list-rules`
 
 ### Подавление в коде
 
@@ -134,12 +134,12 @@ bsl-analyzer --index /path/to/1c-project
 
 **stdio-режим** для Claude Desktop (рекомендуется):
 ```bash
-bsl-analyzer --mcp --stdio --workspace /path/to/1c-project
+onec-hbk-bsl --mcp --stdio --workspace /path/to/1c-project
 ```
 
 **HTTP-режим** для удалённого доступа:
 ```bash
-bsl-analyzer --mcp --port 8051 --workspace /path/to/1c-project
+onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 ```
 
 Конфигурация `claude_desktop_config.json`:
@@ -147,11 +147,11 @@ bsl-analyzer --mcp --port 8051 --workspace /path/to/1c-project
 ```json
 {
   "mcpServers": {
-    "bsl-analyzer": {
-      "command": "bsl-analyzer",
+    "onec-hbk-bsl": {
+      "command": "onec-hbk-bsl",
       "args": ["--mcp", "--stdio", "--workspace", "/path/to/1c-project"],
       "env": {
-        "INDEX_DB_PATH": "/path/to/1c-project/bsl_index.sqlite"
+        "INDEX_DB_PATH": "/path/to/1c-project/onec-hbk-bsl_index.sqlite"
       }
     }
   }
@@ -165,10 +165,10 @@ bsl-analyzer --mcp --port 8051 --workspace /path/to/1c-project
 ## GitHub Actions / CI
 
 ```yaml
-- name: BSL Lint
+- name: 1C HBK BSL Lint
   run: |
-    pip install bsl-analyzer
-    bsl-analyzer --check . --format sarif > bsl-results.sarif
+    pip install onec-hbk-bsl
+    onec-hbk-bsl --check . --format sarif > bsl-results.sarif
 
 - name: Upload SARIF
   uses: github/codeql-action/upload-sarif@v3
@@ -181,8 +181,8 @@ bsl-analyzer --mcp --port 8051 --workspace /path/to/1c-project
 ## Архитектура
 
 ```
-bsl-analyzer/
-├── src/bsl_analyzer/
+1c_hbk_bsl/
+├── src/onec_hbk_bsl/
 │   ├── parser/       # tree-sitter BSL
 │   ├── analysis/     # символы, граф вызовов, диагностики
 │   ├── indexer/      # инкрементальный SQLite-индекс (FTS5)
@@ -207,15 +207,19 @@ cd 1c_hbk_bsl
 make install    # установить зависимости
 make test       # запустить тесты
 make lint       # ruff check
-make build      # собрать бинарник (Nuitka)
+make build      # собрать бинарник (Nuitka) → dist/
+make extension-bin   # make build + копия в vscode-extension/bin/ (для локального VSIX)
+make vsix       # extension-bin + сборка расширения + VSIX с актуальным бинарником
 make lsp        # запустить LSP-сервер из исходников
 ```
+
+Локальная упаковка расширения: не вызывайте `vsce package` без синхронизации `dist/` → `vscode-extension/bin/`, иначе в VSIX попадёт старый (или пустой) бинарник — см. **`make vsix`** или **`make sync-extension-bin`**.
 
 ---
 
 ## Лицензия
 
-MIT © 2024 BSL Analyzer Contributors
+MIT © 2024 1C HBK BSL Contributors
 
 Полный перечень зависимостей и заметки по лицензированию: [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md). Источники данных `data/`: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Аудит секретов: [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).
 

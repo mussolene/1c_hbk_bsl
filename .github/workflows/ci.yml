@@ -32,7 +32,7 @@ jobs:
         run: ruff check src tests
 
       - name: Run tests
-        run: pytest --cov=src/bsl_analyzer --cov-report=xml -q
+        run: pytest --cov=src/onec_hbk_bsl --cov-report=xml -q
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

@@ -1,4 +1,4 @@
-.PHONY: install install-build dev test lint fmt check-all build dist clean docker-build docker-up docker-down
+.PHONY: install install-build dev test lint fmt check-all build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
 
@@ -9,7 +9,7 @@ install-build:
 	uv pip install -e ".[dev,build]"
 
 dev: install
-	@echo "Dev environment ready. Run: bsl-analyzer --help"
+	@echo "Dev environment ready. Run: onec-hbk-bsl --help"
 
 # ── Тесты и линтинг ──────────────────────────────────────────────────────────
 
@@ -26,9 +26,9 @@ check-all: lint test
 
 # ── Сборка нативного бинаря (Nuitka) ─────────────────────────────────────────
 
-ENTRY     = src/bsl_analyzer/__main__.py
+ENTRY     = src/onec_hbk_bsl/__main__.py
 DIST_DIR  = dist
-BIN_NAME  = bsl-analyzer
+BIN_NAME  = onec-hbk-bsl
 
 # Определяем ОС для суффикса
 UNAME := $(shell uname -s)
@@ -45,10 +45,14 @@ endif
 
 BUILD_OUT = $(DIST_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
 
+# Бинарник для локальной упаковки VSIX (совпадает с путём в extension.ts → bin/)
+EXTENSION_BIN_DIR = vscode-extension/bin
+EXTENSION_BIN = $(EXTENSION_BIN_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
+
 NUITKA_COMMON = \
 		--standalone \
 		--output-dir=$(DIST_DIR) \
-		--include-package=bsl_analyzer \
+		--include-package=onec_hbk_bsl \
 		--include-package=tree_sitter \
 		--include-package=tree_sitter_bsl \
 		--include-package=fastmcp \
@@ -73,13 +77,33 @@ build:
 	@echo "✓ Готово: $(BUILD_OUT)"
 	@ls -lh $(BUILD_OUT)
 
+# Скопировать свежий бинарник в vscode-extension/bin/ (для vsce package / отладки расширения)
+sync-extension-bin:
+	@test -f $(BUILD_OUT) || (echo "Нет $(BUILD_OUT) — сначала: make build" >&2 && exit 1)
+	@mkdir -p $(EXTENSION_BIN_DIR)
+	@cp -f $(BUILD_OUT) $(EXTENSION_BIN)
+	@cmp -s $(BUILD_OUT) $(EXTENSION_BIN) || (echo "Ошибка: $(EXTENSION_BIN) не совпадает с $(BUILD_OUT)" >&2 && exit 1)
+	@chmod +x $(EXTENSION_BIN) 2>/dev/null || true
+	@echo "✓ Синхронизировано: $(EXTENSION_BIN) ← $(BUILD_OUT)"
+
+# Сборка Nuitka + копирование в расширение одной командой
+extension-bin: build sync-extension-bin
+
+# Собрать webpack и упаковать VSIX с бинарником из extension-bin (не используйте голый vsce без sync)
+vsix: extension-bin
+	cd vscode-extension && npm run compile && \
+		VERSION=$$(node -p "require('./package.json').version") && \
+		npx @vscode/vsce package --no-dependencies \
+			-o onec-hbk-bsl-$$VERSION-local.vsix && \
+		echo "✓ VSIX: vscode-extension/onec-hbk-bsl-$$VERSION-local.vsix"
+
 # Быстрая сборка без --onefile (для отладки — не нужна упаковка onefile)
 build-dev:
 	@mkdir -p $(DIST_DIR)/dev
 	.venv/bin/python -m nuitka \
 		--standalone \
 		--output-dir=$(DIST_DIR)/dev \
-		--include-package=bsl_analyzer \
+		--include-package=onec_hbk_bsl \
 		--include-data-dir=data=data \
 		--jobs=4 \
 		$(ENTRY)
@@ -92,8 +116,8 @@ build-check: build
 
 # Пакет для дистрибуции с версией из pyproject.toml
 dist: build
-	@VERSION=$$(python -c "import importlib.metadata; print(importlib.metadata.version('bsl-analyzer'))"); \
-	ARCHIVE=$(DIST_DIR)/bsl-analyzer-$$VERSION-$(PLATFORM).tar.gz; \
+	@VERSION=$$(python -c "import importlib.metadata; print(importlib.metadata.version('onec-hbk-bsl'))"); \
+	ARCHIVE=$(DIST_DIR)/onec-hbk-bsl-$$VERSION-$(PLATFORM).tar.gz; \
 	tar -czf $$ARCHIVE -C $(DIST_DIR) $(BIN_NAME)$(BIN_SUFFIX); \
 	echo "✓ Архив: $$ARCHIVE"; \
 	ls -lh $$ARCHIVE
@@ -116,6 +140,8 @@ docker-logs:
 
 clean:
 	rm -rf $(DIST_DIR)
+	rm -f $(EXTENSION_BIN)
+	rmdir $(EXTENSION_BIN_DIR) 2>/dev/null || true
 	rm -rf build/
 	rm -rf *.build *.dist *.onefile-build
 	find . -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -130,10 +156,10 @@ index:
 		echo "Использование: make index WORKSPACE=/path/to/1c/config"; \
 		exit 1; \
 	fi
-	bsl-analyzer --index $(WORKSPACE)
+	onec-hbk-bsl --index $(WORKSPACE)
 
 mcp:
-	bsl-analyzer --mcp --port 8051
+	onec-hbk-bsl --mcp --port 8051
 
 lsp:
-	bsl-analyzer --lsp
+	onec-hbk-bsl --lsp

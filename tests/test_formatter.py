@@ -1,7 +1,7 @@
 """Tests for BSL source code formatter."""
 from __future__ import annotations
 
-from bsl_analyzer.analysis.formatter import BslFormatter
+from onec_hbk_bsl.analysis.formatter import BslFormatter
 
 
 class TestKeywordNormalisation:

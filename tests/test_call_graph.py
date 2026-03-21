@@ -1,5 +1,5 @@
 """
-Tests for bsl_analyzer.analysis.call_graph.
+Tests for onec_hbk_bsl.analysis.call_graph.
 
 Covers:
   - Call dataclass fields
@@ -48,7 +48,7 @@ class _FakeEmptyTree:
 
 class TestCallDataclass:
     def test_call_fields(self) -> None:
-        from bsl_analyzer.analysis.call_graph import Call
+        from onec_hbk_bsl.analysis.call_graph import Call
 
         c = Call(
             caller_file="test.bsl",
@@ -64,7 +64,7 @@ class TestCallDataclass:
         assert c.callee_args_count == 2
 
     def test_call_default_args_count(self) -> None:
-        from bsl_analyzer.analysis.call_graph import Call
+        from onec_hbk_bsl.analysis.call_graph import Call
 
         c = Call(caller_file="f.bsl", caller_line=1, caller_name=None, callee_name="Ф")
         assert c.callee_args_count == 0
@@ -89,21 +89,21 @@ BSL_WITH_CALLS = """\
 
 class TestExtractCallsRegexFallback:
     def test_returns_list(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         tree = _FakeRegexTree(BSL_WITH_CALLS)
         result = extract_calls(tree, file_path="test.bsl")
         assert isinstance(result, list)
 
     def test_returns_call_objects(self) -> None:
-        from bsl_analyzer.analysis.call_graph import Call, extract_calls
+        from onec_hbk_bsl.analysis.call_graph import Call, extract_calls
 
         tree = _FakeRegexTree(BSL_WITH_CALLS)
         result = extract_calls(tree, file_path="test.bsl")
         assert all(isinstance(c, Call) for c in result)
 
     def test_finds_known_callee(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         tree = _FakeRegexTree(BSL_WITH_CALLS)
         result = extract_calls(tree, file_path="test.bsl")
@@ -111,14 +111,14 @@ class TestExtractCallsRegexFallback:
         assert "ВалидироватьСтроки" in callee_names or "ЗаписатьЛог" in callee_names
 
     def test_caller_file_set_correctly(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         tree = _FakeRegexTree(BSL_WITH_CALLS)
         result = extract_calls(tree, file_path="my_module.bsl")
         assert all(c.caller_file == "my_module.bsl" for c in result)
 
     def test_caller_name_tracks_procedure(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         tree = _FakeRegexTree(BSL_WITH_CALLS)
         result = extract_calls(tree, file_path="test.bsl")
@@ -127,14 +127,14 @@ class TestExtractCallsRegexFallback:
         assert len(inside_proc) >= 1
 
     def test_empty_content_returns_empty_list(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         tree = _FakeRegexTree("")
         result = extract_calls(tree, file_path="empty.bsl")
         assert result == []
 
     def test_tree_without_root_node_or_content_returns_empty(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         # An object with neither .root_node nor .content
         class _Bare:
@@ -144,7 +144,7 @@ class TestExtractCallsRegexFallback:
         assert result == []
 
     def test_args_count_single_arg(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         source = "ЗаписатьЛог(\"Сообщение\");\n"
         tree = _FakeRegexTree(source)
@@ -154,7 +154,7 @@ class TestExtractCallsRegexFallback:
         assert calls_named[0].callee_args_count == 1
 
     def test_args_count_multiple_args(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         source = "ОбработатьЗаказ(Заказ, Режим, Флаг);\n"
         tree = _FakeRegexTree(source)
@@ -164,7 +164,7 @@ class TestExtractCallsRegexFallback:
         assert calls_named[0].callee_args_count == 3
 
     def test_keywords_not_included_as_calls(self) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
 
         # BSL keywords should not appear as callee names
         source = "Если Условие(Аргумент) Тогда\nКонецЕсли;\n"
@@ -181,8 +181,8 @@ class TestExtractCallsRegexFallback:
 
 class TestExtractCallsRealParser:
     def test_extract_calls_from_sample_bsl(self, sample_bsl_path: str) -> None:
-        from bsl_analyzer.analysis.call_graph import Call, extract_calls
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.call_graph import Call, extract_calls
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         parser = BslParser()
         tree = parser.parse_file(sample_bsl_path)
@@ -192,8 +192,8 @@ class TestExtractCallsRealParser:
         assert all(isinstance(c, Call) for c in result)
 
     def test_sample_bsl_calls_записатьлог(self, sample_bsl_path: str) -> None:
-        from bsl_analyzer.analysis.call_graph import extract_calls
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         parser = BslParser()
         tree = parser.parse_file(sample_bsl_path)
@@ -232,7 +232,7 @@ class TestBuildCallGraph:
         return mock_index
 
     def test_build_call_graph_returns_dict(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index()
         result = build_call_graph(mock_index, "ОбработатьЗаказ")
@@ -240,7 +240,7 @@ class TestBuildCallGraph:
         assert isinstance(result, dict)
 
     def test_result_has_required_keys(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index()
         result = build_call_graph(mock_index, "ОбработатьЗаказ")
@@ -251,7 +251,7 @@ class TestBuildCallGraph:
         assert "callees" in result
 
     def test_name_matches_queried_symbol(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index()
         result = build_call_graph(mock_index, "ОбработатьЗаказ")
@@ -259,7 +259,7 @@ class TestBuildCallGraph:
         assert result["name"] == "ОбработатьЗаказ"
 
     def test_definition_populated_when_found(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index()
         result = build_call_graph(mock_index, "ОбработатьЗаказ")
@@ -268,7 +268,7 @@ class TestBuildCallGraph:
         assert result["definition"]["line"] == 10
 
     def test_definition_none_when_symbol_not_found(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = MagicMock()
         mock_index.find_symbol.return_value = []
@@ -281,7 +281,7 @@ class TestBuildCallGraph:
         assert result["definition"]["line"] is None
 
     def test_callers_empty_when_no_callers(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index()
         mock_index.find_callers.return_value = []
@@ -290,7 +290,7 @@ class TestBuildCallGraph:
         assert result["callers"] == []
 
     def test_callers_populated_from_index(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index()
         mock_index.find_callers.return_value = [
@@ -306,7 +306,7 @@ class TestBuildCallGraph:
         assert result["callers"][0]["caller_name"] == "ГлавнаяФункция"
 
     def test_callees_populated_from_index(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index(line=10, end_line=40)
         mock_index.find_callees.return_value = [
@@ -323,7 +323,7 @@ class TestBuildCallGraph:
         assert "ВалидироватьСтроки" in callee_names
 
     def test_depth_zero_returns_empty_callers(self) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         mock_index = self._make_mock_index()
         mock_index.find_callers.return_value = [
@@ -336,7 +336,7 @@ class TestBuildCallGraph:
     def test_build_call_graph_with_real_index(
         self, populated_index: Any
     ) -> None:
-        from bsl_analyzer.analysis.call_graph import build_call_graph
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
         result = build_call_graph(populated_index, "ЗаписатьЛог")
 

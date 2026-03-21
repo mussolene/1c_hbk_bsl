@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from bsl_analyzer.cli.git_utils import git_changed_files, git_root
+from onec_hbk_bsl.cli.git_utils import git_changed_files, git_root
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,20 +28,20 @@ def _make_run_result(stdout: str, returncode: int = 0) -> MagicMock:
 
 class TestGitRoot:
     def test_returns_root_when_in_repo(self, tmp_path: Path) -> None:
-        with patch("bsl_analyzer.cli.git_utils.subprocess.run") as mock_run:
+        with patch("onec_hbk_bsl.cli.git_utils.subprocess.run") as mock_run:
             mock_run.return_value = _make_run_result("/some/root\n")
             result = git_root(str(tmp_path))
         assert result == "/some/root"
 
     def test_returns_none_outside_repo(self, tmp_path: Path) -> None:
-        with patch("bsl_analyzer.cli.git_utils.subprocess.run") as mock_run:
+        with patch("onec_hbk_bsl.cli.git_utils.subprocess.run") as mock_run:
             mock_run.return_value = _make_run_result("", returncode=128)
             result = git_root(str(tmp_path))
         assert result is None
 
     def test_returns_none_when_git_not_found(self, tmp_path: Path) -> None:
         with patch(
-            "bsl_analyzer.cli.git_utils.subprocess.run",
+            "onec_hbk_bsl.cli.git_utils.subprocess.run",
             side_effect=FileNotFoundError,
         ):
             result = git_root(str(tmp_path))
@@ -69,14 +69,14 @@ class TestGitChangedFiles:
                 return _make_run_result("")
             return _make_run_result("")
 
-        with patch("bsl_analyzer.cli.git_utils.subprocess.run", side_effect=_fake_run):
+        with patch("onec_hbk_bsl.cli.git_utils.subprocess.run", side_effect=_fake_run):
             result = git_changed_files(str(tmp_path))
 
         assert any("module.bsl" in f for f in result)
         assert not any("readme.txt" in f for f in result)
 
     def test_returns_empty_when_no_git(self, tmp_path: Path) -> None:
-        with patch("bsl_analyzer.cli.git_utils.subprocess.run") as mock_run:
+        with patch("onec_hbk_bsl.cli.git_utils.subprocess.run") as mock_run:
             mock_run.return_value = _make_run_result("", returncode=128)
             result = git_changed_files(str(tmp_path))
         assert result == []
@@ -87,7 +87,7 @@ class TestGitChangedFiles:
                 return _make_run_result(str(tmp_path) + "\n")
             return _make_run_result("readme.md\n")
 
-        with patch("bsl_analyzer.cli.git_utils.subprocess.run", side_effect=_fake_run):
+        with patch("onec_hbk_bsl.cli.git_utils.subprocess.run", side_effect=_fake_run):
             result = git_changed_files(str(tmp_path))
         assert result == []
 
@@ -105,7 +105,7 @@ class TestGitChangedFiles:
                 return _make_run_result("new.bsl\n")
             return _make_run_result("")
 
-        with patch("bsl_analyzer.cli.git_utils.subprocess.run", side_effect=_fake_run):
+        with patch("onec_hbk_bsl.cli.git_utils.subprocess.run", side_effect=_fake_run):
             git_changed_files(str(tmp_path), since="origin/main")
 
         diff_call = next(a for a in call_args_list if "diff" in a)

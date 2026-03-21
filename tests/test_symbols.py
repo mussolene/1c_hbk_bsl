@@ -1,5 +1,5 @@
 """
-Tests for bsl_analyzer.analysis.symbols.
+Tests for onec_hbk_bsl.analysis.symbols.
 
 Covers:
   - Symbol dataclass fields
@@ -46,7 +46,7 @@ class _FakeEmptyTree:
 
 class TestSymbolDataclass:
     def test_symbol_required_fields(self) -> None:
-        from bsl_analyzer.analysis.symbols import Symbol
+        from onec_hbk_bsl.analysis.symbols import Symbol
 
         s = Symbol(
             name="МояПроцедура",
@@ -62,7 +62,7 @@ class TestSymbolDataclass:
         assert s.end_line == 20
 
     def test_symbol_defaults(self) -> None:
-        from bsl_analyzer.analysis.symbols import Symbol
+        from onec_hbk_bsl.analysis.symbols import Symbol
 
         s = Symbol(
             name="Ф",
@@ -79,7 +79,7 @@ class TestSymbolDataclass:
         assert s.file_path == ""
 
     def test_symbol_export_flag(self) -> None:
-        from bsl_analyzer.analysis.symbols import Symbol
+        from onec_hbk_bsl.analysis.symbols import Symbol
 
         s = Symbol(
             name="Ф",
@@ -132,14 +132,14 @@ BSL_EXPORT_VAR = """\
 
 class TestExtractSymbolsRegexFallback:
     def test_returns_list(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="test.bsl")
         assert isinstance(result, list)
 
     def test_finds_procedure(self) -> None:
-        from bsl_analyzer.analysis.symbols import Symbol, extract_symbols
+        from onec_hbk_bsl.analysis.symbols import Symbol, extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -148,7 +148,7 @@ class TestExtractSymbolsRegexFallback:
         assert "ИнициализироватьМодуль" in names
 
     def test_finds_function(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -156,7 +156,7 @@ class TestExtractSymbolsRegexFallback:
         assert "ПолучитьСчётчик" in names
 
     def test_export_flag_detected(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -165,7 +165,7 @@ class TestExtractSymbolsRegexFallback:
         assert exported[0].name == "ПолучитьСчётчик"
 
     def test_non_export_has_false_flag(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -173,14 +173,14 @@ class TestExtractSymbolsRegexFallback:
         assert any(s.name == "ИнициализироватьМодуль" for s in non_exported)
 
     def test_file_path_set_correctly(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="my_module.bsl")
         assert all(s.file_path == "my_module.bsl" for s in result)
 
     def test_kind_is_procedure_or_function(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -188,7 +188,7 @@ class TestExtractSymbolsRegexFallback:
         assert len(procs_funcs) >= 2
 
     def test_sorted_by_line(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_PROCEDURES)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -196,14 +196,14 @@ class TestExtractSymbolsRegexFallback:
         assert lines == sorted(lines)
 
     def test_empty_content_returns_empty_list(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree("")
         result = extract_symbols(tree, file_path="empty.bsl")
         assert result == []
 
     def test_tree_without_content_or_root_node_returns_empty(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         class _Bare:
             pass
@@ -219,7 +219,7 @@ class TestExtractSymbolsRegexFallback:
 
 class TestExtractSymbolsVariables:
     def test_finds_module_variables(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_WITH_VARS)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -228,7 +228,7 @@ class TestExtractSymbolsVariables:
         assert "МаксимальноеКоличество" in var_names
 
     def test_variable_kind_is_variable(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_WITH_VARS)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -236,7 +236,7 @@ class TestExtractSymbolsVariables:
         assert len(variables) >= 2
 
     def test_export_variable_detected(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_EXPORT_VAR)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -247,7 +247,7 @@ class TestExtractSymbolsVariables:
         assert exported_vars[0].name == "МойЭкспорт"
 
     def test_variable_signature_starts_with_var(self) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
 
         tree = _FakeRegexTree(BSL_WITH_VARS)
         result = extract_symbols(tree, file_path="test.bsl")
@@ -263,8 +263,8 @@ class TestExtractSymbolsVariables:
 
 class TestExtractSymbolsRealParser:
     def test_returns_list_of_symbols(self, sample_bsl_path: str) -> None:
-        from bsl_analyzer.analysis.symbols import Symbol, extract_symbols
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.symbols import Symbol, extract_symbols
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         parser = BslParser()
         tree = parser.parse_file(sample_bsl_path)
@@ -274,8 +274,8 @@ class TestExtractSymbolsRealParser:
         assert all(isinstance(s, Symbol) for s in result)
 
     def test_finds_expected_procedures(self, sample_bsl_path: str) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         parser = BslParser()
         tree = parser.parse_file(sample_bsl_path)
@@ -286,8 +286,8 @@ class TestExtractSymbolsRealParser:
         assert "ЗаписатьЛог" in names
 
     def test_exported_symbols_have_is_export_true(self, sample_bsl_path: str) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         parser = BslParser()
         tree = parser.parse_file(sample_bsl_path)
@@ -303,8 +303,8 @@ class TestExtractSymbolsRealParser:
         )
 
     def test_file_path_set_on_all_symbols(self, sample_bsl_path: str) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         parser = BslParser()
         tree = parser.parse_file(sample_bsl_path)
@@ -313,8 +313,8 @@ class TestExtractSymbolsRealParser:
         assert all(s.file_path == sample_bsl_path for s in result)
 
     def test_symbols_sorted_by_line(self, sample_bsl_path: str) -> None:
-        from bsl_analyzer.analysis.symbols import extract_symbols
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         parser = BslParser()
         tree = parser.parse_file(sample_bsl_path)
@@ -325,8 +325,8 @@ class TestExtractSymbolsRealParser:
 
     def test_cyrillic_function_name_character_is_lsp_column(self) -> None:
         """Symbol.character must be UTF-16/LSP column, not tree-sitter UTF-8 byte offset."""
-        from bsl_analyzer.analysis.symbols import extract_symbols
-        from bsl_analyzer.parser.bsl_parser import BslParser
+        from onec_hbk_bsl.analysis.symbols import extract_symbols
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
 
         src = (
             "Функция ИННСертификата(СубъектСертификата)\n"

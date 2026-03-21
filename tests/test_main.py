@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bsl_analyzer.__main__ import _parse_codes, main
+from onec_hbk_bsl.__main__ import _parse_codes, main
 
 # ---------------------------------------------------------------------------
 # _parse_codes
@@ -49,7 +49,7 @@ class TestMainCheckNewFlags:
     def test_exit_zero_flag(self, tmp_path: Path) -> None:
         (tmp_path / "dirty.bsl").write_text('Пароль = "секрет123";\n', encoding="utf-8")
         with patch("sys.argv", [
-            "bsl-analyzer", "--check", str(tmp_path),
+            "onec-hbk-bsl", "--check", str(tmp_path),
             "--select", "BSL012", "--exit-zero",
         ]):
             with pytest.raises(SystemExit) as exc_info:
@@ -59,7 +59,7 @@ class TestMainCheckNewFlags:
     def test_sarif_format(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         (tmp_path / "ok.bsl").write_text("А = 1;\n", encoding="utf-8")
         with patch("sys.argv", [
-            "bsl-analyzer", "--check", str(tmp_path),
+            "onec-hbk-bsl", "--check", str(tmp_path),
             "--format", "sarif", "--select", "BSL001",
         ]):
             with pytest.raises(SystemExit):
@@ -73,7 +73,7 @@ class TestMainCheckNewFlags:
         (tmp_path / "f.bsl").write_text('Пароль = "с123";\n', encoding="utf-8")
         baseline = str(tmp_path / "b.json")
         with patch("sys.argv", [
-            "bsl-analyzer", "--check", str(tmp_path),
+            "onec-hbk-bsl", "--check", str(tmp_path),
             "--select", "BSL012", "--update-baseline", baseline,
         ]):
             with pytest.raises(SystemExit) as exc_info:
@@ -86,14 +86,14 @@ class TestMainCheckNewFlags:
         baseline = str(tmp_path / "b.json")
         # First, create baseline
         with patch("sys.argv", [
-            "bsl-analyzer", "--check", str(tmp_path),
+            "onec-hbk-bsl", "--check", str(tmp_path),
             "--select", "BSL012", "--update-baseline", baseline,
         ]):
             with pytest.raises(SystemExit):
                 main()
         # Then run with baseline — should exit 0
         with patch("sys.argv", [
-            "bsl-analyzer", "--check", str(tmp_path),
+            "onec-hbk-bsl", "--check", str(tmp_path),
             "--select", "BSL012", "--baseline", baseline,
         ]):
             with pytest.raises(SystemExit) as exc_info:
@@ -104,14 +104,14 @@ class TestMainCheckNewFlags:
 class TestMainCheck:
     def test_check_mode_clean_exits_0(self, tmp_path: Path) -> None:
         (tmp_path / "ok.bsl").write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
-        with patch("sys.argv", ["bsl-analyzer", "--check", str(tmp_path), "--select", "BSL001"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--check", str(tmp_path), "--select", "BSL001"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
         assert exc_info.value.code == 0
 
     def test_check_mode_dirty_exits_1(self, tmp_path: Path) -> None:
         (tmp_path / "dirty.bsl").write_text('Пароль = "секрет123";\n', encoding="utf-8")
-        with patch("sys.argv", ["bsl-analyzer", "--check", str(tmp_path), "--select", "BSL012"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--check", str(tmp_path), "--select", "BSL012"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
         assert exc_info.value.code == 1
@@ -122,7 +122,7 @@ class TestMainCheck:
         (tmp_path / "ok.bsl").write_text("А = 1;\n", encoding="utf-8")
         with patch(
             "sys.argv",
-            ["bsl-analyzer", "--check", str(tmp_path), "--format", "json", "--select", "BSL001"],
+            ["onec-hbk-bsl", "--check", str(tmp_path), "--format", "json", "--select", "BSL001"],
         ):
             with pytest.raises(SystemExit):
                 main()
@@ -139,7 +139,7 @@ class TestMainCheck:
         with patch(
             "sys.argv",
             [
-                "bsl-analyzer", "--check", str(tmp_path),
+                "onec-hbk-bsl", "--check", str(tmp_path),
                 "--format", "sonarqube", "--select", "BSL001",
             ],
         ):
@@ -152,7 +152,7 @@ class TestMainCheck:
 
     def test_check_no_path_uses_cwd(self, tmp_path: Path) -> None:
         """--check with no paths should use cwd (returns 0 if cwd has no BSL files)."""
-        with patch("sys.argv", ["bsl-analyzer", "--check"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--check"]):
             with patch("os.getcwd", return_value=str(tmp_path)):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -162,7 +162,7 @@ class TestMainCheck:
         (tmp_path / "t.bsl").write_text("А = А;\n", encoding="utf-8")
         with patch(
             "sys.argv",
-            ["bsl-analyzer", "--check", str(tmp_path), "--select", "BSL009"],
+            ["onec-hbk-bsl", "--check", str(tmp_path), "--select", "BSL009"],
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -172,7 +172,7 @@ class TestMainCheck:
         (tmp_path / "t.bsl").write_text('Пароль = "секрет123";\n', encoding="utf-8")
         with patch(
             "sys.argv",
-            ["bsl-analyzer", "--check", str(tmp_path), "--ignore", "BSL012"],
+            ["onec-hbk-bsl", "--check", str(tmp_path), "--ignore", "BSL012"],
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -188,12 +188,12 @@ class TestMainCheck:
 
 class TestMainListRules:
     def test_list_rules_does_not_exit(self) -> None:
-        with patch("sys.argv", ["bsl-analyzer", "--list-rules"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--list-rules"]):
             # Should return normally (no sys.exit called)
             main()
 
     def test_list_rules_with_tag_filter(self) -> None:
-        with patch("sys.argv", ["bsl-analyzer", "--list-rules", "--tag", "security"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--list-rules", "--tag", "security"]):
             # Should return normally and show only security rules
             main()
 
@@ -205,7 +205,7 @@ class TestMainListRules:
 
 class TestMainVersion:
     def test_version_flag(self) -> None:
-        with patch("sys.argv", ["bsl-analyzer", "--version"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--version"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
         assert exc_info.value.code == 0
@@ -218,15 +218,15 @@ class TestMainVersion:
 
 class TestMainInit:
     def test_init_creates_config_file(self, tmp_path: Path) -> None:
-        with patch("sys.argv", ["bsl-analyzer", "--init"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--init"]):
             with patch("os.getcwd", return_value=str(tmp_path)):
                 main()
-        assert (tmp_path / "bsl-analyzer.toml").exists()
+        assert (tmp_path / "onec-hbk-bsl.toml").exists()
 
     def test_init_does_not_overwrite_existing(self, tmp_path: Path) -> None:
-        existing = tmp_path / "bsl-analyzer.toml"
+        existing = tmp_path / "onec-hbk-bsl.toml"
         existing.write_text("# custom\n")
-        with patch("sys.argv", ["bsl-analyzer", "--init"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--init"]):
             with patch("os.getcwd", return_value=str(tmp_path)):
                 main()
         assert existing.read_text() == "# custom\n"
@@ -241,7 +241,7 @@ class TestMainCompactFormat:
     def test_compact_format_output(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         (tmp_path / "t.bsl").write_text("А = А;\n", encoding="utf-8")
         with patch("sys.argv", [
-            "bsl-analyzer", "--check", str(tmp_path),
+            "onec-hbk-bsl", "--check", str(tmp_path),
             "--format", "compact", "--select", "BSL009",
         ]):
             with pytest.raises(SystemExit):
@@ -260,7 +260,7 @@ class TestMainFixFlag:
         p = tmp_path / "t.bsl"
         p.write_text("А = А;\n", encoding="utf-8")
         with patch("sys.argv", [
-            "bsl-analyzer", "--check", str(tmp_path),
+            "onec-hbk-bsl", "--check", str(tmp_path),
             "--select", "BSL009", "--fix",
         ]):
             with pytest.raises(SystemExit) as exc_info:
@@ -277,8 +277,8 @@ class TestMainFixFlag:
 class TestMainDiffFlag:
     def test_diff_with_no_changes_exits_0(self, tmp_path: Path) -> None:
         """--diff with no changed BSL files should exit 0 cleanly."""
-        with patch("sys.argv", ["bsl-analyzer", "--check", str(tmp_path), "--diff"]):
-            with patch("bsl_analyzer.cli.git_utils.git_changed_files", return_value=[]):
+        with patch("sys.argv", ["onec-hbk-bsl", "--check", str(tmp_path), "--diff"]):
+            with patch("onec_hbk_bsl.cli.git_utils.git_changed_files", return_value=[]):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
         assert exc_info.value.code == 0

@@ -7,17 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.7] - 2026-03-21
 
+### Changed
+- Имя файла индекса по умолчанию: **`onec-hbk-bsl_index.sqlite`** (в `.git/` и в `~/.cache/onec-hbk-bsl/…`) вместо `bsl_index.sqlite`; существующий `bsl_index.sqlite` в том же каталоге по-прежнему используется, чтобы не пересоздавать индекс.
+- Расширение VS Code: для `[bsl]` по умолчанию включён **`editor.formatOnType`**, чтобы при нажатии Enter LSP выставлял только отступ новой строки (без форматирования всего модуля).
+- Makefile: цели **`sync-extension-bin`**, **`extension-bin`**, **`vsix`** — копирование свежего `dist/onec-hbk-bsl*` в `vscode-extension/bin/` и сборка VSIX одной командой, чтобы не попадал устаревший бинарник в пакет.
+
+### Fixed
+- Расширение VS Code: команда **Reindex Workspace** при откате на CLI больше не вызывает голый `onec-hbk-bsl` из `PATH` — подставляется тот же полный путь к бинарнику, что и для LSP; если LSP не запущен, индексация через терминал всё равно возможна при известном бинарнике.
+- LSP (stdio): исправлена длина заголовка `Content-Length` для JSON-RPC с не-ASCII (кириллица в hover/символах и т.д.): pygls считал `len(str)` вместо длины UTF-8 в байтах, из‑за чего VS Code терял синхронизацию потока (`Header must provide a Content-Length property`).
+- BSL035: повторы строковых литералов учитываются **в пределах одной процедуры/функции** (и отдельно на уровне модуля), а не по всему файлу — убраны ложные срабатывания на одинаковых ключах `Вставить("…")` в разных методах.
+
 ### Added
 - Документация аудита: `docs/SECURITY_AUDIT.md`, `docs/THIRD_PARTY_NOTICES.md`, `docs/DATA_SOURCES.md`; ссылки из корневого `README.md`.
 - `.gitleaks.toml` и workflow **Security** (Gitleaks в CI).
 
 ### Changed
+- **Ребренд продукта:** PyPI-пакет и CLI — `onec-hbk-bsl`, Python-модуль — `onec_hbk_bsl`, кеш — `~/.cache/onec-hbk-bsl/`, VS Code — id `mussolene.1c-hbk-bsl`, настройки/команды — `onecHbkBsl.*`; конфиг-проект: `onec-hbk-bsl.toml` / `[tool."onec-hbk-bsl"]` в `pyproject.toml`.
 - Расширение VS Code: тег GitHub-релиза для fallback-скачивания бинарника берётся как `v` + `version` из `package.json` (согласовано с публикуемой версией расширения).
 
 ## [0.6.6] - 2026-03-20
 
 ### Changed
-- Расширение VS Code: поиск бинарника **не** выполняется по системному `PATH` — используйте явный `bslAnalyzer.serverPath`, бинарник из VSIX (`bin/`) или скачанный в хранилище расширения.
+- Расширение VS Code: поиск бинарника **не** выполняется по системному `PATH` — используйте явный `onecHbkBsl.serverPath`, бинарник из VSIX (`bin/`) или скачанный в хранилище расширения.
 
 ## [0.6.5] - 2026-03-20
 
@@ -96,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Commands: Reindex Workspace, Reindex File, Show Status
 - MCP server with tools: `bsl_find_symbol`, `bsl_callers`, `bsl_callees`,
   `bsl_diagnostics`, `bsl_definition`, `bsl_file_symbols`, `bsl_status`
-- CLI linter: `bsl-analyzer --check` with SARIF / SonarQube / JSON output
+- CLI linter: `onec-hbk-bsl --check` with SARIF / SonarQube / JSON output
 - Incremental SQLite index (FTS5), ~600 files/sec
 - 30+ diagnostic rules (BSL001–BSL055)
 - Nuitka build system for standalone native binary (~40 MB)

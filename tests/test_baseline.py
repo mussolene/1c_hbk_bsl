@@ -7,8 +7,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from bsl_analyzer.analysis.diagnostics import Diagnostic, Severity
-from bsl_analyzer.cli.baseline import filter_baseline, load_baseline, save_baseline
+from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
+from onec_hbk_bsl.cli.baseline import filter_baseline, load_baseline, save_baseline
 
 # ---------------------------------------------------------------------------
 # Helpers

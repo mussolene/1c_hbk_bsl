@@ -11,7 +11,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from bsl_analyzer.analysis.diagnostics import Diagnostic, DiagnosticEngine
+from onec_hbk_bsl.analysis.diagnostics import Diagnostic, DiagnosticEngine
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -594,13 +594,13 @@ class TestRuleSelection:
 
 class TestRuleMetadata:
     def test_all_rules_have_metadata(self) -> None:
-        from bsl_analyzer.analysis.diagnostics import RULE_METADATA
+        from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
 
         expected_codes = {f"BSL{i:03d}" for i in range(1, 18)}
         assert expected_codes.issubset(set(RULE_METADATA.keys()))
 
     def test_metadata_has_required_fields(self) -> None:
-        from bsl_analyzer.analysis.diagnostics import RULE_METADATA
+        from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
 
         required = {"name", "description", "severity", "sonar_type", "sonar_severity"}
         for code, meta in RULE_METADATA.items():
@@ -608,7 +608,7 @@ class TestRuleMetadata:
             assert not missing, f"{code} is missing fields: {missing}"
 
     def test_all_bsl041_rules_have_metadata(self) -> None:
-        from bsl_analyzer.analysis.diagnostics import RULE_METADATA
+        from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
 
         expected_codes = {f"BSL{i:03d}" for i in range(1, 42)}
         assert expected_codes.issubset(set(RULE_METADATA.keys()))
@@ -1131,6 +1131,30 @@ class TestBsl035DuplicateStringLiteral:
                 ВызватьИсключение "ОченьДлиннаяСтрока";
                 ВызватьИсключение "ОченьДлиннаяСтрока";
             КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, min_duplicate_uses=3)
+        assert "BSL035" not in _codes(diags)
+
+    def test_same_literal_in_different_procedures_no_warning(self, tmp_path: Path) -> None:
+        """Repeated structure keys like Вставить("Ключ") across methods are not duplicates."""
+        content = """\
+            Функция Один() Экспорт
+                Р = Новый Структура;
+                Р.Вставить("ОченьДлиннаяСтрока", 1);
+                Возврат Р;
+            КонецФункции
+
+            Функция Два() Экспорт
+                Р = Новый Структура;
+                Р.Вставить("ОченьДлиннаяСтрока", 2);
+                Возврат Р;
+            КонецФункции
+
+            Функция Три() Экспорт
+                Р = Новый Структура;
+                Р.Вставить("ОченьДлиннаяСтрока", 3);
+                Возврат Р;
+            КонецФункции
         """
         diags = _check(content, tmp_path, min_duplicate_uses=3)
         assert "BSL035" not in _codes(diags)
@@ -2510,7 +2534,7 @@ class TestBsl082MissingNewlineAtEof:
     def test_missing_newline_detected(self, tmp_path: Path) -> None:
         p = tmp_path / "t.bsl"
         p.write_bytes("А = 1;".encode())  # no trailing newline
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL082"}).check_file(str(p))
         assert any(d.code == "BSL082" for d in diags)
 
@@ -3362,7 +3386,7 @@ class TestBsl121TabIndentation:
         # Write directly — textwrap.dedent strips common leading whitespace
         p = tmp_path / "test.bsl"
         p.write_bytes("Процедура Тест()\n\tА = 1;\nКонецПроцедуры\n".encode())
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL121"}).check_file(str(p))
         assert "BSL121" in _codes(diags)
 
@@ -3567,7 +3591,7 @@ class TestBsl130LongCommentLine:
         long_comment = "// " + "x" * 120 + "\n"
         p = tmp_path / "test.bsl"
         p.write_text(long_comment, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL130"}).check_file(str(p))
         assert "BSL130" in [d.code for d in diags]
 
@@ -3575,7 +3599,7 @@ class TestBsl130LongCommentLine:
         content = "// короткий комментарий\n"
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL130"}).check_file(str(p))
         assert "BSL130" not in [d.code for d in diags]
 
@@ -3590,7 +3614,7 @@ class TestBsl131EmptyRegion:
         content = "#Область ПустаяОбласть\n#КонецОбласти\n"
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert "BSL131" in [d.code for d in diags]
 
@@ -3598,7 +3622,7 @@ class TestBsl131EmptyRegion:
         content = "#Область СОдержимым\nА = 1;\n#КонецОбласти\n"
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert "BSL131" not in [d.code for d in diags]
 
@@ -3618,7 +3642,7 @@ class TestBsl132RepeatedStringLiteral:
         )
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL132"}).check_file(str(p))
         assert "BSL132" in [d.code for d in diags]
 
@@ -3630,7 +3654,7 @@ class TestBsl132RepeatedStringLiteral:
         )
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL132"}).check_file(str(p))
         assert "BSL132" not in [d.code for d in diags]
 
@@ -3675,7 +3699,7 @@ class TestBsl134CyclomaticComplexity:
         content = f"Функция Тест()\n{ifs}\n    Возврат 0;\nКонецФункции\n"
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL134"}).check_file(str(p))
         assert "BSL134" in [d.code for d in diags]
 
@@ -3733,7 +3757,7 @@ class TestBsl136MissingSpaceBeforeComment:
         content = "А = 1;// комментарий\n"
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL136"}).check_file(str(p))
         assert "BSL136" in [d.code for d in diags]
 
@@ -3741,7 +3765,7 @@ class TestBsl136MissingSpaceBeforeComment:
         content = "А = 1; // комментарий\n"
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
-        from bsl_analyzer.analysis.diagnostics import DiagnosticEngine
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
         diags = DiagnosticEngine(select={"BSL136"}).check_file(str(p))
         assert "BSL136" not in [d.code for d in diags]
 
@@ -4044,7 +4068,7 @@ class TestBsl147UseOfUICall:
 
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
-        from bsl_analyzer.analysis.diagnostics import RULE_METADATA
+        from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
         expected = {f"BSL{i:03d}" for i in range(1, 148)}
         missing = expected - set(RULE_METADATA.keys())
         assert not missing, f"Missing RULE_METADATA entries: {missing}"

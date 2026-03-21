@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from bsl_analyzer.analysis.diagnostics import Diagnostic, Severity
-from bsl_analyzer.cli.check import (
+from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
+from onec_hbk_bsl.cli.check import (
     BSL_EXTENSIONS,
     _collect_files,
     _print_json,
@@ -21,7 +21,7 @@ from bsl_analyzer.cli.check import (
     check,
     list_rules,
 )
-from bsl_analyzer.cli.config import BslConfig
+from onec_hbk_bsl.cli.config import BslConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -170,7 +170,7 @@ class TestPrintSonarqube:
         assert "issues" in data
         assert len(data["issues"]) == 1
         issue = data["issues"][0]
-        assert issue["engineId"] == "bsl-analyzer"
+        assert issue["engineId"] == "onec-hbk-bsl"
         assert issue["ruleId"] == "BSL009"
         assert "primaryLocation" in issue
 
