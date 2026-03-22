@@ -60,12 +60,16 @@ function readExtensionReleaseTag(extensionPath: string): string {
   return "v0.0.0";
 }
 
-/** Map from Node platform+arch → asset filename in GitHub Releases. */
+/**
+ * Map from Node platform+arch → asset filename in GitHub Releases.
+ * Windows ARM64 uses the x64 binary: Windows 10/11 on ARM runs x64 .exe via emulation.
+ */
 const PLATFORM_ASSETS: Record<string, string> = {
   "darwin-arm64": "onec-hbk-bsl-darwin-arm64",
   "darwin-x64": "onec-hbk-bsl-darwin-x64",
   "linux-x64": "onec-hbk-bsl-linux-x64",
   "win32-x64": "onec-hbk-bsl-win32-x64.exe",
+  "win32-arm64": "onec-hbk-bsl-win32-x64.exe",
 };
 
 // ---------------------------------------------------------------------------
@@ -231,6 +235,14 @@ async function resolveBinaryPath(ctx: vscode.ExtensionContext): Promise<string |
 }
 
 function isExecutable(filePath: string): boolean {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  // Windows has no Unix execute bit; X_OK is unreliable for .exe (often fails and blocks LSP).
+  if (process.platform === "win32") {
+    const lower = filePath.toLowerCase();
+    return lower.endsWith(".exe") || lower.endsWith(".cmd") || lower.endsWith(".bat");
+  }
   try {
     fs.accessSync(filePath, fs.constants.X_OK);
     return true;

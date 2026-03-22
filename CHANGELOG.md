@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
 - Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники собираются на **Python 3.12**.
 
+## [0.6.9] - 2026-03-22
+
+### Fixed
+
+- **LSP:** преобразование `file://` → локальный путь на Windows через `urllib.request.url2pathname` (корректные пути вида `C:\…` вместо `/C:/…`), чтобы корень воркспейса, `cwd` для `git` и индексатор работали; обратное преобразование путь → URI через `Path.resolve().as_uri()`.
+- **Расширение VS Code:** на Windows проверка исполняемости бинарника без `fs.constants.X_OK` (ненадёжно для `.exe`); платформа `win32-arm64` использует тот же релизный артефакт `onec-hbk-bsl-win32-x64.exe` (x64 на ARM Windows).
+
 ## [0.6.8] - 2026-03-22
 
 ### Changed

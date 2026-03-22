@@ -29,6 +29,7 @@ import os
 import re as _re
 import threading
 import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -198,15 +199,24 @@ _KIND_MAP = {
 
 
 def _uri_to_path(uri: str) -> str:
-    """Convert a file:// URI to an absolute local path (cross-platform)."""
-    if uri.startswith("file://"):
-        return urllib.parse.unquote(urllib.parse.urlparse(uri).path)
-    return uri
+    """Convert a file:// URI to an absolute local path (cross-platform).
+
+    On Windows, ``urlparse(...).path`` for ``file:///C:/project`` is ``/C:/project``;
+    ``urllib.request.url2pathname`` maps that to ``C:\\project`` so ``git`` and
+    filesystem walks see a valid cwd (see indexing / incremental indexer).
+    """
+    if not uri.startswith("file://"):
+        return uri
+    parsed = urllib.parse.urlparse(uri)
+    if parsed.scheme != "file":
+        return uri
+    raw = urllib.parse.unquote(parsed.path)
+    return urllib.request.url2pathname(raw)
 
 
 def _path_to_uri(path: str) -> str:
-    """Convert an absolute path to a file:// URI."""
-    return f"file://{path}"
+    """Convert an absolute path to a correct file:// URI (drive letters on Windows)."""
+    return Path(path).resolve().as_uri()
 
 
 def _internal_rule_code_from_lsp_diagnostic(diag: LspDiagnostic) -> str:

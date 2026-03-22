@@ -23,15 +23,20 @@ class TestUriHelpers:
         from onec_hbk_bsl.lsp.server import _uri_to_path
         assert _uri_to_path("/absolute/path.bsl") == "/absolute/path.bsl"
 
-    def test_path_to_uri(self) -> None:
+    def test_path_to_uri(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.lsp.server import _path_to_uri
-        result = _path_to_uri("/home/user/module.bsl")
-        assert result == "file:///home/user/module.bsl"
+        f = tmp_path / "module.bsl"
+        f.write_text("//", encoding="utf-8")
+        result = _path_to_uri(str(f))
+        assert result.startswith("file:///")
+        assert "module.bsl" in result
 
-    def test_roundtrip(self) -> None:
+    def test_roundtrip(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.lsp.server import _path_to_uri, _uri_to_path
-        path = "/some/project/module.bsl"
-        assert _uri_to_path(_path_to_uri(path)) == path
+        f = tmp_path / "module.bsl"
+        f.write_text("//", encoding="utf-8")
+        path = str(f.resolve())
+        assert Path(_uri_to_path(_path_to_uri(path))).resolve() == Path(path).resolve()
 
 
 # ---------------------------------------------------------------------------
