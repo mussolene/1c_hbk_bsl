@@ -12,6 +12,7 @@ import os
 import subprocess
 import threading
 from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any
@@ -242,6 +243,13 @@ class IncrementalIndexer:
         errors = 0
         _ = workspace  # reserved for future workspace-scoped policies
 
+        bulk_enabled = os.environ.get("BSL_INDEX_SQLITE_BULK", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        bulk_ctx = self.index.bulk_write if bulk_enabled and len(files) > 0 else nullcontext
+
         with Progress(
             TextColumn("[bold blue]{task.description}"),
             BarColumn(),
@@ -250,81 +258,82 @@ class IncrementalIndexer:
             transient=True,
         ) as progress:
             task = progress.add_task("Indexing BSL files", total=len(files))
-            existing: list[str] = []
-            for path in files:
-                if not Path(path).exists():
-                    # File was deleted — remove from index
-                    self.index.remove_file(path)
-                    skipped += 1
-                    if self._on_progress:
-                        self._on_progress(indexed + skipped + errors, len(files), path)
-                    progress.advance(task)
-                    continue
-                existing.append(path)
+            with bulk_ctx():
+                existing: list[str] = []
+                for path in files:
+                    if not Path(path).exists():
+                        # File was deleted — remove from index
+                        self.index.remove_file(path)
+                        skipped += 1
+                        if self._on_progress:
+                            self._on_progress(indexed + skipped + errors, len(files), path)
+                        progress.advance(task)
+                        continue
+                    existing.append(path)
 
-            if self._parse_workers <= 1 or len(existing) <= 1:
-                # Sequential mode.
-                for path in existing:
-                    progress.update(task, description=f"[bold blue]{Path(path).name}")
-                    parsed = self._parse_file(path)
-                    if "error" in parsed:
-                        errors += 1
-                    else:
-                        self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
-                        indexed += 1
-                    if self._on_progress:
-                        self._on_progress(indexed + skipped + errors, len(files), path)
-                    progress.advance(task)
-            else:
-                # Parallel parse with daemon workers to avoid stop-timeout regressions
-                # during LSP process shutdown.
-                work_q: Queue[str] = Queue()
-                worker_count = min(self._parse_workers, len(existing))
-                # Bound backpressure: main thread serializes SQLite writes; without a
-                # maxsize, producers could queue tens of thousands of parsed trees in RAM.
-                out_max = max(8, worker_count * 2)
-                out_q: Queue[tuple[str, dict[str, Any]]] = Queue(maxsize=out_max)
-                for path in existing:
-                    work_q.put(path)
+                if self._parse_workers <= 1 or len(existing) <= 1:
+                    # Sequential mode.
+                    for path in existing:
+                        progress.update(task, description=f"[bold blue]{Path(path).name}")
+                        parsed = self._parse_file(path)
+                        if "error" in parsed:
+                            errors += 1
+                        else:
+                            self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
+                            indexed += 1
+                        if self._on_progress:
+                            self._on_progress(indexed + skipped + errors, len(files), path)
+                        progress.advance(task)
+                else:
+                    # Parallel parse with daemon workers to avoid stop-timeout regressions
+                    # during LSP process shutdown.
+                    work_q: Queue[str] = Queue()
+                    worker_count = min(self._parse_workers, len(existing))
+                    # Bound backpressure: main thread serializes SQLite writes; without a
+                    # maxsize, producers could queue tens of thousands of parsed trees in RAM.
+                    out_max = max(8, worker_count * 2)
+                    out_q: Queue[tuple[str, dict[str, Any]]] = Queue(maxsize=out_max)
+                    for path in existing:
+                        work_q.put(path)
 
-                def _worker() -> None:
-                    while True:
-                        try:
-                            p = work_q.get_nowait()
-                        except Empty:
-                            return
-                        try:
-                            out_q.put((p, self._parse_file(p)))
-                        finally:
-                            work_q.task_done()
+                    def _worker() -> None:
+                        while True:
+                            try:
+                                p = work_q.get_nowait()
+                            except Empty:
+                                return
+                            try:
+                                out_q.put((p, self._parse_file(p)))
+                            finally:
+                                work_q.task_done()
 
-                workers: list[threading.Thread] = []
-                for i in range(worker_count):
-                    t = threading.Thread(
-                        target=_worker,
-                        daemon=True,
-                        name=f"bsl-index-parse-{i + 1}",
-                    )
-                    t.start()
-                    workers.append(t)
+                    workers: list[threading.Thread] = []
+                    for i in range(worker_count):
+                        t = threading.Thread(
+                            target=_worker,
+                            daemon=True,
+                            name=f"bsl-index-parse-{i + 1}",
+                        )
+                        t.start()
+                        workers.append(t)
 
-                processed = 0
-                while processed < len(existing):
-                    path, parsed = out_q.get()
-                    progress.update(task, description=f"[bold blue]{Path(path).name}")
-                    if "error" in parsed:
-                        errors += 1
-                    else:
-                        self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
-                        indexed += 1
+                    processed = 0
+                    while processed < len(existing):
+                        path, parsed = out_q.get()
+                        progress.update(task, description=f"[bold blue]{Path(path).name}")
+                        if "error" in parsed:
+                            errors += 1
+                        else:
+                            self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
+                            indexed += 1
 
-                    if self._on_progress:
-                        self._on_progress(indexed + skipped + errors, len(files), path)
-                    progress.advance(task)
-                    processed += 1
+                        if self._on_progress:
+                            self._on_progress(indexed + skipped + errors, len(files), path)
+                        progress.advance(task)
+                        processed += 1
 
-                for t in workers:
-                    t.join(timeout=0.1)
+                    for t in workers:
+                        t.join(timeout=0.1)
 
         logger.info(
             "Indexing complete: %d indexed, %d skipped, %d errors",
@@ -349,12 +358,21 @@ class IncrementalIndexer:
 
     @staticmethod
     def _find_all_bsl_files(workspace: str) -> list[str]:
-        """Walk the workspace and return all .bsl/.os files."""
+        """Walk the workspace and return all .bsl/.os files.
+
+        Uses a single ``os.walk`` pass instead of two ``Path.rglob`` traversals plus a
+        full sort of the combined list — large workspaces (10k+ files) spend noticeable
+        time just enumerating paths.
+        """
+        root = os.path.abspath(workspace)
         result: list[str] = []
-        workspace_path = Path(workspace)
-        for ext in BSL_EXTENSIONS:
-            result.extend(str(p) for p in workspace_path.rglob(f"*{ext}"))
-        return sorted(result)
+        for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+            for name in filenames:
+                suf = Path(name).suffix.lower()
+                if suf in BSL_EXTENSIONS:
+                    result.append(os.path.join(dirpath, name))
+        result.sort()
+        return result
 
     @staticmethod
     def _get_current_commit(workspace: str) -> str | None:

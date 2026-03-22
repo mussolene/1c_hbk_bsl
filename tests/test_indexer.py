@@ -83,6 +83,20 @@ SAMPLE_CALLS = [
 # ---------------------------------------------------------------------------
 
 
+class TestBulkWrite:
+    """bulk_write drops FTS triggers during load and rebuilds — fuzzy search must still work."""
+
+    def test_bulk_write_then_fuzzy_find(self, tmp_path: Path) -> None:
+        db = tmp_path / "bulk.sqlite"
+        idx = SymbolIndex(str(db))
+        with idx.bulk_write():
+            idx.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
+        results = idx.find_symbol("Обраб", fuzzy=True, limit=10)
+        assert len(results) >= 1
+        names = {r["name"] for r in results}
+        assert "ОбработатьЗаказ" in names
+
+
 class TestUpsertAndFind:
     def test_upsert_and_find_exact(self, symbol_index: SymbolIndex) -> None:
         symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)

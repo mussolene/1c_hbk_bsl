@@ -17,6 +17,7 @@ import os
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from typing import Any
 
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
@@ -122,6 +123,24 @@ CREATE INDEX IF NOT EXISTS idx_meta_members_object ON meta_members(object_id);
 CREATE INDEX IF NOT EXISTS idx_meta_members_name ON meta_members(name_lower);
 """
 
+# Recreated after bulk index (must match SCHEMA_SQL trigger bodies).
+FTS5_TRIGGER_SQL = """
+CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+    INSERT INTO symbols_fts(rowid, name, file_path, signature)
+    VALUES (new.id, new.name, new.file_path, new.signature);
+END;
+CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, file_path, signature)
+    VALUES ('delete', old.id, old.name, old.file_path, old.signature);
+END;
+CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, file_path, signature)
+    VALUES ('delete', old.id, old.name, old.file_path, old.signature);
+    INSERT INTO symbols_fts(rowid, name, file_path, signature)
+    VALUES (new.id, new.name, new.file_path, new.signature);
+END;
+"""
+
 
 class SymbolIndex:
     """
@@ -136,6 +155,7 @@ class SymbolIndex:
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path if db_path is not None else resolve_index_db_path(os.getcwd())
+        self._bulk_write_active = False
         # In-memory DBs are connection-scoped; keep per-instance connection to
         # avoid test isolation issues with the thread-local pool.
         self._mem_conn: sqlite3.Connection | None = None
@@ -300,6 +320,114 @@ class SymbolIndex:
     # Write operations
     # ------------------------------------------------------------------
 
+    @contextmanager
+    def bulk_write(self):
+        """
+        Bulk indexing: drop FTS sync triggers, one transaction, fast PRAGMA, then FTS rebuild.
+
+        Use around many ``upsert_file`` / ``remove_file`` calls (e.g. full workspace index).
+        Skips per-row FTS5 trigger work during inserts; rebuilds ``symbols_fts`` once at the end.
+        """
+        conn = self._conn()
+        if self._bulk_write_active:
+            raise RuntimeError("nested bulk_write is not supported")
+        self._bulk_write_active = True
+        conn.execute("DROP TRIGGER IF EXISTS symbols_ai")
+        conn.execute("DROP TRIGGER IF EXISTS symbols_ad")
+        conn.execute("DROP TRIGGER IF EXISTS symbols_au")
+        try:
+            conn.execute("PRAGMA synchronous=OFF")
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            conn.execute("COMMIT")
+            conn.execute("INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')")
+            conn.executescript(FTS5_TRIGGER_SQL)
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild')")
+            except sqlite3.OperationalError:
+                pass
+            conn.executescript(FTS5_TRIGGER_SQL)
+            raise
+        finally:
+            try:
+                conn.execute("PRAGMA synchronous=NORMAL")
+            except sqlite3.OperationalError:
+                pass
+            self._bulk_write_active = False
+
+    def _upsert_file_impl(
+        self,
+        conn: sqlite3.Connection,
+        file_path: str,
+        symbols: list[dict],
+        calls: list[dict],
+        now: float,
+    ) -> None:
+        conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
+        conn.execute("DELETE FROM calls WHERE caller_file = ?", (file_path,))
+
+        conn.executemany(
+            """
+            INSERT INTO symbols
+                (name, name_lower, file_path, line, character, end_line, end_character,
+                 kind, is_export, container, signature, doc_comment, indexed_at)
+            VALUES
+                (:name, :name_lower, :file_path, :line, :character, :end_line, :end_character,
+                 :kind, :is_export, :container, :signature, :doc_comment, :indexed_at)
+            """,
+            [
+                {
+                    "name": s.get("name", ""),
+                    "name_lower": s.get("name", "").casefold(),
+                    "file_path": file_path,
+                    "line": s.get("line", 0),
+                    "character": s.get("character", 0),
+                    "end_line": s.get("end_line", 0),
+                    "end_character": s.get("end_character", 0),
+                    "kind": s.get("kind", "unknown"),
+                    "is_export": int(bool(s.get("is_export", False))),
+                    "container": s.get("container"),
+                    "signature": s.get("signature"),
+                    "doc_comment": s.get("doc_comment"),
+                    "indexed_at": now,
+                }
+                for s in symbols
+            ],
+        )
+
+        conn.executemany(
+            """
+            INSERT INTO calls (
+                caller_file, caller_line, caller_character, caller_name,
+                callee_name, callee_name_lower, callee_args_count
+            )
+            VALUES (
+                :caller_file, :caller_line, :caller_character, :caller_name,
+                :callee_name, :callee_name_lower, :callee_args_count
+            )
+            """,
+            [
+                {
+                    "caller_file": file_path,
+                    "caller_line": c.get("caller_line", 0),
+                    "caller_character": c.get("caller_character", 0),
+                    "caller_name": c.get("caller_name"),
+                    "callee_name": c.get("callee_name", ""),
+                    "callee_name_lower": c.get("callee_name", "").casefold(),
+                    "callee_args_count": c.get("callee_args_count", 0),
+                }
+                for c in calls
+            ],
+        )
+
     def upsert_file(
         self,
         file_path: str,
@@ -316,74 +444,22 @@ class SymbolIndex:
         """
         conn = self._conn()
         now = time.time()
-
-        with conn:
-            # Delete old data for this file
-            conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
-            conn.execute("DELETE FROM calls WHERE caller_file = ?", (file_path,))
-
-            # Insert new symbols
-            conn.executemany(
-                """
-                INSERT INTO symbols
-                    (name, name_lower, file_path, line, character, end_line, end_character,
-                     kind, is_export, container, signature, doc_comment, indexed_at)
-                VALUES
-                    (:name, :name_lower, :file_path, :line, :character, :end_line, :end_character,
-                     :kind, :is_export, :container, :signature, :doc_comment, :indexed_at)
-                """,
-                [
-                    {
-                        "name": s.get("name", ""),
-                        "name_lower": s.get("name", "").casefold(),
-                        "file_path": file_path,
-                        "line": s.get("line", 0),
-                        "character": s.get("character", 0),
-                        "end_line": s.get("end_line", 0),
-                        "end_character": s.get("end_character", 0),
-                        "kind": s.get("kind", "unknown"),
-                        "is_export": int(bool(s.get("is_export", False))),
-                        "container": s.get("container"),
-                        "signature": s.get("signature"),
-                        "doc_comment": s.get("doc_comment"),
-                        "indexed_at": now,
-                    }
-                    for s in symbols
-                ],
-            )
-
-            # Insert new calls
-            conn.executemany(
-                """
-                INSERT INTO calls (
-                    caller_file, caller_line, caller_character, caller_name,
-                    callee_name, callee_name_lower, callee_args_count
-                )
-                VALUES (
-                    :caller_file, :caller_line, :caller_character, :caller_name,
-                    :callee_name, :callee_name_lower, :callee_args_count
-                )
-                """,
-                [
-                    {
-                        "caller_file": file_path,
-                        "caller_line": c.get("caller_line", 0),
-                        "caller_character": c.get("caller_character", 0),
-                        "caller_name": c.get("caller_name"),
-                        "callee_name": c.get("callee_name", ""),
-                        "callee_name_lower": c.get("callee_name", "").casefold(),
-                        "callee_args_count": c.get("callee_args_count", 0),
-                    }
-                    for c in calls
-                ],
-            )
+        if self._bulk_write_active:
+            self._upsert_file_impl(conn, file_path, symbols, calls, now)
+        else:
+            with conn:
+                self._upsert_file_impl(conn, file_path, symbols, calls, now)
 
     def remove_file(self, file_path: str) -> None:
         """Remove all index data for a file (called when file is deleted)."""
         conn = self._conn()
-        with conn:
+        if self._bulk_write_active:
             conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
             conn.execute("DELETE FROM calls WHERE caller_file = ?", (file_path,))
+        else:
+            with conn:
+                conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
+                conn.execute("DELETE FROM calls WHERE caller_file = ?", (file_path,))
 
     def save_commit(self, commit_hash: str, workspace_root: str = "") -> None:
         """Persist the last successfully indexed commit hash."""
