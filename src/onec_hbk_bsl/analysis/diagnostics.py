@@ -8,7 +8,7 @@ Built-in rules
 BSL001  ParseError              — Syntax error detected by tree-sitter
 BSL002  MethodSize              — Procedure/function longer than N lines (default 200)
 BSL003  NonExportMethodsInApiRegion — Method in API region without Export keyword
-BSL004  EmptyCodeBlock          — Empty exception handler
+BSL004  EmptyCodeBlock          — Empty handler / empty «Тогда» branch
 BSL005  UsingHardcodeNetworkAddress — Hardcoded IP address or URL (BSLLS name)
 BSL006  UsingHardcodePath           — Hardcoded file system path (BSLLS name)
 BSL007  UnusedLocalVariable         — Local variable declared but never referenced
@@ -66,6 +66,10 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
+from onec_hbk_bsl.analysis.bsl_string_regions import (
+    diagnostic_overlaps_string_literal,
+    double_quoted_string_ranges,
+)
 from onec_hbk_bsl.analysis.bsl_string_split import (
     split_commas_outside_double_quotes,
     strip_leading_val_keywords,
@@ -80,10 +84,49 @@ from onec_hbk_bsl.analysis.diagnostics_cst import (
     diagnostics_bsl091_from_tree,
     diagnostics_bsl092_from_tree,
     loop_body_line_indices_0,
+    ts_elseif_then_branch_empty,
+    ts_if_main_then_branch_empty,
+)
+from onec_hbk_bsl.analysis.diagnostics_cst import (
     ts_tree_ok_for_rules as _ts_tree_ok_for_rules,
 )
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+# When a diagnostic span overlaps a "..." literal, drop the warning unless the rule
+# is meant to inspect string contents (secrets, duplicates, concat, magic numbers, …).
+_CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
+    {
+        # Line-length spans the whole line; overlap with trailing string literals must not drop the rule.
+        "BSL014",
+        "BSL005",
+        "BSL006",
+        "BSL012",
+        "BSL018",
+        "BSL022",
+        "BSL029",
+        "BSL035",
+        "BSL038",
+        "BSL045",
+        "BSL049",
+        "BSL051",
+        "BSL053",
+        "BSL058",
+        "BSL071",
+        "BSL072",
+        "BSL077",
+        "BSL090",
+        "BSL100",
+        "BSL106",
+        "BSL110",
+        "BSL119",
+        "BSL132",
+        "BSL142",
+        "BSL145",
+        "BSL148",
+        "BSL235",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Public rule registry  (used for --list-rules and SonarQube output)
@@ -116,7 +159,7 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL004": {
         "name": "EmptyCodeBlock",
-        "description": "Empty exception handler — errors are silently swallowed",
+        "description": "Empty code block (exception handler, empty «Тогда» branch, …)",
         "severity": "WARNING",
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
@@ -327,7 +370,7 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL030": {
         "name": "SemicolonPresence",
-        "description": "Procedure/function header line ends with a semicolon (not needed in BSL)",
+        "description": "SemicolonPresence (BSLLS): лишняя «;» в заголовке метода и/или пропущена в конце выражения",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
@@ -1919,7 +1962,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["documentation", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL220": {
         "name": "MultilineStringInQuery",
@@ -2252,7 +2295,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL257": {
         "name": "UnaryPlusInConcatenation",
@@ -2484,7 +2527,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL001": "Синтаксическая ошибка",
     "BSL002": "Метод слишком длинный",
     "BSL003": "Неэкспортный метод в области программного интерфейса",
-    "BSL004": "Пустой блок обработки исключений",
+    "BSL004": "Пустой блок кода (обработчик исключений, ветка «Тогда», …)",
     "BSL005": "Использование жёсткого кодирования сетевых адресов",
     "BSL006": "Использование жёстко заданных путей к файлам",
     "BSL007": "Неиспользуемая локальная переменная",
@@ -3000,6 +3043,12 @@ _RE_VAR_LOCAL = re.compile(
     re.IGNORECASE,
 )
 
+# Module-level ``Перем Имя Экспорт;`` / ``Var Name Export;`` (BSLLS MissingVariablesDescription)
+_RE_VAR_MODULE_EXPORT = re.compile(
+    r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s+(?:Экспорт|Export)\s*;",
+    re.IGNORECASE,
+)
+
 # Return statements (MULTILINE so ^ matches each line in a joined block)
 _RE_RETURN = re.compile(
     r"^\s*(?:Возврат|Return)\b",
@@ -3367,11 +3416,288 @@ _RE_SERVICE_TAG = re.compile(
     re.IGNORECASE,
 )
 
-# Comment without space after //  (but allow //!, ///  doc-comments)
-_RE_NO_SPACE_COMMENT = re.compile(
-    r"//(?![/! ])(?!\s*$)(?!noqa)(?!bsl-disable)",
+# BSLLS SpaceAtStartCommentDiagnostic — GOOD_COMMENT_PATTERN_STRICT (develop branch):
+# either "//[ \\t].*" or "//{2,}[ \\t]*" end-of-line only (///, ////, bare //).
+_BSL024_BSLLS_GOOD_STRICT = re.compile(
+    r"(?:(?://[ \t].*)|(?:/{2,}[ \t]*))$",
     re.IGNORECASE,
 )
+
+
+def _bsl024_matches_bslls_good_strict(line: str, comment_col: int) -> bool:
+    """True if the comment suffix from ``//`` matches BSLLS strict «good» pattern."""
+    if comment_col < 0 or comment_col >= len(line):
+        return False
+    return bool(_BSL024_BSLLS_GOOD_STRICT.match(line[comment_col:]))
+
+
+def _bsl024_is_bslls_annotation_comment(line: str, comment_col: int) -> bool:
+    """BSLLS ``commentsAnnotation`` default: //@, //(c), //© (case-insensitive)."""
+    if comment_col + 2 > len(line):
+        return False
+    rest = line[comment_col + 2 :]
+    s = rest.lstrip()
+    if not s:
+        return False
+    if s.startswith("@"):
+        return True
+    if s.lower().startswith("(c)"):
+        return True
+    if s.startswith("©"):
+        return True
+    return False
+
+
+def _bsl024_skip_line_bslls_alignment(line: str) -> bool:
+    """Extra skips aligned with BSLLS / EDT: ``///``, ``//|``, ``//!``, noqa, bsl-disable."""
+    st = line.lstrip()
+    if st.startswith("///"):
+        return True
+    if st.startswith("//|"):
+        return True
+    if st.startswith("//!"):
+        return True
+    if re.match(r"//\s*noqa\b", st, re.IGNORECASE):
+        return True
+    if re.match(r"//\s*bsl-disable\b", st, re.IGNORECASE):
+        return True
+    return False
+
+
+def _bsl024_is_compiler_directive_comment(line: str) -> bool:
+    """``//&НаКлиенте``-style lines — BSLLS SpaceAtStartComment does not flag these."""
+    st = line.lstrip()
+    if not st.startswith("//"):
+        return False
+    rest = st[2:].lstrip()
+    return rest.startswith("&")
+
+
+def bsl024_should_report_line(line: str) -> bool:
+    """
+    True when ``SpaceAtStartComment`` / BSL024 should flag this line (full-line ``//`` comment).
+
+    Kept in sync with :meth:`DiagnosticEngine._rule_bsl024_space_at_start_comment`
+    and LSP quick-fix for BSL024.
+    """
+    stripped = line.strip()
+    if not stripped.startswith("//"):
+        return False
+    col = line.index("//")
+    if _bsl024_matches_bslls_good_strict(line, col):
+        return False
+    if _bsl024_is_bslls_annotation_comment(line, col):
+        return False
+    if _bsl024_skip_line_bslls_alignment(line):
+        return False
+    if _RE_COMMENTED_CODE.match(line):
+        return False
+    if _bsl024_is_compiler_directive_comment(line):
+        return False
+    return True
+
+
+def path_is_likely_form_module_bsl(path: str) -> bool:
+    """
+    True for EDT-style ``.../Forms/.../Ext/Module.bsl`` or file stems containing
+    ``форма`` / ending with ``form`` (модули форм — ``ЭтаФорма`` допустима).
+    """
+    try:
+        p = Path(path).resolve()
+    except OSError:
+        return False
+    stem = p.stem.lower()
+    if "форма" in stem or stem.endswith("form"):
+        return True
+    parts = [x.lower() for x in p.parts]
+    if p.name.lower() == "module.bsl" and ("forms" in parts or "формы" in parts):
+        return True
+    return False
+
+
+# Параметры стандартного обработчика команды — BSLLS не помечает как неиспользуемые.
+_BSL062_SKIP_STANDARD_COMMAND_PARAMS = frozenset(
+    {
+        "параметркоманды",
+        "параметрывыполнениякоманды",
+        "commandparameter",
+        "commandexecutionparameters",
+    }
+)
+
+
+def _procedure_compiler_execution_context(lines: list[str], proc: _ProcInfo) -> str:
+    """
+    ``&НаКлиенте`` / ``&НаСервере`` / ``&НаКлиентеНаСервере`` непосредственно перед объявлением метода.
+
+    Returns one of: ``client``, ``server``, ``both``, ``none``.
+    """
+    j = proc.start_idx - 1
+    saw_client = False
+    saw_server = False
+    while j >= 0:
+        raw = lines[j]
+        if not raw.strip():
+            j -= 1
+            continue
+        if raw.strip().startswith("//"):
+            j -= 1
+            continue
+        s = raw.strip()
+        if not s.startswith("&"):
+            break
+        u = s.casefold().replace(" ", "")
+        if "наклиентенасервере" in u:
+            return "both"
+        if "наклиенте" in u and "насервере" not in u:
+            saw_client = True
+        elif "насервере" in u and "наклиенте" not in u:
+            saw_server = True
+        j -= 1
+    if saw_client and saw_server:
+        return "both"
+    if saw_client:
+        return "client"
+    if saw_server:
+        return "server"
+    return "none"
+
+
+def _is_typical_client_command_handler(proc: _ProcInfo, lines: list[str]) -> bool:
+    """
+    Типовой обработчик команды: ``Процедура ОбработкаКоманды`` в клиентском (или смешанном)
+    контексте компилятора. Серверный контекст исключаем — это уже не «ввод команды» на клиенте.
+
+    Заменяет эвристику ``.../CommonCommands/.../CommandModule.bsl``: одно и то же имя метода
+    встречается в общих командах и в ``Catalogs/.../Commands/.../CommandModule.bsl``.
+    """
+    if proc.name.strip().casefold() != "обработкакоманды":
+        return False
+    ctx = _procedure_compiler_execution_context(lines, proc)
+    return ctx in ("client", "both", "none")
+
+
+def _is_client_notify_completion_export_handler(proc: _ProcInfo, lines: list[str]) -> bool:
+    """
+    Экспортный клиентский обработчик завершения для «ОписаниеОповещения» (имя *Завершение / *Completion).
+
+    Сигнатура платформенная; второй параметр «Параметры» часто не используется — это не ошибка.
+    Отдельный комментарий к экспорту обычно избыточен (как в BSLLS на типовых CommandModule).
+    """
+    if not proc.is_export:
+        return False
+    ctx = _procedure_compiler_execution_context(lines, proc)
+    if ctx not in ("client", "both", "none"):
+        return False
+    n = proc.name.strip().casefold()
+    return n.endswith("завершение") or n.endswith("completion")
+
+
+def _proc_containing_line(procs: list[_ProcInfo], line_idx: int) -> _ProcInfo | None:
+    """Procedure/function whose body includes 0-based line index *line_idx*."""
+    for p in procs:
+        if p.start_idx <= line_idx <= p.end_idx:
+            return p
+    return None
+
+
+def _comma_missing_space_after_col_in_line(line: str) -> int | None:
+    """
+    0-based column of ``,`` when immediately followed by a token char (BSLLS MissingSpace),
+    only outside ``"..."`` string literals (positions must match *line* for overlap filter).
+    """
+    in_str = False
+    i = 0
+    n = len(line)
+    while i < n - 1:
+        ch = line[i]
+        if ch == '"':
+            in_str = not in_str
+            i += 1
+            continue
+        if in_str:
+            i += 1
+            continue
+        if ch == ",":
+            nxt = line[i + 1]
+            if nxt not in " \t\n\r," and nxt.isalpha():
+                return i
+        i += 1
+    return None
+
+
+def _module_export_var_has_preceding_description(lines: list[str], var_line_idx: int) -> bool:
+    """Previous non-blank line is a non-empty ``//`` or ``///`` comment (BSLLS MissingVariablesDescription)."""
+    j = var_line_idx - 1
+    while j >= 0 and not lines[j].strip():
+        j -= 1
+    if j < 0:
+        return False
+    s = lines[j].strip()
+    if s.startswith("///"):
+        return len(s) > 3
+    if s.startswith("//"):
+        return len(s[2:].strip()) > 0
+    return False
+
+
+# BSLLS: Typo (BSL256) vs LatinAndCyrillicSymbolInWord (BSL208). When every Cyrillic
+# letter in an identifier is a Latin homoglyph, BSLLS reports Typo — not mixed-script.
+_CYR_HOMOGLYPH_TO_LATIN: dict[str, str] = {
+    "а": "a",
+    "А": "A",
+    "е": "e",
+    "Е": "E",
+    "о": "o",
+    "О": "O",
+    "р": "p",
+    "Р": "P",
+    "с": "c",
+    "С": "C",
+    "х": "x",
+    "Х": "X",
+    "м": "m",
+    "М": "M",
+    "т": "t",
+    "Т": "T",
+    "у": "y",
+    "У": "Y",
+    "і": "i",
+    "І": "I",
+    "к": "k",
+    "К": "K",
+    "д": "d",
+    "Д": "D",
+}
+
+
+def _try_homoglyph_latinize_identifier(word: str) -> str | None:
+    """
+    If every Cyrillic character is a known Latin lookalike, return the Latin form.
+
+    If any Cyrillic letter is not in the homoglyph map, return None (intentional
+    mixed-script name → BSL208).
+    """
+    out: list[str] = []
+    for c in word:
+        if c in _CYR_HOMOGLYPH_TO_LATIN:
+            out.append(_CYR_HOMOGLYPH_TO_LATIN[c])
+        elif "\u0400" <= c <= "\u04ff" or c in "ёЁ":
+            return None
+        else:
+            out.append(c)
+    s = "".join(out)
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", s):
+        return None
+    return s
+
+
+def _mixed_script_identifier_is_homoglyph_typo(word: str) -> bool:
+    """True when identifier mixes scripts only via confusable Cyrillic letters (BSLLS Typo)."""
+    if not re.search(r"[a-zA-Z]", word) or not re.search(r"[А-ЯЁа-яё]", word):
+        return False
+    return _try_homoglyph_latinize_identifier(word) is not None
+
 
 # Statements that MUST end with ;  — simplified: lines inside procs that look
 # like assignment, method call, or return, but have no trailing semicolon.
@@ -3600,6 +3926,8 @@ _RE_RETURN_VALUE = re.compile(
 
 # Comment line (BSL065 — export method comment check)
 _RE_COMMENT_LINE = re.compile(r'^\s*//')
+# Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
+_RE_FORM_COMPILER_DIRECTIVE_LINE = re.compile(r"^\s*&\S+")
 
 # Deprecated 1C platform methods (BSL066)
 _DEPRECATED_METHODS = frozenset({
@@ -3794,6 +4122,31 @@ _RE_SLEEP = re.compile(r'\b(?:Приостановить|Sleep)\s*\(', re.IGNORE
 
 # Тогда — Then keyword for EmptyThenBranch (BSL107)
 _RE_THEN = re.compile(r'\b(?:Тогда|Then)\s*$', re.IGNORECASE)
+
+
+def _regex_line_has_empty_then_branch(lines: list[str], then_line_idx: int) -> bool:
+    """True if this line ends a condition with ``Тогда`` and the branch body is empty (regex fallback)."""
+    if then_line_idx < 0 or then_line_idx >= len(lines):
+        return False
+    line = lines[then_line_idx]
+    if not _RE_THEN.search(line):
+        return False
+    if line.strip().startswith("//"):
+        return False
+    n = len(lines)
+    next_idx = then_line_idx + 1
+    while next_idx < n and (
+        not lines[next_idx].strip() or lines[next_idx].strip().startswith("//")
+    ):
+        next_idx += 1
+    if next_idx >= n:
+        return False
+    return bool(
+        _RE_ENDIF.match(lines[next_idx])
+        or _RE_ELSEIF.match(lines[next_idx])
+        or _RE_ELSE.match(lines[next_idx])
+    )
+
 
 # BSL130 — LongCommentLine: comment line longer than 120 chars
 _RE_COMMENT_ONLY_LINE = re.compile(r'^\s*//')
@@ -4148,6 +4501,60 @@ def _find_proc_definition_node(tree: Any, proc: _ProcInfo) -> Any | None:
     return walk(root)
 
 
+def _ts_first_body_statement_line_idx(proc_node: Any) -> int | None:
+    """First 0-based line of a body statement (after ``parameters`` and optional ``Экспорт``)."""
+    seen_params = False
+    for ch in proc_node.children:
+        if ch.type == "parameters":
+            seen_params = True
+            continue
+        if not seen_params:
+            continue
+        if ch.type == "EXPORT_KEYWORD":
+            continue
+        if ch.type in ("ENDPROCEDURE_KEYWORD", "ENDFUNCTION_KEYWORD"):
+            return None
+        return ch.start_point[0]
+    return None
+
+
+def _proc_body_start_line_idx_fallback(lines: list[str], proc: _ProcInfo) -> int:
+    """First line after procedure/function header when CST is unavailable (paren balance)."""
+    i = proc.start_idx
+    depth = 0
+    started = False
+    while i < len(lines) and i <= proc.end_idx:
+        for ch in lines[i]:
+            if ch == "(":
+                depth += 1
+                started = True
+            elif ch == ")":
+                depth -= 1
+        if started and depth == 0:
+            return i + 1
+        i += 1
+    return proc.start_idx + 1
+
+
+def _export_description_anchor_line_idx(lines: list[str], header_idx: int) -> int | None:
+    """
+    Index of the line that must be a ``//`` description for BSL065.
+
+    Skips blank lines and form/compiler ``&...`` lines between comment and header.
+    """
+    j = header_idx - 1
+    while j >= 0:
+        raw = lines[j]
+        if not raw.strip():
+            j -= 1
+            continue
+        if _RE_FORM_COMPILER_DIRECTIVE_LINE.match(raw):
+            j -= 1
+            continue
+        return j
+    return None
+
+
 def _collect_identifier_casefolds_in_proc_body(proc_node: Any) -> set[str]:
     """
     Identifier names in the method body from the CST (excluding the ``parameters`` subtree).
@@ -4310,6 +4717,16 @@ def _find_regions_from_tree(tree: Any) -> list[_RegionInfo]:
     return result
 
 
+def _ts_node_is_under_parameters(node: Any) -> bool:
+    """True if *node* is inside a ``parameters`` subtree (default values, etc.)."""
+    p = getattr(node, "parent", None)
+    while p is not None:
+        if getattr(p, "type", None) == "parameters":
+            return True
+        p = getattr(p, "parent", None)
+    return False
+
+
 def _ts_assignment_is_bare_self_assign(node: Any) -> bool:
     """``identifier = identifier`` only (not ``Obj.Field = Field``)."""
     if getattr(node, "type", None) != "assignment_statement":
@@ -4378,7 +4795,11 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
     diags: list[Diagnostic] = []
 
     def walk(node: Any) -> None:
-        if getattr(node, "type", None) == "assignment_statement" and _ts_assignment_is_bare_self_assign(node):
+        if (
+            getattr(node, "type", None) == "assignment_statement"
+            and not _ts_node_is_under_parameters(node)
+            and _ts_assignment_is_bare_self_assign(node)
+        ):
             start = node.start_point
             end = node.end_point
             left_t = ""
@@ -4406,19 +4827,36 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
 
 
 def _bsl059_collect_if_statement(node: Any, path: str, diags: list[Diagnostic]) -> None:
-    """First condition + each elseif_clause ``expression``."""
-    seen_then = False
-    for c in getattr(node, "children", []) or []:
-        ct = getattr(c, "type", None)
-        if ct == "expression" and not seen_then:
-            _append_bsl059_if_expr(c, path, diags)
-        elif ct == "THEN_KEYWORD":
-            seen_then = True
-        elif ct == "elseif_clause":
-            for cc in getattr(c, "children", []) or []:
-                if getattr(cc, "type", None) == "expression":
-                    _append_bsl059_if_expr(cc, path, diags)
-                    break
+    """First condition + each elseif_clause ``expression`` (skip when ``Тогда`` body is empty — BSL004)."""
+    ch = list(getattr(node, "children", []) or [])
+    i = 0
+    if i < len(ch) and getattr(ch[i], "type", None) == "IF_KEYWORD":
+        i += 1
+    else:
+        return
+    if i < len(ch) and getattr(ch[i], "type", None) == "expression":
+        expr_node = ch[i]
+        i += 1
+    else:
+        return
+    if i >= len(ch) or getattr(ch[i], "type", None) != "THEN_KEYWORD":
+        return
+    if not ts_if_main_then_branch_empty(node):
+        _append_bsl059_if_expr(expr_node, path, diags)
+    for c in ch:
+        if getattr(c, "type", None) != "elseif_clause":
+            continue
+        ech = list(getattr(c, "children", []) or [])
+        j = 0
+        if j < len(ech) and getattr(ech[j], "type", None) == "ELSIF_KEYWORD":
+            j += 1
+        eexpr = None
+        if j < len(ech) and getattr(ech[j], "type", None) == "expression":
+            eexpr = ech[j]
+        if eexpr is None:
+            continue
+        if not ts_elseif_then_branch_empty(c):
+            _append_bsl059_if_expr(eexpr, path, diags)
 
 
 def _append_bsl059_if_expr(expr_node: Any, path: str, diags: list[Diagnostic]) -> None:
@@ -4471,11 +4909,17 @@ def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -
     - Each structural element (if/for/while/try) adds 1 + nesting level
     - Each else/elseif/except adds 1 (no nesting bonus)
     - Closing tokens decrease nesting
+    - Each logical operator (И/ИЛИ/And/Or) in non-comment code adds 1 (Sonar/BSLLS alignment)
     """
     complexity = 0
     nesting = 0
     for i in range(start_idx + 1, min(end_idx, len(lines))):
         line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        line_no_strings = re.sub(r'"[^"]*"', '""', line)
+        complexity += len(_RE_MCCABE_BOOL.findall(line_no_strings))
         if _CC_OPEN.match(line):
             complexity += 1 + nesting
             nesting += 1
@@ -4532,7 +4976,7 @@ class DiagnosticEngine:
     # Strategy:
     #  - BSL001–BSL070: keep enabled (direct BSL-LS equivalents).
     #  - BSL071–BSL147: disabled unless they are unique critical checks with
-    #    no earlier equivalent (BSL077, BSL097, BSL111, BSL117, BSL125, BSL126,
+    #    no earlier equivalent (BSL077, BSL097, BSL117, BSL125, BSL126,
     #    BSL133, BSL140, BSL143, BSL147 stay ON).
     #  - A few BSL001-BSL070 that are high-noise are also in this set.
     DEFAULT_DISABLED: frozenset[str] = frozenset(
@@ -4540,6 +4984,7 @@ class DiagnosticEngine:
             # ── BSL001–BSL070 noise/style preferences ──────────────────────
             "BSL013",  # CommentedCode — high false-positive rate
             "BSL018",  # RaiseWithLiteral — opt-in; bare literals are normal; extended syntax is optional
+            "BSL063",  # LargeModule — BSLLS analyze часто не даёт эквивалент на строке 1; включите при необходимости
             "BSL074",  # TodoComment — duplicate of BSL023
             "BSL120",  # TrailingWhitespace — noisy in diffs
             "BSL121",  # TabIndentation — style preference
@@ -4582,6 +5027,7 @@ class DiagnosticEngine:
             "BSL108",  # UseOfGlobalVariables — duplicate of BSL054
             "BSL109",  # NegativeConditionalReturn — no BSL-LS equivalent
             "BSL110",  # StringConcatInLoop — duplicate of BSL038
+            "BSL111",  # MixedLanguageIdentifiers — duplicate of BSL208 (LatinAndCyrillicSymbolInWord / Typo family)
             "BSL112",  # UnterminatedTransaction — duplicate of BSL050
             "BSL113",  # AssignmentInCondition — semantically invalid for BSL
             "BSL114",  # EmptyModule — duplicate of BSL048
@@ -4680,7 +5126,6 @@ class DiagnosticEngine:
             # "BSL216" enabled — MissingSpace implemented
             "BSL217",  # MissingTempStorageDeletion — TODO
             "BSL218",  # MissingTemporaryFileDeletion — TODO
-            "BSL219",  # MissingVariablesDescription — TODO
             "BSL220",  # MultilineStringInQuery — TODO
             "BSL221",  # MultilingualStringHasAllDeclaredLanguages — TODO
             "BSL222",  # MultilingualStringUsingWithTemplate — TODO
@@ -4715,9 +5160,9 @@ class DiagnosticEngine:
             "BSL251",  # TernaryOperatorUsage — TODO
             "BSL252",  # ThisObjectAssign — TODO
             "BSL253",  # TimeoutsInExternalResources — TODO
-            "BSL254",  # TransferringParametersBetweenClientAndServer — TODO
+            # "BSL254" enabled — TransferringParametersBetweenClientAndServer (server procs; Знач)
             # "BSL255" enabled — TryNumber implemented
-            "BSL256",  # Typo — TODO
+            # "BSL256" enabled — Typo (homoglyph Latin/Cyrillic in identifiers; BSLLS priority over BSL208)
             # "BSL257" enabled — UnaryPlusInConcatenation implemented
             # "BSL258" enabled — UnionAll implemented
             "BSL259",  # UnknownPreprocessorSymbol — TODO
@@ -4919,6 +5364,7 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl002_method_size(path, lines, procs))
         if self._rule_enabled("BSL003"):
             diagnostics.extend(self._rule_bsl003_non_export_in_api_region(path, lines, procs, regions))
+        # BSL004 (EmptyCodeBlock) before BSL059: empty «Тогда» must report BSL004, not BooleanLiteralComparison.
         if self._rule_enabled("BSL004"):
             diagnostics.extend(self._rule_bsl004_empty_except(path, lines, tree))
         if self._rule_enabled("BSL005"):
@@ -4956,13 +5402,13 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL021"):
             diagnostics.extend(self._rule_bsl021_unused_val_parameter(path, lines, procs))
         if self._rule_enabled("BSL022"):
-            diagnostics.extend(self._rule_bsl022_deprecated_message(path, lines))
+            diagnostics.extend(self._rule_bsl022_deprecated_message(path, lines, procs))
         if self._rule_enabled("BSL023"):
             diagnostics.extend(self._rule_bsl023_service_tag(path, lines))
         if self._rule_enabled("BSL024"):
             diagnostics.extend(self._rule_bsl024_space_at_start_comment(path, lines))
         if self._rule_enabled("BSL025"):
-            diagnostics.extend(self._rule_bsl025_missing_semicolon(path, lines, procs))
+            diagnostics.extend(self._rule_bsl025_empty_statement(path, lines))
         if self._rule_enabled("BSL026"):
             diagnostics.extend(self._rule_bsl026_empty_region(path, lines, regions))
         if self._rule_enabled("BSL027"):
@@ -4973,6 +5419,8 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl029_magic_number(path, lines, procs))
         if self._rule_enabled("BSL030"):
             diagnostics.extend(self._rule_bsl030_header_semicolon(path, lines))
+            # BSLLS ``SemicolonPresence`` — пропущена «;» в конце выражения (не путать с BSL025 EmptyStatement).
+            diagnostics.extend(self._rule_bsl030_statement_missing_semicolon(path, lines, procs))
         if self._rule_enabled("BSL031"):
             diagnostics.extend(self._rule_bsl031_number_of_params(path, lines, procs))
         if self._rule_enabled("BSL032"):
@@ -4994,7 +5442,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL040"):
             diagnostics.extend(self._rule_bsl040_using_this_form(path, lines))
         if self._rule_enabled("BSL041"):
-            diagnostics.extend(self._rule_bsl041_notify_description(path, lines))
+            diagnostics.extend(self._rule_bsl041_notify_description(path, lines, procs))
         if self._rule_enabled("BSL042"):
             diagnostics.extend(self._rule_bsl042_empty_export_method(path, lines, procs))
         if self._rule_enabled("BSL043"):
@@ -5023,6 +5471,10 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl053_execute_dynamic(path, lines))
         if self._rule_enabled("BSL054"):
             diagnostics.extend(self._rule_bsl054_module_level_variable(path, lines, procs))
+        if self._rule_enabled("BSL219"):
+            diagnostics.extend(
+                self._rule_bsl219_missing_variables_description(path, lines, procs)
+            )
         if self._rule_enabled("BSL055"):
             diagnostics.extend(self._rule_bsl055_consecutive_blank_lines(path, lines))
         if self._rule_enabled("BSL056"):
@@ -5048,7 +5500,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL065"):
             diagnostics.extend(self._rule_bsl065_missing_export_comment(path, lines, procs))
         if self._rule_enabled("BSL066"):
-            diagnostics.extend(self._rule_bsl066_deprecated_platform_method(path, lines))
+            diagnostics.extend(self._rule_bsl066_deprecated_platform_method(path, lines, procs))
         if self._rule_enabled("BSL067"):
             diagnostics.extend(self._rule_bsl067_var_after_code(path, lines, procs))
         if self._rule_enabled("BSL068"):
@@ -5210,7 +5662,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL146"):
             diagnostics.extend(self._rule_bsl146_module_initialization_code(path, lines, procs))
         if self._rule_enabled("BSL147"):
-            diagnostics.extend(self._rule_bsl147_use_of_ui_call(path, lines))
+            diagnostics.extend(self._rule_bsl147_use_of_ui_call(path, lines, procs))
         if self._rule_enabled("BSL151"):
             diagnostics.extend(self._rule_bsl151_begin_transaction_before_try(path, lines))
         if self._rule_enabled("BSL157"):
@@ -5239,12 +5691,14 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl258_union_without_all(path, lines))
         if self._rule_enabled("BSL183"):
             diagnostics.extend(self._rule_bsl183_execute_external_code(path, lines))
-        if self._rule_enabled("BSL208"):
-            diagnostics.extend(self._rule_bsl208_latin_and_cyrillic_in_word(path, lines, procs))
+        if self._rule_enabled("BSL208") or self._rule_enabled("BSL256"):
+            diagnostics.extend(
+                self._rule_bsl208_bsl256_latin_cyrillic_and_typo(path, lines, procs)
+            )
         if self._rule_enabled("BSL230"):
             diagnostics.extend(self._rule_bsl230_pairing_broken_transaction(path, lines, procs))
         if self._rule_enabled("BSL240"):
-            diagnostics.extend(self._rule_bsl240_rewrite_method_parameter(path, lines, procs))
+            diagnostics.extend(self._rule_bsl240_rewrite_method_parameter(path, lines, procs, tree))
         if self._rule_enabled("BSL263"):
             diagnostics.extend(self._rule_bsl263_useless_for_each(path, lines, procs))
         if self._rule_enabled("BSL265"):
@@ -5255,11 +5709,28 @@ class DiagnosticEngine:
             diagnostics.extend(self._rule_bsl199_if_else_if_ends_with_else(path, lines))
         if self._rule_enabled("BSL216"):
             diagnostics.extend(self._rule_bsl216_missing_space(path, lines))
+        if self._rule_enabled("BSL254"):
+            diagnostics.extend(self._rule_bsl254_transferring_parameters(path, lines, procs))
         if self._rule_enabled("BSL255"):
             diagnostics.extend(self._rule_bsl255_try_number(path, lines))
 
-        # Apply inline suppressions and sort
+        # Apply inline suppressions
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
+        _str_ranges = double_quoted_string_ranges(content)
+        if _str_ranges:
+            diagnostics = [
+                d
+                for d in diagnostics
+                if d.code in _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL
+                or not diagnostic_overlaps_string_literal(
+                    content,
+                    line=d.line,
+                    character=d.character,
+                    end_line=d.end_line,
+                    end_character=d.end_character,
+                    ranges=_str_ranges,
+                )
+            ]
         return sorted(diagnostics, key=lambda d: (d.line, d.character))
 
     # ------------------------------------------------------------------
@@ -5391,6 +5862,29 @@ class DiagnosticEngine:
                 i = j + 1
             else:
                 i += 1
+        empty_then_msg = (
+            "Empty code block: 'Тогда' branch contains no statements — "
+            "add logic or remove the branch."
+        )
+        for idx, line in enumerate(lines):
+            if not _RE_THEN.search(line):
+                continue
+            if line.strip().startswith("//"):
+                continue
+            if not _regex_line_has_empty_then_branch(lines, idx):
+                continue
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=len(line) - len(line.lstrip()),
+                    end_line=idx + 1,
+                    end_character=len(line.rstrip()),
+                    severity=Severity.WARNING,
+                    code="BSL004",
+                    message=empty_then_msg,
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -5964,7 +6458,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl022_deprecated_message(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         """
         Flag calls to Предупреждение()/Warning() — deprecated modal dialogs.
@@ -5978,6 +6472,9 @@ class DiagnosticEngine:
                 continue
             m = _RE_DEPRECATED_MSG.match(line)
             if m:
+                proc = _proc_containing_line(procs, idx)
+                if proc is not None and _is_typical_client_command_handler(proc, lines):
+                    continue
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -6036,46 +6533,49 @@ class DiagnosticEngine:
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
         """
-        Require a space after ``//`` in single-line comments.
+        Require a space after ``//`` in single-line comments (BSLLS ``SpaceAtStartComment``).
 
-        Exceptions: ``///`` (doc-comments), ``//!`` (region markers),
-        empty comments ``//``, and suppression comments.
+        Mirrors BSLLS strict-good pattern, ``//@`` / ``//(c)`` / ``//©`` annotations,
+        skips commented-code lines (BSLLS ``CodeRecognizer``), ``//!``, ``//|``, noqa.
         """
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped.startswith("//"):
+            if not bsl024_should_report_line(line):
                 continue
             col = line.index("//")
-            m = _RE_NO_SPACE_COMMENT.search(line, col)
-            if m and m.start() == col:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=col,
-                        end_line=idx + 1,
-                        end_character=col + 2,
-                        severity=Severity.INFORMATION,
-                        code="BSL024",
-                        message="Comment text should start with a space after '//'",
-                    )
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=col,
+                    end_line=idx + 1,
+                    end_character=col + 2,
+                    severity=Severity.INFORMATION,
+                    code="BSL024",
+                    message="Comment text should start with a space after '//'",
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
-    # BSL025 — Missing semicolon at end of statement
+    # BSL025 — EmptyStatement (BSLLS; отдельно от SemicolonPresence / BSL030)
     # ------------------------------------------------------------------
 
-    def _rule_bsl025_missing_semicolon(
+    def _rule_bsl025_empty_statement(self, path: str, lines: list[str]) -> list[Diagnostic]:
+        """Placeholder: настоящий EmptyStatement в BSLLS — иной паттерн; не смешивать с BSL030."""
+        return []
+
+    # ------------------------------------------------------------------
+    # BSL030 — SemicolonPresence: «;» в конце выражения (BSLLS) + лишняя «;» в заголовке
+    # ------------------------------------------------------------------
+
+    def _rule_bsl030_statement_missing_semicolon(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         """
-        Detect statements inside methods that appear to be missing a trailing
-        semicolon.
+        BSLLS ``SemicolonPresence``: пропущена точка с запятой в конце выражения (код BSL030).
 
-        Only flags lines that match a statement pattern (call/assignment/return)
-        and do not end with ``;`` or a continuation character.
+        Ранее дублировалось как BSL025 — для паритета с BSLLS JSON используем BSL030.
         """
         diags: list[Diagnostic] = []
         for proc in procs:
@@ -6088,7 +6588,8 @@ class DiagnosticEngine:
                 if not code_part:
                     continue
                 last_char = code_part[-1]
-                if last_char in (";", ",", "(", ")", "|", "+", "-", "*", "/", "="):
+                # «)» может завершать вызов — после него нужна «;» (BSLLS SemicolonPresence).
+                if last_char in (";", ",", "(", "|", "+", "-", "*", "/", "="):
                     continue
                 if _RE_STMT_NO_SEMI.match(code_part):
                     diags.append(
@@ -6099,8 +6600,10 @@ class DiagnosticEngine:
                             end_line=i + 1,
                             end_character=len(code_part),
                             severity=Severity.WARNING,
-                            code="BSL025",
-                            message="Statement appears to be missing a trailing semicolon",
+                            code="BSL030",
+                            message=(
+                                "Пропущена точка с запятой в конце выражения"
+                            ),
                         )
                     )
         return diags
@@ -6504,7 +7007,9 @@ class DiagnosticEngine:
         literals (e.g. ``Вставить("СерийныйНомер", ...)``) appear in different
         functions.
 
-        Only flags the second occurrence onward to guide extraction.
+        BSLLS ``DuplicateStringLiteral``: одна диагностика на литерал при достижении порога,
+        с привязкой к *первой* позиции вхождения (relatedInformation в BSLLS — остальные строки).
+
         Ignores short/trivial strings (less than 4 chars after stripping).
         """
         from collections import Counter
@@ -6531,28 +7036,82 @@ class DiagnosticEngine:
                     # Same user-facing error text repeated only on raise lines — low value to dedupe
                     if all(_line_starts_with_raise_statement(lines[ln - 1]) for ln, _ in pos_list):
                         continue
-                    # Report second occurrence onward
-                    for line_no, col in pos_list[1:]:
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=col,
-                                end_line=line_no,
-                                end_character=col + len(val) + 2,
-                                severity=Severity.INFORMATION,
-                                code="BSL035",
-                                message=(
-                                    f'String "{val}" is duplicated {count} times — '
-                                    "extract to a named constant"
-                                ),
-                            )
+                    # BSLLS: одна диагностика на первом вхождении литерала в области видимости
+                    line_no, col = pos_list[0]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_no,
+                            character=col,
+                            end_line=line_no,
+                            end_character=col + len(val) + 2,
+                            severity=Severity.INFORMATION,
+                            code="BSL035",
+                            message=(
+                                f'String "{val}" is duplicated {count} times — '
+                                "extract to a named constant"
+                            ),
                         )
+                    )
         return diags
 
     # ------------------------------------------------------------------
     # BSL036 — Complex condition (too many boolean operators)
     # ------------------------------------------------------------------
+
+    _RE_IF_OR_ELSEIF_LINE = re.compile(
+        r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b", re.IGNORECASE
+    )
+    _RE_THEN_WORD = re.compile(r"\b(?:Тогда|Then)\b", re.IGNORECASE)
+
+    def _bsl036_if_condition_chunk(self, lines: list[str], idx: int) -> str | None:
+        """
+        Text of ``Если``/``ИначеЕсли`` condition through ``Тогда`` (BSLLS counts whole condition).
+
+        Returns None if *idx* is not the first line of an If/ElseIf condition.
+        """
+        line = lines[idx]
+        if line.strip().startswith("//"):
+            return None
+        if not self._RE_IF_OR_ELSEIF_LINE.match(line):
+            return None
+        if self._RE_THEN_WORD.search(line):
+            return line
+        parts = [line]
+        j = idx + 1
+        max_j = min(len(lines), idx + 48)
+        while j < max_j:
+            parts.append(lines[j])
+            if self._RE_THEN_WORD.search(lines[j]):
+                break
+            j += 1
+        return "\n".join(parts)
+
+    def _line_triggers_bsl036(self, lines: list[str], idx: int) -> bool:
+        """True when line *idx* starts a condition that exceeds *max_bool_ops* (BSLLS IfConditionComplexity)."""
+        chunk = self._bsl036_if_condition_chunk(lines, idx)
+        if chunk is None:
+            return False
+        return len(_RE_BOOL_OP.findall(chunk)) > self.max_bool_ops
+
+    def _line_in_triggered_bsl036_condition(self, lines: list[str], idx: int) -> bool:
+        """
+        True if line *idx* belongs to an If/ElseIf..Тогда block whose **first** line
+        triggers BSL036 — suppress BSL153 on continuation lines (BSLLS: IfConditionComplexity).
+        """
+        if not self._rule_enabled("BSL036"):
+            return False
+        for start in range(max(0, idx - 48), idx + 1):
+            if self._bsl036_if_condition_chunk(lines, start) is None:
+                continue
+            if not self._line_triggers_bsl036(lines, start):
+                continue
+            j = start
+            while j < len(lines):
+                if self._RE_THEN_WORD.search(lines[j]):
+                    return start <= idx <= j
+                j += 1
+        return False
 
     def _rule_bsl036_complex_condition(
         self, path: str, lines: list[str]
@@ -6564,30 +7123,27 @@ class DiagnosticEngine:
         be refactored into named boolean variables or helper functions.
         """
         diags: list[Diagnostic] = []
-        _if_line = re.compile(r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b", re.IGNORECASE)
         for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
+            if not self._line_triggers_bsl036(lines, idx):
                 continue
-            if not _if_line.match(line):
-                continue
-            ops = len(_RE_BOOL_OP.findall(line))
-            if ops > self.max_bool_ops:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=len(line) - len(line.lstrip()),
-                        end_line=idx + 1,
-                        end_character=len(line),
-                        severity=Severity.WARNING,
-                        code="BSL036",
-                        message=(
-                            f"Condition has {ops} boolean operators "
-                            f"(maximum {self.max_bool_ops}) — "
-                            "extract sub-conditions into named variables"
-                        ),
-                    )
+            chunk = self._bsl036_if_condition_chunk(lines, idx) or line
+            ops = len(_RE_BOOL_OP.findall(chunk))
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=len(line) - len(line.lstrip()),
+                    end_line=idx + 1,
+                    end_character=len(line),
+                    severity=Severity.WARNING,
+                    code="BSL036",
+                    message=(
+                        f"Condition has {ops} boolean operators "
+                        f"(maximum {self.max_bool_ops}) — "
+                        "extract sub-conditions into named variables"
+                    ),
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -6729,10 +7285,8 @@ class DiagnosticEngine:
         These are only valid in form module event handlers. Using them in
         common modules or non-handler procedures causes hard-to-debug errors.
         """
-        p = Path(path)
-        stem_lower = p.stem.lower()
-        # Only applies if file is NOT a form module
-        if "форма" in stem_lower or "form" in stem_lower:
+        # Skip form modules (EDT ``.../Forms/.../Ext/Module.bsl``, ``*форма*``, ``*Form``).
+        if path_is_likely_form_module_bsl(path):
             return []
 
         diags: list[Diagnostic] = []
@@ -6763,7 +7317,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl041_notify_description(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         """
         Flag ОписаниеОповещения() usage — this API is tied to legacy modal windows.
@@ -6776,6 +7330,9 @@ class DiagnosticEngine:
                 continue
             m = _RE_NOTIFY_DESCRIPTION.search(line)
             if m:
+                proc = _proc_containing_line(procs, idx)
+                if proc is not None and _is_typical_client_command_handler(proc, lines):
+                    continue
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -6982,21 +7539,23 @@ class DiagnosticEngine:
                             has_else = True
                     j += 1
                 if has_elseif and not has_else:
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=if_line + 1,
-                            character=len(line) - len(line.lstrip()),
-                            end_line=if_line + 1,
-                            end_character=len(line),
-                            severity=Severity.INFORMATION,
-                            code="BSL046",
-                            message=(
-                                "Если/ElseIf chain has no Иначе/Else branch — "
-                                "unhandled cases may silently do nothing."
-                            ),
+                    # BSLLS uses IfElseIfEndsWithElse (BSL199) on the closing line; avoid duplicate.
+                    if not self._rule_enabled("BSL199"):
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=if_line + 1,
+                                character=len(line) - len(line.lstrip()),
+                                end_line=if_line + 1,
+                                end_character=len(line),
+                                severity=Severity.INFORMATION,
+                                code="BSL046",
+                                message=(
+                                    "Если/ElseIf chain has no Иначе/Else branch — "
+                                    "unhandled cases may silently do nothing."
+                                ),
+                            )
                         )
-                    )
                 i = j + 1
                 continue
             i += 1
@@ -7354,10 +7913,58 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
+    # BSL219 — MissingVariablesDescription (exported module Перем)
+    # ------------------------------------------------------------------
+
+    def _rule_bsl219_missing_variables_description(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        Flag module-level ``Перем … Экспорт`` without a preceding ``//`` / ``///`` description line.
+
+        Aligns with BSLLS ``MissingVariablesDescription`` (often together with BSL054 on the same line).
+        """
+        diags: list[Diagnostic] = []
+        inside: set[int] = set()
+        for proc in procs:
+            for i in range(proc.start_idx, proc.end_idx + 1):
+                inside.add(i)
+
+        for idx, line in enumerate(lines):
+            if idx in inside:
+                continue
+            code_part = line.split("//", 1)[0].rstrip()
+            if not code_part.strip():
+                continue
+            m = _RE_VAR_MODULE_EXPORT.match(code_part)
+            if not m:
+                continue
+            if _module_export_var_has_preceding_description(lines, idx):
+                continue
+            names = [n.strip() for n in m.group("names").split(",") if n.strip()]
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=len(line) - len(line.lstrip()),
+                    end_line=idx + 1,
+                    end_character=len(line),
+                    severity=Severity.INFORMATION,
+                    code="BSL219",
+                    message=(
+                        "Add a description comment on the line before this exported module variable "
+                        f"('{', '.join(names)}')."
+                    ),
+                )
+            )
+        return diags
+
+    # ------------------------------------------------------------------
     # BSL055 — Consecutive blank lines (> 2)
     # ------------------------------------------------------------------
 
-    MAX_BLANK_LINES: int = 2
+    # BSLLS ConsecutiveEmptyLines: flag when more than one blank line in a row.
+    MAX_BLANK_LINES: int = 1
 
     def _rule_bsl055_consecutive_blank_lines(
         self, path: str, lines: list[str]
@@ -7389,6 +7996,38 @@ class DiagnosticEngine:
                         )
                     )
                 blank_run = 0
+        if blank_run > self.MAX_BLANK_LINES:
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=run_start + 1,
+                    character=0,
+                    end_line=run_start + blank_run,
+                    end_character=0,
+                    severity=Severity.INFORMATION,
+                    code="BSL055",
+                    message=(
+                        f"{blank_run} consecutive blank lines "
+                        f"(max {self.MAX_BLANK_LINES}) — remove extra blank lines."
+                    ),
+                )
+            )
+        # BSLLS: лишняя пустая строка в самом конце модуля (после КонецПроцедуры / #КонецОбласти и т.п.).
+        if len(lines) >= 2 and lines[-1].strip() == "" and lines[-2].strip() != "":
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=len(lines),
+                    character=0,
+                    end_line=len(lines),
+                    end_character=0,
+                    severity=Severity.INFORMATION,
+                    code="BSL055",
+                    message=(
+                        "Лишняя пустая строка в конце модуля — удалите последовательные пустые строки."
+                    ),
+                )
+            )
         return diags
 
 
@@ -7407,23 +8046,26 @@ class DiagnosticEngine:
             if line.lstrip().startswith("//"):
                 continue
             m = _RE_BOOL_LITERAL_CMP.search(line)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL059",
-                        message=(
-                            "In If/ElseIf condition: comparison to boolean literal — "
-                            "use the expression directly: "
-                            "'Если А Тогда' instead of 'Если А = Истина Тогда'."
-                        ),
-                    )
+            if not m:
+                continue
+            if _regex_line_has_empty_then_branch(lines, idx):
+                continue
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.INFORMATION,
+                    code="BSL059",
+                    message=(
+                        "In If/ElseIf condition: comparison to boolean literal — "
+                        "use the expression directly: "
+                        "'Если А Тогда' instead of 'Если А = Истина Тогда'."
+                    ),
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -7671,6 +8313,13 @@ class DiagnosticEngine:
                     continue
                 if not param_name.isidentifier():
                     continue
+                if param_name.casefold() in _BSL062_SKIP_STANDARD_COMMAND_PARAMS:
+                    continue
+                if param_name.casefold() in ("параметры", "parameters") and (
+                    _is_typical_client_command_handler(proc, lines)
+                    or _is_client_notify_completion_export_handler(proc, lines)
+                ):
+                    continue
                 if used_casefold is not None:
                     is_used = param_name.casefold() in used_casefold
                 else:
@@ -7782,21 +8431,24 @@ class DiagnosticEngine:
         """
         Flag exported methods that have no preceding description comment.
 
-        The line immediately before the method declaration (or the line before
-        blank lines above the declaration) must be a comment (// or ///).
+        The line before the declaration (skipping blanks and ``&НаКлиенте``-style
+        compiler lines) must be a ``//`` or ``///`` comment.
         """
+        # BSLLS: form modules use a different documentation profile; parity with
+        # analyze on ``.../Forms/.../Ext/Module.bsl`` — skip (see BSL040).
+        if path_is_likely_form_module_bsl(path):
+            return []
+
         diags: list[Diagnostic] = []
         for proc in procs:
             if not proc.is_export:
                 continue
+            if _is_client_notify_completion_export_handler(proc, lines):
+                continue
             header_idx = proc.start_idx
             header_line = lines[header_idx]
-            # Walk backwards past blank lines to find the line before
-            prev_idx = header_idx - 1
-            while prev_idx >= 0 and not lines[prev_idx].strip():
-                prev_idx -= 1
-            # Check if that line is a comment
-            if prev_idx < 0 or not _RE_COMMENT_LINE.match(lines[prev_idx]):
+            anchor = _export_description_anchor_line_idx(lines, header_idx)
+            if anchor is None or not _RE_COMMENT_LINE.match(lines[anchor]):
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -7818,7 +8470,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl066_deprecated_platform_method(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         """Flag calls to deprecated 1C platform methods."""
         diags: list[Diagnostic] = []
@@ -7828,6 +8480,11 @@ class DiagnosticEngine:
             m = _RE_DEPRECATED_METHOD.search(line)
             if m:
                 method_name = m.group(0).rstrip("(").strip()
+                mn = method_name.casefold()
+                if mn.startswith("предупреждение") or mn.startswith("warning"):
+                    proc = _proc_containing_line(procs, idx)
+                    if proc is not None and _is_typical_client_command_handler(proc, lines):
+                        continue
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -10962,30 +11619,36 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl147_use_of_ui_call(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        """Flag ОткрытьФорму()/OpenForm() and similar UI calls."""
+        """Flag ОткрытьФорму()/OpenForm() in server-side code (BSLLS — not in ``&НаКлиенте``)."""
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
                 continue
             m = _RE_UI_CALL.search(line)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.WARNING,
-                        code="BSL147",
-                        message=(
-                            f"'{m.group().rstrip('(')}' is a UI call — "
-                            "remove or restrict to client-side context."
-                        ),
-                    )
+            if not m:
+                continue
+            proc = _proc_containing_line(procs, idx)
+            if proc is not None:
+                ctx = _procedure_compiler_execution_context(lines, proc)
+                if ctx in ("client", "both"):
+                    continue
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.WARNING,
+                    code="BSL147",
+                    message=(
+                        f"'{m.group().rstrip('(')}' is a UI call — "
+                        "remove or restrict to client-side context."
+                    ),
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -11483,11 +12146,19 @@ class DiagnosticEngine:
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
         """Detect BSL keywords not written in canonical title-case form."""
+        if path_is_likely_form_module_bsl(path):
+            return []
         diags: list[Diagnostic] = []
         _re_comment = re.compile(r"^\s*//")
 
         for idx, line in enumerate(lines):
             if _re_comment.match(line):
+                continue
+            if self._rule_enabled("BSL036") and self._line_triggers_bsl036(lines, idx):
+                continue
+            if self._rule_enabled("BSL036") and self._line_in_triggered_bsl036_condition(
+                lines, idx
+            ):
                 continue
             # Remove string literals
             clean = re.sub(r'"[^"]*"', '""', line)
@@ -11535,7 +12206,6 @@ class DiagnosticEngine:
 
             has_elseif = False
             has_else = False
-            if_line = i
             depth = 1
             j = i + 1
             while j < len(lines) and depth > 0:
@@ -11552,19 +12222,23 @@ class DiagnosticEngine:
                 j += 1
 
             if has_elseif and not has_else:
-                diags.append(Diagnostic(
-                    file=path,
-                    line=if_line + 1,
-                    character=0,
-                    end_line=if_line + 1,
-                    end_character=len(lines[if_line]),
-                    severity=Severity.INFORMATION,
-                    code="BSL199",
-                    message=(
-                        "Цепочка «Если/ИначеЕсли» не завершается веткой «Иначе» — "
-                        "добавьте обработку неожиданных значений"
-                    ),
-                ))
+                # BSLLS attaches this diagnostic to the closing «КонецЕсли» line.
+                endif_idx = j - 1
+                if endif_idx >= 0 and endif_idx < len(lines):
+                    el = lines[endif_idx]
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=endif_idx + 1,
+                        character=0,
+                        end_line=endif_idx + 1,
+                        end_character=len(el),
+                        severity=Severity.INFORMATION,
+                        code="BSL199",
+                        message=(
+                            "Цепочка «Если/ИначеЕсли» не завершается веткой «Иначе» — "
+                            "добавьте обработку неожиданных значений"
+                        ),
+                    ))
             i = j
         return diags
 
@@ -11616,6 +12290,61 @@ class DiagnosticEngine:
                         "добавьте пробелы для читаемости"
                     ),
                 ))
+                continue
+            comma_col = _comma_missing_space_after_col_in_line(line.split("//", 1)[0])
+            if comma_col is not None:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=comma_col,
+                    end_line=idx + 1,
+                    end_character=comma_col + 1,
+                    severity=Severity.INFORMATION,
+                    code="BSL216",
+                    message=(
+                        "Пропущен пробел после запятой — "
+                        "добавьте пробел для читаемости"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL254 — TransferringParametersBetweenClientAndServer
+    # ------------------------------------------------------------------
+
+    def _rule_bsl254_transferring_parameters(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """
+        BSLLS: параметры без ``Знач`` при вызовах клиент/сервер в общих командах.
+
+        Ограничение: только серверные процедуры/функции (см. ``_procedure_compiler_execution_context``).
+        """
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if _procedure_compiler_execution_context(lines, proc) != "server":
+                continue
+            if not proc.params:
+                continue
+            missing_val = [p for p in proc.params if p and p not in proc.val_params]
+            if not missing_val:
+                continue
+            header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=proc.header_col,
+                    end_line=proc.start_idx + 1,
+                    end_character=len(header_line.rstrip()),
+                    severity=Severity.INFORMATION,
+                    code="BSL254",
+                    message=(
+                        "Установите модификатор «Знач» для параметров, передаваемых между клиентом и сервером "
+                        f"({', '.join(missing_val)})"
+                    ),
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -11697,18 +12426,22 @@ class DiagnosticEngine:
 
     # ------------------------------------------------------------------
     # BSL208 — LatinAndCyrillicSymbolInWord
+    # BSL256 — Typo (homoglyph Cyrillic in Latin-looking identifier; BSLLS priority)
     # ------------------------------------------------------------------
 
-    def _rule_bsl208_latin_and_cyrillic_in_word(
+    def _rule_bsl208_bsl256_latin_cyrillic_and_typo(
         self, path: str, lines: list[str], procs: list[Any]
     ) -> list[Diagnostic]:
-        """Detect identifiers mixing Latin and Cyrillic characters."""
+        """
+        Mixed Latin/Cyrillic identifiers: BSLLS often reports **Typo** (BSL256) when
+        Cyrillic letters are Latin homoglyphs in an otherwise Latin name; intentional
+        mixed-script names get **LatinAndCyrillicSymbolInWord** (BSL208).
+        """
         diags: list[Diagnostic] = []
         _re_word = re.compile(r"\b[a-zA-ZА-ЯЁа-яё_][a-zA-ZА-ЯЁа-яё0-9_]*\b", re.UNICODE)
         _re_has_latin = re.compile(r"[a-zA-Z]")
         _re_has_cyrillic = re.compile(r"[А-ЯЁа-яё]")
         _re_comment = re.compile(r"^\s*//")
-        # Known mixed-script platform identifiers to skip
         _WHITELIST = frozenset({"УстановитьHTTPСоединение", "HTTPСоединение", "НСтр"})
 
         for idx, line in enumerate(lines):
@@ -11722,20 +12455,43 @@ class DiagnosticEngine:
                 word = m.group()
                 if word in _WHITELIST:
                     continue
-                if _re_has_latin.search(word) and _re_has_cyrillic.search(word):
-                    diags.append(Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.WARNING,
-                        code="BSL208",
-                        message=(
-                            f"Идентификатор «{word}» содержит кириллицу и латиницу "
-                            "одновременно — визуально неотличимо от другого имени"
-                        ),
-                    ))
+                if not (
+                    _re_has_latin.search(word) and _re_has_cyrillic.search(word)
+                ):
+                    continue
+                if _mixed_script_identifier_is_homoglyph_typo(word):
+                    if self._rule_enabled("BSL256"):
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=m.start(),
+                                end_line=idx + 1,
+                                end_character=m.end(),
+                                severity=Severity.INFORMATION,
+                                code="BSL256",
+                                message=(
+                                    f"В идентификаторе «{word}» буквы, похожие на латиницу "
+                                    "(возможная опечатка — смешение алфавитов)"
+                                ),
+                            )
+                        )
+                elif self._rule_enabled("BSL208"):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=m.start(),
+                            end_line=idx + 1,
+                            end_character=m.end(),
+                            severity=Severity.WARNING,
+                            code="BSL208",
+                            message=(
+                                f"Идентификатор «{word}» содержит кириллицу и латиницу "
+                                "одновременно — визуально неотличимо от другого имени"
+                            ),
+                        )
+                    )
         return diags
 
     # ------------------------------------------------------------------
@@ -11794,7 +12550,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl240_rewrite_method_parameter(
-        self, path: str, lines: list[str], procs: list[Any]
+        self, path: str, lines: list[str], procs: list[Any], tree: Any
     ) -> list[Diagnostic]:
         """Detect parameter overwritten before being read."""
         diags: list[Diagnostic] = []
@@ -11829,8 +12585,25 @@ class DiagnosticEngine:
             if not param_names:
                 continue
 
+            body_start = proc.start_idx + 1
+            if _ts_tree_ok_for_rules(tree):
+                pnode = _find_proc_definition_node(tree, proc)
+                if pnode is not None:
+                    bl = _ts_first_body_statement_line_idx(pnode)
+                    if bl is not None:
+                        body_start = bl
+                    else:
+                        body_start = _proc_body_start_line_idx_fallback(lines, proc)
+                else:
+                    body_start = _proc_body_start_line_idx_fallback(lines, proc)
+            else:
+                body_start = _proc_body_start_line_idx_fallback(lines, proc)
+
+            if body_start >= proc.end_idx:
+                continue
+
             # Find params reassigned before use in first non-blank body lines
-            for li in range(proc.start_idx + 1, min(proc.start_idx + 15, proc.end_idx)):
+            for li in range(body_start, min(body_start + 15, proc.end_idx)):
                 if li >= len(lines):
                     break
                 line = lines[li]

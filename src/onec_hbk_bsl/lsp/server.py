@@ -2259,6 +2259,7 @@ _SEMANTIC_LEGEND = SemanticTokensLegend(
     token_modifiers=["declaration", "definition", "readonly", "static", "deprecated"],
 )
 
+# Longer keywords first (e.g. ИЛИ before И). BSL is case-insensitive — use IGNORECASE.
 _ST_KEYWORD_RE = _re.compile(
     r"(?<![А-ЯЁа-яёA-Za-z_\d])("
     r"Процедура|КонецПроцедуры|Функция|КонецФункции"
@@ -2267,7 +2268,7 @@ _ST_KEYWORD_RE = _re.compile(
     r"|Попытка|Исключение|КонецПопытки"
     r"|Возврат|Прервать|Продолжить|Новый|Перем|Знач|Экспорт"
     r"|Истина|Ложь|Неопределено|Null"
-    r"|И|Или|Не"
+    r"|ИЛИ|И|НЕ"
     r"|Procedure|EndProcedure|Function|EndFunction"
     r"|If|ElsIf|Else|EndIf|Then"
     r"|For|Each|In|To|While|Do|EndDo"
@@ -2275,12 +2276,22 @@ _ST_KEYWORD_RE = _re.compile(
     r"|Return|Break|Continue|New|Var|Val|Export"
     r"|True|False|Undefined|And|Or|Not"
     r")(?![А-ЯЁа-яёA-Za-z_\d])",
-    _re.UNICODE,
+    _re.UNICODE | _re.IGNORECASE,
 )
 _ST_NUMBER_RE = _re.compile(r"\b\d+(?:\.\d+)?\b")
 _ST_STRING_RE = _re.compile(r'"[^"]*"')
 _ST_COMMENT_RE = _re.compile(r"//.*$")
 _ST_CALL_RE = _re.compile(r"([А-ЯЁа-яёA-Za-z_]\w*)\s*\(", _re.UNICODE)
+# Line-start preprocessor (same scope as TextMate keyword.other.preprocessor.bsl)
+_ST_PREPROCESSOR_LINE_RE = _re.compile(
+    r"^\s*#("
+    r"Если|If|ИначеЕсли|ElsIf|Иначе|Else|КонецЕсли|EndIf|"
+    r"Область|Region|КонецОбласти|EndRegion|"
+    r"Использовать|Use|Удаление|Delete|КонецУдаления|EndDelete|"
+    r"Вставка|Insert|КонецВставки|EndInsert"
+    r")\b",
+    _re.IGNORECASE | _re.UNICODE,
+)
 
 
 @server.feature(
@@ -2336,6 +2347,12 @@ def on_semantic_tokens_full(
         for m in _ST_NUMBER_RE.finditer(code_part):
             if not _in_string(m.start()):
                 tokens.append((m.start(), len(m.group()), _ST_NUMBER))
+
+        # Preprocessor (#Если / #Область / …) — keyword styling
+        for m in _ST_PREPROCESSOR_LINE_RE.finditer(line_text):
+            if m.start() >= comment_start:
+                continue
+            tokens.append((m.start(), len(m.group()), _ST_KEYWORD))
 
         # Keywords
         for m in _ST_KEYWORD_RE.finditer(code_part):
@@ -2590,16 +2607,12 @@ def _fix_bsl024_space_after_double_slash(line: str) -> str | None:
 
     Returns the full replacement line, or None if no fix applies.
     """
-    from onec_hbk_bsl.analysis.diagnostics import _RE_NO_SPACE_COMMENT
+    from onec_hbk_bsl.analysis.diagnostics import bsl024_should_report_line
 
-    stripped = line.lstrip()
-    if not stripped.startswith("//"):
+    if not bsl024_should_report_line(line):
         return None
     col = line.find("//")
     if col < 0:
-        return None
-    m = _RE_NO_SPACE_COMMENT.search(line, col)
-    if not m or m.start() != col:
         return None
     return line[: col + 2] + " " + line[col + 2 :]
 

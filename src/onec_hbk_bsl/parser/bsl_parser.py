@@ -3,6 +3,19 @@ BSL parser using tree-sitter.
 
 Primary: tree-sitter-bsl (dedicated BSL grammar package).
 Fallback: regex-based extraction if tree-sitter-bsl is not available.
+
+Language notes (1C:Enterprise / BSL)
+-----------------------------------
+The BSL type system is **not** Java-style static typing: many checks are runtime.
+Identifiers and keywords are **case-insensitive** at the language level; rules that
+enforce «canonical» spelling of keywords (e.g. ``Процедура`` vs ``процедура``) are
+**style** diagnostics, not a claim that the platform distinguishes case at runtime.
+
+**BSL001 / ParseError** comes from the tree-sitter **concrete syntax tree** (ERROR
+and MISSING nodes). It does not encode type information. Some constructs valid in
+BSL still produce spurious ERROR tokens in the current grammar (parentheses in
+multi-line assignments, ``Новый("…")``, parenthesised ``Если`` conditions); see
+:meth:`BslParser._collect_errors` suppressions.
 """
 
 from __future__ import annotations
@@ -142,6 +155,9 @@ class BslParser:
     #   Если (А = Б) Тогда     — lone '(' and ')' ERROR nodes, parent = if_statement
     # The grammar only accepts bare expressions, not a leading '(' group.
     _IF_NODE_TYPES = frozenset({"if_statement", "elsif_clause"})
+    # Multi-line parenthesised RHS is valid BSL, e.g. ``А = (Б И В`` + newline + ``)``;
+    # lone '(' / ')' may appear as ERROR under assignment_statement (not only if_statement).
+    _ASSIGNMENT_SUPPRESS_PARENT = frozenset({"assignment_statement"})
 
     def _collect_errors(self, node: Any, errors: list[dict]) -> None:
         """Recursively collect ERROR and MISSING nodes from a tree-sitter tree."""
@@ -155,12 +171,11 @@ class BslParser:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
-            # Suppress lone '(' and ')' ERROR nodes inside an if_statement subtree
-            # — grammar bug: tree-sitter-bsl rejects parenthesised conditions like
-            # `Если (А = Б) Тогда` even though they are valid BSL.
-            # The '(' is a direct child of if_statement; the paired ')' may be
-            # buried deeper (e.g. inside binary_expression), so we walk ancestors.
-            if text_stripped in (b"(", b")") and self._ancestor_is_if(node):
+            # Suppress lone '(' and ')' ERROR nodes where the grammar is incomplete
+            # but the source is valid BSL (see module docstring).
+            if text_stripped in (b"(", b")") and self._should_suppress_lone_paren_error(
+                node
+            ):
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
@@ -197,6 +212,23 @@ class BslParser:
                 return False
             current = getattr(current, "parent", None)
         return False
+
+    def _ancestor_has_type(self, node: Any, types: frozenset[str]) -> bool:
+        """True if any ancestor (walking parents) has a type in ``types``."""
+        current = getattr(node, "parent", None)
+        while current is not None:
+            if current.type in types:
+                return True
+            if current.type == "module":
+                return False
+            current = getattr(current, "parent", None)
+        return False
+
+    def _should_suppress_lone_paren_error(self, node: Any) -> bool:
+        """Valid BSL often yields spurious '(' / ')' ERROR nodes; see _collect_errors."""
+        if self._ancestor_is_if(node):
+            return True
+        return self._ancestor_has_type(node, self._ASSIGNMENT_SUPPRESS_PARENT)
 
 
 # ---------------------------------------------------------------------------

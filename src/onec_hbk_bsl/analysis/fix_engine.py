@@ -7,7 +7,7 @@ Supported rules
 ---------------
 BSL009  SelfAssign              — delete the self-assignment line
 BSL010  UselessReturn           — delete the redundant 'Возврат;' line
-BSL055  ConsecutiveBlankLines   — truncate blank-line runs to MAX_BLANK_LINES (2)
+BSL055  ConsecutiveBlankLines   — truncate blank-line runs to MAX_BLANK_LINES (1)
 BSL060  DoubleNegation          — replace 'НЕ НЕ expr' with 'expr'
 
 Usage
@@ -65,7 +65,7 @@ class FixResult:
 # Individual fixer functions
 # ---------------------------------------------------------------------------
 
-_MAX_BLANK_LINES = 2
+_MAX_BLANK_LINES = 1
 
 # Regex for a plain empty return (matches the useless-return rule's target)
 _RE_EMPTY_RETURN = re.compile(r'^\s*(?:Возврат|Return)\s*;?\s*$', re.IGNORECASE)

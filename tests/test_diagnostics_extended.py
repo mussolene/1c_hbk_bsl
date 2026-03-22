@@ -11,7 +11,11 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from onec_hbk_bsl.analysis.diagnostics import Diagnostic, DiagnosticEngine
+from onec_hbk_bsl.analysis.diagnostics import (
+    Diagnostic,
+    DiagnosticEngine,
+    path_is_likely_form_module_bsl,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -871,6 +875,35 @@ class TestBsl024SpaceAtStartComment:
         diags = _check(content, tmp_path)
         assert "BSL024" not in _codes(diags)
 
+    def test_multiple_slashes_only_no_warning(self, tmp_path: Path) -> None:
+        """BSLLS strict: ``////`` and ``///`` are valid without a space after ``//``."""
+        content = "////\n///\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
+    def test_at_annotation_no_warning(self, tmp_path: Path) -> None:
+        content = "//@УстановитьОбработчик\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
+    def test_compiler_directive_no_bsl024(self, tmp_path: Path) -> None:
+        """``//&НаКлиенте`` — BSLLS does not flag SpaceAtStartComment."""
+        content = "//&НаКлиенте\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
+    def test_asterisk_banner_reports_bsl024(self, tmp_path: Path) -> None:
+        """BSLLS SpaceAtStartComment flags decorative ``//****`` lines (parity on real EDT modules)."""
+        content = "//**********************************************\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" in _codes(diags)
+
+    def test_commented_code_line_no_bsl024(self, tmp_path: Path) -> None:
+        """BSLLS skips SpaceAtStartComment when comment looks like code (CodeRecognizer)."""
+        content = "//  Х = 1;\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL026 — EmptyRegion
@@ -1044,7 +1077,7 @@ class TestBsl033QueryInLoop:
     def test_query_in_foreach_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест(Коллекция)
-                ДляКаждого Элемент Из Коллекция Цикл
+                Для Каждого Элемент Из Коллекция Цикл
                     Результат = Запрос.Выполнить();
                 КонецЦикла;
             КонецПроцедуры
@@ -1199,6 +1232,98 @@ class TestBsl036ComplexCondition:
         diags = _check(content, tmp_path, max_bool_ops=3)
         assert "BSL036" not in _codes(diags)
 
+    def test_multiline_condition_bool_ops_bslls_alignment(self, tmp_path: Path) -> None:
+        """IfConditionComplexity counts ``И``/``ИЛИ`` across lines until ``Тогда``."""
+        content = """\
+            Процедура Тест()
+                Если Ложь Тогда
+                ИначеЕсли НЕ Б
+                    И В
+                    И Г
+                    И Д
+                    И А Тогда
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
+        assert "BSL036" in _codes(diags)
+
+    def test_bsl153_suppressed_on_continuation_of_bsl036_condition(self, tmp_path: Path) -> None:
+        """CanonicalSpelling must not fire on ``и`` continuation lines when IfConditionComplexity applies."""
+        content = """\
+            Процедура Тест()
+                Если Ложь Тогда
+                ИначеЕсли НЕ Б
+                    и В
+                    и Г
+                    и Д
+                    и А Тогда
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036", "BSL153"})
+        assert "BSL036" in _codes(diags)
+        assert "BSL153" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL153 — CanonicalSpelling (form module parity)
+# ---------------------------------------------------------------------------
+
+
+class TestBsl153FormModuleSkips:
+    def test_form_module_path_skips_bsl153(self, tmp_path: Path) -> None:
+        """BSLLS parity: EDT form ``Module.bsl`` — skip canonical keyword spelling (BSL153)."""
+        content = """\
+            процедура Тест()
+                А = 1;
+            КонецПроцедуры
+        """
+        form_dir = tmp_path / "Forms" / "SomeForm" / "Ext"
+        form_dir.mkdir(parents=True)
+        bsl_path = form_dir / "Module.bsl"
+        bsl_path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL153"}).check_file(str(bsl_path))
+        assert "BSL153" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL208 / BSL256 — Latin+Cyrillic vs Typo (homoglyph), BSLLS priority
+# ---------------------------------------------------------------------------
+
+
+class TestBsl208Bsl256MixedScriptVsTypo:
+    def test_homoglyph_identifier_reports_bsl256_not_bsl208(self, tmp_path: Path) -> None:
+        # Cyrillic «с» (U+0441) instead of Latin «c» — Latinizes to «connection»
+        content = """\
+            Процедура Тест()
+                \u0441onnection = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208", "BSL256"})
+        assert "BSL256" in _codes(diags)
+        assert "BSL208" not in _codes(diags)
+
+    def test_intentional_mixed_script_reports_bsl208(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ИмяName = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208", "BSL256"})
+        assert "BSL208" in _codes(diags)
+        assert "BSL256" not in _codes(diags)
+
+    def test_bsl208_only_select_skips_homoglyph_typo_line(self, tmp_path: Path) -> None:
+        """Same line as BSLLS Typo: no LatinAndCyrillic when BSL256 is off."""
+        content = """\
+            Процедура Тест()
+                \u0441onnection = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208"})
+        assert "BSL208" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL037 — OverrideBuiltinMethod
@@ -1234,7 +1359,7 @@ class TestBsl038StringConcatInLoop:
         content = """\
             Процедура Тест(Массив)
                 Результат = "";
-                ДляКаждого Эл Из Массив Цикл
+                Для Каждого Эл Из Массив Цикл
                     Результат = Результат + "текст";
                 КонецЦикла;
             КонецПроцедуры
@@ -1279,6 +1404,17 @@ class TestBsl041NotifyDescription:
         content = "ОповещениеОЗакрытии = ОписаниеОповещения(\"ОбработкаЗакрытия\", ЭтотОбъект);\n"
         diags = _check(content, tmp_path)
         assert "BSL041" in _codes(diags)
+
+    def test_notify_description_skipped_in_typical_client_command_handler(self, tmp_path: Path) -> None:
+        """ОписаниеОповещения в типовом ОбработкаКоманды (&НаКлиенте) — допустимый паттерн (не путь CommonCommands)."""
+        content = """\
+            &НаКлиенте
+            Процедура ОбработкаКоманды(ПараметрКоманды, ПараметрыВыполненияКоманды)
+                О = Новый ОписаниеОповещения("Колбэк", ЭтотОбъект);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL041"})
+        assert "BSL041" not in _codes(diags)
 
     def test_in_comment_not_flagged(self, tmp_path: Path) -> None:
         content = "// ОписаниеОповещения(\"ОбработкаЗакрытия\", ЭтотОбъект)\n"
@@ -1450,6 +1586,24 @@ class TestBsl046MissingElseBranch:
         """
         diags = _check(content, tmp_path, select={"BSL046"})
         assert "BSL046" not in _codes(diags)
+
+    def test_elseif_no_else_bsl199_on_endif_suppresses_bsl046_when_both_enabled(
+        self, tmp_path: Path
+    ) -> None:
+        """BSLLS uses IfElseIfEndsWithElse on ``КонецЕсли``; BSL046 is not duplicated."""
+        content = """\
+            Если А = 1 Тогда
+                Б = 1;
+            ИначеЕсли А = 2 Тогда
+                Б = 2;
+            КонецЕсли;
+        """
+        diags = _check(content, tmp_path, select={"BSL046", "BSL199"})
+        assert "BSL046" not in _codes(diags)
+        assert "BSL199" in _codes(diags)
+        bsl199 = [d for d in diags if d.code == "BSL199"]
+        assert len(bsl199) == 1
+        assert bsl199[0].line == 5
 
 
 # ---------------------------------------------------------------------------
@@ -1756,6 +1910,97 @@ class TestBsl054ModuleLevelVariable:
 
 
 # ---------------------------------------------------------------------------
+# BSL040 — UsingThisForm (form module path detection)
+# ---------------------------------------------------------------------------
+
+
+class TestBsl040UsingThisForm:
+    def test_this_form_in_common_module_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ЭтаФорма.Закрыть();
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL040"})
+        assert "BSL040" in _codes(diags)
+
+    def test_this_form_in_edt_form_module_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПриОткрытии()
+                ЭтаФорма.Закрыть();
+            КонецПроцедуры
+        """
+        form_dir = tmp_path / "Catalogs" / "Foo" / "Forms" / "ФормаЭлемента" / "Ext"
+        form_dir.mkdir(parents=True)
+        bsl_path = form_dir / "Module.bsl"
+        bsl_path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL040"}).check_file(str(bsl_path))
+        assert "BSL040" not in _codes(diags)
+
+    def test_path_is_likely_form_module_bsl(self, tmp_path: Path) -> None:
+        mod = tmp_path / "Forms" / "SomeForm" / "Ext" / "Module.bsl"
+        mod.parent.mkdir(parents=True)
+        mod.write_text("// ok\n", encoding="utf-8")
+        assert path_is_likely_form_module_bsl(str(mod))
+        plain = tmp_path / "CommonModules" / "Foo" / "Ext" / "Module.bsl"
+        plain.parent.mkdir(parents=True)
+        plain.write_text("// ok\n", encoding="utf-8")
+        assert not path_is_likely_form_module_bsl(str(plain))
+
+
+# ---------------------------------------------------------------------------
+# BSL219 — MissingVariablesDescription
+# ---------------------------------------------------------------------------
+
+
+class TestBsl219MissingVariablesDescription:
+    def test_export_var_without_description(self, tmp_path: Path) -> None:
+        content = """\
+            Перем Глоб Экспорт;
+
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        assert "BSL219" in _codes(diags)
+
+    def test_export_var_with_preceding_comment_no_bsl219(self, tmp_path: Path) -> None:
+        content = """\
+            // Описание переменной
+            Перем Глоб Экспорт;
+
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        assert "BSL219" not in _codes(diags)
+
+    def test_export_var_with_preceding_triple_comment_no_bsl219(self, tmp_path: Path) -> None:
+        content = """\
+            /// Описание
+            Перем Глоб Экспорт;
+
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        assert "BSL219" not in _codes(diags)
+
+    def test_non_export_module_var_no_bsl219(self, tmp_path: Path) -> None:
+        content = """\
+            Перем МояПеременная;
+            Процедура Тест()
+                Сообщить(МояПеременная);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        assert "BSL219" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL055 — ConsecutiveBlankLines
 # ---------------------------------------------------------------------------
 
@@ -1768,12 +2013,13 @@ class TestBsl055ConsecutiveBlankLines:
         diags = DiagnosticEngine(select={"BSL055"}).check_file(str(bsl_file))
         assert "BSL055" in _codes(diags)
 
-    def test_two_blank_lines_no_warning(self, tmp_path: Path) -> None:
+    def test_two_blank_lines_detected_bslls_parity(self, tmp_path: Path) -> None:
+        """BSLLS flags 2+ consecutive empty lines (max one blank between statements)."""
         content = "А = 1;\n\n\nБ = 2;\n"
         bsl_file = tmp_path / "test.bsl"
         bsl_file.write_text(content, encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL055"}).check_file(str(bsl_file))
-        assert "BSL055" not in _codes(diags)
+        assert "BSL055" in _codes(diags)
 
     def test_single_blank_line_no_warning(self, tmp_path: Path) -> None:
         content = "А = 1;\n\nБ = 2;\n"
@@ -1880,18 +2126,32 @@ class TestBsl058QueryWithoutWhere:
 
 
 # ---------------------------------------------------------------------------
+# BSL004 — empty «Тогда» (BSLLS EmptyCodeBlock) vs BSL059
+# ---------------------------------------------------------------------------
+
+
+class TestBsl004EmptyThenBranch:
+    def test_empty_then_is_bsl004_not_bsl059(self, tmp_path: Path) -> None:
+        content = "Если А = Истина Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL004", "BSL059"})
+        assert "BSL004" in _codes(diags)
+        assert "BSL059" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL059 — BooleanLiteralComparison
 # ---------------------------------------------------------------------------
 
 
 class TestBsl059BooleanLiteralComparison:
     def test_comparison_with_true_detected(self, tmp_path: Path) -> None:
-        content = "Если А = Истина Тогда\nКонецЕсли;\n"
+        # Non-empty «Тогда» — empty branch is BSL004 (BSLLS EmptyCodeBlock), not BSL059.
+        content = "Если А = Истина Тогда\n    Х=1;\nКонецЕсли;\n"
         diags = _check(content, tmp_path, select={"BSL059"})
         assert "BSL059" in _codes(diags)
 
     def test_comparison_with_false_detected(self, tmp_path: Path) -> None:
-        content = "Если Флаг = Ложь Тогда\nКонецЕсли;\n"
+        content = "Если Флаг = Ложь Тогда\n    Х=1;\nКонецЕсли;\n"
         diags = _check(content, tmp_path, select={"BSL059"})
         assert "BSL059" in _codes(diags)
 
@@ -1911,7 +2171,9 @@ class TestBsl059BooleanLiteralComparison:
         assert "BSL059" not in _codes(diags)
 
     def test_bool_literal_in_elseif_detected(self, tmp_path: Path) -> None:
-        content = "Если А Тогда\nИначеЕсли Б = Ложь Тогда\nКонецЕсли;\n"
+        content = (
+            "Если А Тогда\n    Х=1;\nИначеЕсли Б = Ложь Тогда\n    У=2;\nКонецЕсли;\n"
+        )
         diags = _check(content, tmp_path, select={"BSL059"})
         assert "BSL059" in _codes(diags)
 
@@ -2042,6 +2304,46 @@ class TestBsl062UnusedParameter:
         diags = _check(content, tmp_path, select={"BSL062"})
         assert "BSL062" not in _codes(diags)
 
+    def test_unused_parameters_skipped_in_client_command_handler(self, tmp_path: Path) -> None:
+        """Колбэк Параметры в типовом ОбработкаКоманды на клиенте — не BSL062 (как BSLLS на командах)."""
+        content = """\
+            &НаКлиенте
+            Процедура ОбработкаКоманды(ПараметрКоманды, ПараметрыВыполненияКоманды, Параметры)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_unused_parameters_skipped_in_notify_completion_handler(self, tmp_path: Path) -> None:
+        """Второй параметр Параметры в экспортном *Завершение — штатный колбэк оповещения."""
+        content = """\
+            &НаКлиенте
+            Процедура МояОперацияЗавершение(Результат, Параметры) Экспорт
+                А = Результат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL254 — TransferringParametersBetweenClientAndServer
+# ---------------------------------------------------------------------------
+
+
+class TestBsl254TransferringParameters:
+    def test_server_parameter_without_val_reported(self, tmp_path: Path) -> None:
+        """На сервере параметры границы клиент/сервер должны иметь Знач (не только CommonCommands)."""
+        content = """\
+            &НаСервере
+            Функция Данные(Ссылка)
+                Возврат 1;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL254"})
+        assert "BSL254" in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL063 — LargeModule
@@ -2122,6 +2424,18 @@ class TestBsl065MissingExportComment:
         diags = _check(content, tmp_path, select={"BSL065"})
         assert "BSL065" not in _codes(diags)
 
+    def test_export_with_comment_before_form_directive(self, tmp_path: Path) -> None:
+        """Comment may be separated from declaration by &НаКлиенте / &НаСервере lines."""
+        content = """\
+            // Описание экспортного метода формы
+            &НаКлиенте
+            Процедура Тест() Экспорт
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL065"})
+        assert "BSL065" not in _codes(diags)
+
     def test_non_export_no_warning(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -2130,6 +2444,58 @@ class TestBsl065MissingExportComment:
         """
         diags = _check(content, tmp_path, select={"BSL065"})
         assert "BSL065" not in _codes(diags)
+
+    def test_form_module_path_skips_bsl065(self, tmp_path: Path) -> None:
+        """BSLLS parity: EDT form ``Module.bsl`` — skip Missing export comment."""
+        content = """\
+            Процедура Тест() Экспорт
+                А = 1;
+            КонецПроцедуры
+        """
+        form_dir = tmp_path / "Forms" / "SomeForm" / "Ext"
+        form_dir.mkdir(parents=True)
+        bsl_path = form_dir / "Module.bsl"
+        bsl_path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL065"}).check_file(str(bsl_path))
+        assert "BSL065" not in _codes(diags)
+
+    def test_notify_completion_export_no_bsl065(self, tmp_path: Path) -> None:
+        """Экспорт *Завершение на клиенте — штатный колбэк; отдельный // к экспорту не обязателен."""
+        content = """\
+            &НаКлиенте
+            Процедура ДействиеЗавершение(Результат, Параметры) Экспорт
+                А = Результат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL065"})
+        assert "BSL065" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL240 — RewriteMethodParameter (parameter default lines are not body)
+# ---------------------------------------------------------------------------
+
+
+class TestBsl240RewriteMethodParameter:
+    def test_multiline_param_default_not_false_positive(self, tmp_path: Path) -> None:
+        """Continuation lines of the parameter list must not count as body assignments."""
+        content = """\
+            Процедура МояПроцедура(
+                Переменная = Неопределено) Экспорт
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" not in _codes(diags)
+
+    def test_param_reassign_in_body_still_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(П) Экспорт
+                П = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" in _codes(diags)
 
 
 # ---------------------------------------------------------------------------
@@ -2142,6 +2508,18 @@ class TestBsl066DeprecatedPlatformMethod:
         content = 'Сообщить("Привет");\n'
         diags = _check(content, tmp_path, select={"BSL066"})
         assert "BSL066" in _codes(diags)
+
+    def test_preduprezhdenie_skipped_in_client_command_handler(self, tmp_path: Path) -> None:
+        """Предупреждение() в типовом клиентском ОбработкаКоманды — не BSL066 (модальный сценарий команды)."""
+        content = """\
+            &НаКлиенте
+            Процедура ОбработкаКоманды(ПараметрКоманды, ПараметрыВыполненияКоманды)
+                Предупреждение("Внимание");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL066", "BSL022"})
+        assert "BSL066" not in _codes(diags)
+        assert "BSL022" not in _codes(diags)
 
     def test_in_comment_no_warning(self, tmp_path: Path) -> None:
         content = '// Сообщить("Привет");\n'
@@ -3414,7 +3792,7 @@ class TestBsl116UseOfObsoleteIterator:
     def test_foreach_no_warning(self, tmp_path: Path) -> None:
         content = """\
 Процедура Тест()
-    ДляКаждого Элемент Из Список Цикл
+    Для Каждого Элемент Из Список Цикл
         А = 1;
     КонецЦикла;
 КонецПроцедуры

@@ -4,7 +4,7 @@
 
 ## Что нужно локально
 
-- Установленный или собранный JAR **Java-анализатора BSL** из экосистемы 1c-syntax (см. `docs/THIRD_PARTY_NOTICES.md`); путь к JAR задаётся переменной `BSLLS_JAR` или локально вне репозитория.
+- Установленный или собранный JAR **Java-анализатора BSL** из экосистемы 1c-syntax (см. `docs/THIRD_PARTY_NOTICES.md`). Удобный вариант для разработки onec-hbk-bsl: каталог **`.nosync/bsl-language-server`** в корне клона (любой `bsl-language-server*.jar` в поддереве) **или** переменная **`BSLLS_JAR`** с путём к одному JAR. Для сравнения с эталоном см. [BSLLS_PARITY.md](BSLLS_PARITY.md).
 - Один и тот же корень workspace (например, корень выгрузки конфигурации из EDT).
 - Воспроизводимый профиль правил: файл `.bsl-language-server.json` в корне workspace (или эквивалентные настройки в IDE).
 
@@ -15,17 +15,14 @@
 3. Сохраните JSON в формате, совместимом со [схемой baseline](../tests/fixtures/diag_baseline/README.md) (минимум: `file`, `line`, `code`).
 
 Альтернатива: через MCP **document_diagnostics** по `file://` URI (если в вашей среде используется LSP через MCP) — сохраните ответ в файл и при необходимости преобразуйте в упрощённый baseline.  
-**Важно:** URI внутри контейнера/моста часто **не совпадают** с путями на хосте — см. [LSP_BRIDGE_PATH_MAPPING.md](LSP_BRIDGE_PATH_MAPPING.md) и скрипт `scripts/host_to_lsp_bridge_uri.py`.
+**Важно:** URI внутри контейнера/моста часто **не совпадают** с путями на хосте — см. [LSP_BRIDGE_PATH_MAPPING.md](LSP_BRIDGE_PATH_MAPPING.md).
 
 ## Сравнение с onec-hbk-bsl
 
 После сохранения baseline-файла:
 
 ```bash
-PYTHONPATH=src python scripts/compare_diag_baseline.py \
-  --baseline path/to/baseline.json \
-  --workspace /path/to/same/workspace \
-  --files path/to/File.bsl
+onec-hbk-bsl --check path/to/File.bsl --workspace /path/to/same/workspace
 ```
 
 Скрипт запускает `DiagnosticEngine` с теми же переменными `BSL_SELECT` / `BSL_IGNORE`, что и в окружении (или задайте их явно в shell перед запуском).

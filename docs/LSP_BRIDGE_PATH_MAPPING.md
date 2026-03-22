@@ -36,15 +36,19 @@ HOST_FILE = HOST_WS / relative
 
 Если передать **хостовый** `file:///Users/...` или `file:///home/...` без согласования с тем, что открыто в LSP, bridge часто возвращает **0 диагностик** — документ не совпадает с workspace сервера. Для **onec-hbk-bsl** используйте абсолютные пути на хосте и тот же `workspace_root=HOST_WS`, что и у индексатора.
 
-## Утилита в репозитории
+## Пример на Python (локально, без отдельного скрипта)
 
-```bash
-PYTHONPATH=src python scripts/host_to_lsp_bridge_uri.py \
-  --host-workspace /path/to/your/workspace \
-  /path/to/your/workspace/src/CommonModules/MyModule/Ext/Module.bsl
+```python
+from pathlib import Path
+from urllib.parse import quote
+
+host_ws = Path("/path/to/your/workspace").resolve()
+host_file = Path("/path/to/your/workspace/src/CommonModules/MyModule/Ext/Module.bsl").resolve()
+rel = host_file.relative_to(host_ws)
+bridge_prefix = "file:///projects"
+segments = "/".join(quote(s, safe="") for s in rel.parts)
+print(f"{bridge_prefix}/{segments}")
 ```
-
-Вывод: строка `BRIDGE_URI=` для вставки в `document_diagnostics` и опционально `HOST_PATH=` для проверки обратного соответствия.
 
 ## См. также
 

@@ -31,6 +31,87 @@ class TestLineCommentNormalization:
         assert line == "//"
 
 
+class TestDocCommentBlocks:
+    """Contiguous // / /// blocks: Параметры / Возвращаемое значение and hanging text."""
+
+    def test_parameters_section_hangs_body_lines(self) -> None:
+        f = BslFormatter()
+        code = (
+            "// Параметры:\n"
+            "// КраткоеИмя - Строка - описание\n"
+            "// продолжение описания\n"
+            "Процедура Тест()\n"
+            "КонецПроцедуры\n"
+        )
+        lines = f.format(code).splitlines()
+        assert lines[0].strip() == "// Параметры:"
+        assert lines[1].strip() == "//     КраткоеИмя - Строка - описание"
+        assert lines[2].strip() == "//     продолжение описания"
+
+    def test_returns_section(self) -> None:
+        f = BslFormatter()
+        code = (
+            "// Возвращаемое значение:\n"
+            "// Булево - если ок\n"
+            "Функция Т()\n"
+            "КонецФункции\n"
+        )
+        lines = f.format(code).splitlines()
+        assert lines[0].strip() == "// Возвращаемое значение:"
+        assert lines[1].strip() == "//     Булево - если ок"
+
+    def test_preamble_then_parameters(self) -> None:
+        f = BslFormatter()
+        code = (
+            "// Краткое описание метода\n"
+            "// вторая строка описания\n"
+            "// Параметры:\n"
+            "// Имя - Строка\n"
+            "Процедура Т()\n"
+            "КонецПроцедуры\n"
+        )
+        lines = f.format(code).splitlines()
+        assert lines[0].strip() == "// Краткое описание метода"
+        assert lines[1].strip() == "//     вторая строка описания"
+        assert lines[2].strip() == "// Параметры:"
+        assert lines[3].strip() == "//     Имя - Строка"
+
+    def test_english_headers(self) -> None:
+        f = BslFormatter()
+        code = (
+            "// Parameters:\n"
+            "// Name - String\n"
+            "// Returns:\n"
+            "// True\n"
+        )
+        lines = f.format(code).splitlines()
+        assert lines[0].strip() == "// Parameters:"
+        assert lines[1].strip() == "//     Name - String"
+        assert lines[2].strip() == "// Returns:"
+        assert lines[3].strip() == "//     True"
+
+    def test_triple_slash_doc_block(self) -> None:
+        f = BslFormatter()
+        code = "/// Параметры:\n/// Имя - Строка\n"
+        lines = f.format(code).splitlines()
+        assert lines[0].strip() == "/// Параметры:"
+        assert lines[1].strip() == "///     Имя - Строка"
+
+    def test_blank_line_between_comments_resets_run(self) -> None:
+        f = BslFormatter()
+        code = "// первая\n\n// вторая\n"
+        lines = f.format(code).splitlines()
+        assert lines[0].strip() == "// первая"
+        assert lines[2].strip() == "// вторая"
+
+    def test_section_header_collapses_whitespace(self) -> None:
+        f = BslFormatter()
+        code = "//  Параметры   :\n// Имя\n"
+        lines = f.format(code).splitlines()
+        assert lines[0].strip() == "// Параметры:"
+        assert lines[1].strip() == "//     Имя"
+
+
 class TestKeywordNormalisation:
     def test_procedure_normalised(self) -> None:
         f = BslFormatter()

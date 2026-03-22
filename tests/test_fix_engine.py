@@ -87,26 +87,28 @@ class TestFixBsl010UselessReturn:
 
 
 class TestFixBsl055BlankLines:
-    def test_compresses_five_blank_lines_to_two(self) -> None:
+    def test_compresses_five_blank_lines_to_one(self) -> None:
         lines = ["А = 1;\n", "\n", "\n", "\n", "\n", "\n", "Б = 2;\n"]
         diag = _diag("f.bsl", 2, "BSL055")  # blank run starts at line 2
         result = _fix_bsl055_consecutive_blank_lines(lines, diag)
         assert result is not None
-        assert len(result) == 4  # 1 + 2 blank + 1
+        assert len(result) == 3  # 1 + 1 blank + 1
 
-    def test_preserves_two_blank_lines(self) -> None:
+    def test_two_blank_lines_compress_to_one(self) -> None:
         lines = ["А = 1;\n", "\n", "\n", "Б = 2;\n"]
         diag = _diag("f.bsl", 2, "BSL055")
         result = _fix_bsl055_consecutive_blank_lines(lines, diag)
-        assert result is None  # nothing to fix — already at limit
+        assert result is not None
+        blank_count = sum(1 for line in result if not line.strip())
+        assert blank_count == 1
 
-    def test_three_blank_lines_become_two(self) -> None:
+    def test_three_blank_lines_become_one(self) -> None:
         lines = ["А = 1;\n", "\n", "\n", "\n", "Б = 2;\n"]
         diag = _diag("f.bsl", 2, "BSL055")
         result = _fix_bsl055_consecutive_blank_lines(lines, diag)
         assert result is not None
         blank_count = sum(1 for line in result if not line.strip())
-        assert blank_count == 2
+        assert blank_count == 1
 
 
 class TestFixBsl060DoubleNegation:
@@ -176,7 +178,7 @@ class TestApplyFixes:
         assert result.error is None
         text = p.read_text(encoding="utf-8")
         blank_count = sum(1 for line in text.splitlines() if not line.strip())
-        assert blank_count <= 2
+        assert blank_count <= 1
 
     def test_fix_result_has_applied_and_skipped(self, tmp_path: Path) -> None:
         content = "Б = Б;\n"

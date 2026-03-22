@@ -9,6 +9,19 @@
   "uuid": "cf0633ff-beee-424a-a2f7-3dce4093e139",
   "patterns": [
     {
+      "comment": "Preprocessor — must match before generic «Если» / assignment rules",
+      "name": "keyword.other.preprocessor.bsl",
+      "match": "(?i)^\\s*#(Если|If|ИначеЕсли|ElsIf|Иначе|Else|КонецЕсли|EndIf)\\b"
+    },
+    {
+      "name": "keyword.other.preprocessor.bsl",
+      "match": "(?i)^\\s*#(Область|Region)\\b"
+    },
+    {
+      "name": "keyword.other.preprocessor.bsl",
+      "match": "(?i)^\\s*#(КонецОбласти|EndRegion|Использовать|Use|Удаление|Delete|КонецУдаления|EndDelete|Вставка|Insert|КонецВставки|EndInsert)\\b"
+    },
+    {
       "include": "#basic"
     },
     {
@@ -180,8 +193,9 @@
       "include": "#annotations"
     },
     {
+      "comment": "Legacy: full-line #Если … Тогда (rest of line)",
       "name": "keyword.other.preprocessor.bsl",
-      "match": "(?i:#(Если|If|ИначеЕсли|ElsIf|Иначе|Else|КонецЕсли|EndIf).*(Тогда|Then)?)"
+      "match": "(?i)^\\s*#(Если|If|ИначеЕсли|ElsIf|Иначе|Else|КонецЕсли|EndIf)\\b.*$"
     },
     {
       "comment": "Region start",

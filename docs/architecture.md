@@ -182,7 +182,7 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 
 ## Отношение к справочнику правил BSL (совместимость имён)
 
-**onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). Сторонний **Java-анализатор** из экосистемы 1c-syntax **не** вызывается в рантайме. Имена правил и подавления `// BSLLS:…` согласованы с общепринятым справочником; см. [матрицу](bsl_rules_matrix.md). Офлайн-сверка — [BSLLS_BASELINE.md](BSLLS_BASELINE.md). Внешний **MCP→LSP** в IDE не является частью `onec-hbk-bsl` и может использоваться только для ручного снятия эталонов.
+**onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). Сторонний **Java-анализатор** из экосистемы 1c-syntax **не** вызывается в рантайме. Имена правил и подавления `// BSLLS:…` согласованы с общепринятым справочником; см. [матрицу](bsl_rules_matrix.md). Офлайн-сверка — [BSLLS_BASELINE.md](BSLLS_BASELINE.md). Политика выравнивания кодов и приоритетов с BSLLS (JAR, workspace, `.bsl-language-server.json`) — [BSLLS_PARITY.md](BSLLS_PARITY.md). Внешний **MCP→LSP** в IDE не является частью `onec-hbk-bsl` и может использоваться только для ручного снятия эталонов.
 
 ## Further work
 

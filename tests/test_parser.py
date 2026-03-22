@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from onec_hbk_bsl.parser.bsl_parser import BslParser
+from onec_hbk_bsl.parser.bsl_parser import _TS_AVAILABLE, BslParser
 
 
 class TestBslParserParseFile:
@@ -71,6 +71,32 @@ class TestBslParserExtractErrors:
         tree = parser.parse_content("Процедура (\nневерный синтаксис\n")
         result = parser.extract_errors(tree)
         assert isinstance(result, list)
+
+    @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-bsl required")
+    def test_no_false_positive_paren_errors_multiline_assignment(self) -> None:
+        """Valid parenthesised RHS split across lines must not yield lone (/) ERROR nodes."""
+        parser = BslParser()
+        code = """\
+Процедура Тест()
+\tЗаполненОГРН = (Резидент И ЗаполненОГРН
+\t\t\tИЛИ НЕ Резидент И НЕ ЗаполненОГРН)
+\t\tИ НЕ ЗначениеЗаполнено(ОГРНИП);
+КонецПроцедуры
+"""
+        tree = parser.parse_content(code)
+        assert parser.extract_errors(tree) == []
+
+    @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-bsl required")
+    def test_no_false_positive_paren_new_string_constructor(self) -> None:
+        """``Новый(\"…\")`` can produce spurious ')' ERROR in grammar — suppress when valid."""
+        parser = BslParser()
+        code = """\
+Процедура Тест()
+\tМенеджерКриптографии = Новый(\"МенеджерКриптографии\");
+КонецПроцедуры
+"""
+        tree = parser.parse_content(code)
+        assert parser.extract_errors(tree) == []
 
 
 class TestBslParserProcedureCount:

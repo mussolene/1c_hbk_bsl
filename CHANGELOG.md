@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Документация сверки с BSLLS и клиент/серверный контекст правил: [docs/BSLLS_PARITY.md](docs/BSLLS_PARITY.md), [docs/CLIENT_SERVER_DIAGNOSTICS.md](docs/CLIENT_SERVER_DIAGNOSTICS.md); ссылки из [architecture.md](docs/architecture.md) и [BSLLS_BASELINE.md](docs/BSLLS_BASELINE.md).
+
 ### Changed
+- **LSP semantic tokens (подсветка):** логические операторы **И** / **ИЛИ** / **НЕ** учитываются в **любом регистре** (`и`, `ИЛИ`, `нЕ` и т.д.); исправлено написание **ИЛИ** (раньше в шаблоне ошибочно фигурировало «Или» без совпадения с ключевым словом в модуле).
+- **BSL001 (ParseError):** подавление ложных узлов `(` / `)` от грамматики tree-sitter-bsl не только внутри ``Если (…)``, но и в **присваиваниях** с многострочными скобками и в конструкциях вроде ``Новый("…")`` — ближе к BSLLS и к допустимому BSL (см. `BslParser._should_suppress_lone_paren_error`).
+- **BSL065 (Missing export comment):** в модулях форм EDT (`path_is_likely_form_module_bsl`) правило не выполняется — паритет с BSLLS на `…/Forms/…/Ext/Module.bsl`.
+- **BSL153 (CanonicalSpellingKeywords):** в модулях форм EDT (`path_is_likely_form_module_bsl`) правило не выполняется — паритет с BSLLS на типичных `Module.bsl` форм.
+- **BSL011 (CognitiveComplexity):** в метрику добавлен учёт логических операторов `И`/`ИЛИ`/`And`/`Or` (в духе Sonar/BSLLS), чтобы совместно с BSL019 не «отставать» от BSLLS на длинных условиях.
+- **BSL046 / BSL199:** при включённом BSL199 цепочка «Если/ИначеЕсли без Иначе» даёт только **BSL199** (строка **КонецЕсли**), без дубля BSL046; при отключённом BSL199 по-прежнему срабатывает BSL046 на строке `Если`.
+- **BSL036 (IfConditionComplexity):** подсчёт операторов `И`/`ИЛИ` по **всему** условию до `Тогда` (многострочные `Если`/`ИначеЕсли`); **BSL153** не выдаётся на строках этого условия, если с первой строки срабатывает BSL036.
+- **BSL024 (SpaceAtStartComment):** дополнительно не помечаются только строки `//&…` (директивы компилятора); `//{`/`//}` и декоративные `//****…` снова проверяются как у BSLLS на эталонных модулях.
+- **BSL055 (ConsecutiveEmptyLines):** порог как у BSLLS — не более **одной** пустой строки подряд между фрагментами кода (`MAX_BLANK_LINES=1`); quick-fix в [fix_engine.py](src/onec_hbk_bsl/analysis/fix_engine.py) согласован.
+- **BSL256 (Typo) / BSL208 (LatinAndCyrillicSymbolInWord):** включено по умолчанию правило **BSL256** для идентификаторов, где кириллица состоит только из букв-омоглифов латиницы (как у BSLLS — приоритет Typo); намеренное смешение алфавитов по-прежнему даёт **BSL208**. Общая реализация: `_rule_bsl208_bsl256_latin_cyrillic_and_typo`.
+- **BSL219 (MissingVariablesDescription):** реализовано для `Перем … Экспорт` / `Var … Export` на уровне модуля без непустой строки описания `//` или `///` непосредственно выше (как BSLLS; часто вместе с BSL054 на той же строке).
+- **BSL040 (UsingThisForm):** модули форм определяются по пути EDT (`…/Forms/…/Ext/Module.bsl`) и по имени файла (`*форма*`, окончание `form`) — для них **ЭтаФорма** не помечается как ошибочное использование вне обработчика.
+- **BSL024 (SpaceAtStartComment):** выравнивание с BSLLS — строгий «допустимый» комментарий как в `SpaceAtStartCommentDiagnostic`, аннотации `//@` / `//(c)` / `//©`, пропуск строк с закомментированным кодом (аналог `CodeRecognizer`), `///`, `//|`, `//!`; общая функция `bsl024_should_report_line` для движка и LSP quick-fix.
+- **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
 - Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники собираются на **Python 3.12**.
 
 ## [0.6.7] - 2026-03-21

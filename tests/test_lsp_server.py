@@ -773,6 +773,43 @@ class TestSemanticTokens:
         assert found_znach, "expected semantic token 'keyword' over Знач"
         assert found_val, "expected semantic token 'keyword' over Val"
 
+    def test_semantic_tokens_logical_operators_case_insensitive(self, tmp_path, monkeypatch) -> None:
+        """BSL is case-insensitive: и/или/нЕ must get keyword tokens; ИЛИ is one token, not И."""
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_semantic_tokens_full
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        src = "Если а и б или в нЕ г Тогда\nКонецЕсли\n"
+        ls._docs["file:///log.bsl"] = src
+        params = MagicMock()
+        params.text_document.uri = "file:///log.bsl"
+        result = on_semantic_tokens_full(ls, params)
+        assert result is not None and result.data
+        keyword_type = 0
+        # Collect keyword spans on line 0
+        line0 = 0
+        col0 = 0
+        spans: list[tuple[int, int]] = []
+        i = 0
+        while i < len(result.data):
+            d_line, d_start, length, typ, _mod = result.data[i : i + 5]
+            if d_line > 0:
+                line0 += d_line
+                col0 = d_start
+            else:
+                col0 += d_start
+            if line0 == 0 and typ == keyword_type:
+                spans.append((col0, length))
+            i += 5
+
+        def covers(pos: int) -> bool:
+            return any(s <= pos < s + ln for s, ln in spans)
+
+        assert covers(src.index("и")), "expected keyword token on lowercase и (AND)"
+        assert covers(src.index("или")), "expected keyword token on или (OR)"
+        assert covers(src.index("нЕ")), "expected keyword token on mixed-case нЕ (NOT)"
+
     def test_semantic_tokens_empty_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 

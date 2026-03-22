@@ -268,6 +268,131 @@ def diagnostics_bsl085_from_tree(path: str, root: Any, lines: list[str]) -> list
     return diags
 
 
+def ts_clause_body_is_empty(body: list[Any]) -> bool:
+    """True if clause body has no executable statements (only comments / bare ``;``)."""
+    for c in body:
+        ct = getattr(c, "type", None)
+        if ct in (None, "line_comment", ";"):
+            continue
+        return False
+    return True
+
+
+def _bsl004_append_empty_block(
+    path: str,
+    diags: list[Any],
+    anchor_kw: Any,
+    message: str,
+) -> None:
+    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
+
+    diags.append(
+        Diagnostic(
+            file=path,
+            line=anchor_kw.start_point[0] + 1,
+            character=anchor_kw.start_point[1],
+            end_line=anchor_kw.end_point[0] + 1,
+            end_character=anchor_kw.end_point[1],
+            severity=Severity.WARNING,
+            code="BSL004",
+            message=message,
+        )
+    )
+
+
+def _bsl004_emit_empty_then_for_elseif_clause(
+    elseif_node: Any, path: str, diags: list[Any], empty_msg: str
+) -> None:
+    ech = list(getattr(elseif_node, "children", []) or [])
+    j = 0
+    if j < len(ech) and getattr(ech[j], "type", None) == "ELSIF_KEYWORD":
+        j += 1
+    else:
+        return
+    if j < len(ech) and getattr(ech[j], "type", None) == "expression":
+        j += 1
+    if j >= len(ech) or getattr(ech[j], "type", None) != "THEN_KEYWORD":
+        return
+    then_kw = ech[j]
+    j += 1
+    body = ech[j:]
+    if not ts_clause_body_is_empty(body):
+        return
+    _bsl004_append_empty_block(path, diags, then_kw, empty_msg)
+
+
+def ts_if_main_then_branch_empty(if_stmt: Any) -> bool:
+    """True when the first ``Если`` … ``Тогда`` branch has no executable statements."""
+    ch = list(getattr(if_stmt, "children", []) or [])
+    i = 0
+    if i < len(ch) and getattr(ch[i], "type", None) == "IF_KEYWORD":
+        i += 1
+    else:
+        return False
+    if i < len(ch) and getattr(ch[i], "type", None) == "expression":
+        i += 1
+    if i >= len(ch) or getattr(ch[i], "type", None) != "THEN_KEYWORD":
+        return False
+    i += 1
+    start = i
+    while i < len(ch) and getattr(ch[i], "type", None) not in (
+        "elseif_clause",
+        "else_clause",
+        "ENDIF_KEYWORD",
+    ):
+        i += 1
+    body = ch[start:i]
+    return ts_clause_body_is_empty(body)
+
+
+def ts_elseif_then_branch_empty(elseif_node: Any) -> bool:
+    """True when an ``ИначеЕсли`` … ``Тогда`` branch has no executable statements."""
+    ech = list(getattr(elseif_node, "children", []) or [])
+    j = 0
+    if j < len(ech) and getattr(ech[j], "type", None) == "ELSIF_KEYWORD":
+        j += 1
+    else:
+        return False
+    if j < len(ech) and getattr(ech[j], "type", None) == "expression":
+        j += 1
+    if j >= len(ech) or getattr(ech[j], "type", None) != "THEN_KEYWORD":
+        return False
+    j += 1
+    body = ech[j:]
+    return ts_clause_body_is_empty(body)
+
+
+def _bsl004_emit_empty_then_for_if_statement(
+    if_stmt: Any, path: str, diags: list[Any], empty_msg: str
+) -> None:
+    ch = list(getattr(if_stmt, "children", []) or [])
+    i = 0
+    if i < len(ch) and getattr(ch[i], "type", None) == "IF_KEYWORD":
+        i += 1
+    else:
+        return
+    if i < len(ch) and getattr(ch[i], "type", None) == "expression":
+        i += 1
+    if i >= len(ch) or getattr(ch[i], "type", None) != "THEN_KEYWORD":
+        return
+    then_kw = ch[i]
+    i += 1
+    start = i
+    while i < len(ch) and getattr(ch[i], "type", None) not in (
+        "elseif_clause",
+        "else_clause",
+        "ENDIF_KEYWORD",
+    ):
+        i += 1
+    body = ch[start:i]
+    if ts_clause_body_is_empty(body):
+        _bsl004_append_empty_block(path, diags, then_kw, empty_msg)
+    while i < len(ch):
+        if getattr(ch[i], "type", None) == "elseif_clause":
+            _bsl004_emit_empty_then_for_elseif_clause(ch[i], path, diags, empty_msg)
+        i += 1
+
+
 def _try_except_has_only_comments_or_empty(
     try_node: Any,
 ) -> bool:
@@ -293,36 +418,42 @@ def _try_except_has_only_comments_or_empty(
 
 
 def diagnostics_bsl004_from_tree(path: str, root: Any) -> list[Any]:
-    """BSL004 — empty exception handler."""
+    """BSL004 — empty code blocks (BSLLS ``EmptyCodeBlock``): empty Except, empty Тогда."""
     from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
 
     diags: list[Any] = []
+    empty_then_msg = (
+        "Empty code block: 'Тогда' branch contains no statements — "
+        "add logic or remove the branch."
+    )
 
     def visit(node: Any) -> None:
-        if getattr(node, "type", None) != "try_statement":
-            return
-        if not _try_except_has_only_comments_or_empty(node):
-            return
-        for c in getattr(node, "children", []) or []:
-            if getattr(c, "type", None) == "EXCEPT_KEYWORD":
-                line = c.start_point[0] + 1
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=line,
-                        character=0,
-                        end_line=line,
-                        end_character=0,
-                        severity=Severity.WARNING,
-                        code="BSL004",
-                        message=(
-                            "Empty exception handler: Except block contains no statements. "
-                            "Add error handling or at least a comment explaining why "
-                            "it is intentionally empty."
-                        ),
-                    )
-                )
+        nt = getattr(node, "type", None)
+        if nt == "try_statement":
+            if not _try_except_has_only_comments_or_empty(node):
                 return
+            for c in getattr(node, "children", []) or []:
+                if getattr(c, "type", None) == "EXCEPT_KEYWORD":
+                    line = c.start_point[0] + 1
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line,
+                            character=0,
+                            end_line=line,
+                            end_character=0,
+                            severity=Severity.WARNING,
+                            code="BSL004",
+                            message=(
+                                "Empty exception handler: Except block contains no statements. "
+                                "Add error handling or at least a comment explaining why "
+                                "it is intentionally empty."
+                            ),
+                        )
+                    )
+                    return
+        elif nt == "if_statement":
+            _bsl004_emit_empty_then_for_if_statement(node, path, diags, empty_then_msg)
 
     ts_walk_preorder(root, visit)
     return diags

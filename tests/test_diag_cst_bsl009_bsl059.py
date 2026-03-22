@@ -26,6 +26,7 @@ def test_bsl059_cst_only_if_condition(tmp_path: Path) -> None:
         "Процедура Т()\n"
         "    Флаг = Ложь;\n"
         "    Если А = Истина Тогда\n"
+        "        Х = 1;\n"
         "    КонецЕсли;\n"
         "КонецПроцедуры\n",
         encoding="utf-8",
@@ -40,7 +41,9 @@ def test_bsl059_cst_elseif(tmp_path: Path) -> None:
     p = tmp_path / "m.bsl"
     p.write_text(
         "Если А Тогда\n"
+        "    Х = 1;\n"
         "ИначеЕсли Б = Ложь Тогда\n"
+        "    У = 2;\n"
         "КонецЕсли;\n",
         encoding="utf-8",
     )

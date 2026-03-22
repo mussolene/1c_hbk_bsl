@@ -9,8 +9,13 @@ bare ``=`` until ``;``, extra for lines starting with ``.``, suppressed inside
 procedure signatures and inside ``Если``/``Пока``/``Для`` conditions until
 ``Тогда``/``Цикл``/``Do``.
 
-Full-line ``//`` comments: spaces after ``//`` are normalized to a single space
-before non-empty comment text (aligned with typical BSLLS / SpaceAtStartComment style).
+Full-line ``//`` / ``///`` comments: spaces after the slashes are normalized to a
+single space before non-empty text. Contiguous multi-line comment blocks (no blank
+lines between) get extra rules: documentation section headers (``Параметры``,
+``Parameters``, ``Возвращаемое значение``, ``Returns``, ``Описание``, ``Description``,
+``Пример``, ``Example``) are whitespace-normalized; continuation lines under a
+section and wrapped preamble lines use a uniform hanging indent after ``// `` so
+multi-line descriptions align.
 
 Wrapped procedure/function parameters (``Функция Имя(`` then parameters on the
 next lines) get one extra indent level so continuation lines use a "double"
@@ -238,10 +243,130 @@ def _normalize_line_comment_spaces(stripped: str) -> str:
     """Normalize a full-line // comment: ``//`` + one space + trimmed text (BSL LS style)."""
     if not stripped.startswith("//"):
         return stripped
+    # XML-doc / structured lines (/// …) — keep one space after ///, preserve rest of the line
+    if stripped.startswith("///"):
+        rest = stripped[3:]
+        if not rest.strip():
+            return "///"
+        return "/// " + rest.lstrip()
     rest = stripped[2:]
     if not rest.strip():
         return "//"
     return "// " + rest.lstrip()
+
+
+# Documentation blocks (Parameters / Returns / …) inside contiguous // or /// runs.
+_DOC_SECTION_HEADER = re.compile(
+    r"^\s*(?:"
+    r"Параметры|Parameters|"
+    r"Возвращаемое\s+значение|Returns|"
+    r"Описание|Description|"
+    r"Пример|Example"
+    r")\s*:",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _comment_prefix_and_core(stripped: str) -> tuple[str, str]:
+    """Return ``("//" or "///", text after the slashes)."""
+    s = stripped.strip()
+    if s.startswith("///"):
+        return "///", s[3:].lstrip()
+    if s.startswith("//"):
+        return "//", s[2:].lstrip()
+    return "//", s.lstrip()
+
+
+def _find_contiguous_full_line_comment_runs(lines: list[str]) -> list[tuple[int, int]]:
+    """Inclusive [start, end] indices of runs of 2+ consecutive full-line ``//``/``///`` lines.
+
+    A blank line or a non-comment line ends the run.
+    """
+    n = len(lines)
+    runs: list[tuple[int, int]] = []
+    i = 0
+    while i < n:
+        st = _strip_indent(lines[i].rstrip())
+        if not st or not st.startswith("//"):
+            i += 1
+            continue
+        j = i
+        while j + 1 < n:
+            nst = _strip_indent(lines[j + 1].rstrip())
+            if not nst:
+                break
+            if not nst.startswith("//"):
+                break
+            j += 1
+        if j > i:
+            runs.append((i, j))
+        i = j + 1
+    return runs
+
+
+def _normalize_doc_comment_block_stripped(
+    stripped_lines: list[str],
+    *,
+    inner_spaces: int = 4,
+) -> list[str]:
+    """Normalize a contiguous block of stripped full-line ``//``/``///`` lines (2+ lines).
+
+    * Section headers (Параметры / Parameters / …) are collapsed to single spaces.
+    * Lines after a section header, and preamble continuation lines before the first
+      header, get a hanging indent (``inner_spaces`` spaces after ``// `` / ``/// ``).
+    """
+    sp = " " * inner_spaces
+    first_header_idx: int | None = None
+    for idx, line in enumerate(stripped_lines):
+        _pref, core = _comment_prefix_and_core(line)
+        if not core.strip():
+            continue
+        if _DOC_SECTION_HEADER.match(core):
+            first_header_idx = idx
+            break
+
+    out: list[str] = []
+    for idx, line in enumerate(stripped_lines):
+        pref, core = _comment_prefix_and_core(line)
+        if not core.strip():
+            out.append("///" if pref == "///" else "//")
+            continue
+
+        if _DOC_SECTION_HEADER.match(core):
+            canon = re.sub(r"\s+", " ", core.strip())
+            canon = re.sub(r" +:", ":", canon)
+            out.append(f"{pref} {canon}")
+            continue
+
+        # Non-header body line
+        if first_header_idx is None:
+            if idx > 0:
+                out.append(f"{pref} {sp}{core.lstrip()}")
+            else:
+                out.append(f"{pref} {core.strip()}")
+            continue
+
+        if idx < first_header_idx:
+            if idx > 0:
+                out.append(f"{pref} {sp}{core.lstrip()}")
+            else:
+                out.append(f"{pref} {core.strip()}")
+            continue
+
+        out.append(f"{pref} {sp}{core.lstrip()}")
+
+    return out
+
+
+def _precompute_multiline_doc_comment_stripped(lines: list[str]) -> dict[int, str]:
+    """Map line index -> normalized stripped comment for lines in 2+ line comment runs."""
+    out: dict[int, str] = {}
+    for start, end in _find_contiguous_full_line_comment_runs(lines):
+        block = [_strip_indent(lines[k].rstrip()) for k in range(start, end + 1)]
+        normed = _normalize_doc_comment_block_stripped(block)
+        for k, idx in enumerate(range(start, end + 1)):
+            out[idx] = normed[k]
+    return out
 
 
 def _tokenize(line: str) -> list[tuple[str, str]]:
@@ -795,6 +920,8 @@ class BslFormatter:
         if len(base_levels) != len(lines):
             base_levels = _compute_structural_indent_levels(lines, text)
 
+        comment_multiline = _precompute_multiline_doc_comment_stripped(lines)
+
         result: list[str] = []
         continuation = False
         inside_operator = False
@@ -814,7 +941,7 @@ class BslFormatter:
             pp_match = _PREPROCESSOR_PATTERN.match(stripped)
 
             if is_comment_line:
-                stripped = _normalize_line_comment_spaces(stripped)
+                stripped = comment_multiline.get(i, _normalize_line_comment_spaces(stripped))
                 if output:
                     lvl = base_levels[i] + initial_indent
                     result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)

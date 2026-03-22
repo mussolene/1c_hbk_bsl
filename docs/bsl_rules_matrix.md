@@ -8,15 +8,29 @@
 | Показатель                                                    | Значение |
 | ------------------------------------------------------------- | -------- |
 | Кодов в `RULE_METADATA` (BSL001–BSL280)                       | 280      |
-| Кодов с веткой в `_run_rules` (`_rule_enabled`)               | 168      |
-| Кодов в `DEFAULT_DISABLED` по умолчанию                       | 201      |
+| Кодов с веткой в `_run_rules` (`_rule_enabled`)               | 170      |
+| Кодов в `DEFAULT_DISABLED` по умолчанию                       | 200      |
 | Имён в `_BSLLS_NAME_TO_CODE`                                  | 180      |
 | Конкретных классов `*Diagnostic.java` в BSLLS (без Abstract*) | 181      |
 | Совпадение `RULE_METADATA.name` с именем класса BSLLS         | 207      |
 | Правил только в BSLLS (нет такого `name` у нас)               | 2        |
-| Явных `implemented: True` в метаданных                        | 1        |
+| Явных `implemented: True` в метаданных                        | 3        |
 | Явных `implemented: False` в метаданных                       | 132      |
 
+
+### Намеренные дубликаты семантики BSLLS (отдельные коды BSL)
+
+Некоторые правила в BSLLS имеют один канонический код `EmptyCodeBlock` (**BSL004**). В движке onec-hbk-bsl для исторических сценариев остаются отдельные реализации с кодами **BSL080**, **BSL092**, **BSL107**; они **выключены по умолчанию** (`DEFAULT_DISABLED`), чтобы не дублировать **BSL004** на той же конструкции. При включении такого кода ожидайте пересечение с **BSL004** — предпочтительнее пользоваться **BSL004** и профилем BSLLS.
+
+Если на одной строке срабатывают **BSL036** (IfConditionComplexity) и **BSL153** (CanonicalSpellingKeywords), движок подавляет **BSL153**, когда включены оба правила: приоритет у сложности условия, как у BSLLS на пересечениях «сложное условие» vs «написание ключевых слов». Для **многострочного** условия `Если … Тогда` учёт операторов `И`/`ИЛИ`/`And`/`Or` идёт по всему блоку до `Тогда`; **BSL153** на строках продолжения подавляется, если первая строка условия даёт **BSL036** (согласование с BSLLS).
+
+**BSL065** (Missing export comment для экспортных процедур/функций): в модулях форм (`…/Form/Module.bsl`) правило **не** применяется — как контекстное сужение к поведению BSLLS на формах.
+
+**BSL024** (SpaceAtStartComment): не сообщается для строк директив компилятора `//&…`; остальные полнострочные `//` комментарии — по `bsl024_should_report_line` (в т.ч. `//{`/`//}` и `//****…`, как в типичном прогоне BSLLS на модулях EDT).
+
+**BSL055** (ConsecutiveEmptyLines): допускается не более **одной** пустой строки подряд (`MAX_BLANK_LINES=1`).
+
+Для идентификаторов с латиницей и кириллицей: если все кириллические буквы — омоглифы латиницы (слово сводится к «латинскому» виду), движок выдаёт **BSL256** (Typo), иначе **BSL208** (LatinAndCyrillicSymbolInWord), как у BSLLS относительно Typo vs mixed-script.
 
 ### Легенда колонок
 
@@ -254,7 +268,7 @@
 | BSL216 | MissingSpace                                 | MissingSpace                                 | INFORMATION | да         | да             | нет         | да              |
 | BSL217 | MissingTempStorageDeletion                   | MissingTempStorageDeletion                   | WARNING     | да         | нет            | нет         | да              |
 | BSL218 | MissingTemporaryFileDeletion                 | MissingTemporaryFileDeletion                 | WARNING     | да         | нет            | нет         | да              |
-| BSL219 | MissingVariablesDescription                  | MissingVariablesDescription                  | INFORMATION | да         | нет            | нет         | да              |
+| BSL219 | MissingVariablesDescription                  | MissingVariablesDescription                  | INFORMATION | да         | да             | да          | нет             |
 | BSL220 | MultilineStringInQuery                       | MultilineStringInQuery                       | INFORMATION | да         | нет            | нет         | да              |
 | BSL221 | MultilingualStringHasAllDeclaredLanguages    | MultilingualStringHasAllDeclaredLanguages    | WARNING     | да         | нет            | нет         | да              |
 | BSL222 | MultilingualStringUsingWithTemplate          | MultilingualStringUsingWithTemplate          | INFORMATION | да         | нет            | нет         | да              |
@@ -291,7 +305,7 @@
 | BSL253 | TimeoutsInExternalResources                  | TimeoutsInExternalResources                  | WARNING     | да         | нет            | нет         | да              |
 | BSL254 | TransferringParametersBetweenClientAndServer | TransferringParametersBetweenClientAndServer | WARNING     | да         | нет            | нет         | да              |
 | BSL255 | TryNumber                                    | TryNumber                                    | WARNING     | да         | да             | нет         | да              |
-| BSL256 | Typo                                         | Typo                                         | INFORMATION | да         | нет            | нет         | да              |
+| BSL256 | Typo                                         | Typo                                         | INFORMATION | да         | да             | да          | нет             |
 | BSL257 | UnaryPlusInConcatenation                     | UnaryPlusInConcatenation                     | WARNING     | да         | да             | нет         | да              |
 | BSL258 | UnionAll                                     | UnionAll                                     | WARNING     | да         | да             | нет         | да              |
 | BSL259 | UnknownPreprocessorSymbol                    | UnknownPreprocessorSymbol                    | WARNING     | да         | нет            | нет         | да              |
