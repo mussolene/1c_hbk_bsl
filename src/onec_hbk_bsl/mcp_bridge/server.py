@@ -8,7 +8,7 @@ bsl_find_symbol     — search symbols by name
 bsl_file_symbols    — list all symbols in a file
 bsl_callers         — who calls a given function
 bsl_callees         — what a function calls
-bsl_diagnostics     — lint issues (LSP-parity: env filters, index, rule_name + code)
+bsl_diagnostics     — full DiagnosticEngine + optional BSL-DEAD (include_unused)
 bsl_definition      — find definition location(s)
 bsl_index_file      — force-reindex a single file
 bsl_hover           — symbol signature + doc comment
@@ -49,11 +49,13 @@ from onec_hbk_bsl.analysis.call_graph import build_call_graph
 from onec_hbk_bsl.analysis.diagnostics import (
     RULE_METADATA,
     DiagnosticEngine,
+    display_name_for_rule_code,
     normalize_rule_code_set,
     parse_env_rule_filters,
 )
 from onec_hbk_bsl.analysis.fix_engine import apply_fixes as _apply_fixes
 from onec_hbk_bsl.analysis.formatter import default_formatter
+from onec_hbk_bsl.analysis.lsp_positions import utf16_len
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.metadata_registry import defs_snapshot
@@ -64,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 # MCP JSON contract version — response shape for clients.
 # Tool payloads are for assistant context; lint/format correctness uses CST in analysis/.
-MCP_CONTRACT_VERSION = "0.1.0"
+MCP_CONTRACT_VERSION = "0.2.0"
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -193,6 +195,39 @@ def _get_parser() -> BslParser:
 def _mcp_diagnostic_list(issues: list[object]) -> list[dict]:
     """JSON diagnostics aligned with LSP: internal ``code`` + ``rule_name`` (BSLLS-style)."""
     return [d.to_dict(include_rule_name=True) for d in issues]
+
+
+def _mcp_unused_diagnostics(file_path: str, idx: SymbolIndex) -> list[dict]:
+    """
+    Optional BSL-DEAD items (non-export symbols with no callers), same semantics as LSP.
+
+    Requires a populated index; empty list if nothing unused.
+    """
+    out: list[dict] = []
+    try:
+        for sym in idx.find_unused_symbols(file_path):
+            name = sym.get("name", "")
+            line = int(sym.get("line", 1))
+            char = int(sym.get("character", 0))
+            end_char = char + utf16_len(name)
+            msg = f"Неиспользуемая функция или метод: «{name}»"
+            out.append(
+                {
+                    "file": file_path,
+                    "line": line,
+                    "character": char,
+                    "end_line": line,
+                    "end_character": end_char,
+                    "severity": "INFORMATION",
+                    "code": "BSL-DEAD",
+                    "message": msg,
+                    "rule_name": display_name_for_rule_code("BSL-DEAD"),
+                    "source": "onec-hbk-bsl · unused",
+                }
+            )
+    except Exception:
+        logger.debug("MCP: unused diagnostics failed for %s", file_path, exc_info=True)
+    return out
 
 
 def _resolve_mcp_check_file_select_ignore(
@@ -453,8 +488,10 @@ def create_mcp_app() -> FastMCP:
 
     @mcp.tool(
         description=(
-            "Run BSL lint rules on a file and return diagnostics. "
-            "Checks: BSL001 syntax errors, BSL002 long procedures, BSL004 empty except handlers."
+            "Run the full BSL DiagnosticEngine on a file (same rules as LSP: BSL001–BSL280 registry, "
+            "respects BSL_SELECT/BSL_IGNORE env, optional BSL280 with workspace metadata index). "
+            "Set include_unused=true to also emit BSL-DEAD (unused non-export procedures/functions) "
+            "when the symbol index is populated."
         )
     )
     def bsl_diagnostics(
@@ -462,6 +499,10 @@ def create_mcp_app() -> FastMCP:
         workspace_root: Annotated[
             str | None, "Workspace root for resolving workspace-relative file paths"
         ] = None,
+        include_unused: Annotated[
+            bool,
+            "If true, append BSL-DEAD diagnostics for unused private symbols (requires index).",
+        ] = False,
     ) -> dict:
         """
         Run the DiagnosticEngine on *file_path* and return all issues.
@@ -473,21 +514,27 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
             Each diagnostic has: file, line, character, severity, code, rule_name, message.
+            Optional BSL-DEAD entries include ``source``: ``onec-hbk-bsl · unused``.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
         env_sel, env_ign = parse_env_rule_filters()
+        idx = _get_index(workspace_root)
         engine = DiagnosticEngine(
             parser=_get_parser(),
-            symbol_index=_get_index(workspace_root),
+            symbol_index=idx,
             select=env_sel,
             ignore=env_ign,
         )
         issues = engine.check_file(path)
+        diags = _mcp_diagnostic_list(issues)
+        if include_unused:
+            diags.extend(_mcp_unused_diagnostics(path, idx))
+        err = any(d.severity.name == "ERROR" for d in issues)
         return {
             "file_path": path,
-            "count": len(issues),
-            "has_errors": any(d.severity.name == "ERROR" for d in issues),
-            "diagnostics": _mcp_diagnostic_list(issues),
+            "count": len(diags),
+            "has_errors": err,
+            "diagnostics": diags,
         }
 
     # ------------------------------------------------------------------
@@ -557,6 +604,10 @@ def create_mcp_app() -> FastMCP:
             "Comma-separated rules to skip. "
             "If omitted, uses BSL_IGNORE env (same as LSP).",
         ] = None,
+        include_unused: Annotated[
+            bool,
+            "If true, append BSL-DEAD diagnostics for unused private symbols (requires index).",
+        ] = False,
     ) -> dict:
         """
         Lint *file_path* using the BSL DiagnosticEngine.
@@ -576,18 +627,23 @@ def create_mcp_app() -> FastMCP:
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
         select_set, ignore_set = _resolve_mcp_check_file_select_ignore(select, ignore)
+        idx = _get_index(workspace_root)
         engine = DiagnosticEngine(
             parser=_get_parser(),
-            symbol_index=_get_index(workspace_root),
+            symbol_index=idx,
             select=select_set,
             ignore=ignore_set,
         )
         issues = engine.check_file(path)
+        diags = _mcp_diagnostic_list(issues)
+        if include_unused:
+            diags.extend(_mcp_unused_diagnostics(path, idx))
+        err = any(d.severity.name == "ERROR" for d in issues)
         return {
             "file_path": path,
-            "count": len(issues),
-            "has_errors": any(d.severity.name == "ERROR" for d in issues),
-            "diagnostics": _mcp_diagnostic_list(issues),
+            "count": len(diags),
+            "has_errors": err,
+            "diagnostics": diags,
         }
 
     # ------------------------------------------------------------------
@@ -595,7 +651,7 @@ def create_mcp_app() -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Return metadata for all built-in BSL lint rules (BSL001–BSL021).",
+        description="Return metadata for all built-in BSL lint rules (registry BSL001–BSL280).",
     )
     def bsl_list_rules(
         tag_filter: Annotated[

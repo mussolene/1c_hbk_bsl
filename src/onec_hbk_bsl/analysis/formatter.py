@@ -9,6 +9,9 @@ bare ``=`` until ``;``, extra for lines starting with ``.``, suppressed inside
 procedure signatures and inside ``Если``/``Пока``/``Для`` conditions until
 ``Тогда``/``Цикл``/``Do``.
 
+Full-line ``//`` comments: spaces after ``//`` are normalized to a single space
+before non-empty comment text (aligned with typical BSLLS / SpaceAtStartComment style).
+
 Wrapped procedure/function parameters (``Функция Имя(`` then parameters on the
 next lines) get one extra indent level so continuation lines use a "double"
 indent relative to the block baseline (BSL-LS style).
@@ -104,8 +107,10 @@ _KEYWORDS: dict[str, str] = {
     "type": "Type",
     # Boolean-like RU (и/или/не are short words — handle them last to avoid collision)
     "и": "И",
-    "или": "Или",
-    "не": "Не",
+    # BSLLS uses uppercase ИЛИ for the logical operator (matches typical 1C style).
+    "или": "ИЛИ",
+    # Unary / boolean NOT keyword (BSLLS uses НЕ).
+    "не": "НЕ",
 }
 
 # Build a single regex that matches any keyword as a whole word (case-insensitive).
@@ -227,6 +232,16 @@ _PP_CANONICAL: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _normalize_line_comment_spaces(stripped: str) -> str:
+    """Normalize a full-line // comment: ``//`` + one space + trimmed text (BSL LS style)."""
+    if not stripped.startswith("//"):
+        return stripped
+    rest = stripped[2:]
+    if not rest.strip():
+        return "//"
+    return "// " + rest.lstrip()
 
 
 def _tokenize(line: str) -> list[tuple[str, str]]:
@@ -429,6 +444,14 @@ def _line_ends_with_semicolon(stripped: str) -> bool:
     code = "".join(t[1] for t in tokens if t[0] == "code")
     code = _strip_inline_comment_from_code(code).rstrip()
     return code.endswith(";")
+
+
+def _line_expression_ends_with_open_paren(stripped: str) -> bool:
+    """Code ends with ``(`` — next line continues the parenthesised expression (BSLLS-style)."""
+    tokens = _tokenize(stripped)
+    code = "".join(t[1] for t in tokens if t[0] == "code")
+    code = _strip_inline_comment_from_code(code).rstrip()
+    return code.endswith("(")
 
 
 def _line_starts_with_dot(stripped: str) -> bool:
@@ -652,6 +675,8 @@ class BslFormatter:
         insert_spaces: bool = True,
     ) -> str:
         """Format an entire BSL source file."""
+        if content.startswith("\ufeff"):
+            content = content[1:]
         lines = _expand_block_headers_one_line(content.splitlines())
         text = "\n".join(lines)
         parser = BslParser()
@@ -688,6 +713,8 @@ class BslFormatter:
         Returns the formatted text for the range only
         (TextEdit-compatible: replace lines start_line..end_line with this text).
         """
+        if content.startswith("\ufeff"):
+            content = content[1:]
         all_lines = content.splitlines()
         s = max(0, start_line)
         e = min(len(all_lines) - 1, end_line)
@@ -787,6 +814,7 @@ class BslFormatter:
             pp_match = _PREPROCESSOR_PATTERN.match(stripped)
 
             if is_comment_line:
+                stripped = _normalize_line_comment_spaces(stripped)
                 if output:
                     lvl = base_levels[i] + initial_indent
                     result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
@@ -828,6 +856,23 @@ class BslFormatter:
                 and not inside_op_for_assign
                 and _line_has_assignment_without_semicolon(proc_stripped)
                 and not _is_proc_or_func_header(proc_stripped)
+            ):
+                continuation = True
+            elif (
+                not in_method_sig
+                and not _is_proc_or_func_header(proc_stripped)
+                and kw0 in ("если", "if", "иначеесли", "elsif")
+                and _line_has_assignment_without_semicolon(proc_stripped)
+                and ("тогда" not in proc_stripped.lower())
+                and ("then" not in proc_stripped.lower())
+            ):
+                # Multiline Если/ИначеЕсли condition: next line may be ИЛИ/…/Тогда even though
+                # this line opens operator context (inside_op_for_assign would block above).
+                continuation = True
+            elif (
+                not in_method_sig
+                and not _is_proc_or_func_header(proc_stripped)
+                and _line_expression_ends_with_open_paren(proc_stripped)
             ):
                 continuation = True
             elif _line_starts_with_dot(proc_stripped):

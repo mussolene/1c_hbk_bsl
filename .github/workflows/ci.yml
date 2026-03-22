@@ -34,6 +34,10 @@ jobs:
       - name: Run tests
         run: pytest --cov=src/onec_hbk_bsl --cov-report=xml -q
 
+      # Exits 0 if BSLLS jar is absent (SKIP). With BSLLS_JAR / .nosync jar, compares to committed fixtures.
+      - name: Formatter parity (BSLLS CLI vs onec, optional)
+        run: python scripts/format_compare_bslls.py --fixtures tests/fixtures/format_parity
+
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         if: matrix.python-version == '3.11'

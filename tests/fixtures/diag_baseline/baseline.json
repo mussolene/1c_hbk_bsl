@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "description": "BSL009 + BSL059 smoke parity (run with BSL_SELECT=BSL009,BSL059)",
+  "diagnostics": [
+    { "file": "sample.bsl", "line": 2, "code": "BSL009" },
+    { "file": "sample.bsl", "line": 3, "code": "BSL059" }
+  ]
+}

@@ -1,4 +1,4 @@
-.PHONY: install install-build dev test lint fmt check-all build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
+.PHONY: install install-build dev test lint fmt check-all parity format-parity diag-bslls build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
 
@@ -12,15 +12,29 @@ dev: install
 	@echo "Dev environment ready. Run: onec-hbk-bsl --help"
 
 # ── Тесты и линтинг ──────────────────────────────────────────────────────────
+# Prefer python3 when `python` is not on PATH (e.g. some macOS setups).
+PYTHON3 ?= python3
 
 test:
-	python -m pytest
+	$(PYTHON3) -m pytest
 
 lint:
 	ruff check src tests
 
 fmt:
 	ruff format src tests
+
+# Зафиксированный baseline BSL009/BSL059 (scripts/compare_diag_baseline.py + фикстура)
+parity:
+	BSL_SELECT=BSL009,BSL059 $(PYTHON3) -m pytest tests/test_diag_baseline_fixture.py -q --no-cov
+
+# Сравнение форматтера с BSLLS (нужен BSLLS_JAR или jar в .nosync/bsl-language-server/)
+format-parity:
+	$(PYTHON3) scripts/format_compare_bslls.py --fixtures tests/fixtures/format_parity
+
+# Сравнение с BSLLS analyze -j json (нужен BSLLS_JAR); см. scripts/compare_diag_bslls.py
+diag-bslls:
+	$(PYTHON3) scripts/compare_diag_bslls.py --workspace tests/fixtures/diag_baseline --file tests/fixtures/diag_baseline/sample.bsl
 
 check-all: lint test
 

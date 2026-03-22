@@ -4,6 +4,33 @@ from __future__ import annotations
 from onec_hbk_bsl.analysis.formatter import BslFormatter
 
 
+class TestBomAndEncoding:
+    def test_utf8_bom_stripped(self) -> None:
+        f = BslFormatter()
+        result = f.format("\ufeffА = 1;\n")
+        assert not result.startswith("\ufeff")
+        assert "А = 1" in result
+
+
+class TestLineCommentNormalization:
+    def test_spaces_after_double_slash(self) -> None:
+        f = BslFormatter()
+        result = f.format("//foo\n")
+        assert "// foo\n" in result or result.strip() == "// foo"
+
+    def test_collapses_multiple_spaces_before_text(self) -> None:
+        f = BslFormatter()
+        result = f.format("//    bar\n")
+        line = result.splitlines()[0].lstrip()
+        assert line == "// bar"
+
+    def test_empty_comment_line_stays_double_slash(self) -> None:
+        f = BslFormatter()
+        result = f.format("//   \n")
+        line = result.splitlines()[0].lstrip()
+        assert line == "//"
+
+
 class TestKeywordNormalisation:
     def test_procedure_normalised(self) -> None:
         f = BslFormatter()

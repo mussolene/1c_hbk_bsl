@@ -146,6 +146,36 @@ def _resolve_path_via_module(path: str, mod) -> str:
     return str(P(mod._WORKSPACE) / path)
 
 
+class TestMcpUnusedDiagnostics:
+    def test_mcp_unused_returns_bsl_dead(self, tmp_path: Path, symbol_index) -> None:
+        from onec_hbk_bsl.mcp_bridge.server import _mcp_unused_diagnostics
+
+        bsl = tmp_path / "m.bsl"
+        bsl.write_text("Функция А() КонецФункции\n", encoding="utf-8")
+        fp = str(bsl)
+        symbol_index.upsert_file(
+            fp,
+            [
+                {
+                    "name": "А",
+                    "line": 1,
+                    "character": 0,
+                    "end_line": 1,
+                    "end_character": 0,
+                    "kind": "function",
+                    "is_export": 0,
+                    "signature": "А()",
+                    "doc_comment": None,
+                },
+            ],
+            [],
+        )
+        rows = _mcp_unused_diagnostics(fp, symbol_index)
+        assert len(rows) >= 1
+        assert rows[0]["code"] == "BSL-DEAD"
+        assert rows[0]["source"] == "onec-hbk-bsl · unused"
+
+
 # ---------------------------------------------------------------------------
 # New MCP tools: hover, references, read_file, search, format, rename, fix, scan
 # ---------------------------------------------------------------------------

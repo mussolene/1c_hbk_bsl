@@ -217,6 +217,16 @@ class TestBsl009SelfAssign:
         diags = _check(content, tmp_path)
         assert "BSL009" not in _codes(diags)
 
+    def test_property_assign_same_identifier_not_self_assign(self, tmp_path: Path) -> None:
+        # BSLLS does not flag Obj.Field = Field as SelfAssign.
+        content = (
+            "Процедура Тест()\n"
+            "    ОписаниеСертификата.ИНН = ИНН;\n"
+            "КонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path)
+        assert "BSL009" not in _codes(diags)
+
     def test_self_assign_in_comment_ignored(self, tmp_path: Path) -> None:
         content = "// Х = Х;\n"
         diags = _check(content, tmp_path)
@@ -1894,6 +1904,16 @@ class TestBsl059BooleanLiteralComparison:
         content = "// Если А = Истина Тогда\n"
         diags = _check(content, tmp_path, select={"BSL059"})
         assert "BSL059" not in _codes(diags)
+
+    def test_bool_literal_assignment_not_if_condition(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    Флаг = Ложь;\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL059"})
+        assert "BSL059" not in _codes(diags)
+
+    def test_bool_literal_in_elseif_detected(self, tmp_path: Path) -> None:
+        content = "Если А Тогда\nИначеЕсли Б = Ложь Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL059"})
+        assert "BSL059" in _codes(diags)
 
 
 # ---------------------------------------------------------------------------

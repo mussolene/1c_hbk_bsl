@@ -162,7 +162,7 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | Metadata | `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index` |
 | 1C Help (optional) | `bsl_1c_help_search_keyword`, `bsl_1c_help_get_topic` |
 
-`bsl_diagnostics` runs the full diagnostic engine for a file (not limited to BSL001–BSL004). Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
+`bsl_diagnostics` / `bsl_check_file` run the full diagnostic engine for a file (registry BSL001–BSL280). Optional `include_unused=true` appends **BSL-DEAD** (unused non-export symbols) when the index is populated — same signal as LSP Problems under source `onec-hbk-bsl · unused`. Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
 
 ## LSP capabilities (current)
 
@@ -179,6 +179,10 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | `textDocument/signatureHelp` | Implemented | Parameter hints |
 | `textDocument/formatting` / `rangeFormatting` | Implemented | `BslFormatter` stack |
 | Semantic tokens / inlay hints | Implemented | Configurable in extension |
+
+## Отношение к bsl-language-server (BSLLS)
+
+**onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). **[bsl-language-server](https://github.com/1c-syntax/bsl-language-server)** (Java) **не** вызывается в рантайме и **не** подключается через флаги «режима BSLLS» или делегирование. Связь с BSLLS — **идея** сопоставимых имён правил, подавлений `// BSLLS:…` и при желании сходства вывода; это отражено в реестре правил и [матрице](bsl_rules_matrix.md). Проверка близости к BSLLS — **офлайн** (эталонные снимки, тесты), см. [BSLLS_BASELINE.md](BSLLS_BASELINE.md). **MCP-LSP-bridge** (MCP→LSP) — другое приложение; может использоваться только как удобный способ снять эталон диагностик с JAR, без связи с процессом onec-hbk-bsl.
 
 ## Further work
 

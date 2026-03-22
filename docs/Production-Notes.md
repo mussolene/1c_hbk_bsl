@@ -5,6 +5,8 @@ This runbook covers production usage of:
 - `onec-hbk-bsl` server (LSP + MCP + diagnostics/indexing)
 - `vscode-extension` activation and binary startup behavior
 
+**Note:** `onec-hbk-bsl` does **not** bundle or call **bsl-language-server** (Java) at runtime. Behaviour alignment with BSLLS is a documented goal, not a shared process; see [architecture.md](architecture.md) (section «Отношение к bsl-language-server (BSLLS)») and [BSLLS_BASELINE.md](BSLLS_BASELINE.md).
+
 ## Startup And Activation
 - VSCode extension activates on:
   - `onLanguage:bsl`

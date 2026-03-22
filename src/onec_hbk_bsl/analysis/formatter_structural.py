@@ -52,7 +52,8 @@ def _visit_stmt(out: list[int], node: Any, depth: int) -> None:
 def _visit_proc_func(out: list[int], node: Any, depth: int) -> None:
     for c in node.children:
         ct = c.type
-        if ct in ("PROCEDURE_KEYWORD", "FUNCTION_KEYWORD"):
+        # Header line: keyword, export/async modifiers — same structural depth as procedure name.
+        if ct in ("PROCEDURE_KEYWORD", "FUNCTION_KEYWORD", "EXPORT_KEYWORD"):
             _mark_line_max(out, c.start_point[0], depth)
         elif ct in ("identifier", "parameters"):
             continue

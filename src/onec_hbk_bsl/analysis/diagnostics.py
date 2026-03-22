@@ -70,6 +70,18 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     split_commas_outside_double_quotes,
     strip_leading_val_keywords,
 )
+from onec_hbk_bsl.analysis.diagnostics_cst import (
+    diagnostics_bsl004_from_tree,
+    diagnostics_bsl018_from_tree,
+    diagnostics_bsl060_from_tree,
+    diagnostics_bsl061_from_tree,
+    diagnostics_bsl070_from_tree,
+    diagnostics_bsl085_from_tree,
+    diagnostics_bsl091_from_tree,
+    diagnostics_bsl092_from_tree,
+    loop_body_line_indices_0,
+    ts_tree_ok_for_rules as _ts_tree_ok_for_rules,
+)
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -2998,9 +3010,9 @@ _RE_RETURN_EMPTY = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Self-assign: Х = Х;
+# Self-assign: Х = Х; (bare identifier only — not Obj.Field = Field)
 _RE_SELF_ASSIGN = re.compile(
-    r"\b(\w+)\s*=\s*\1\s*;",
+    r"^\s*(\w+)\s*=\s*\1\s*;",
     re.IGNORECASE,
 )
 
@@ -3505,10 +3517,10 @@ _RE_IF_LITERAL = re.compile(
     re.IGNORECASE,
 )
 
-# Boolean literal comparison: А = Истина / А = Ложь (both sides)
+# Boolean literal comparison in If/ElseIf condition only (aligns with BSLLS).
 _RE_BOOL_LITERAL_CMP = re.compile(
-    r'(?:=|<>)\s*(?:Истина|True|Ложь|False)(?=\s|;|\)|\Z)'
-    r'|(?:Истина|True|Ложь|False)\s*(?:=|<>)',
+    r"^\s*(?:Если|ИначеЕсли|ElseIf|If)\b.*(?:=|<>)\s*(?:Истина|True|Ложь|False)\b"
+    r"|^\s*(?:Если|ИначеЕсли|ElseIf|If)\b.*(?:Истина|True|Ложь|False)\s*(?:=|<>)",
     re.IGNORECASE,
 )
 
@@ -4298,6 +4310,159 @@ def _find_regions_from_tree(tree: Any) -> list[_RegionInfo]:
     return result
 
 
+def _ts_assignment_is_bare_self_assign(node: Any) -> bool:
+    """``identifier = identifier`` only (not ``Obj.Field = Field``)."""
+    if getattr(node, "type", None) != "assignment_statement":
+        return False
+    ch = getattr(node, "children", []) or []
+    if not ch or getattr(ch[0], "type", None) != "identifier":
+        return False
+    left = _ts_node_text(ch[0])
+    expr_node = None
+    for c in ch:
+        if getattr(c, "type", None) == "expression":
+            expr_node = c
+            break
+    if expr_node is None:
+        return False
+    ech = getattr(expr_node, "children", []) or []
+    if len(ech) != 1 or getattr(ech[0], "type", None) != "identifier":
+        return False
+    return left == _ts_node_text(ech[0])
+
+
+def _ts_expr_is_boolean_literal(expr: Any) -> bool:
+    """Right-hand ``Истина``/``Ложь``/``True``/``False`` as const boolean."""
+    if getattr(expr, "type", None) != "expression":
+        return False
+    ech = getattr(expr, "children", []) or []
+    if len(ech) != 1:
+        return False
+    ce = ech[0]
+    if getattr(ce, "type", None) != "const_expression":
+        return False
+    for x in getattr(ce, "children", []) or []:
+        if getattr(x, "type", None) != "boolean":
+            continue
+        for k in getattr(x, "children", []) or []:
+            if getattr(k, "type", None) in ("TRUE_KEYWORD", "FALSE_KEYWORD"):
+                return True
+    return False
+
+
+def _ts_binary_expr_is_eq_bool_literal(be: Any) -> bool:
+    """``expr = Истина|Ложь|True|False`` (comparison to boolean literal)."""
+    if getattr(be, "type", None) != "binary_expression":
+        return False
+    ch = getattr(be, "children", []) or []
+    if len(ch) < 3:
+        return False
+    if getattr(ch[1], "type", None) != "operator":
+        return False
+    if _ts_node_text(ch[1]).strip() != "=":
+        return False
+    return _ts_expr_is_boolean_literal(ch[2])
+
+
+def _ts_expr_is_bool_literal_comparison(expr: Any) -> bool:
+    """Single ``binary_expression`` under ``expression``."""
+    if getattr(expr, "type", None) != "expression":
+        return False
+    ech = getattr(expr, "children", []) or []
+    if len(ech) != 1 or getattr(ech[0], "type", None) != "binary_expression":
+        return False
+    return _ts_binary_expr_is_eq_bool_literal(ech[0])
+
+
+def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
+    diags: list[Diagnostic] = []
+
+    def walk(node: Any) -> None:
+        if getattr(node, "type", None) == "assignment_statement" and _ts_assignment_is_bare_self_assign(node):
+            start = node.start_point
+            end = node.end_point
+            left_t = ""
+            for c in getattr(node, "children", []) or []:
+                if getattr(c, "type", None) == "identifier":
+                    left_t = _ts_node_text(c)
+                    break
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=start[0] + 1,
+                    character=start[1],
+                    end_line=end[0] + 1,
+                    end_character=end[1],
+                    severity=Severity.WARNING,
+                    code="BSL009",
+                    message=f"Self-assignment: variable '{left_t}' is assigned to itself",
+                )
+            )
+        for c in getattr(node, "children", []) or []:
+            walk(c)
+
+    walk(root)
+    return diags
+
+
+def _bsl059_collect_if_statement(node: Any, path: str, diags: list[Diagnostic]) -> None:
+    """First condition + each elseif_clause ``expression``."""
+    seen_then = False
+    for c in getattr(node, "children", []) or []:
+        ct = getattr(c, "type", None)
+        if ct == "expression" and not seen_then:
+            _append_bsl059_if_expr(c, path, diags)
+        elif ct == "THEN_KEYWORD":
+            seen_then = True
+        elif ct == "elseif_clause":
+            for cc in getattr(c, "children", []) or []:
+                if getattr(cc, "type", None) == "expression":
+                    _append_bsl059_if_expr(cc, path, diags)
+                    break
+
+
+def _append_bsl059_if_expr(expr_node: Any, path: str, diags: list[Diagnostic]) -> None:
+    if not _ts_expr_is_bool_literal_comparison(expr_node):
+        return
+    be = None
+    for c in getattr(expr_node, "children", []) or []:
+        if getattr(c, "type", None) == "binary_expression":
+            be = c
+            break
+    span = be if be is not None else expr_node
+    start = span.start_point
+    end = span.end_point
+    diags.append(
+        Diagnostic(
+            file=path,
+            line=start[0] + 1,
+            character=start[1],
+            end_line=end[0] + 1,
+            end_character=end[1],
+            severity=Severity.INFORMATION,
+            code="BSL059",
+            message=(
+                "In If/ElseIf condition: comparison to boolean literal — "
+                "use the expression directly: "
+                "'Если А Тогда' instead of 'Если А = Истина Тогда'."
+            ),
+        )
+    )
+
+
+def _diagnostics_bsl059_from_tree(path: str, root: Any) -> list[Diagnostic]:
+    diags: list[Diagnostic] = []
+
+    def walk(node: Any) -> None:
+        if getattr(node, "type", None) == "if_statement":
+            _bsl059_collect_if_statement(node, path, diags)
+        for c in getattr(node, "children", []) or []:
+            walk(c)
+
+    walk(root)
+    return diags
+
+
 def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -> int:
     """
     Calculate simplified Cognitive Complexity for a procedure body.
@@ -4755,7 +4920,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL003"):
             diagnostics.extend(self._rule_bsl003_non_export_in_api_region(path, lines, procs, regions))
         if self._rule_enabled("BSL004"):
-            diagnostics.extend(self._rule_bsl004_empty_except(path, lines))
+            diagnostics.extend(self._rule_bsl004_empty_except(path, lines, tree))
         if self._rule_enabled("BSL005"):
             diagnostics.extend(self._rule_bsl005_hardcode_network_address(path, lines))
         if self._rule_enabled("BSL006"):
@@ -4765,7 +4930,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL008"):
             diagnostics.extend(self._rule_bsl008_too_many_returns(path, lines, procs))
         if self._rule_enabled("BSL009"):
-            diagnostics.extend(self._rule_bsl009_self_assign(path, lines))
+            diagnostics.extend(self._rule_bsl009_self_assign(path, lines, tree))
         if self._rule_enabled("BSL010"):
             diagnostics.extend(self._rule_bsl010_useless_return(path, lines, procs))
         if self._rule_enabled("BSL011"):
@@ -4783,7 +4948,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL017"):
             diagnostics.extend(self._rule_bsl017_export_in_command_module(path, lines, procs))
         if self._rule_enabled("BSL018"):
-            diagnostics.extend(self._rule_bsl018_raise_with_literal(path, lines))
+            diagnostics.extend(self._rule_bsl018_raise_with_literal(path, lines, tree))
         if self._rule_enabled("BSL019"):
             diagnostics.extend(self._rule_bsl019_cyclomatic_complexity(path, lines, procs))
         if self._rule_enabled("BSL020"):
@@ -4813,7 +4978,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL032"):
             diagnostics.extend(self._rule_bsl032_function_return_value(path, lines, procs))
         if self._rule_enabled("BSL033"):
-            diagnostics.extend(self._rule_bsl033_query_in_loop(path, lines, procs))
+            diagnostics.extend(self._rule_bsl033_query_in_loop(path, lines, procs, tree))
         if self._rule_enabled("BSL034"):
             diagnostics.extend(self._rule_bsl034_unused_error_variable(path, lines, procs))
         if self._rule_enabled("BSL035"):
@@ -4823,7 +4988,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL037"):
             diagnostics.extend(self._rule_bsl037_override_builtin(path, lines, procs))
         if self._rule_enabled("BSL038"):
-            diagnostics.extend(self._rule_bsl038_string_concat_in_loop(path, lines, procs))
+            diagnostics.extend(self._rule_bsl038_string_concat_in_loop(path, lines, procs, tree))
         if self._rule_enabled("BSL039"):
             diagnostics.extend(self._rule_bsl039_nested_ternary(path, lines))
         if self._rule_enabled("BSL040"):
@@ -4867,11 +5032,11 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL058"):
             diagnostics.extend(self._rule_bsl058_query_without_where(path, lines))
         if self._rule_enabled("BSL059"):
-            diagnostics.extend(self._rule_bsl059_bool_literal_comparison(path, lines))
+            diagnostics.extend(self._rule_bsl059_bool_literal_comparison(path, lines, tree))
         if self._rule_enabled("BSL060"):
-            diagnostics.extend(self._rule_bsl060_double_negation(path, lines))
+            diagnostics.extend(self._rule_bsl060_double_negation(path, lines, tree))
         if self._rule_enabled("BSL061"):
-            diagnostics.extend(self._rule_bsl061_abrupt_loop_exit(path, lines))
+            diagnostics.extend(self._rule_bsl061_abrupt_loop_exit(path, lines, tree))
         if self._rule_enabled("BSL062"):
             diagnostics.extend(
                 self._rule_bsl062_unused_parameter(path, lines, procs, tree)
@@ -4891,7 +5056,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL069"):
             diagnostics.extend(self._rule_bsl069_infinite_loop(path, lines))
         if self._rule_enabled("BSL070"):
-            diagnostics.extend(self._rule_bsl070_empty_loop_body(path, lines))
+            diagnostics.extend(self._rule_bsl070_empty_loop_body(path, lines, tree))
         if self._rule_enabled("BSL071"):
             diagnostics.extend(self._rule_bsl071_magic_number(path, lines, procs))
         if self._rule_enabled("BSL072"):
@@ -4921,7 +5086,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL084"):
             diagnostics.extend(self._rule_bsl084_function_with_no_return(path, lines, procs))
         if self._rule_enabled("BSL085"):
-            diagnostics.extend(self._rule_bsl085_literal_boolean_condition(path, lines))
+            diagnostics.extend(self._rule_bsl085_literal_boolean_condition(path, lines, tree))
         if self._rule_enabled("BSL086"):
             diagnostics.extend(self._rule_bsl086_http_request_in_loop(path, lines))
         if self._rule_enabled("BSL087"):
@@ -4933,9 +5098,9 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL090"):
             diagnostics.extend(self._rule_bsl090_hardcoded_connection_string(path, lines))
         if self._rule_enabled("BSL091"):
-            diagnostics.extend(self._rule_bsl091_redundant_else_after_return(path, lines, procs))
+            diagnostics.extend(self._rule_bsl091_redundant_else_after_return(path, lines, procs, tree))
         if self._rule_enabled("BSL092"):
-            diagnostics.extend(self._rule_bsl092_empty_else_block(path, lines))
+            diagnostics.extend(self._rule_bsl092_empty_else_block(path, lines, tree))
         if self._rule_enabled("BSL093"):
             diagnostics.extend(self._rule_bsl093_comparison_to_null(path, lines))
         if self._rule_enabled("BSL094"):
@@ -5190,8 +5355,10 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl004_empty_except(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl004_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         i = 0
         while i < len(lines):
@@ -5352,8 +5519,10 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl009_self_assign(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
+        if _ts_tree_ok_for_rules(tree):
+            return _diagnostics_bsl009_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
@@ -5651,7 +5820,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl018_raise_with_literal(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """
         Detect ``ВызватьИсключение "строка";`` — only a string literal after the keyword.
@@ -5659,6 +5828,8 @@ class DiagnosticEngine:
         Richer context: extended ``ВызватьИсключение`` syntax with optional category, code,
         additional info, and cause (platform 8.3.21+), or a non-literal expression.
         """
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl018_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
@@ -6215,7 +6386,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl033_query_in_loop(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
     ) -> list[Diagnostic]:
         """
         Detect ``.Выполнить()`` / ``.Execute()`` calls inside loops.
@@ -6224,10 +6395,34 @@ class DiagnosticEngine:
         in 1C Enterprise — it causes N database round-trips per iteration.
         """
         diags: list[Diagnostic] = []
+        loop_lines: set[int] | None = None
+        if _ts_tree_ok_for_rules(tree):
+            loop_lines = loop_body_line_indices_0(tree.root_node)
         for proc in procs:
             loop_depth = 0
             for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
                 line = lines[i]
+                if loop_lines is not None:
+                    if i not in loop_lines:
+                        continue
+                    m = _RE_QUERY_EXECUTE.search(line)
+                    if m and not line.strip().startswith("//"):
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=i + 1,
+                                character=m.start(),
+                                end_line=i + 1,
+                                end_character=m.end(),
+                                severity=Severity.WARNING,
+                                code="BSL033",
+                                message=(
+                                    "Query.Выполнить() inside a loop causes N database "
+                                    "round-trips. Move the query outside the loop."
+                                ),
+                            )
+                        )
+                    continue
                 if _RE_LOOP_OPEN.match(line):
                     loop_depth += 1
                 elif _RE_LOOP_CLOSE.match(line):
@@ -6429,7 +6624,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl038_string_concat_in_loop(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
     ) -> list[Diagnostic]:
         """
         Flag ``Переменная = Переменная + "..."`` inside a loop.
@@ -6438,10 +6633,34 @@ class DiagnosticEngine:
         or СтрШаблон pattern instead.
         """
         diags: list[Diagnostic] = []
+        loop_lines: set[int] | None = None
+        if _ts_tree_ok_for_rules(tree):
+            loop_lines = loop_body_line_indices_0(tree.root_node)
         for proc in procs:
             loop_depth = 0
             for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
                 line = lines[i]
+                if loop_lines is not None:
+                    if i not in loop_lines or line.strip().startswith("//"):
+                        continue
+                    if _RE_STR_CONCAT.search(line):
+                        m = _RE_STR_CONCAT.search(line)
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=i + 1,
+                                character=m.start() if m else 0,
+                                end_line=i + 1,
+                                end_character=len(line),
+                                severity=Severity.WARNING,
+                                code="BSL038",
+                                message=(
+                                    "String concatenation inside a loop is O(n²). "
+                                    "Use Массив + СтрСоединить() instead."
+                                ),
+                            )
+                        )
+                    continue
                 if _RE_LOOP_OPEN.match(line):
                     loop_depth += 1
                 elif _RE_LOOP_CLOSE.match(line):
@@ -7178,9 +7397,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl059_bool_literal_comparison(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """Flag А = Истина / А = Ложь — use the boolean expression directly."""
+        if _ts_tree_ok_for_rules(tree):
+            return _diagnostics_bsl059_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.lstrip().startswith("//"):
@@ -7197,7 +7418,7 @@ class DiagnosticEngine:
                         severity=Severity.INFORMATION,
                         code="BSL059",
                         message=(
-                            "Comparison to boolean literal — "
+                            "In If/ElseIf condition: comparison to boolean literal — "
                             "use the expression directly: "
                             "'Если А Тогда' instead of 'Если А = Истина Тогда'."
                         ),
@@ -7210,9 +7431,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl060_double_negation(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """Flag НЕ НЕ / Not Not — double negation always cancels out."""
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl060_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.lstrip().startswith("//"):
@@ -7241,12 +7464,14 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl061_abrupt_loop_exit(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """
         Flag Прервать/Break as the very last non-blank statement before КонецЦикла.
         The loop could be rewritten with a proper loop condition instead.
         """
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl061_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         i = 0
         while i < len(lines):
@@ -7770,12 +7995,14 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl070_empty_loop_body(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """
         Flag loops whose body contains no executable statements.
         Only blank lines and comments between the loop header and КонецЦикла.
         """
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl070_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         i = 0
         while i < len(lines):
@@ -8408,9 +8635,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl085_literal_boolean_condition(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """Flag Если Истина/Ложь Тогда — conditions that are always true or false."""
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl085_from_tree(path, tree.root_node, lines)
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if _RE_LITERAL_BOOL_CONDITION.match(line):
@@ -8655,12 +8884,14 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl091_redundant_else_after_return(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
     ) -> list[Diagnostic]:
         """
         Flag Иначе/Else blocks that immediately follow a Возврат/Return in the preceding
         Если/Then block — the Иначе is redundant since the Return already exits.
         """
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl091_from_tree(path, tree.root_node)
         if not procs:
             return []
         diags: list[Diagnostic] = []
@@ -8716,9 +8947,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl092_empty_else_block(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """Flag Иначе/Else blocks that contain no executable statements."""
+        if _ts_tree_ok_for_rules(tree):
+            return diagnostics_bsl092_from_tree(path, tree.root_node)
         diags: list[Diagnostic] = []
         i = 0
         while i < len(lines):
