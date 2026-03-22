@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
 - Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники собираются на **Python 3.12**.
 
+## [0.6.8] - 2026-03-22
+
+### Changed
+
+- Релиз **0.6.8**: синхронизированы версии пакета `onec-hbk-bsl` (PyPI) и расширения VS Code.
+
 ## [0.6.7] - 2026-03-21
 
 ### Changed
