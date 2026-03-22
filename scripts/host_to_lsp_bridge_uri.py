@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Map host workspace file paths <-> MCP-LSP-bridge file:// URIs (e.g. file:///projects/...).
+Map host workspace file paths <-> in-container file:// URIs (e.g. file:///projects/...).
 
-Use when MCP document_diagnostics must use the same URI scheme as the BSL LS inside Cursor/devcontainer.
+Use when MCP document_diagnostics must use the same URI scheme as the language server inside Cursor/devcontainer.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def bridge_uri_to_host_path(uri: str, host_ws: Path, bridge_prefix: str) -> str:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Host path <-> MCP-LSP-bridge file:// URI")
+    p = argparse.ArgumentParser(description="Host path <-> devcontainer MCP/LSP file:// URI")
     p.add_argument(
         "--host-workspace",
         required=True,

@@ -180,9 +180,9 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | `textDocument/formatting` / `rangeFormatting` | Implemented | `BslFormatter` stack |
 | Semantic tokens / inlay hints | Implemented | Configurable in extension |
 
-## Отношение к bsl-language-server (BSLLS)
+## Отношение к справочнику правил BSL (совместимость имён)
 
-**onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). **[bsl-language-server](https://github.com/1c-syntax/bsl-language-server)** (Java) **не** вызывается в рантайме и **не** подключается через флаги «режима BSLLS» или делегирование. Связь с BSLLS — **идея** сопоставимых имён правил, подавлений `// BSLLS:…` и при желании сходства вывода; это отражено в реестре правил и [матрице](bsl_rules_matrix.md). Проверка близости к BSLLS — **офлайн** (эталонные снимки, тесты), см. [BSLLS_BASELINE.md](BSLLS_BASELINE.md). **MCP-LSP-bridge** (MCP→LSP) — другое приложение; может использоваться только как удобный способ снять эталон диагностик с JAR, без связи с процессом onec-hbk-bsl.
+**onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). Сторонний **Java-анализатор** из экосистемы 1c-syntax **не** вызывается в рантайме. Имена правил и подавления `// BSLLS:…` согласованы с общепринятым справочником; см. [матрицу](bsl_rules_matrix.md). Офлайн-сверка — [BSLLS_BASELINE.md](BSLLS_BASELINE.md). Внешний **MCP→LSP** в IDE не является частью `onec-hbk-bsl` и может использоваться только для ручного снятия эталонов.
 
 ## Further work
 

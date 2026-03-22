@@ -1,6 +1,6 @@
 # Матрица правил BSL: onec-hbk-bsl ↔ BSLLS
 
-Автогенерация: `2026-03-21`. Источники: `src/onec_hbk_bsl/analysis/diagnostics.py` (`RULE_METADATA`, `_BSLLS_NAME_TO_CODE`, `DiagnosticEngine._run_rules`, `DEFAULT_DISABLED`) и `.nosync/bsl-language-server/.../diagnostics/*Diagnostic.java`.
+Автогенерация: `2026-03-21`. Источники: `src/onec_hbk_bsl/analysis/diagnostics.py` (`RULE_METADATA`, `_BSLLS_NAME_TO_CODE`, `DiagnosticEngine._run_rules`, `DEFAULT_DISABLED`) и при необходимости локальный справочник классов диагностик сопоставимого Java-анализатора (не входит в репозиторий).
 
 ## Сводка
 

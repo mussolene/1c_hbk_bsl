@@ -12,12 +12,9 @@ The single source of truth is [`src/onec_hbk_bsl/indexer/metadata_registry.py`](
 - **`bsl_meta_collection`** expects `collection` in canonical Russian (e.g. `Справочники`) or any alias known to `META_COLLECTION_ALIASES`.
 - **`bsl_meta_index`** returns the indexer result plus **`metadata_kind_registry`**: the same data as `defs_snapshot()`.
 
-## External references (local clones)
+## Сверка с другими инструментами
 
-For comparison with other VS Code extensions (not vendored into this repo), clones under **`.nosync/`** (gitignored) may include:
-
-- [lekot/VScodePluginFor1CDev](https://github.com/example/placeholder-vscode-metadata) — `src/utils/metadataTypeMapper.ts`, EDT vs Designer parsers.
-- [asweetand-a11y/MetadataViewer1C](https://github.com/example/placeholder-metadata-viewer) — `src/ConfigurationFormats/edt.ts`, broad metadata coverage.
+При аудите сопоставлений «папка EDT/Designer → вид метаданных» можно сверяться с открытыми реализациями в других редакторах — **в репозиторий они не входят**. Локальные клоны для сравнения держите вне проекта (например в игнорируемом каталоге).
 
 ## EDT vs Designer export
 

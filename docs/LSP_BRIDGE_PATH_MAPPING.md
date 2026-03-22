@@ -1,6 +1,6 @@
-# Сопоставление путей: хост ↔ MCP `MCP-LSP-bridge` (URI внутри `/projects`)
+# Сопоставление путей: хост ↔ MCP LSP bridge (URI внутри `/projects`)
 
-В среде Cursor с **devcontainer / смонтированным workspace** языковой сервер BSL и MCP **MCP-LSP-bridge** работают с **другими `file://` URI**, чем абсолютные пути на macOS/Linux хосте.
+В среде **devcontainer / смонтированном workspace** языковой сервер BSL и внешний **MCP→LSP мост** могут работать с **другими `file://` URI**, чем абсолютные пути на macOS/Linux хосте.
 
 ## Правило (один корень workspace)
 

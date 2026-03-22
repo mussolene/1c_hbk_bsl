@@ -9,7 +9,7 @@ Usage:
     python scripts/generate_platform_api.py
 
 Requirements:
-    1c-help MCP server running at localhost:8050 (see external-help-service project)
+    1c-help MCP server running at localhost:8050 (see docs/DATA_SOURCES.md)
 """
 
 from __future__ import annotations
@@ -323,7 +323,7 @@ def main() -> None:
     client = McpClient()
     print("Connecting to 1c-help MCP at", MCP_BASE)
     if not client.init():
-        print("ERROR: Cannot connect to MCP. Is external-help-service running?", file=sys.stderr)
+        print("ERROR: Cannot connect to MCP. Is the 1c-help server running?", file=sys.stderr)
         sys.exit(1)
     print("Connected.\n")
 

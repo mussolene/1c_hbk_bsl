@@ -93,8 +93,8 @@ _parser: BslParser | None = None
 # Optional 1c-help MCP proxy (for AI context / snippets)
 # ---------------------------------------------------------------------------
 
-# 1c-help provides an MCP server (see external-help-service project).
-# We proxy its "search_1c_help_keyword" and "get_1c_help_topic" tools.
+# Optional 1c-help MCP HTTP endpoint (developer-generated docs; see DATA_SOURCES.md).
+# We proxy "search_1c_help_keyword" and "get_1c_help_topic" tools.
 _ONEC_HELP_MCP_BASE = os.environ.get("ONEC_HELP_MCP_BASE", "http://localhost:8050/mcp")
 _ONEC_HELP_HEADERS = {
     "Accept": "application/json, text/event-stream",
