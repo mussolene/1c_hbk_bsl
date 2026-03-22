@@ -10,9 +10,10 @@ permissions:
 
 env:
   BINARY_NAME: onec-hbk-bsl
+  PYTHON_VERSION: "3.12"
 
 jobs:
-  # ── 1. Build native binary per platform ─────────────────────────────────────
+  # ── 1. Build standalone binary per platform (PyInstaller onefile) ──────────
   build-binary:
     name: Build binary (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
@@ -21,79 +22,54 @@ jobs:
       matrix:
         include:
           - target: darwin-arm64
-            runner: macos-26          # Apple Silicon — 3 cores
+            runner: macos-26
             asset: onec-hbk-bsl-darwin-arm64
-            jobs: 3
-            cache_path: ~/Library/Caches/Nuitka
           - target: darwin-x64
-            runner: macos-26-intel    # Intel — 3 cores
+            runner: macos-26-intel
             asset: onec-hbk-bsl-darwin-x64
-            jobs: 3
-            cache_path: ~/Library/Caches/Nuitka
           - target: linux-x64
-            runner: ubuntu-22.04      # 2 cores
+            runner: ubuntu-22.04
             asset: onec-hbk-bsl-linux-x64
-            jobs: 2
-            cache_path: ~/.cache/Nuitka
           - target: win32-x64
-            runner: windows-2022      # 2 cores
+            runner: windows-2022
             asset: onec-hbk-bsl-win32-x64.exe
             ext: .exe
-            jobs: 2
-            cache_path: ~\AppData\Local\Nuitka\Nuitka\Cache
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      # Cache pip downloads
       - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-${{ matrix.target }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: pip-${{ matrix.target }}-
+          key: pip-${{ matrix.target }}-py312-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: pip-${{ matrix.target }}-py312-
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Install dependencies (including Nuitka)
+      - name: Install dependencies (PyInstaller + project)
         run: uv pip install -e ".[dev,build]" --system
 
-      # Cache compiled Nuitka C objects — biggest speedup on repeat runs
-      - name: Cache Nuitka compilation
+      - name: Cache PyInstaller work directory
         uses: actions/cache@v4
         with:
-          path: ${{ matrix.cache_path }}
-          key: nuitka-${{ matrix.target }}-py311-${{ hashFiles('src/**/*.py', 'pyproject.toml') }}
-          restore-keys: nuitka-${{ matrix.target }}-py311-
+          path: build/pyinstaller
+          key: pyinstaller-${{ matrix.target }}-py312-${{ hashFiles('packaging/onec-hbk-bsl.spec', 'src/**/*.py', 'pyproject.toml', 'uv.lock') }}
+          restore-keys: pyinstaller-${{ matrix.target }}-py312-
 
-      - name: Build binary (Nuitka)
+      - name: Build binary (PyInstaller)
         shell: bash
         run: |
-          python -m nuitka \
-            --standalone \
-            --onefile \
-            --deployment \
-            --python-flag=no_site,no_warnings \
-            --output-filename=${{ env.BINARY_NAME }}${{ matrix.ext }} \
-            --output-dir=dist \
-            --include-package=onec_hbk_bsl \
-            --include-package=tree_sitter \
-            --include-package=tree_sitter_bsl \
-            --include-package=fastmcp \
-            --include-package=pygls \
-            --include-package=watchfiles \
-            --include-package=rich \
-            --nofollow-import-to=tkinter,test,unittest,pydoc,doctest,distutils \
-            --include-data-dir=data=data \
-            --assume-yes-for-downloads \
-            --jobs=${{ matrix.jobs }} \
-            src/onec_hbk_bsl/__main__.py
+          python -m PyInstaller --clean --noconfirm \
+            --workpath build/pyinstaller \
+            --distpath dist \
+            packaging/onec-hbk-bsl.spec
 
       - name: Rename asset
         shell: bash
@@ -191,7 +167,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Build wheel
         run: |

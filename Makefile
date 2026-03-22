@@ -24,9 +24,10 @@ fmt:
 
 check-all: lint test
 
-# ── Сборка нативного бинаря (Nuitka) ─────────────────────────────────────────
+# ── Сборка standalone-бинаря (PyInstaller onefile) ──────────────────────────
 
 ENTRY     = src/onec_hbk_bsl/__main__.py
+SPEC      = packaging/onec-hbk-bsl.spec
 DIST_DIR  = dist
 BIN_NAME  = onec-hbk-bsl
 
@@ -49,31 +50,13 @@ BUILD_OUT = $(DIST_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
 EXTENSION_BIN_DIR = vscode-extension/bin
 EXTENSION_BIN = $(EXTENSION_BIN_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
 
-NUITKA_COMMON = \
-		--standalone \
-		--output-dir=$(DIST_DIR) \
-		--include-package=onec_hbk_bsl \
-		--include-package=tree_sitter \
-		--include-package=tree_sitter_bsl \
-		--include-package=fastmcp \
-		--include-package=pygls \
-		--include-package=watchfiles \
-		--include-package=rich \
-		--nofollow-import-to=tkinter,test,unittest,pydoc,doctest,distutils \
-		--include-data-dir=data=data \
-		--assume-yes-for-downloads \
-		--jobs=4
-
 build:
-	@echo "→ Компиляция через Nuitka ($(PLATFORM))..."
+	@echo "→ PyInstaller onefile ($(PLATFORM))..."
 	@mkdir -p $(DIST_DIR)
-	.venv/bin/python -m nuitka \
-		$(NUITKA_COMMON) \
-		--onefile \
-		--deployment \
-		--python-flag=no_site,no_warnings \
-		--output-filename=$(BIN_NAME)$(BIN_SUFFIX) \
-		$(ENTRY)
+	.venv/bin/python -m PyInstaller --clean --noconfirm \
+		--workpath build/pyinstaller \
+		--distpath $(DIST_DIR) \
+		$(SPEC)
 	@echo "✓ Готово: $(BUILD_OUT)"
 	@ls -lh $(BUILD_OUT)
 
@@ -86,7 +69,7 @@ sync-extension-bin:
 	@chmod +x $(EXTENSION_BIN) 2>/dev/null || true
 	@echo "✓ Синхронизировано: $(EXTENSION_BIN) ← $(BUILD_OUT)"
 
-# Сборка Nuitka + копирование в расширение одной командой
+# Сборка PyInstaller + копирование в расширение одной командой
 extension-bin: build sync-extension-bin
 
 # Собрать webpack и упаковать VSIX с бинарником из extension-bin (не используйте голый vsce без sync)
@@ -96,18 +79,6 @@ vsix: extension-bin
 		npx @vscode/vsce package --no-dependencies \
 			-o onec-hbk-bsl-$$VERSION-local.vsix && \
 		echo "✓ VSIX: vscode-extension/onec-hbk-bsl-$$VERSION-local.vsix"
-
-# Быстрая сборка без --onefile (для отладки — не нужна упаковка onefile)
-build-dev:
-	@mkdir -p $(DIST_DIR)/dev
-	.venv/bin/python -m nuitka \
-		--standalone \
-		--output-dir=$(DIST_DIR)/dev \
-		--include-package=onec_hbk_bsl \
-		--include-data-dir=data=data \
-		--jobs=4 \
-		$(ENTRY)
-	@echo "✓ Готово: $(DIST_DIR)/dev/__main__.dist/$(BIN_NAME)$(BIN_SUFFIX)"
 
 # Проверить что бинарь работает
 build-check: build
@@ -143,7 +114,6 @@ clean:
 	rm -f $(EXTENSION_BIN)
 	rmdir $(EXTENSION_BIN_DIR) 2>/dev/null || true
 	rm -rf build/
-	rm -rf *.build *.dist *.onefile-build
 	find . -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
 	find . -name "*.sqlite" -delete 2>/dev/null || true

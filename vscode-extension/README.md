@@ -90,7 +90,7 @@ npm ci
 npm run compile    # webpack → out/extension.js
 ```
 
-Упаковка VSIX (локально) **с тем же бинарником, что только что собрали** — из корня репозитория (Nuitka → `vscode-extension/bin/` → webpack → vsce):
+Упаковка VSIX (локально) **с тем же бинарником, что только что собрали** — из корня репозитория (PyInstaller → `vscode-extension/bin/` → webpack → vsce):
 
 ```bash
 # один раз: зависимости расширения

@@ -108,11 +108,11 @@ def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
     from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 
     db_path = resolve_index_db_path(workspace)
-    # Set env vars BEFORE importing mcp/server so module-level globals pick them up
+    # Set env vars BEFORE importing mcp_bridge/server so module-level globals pick them up
     os.environ.setdefault("INDEX_DB_PATH", db_path)
     os.environ.setdefault("WORKSPACE_ROOT", workspace)
 
-    from onec_hbk_bsl.mcp.server import create_mcp_app
+    from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
 
     _autoindex_if_empty(workspace, db_path)
 

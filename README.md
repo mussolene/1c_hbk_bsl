@@ -204,7 +204,7 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 │   ├── analysis/     # символы, граф вызовов, диагностики
 │   ├── indexer/      # инкрементальный SQLite-индекс (FTS5)
 │   ├── lsp/          # pygls LSP-сервер
-│   ├── mcp/          # MCP-сервер (fastmcp)
+│   ├── mcp_bridge/   # MCP-сервер (fastmcp)
 │   └── cli/          # CLI-интерфейс
 └── vscode-extension/
     ├── src/          # TypeScript LanguageClient
@@ -212,7 +212,7 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
     └── snippets/     # 219 сниппетов
 ```
 
-**Бинарник** собирается через [Nuitka](https://nuitka.net/) — standalone, ~40 МБ, не требует Python.
+**Бинарник** собирается через [PyInstaller](https://pyinstaller.org/) (onefile), ~30–35 МБ, не требует установленного Python.
 
 ---
 
@@ -224,7 +224,7 @@ cd 1c_hbk_bsl
 make install    # установить зависимости
 make test       # запустить тесты
 make lint       # ruff check
-make build      # собрать бинарник (Nuitka) → dist/
+make build      # собрать бинарник (PyInstaller) → dist/onec-hbk-bsl
 make extension-bin   # make build + копия в vscode-extension/bin/ (для локального VSIX)
 make vsix       # extension-bin + сборка расширения + VSIX с актуальным бинарником
 make lsp        # запустить LSP-сервер из исходников

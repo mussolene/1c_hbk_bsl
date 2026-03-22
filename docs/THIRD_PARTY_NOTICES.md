@@ -46,9 +46,9 @@ Transitive dependencies include **MIT**, **Apache-2.0**, **BSD-2/3-Clause**, **I
 
 | Package | License | Note |
 |---------|---------|------|
-| **Nuitka** | AGPL-3.0+ | Used in CI and local builds to produce standalone binaries. **Using Nuitka as a compiler does not automatically “infect” your application source with AGPL**, but you must **comply with Nuitka’s own license** (and any terms for the Nuitka distribution you use). Review [Nuitka licensing](https://nuitka.net/doc/user-manual.html#licensing) for binary releases. |
+| **PyInstaller** | GPL-2.0-or-later (bootloader and tools have additional permissive terms; see [PyInstaller licensing](https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt)) | Used in CI and local builds to produce standalone onefile binaries. |
+| **typer** | MIT | Build-time dependency: required so `mcp` package imports cleanly during PyInstaller’s `collect_all` analysis. |
 | pytest, pytest-cov, ruff | MIT / Apache-2.0 | Tests and lint only — not shipped in the wheel. |
-| ordered-set, zstandard | MIT | Nuitka helper deps for onefile builds. |
 
 ## High-level credits (see also [README](../README.md))
 

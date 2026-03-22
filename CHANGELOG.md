@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники собираются на **Python 3.12**.
+
 ## [0.6.7] - 2026-03-21
 
 ### Changed
@@ -112,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI linter: `onec-hbk-bsl --check` with SARIF / SonarQube / JSON output
 - Incremental SQLite index (FTS5), ~600 files/sec
 - 30+ diagnostic rules (BSL001–BSL055)
-- Nuitka build system for standalone native binary (~40 MB)
+- Standalone native binary (no system Python required)
 
 [Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.2.0...v0.3.0

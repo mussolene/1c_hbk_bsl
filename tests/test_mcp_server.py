@@ -28,14 +28,14 @@ def _make_bsl(tmp_path: Path, name: str, content: str) -> str:
 
 class TestCreateMcpApp:
     def test_app_is_created(self) -> None:
-        from onec_hbk_bsl.mcp.server import create_mcp_app
+        from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
         app = create_mcp_app()
         assert app is not None
 
     def test_app_has_expected_tools(self) -> None:
         import asyncio
 
-        from onec_hbk_bsl.mcp.server import create_mcp_app
+        from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
         app = create_mcp_app()
         tools = asyncio.run(app.list_tools())
         tool_names = {t.name for t in tools}
@@ -54,7 +54,7 @@ class TestCreateMcpApp:
 class TestBslStatusTool:
     def test_status_returns_dict_with_expected_keys(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-        from onec_hbk_bsl.mcp import server as mcp_module
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
         db = str(tmp_path / "idx.sqlite")
         # Override the module-level index singleton
@@ -75,7 +75,7 @@ class TestBslStatusTool:
 class TestBslListRulesTool:
     def test_list_rules_returns_all_rules(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-        from onec_hbk_bsl.mcp import server as mcp_module
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
         db = str(tmp_path / "idx.sqlite")
         original_index = mcp_module._index
@@ -107,7 +107,7 @@ class TestBslListRulesTool:
 
 class TestBslCheckFileTool:
     def test_check_file_returns_diagnostics(self, tmp_path: Path) -> None:
-        from onec_hbk_bsl.mcp import server as mcp_module
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
         bsl_path = _make_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
         # Mock the resolve path to use our tmp file
@@ -123,12 +123,12 @@ class TestBslCheckFileTool:
             mcp_module._WORKSPACE = original_workspace
 
     def test_resolve_path_absolute(self, tmp_path: Path) -> None:
-        from onec_hbk_bsl.mcp.server import _resolve_path
+        from onec_hbk_bsl.mcp_bridge.server import _resolve_path
         abs_path = str(tmp_path / "module.bsl")
         assert _resolve_path(abs_path) == abs_path
 
     def test_resolve_path_relative(self, tmp_path: Path) -> None:
-        from onec_hbk_bsl.mcp import server as mcp_module
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
         original = mcp_module._WORKSPACE
         try:
             mcp_module._WORKSPACE = str(tmp_path)
@@ -154,7 +154,7 @@ def _resolve_path_via_module(path: str, mod) -> str:
 def _make_app(tmp_path):
     os.environ["INDEX_DB_PATH"] = str(tmp_path / "idx.sqlite")
     os.environ["WORKSPACE_ROOT"] = str(tmp_path)
-    from onec_hbk_bsl.mcp.server import create_mcp_app
+    from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
     return create_mcp_app()
 
 
@@ -180,7 +180,7 @@ class TestBsl1cHelpTools:
     def test_1c_help_search_keyword_is_proxied_and_sorted(
         self, tmp_path, monkeypatch
     ) -> None:
-        from onec_hbk_bsl.mcp import server as mcp_module
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
         mcp_module._help_keyword_cache.clear()
         mcp_module._help_topic_cache.clear()
@@ -215,7 +215,7 @@ class TestBsl1cHelpTools:
     def test_1c_help_get_topic_is_proxied_and_cached(
         self, tmp_path, monkeypatch
     ) -> None:
-        from onec_hbk_bsl.mcp import server as mcp_module
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
         mcp_module._help_keyword_cache.clear()
         mcp_module._help_topic_cache.clear()
@@ -428,7 +428,7 @@ class TestMcpMultiProject:
         f1.write_text("Процедура ТолькоWS1()\nКонецПроцедуры\n", encoding="utf-8")
         f2.write_text("Процедура ТолькоWS2()\nКонецПроцедуры\n", encoding="utf-8")
 
-        from onec_hbk_bsl.mcp.server import create_mcp_app
+        from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
 
         app = create_mcp_app()
         import asyncio
