@@ -162,7 +162,7 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | Metadata | `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index` |
 | 1C Help (optional) | `bsl_1c_help_search_keyword`, `bsl_1c_help_get_topic` |
 
-`bsl_diagnostics` / `bsl_check_file` run the full diagnostic engine for a file (registry BSL001–BSL280). Optional `include_unused=true` appends **BSL-DEAD** (unused non-export symbols) when the index is populated — same signal as LSP Problems under source `onec-hbk-bsl · unused`. Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
+`bsl_diagnostics` / `bsl_check_file` run the full diagnostic engine for a file (registry BSL001–BSL280). Optional `include_unused=true` appends **BSL-DEAD** (unused non-export symbols) when the index is populated — same signal as LSP Problems under source `onec-hbk-bsl · BSL-DEAD`. Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
 
 ## LSP capabilities (current)
 

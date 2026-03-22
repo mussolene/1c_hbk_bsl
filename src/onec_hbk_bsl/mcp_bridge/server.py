@@ -222,7 +222,7 @@ def _mcp_unused_diagnostics(file_path: str, idx: SymbolIndex) -> list[dict]:
                     "code": "BSL-DEAD",
                     "message": msg,
                     "rule_name": display_name_for_rule_code("BSL-DEAD"),
-                    "source": "onec-hbk-bsl · unused",
+                    "source": "onec-hbk-bsl · BSL-DEAD",
                 }
             )
     except Exception:
@@ -514,7 +514,7 @@ def create_mcp_app() -> FastMCP:
         Returns:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
             Each diagnostic has: file, line, character, severity, code, rule_name, message.
-            Optional BSL-DEAD entries include ``source``: ``onec-hbk-bsl · unused``.
+            Optional BSL-DEAD entries include ``source``: ``onec-hbk-bsl · BSL-DEAD``.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
         env_sel, env_ign = parse_env_rule_filters()

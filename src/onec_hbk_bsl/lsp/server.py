@@ -6,7 +6,8 @@ Capabilities implemented:
   - textDocument/hover
   - textDocument/documentSymbol
   - workspace/symbol
-  - textDocument/publishDiagnostics  (on save)
+  - textDocument/publishDiagnostics  (legacy clients without pull diagnostics)
+  - textDocument/diagnostic  (pull diagnostics; preferred on VS Code / Cursor — no push spam)
   - textDocument/completion  (global functions + workspace symbols + member access)
   - textDocument/references
   - textDocument/rename + textDocument/prepareRename
@@ -42,6 +43,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_CODE_LENS,
     TEXT_DOCUMENT_COMPLETION,
     TEXT_DOCUMENT_DEFINITION,
+    TEXT_DOCUMENT_DIAGNOSTIC,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
@@ -80,11 +82,13 @@ from lsprotocol.types import (
     CompletionOptions,
     CompletionParams,
     DefinitionParams,
+    DiagnosticOptions,
     DiagnosticSeverity,
     DiagnosticTag,
     DidChangeTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
+    DocumentDiagnosticParams,
     DocumentFormattingParams,
     DocumentHighlight,
     DocumentHighlightKind,
@@ -114,6 +118,7 @@ from lsprotocol.types import (
     PublishDiagnosticsParams,
     Range,
     ReferenceParams,
+    RelatedFullDocumentDiagnosticReport,
     RenameParams,
     SaveOptions,
     SelectionRange,
@@ -186,9 +191,10 @@ _SEV_MAP = {
     Severity.HINT: DiagnosticSeverity.Hint,
 }
 
-# Problems panel: single source for grouping; rule identity is `code` (BSLLS-style name).
-_DIAG_SOURCE_LINT = "onec-hbk-bsl"
-_DIAG_SOURCE_UNUSED = "onec-hbk-bsl · unused"
+# Problems panel: ``source`` = ``onec-hbk-bsl · <internal rule id>`` so VS Code
+# "Group by Source" splits diagnostics by rule; ``code`` remains the BSLLS-style name.
+def _lsp_diagnostic_source(internal_rule_code: str) -> str:
+    return f"onec-hbk-bsl · {internal_rule_code}"
 
 # Map symbol kind strings → LSP SymbolKind
 _KIND_MAP = {
@@ -275,6 +281,8 @@ class BslLanguageServer(LanguageServer):
         self._reindex_lock = threading.Lock()
         self._reindex_running = False
         self._reindex_pending = False
+        # Set in initialize from ClientCapabilities.text_document.diagnostic (LSP 3.17 pull).
+        self.client_pull_diagnostics: bool = False
 
 
 server = BslLanguageServer()
@@ -376,6 +384,10 @@ def _schedule_workspace_reindex(
 @server.feature(INITIALIZE)
 def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
     """Handle initialize — kick off workspace indexing if workspace is set."""
+    caps = params.capabilities
+    td = caps.text_document if caps else None
+    ls.client_pull_diagnostics = bool(td is not None and td.diagnostic is not None)
+
     workspace_root = None
     if params.workspace_folders:
         workspace_root = _uri_to_path(params.workspace_folders[0].uri)
@@ -403,14 +415,15 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
 
 @server.feature(TEXT_DOCUMENT_DID_OPEN)
 def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> None:
-    """Cache document content on open and run initial diagnostics."""
+    """Cache document content on open; push diagnostics only if client has no pull support."""
     doc = params.text_document
     ls._docs[doc.uri] = doc.text
     logger.debug("LSP: opened %s", doc.uri)
     path = _uri_to_path(doc.uri)
-    threading.Thread(
-        target=_publish_diagnostics, args=(ls, doc.uri, path), daemon=True
-    ).start()
+    if not ls.client_pull_diagnostics:
+        threading.Thread(
+            target=_publish_diagnostics, args=(ls, doc.uri, path), daemon=True
+        ).start()
 
 
 _DIAG_DEBOUNCE_SECS = 0.6
@@ -420,7 +433,7 @@ _DIAG_MAX_LINES_LIVE = 3000
 
 @server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) -> None:
-    """Update cached content and schedule debounced diagnostics."""
+    """Update cached content; debounced push diagnostics only without pull-diagnostic support."""
     uri = params.text_document.uri
     for change in params.content_changes:
         ls._docs[uri] = change.text
@@ -430,6 +443,9 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
     old_timer = ls._diag_timers.pop(uri, None)
     if old_timer is not None:
         old_timer.cancel()
+
+    if ls.client_pull_diagnostics:
+        return
 
     # Skip live diagnostics for very large files — they block the server
     content = ls._docs.get(uri, "")
@@ -467,72 +483,91 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
     def _run() -> None:
         result = ls.indexer.index_file(path)
         logger.debug("LSP: re-indexed %s: %s", path, result)
-        _publish_diagnostics(ls, uri, path)
+        if not ls.client_pull_diagnostics:
+            _publish_diagnostics(ls, uri, path)
 
     threading.Thread(target=_run, daemon=True).start()
 
 
-def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
-    """Run diagnostic engine and push results to the client.
+def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
+    """Run the diagnostic engine and return LSP diagnostics (shared by push and pull)."""
+    cached = ls._docs.get(uri)
+    if cached is not None:
+        issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
+    else:
+        issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
+    lsp_diags: list[LspDiagnostic] = []
+    for d in issues:
+        pub, code_desc = _lsp_diagnostic_code_fields(d.code)
+        lsp_diags.append(
+            LspDiagnostic(
+                range=Range(
+                    start=Position(line=d.line - 1, character=d.character),
+                    end=Position(line=d.end_line - 1, character=d.end_character),
+                ),
+                severity=_SEV_MAP.get(d.severity, DiagnosticSeverity.Warning),
+                code=pub,
+                code_description=code_desc,
+                message=translate_message(d.code, d.message),
+                source=_lsp_diagnostic_source(d.code),
+                data={"bsl": d.code},
+            )
+        )
 
-    Uses in-memory document content when available (reflects current editor
-    state) and falls back to reading from disk.
-    """
     try:
-        cached = ls._docs.get(uri)
-        if cached is not None:
-            issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
-        else:
-            issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
-        lsp_diags: list[LspDiagnostic] = []
-        for d in issues:
-            pub, code_desc = _lsp_diagnostic_code_fields(d.code)
+        for sym in ls.symbol_index.find_unused_symbols(path):
+            name = sym.get("name", "")
+            sym_line = max(0, sym["line"] - 1)
+            sym_char = sym.get("character", 0)
+            dead_pub, dead_desc = _lsp_diagnostic_code_fields("BSL-DEAD")
             lsp_diags.append(
                 LspDiagnostic(
                     range=Range(
-                        start=Position(line=d.line - 1, character=d.character),
-                        end=Position(line=d.end_line - 1, character=d.end_character),
+                        start=Position(line=sym_line, character=sym_char),
+                        end=Position(line=sym_line, character=sym_char + utf16_len(name)),
                     ),
-                    severity=_SEV_MAP.get(d.severity, DiagnosticSeverity.Warning),
-                    code=pub,
-                    code_description=code_desc,
-                    message=translate_message(d.code, d.message),
-                    source=_DIAG_SOURCE_LINT,
-                    data={"bsl": d.code},
+                    severity=DiagnosticSeverity.Information,
+                    code=dead_pub,
+                    code_description=dead_desc,
+                    message=f"Неиспользуемая функция или метод: «{name}»",
+                    source=_lsp_diagnostic_source("BSL-DEAD"),
+                    tags=[DiagnosticTag.Unnecessary],
+                    data={"bsl": "BSL-DEAD"},
                 )
             )
+    except Exception as exc:
+        logger.debug("LSP: unused detection failed for %s: %s", path, exc)
 
-        # Unused (dead) function detection: private symbols with no callers.
-        # Information + separate source (Problems groups by Source); Unnecessary → dimmed in editor.
-        try:
-            for sym in ls.symbol_index.find_unused_symbols(path):
-                name = sym.get("name", "")
-                sym_line = max(0, sym["line"] - 1)
-                sym_char = sym.get("character", 0)
-                dead_pub, dead_desc = _lsp_diagnostic_code_fields("BSL-DEAD")
-                lsp_diags.append(
-                    LspDiagnostic(
-                        range=Range(
-                            start=Position(line=sym_line, character=sym_char),
-                            end=Position(line=sym_line, character=sym_char + utf16_len(name)),
-                        ),
-                        severity=DiagnosticSeverity.Information,
-                        code=dead_pub,
-                        code_description=dead_desc,
-                        message=f"Неиспользуемая функция или метод: «{name}»",
-                        source=_DIAG_SOURCE_UNUSED,
-                        tags=[DiagnosticTag.Unnecessary],
-                        data={"bsl": "BSL-DEAD"},
-                    )
-                )
-        except Exception as exc:
-            logger.debug("LSP: unused detection failed for %s: %s", path, exc)
+    return lsp_diags
 
+
+def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
+    """Push diagnostics (clients without textDocument/diagnostic pull support)."""
+    try:
+        lsp_diags = _build_lsp_diagnostics(ls, uri, path)
         ls.text_document_publish_diagnostics(
             PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags)
         )
     except Exception as exc:
         logger.error("LSP: diagnostics failed for %s: %s", path, exc)
+
+
+@server.feature(
+    TEXT_DOCUMENT_DIAGNOSTIC,
+    DiagnosticOptions(inter_file_dependencies=True, workspace_diagnostics=False),
+)
+def on_document_diagnostic(
+    ls: BslLanguageServer, params: DocumentDiagnosticParams
+) -> RelatedFullDocumentDiagnosticReport:
+    """Pull diagnostics (LSP 3.17). Used by VS Code / Cursor instead of push."""
+    uri = params.text_document.uri
+    path = _uri_to_path(uri)
+    try:
+        items = _build_lsp_diagnostics(ls, uri, path)
+    except Exception as exc:
+        logger.error("LSP: pull diagnostics failed for %s: %s", path, exc)
+        items = []
+    return RelatedFullDocumentDiagnosticReport(items=items)
 
 
 # ---------------------------------------------------------------------------

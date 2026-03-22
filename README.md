@@ -102,7 +102,7 @@ onec-hbk-bsl --index /path/to/1c-project
 
 **Команды палитры** (Command Palette): `1C HBK BSL: Reindex Workspace`, `Reindex Current File`, `Show Index Status`, `Show Server Log` — см. [docs/Production-Notes.md](docs/Production-Notes.md).
 
-**Панель Problems:** включите группировку по **источнику** (меню вида в заголовке Problems) — правила линтера идут как `onec-hbk-bsl`, неиспользуемые в проекте процедуры и функции (после индексации) — отдельной группой `onec-hbk-bsl · unused` (код `BSL-DEAD`, подсветка «лишнего» кода в редакторе сохраняется).
+**Панель Problems:** включите группировку по **источнику** — каждое правило отображается отдельной группой вида `onec-hbk-bsl · BSL001` (внутренний код правила); неиспользуемые процедуры/функции после индексации — `onec-hbk-bsl · BSL-DEAD` (подсветка «лишнего» кода в редакторе сохраняется).
 
 ---
 

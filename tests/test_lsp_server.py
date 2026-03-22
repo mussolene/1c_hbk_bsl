@@ -107,7 +107,7 @@ class TestPublishDiagnostics:
     def test_publish_diagnostics_unused_separate_source_and_information(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """Dead-code hints use a distinct Problems source and Information severity."""
+        """Dead-code hints use rule-scoped Problems source and Information severity."""
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         bsl = tmp_path / "mod.bsl"
         bsl.write_text(
@@ -140,11 +140,29 @@ class TestPublishDiagnostics:
         dead = [d for d in params.diagnostics if _is_dead(d)]
         assert len(dead) == 1
         assert dead[0].code == "UnusedPrivateMethod"
-        assert dead[0].source == "onec-hbk-bsl · unused"
+        assert dead[0].source == "onec-hbk-bsl · BSL-DEAD"
         assert dead[0].severity == DiagnosticSeverity.Information
         assert dead[0].tags and DiagnosticTag.Unnecessary in dead[0].tags
         lint_sources = {d.source for d in params.diagnostics if not _is_dead(d)}
-        assert lint_sources <= {"onec-hbk-bsl"}
+        assert all(s.startswith("onec-hbk-bsl · BSL") for s in lint_sources)
+
+    def test_document_diagnostic_pull_returns_report(self, tmp_path: Path, monkeypatch) -> None:
+        """textDocument/diagnostic returns RelatedFullDocumentDiagnosticReport (pull model)."""
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        bsl = tmp_path / "pull.bsl"
+        bsl.write_text("А = 1;\n", encoding="utf-8")
+
+        from lsprotocol.types import DocumentDiagnosticParams, TextDocumentIdentifier
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _path_to_uri, on_document_diagnostic
+
+        ls = BslLanguageServer()
+        uri = _path_to_uri(str(bsl))
+        ls._docs[uri] = bsl.read_text(encoding="utf-8")
+        params = DocumentDiagnosticParams(text_document=TextDocumentIdentifier(uri=uri))
+        report = on_document_diagnostic(ls, params)
+        assert report.kind == "full"
+        assert isinstance(report.items, (list, tuple))
 
 
 # ---------------------------------------------------------------------------

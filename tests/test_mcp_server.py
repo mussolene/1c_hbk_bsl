@@ -173,7 +173,7 @@ class TestMcpUnusedDiagnostics:
         rows = _mcp_unused_diagnostics(fp, symbol_index)
         assert len(rows) >= 1
         assert rows[0]["code"] == "BSL-DEAD"
-        assert rows[0]["source"] == "onec-hbk-bsl · unused"
+        assert rows[0]["source"] == "onec-hbk-bsl · BSL-DEAD"
 
 
 # ---------------------------------------------------------------------------
