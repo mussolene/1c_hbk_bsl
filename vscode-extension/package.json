@@ -68,22 +68,22 @@
     "commands": [
       {
         "command": "onecHbkBsl.reindexWorkspace",
-        "title": "1C HBK BSL: Reindex Workspace",
+        "title": "Reindex Workspace",
         "category": "1C HBK BSL"
       },
       {
         "command": "onecHbkBsl.reindexCurrentFile",
-        "title": "1C HBK BSL: Reindex Current File",
+        "title": "Reindex Current File",
         "category": "1C HBK BSL"
       },
       {
         "command": "onecHbkBsl.showStatus",
-        "title": "1C HBK BSL: Show Index Status",
+        "title": "Show Index Status",
         "category": "1C HBK BSL"
       },
       {
         "command": "onecHbkBsl.showOutput",
-        "title": "1C HBK BSL: Show Server Log",
+        "title": "Show Server Log",
         "category": "1C HBK BSL"
       }
     ],

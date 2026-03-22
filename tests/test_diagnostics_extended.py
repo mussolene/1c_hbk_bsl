@@ -1601,6 +1601,41 @@ class TestBsl051UnreachableCode:
         diags = _check(content, tmp_path, select={"BSL051"})
         assert "BSL051" not in _codes(diags)
 
+    def test_return_in_except_before_endtry_not_unreachable(self, tmp_path: Path) -> None:
+        """КонецПопытки closes Попытка — not dead code after Возврат in Исключение."""
+        content = """\
+            Процедура Тест()
+                Попытка
+                    А = 1;
+                Исключение
+                    Возврат;
+                КонецПопытки
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL051"})
+        assert "BSL051" not in _codes(diags)
+
+    def test_bsl051_uses_ast_delimiter_lines_when_tree_clean(self, tmp_path: Path) -> None:
+        """Block delimiters come from tree-sitter keyword nodes, not only regex."""
+        from onec_hbk_bsl.analysis.diagnostics import _bsl051_delimiter_lines_for_tree
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        content = """\
+            Процедура Тест()
+                Попытка
+                    А = 1;
+                Исключение
+                    Возврат;
+                КонецПопытки
+            КонецПроцедуры
+        """
+        tree = BslParser().parse_content(content)
+        dlines = _bsl051_delimiter_lines_for_tree(tree)
+        assert dlines is not None
+        # Исключение / КонецПопытки (0-based)
+        assert 3 in dlines
+        assert 5 in dlines
+
 
 # ---------------------------------------------------------------------------
 # BSL052 — UselessCondition
@@ -1634,6 +1669,36 @@ class TestBsl052UselessCondition:
         """
         diags = _check(content, tmp_path, select={"BSL052"})
         assert "BSL052" not in _codes(diags)
+
+    def test_elseif_true_detected_via_cst(self, tmp_path: Path) -> None:
+        """ИначеЕсли Истина — отдельный узел elseif_clause в CST."""
+        content = """\
+            Процедура Т()
+                Если А = 1 Тогда
+                ИначеЕсли Истина Тогда
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert "BSL052" in _codes(diags)
+        lines = {d.line for d in diags if d.code == "BSL052"}
+        assert 3 in lines  # ИначеЕсли line (1-based)
+
+    def test_bsl052_cst_helpers_match_parser(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.analysis.diagnostics import _bsl052_collect_literal_if_nodes
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        content = """\
+            Процедура Т()
+                Если А = 1 Тогда
+                ИначеЕсли Истина Тогда
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        tree = BslParser().parse_content(content)
+        pairs: list[tuple[int, str]] = []
+        _bsl052_collect_literal_if_nodes(tree.root_node, pairs)
+        assert pairs == [(2, "Истина")]
 
 
 # ---------------------------------------------------------------------------
@@ -1933,6 +1998,20 @@ class TestBsl062UnusedParameter:
         """Regression: naive split(',') saw `Р = ","` as two params and flagged ``"``."""
         content = """\
             Функция РазделитьСтрокуЛок(Знач Строка, Разделитель = ",", ВключатьПустые = Истина)
+                Если ВключатьПустые Тогда
+                    Возврат Строка;
+                Иначе
+                    Возврат Разделитель;
+                КонецЕсли;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_double_val_prefix_still_recognizes_param_for_bsl062(self, tmp_path: Path) -> None:
+        """Typo ``Знач Знач Имя``: regex param list must still see ``Имя`` (not drop it)."""
+        content = """\
+            Функция РазделитьСтрокуЛок(Знач Знач Строка, Разделитель = ",", ВключатьПустые = Истина)
                 Если ВключатьПустые Тогда
                     Возврат Строка;
                 Иначе

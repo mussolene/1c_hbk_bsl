@@ -1,13 +1,14 @@
 # BSL Analyzer — Architecture
 
+Актуальный контракт по эксплуатации, паритету LSP/MCP и индексации: [Production-Notes.md](Production-Notes.md).
+
 ## Overview
 
-BSL Analyzer is a static analysis toolkit for 1C Enterprise BSL language,
-providing three interfaces over a single shared symbol index:
+BSL Analyzer (`onec-hbk-bsl`) — статический анализ для языка 1C Enterprise BSL. Три интерфейса над общим SQLite-индексом символов и вызовов:
 
-1. **MCP server** — exposes BSL analysis tools to Claude via FastMCP
-2. **LSP server** — powers VSCode/Cursor with go-to-definition, hover, and diagnostics
-3. **CLI linter** — ruff-style `onec-hbk-bsl --check` command
+1. **MCP server** (FastMCP) — инструменты для ассистентов (поиск символов, диагностики, метаданные, и др.)
+2. **LSP server** (pygls) — VS Code / Cursor: определение, ссылки, переименование, дополнение, подсказки сигнатур, форматирование, диагностики
+3. **CLI** — `onec-hbk-bsl --check`, `--index`, и т.д.
 
 ## Component Diagram
 
@@ -17,20 +18,21 @@ providing three interfaces over a single shared symbol index:
 │                                                              │
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────────┐ │
 │  │  --mcp   │   │  --lsp   │   │  --check / --index       │ │
-│  │ FastMCP  │   │  pygls   │   │  CLI (rich output)        │ │
+│  │ FastMCP  │   │  pygls   │   │  CLI (rich output)       │ │
 │  │ HTTP/SSE │   │  stdio   │   │                          │ │
 │  └────┬─────┘   └────┬─────┘   └────────────┬─────────────┘ │
 │       │              │                       │               │
 │  ─────┴──────────────┴───────────────────────┴─────────────  │
-│                   Analysis Layer                              │
+│                   Analysis Layer                            │
 │  ┌──────────────┐  ┌───────────────┐  ┌──────────────────┐  │
 │  │  symbols.py  │  │ call_graph.py │  │  diagnostics.py  │  │
 │  │  Symbol      │  │  Call         │  │  DiagnosticEngine│  │
-│  │  extraction  │  │  build_call_  │  │  BSL001–BSL004   │  │
-│  │              │  │  graph()      │  │                  │  │
+│  │  extraction  │  │  build_call_  │  │  BSL001–BSL280   │  │
+│  │              │  │  graph()      │  │  (реестр; подмн. │  │
+│  │              │  │               │  │   набор активен) │  │
 │  └──────┬───────┘  └───────┬───────┘  └──────┬───────────┘  │
 │         │                  │                  │               │
-│  ─────────────────────────────────────────────────────────── │
+│  ─────────────────────────────────────────────────────────  │
 │                   Indexer Layer                               │
 │  ┌────────────────────┐    ┌───────────────────────────────┐  │
 │  │  IncrementalIndexer│    │  FileWatcher (watchfiles)     │  │
@@ -42,7 +44,7 @@ providing three interfaces over a single shared symbol index:
 │  │  symbols  │  symbols_fts (FTS5)  │  calls  │  git_state │  │
 │  └─────────────────────────────────────────────────────────┘  │
 │                                                              │
-│  ─────────────────────────────────────────────────────────── │
+│  ───────────────────────────────────────────────────────────  │
 │                   Parser Layer                                │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │  BslParser (tree-sitter-languages["bsl"])               │  │
@@ -95,14 +97,15 @@ Formatted response (dict / LSP Location)
 `textDocument/formatting` and `textDocument/rangeFormatting` use `BslFormatter`
 (`src/onec_hbk_bsl/analysis/formatter.py`).
 
-- **Structural block indent:** tree-sitter AST walk (`formatter_structural.py`),
+- **Structural block indent:** tree-sitter walk (`formatter_structural.py`),
   merged with a keyword heuristic for blank/comment/`#` lines and when the parse
   tree is a regex stub or contains ERROR nodes.
 - **Multi-line expression indent (BSL LS style):** extra level after a bare `=`
   until `;`, leading `.` chains, operator context for `Если`/`Пока`/`Для` until
   `Тогда`/`Цикл`, procedure signature tracking — line-based state in `formatter.py`.
-- **Future:** optional token-space rules (parity with BSL LS `FormatProvider`) on
-  the same AST as diagnostics.
+- **Token spacing in argument lists:** `formatter_ast_spacing.py` (comma spacing and related layout on valid CST).
+
+Политика структурных правил и CST: [cst_policy.md](cst_policy.md).
 
 ## SQLite Schema
 
@@ -148,59 +151,35 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | indexed_at    | REAL  | Unix timestamp                       |
 | workspace_root| TEXT  | Workspace root path                  |
 
-## MCP Tool Reference
+## MCP tools (summary)
 
-| Tool               | Description                                        |
-|--------------------|----------------------------------------------------|
-| `bsl_status`       | Index health: symbol/file counts, last commit      |
-| `bsl_find_symbol`  | Search symbols by name (exact or FTS prefix)       |
-| `bsl_file_symbols` | All symbols in a single file                       |
-| `bsl_callers`      | Recursive callers tree up to N depth               |
-| `bsl_callees`      | Symbols called by a given procedure/function       |
-| `bsl_diagnostics`  | Run lint rules on a file (BSL001–BSL004)           |
-| `bsl_definition`   | Definition location(s) of a symbol                 |
-| `bsl_index_file`   | Force re-parse and re-index a single file          |
+| Group | Tools |
+|-------|--------|
+| Contract / index | `bsl_contract_version`, `bsl_status`, `bsl_index_file` |
+| Symbols & navigation | `bsl_find_symbol`, `bsl_file_symbols`, `bsl_definition`, `bsl_references`, `bsl_callers`, `bsl_callees` |
+| Diagnostics & edits | `bsl_diagnostics`, `bsl_check_file`, `bsl_list_rules`, `bsl_format`, `bsl_rename`, `bsl_fix` |
+| Files & search | `bsl_read_file`, `bsl_search`, `bsl_workspace_scan`, `bsl_hover` |
+| Metadata | `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index` |
+| 1C Help (optional) | `bsl_1c_help_search_keyword`, `bsl_1c_help_get_topic` |
 
-## LSP Capabilities
+`bsl_diagnostics` runs the full diagnostic engine for a file (not limited to BSL001–BSL004). Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
 
-| Capability                | Status       | Notes                                |
-|---------------------------|--------------|--------------------------------------|
-| `textDocument/definition` | Implemented  | Index lookup                         |
-| `textDocument/hover`      | Implemented  | Signature + doc comment              |
-| `textDocument/documentSymbol` | Implemented | File outline                     |
-| `workspace/symbol`        | Implemented  | FTS5 prefix search                   |
-| `textDocument/publishDiagnostics` | Implemented | On save, BSL001–BSL004     |
-| `textDocument/completion` | Planned      | Symbol name completions              |
-| `textDocument/references` | Planned      | find_callers via index               |
-| `textDocument/rename`     | Planned      | Workspace-wide rename                |
-| `textDocument/signatureHelp` | Planned   | Parameter hints                      |
+## LSP capabilities (current)
 
-## Roadmap
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `textDocument/definition` | Implemented | Index lookup |
+| `textDocument/hover` | Implemented | Signature + doc comment |
+| `textDocument/documentSymbol` | Implemented | File outline |
+| `workspace/symbol` | Implemented | FTS5 prefix search |
+| `textDocument/publishDiagnostics` | Implemented | Debounced on change; full rule set from engine |
+| `textDocument/completion` | Implemented | Globals + workspace + metadata-aware members |
+| `textDocument/references` | Implemented | Via index |
+| `textDocument/rename` / `prepareRename` | Implemented | Workspace edits |
+| `textDocument/signatureHelp` | Implemented | Parameter hints |
+| `textDocument/formatting` / `rangeFormatting` | Implemented | `BslFormatter` stack |
+| Semantic tokens / inlay hints | Implemented | Configurable in extension |
 
-### Phase 1 — Core (current)
-- [x] SQLite symbol index with FTS5
-- [x] Incremental git-diff indexing
-- [x] tree-sitter parsing with regex fallback
-- [x] MCP server (8 tools)
-- [x] LSP server skeleton (definition, hover, symbols, diagnostics)
-- [x] CLI linter (BSL001, BSL002, BSL004)
-- [x] VSCode extension (process launcher)
+## Further work
 
-### Phase 2 — Analysis
-- [ ] BSL003: missing Export on public API
-- [ ] Type inference for basic types (Строка, Число, Булево)
-- [ ] Platform API autocomplete from `data/platform_api/`
-- [ ] Signature help (parameter count/type hints)
-- [ ] textDocument/references via `find_callers`
-
-### Phase 3 — Intelligence
-- [ ] Cross-file rename with workspace edit
-- [ ] Dead code detection (exported but never called)
-- [ ] Cyclomatic complexity metric
-- [ ] Integration with 1C Help MCP (sibling project)
-
-### Phase 4 — Ecosystem
-- [ ] OneScript (.os) full support
-- [ ] Configuration metadata awareness (ОМ, справочники, etc.)
-- [ ] Performance: parallel file indexing
-- [ ] GitHub Actions CI integration
+Ongoing work and release notes: [CHANGELOG.md](../CHANGELOG.md) and project issues. Долгосрочные темы (не исчерпывающе): более глубокий вывод типов, расширенная поддержка EDT-выгрузки без Designer XML, производительность индексации на очень больших конфигурациях.

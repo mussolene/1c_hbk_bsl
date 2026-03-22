@@ -26,7 +26,7 @@ npx license-checker --production --csv
 | Package | SPDX / PyPI license | Notes |
 |---------|----------------------|--------|
 | tree-sitter | MIT | Parser runtime |
-| tree-sitter-bsl | MIT | BSL grammar ([1c-syntax/tree-sitter-bsl](https://github.com/1c-syntax/tree-sitter-bsl)) |
+| tree-sitter-bsl | MIT | BSL grammar ([alkoleft/tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl)) |
 | watchfiles | MIT | File watching |
 | fastmcp | Apache-2.0 | MCP server framework |
 | pygls | Apache-2.0 | LSP framework ([pygls](https://github.com/openlawlibrary/pygls), per `LICENSE.txt` in wheel) |
@@ -55,7 +55,7 @@ Transitive dependencies include **MIT**, **Apache-2.0**, **BSD-2/3-Clause**, **I
 | Project | License | Role |
 |---------|---------|------|
 | [vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl) | MIT | Platform API reference data lineage (see [DATA_SOURCES.md](DATA_SOURCES.md)) |
-| [tree-sitter-bsl](https://github.com/1c-syntax/tree-sitter-bsl) | MIT | Grammar |
+| [tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl) | MIT | Grammar |
 | [bsl-language-server](https://github.com/1c-syntax/bsl-language-server) | LGPL-3.0 | Diagnostic **codes/names** reference only — **not** linked or bundled as a runtime dependency |
 
 ## VS Code extension — production `npm` dependencies

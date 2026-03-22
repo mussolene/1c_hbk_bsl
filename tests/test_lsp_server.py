@@ -736,6 +736,43 @@ class TestSemanticTokens:
         assert len(result.data) > 0
         assert len(result.data) % 5 == 0  # each token is 5 integers
 
+    def test_semantic_tokens_znach_val_are_keywords_not_variables(self, tmp_path, monkeypatch) -> None:
+        """Знач/Val in parameter list are modifiers (keyword token), not parameter names."""
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_semantic_tokens_full
+        ls = self._make_server(tmp_path, monkeypatch)
+        src = "Процедура Записать(Знач ИмяСобытия, Val Detail)\nКонецПроцедуры\n"
+        ls._docs["file:///p.bsl"] = src
+        params = MagicMock()
+        params.text_document.uri = "file:///p.bsl"
+        result = on_semantic_tokens_full(ls, params)
+        assert result is not None
+        assert result.data
+        # Decode: [deltaLine, deltaStart, length, tokenType, tokenModifiers] × N
+        line0 = 0
+        col0 = 0
+        keyword_type = 0
+        znach_pos = src.index("Знач")
+        val_pos = src.index("Val")
+        found_znach = found_val = False
+        i = 0
+        while i < len(result.data):
+            d_line, d_start, length, typ, _mod = result.data[i : i + 5]
+            if d_line > 0:
+                line0 += d_line
+                col0 = d_start
+            else:
+                col0 += d_start
+            if typ == keyword_type:
+                if line0 == 0 and col0 <= znach_pos < col0 + length:
+                    found_znach = True
+                if line0 == 0 and col0 <= val_pos < col0 + length:
+                    found_val = True
+            i += 5
+        assert found_znach, "expected semantic token 'keyword' over Знач"
+        assert found_val, "expected semantic token 'keyword' over Val"
+
     def test_semantic_tokens_empty_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
@@ -745,6 +782,46 @@ class TestSemanticTokens:
         params.text_document.uri = "file:///empty.bsl"
         result = on_semantic_tokens_full(ls, params)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Inlay hints
+# ---------------------------------------------------------------------------
+
+
+class TestInlayHints:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer
+
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        return ls
+
+    def test_no_inlay_on_function_declaration_with_znach(self, tmp_path, monkeypatch) -> None:
+        """Declaration lines are not call sites — do not prefix Знач: before parameters."""
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_inlay_hint
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = "file:///m.bsl"
+        ls._docs[uri] = (
+            "//\n"
+            "&НаКлиенте\n"
+            'Функция РазделитьСтрокуЛок(Знач Строка, Разделитель = ",", ВключатьПустые = Истина)\n'
+            "\tВозврат Строка;\n"
+            "КонецФункции\n"
+        )
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.range = MagicMock()
+        params.range.start.line = 0
+        params.range.end.line = 10
+        result = on_inlay_hint(ls, params)
+        assert result in (None, [])
 
 
 # ---------------------------------------------------------------------------
@@ -823,6 +900,36 @@ class TestCodeAction:
                 for te in edits:
                     texts.append(te.new_text)
         assert any(t.startswith("\t// BSLLS:") for t in texts), texts
+
+    def test_code_action_bsl024_inserts_space_after_slash(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_code_action
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = "file:///c.bsl"
+        ls._docs[uri] = "Процедура Т()\n\t//коммент\nКонецПроцедуры\n"
+        params = MagicMock()
+        params.text_document.uri = uri
+        diag = MagicMock()
+        diag.code = "BSL024"
+        diag.range.start.line = 1
+        params.context.diagnostics = [diag]
+        params.range = MagicMock()
+        params.range.start.line = 1
+        result = on_code_action(ls, params)
+        assert result
+        titles = [a.title for a in result]
+        assert any("пробел" in t.lower() and "BSL024" in t for t in titles)
+        fix_edit = None
+        for a in result:
+            if getattr(a, "title", "") == "Вставить пробел после «//» (BSL024)":
+                fix_edit = a
+                break
+        assert fix_edit is not None
+        changes = fix_edit.edit.changes[uri]
+        assert len(changes) == 1
+        assert "\t// коммент" in changes[0].new_text
 
 
 # ---------------------------------------------------------------------------

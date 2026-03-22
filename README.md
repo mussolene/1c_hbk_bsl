@@ -14,7 +14,7 @@
 | Функция | Описание |
 |---|---|
 | **Подсветка синтаксиса** | TextMate-грамматика: процедуры, функции, директивы `&НаКлиенте`, аннотации, встроенные запросы |
-| **Диагностики в реальном времени** | Ошибки и предупреждения по мере ввода (дебаунс 0.6 с), 30+ правил |
+| **Диагностики в реальном времени** | Ошибки и предупреждения по мере ввода (дебаунс 0.6 с); реестр кодов BSL001–BSL280, часть правил выключена по умолчанию (см. `--list-rules` и [матрицу](docs/bsl_rules_matrix.md)) |
 | **Переход к определению** | `F12` — перейти к объявлению функции / процедуры / переменной |
 | **Поиск использований** | `Shift+F12` — все места вызова символа по всему воркспейсу |
 | **Граф вызовов** | `Shift+Alt+H` — иерархия входящих и исходящих вызовов |
@@ -95,12 +95,24 @@ onec-hbk-bsl --index /path/to/1c-project
 | `onecHbkBsl.format.indentSize` | `4` | Размер отступа |
 | `onecHbkBsl.inlayHints.enabled` | `true` | Подсказки имён параметров |
 | `onecHbkBsl.semanticTokens.enabled` | `true` | Семантическая подсветка |
+| `onecHbkBsl.useDocker` | `false` | Запускать `onec-hbk-bsl` в Docker вместо локального бинарника |
+| `onecHbkBsl.dockerContainer` | `onec-hbk-bsl-default` | Имя контейнера при `useDocker: true` |
+
+При **Docker** (`useDocker: true`) LSP запускается как `docker exec` с теми же переменными окружения, что и у локального бинарника: `LOG_LEVEL` (из `logLevel`), при необходимости `INDEX_DB_PATH`, `BSL_SELECT` и `BSL_IGNORE` из настроек выше. Контейнер должен быть **уже запущен**; путь к индексу на хосте должен быть доступен процессу внутри контейнера (смонтируйте том при подготовке образа/compose).
+
+**Команды палитры** (Command Palette): `1C HBK BSL: Reindex Workspace`, `Reindex Current File`, `Show Index Status`, `Show Server Log` — см. [docs/Production-Notes.md](docs/Production-Notes.md).
 
 **Панель Problems:** включите группировку по **источнику** (меню вида в заголовке Problems) — правила линтера идут как `onec-hbk-bsl`, неиспользуемые в проекте процедуры и функции (после индексации) — отдельной группой `onec-hbk-bsl · unused` (код `BSL-DEAD`, подсветка «лишнего» кода в редакторе сохраняется).
 
 ---
 
 ## Правила диагностик
+
+В реестре объявлены коды **BSL001–BSL280** (совместимость имён с BSLLS); реализованная логика и набор **включённых по умолчанию** задаются в движке — сводная таблица: [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md). Полный список с уровнями: `onec-hbk-bsl --list-rules`.
+
+**Политика по умолчанию:** значительная часть кодов из реестра **выключена** (`DEFAULT_DISABLED` в `DiagnosticEngine` в коде): снижение шума, дубликаты имён BSLLS, спорные или тяжёлые проверки. Включён «базовый» набор для практичного линтинга; точный состав — в матрице (колонка «Выкл. по умолч.»). Настройки `onecHbkBsl.diagnostics.select` / `ignore` и переменные `BSL_SELECT` / `BSL_IGNORE` переопределяют набор.
+
+Примеры (не исчерпывающий список):
 
 | Код | Уровень | Название | Описание |
 |---|---|---|---|
@@ -116,8 +128,9 @@ onec-hbk-bsl --index /path/to/1c-project
 | BSL050 | WRN | LargeTransaction | `НачатьТранзакцию` без Зафиксировать/Отменить |
 | BSL051 | WRN | UnreachableCode | Код после безусловного `Возврат` |
 | BSL053 | WRN | ExecuteExternalCode | `Выполнить()` — динамическое исполнение кода |
+| BSL280 | WRN | *(метаданные)* | Обращение к несуществующему объекту метаданных (при проиндексированной конфигурации) — см. [docs/metadata_registry.md](docs/metadata_registry.md) |
 
-Полный список: `onec-hbk-bsl --list-rules`
+Разработчикам правил: политика CST (tree-sitter) — [docs/cst_policy.md](docs/cst_policy.md), инвентаризация: [docs/cst_policy.md](docs/cst_policy.md), гайд: [docs/cst_policy.md](docs/cst_policy.md).
 
 ### Подавление в коде
 
@@ -158,7 +171,9 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 }
 ```
 
-Доступные инструменты: `bsl_find_symbol`, `bsl_callers`, `bsl_callees`, `bsl_diagnostics`, `bsl_definition`, `bsl_file_symbols`, `bsl_status`, `bsl_check_file`, `bsl_list_rules`
+Инструменты MCP (имена как в сервере): `bsl_contract_version`, `bsl_status`, `bsl_find_symbol`, `bsl_file_symbols`, `bsl_callers`, `bsl_callees`, `bsl_diagnostics`, `bsl_definition`, `bsl_check_file`, `bsl_list_rules`, `bsl_index_file`, `bsl_hover`, `bsl_references`, `bsl_read_file`, `bsl_search`, `bsl_format`, `bsl_rename`, `bsl_fix`, `bsl_workspace_scan`, `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index`, `bsl_1c_help_search_keyword`, `bsl_1c_help_get_topic` (последние два — при настроенном внешнем MCP **1c-help**).
+
+Для нескольких воркспейсов указывайте `workspace_root` (и при необходимости `config_root` для метаданных) в аргументах инструментов. Подробнее: [docs/Production-Notes.md](docs/Production-Notes.md).
 
 ---
 
@@ -177,6 +192,8 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 ```
 
 ---
+
+Подробный обзор компонентов и потоков данных: [docs/architecture.md](docs/architecture.md). Эксплуатация и паритет LSP/MCP: [docs/Production-Notes.md](docs/Production-Notes.md).
 
 ## Архитектура
 
@@ -221,7 +238,7 @@ make lsp        # запустить LSP-сервер из исходников
 
 MIT © 2024 1C HBK BSL Contributors
 
-Полный перечень зависимостей и заметки по лицензированию: [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md). Источники данных `data/`: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Аудит секретов: [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).
+Полный перечень зависимостей и заметки по лицензированию: [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md). Источники данных `data/`: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Аудит секретов: [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md). Матрица правил BSLLS ↔ движок: [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md).
 
 ---
 
@@ -230,7 +247,7 @@ MIT © 2024 1C HBK BSL Contributors
 | Проект | Лицензия | Использование |
 |--------|----------|---------------|
 | [vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl) | MIT | Данные Platform API (`bslGlobals.json`) — глобальные функции, типы, перечисления |
-| [tree-sitter-bsl](https://github.com/1c-syntax/tree-sitter-bsl) | MIT | Парсер / грамматика BSL для синтаксического анализа |
+| [tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl) | MIT | Парсер / грамматика BSL для синтаксического анализа |
 | [pygls](https://github.com/openlawlibrary/pygls) | Apache 2.0 | LSP-сервер (Python Language Server Protocol framework) |
 | [lsprotocol](https://github.com/microsoft/lsprotocol) | MIT | LSP-типы (Python) |
 | [fastmcp](https://github.com/jlowin/fastmcp) | Apache 2.0 | MCP-сервер |

@@ -320,6 +320,24 @@ function httpDownload(
 // Server options
 // ---------------------------------------------------------------------------
 
+/** Env vars passed into `docker exec -e …` so Docker LSP matches local binary parity. */
+const DOCKER_LSP_ENV_KEYS = ["LOG_LEVEL", "INDEX_DB_PATH", "BSL_SELECT", "BSL_IGNORE"] as const;
+
+/**
+ * Build `-e KEY=value` pairs for `docker exec` from the same env we would pass to a local process.
+ * Only forwards keys the server reads (avoids leaking the full host `process.env` into the container).
+ */
+function dockerExecEnvArgs(env: NodeJS.ProcessEnv): string[] {
+  const out: string[] = [];
+  for (const key of DOCKER_LSP_ENV_KEYS) {
+    const v = env[key];
+    if (v !== undefined && v !== "") {
+      out.push("-e", `${key}=${v}`);
+    }
+  }
+  return out;
+}
+
 function buildServerOptions(
   binaryPath: string,
   config: vscode.WorkspaceConfiguration,
@@ -347,12 +365,29 @@ function buildServerOptions(
   if (ignore.length > 0) { env["BSL_IGNORE"] = ignore.join(","); }
 
   if (useDocker) {
+    const envArgs = dockerExecEnvArgs(env);
+    const runArgs = ["exec", "-i", ...envArgs, containerName, "onec-hbk-bsl", "--lsp"];
+    const debugArgs = [
+      "exec",
+      "-i",
+      ...envArgs,
+      containerName,
+      "onec-hbk-bsl",
+      "--lsp",
+      "--log-level",
+      "debug",
+    ];
     const srv: Executable = {
       command: "docker",
-      args: ["exec", "-i", containerName, "onec-hbk-bsl", "--lsp"],
+      args: runArgs,
       transport: TransportKind.stdio,
     };
-    return { run: srv, debug: srv };
+    const debugSrv: Executable = {
+      command: "docker",
+      args: debugArgs,
+      transport: TransportKind.stdio,
+    };
+    return { run: srv, debug: debugSrv };
   }
 
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;

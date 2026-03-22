@@ -22,6 +22,13 @@ bsl_workspace_scan  — list BSL files + quick metrics for a directory
 bsl_meta_object     — 1C config metadata: attributes/TS/forms for an object
 bsl_meta_collection — list objects in a 1C global collection (Справочники, etc.)
 bsl_meta_index      — trigger metadata re-indexing from XML config export (+ kind registry snapshot)
+
+Contract
+--------
+Responses are **assistant-oriented context** (summaries, snippets, navigation, optional
+1c-help proxy text). They are **not** a substitute for the tree-sitter CST used inside
+the analyzer for diagnostics and formatting; do not treat MCP payloads as an alternate
+“code model” for rule correctness.
 """
 
 from __future__ import annotations
@@ -55,8 +62,8 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
 
-# MCP JSON contract version.
-# Intended for assistant/clients to understand which response shape to expect.
+# MCP JSON contract version — response shape for clients.
+# Tool payloads are for assistant context; lint/format correctness uses CST in analysis/.
 MCP_CONTRACT_VERSION = "0.1.0"
 
 # ---------------------------------------------------------------------------

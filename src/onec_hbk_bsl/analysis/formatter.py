@@ -1,7 +1,7 @@
 """BSL source code formatter.
 
-Structural (block) indentation is derived from the **tree-sitter BSL AST** when
-the parse tree is available and has no ERROR nodes; otherwise a keyword
+Structural (block) indentation is derived from the **tree-sitter BSL CST** (parse
+tree) when the parse is available and has no ERROR nodes; otherwise a keyword
 heuristic matches the previous line-based behaviour.
 
 Multi-line expression rules (BSL Language Server style): extra indent after a
@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
+from onec_hbk_bsl.analysis.formatter_ast_spacing import normalize_argument_list_spacing
 from onec_hbk_bsl.analysis.formatter_structural import ast_structural_indent_levels, tree_has_errors
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -266,6 +267,24 @@ def _tokenize(line: str) -> list[tuple[str, str]]:
     return tokens
 
 
+def _squeeze_whitespace_runs(code: str) -> str:
+    """Collapse runs of spaces/tabs in a code fragment to a single space (no regex)."""
+    out: list[str] = []
+    i, n = 0, len(code)
+    while i < n:
+        ch = code[i]
+        if ch in " \t":
+            j = i + 1
+            while j < n and code[j] in " \t":
+                j += 1
+            out.append(" ")
+            i = j
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def _normalize_keywords_in_code(code: str) -> str:
     """Replace keywords in a pure code segment."""
 
@@ -290,8 +309,7 @@ def _add_operator_spaces(code: str, in_proc_header: bool) -> str:
     if not in_proc_header:
         result = _EQ_OP_RE.sub(lambda m: f" {m.group(2)} ", result)
 
-    # Normalise multiple spaces to single
-    result = re.sub(r"  +", " ", result)
+    result = _squeeze_whitespace_runs(result)
     return result
 
 
@@ -496,7 +514,7 @@ def _heuristic_structural_indent_levels(lines: list[str]) -> list[int]:
 
 
 def _compute_structural_indent_levels(lines: list[str], text: str) -> list[int]:
-    """Per-line base indent: AST + heuristic merge for special lines."""
+    """Per-line base indent: CST (structural) + heuristic merge for special lines."""
     n = len(lines)
     if n == 0:
         return []
@@ -536,7 +554,7 @@ def _collapse_spaces_static(line: str) -> str:
     parts: list[str] = []
     for ttype, text in tokens:
         if ttype == "code":
-            text = re.sub(r"  +", " ", text)
+            text = _squeeze_whitespace_runs(text)
         parts.append(text)
     return "".join(parts)
 
@@ -636,6 +654,11 @@ class BslFormatter:
         """Format an entire BSL source file."""
         lines = _expand_block_headers_one_line(content.splitlines())
         text = "\n".join(lines)
+        parser = BslParser()
+        tree = parser.parse_content(text)
+        if getattr(tree, "content", None) is None and not tree_has_errors(tree.root_node):
+            text = normalize_argument_list_spacing(text, tree.root_node)
+            lines = text.splitlines()
         formatted, _ = self._format_lines(
             lines,
             indent_size=indent_size,
@@ -695,7 +718,7 @@ class BslFormatter:
         insert_spaces: bool = True,
         full_text: str,
     ) -> int:
-        """Indent level for line *target* (0-based). Uses full document AST when possible."""
+        """Indent level for line *target* (0-based). Uses full-document CST when possible."""
         if target <= 0:
             return 0
         if target > len(full_lines):
@@ -853,7 +876,7 @@ class BslFormatter:
         parts: list[str] = []
         for ttype, text in tokens:
             if ttype == "code":
-                text = re.sub(r"  +", " ", text)
+                text = _squeeze_whitespace_runs(text)
             parts.append(text)
         return "".join(parts)
 

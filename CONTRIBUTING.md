@@ -83,7 +83,7 @@ The ruff configuration is in `pyproject.toml` under `[tool.ruff]`.
 3. Add a new private method `_rule_bslXXX_description(self, path, content) -> list[Diagnostic]`
 4. Call it inside `check_file()`
 5. Add tests in `tests/test_diagnostics.py` following the existing pattern
-6. Update the rule table in `docs/architecture.md`
+6. See [docs/cst_policy.md](docs/cst_policy.md); refresh [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md) if your workflow regenerates it
 
 Rule naming convention: `BSL001–BSL099` are reserved for core rules.
 Community rules start at `BSL200`.
@@ -99,13 +99,21 @@ Community rules start at `BSL200`.
 
 ## Architecture Overview
 
-See [docs/architecture.md](docs/architecture.md) for the full component diagram,
-data flow, SQLite schema, and roadmap.
+See [docs/architecture.md](docs/architecture.md) for the component diagram,
+data flow, and SQLite schema. Operational notes: [docs/Production-Notes.md](docs/Production-Notes.md).
+
+## Documentation (user-facing changes)
+
+If the PR changes LSP/MCP behavior, diagnostic rules, VS Code settings in `vscode-extension/package.json`, or MCP tool names:
+
+- Update [README.md](README.md) and/or [docs/Production-Notes.md](docs/Production-Notes.md) as needed.
+- For new or renamed rules, refresh [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md) if your workflow regenerates it.
+- Optional: add a line to CHANGELOG.md for user-visible behavior changes.
 
 ## Pull Request Checklist
 
 - [ ] Tests added/updated for the change
 - [ ] `ruff check` passes with no new errors
 - [ ] `pytest` passes
-- [ ] `docs/architecture.md` updated if new capabilities were added
+- [ ] `docs/architecture.md` or `README.md` / `docs/Production-Notes.md` updated if public behavior or settings changed
 - [ ] Commit message is descriptive (what & why, not just what)

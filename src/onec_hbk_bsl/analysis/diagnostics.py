@@ -66,7 +66,11 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.bsl_string_split import split_commas_outside_double_quotes
+from onec_hbk_bsl.analysis.bsl_string_split import (
+    split_commas_outside_double_quotes,
+    strip_leading_val_keywords,
+)
+from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 # ---------------------------------------------------------------------------
@@ -3913,7 +3917,7 @@ def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
         if not raw:
             continue
         is_val = bool(re.match(r"^(?:Знач|Val)\s+", raw, re.IGNORECASE))
-        clean = re.sub(r"^(?:Знач|Val)\s+", "", raw, flags=re.IGNORECASE).strip()
+        clean = strip_leading_val_keywords(raw)
         is_optional = "=" in clean
         name = clean.split("=")[0].strip()
         if name and re.match(r"^\w+$", name):
@@ -3930,7 +3934,7 @@ def _ts_node_text(node: Any) -> str:
 
 
 def _find_procedures_from_tree(tree: Any) -> list[_ProcInfo]:
-    """Extract procedure/function definitions from a tree-sitter AST.
+    """Extract procedure/function definitions from a tree-sitter CST.
 
     Handles multi-line signatures correctly (e.g. params on multiple lines).
     Returns empty list if *tree* is not a real tree-sitter tree.
@@ -3944,8 +3948,108 @@ def _find_procedures_from_tree(tree: Any) -> list[_ProcInfo]:
     return result
 
 
+# BSL051 — tree-sitter nodes that close or branch control flow (not executable body).
+# Matches keyword roles in formatter_structural (if/while/for/try).
+_BSL051_BLOCK_DELIMITER_TYPES = frozenset(
+    {
+        "ENDIF_KEYWORD",
+        "ENDDO_KEYWORD",
+        "ENDTRY_KEYWORD",
+        "EXCEPT_KEYWORD",
+        "ELSE_KEYWORD",
+        "ELSIF_KEYWORD",
+    }
+)
+
+# Regex fallback when tree-sitter is unavailable (_RegexTree) or the tree has ERROR nodes.
+_RE_BSL051_DELIMITER_FALLBACK = re.compile(
+    r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo"
+    r"|КонецПопытки|EndTry"
+    r"|Исключение|Except|Иначе|Else|ИначеЕсли|ElsIf)\b",
+    re.IGNORECASE,
+)
+
+
+def _collect_bsl051_delimiter_lines_from_tree(root: Any) -> set[int]:
+    """Return 0-based line indices of block delimiter keywords in the CST."""
+
+    lines: set[int] = set()
+
+    def _walk(node: Any) -> None:
+        if node.type in _BSL051_BLOCK_DELIMITER_TYPES:
+            lines.add(node.start_point[0])
+        for child in node.children:
+            _walk(child)
+
+    _walk(root)
+    return lines
+
+
+def _bsl051_delimiter_lines_for_tree(tree: Any) -> set[int] | None:
+    """
+    Delimiter line set from the CST, or None to use :data:`_RE_BSL051_DELIMITER_FALLBACK`.
+
+    None when not a tree-sitter parse or when the tree contains ERROR/missing nodes
+    (structure is unreliable).
+    """
+    root = getattr(tree, "root_node", None)
+    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+        return None
+    if tree_has_errors(root):
+        return None
+    return _collect_bsl051_delimiter_lines_from_tree(root)
+
+
+# BSL052 — literal True/False in If / ElsIf condition (tree-sitter CST).
+def _bsl052_literal_boolean_from_expression(expr: Any) -> str | None:
+    """
+    If *expr* is an ``expression`` node whose only value is a boolean literal,
+    return the literal as spelled in source (Истина, Ложь, True, False).
+    """
+    if getattr(expr, "type", None) != "expression":
+        return None
+    meaningful = [c for c in expr.children if c.type not in (";",)]
+    if len(meaningful) != 1:
+        return None
+    child = meaningful[0]
+    if child.type != "const_expression":
+        return None
+    for c in child.children:
+        if c.type != "boolean":
+            continue
+        for bc in c.children:
+            if bc.type in ("TRUE_KEYWORD", "FALSE_KEYWORD"):
+                return _ts_node_text(bc)
+    return None
+
+
+def _bsl052_collect_literal_if_nodes(root: Any, out: list[tuple[int, str]]) -> None:
+    """Fill *out* with (0-based line of Если/ИначеЕсли, literal text) for useless conditions."""
+
+    def _from_if_like(node: Any) -> None:
+        keyword_line: int | None = None
+        for c in node.children:
+            if c.type in ("IF_KEYWORD", "ELSIF_KEYWORD"):
+                keyword_line = c.start_point[0]
+            elif c.type == "expression":
+                lit = _bsl052_literal_boolean_from_expression(c)
+                if lit is not None and keyword_line is not None:
+                    out.append((keyword_line, lit))
+                return
+            elif c.type == "THEN_KEYWORD":
+                break
+
+    def walk(node: Any) -> None:
+        if node.type in ("if_statement", "elseif_clause"):
+            _from_if_like(node)
+        for c in node.children:
+            walk(c)
+
+    walk(root)
+
+
 def _collect_procs_from_node(node: Any, result: list[_ProcInfo]) -> None:
-    """Recursively walk AST collecting procedure/function definition nodes."""
+    """Recursively walk the CST collecting procedure/function definition nodes."""
     if node.type in ("procedure_definition", "function_definition"):
         proc = _ts_node_to_proc_info(node)
         if proc:
@@ -4005,6 +4109,56 @@ def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
         optional_count=optional_count,
         header_col=node.start_point[1],
     )
+
+
+def _find_proc_definition_node(tree: Any, proc: _ProcInfo) -> Any | None:
+    """Return the tree-sitter procedure/function node matching *proc*, or None."""
+    root = getattr(tree, "root_node", None)
+    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+        return None
+
+    def walk(node: Any) -> Any | None:
+        if node.type in ("procedure_definition", "function_definition"):
+            info = _ts_node_to_proc_info(node)
+            if (
+                info
+                and info.name == proc.name
+                and info.start_idx == proc.start_idx
+                and info.kind == proc.kind
+            ):
+                return node
+        for child in node.children:
+            found = walk(child)
+            if found is not None:
+                return found
+        return None
+
+    return walk(root)
+
+
+def _collect_identifier_casefolds_in_proc_body(proc_node: Any) -> set[str]:
+    """
+    Identifier names in the method body from the CST (excluding the ``parameters`` subtree).
+
+    Includes the procedure/function name identifier and all references in the body.
+    """
+    out: set[str] = set()
+
+    def walk(n: Any) -> None:
+        if n.type == "parameters":
+            return
+        if n.type == "identifier":
+            t = _ts_node_text(n)
+            if t:
+                out.add(t.casefold())
+        for c in n.children:
+            walk(c)
+
+    for child in proc_node.children:
+        if child.type == "parameters":
+            continue
+        walk(child)
+    return out
 
 
 def _find_procedures(content: str) -> list[_ProcInfo]:
@@ -4087,7 +4241,7 @@ def _find_regions(content: str) -> list[_RegionInfo]:
 
 def _find_regions_from_tree(tree: Any) -> list[_RegionInfo]:
     """
-    Extract #Область/#Region blocks from a tree-sitter AST.
+    Extract #Область/#Region blocks from a tree-sitter CST.
 
     Returns an empty list if *tree* is not a real tree-sitter tree
     (fallback to regex is expected).
@@ -4563,7 +4717,7 @@ class DiagnosticEngine:
         suppressions = _parse_suppressions(lines)
 
         # Precompute structural info once (shared across rules).
-        # Prefer AST-based extraction (handles multi-line signatures, exact
+        # Prefer CST-based extraction (handles multi-line signatures, exact
         # boundaries); fall back to regex when tree-sitter is unavailable.
         tree_is_ts = (
             hasattr(tree, "root_node")
@@ -4695,9 +4849,11 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL050"):
             diagnostics.extend(self._rule_bsl050_large_transaction(path, lines, procs))
         if self._rule_enabled("BSL051"):
-            diagnostics.extend(self._rule_bsl051_unreachable_code(path, lines, procs))
+            diagnostics.extend(
+                self._rule_bsl051_unreachable_code(path, lines, procs, tree)
+            )
         if self._rule_enabled("BSL052"):
-            diagnostics.extend(self._rule_bsl052_useless_condition(path, lines))
+            diagnostics.extend(self._rule_bsl052_useless_condition(path, lines, tree))
         if self._rule_enabled("BSL053"):
             diagnostics.extend(self._rule_bsl053_execute_dynamic(path, lines))
         if self._rule_enabled("BSL054"):
@@ -4717,7 +4873,9 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL061"):
             diagnostics.extend(self._rule_bsl061_abrupt_loop_exit(path, lines))
         if self._rule_enabled("BSL062"):
-            diagnostics.extend(self._rule_bsl062_unused_parameter(path, lines, procs))
+            diagnostics.extend(
+                self._rule_bsl062_unused_parameter(path, lines, procs, tree)
+            )
         if self._rule_enabled("BSL063"):
             diagnostics.extend(self._rule_bsl063_large_module(path, lines))
         if self._rule_enabled("BSL064"):
@@ -6777,17 +6935,19 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl051_unreachable_code(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
     ) -> list[Diagnostic]:
         """
         Flag code that follows an unconditional Возврат/Return or
         ВызватьИсключение/Raise within the same scope block.
 
-        Simple heuristic: if an unconditional exit is followed by a
-        non-blank, non-comment line *at the same or lesser indentation*,
-        it is unreachable.
+        Block boundaries (КонецЕсли, КонецПопытки, Исключение, …) are taken from
+        the tree-sitter CST keyword nodes when the parse is clean; otherwise
+        the same tokens are matched with a regex fallback (``_RegexTree`` / ERROR).
         """
         diags: list[Diagnostic] = []
+        delimiter_lines = _bsl051_delimiter_lines_for_tree(tree)
+
         # Track which lines are proc-end markers to avoid false positives
         end_line_idxs: set[int] = set()
         for proc in procs:
@@ -6813,12 +6973,13 @@ class DiagnosticEngine:
                         next_indent = len(next_line) - len(next_line.lstrip())
                         # Same or lesser indent => same scope => unreachable
                         if next_indent <= exit_indent and next_abs not in end_line_idxs:
-                            # Skip КонецЕсли/КонецЦикла/etc. (they close blocks)
-                            if not re.match(
-                                r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo"
-                                r"|Исключение|Except|Иначе|Else|ИначеЕсли|ElsIf)\b",
-                                next_line, re.IGNORECASE
-                            ):
+                            if delimiter_lines is not None:
+                                is_block_delimiter = next_abs in delimiter_lines
+                            else:
+                                is_block_delimiter = bool(
+                                    _RE_BSL051_DELIMITER_FALLBACK.match(next_line)
+                                )
+                            if not is_block_delimiter:
                                 diags.append(
                                     Diagnostic(
                                         file=path,
@@ -6842,9 +7003,38 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl052_useless_condition(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
         """Flag Если Истина/Ложь Тогда — condition is never evaluated."""
+        root = getattr(tree, "root_node", None)
+        tree_is_ts = root is not None and isinstance(
+            getattr(root, "text", None), (bytes, bytearray)
+        )
+        if tree_is_ts and root is not None and not tree_has_errors(root):
+            pairs: list[tuple[int, str]] = []
+            _bsl052_collect_literal_if_nodes(root, pairs)
+            diags: list[Diagnostic] = []
+            for line_idx, literal in pairs:
+                if line_idx >= len(lines):
+                    continue
+                line = lines[line_idx]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_idx + 1,
+                        character=len(line) - len(line.lstrip()),
+                        end_line=line_idx + 1,
+                        end_character=len(line),
+                        severity=Severity.WARNING,
+                        code="BSL052",
+                        message=(
+                            f"Condition is always '{literal}' — "
+                            "this If branch either always or never executes."
+                        ),
+                    )
+                )
+            return diags
+
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.lstrip().startswith("//"):
@@ -6853,7 +7043,7 @@ class DiagnosticEngine:
             if m:
                 # Get the literal value
                 literal_m = re.search(
-                    r'\b(Истина|True|Ложь|False)\b', line, re.IGNORECASE
+                    r"\b(Истина|True|Ложь|False)\b", line, re.IGNORECASE
                 )
                 literal = literal_m.group(1) if literal_m else "literal"
                 diags.append(
@@ -7217,45 +7407,71 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl062_unused_parameter(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
     ) -> list[Diagnostic]:
         """
         Flag method parameters that are never referenced in the method body.
 
-        Uses parameter names from the tree-sitter AST (``proc.params``), not a regex split
-        on commas — defaults like ``Р = ","`` contain commas that must not split the list.
+        Parameter names come from ``proc.params`` (tree-sitter when available). Whether a
+        name is used is determined by walking the procedure body CST and collecting
+        ``identifier`` nodes (excluding the ``parameters`` subtree). When tree-sitter is
+        unavailable (_RegexTree), falls back to a word-boundary scan of the body text.
 
-        Heuristic: scan the body for the parameter name as a word token.
         Excludes parameters that start with '_' (convention for intentionally unused).
         """
         diags: list[Diagnostic] = []
+        root = getattr(tree, "root_node", None)
+        tree_is_ts = root is not None and isinstance(
+            getattr(root, "text", None), (bytes, bytearray)
+        )
+
         for proc in procs:
             if not proc.params:
                 continue
             header_line = lines[proc.start_idx]
-            body_lines = lines[proc.start_idx + 1: proc.end_idx]
+            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
             body_text = "\n".join(body_lines)
             header_lineno = proc.start_idx + 1  # 1-based
+
+            used_casefold: set[str] | None = None
+            if tree_is_ts:
+                proc_node = _find_proc_definition_node(tree, proc)
+                if proc_node is not None:
+                    used_casefold = _collect_identifier_casefolds_in_proc_body(proc_node)
+
             for param_name in proc.params:
+                if not param_name:
+                    continue
                 if param_name.startswith("_"):
                     continue
-                if not re.search(
-                    r"\b" + re.escape(param_name) + r"\b", body_text, re.IGNORECASE
-                ):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=header_lineno,
-                            character=proc.header_col,
-                            end_line=header_lineno,
-                            end_character=len(header_line.rstrip()),
-                            severity=Severity.WARNING,
-                            code="BSL062",
-                            message=(
-                                f"Parameter '{param_name}' is never used in the method body."
-                            ),
+                if not param_name.isidentifier():
+                    continue
+                if used_casefold is not None:
+                    is_used = param_name.casefold() in used_casefold
+                else:
+                    is_used = bool(
+                        re.search(
+                            r"\b" + re.escape(param_name) + r"\b",
+                            body_text,
+                            re.IGNORECASE,
                         )
                     )
+                if is_used:
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=header_lineno,
+                        character=proc.header_col,
+                        end_line=header_lineno,
+                        end_character=len(header_line.rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL062",
+                        message=(
+                            f"Parameter '{param_name}' is never used in the method body."
+                        ),
+                    )
+                )
         return diags
 
     # ------------------------------------------------------------------

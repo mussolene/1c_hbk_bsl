@@ -17,8 +17,8 @@
     ["\"", "\""]
   ],
   "indentationRules": {
-    "increaseIndentPattern": "(?i)^\\s*(Процедура|Функция|Если.*Тогда|ИначеЕсли.*Тогда|Иначе|Для.*Цикл|Пока.*Цикл|Попытка|Исключение|Procedure|Function|If.*Then|ElsIf.*Then|Else|For.*Do|While.*Do|Try|Except)\\b",
-    "decreaseIndentPattern": "(?i)^\\s*(КонецПроцедуры|КонецФункции|КонецЕсли|КонецЦикла|КонецПопытки|ИначеЕсли|Иначе|Исключение|EndProcedure|EndFunction|EndIf|EndDo|EndTry|ElsIf|Else|Except)\\b"
+    "increaseIndentPattern": "(?i)^\\s*(Процедура|Функция|Если.*Тогда|ИначеЕсли.*Тогда|Иначе|Для.*Цикл|Пока.*Цикл|Попытка|Исключение|Procedure|Function|If.*Then|ElsIf.*Then|Else|For.*Do|While.*Do|Try|Except)\\b|(?i)^\\s*#Область\\b|(?i)^\\s*[^\\n]*\\bТогда\\s*$|(?i)^\\s*[^\\n]*\\bЦикл\\s*$",
+    "decreaseIndentPattern": "(?i)^\\s*(КонецПроцедуры|КонецФункции|КонецЕсли|КонецЦикла|КонецПопытки|ИначеЕсли|Иначе|Исключение|EndProcedure|EndFunction|EndIf|EndDo|EndTry|ElsIf|Else|Except)\\b|(?i)^\\s*#КонецОбласти\\b"
   },
   "wordPattern": "[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z0-9_]*",
   "folding": {

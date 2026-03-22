@@ -74,6 +74,27 @@ class TestIndentation:
         lines = result.splitlines()
         assert lines[1].startswith("    ")
 
+    def test_multiline_if_condition_indented_under_keyword(self) -> None:
+        f = BslFormatter()
+        code = (
+            "Процедура Тест()\n"
+            "Если \n"
+            "Результат <> 0 Тогда\n"
+            "    Прервать;\n"
+            "КонецЕсли;\n"
+            "КонецПроцедуры\n"
+        )
+        lines = f.format(code).splitlines()
+        cond = [ln for ln in lines if "Результат" in ln][0]
+        kw = [ln for ln in lines if ln.strip() == "Если"][0]
+        assert cond.startswith("        "), cond
+        assert kw.startswith("    "), kw
+
+    def test_call_argument_comma_spacing_ast(self) -> None:
+        f = BslFormatter()
+        code = "Процедура Т()\nА = Метод( 1  ,2 , 3 );\nКонецПроцедуры\n"
+        assert "Метод(1, 2, 3)" in f.format(code)
+
     def test_if_then_same_line_splits_body_to_next_line(self) -> None:
         """One-line ``Если … Тогда <stmt>`` becomes two lines so body indents vertically."""
         f = BslFormatter()

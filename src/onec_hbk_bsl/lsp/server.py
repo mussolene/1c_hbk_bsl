@@ -139,7 +139,10 @@ try:
 except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
-from onec_hbk_bsl.analysis.bsl_string_split import split_commas_outside_double_quotes
+from onec_hbk_bsl.analysis.bsl_string_split import (
+    parameter_name_from_declaration_fragment,
+    split_commas_outside_double_quotes,
+)
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
     RULE_METADATA,
@@ -1491,9 +1494,7 @@ def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str])
     if params_str:
         lines += [f"{prefix}//", f"{prefix}// Параметры:"]
         for p in split_commas_outside_double_quotes(params_str):
-            name = p.strip().split("=")[0].strip()
-            # Strip leading Знач/Val keyword
-            name = _re.sub(r"(?i)^(Знач|Val)\s+", "", name)
+            name = parameter_name_from_declaration_fragment(p)
             if name:
                 lines.append(f"{prefix}//   {name} - Тип - Описание")
     lines.append(f"{prefix}//")
@@ -2264,14 +2265,14 @@ _ST_KEYWORD_RE = _re.compile(
     r"|Если|ИначеЕсли|Иначе|КонецЕсли|Тогда"
     r"|Для|Каждого|Из|По|Пока|Цикл|КонецЦикла"
     r"|Попытка|Исключение|КонецПопытки"
-    r"|Возврат|Прервать|Продолжить|Новый|Перем|Экспорт"
+    r"|Возврат|Прервать|Продолжить|Новый|Перем|Знач|Экспорт"
     r"|Истина|Ложь|Неопределено|Null"
     r"|И|Или|Не"
     r"|Procedure|EndProcedure|Function|EndFunction"
     r"|If|ElsIf|Else|EndIf|Then"
     r"|For|Each|In|To|While|Do|EndDo"
     r"|Try|Except|EndTry"
-    r"|Return|Break|Continue|New|Var|Export"
+    r"|Return|Break|Continue|New|Var|Val|Export"
     r"|True|False|Undefined|And|Or|Not"
     r")(?![А-ЯЁа-яёA-Za-z_\d])",
     _re.UNICODE,
@@ -2381,9 +2382,19 @@ def on_inlay_hint(
     # Pattern: identifier followed by '(' — find calls and match to known symbols
     call_re = _re.compile(r"([А-ЯЁа-яёA-Za-z_]\w*)\s*\(([^)]*)\)", _re.UNICODE)
 
+    _decl_before_name = _re.compile(
+        r"(?:Процедура|Функция|Procedure|Function)\s*$",
+        _re.IGNORECASE,
+    )
+
     for line_idx in range(r.start.line, min(r.end.line + 1, len(lines))):
         line_text = lines[line_idx]
         for m in call_re.finditer(line_text):
+            # Declaration line: Имя(...) lists parameters, not call arguments — skip inlays.
+            prefix_before_name = line_text[: m.start(1)].rstrip()
+            if _decl_before_name.search(prefix_before_name):
+                continue
+
             func_name = m.group(1)
             args_text = m.group(2).strip()
             if not args_text:
@@ -2401,10 +2412,11 @@ def on_inlay_hint(
                 continue
             params_str = param_match.group(1)
             param_names = [
-                p.strip().split("=")[0].strip().lstrip("&").split()[0]
+                parameter_name_from_declaration_fragment(p)
                 for p in split_commas_outside_double_quotes(params_str)
                 if p.strip()
             ]
+            param_names = [n for n in param_names if n]
             if not param_names:
                 continue
 
@@ -2477,16 +2489,7 @@ def _parse_signature_params(sig: str | None) -> list[str]:
 
 
 def _param_label(param: str) -> str:
-    # Normalize common BSL signature tokens: remove `Знач/Val` and optional markers.
-    p = param.strip()
-    p = p.lstrip("&").strip()
-    p = _re.sub(r"^(?:Знач|Val)\s+", "", p, flags=_re.IGNORECASE)
-    p = p.split("=", 1)[0].strip()
-    # Examples:
-    #   "ТекстСообщения" → "ТекстСообщения"
-    #   "Параметр1 (опционально)" → "Параметр1"
-    parts = p.split()
-    return parts[0] if parts else ""
+    return parameter_name_from_declaration_fragment(param)
 
 
 @server.feature(TEXT_DOCUMENT_SIGNATURE_HELP)
@@ -2579,6 +2582,26 @@ def _build_code_to_bslls() -> dict[str, str]:
         return {}
 
 _CODE_TO_BSLLS_NAME: dict[str, str] = _build_code_to_bslls()
+
+
+def _fix_bsl024_space_after_double_slash(line: str) -> str | None:
+    """
+    Insert a space after ``//`` when BSL024 would fire (same conditions as the rule).
+
+    Returns the full replacement line, or None if no fix applies.
+    """
+    from onec_hbk_bsl.analysis.diagnostics import _RE_NO_SPACE_COMMENT
+
+    stripped = line.lstrip()
+    if not stripped.startswith("//"):
+        return None
+    col = line.find("//")
+    if col < 0:
+        return None
+    m = _RE_NO_SPACE_COMMENT.search(line, col)
+    if not m or m.start() != col:
+        return None
+    return line[: col + 2] + " " + line[col + 2 :]
 
 
 @server.feature(TEXT_DOCUMENT_CODE_ACTION)
@@ -2710,6 +2733,23 @@ def on_code_action(
                                 end=Position(line=diag_line, character=0),
                             ),
                             new_text=doc_fix,
+                        )]}),
+                    ))
+
+            # ── BSL024: пробел после // (как в правиле SpaceAtStartComment) ──
+            if code == "BSL024":
+                fixed_line = _fix_bsl024_space_after_double_slash(line_text)
+                if fixed_line is not None and fixed_line != line_text:
+                    actions.append(CodeAction(
+                        title="Вставить пробел после «//» (BSL024)",
+                        kind=CodeActionKind.QuickFix,
+                        diagnostics=[diag],
+                        edit=WorkspaceEdit(changes={uri: [TextEdit(
+                            range=Range(
+                                start=Position(line=diag_line, character=0),
+                                end=Position(line=diag_line, character=line_end_char),
+                            ),
+                            new_text=fixed_line,
                         )]}),
                     ))
 

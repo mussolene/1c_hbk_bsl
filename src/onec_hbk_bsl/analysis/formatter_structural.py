@@ -63,14 +63,25 @@ def _visit_proc_func(out: list[int], node: Any, depth: int) -> None:
 
 
 def _visit_if_statement(out: list[int], node: Any, depth: int) -> None:
+    if_line = then_line = None
+    for c in node.children:
+        if c.type == "IF_KEYWORD":
+            if_line = c.start_point[0]
+        elif c.type == "THEN_KEYWORD":
+            then_line = c.start_point[0]
+    single_header = (
+        if_line is not None and then_line is not None and if_line == then_line
+    )
+    cond_depth = depth if single_header else depth + 1
+
     for c in node.children:
         ct = c.type
         if ct == "IF_KEYWORD":
             _mark_line_max(out, c.start_point[0], depth)
         elif ct == "THEN_KEYWORD":
-            _mark_line_max(out, c.start_point[0], depth)
+            _mark_line_max(out, c.start_point[0], cond_depth)
         elif ct == "expression":
-            continue
+            _mark_statement_node(out, c, cond_depth)
         elif ct == "assignment_statement":
             _mark_statement_node(out, c, depth + 1)
         elif ct == "elseif_clause":
@@ -86,14 +97,25 @@ def _visit_if_statement(out: list[int], node: Any, depth: int) -> None:
 
 
 def _visit_elseif_clause(out: list[int], node: Any, depth: int) -> None:
+    elsif_line = then_line = None
+    for c in node.children:
+        if c.type == "ELSIF_KEYWORD":
+            elsif_line = c.start_point[0]
+        elif c.type == "THEN_KEYWORD":
+            then_line = c.start_point[0]
+    single_header = (
+        elsif_line is not None and then_line is not None and elsif_line == then_line
+    )
+    cond_depth = depth if single_header else depth + 1
+
     for c in node.children:
         ct = c.type
         if ct == "ELSIF_KEYWORD":
             _mark_line_max(out, c.start_point[0], depth)
         elif ct == "THEN_KEYWORD":
-            _mark_line_max(out, c.start_point[0], depth)
+            _mark_line_max(out, c.start_point[0], cond_depth)
         elif ct == "expression":
-            continue
+            _mark_statement_node(out, c, cond_depth)
         elif ct == "assignment_statement":
             _mark_statement_node(out, c, depth + 1)
         else:
@@ -112,16 +134,27 @@ def _visit_else_clause(out: list[int], node: Any, depth: int) -> None:
 
 
 def _visit_while_statement(out: list[int], node: Any, depth: int) -> None:
+    while_line = do_line = None
+    for c in node.children:
+        if c.type == "WHILE_KEYWORD":
+            while_line = c.start_point[0]
+        elif c.type == "DO_KEYWORD":
+            do_line = c.start_point[0]
+    single_header = (
+        while_line is not None and do_line is not None and while_line == do_line
+    )
+    cond_depth = depth if single_header else depth + 1
+
     for c in node.children:
         ct = c.type
         if ct == "WHILE_KEYWORD":
             _mark_line_max(out, c.start_point[0], depth)
         elif ct == "DO_KEYWORD":
-            _mark_line_max(out, c.start_point[0], depth)
+            _mark_line_max(out, c.start_point[0], cond_depth)
         elif ct == "ENDDO_KEYWORD":
             _mark_line_max(out, c.start_point[0], depth)
         elif ct == "expression":
-            continue
+            _mark_statement_node(out, c, cond_depth)
         else:
             _visit_stmt(out, c, depth + 1)
 
@@ -144,18 +177,30 @@ def _visit_try_statement(out: list[int], node: Any, depth: int) -> None:
 
 
 def _visit_for_statement(out: list[int], node: Any, depth: int) -> None:
+    for_line = do_line = None
+    for c in node.children:
+        if c.type == "FOR_KEYWORD":
+            for_line = c.start_point[0]
+        elif c.type == "DO_KEYWORD":
+            do_line = c.start_point[0]
+    single_header = for_line is not None and do_line is not None and for_line == do_line
+    hdr_depth = depth if single_header else depth + 1
+
     for c in node.children:
         ct = c.type
-        if ct in (
-            "FOR_KEYWORD",
-            "TO_KEYWORD",
-            "EACH_KEYWORD",
-            "IN_KEYWORD",
-            "DO_KEYWORD",
-            "ENDDO_KEYWORD",
-        ):
+        if ct == "FOR_KEYWORD":
             _mark_line_max(out, c.start_point[0], depth)
+        elif ct in ("TO_KEYWORD", "EACH_KEYWORD", "IN_KEYWORD", "="):
+            _mark_line_max(out, c.start_point[0], hdr_depth)
+        elif ct == "identifier":
+            _mark_line_max(out, c.start_point[0], hdr_depth)
         elif ct == "expression":
+            _mark_statement_node(out, c, hdr_depth)
+        elif ct == "DO_KEYWORD":
+            _mark_line_max(out, c.start_point[0], hdr_depth)
+        elif ct == "ENDDO_KEYWORD":
+            _mark_line_max(out, c.start_point[0], depth)
+        elif ct == ";":
             continue
         else:
             _visit_stmt(out, c, depth + 1)

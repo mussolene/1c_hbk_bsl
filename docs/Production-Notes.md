@@ -18,6 +18,14 @@ This runbook covers production usage of:
   4. release download fallback (if supported for platform)  
   (System `PATH` is not searched — set `serverPath` to a `onec-hbk-bsl` from `pip`/`uv`/build output if needed.)
 
+## Docker LSP (`onecHbkBsl.useDocker`)
+
+When `useDocker` is true, the extension runs:
+
+`docker exec -i -e LOG_LEVEL=… [-e INDEX_DB_PATH=…] [-e BSL_SELECT=…] [-e BSL_IGNORE=…] <container> onec-hbk-bsl --lsp`
+
+— the same environment keys as for a local binary (`extension.ts`), so log level, DB path, and rule selection match non-Docker mode. The container must already exist; mount workspace and index paths so `INDEX_DB_PATH` (if set) resolves inside the container.
+
 ## LSP Parity Checklist
 - Navigation: definition, references, rename, call hierarchy
 - Editor help: hover, completion, signature help, inlay hints
