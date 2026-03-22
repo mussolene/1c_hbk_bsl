@@ -130,7 +130,7 @@ onec-hbk-bsl --index /path/to/1c-project
 | BSL053 | WRN | ExecuteExternalCode | `Выполнить()` — динамическое исполнение кода |
 | BSL280 | WRN | *(метаданные)* | Обращение к несуществующему объекту метаданных (при проиндексированной конфигурации) — см. [docs/metadata_registry.md](docs/metadata_registry.md) |
 
-Разработчикам правил: политика CST, чеклист и матрица CST/regex — [docs/cst_policy.md](docs/cst_policy.md).
+Разработчикам правил: политика CST, чеклист и матрица CST/regex — [docs/cst_policy.md](docs/cst_policy.md). Классификация способа вызова правил (фазы, эвристика, `last_metrics["rule_invoke"]`) — [docs/diagnostics_rule_invoke.md](docs/diagnostics_rule_invoke.md).
 
 ### Подавление в коде
 

@@ -34,6 +34,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
 - Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники и CI — **Python 3.14** (`requires-python >=3.14`).
 
+## [0.7.2] - 2026-03-23
+
+### Fixed
+
+- **Диагностики — производительность на больших файлах:** при отсечении предупреждений, попадающих внутрь строковых литералов ` "…" `, таблица начал строк (`line_start_offsets`) строится **один раз** на файл и переиспользуется; раньше каждый вызов `line_col_to_offset` заново сканировал весь текст (на тысячах диагностик — доминирующая стоимость).
+
+### Added
+
+- Реестр вызова правил (`diagnostics_rule_registry`): фазы (`RulePhase`), `infer_rule_invoke`, `build_enabled_invoke_snapshot`; метрика `last_metrics["rule_invoke"]` в движке.
+- Документация [docs/diagnostics_rule_invoke.md](docs/diagnostics_rule_invoke.md); тесты [tests/test_diagnostics_rule_registry.py](tests/test_diagnostics_rule_registry.py).
+
+### Changed
+
+- **Диагностики:** правила выполняются последовательно через список задач (без параллельного `ThreadPoolExecutor` внутри одного файла — tree-sitter/SQLite не для воркер-потоков).
+
 ## [0.7.0] - 2026-03-22
 
 ### Fixed

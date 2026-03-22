@@ -17,7 +17,7 @@
 | В дереве есть узлы `ERROR` / missing (`tree_has_errors`) | Часть структурных правил **намеренно** откатывается к regex/строкам — границы блоков ненадёжны. |
 | Валидное дерево без ошибок | Предпочтительны обход узлов и данные из `_find_procedures_from_tree` / `_find_regions_from_tree`. |
 
-Метрики в `DiagnosticEngine.last_metrics` (`proc_source`, `regions_source`, `regex_fallback_*`, `tree_is_ts`) отражают, использовался ли CST-путь.
+Метрики в `DiagnosticEngine.last_metrics` (`proc_source`, `regions_source`, `regex_fallback_*`, `tree_is_ts`) отражают, использовался ли CST-путь. Дополнительно там же — `rule_invoke`: снимок включённых правил, сгруппированных по фазе вызова (`line`, `cst`, `hybrid`, …), см. [diagnostics_rule_invoke.md](diagnostics_rule_invoke.md).
 
 ## Политика для новых правил
 

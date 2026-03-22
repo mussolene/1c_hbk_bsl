@@ -5,6 +5,7 @@ from __future__ import annotations
 from onec_hbk_bsl.analysis.bsl_string_regions import (
     diagnostic_overlaps_string_literal,
     double_quoted_string_ranges,
+    line_start_offsets,
 )
 
 
@@ -48,3 +49,21 @@ def test_diagnostic_outside_string() -> None:
         end_character=len("Процедура"),
         ranges=r,
     )
+
+
+def test_diagnostic_overlap_with_line_starts_matches_without() -> None:
+    """Precomputed line table must match the default path (used in _run_rules)."""
+    content = 'Сообщить("Процедура плохо()");\n'
+    r = double_quoted_string_ranges(content)
+    ls = line_start_offsets(content)
+    args = dict(
+        content=content,
+        line=1,
+        character=content.index("Процедура"),
+        end_line=1,
+        end_character=content.index("Процедура") + len("Процедура"),
+        ranges=r,
+    )
+    a = diagnostic_overlaps_string_literal(**args)
+    b = diagnostic_overlaps_string_literal(**args, line_starts=ls)
+    assert a == b

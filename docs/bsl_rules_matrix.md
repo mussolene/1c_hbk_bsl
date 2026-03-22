@@ -2,6 +2,8 @@
 
 Автогенерация: `2026-03-21`. Источники: `src/onec_hbk_bsl/analysis/diagnostics.py` (`RULE_METADATA`, `_BSLLS_NAME_TO_CODE`, `DiagnosticEngine._run_rules`, `DEFAULT_DISABLED`) и при необходимости локальный справочник классов диагностик сопоставимого Java-анализатора (не входит в репозиторий).
 
+Классификация **фазы вызова** правил (строки / CST / гибрид и т.д., метрика `last_metrics["rule_invoke"]`) описана отдельно: [diagnostics_rule_invoke.md](diagnostics_rule_invoke.md).
+
 ## Сводка
 
 

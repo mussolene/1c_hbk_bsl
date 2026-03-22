@@ -68,9 +68,19 @@ def _line_starts(content: str) -> list[int]:
     return starts
 
 
-def line_col_to_offset(content: str, line: int, col: int) -> int:
-    """0-based *line* and *col* (code units) → absolute offset in *content*."""
-    starts = _line_starts(content)
+def line_col_to_offset(
+    content: str,
+    line: int,
+    col: int,
+    *,
+    line_starts: list[int] | None = None,
+) -> int:
+    """0-based *line* and *col* (code units) → absolute offset in *content*.
+
+    Pass *line_starts* from :func:`line_start_offsets` when converting many spans
+    for the same *content* — avoids O(n) rescans of the full string per call.
+    """
+    starts = line_starts if line_starts is not None else _line_starts(content)
     if line >= len(starts):
         return len(content)
     base = starts[line]
@@ -84,6 +94,11 @@ def line_col_to_offset(content: str, line: int, col: int) -> int:
     return base + col
 
 
+def line_start_offsets(content: str) -> list[int]:
+    """Start character offset of each line (same as internal line table for *content*)."""
+    return _line_starts(content)
+
+
 def diagnostic_overlaps_string_literal(
     content: str,
     *,
@@ -92,14 +107,16 @@ def diagnostic_overlaps_string_literal(
     end_line: int,
     end_character: int,
     ranges: list[tuple[int, int]] | None = None,
+    line_starts: list[int] | None = None,
 ) -> bool:
     """True if the diagnostic span overlaps any double-quoted string range."""
     if not ranges:
         ranges = double_quoted_string_ranges(content)
     if not ranges:
         return False
-    ds = line_col_to_offset(content, line - 1, character)
-    de = line_col_to_offset(content, end_line - 1, end_character)
+    ls = line_starts if line_starts is not None else _line_starts(content)
+    ds = line_col_to_offset(content, line - 1, character, line_starts=ls)
+    de = line_col_to_offset(content, end_line - 1, end_character, line_starts=ls)
     if de < ds:
         de = ds
     for a, b in ranges:
