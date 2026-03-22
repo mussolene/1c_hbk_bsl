@@ -32,14 +32,7 @@ jobs:
         run: ruff check src tests
 
       - name: Run tests
-        run: pytest --cov=src/onec_hbk_bsl --cov-report=xml -q
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        if: matrix.python-version == '3.11'
-        with:
-          file: coverage.xml
-          fail_ci_if_error: false
+        run: pytest --cov=src/onec_hbk_bsl --cov-report=term-missing -q
 
   # PyInstaller onefile (same spec as release) — catches missing hooks/deps early
   build-binary-smoke:

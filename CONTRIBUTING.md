@@ -108,7 +108,7 @@ If the PR changes LSP/MCP behavior, diagnostic rules, VS Code settings in `vscod
 
 - Update [README.md](README.md) and/or [docs/Production-Notes.md](docs/Production-Notes.md) as needed.
 - For new or renamed rules, refresh [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md) if your workflow regenerates it.
-- Optional: add a line to CHANGELOG.md for user-visible behavior changes.
+- Optional: add a line to [CHANGELOG.md](CHANGELOG.md) for user-visible behavior changes.
 
 ## Pull Request Checklist
 

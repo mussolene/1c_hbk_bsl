@@ -1,4 +1,4 @@
-.PHONY: install install-build dev test lint fmt check-all parity format-parity diag-bslls build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
+.PHONY: install install-build dev test lint fmt check-all build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
 

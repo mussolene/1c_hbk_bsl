@@ -1,33 +1,25 @@
-# Офлайн-эталон диагностик BSLLS (для сравнения с onec-hbk-bsl)
+# Офлайн-эталон диагностик (сравнение с BSLLS)
 
-**onec-hbk-bsl** не вызывает сторонний **Java-анализатор BSL** (JAR) в рантайме. Чтобы сверять набор предупреждений с эталоном, снимок собирается **отдельно** — вручную или скриптом у разработчика — и сохраняется как JSON.
+**onec-hbk-bsl** не вызывает Java **bsl-language-server** в рантайме. Чтобы сверять предупреждения с эталоном BSLLS, снимок собирается **отдельно** и сохраняется как JSON.
 
-## Что нужно локально
+## Локально
 
-- Установленный или собранный JAR **Java-анализатора BSL** из экосистемы 1c-syntax (см. `docs/THIRD_PARTY_NOTICES.md`). Удобный вариант для разработки onec-hbk-bsl: каталог **`.nosync/bsl-language-server`** в корне клона (любой `bsl-language-server*.jar` в поддереве) **или** переменная **`BSLLS_JAR`** с путём к одному JAR. Для сравнения с эталоном см. [BSLLS_PARITY.md](BSLLS_PARITY.md).
-- Один и тот же корень workspace (например, корень выгрузки конфигурации из EDT).
-- Воспроизводимый профиль правил: файл `.bsl-language-server.json` в корне workspace (или эквивалентные настройки в IDE).
+- JAR анализатора из экосистемы 1c-syntax (см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). Путь к JAR: переменная окружения **`BSLLS_JAVA`** / **`BSLLS_JAR`** по вашей среде.
+- Один корень workspace и воспроизводимый профиль правил (например `.bsl-language-server.json` в корне).
 
 ## Снятие снимка
 
-1. Откройте проект в редакторе с подключённым BSL Language Server **или** используйте возможности вашей сборки BSLLS для анализа каталога (зависит от версии JAR и обвязки).
-2. Экспортируйте список диагностик по интересующим `.bsl` (Problems / вывод анализатора) в структурированный вид.
-3. Сохраните JSON в формате, совместимом со [схемой baseline](../tests/fixtures/diag_baseline/README.md) (минимум: `file`, `line`, `code`).
+1. Проанализируйте нужные `.bsl` средствами BSLLS (IDE или CLI вашей сборки).
+2. Сохраните результат в JSON, совместимый со [схемой baseline](../tests/fixtures/diag_baseline/README.md).
 
-Альтернатива: через MCP **document_diagnostics** по `file://` URI (если в вашей среде используется LSP через MCP) — сохраните ответ в файл и при необходимости преобразуйте в упрощённый baseline.  
-**Важно:** URI внутри контейнера/моста часто **не совпадают** с путями на хосте — см. [LSP_BRIDGE_PATH_MAPPING.md](LSP_BRIDGE_PATH_MAPPING.md).
+При использовании внешнего **MCP→LSP** учитывайте согласование URI workspace и хоста — [LSP_BRIDGE_PATH_MAPPING.md](LSP_BRIDGE_PATH_MAPPING.md).
 
 ## Сравнение с onec-hbk-bsl
 
-После сохранения baseline-файла:
+Запустите движок тем же набором правил, что и для эталона (`BSL_SELECT` / `BSL_IGNORE`), и сравните наборы `(файл, строка, код)` с baseline. Удобная точка входа: `onec-hbk-bsl --check` по тем же файлам и workspace.
 
-```bash
-onec-hbk-bsl --check path/to/File.bsl --workspace /path/to/same/workspace
-```
+## Связанные документы
 
-Скрипт запускает `DiagnosticEngine` с теми же переменными `BSL_SELECT` / `BSL_IGNORE`, что и в окружении (или задайте их явно в shell перед запуском).
-
-## Связь с документацией
-
-- Граница проектов: раздел «Отношение к справочнику правил» в [architecture.md](architecture.md).
-- Матрица правил: [bsl_rules_matrix.md](bsl_rules_matrix.md).
+- [architecture.md](architecture.md) — отношение к справочнику правил.
+- [bsl_rules_matrix.md](bsl_rules_matrix.md).
+- [BSLLS_PARITY.md](BSLLS_PARITY.md) — намеренные отличия по кодам.

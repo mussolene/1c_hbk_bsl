@@ -26,10 +26,17 @@ Commands used (no matches in this repo):
 
 - **VS Marketplace:** `VSCE_PAT` is referenced only as `${{ secrets.VSCE_PAT }}` in [`.github/workflows/release.yml`](../.github/workflows/release.yml) — value is not in the tree.
 
-## History rewrite / rotation (automated audit)
+## History rewrite / rotation
 
-- **Credential rotation:** Not required — no live API keys, PATs, or private keys were found in history (only the test fixture above).
-- **filter-repo / BFG:** Not required for the same reason.
+- **Credential rotation:** Not required for automated audit — no live API keys, PATs, or private keys were found in history (only the test fixture above).
+- **Purging removed paths from all commits:** Optional. If files were published and later removed from the tree but must disappear from **entire** git history (e.g. internal documentation), use [git-filter-repo](https://github.com/newren/git-filter-repo) after backup:
+
+```bash
+# Example: drop specific paths from every commit (adjust paths; then force-push all branches/tags)
+git filter-repo --path path/to/file.md --invert-paths
+```
+
+Coordinate `force-push`, notify fork owners, and re-clone local checkouts. Purging history **does not** replace rotating credentials if a real secret was exposed.
 
 ## If a real leak is ever found
 

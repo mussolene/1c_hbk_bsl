@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Документация сверки с BSLLS и клиент/серверный контекст правил: [docs/BSLLS_PARITY.md](docs/BSLLS_PARITY.md), [docs/CLIENT_SERVER_DIAGNOSTICS.md](docs/CLIENT_SERVER_DIAGNOSTICS.md); ссылки из [architecture.md](docs/architecture.md) и [BSLLS_BASELINE.md](docs/BSLLS_BASELINE.md).
 
 ### Changed
+- Документация: объединены гайды CST в [docs/cst_policy.md](docs/cst_policy.md); сокращены [docs/BSLLS_PARITY.md](docs/BSLLS_PARITY.md) и [docs/BSLLS_BASELINE.md](docs/BSLLS_BASELINE.md); объединены дублирующие CST-документы в docs/cst_policy.md; убраны битые ссылки на локальные пути вне репозитория; CI без загрузки отчёта в Codecov.
+
+### Changed
 - **LSP semantic tokens (подсветка):** логические операторы **И** / **ИЛИ** / **НЕ** учитываются в **любом регистре** (`и`, `ИЛИ`, `нЕ` и т.д.); исправлено написание **ИЛИ** (раньше в шаблоне ошибочно фигурировало «Или» без совпадения с ключевым словом в модуле).
 - **BSL001 (ParseError):** подавление ложных узлов `(` / `)` от грамматики tree-sitter-bsl не только внутри ``Если (…)``, но и в **присваиваниях** с многострочными скобками и в конструкциях вроде ``Новый("…")`` — ближе к BSLLS и к допустимому BSL (см. `BslParser._should_suppress_lone_paren_error`).
 - **BSL065 (Missing export comment):** в модулях форм EDT (`path_is_likely_form_module_bsl`) правило не выполняется — паритет с BSLLS на `…/Forms/…/Ext/Module.bsl`.
