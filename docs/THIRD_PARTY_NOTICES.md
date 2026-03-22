@@ -46,8 +46,7 @@ Transitive dependencies include **MIT**, **Apache-2.0**, **BSD-2/3-Clause**, **I
 
 | Package | License | Note |
 |---------|---------|------|
-| **PyInstaller** | GPL-2.0-or-later (bootloader and tools have additional permissive terms; see [PyInstaller licensing](https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt)) | Used in CI and local builds to produce standalone onefile binaries. |
-| **typer** | MIT | Build-time dependency: required so `mcp` package imports cleanly during PyInstaller’s `collect_all` analysis. |
+| **PyInstaller** | GPL-2.0-or-later (bootloader and tools have additional permissive terms; see [PyInstaller licensing](https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt)) | Used in CI and local builds to produce standalone onefile binaries (`packaging/onec-hbk-bsl.spec` — import graph from `__main__.py`, no `collect_all`). |
 | pytest, pytest-cov, ruff | MIT / Apache-2.0 | Tests and lint only — not shipped in the wheel. |
 
 ## High-level credits (see also [README](../README.md))

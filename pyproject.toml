@@ -26,7 +26,6 @@ dev = [
 ]
 build = [
     "pyinstaller>=6.0",
-    "typer>=0.9",  # required for PyInstaller collect_all("mcp") import graph during build
 ]
 
 [project.scripts]

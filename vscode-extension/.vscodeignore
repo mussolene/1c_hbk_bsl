@@ -7,11 +7,12 @@ webpack.config.js
 eslint.config.mjs
 .prettierrc.json
 node_modules/**
+package-lock.json
 *.sqlite
 *.sqlite-journal
 **/*.map
 **/*.ts
-!out/**
-# README.md and LICENSE are included for Marketplace and legal clarity
+# Do not use !out/** here — it re-included out/**/*.map (source maps) into the VSIX.
+# README.md, LICENSE, icon.png, syntaxes/, snippets/, language-configuration.json, bin/ — not listed = included
 # Dependencies are bundled into out/extension.js (webpack); do not ship node_modules
 # bin/ is INCLUDED — native onec-hbk-bsl for platform-specific release VSIX

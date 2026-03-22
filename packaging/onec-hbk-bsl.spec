@@ -5,6 +5,9 @@ PyInstaller spec: single-file CLI (LSP, MCP, --check, --index, …).
 Build from repo root:
   python -m PyInstaller --clean --noconfirm --workpath build/pyinstaller --distpath dist packaging/onec-hbk-bsl.spec
 
+Dependency closure comes from Analysis() tracing imports from __main__.py — not from whatever
+extra packages happen to be installed in the build venv. Only non-import assets we add below.
+
 SPECPATH: directory containing this spec (set by PyInstaller).
 """
 from __future__ import annotations
@@ -12,33 +15,28 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import copy_metadata
 
 ROOT = Path(SPECPATH).resolve().parent
 SRC_MAIN = ROOT / "src" / "onec_hbk_bsl" / "__main__.py"
 
+# Project data. certifi/jsonschema/etc. come from PyInstaller hooks via the import graph.
 datas: list = [(str(ROOT / "data"), "data")]
+# fastmcp reads __version__ via importlib.metadata.version("fastmcp") at import time — needs dist-info in the bundle.
+datas += copy_metadata("fastmcp")
+
 binaries: list = []
-hiddenimports: list = []
 
-for pkg in (
-    "tree_sitter",
-    "tree_sitter_bsl",
-    "fastmcp",
-    "mcp",
-    "uvicorn",
-    "pygls",
-    "rich",
-    "watchfiles",
-    "certifi",
-    "jsonschema_specifications",
-):
-    tmp_ret = collect_all(pkg)
-    datas += tmp_ret[0]
-    binaries += tmp_ret[1]
-    hiddenimports += tmp_ret[2]
+# Lazy / optional submodules some stacks load at runtime (keep minimal; expand only if WARN logs show misses)
+hiddenimports: list = [
+    # stdlib re-export paths uvicorn uses
+    "uvicorn.loops",
+    "uvicorn.loops.auto",
+    "uvicorn.protocols.http.auto",
+    "uvicorn.protocols.websockets.auto",
+    "uvicorn.lifespan.on",
+]
 
-# Trim obvious dev / GUI / scientific stacks from the dependency graph (smaller bundle).
 excludes = [
     "pytest",
     "_pytest",
