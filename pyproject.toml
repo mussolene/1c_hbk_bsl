@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=61", "wheel", "setuptools-scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "onec-hbk-bsl"
-version = "0.7.2"
+dynamic = ["version"]
 description = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
 license = { text = "MIT" }
 readme = "README.md"
@@ -23,6 +23,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.9",
+    "setuptools-scm>=8",
 ]
 build = [
     "pyinstaller>=6.0",
@@ -33,6 +34,10 @@ onec-hbk-bsl = "onec_hbk_bsl.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Version from git tags (e.g. v0.7.2). See scripts/README.md.
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

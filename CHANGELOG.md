@@ -34,6 +34,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
 - Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники и CI — **Python 3.14** (`requires-python >=3.14`).
 
+## [0.7.3] - 2026-03-23
+
+### Changed
+
+- **Версионирование:** номер релиза берётся из **git-тегов** (`v*`) через **setuptools-scm** (`dynamic` в `pyproject.toml`); `onec_hbk_bsl.__version__` — из установленного пакета или `setuptools_scm.get_version` в дереве исходников.
+- **Расширение VS Code:** в git в `package.json` и в корне `package-lock.json` зафиксирован плейсхолдер **`0.0.0`**; реальная версия подставляется **`scripts/sync_version.py`**; после локальной **`make vsix`** автоматически вызывается **`scripts/reset_extension_placeholder.py`**.
+- **CI / Release:** `actions/checkout` с **`fetch-depth: 0`**; перед сборкой VSIX в релизе — синхронизация версии расширения из git; в тексте релиза для **pip** указана версия без префикса **`v`**.
+- **PyInstaller:** в spec добавлено **`copy_metadata("onec-hbk-bsl")`** для корректной **`--version`** в onefile.
+
+### Added
+
+- Скрипты **`scripts/sync_version.py`**, **`scripts/reset_extension_placeholder.py`**; цели **`make sync-version`**, **`make reset-extension-placeholder`**; тест **`tests/test_version.py`**.
+
 ## [0.7.2] - 2026-03-23
 
 ### Fixed

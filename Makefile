@@ -1,4 +1,4 @@
-.PHONY: install install-build dev test lint fmt check-all build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
+.PHONY: install install-build dev test lint fmt check-all sync-version reset-extension-placeholder build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
 
@@ -10,6 +10,14 @@ install-build:
 
 dev: install
 	@echo "Dev environment ready. Run: onec-hbk-bsl --help"
+
+# Версия из git-тега (setuptools-scm); синхронизировать vscode-extension/package.json + lock
+sync-version:
+	$(PYTHON3) scripts/sync_version.py
+
+# Вернуть package.json / lock к плейсхолдеру 0.0.0 (после vsix вызывается само)
+reset-extension-placeholder:
+	$(PYTHON3) scripts/reset_extension_placeholder.py
 
 # ── Тесты и линтинг ──────────────────────────────────────────────────────────
 # Prefer python3 when `python` is not on PATH (e.g. some macOS setups).
@@ -74,20 +82,21 @@ sync-extension-bin:
 # Сборка PyInstaller + копирование в расширение одной командой
 extension-bin: build sync-extension-bin
 
-# Собрать webpack и упаковать VSIX с бинарником из extension-bin (не используйте голый vsce без sync)
-vsix: extension-bin
+# Собрать webpack и упаковать VSIX с бинарником из extension-bin (sync → сборка → сброс плейсхолдера)
+vsix: sync-version extension-bin
 	cd vscode-extension && npm run compile && \
 		VERSION=$$(node -p "require('./package.json').version") && \
 		npx @vscode/vsce package --no-dependencies \
 			-o onec-hbk-bsl-$$VERSION-local.vsix && \
 		echo "✓ VSIX: vscode-extension/onec-hbk-bsl-$$VERSION-local.vsix"
+	$(PYTHON3) scripts/reset_extension_placeholder.py
 
 # Проверить что бинарь работает
 build-check: build
 	$(BUILD_OUT) --help
 	$(BUILD_OUT) --version
 
-# Пакет для дистрибуции с версией из pyproject.toml
+# Пакет для дистрибуции с версией из установленного пакета (setuptools-scm / git)
 dist: build
 	@VERSION=$$(python -c "import importlib.metadata; print(importlib.metadata.version('onec-hbk-bsl'))"); \
 	ARCHIVE=$(DIST_DIR)/onec-hbk-bsl-$$VERSION-$(PLATFORM).tar.gz; \

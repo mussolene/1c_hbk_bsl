@@ -24,6 +24,8 @@ SRC_MAIN = ROOT / "src" / "onec_hbk_bsl" / "__main__.py"
 datas: list = [(str(ROOT / "data"), "data")]
 # fastmcp reads __version__ via importlib.metadata.version("fastmcp") at import time — needs dist-info in the bundle.
 datas += copy_metadata("fastmcp")
+# onec-hbk-bsl __version__ uses importlib.metadata.version("onec-hbk-bsl") when bundled.
+datas += copy_metadata("onec-hbk-bsl")
 
 binaries: list = []
 
