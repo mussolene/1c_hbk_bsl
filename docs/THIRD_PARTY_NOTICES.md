@@ -7,7 +7,7 @@ This project (**onec-hbk-bsl**) is distributed under the [MIT License](../LICENS
 Runtime-only tree (matches `pip install onec-hbk-bsl` / `uv pip install -e .` without dev extras):
 
 ```bash
-uv venv /tmp/bsl-lic-tmp -p 3.11
+uv venv /tmp/bsl-lic-tmp -p 3.14
 uv pip install pip-licenses --python /tmp/bsl-lic-tmp/bin/python
 uv pip install -e . --python /tmp/bsl-lic-tmp/bin/python
 /tmp/bsl-lic-tmp/bin/pip-licenses --from=mixed --format=markdown --with-urls --order=license

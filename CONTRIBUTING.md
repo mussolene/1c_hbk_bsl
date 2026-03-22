@@ -6,7 +6,7 @@ Thank you for your interest in contributing!
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.14+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - git
 - Node.js 20+ (only if working on the VSCode extension)

@@ -93,16 +93,48 @@ class TestPublishDiagnostics:
         assert params.uri == uri
 
     def test_publish_diagnostics_missing_file_no_crash(self, tmp_path: Path, monkeypatch) -> None:
-        """_publish_diagnostics should swallow errors for nonexistent files."""
+        """_publish_diagnostics should not raise for nonexistent files (Problems still update)."""
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from unittest.mock import MagicMock
 
         from onec_hbk_bsl.lsp.server import BslLanguageServer, _publish_diagnostics
         ls = BslLanguageServer()
         ls.text_document_publish_diagnostics = MagicMock()
-        # Path does not exist — engine should raise, but _publish_diagnostics catches it
         _publish_diagnostics(ls, "file:///nonexistent.bsl", "/nonexistent.bsl")
-        # Should not raise; publish_diagnostics may or may not be called
+        ls.text_document_publish_diagnostics.assert_called_once()
+
+    def test_publish_diagnostics_engine_failure_returns_failure_diagnostic(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """When check_content raises, publish a single DiagnosticsFailure instead of an empty list."""
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        bsl = tmp_path / "mod.bsl"
+        bsl.write_text("А = 1;\n", encoding="utf-8")
+
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DiagnosticSeverity
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _path_to_uri, _publish_diagnostics
+
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+
+        def _boom(*_a: object, **_k: object) -> None:
+            raise RuntimeError("boom")
+
+        ls.diagnostics_engine.check_content = _boom  # type: ignore[method-assign]
+
+        uri = _path_to_uri(str(bsl))
+        ls._docs[uri] = bsl.read_text(encoding="utf-8")
+        _publish_diagnostics(ls, uri, str(bsl))
+        params = ls.text_document_publish_diagnostics.call_args[0][0]
+        assert len(params.diagnostics) == 1
+        d0 = params.diagnostics[0]
+        assert d0.severity == DiagnosticSeverity.Error
+        assert "boom" in d0.message
+        data = d0.data
+        assert isinstance(data, dict) and data.get("bsl") == "BSL-LSP-ERR"
 
     def test_publish_diagnostics_unused_separate_source_and_information(
         self, tmp_path: Path, monkeypatch

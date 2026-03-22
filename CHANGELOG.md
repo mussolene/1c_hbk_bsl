@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Toolchain:** минимальная версия Python **3.14** (`requires-python`); CI, smoke PyInstaller и релизные бинарники собираются на **3.14**; Ruff `target-version = py314`, `ruff>=0.9`.
+
 ### Added
 - Документация сверки с BSLLS и клиент/серверный контекст правил: [docs/BSLLS_PARITY.md](docs/BSLLS_PARITY.md), [docs/CLIENT_SERVER_DIAGNOSTICS.md](docs/CLIENT_SERVER_DIAGNOSTICS.md); ссылки из [architecture.md](docs/architecture.md) и [BSLLS_BASELINE.md](docs/BSLLS_BASELINE.md).
 
@@ -28,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BSL040 (UsingThisForm):** модули форм определяются по пути EDT (`…/Forms/…/Ext/Module.bsl`) и по имени файла (`*форма*`, окончание `form`) — для них **ЭтаФорма** не помечается как ошибочное использование вне обработчика.
 - **BSL024 (SpaceAtStartComment):** выравнивание с BSLLS — строгий «допустимый» комментарий как в `SpaceAtStartCommentDiagnostic`, аннотации `//@` / `//(c)` / `//©`, пропуск строк с закомментированным кодом (аналог `CodeRecognizer`), `///`, `//|`, `//!`; общая функция `bsl024_should_report_line` для движка и LSP quick-fix.
 - **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
-- Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники собираются на **Python 3.12**.
+- Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники и CI — **Python 3.14** (`requires-python >=3.14`).
 
 ## [0.7.0] - 2026-03-22
 

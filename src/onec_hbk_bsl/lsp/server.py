@@ -248,8 +248,27 @@ def _lsp_diagnostic_code_fields(internal_code: str) -> tuple[str, CodeDescriptio
     public = display_name_for_rule_code(internal_code)
     if internal_code == "BSL-DEAD":
         public = "UnusedPrivateMethod"
+    elif internal_code == "BSL-LSP-ERR":
+        public = "DiagnosticsFailure"
     urn = f"urn:onec-hbk-bsl:rule:{internal_code}"
     return public, CodeDescription(href=urn)
+
+
+def _lsp_failure_diagnostic(message: str) -> LspDiagnostic:
+    """Single error shown in Problems when the engine fails (never return an empty list silently)."""
+    pub, code_desc = _lsp_diagnostic_code_fields("BSL-LSP-ERR")
+    return LspDiagnostic(
+        range=Range(
+            start=Position(line=0, character=0),
+            end=Position(line=0, character=0),
+        ),
+        severity=DiagnosticSeverity.Error,
+        code=pub,
+        code_description=code_desc,
+        message=message,
+        source=_lsp_diagnostic_source("BSL-LSP-ERR"),
+        data={"bsl": "BSL-LSP-ERR"},
+    )
 
 
 class BslLanguageServer(LanguageServer):
@@ -427,8 +446,6 @@ def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> Non
 
 
 _DIAG_DEBOUNCE_SECS = 0.6
-# Skip live diagnostics for files larger than this (run only on save)
-_DIAG_MAX_LINES_LIVE = 3000
 
 
 @server.feature(TEXT_DOCUMENT_DID_CHANGE)
@@ -445,12 +462,6 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
         old_timer.cancel()
 
     if ls.client_pull_diagnostics:
-        return
-
-    # Skip live diagnostics for very large files — they block the server
-    content = ls._docs.get(uri, "")
-    if content.count("\n") > _DIAG_MAX_LINES_LIVE:
-        logger.debug("LSP: skipping live diags for large file %s", uri)
         return
 
     path = _uri_to_path(uri)
@@ -491,11 +502,28 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
 
 def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
     """Run the diagnostic engine and return LSP diagnostics (shared by push and pull)."""
+    try:
+        return _build_lsp_diagnostics_inner(ls, uri, path)
+    except Exception as exc:
+        logger.exception("LSP: diagnostics failed for %s", path)
+        return [_lsp_failure_diagnostic(f"Diagnostics failed: {exc}")]
+
+
+def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
+    """Run the diagnostic engine and unused-symbol pass (may raise)."""
     cached = ls._docs.get(uri)
     if cached is not None:
         issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
     else:
-        issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
+        try:
+            disk_text = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
+        else:
+            issues = ls.diagnostics_engine.check_content(
+                path, disk_text, symbol_index=ls.symbol_index
+            )
+
     lsp_diags: list[LspDiagnostic] = []
     for d in issues:
         pub, code_desc = _lsp_diagnostic_code_fields(d.code)
@@ -543,13 +571,10 @@ def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[L
 
 def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
     """Push diagnostics (clients without textDocument/diagnostic pull support)."""
-    try:
-        lsp_diags = _build_lsp_diagnostics(ls, uri, path)
-        ls.text_document_publish_diagnostics(
-            PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags)
-        )
-    except Exception as exc:
-        logger.error("LSP: diagnostics failed for %s: %s", path, exc)
+    lsp_diags = _build_lsp_diagnostics(ls, uri, path)
+    ls.text_document_publish_diagnostics(
+        PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags)
+    )
 
 
 @server.feature(
@@ -562,11 +587,7 @@ def on_document_diagnostic(
     """Pull diagnostics (LSP 3.17). Used by VS Code / Cursor instead of push."""
     uri = params.text_document.uri
     path = _uri_to_path(uri)
-    try:
-        items = _build_lsp_diagnostics(ls, uri, path)
-    except Exception as exc:
-        logger.error("LSP: pull diagnostics failed for %s: %s", path, exc)
-        items = []
+    items = _build_lsp_diagnostics(ls, uri, path)
     return RelatedFullDocumentDiagnosticReport(items=items)
 
 

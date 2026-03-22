@@ -8,7 +8,7 @@ version = "0.7.0"
 description = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "tree-sitter>=0.24,<0.26",
     "tree-sitter-bsl>=0.1.6",
@@ -22,7 +22,7 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "ruff>=0.4",
+    "ruff>=0.9",
 ]
 build = [
     "pyinstaller>=6.0",
@@ -47,7 +47,7 @@ source = ["src/onec_hbk_bsl"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "S", "UP"]
@@ -73,5 +73,5 @@ quote-style = "double"
 dev = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
-    "ruff>=0.4",
+    "ruff>=0.9",
 ]

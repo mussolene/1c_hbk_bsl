@@ -333,7 +333,12 @@ function httpDownload(
 // ---------------------------------------------------------------------------
 
 /** Env vars passed into `docker exec -e …` so Docker LSP matches local binary parity. */
-const DOCKER_LSP_ENV_KEYS = ["LOG_LEVEL", "INDEX_DB_PATH", "BSL_SELECT", "BSL_IGNORE"] as const;
+const DOCKER_LSP_ENV_KEYS = [
+  "LOG_LEVEL",
+  "INDEX_DB_PATH",
+  "BSL_SELECT",
+  "BSL_IGNORE",
+] as const;
 
 /**
  * Build `-e KEY=value` pairs for `docker exec` from the same env we would pass to a local process.
