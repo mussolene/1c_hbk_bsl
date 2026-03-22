@@ -32,6 +32,22 @@ logger = logging.getLogger(__name__)
 
 BSL_EXTENSIONS = {".bsl", ".os"}
 
+# Upper bound for BSL_INDEX_PARSE_WORKERS — each worker holds a Tree-sitter parser
+# and parsed AST payloads; unbounded queues previously allowed RAM to grow to 100+ GB
+# on 30k+ file workspaces when parsing outran SQLite.
+_MAX_PARSE_WORKERS = 32
+
+
+def _parse_workers_from_env() -> int:
+    raw = os.environ.get("BSL_INDEX_PARSE_WORKERS", "").strip()
+    if raw:
+        try:
+            return max(1, min(int(raw), _MAX_PARSE_WORKERS))
+        except ValueError:
+            logger.warning("Invalid BSL_INDEX_PARSE_WORKERS=%r — using default", raw)
+    cpu = os.cpu_count() or 4
+    return max(1, min(4, cpu))
+
 
 class IncrementalIndexer:
     """
@@ -51,10 +67,19 @@ class IncrementalIndexer:
         on_progress: Callable[[int, int, str], None] | None = None,
     ) -> None:
         self.index = index or SymbolIndex(db_path=db_path)
-        self._parser = BslParser()
+        # tree_sitter.Parser is not thread-safe — one BslParser per thread (see _get_parser).
+        self._parser_tls = threading.local()
         self._on_progress = on_progress
-        # Parsing can be parallelized, writes stay serialized in SymbolIndex.
-        self._parse_workers = max(1, int(os.environ.get("BSL_INDEX_PARSE_WORKERS", "4")))
+        # Parsing can be parallelized; SQLite writes stay serialized in SymbolIndex.
+        self._parse_workers = _parse_workers_from_env()
+
+    def _get_parser(self) -> BslParser:
+        """Return a thread-local :class:`BslParser` (required for parallel indexing)."""
+        p: BslParser | None = getattr(self._parser_tls, "parser", None)
+        if p is None:
+            p = BslParser()
+            self._parser_tls.parser = p
+        return p
 
     # ------------------------------------------------------------------
     # Public API
@@ -254,7 +279,11 @@ class IncrementalIndexer:
                 # Parallel parse with daemon workers to avoid stop-timeout regressions
                 # during LSP process shutdown.
                 work_q: Queue[str] = Queue()
-                out_q: Queue[tuple[str, dict[str, Any]]] = Queue()
+                worker_count = min(self._parse_workers, len(existing))
+                # Bound backpressure: main thread serializes SQLite writes; without a
+                # maxsize, producers could queue tens of thousands of parsed trees in RAM.
+                out_max = max(8, worker_count * 2)
+                out_q: Queue[tuple[str, dict[str, Any]]] = Queue(maxsize=out_max)
                 for path in existing:
                     work_q.put(path)
 
@@ -269,7 +298,6 @@ class IncrementalIndexer:
                         finally:
                             work_q.task_done()
 
-                worker_count = min(self._parse_workers, len(existing))
                 workers: list[threading.Thread] = []
                 for i in range(worker_count):
                     t = threading.Thread(
@@ -309,7 +337,7 @@ class IncrementalIndexer:
     def _parse_file(self, path: str) -> dict[str, Any]:
         """Parse one file and return prepared symbol/call dict lists."""
         try:
-            tree = self._parser.parse_file(path)
+            tree = self._get_parser().parse_file(path)
             symbols = extract_symbols(tree, file_path=path)
             calls = extract_calls(tree, file_path=path)
             return {

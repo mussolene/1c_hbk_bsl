@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "onec-hbk-bsl"
-version = "0.6.9"
+version = "0.7.0"
 description = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
 license = { text = "MIT" }
 readme = "README.md"

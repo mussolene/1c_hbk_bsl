@@ -8,6 +8,6 @@ Provides:
   - Incremental symbol indexing backed by SQLite
 """
 
-__version__ = "0.6.9"
+__version__ = "0.7.0"
 __description__ = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
 __author__ = "1C HBK BSL Contributors"

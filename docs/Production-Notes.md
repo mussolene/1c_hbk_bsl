@@ -50,9 +50,10 @@ When `useDocker` is true, the extension runs:
 - LSP workspace reindex uses single-flight scheduling:
   - no concurrent full reindex runs
   - one pending rerun is queued during active indexing
-- Incremental indexer parallelizes parse stage with bounded worker pool:
-  - set `BSL_INDEX_PARSE_WORKERS` to tune
-  - SQLite writes remain serialized via index API
+- Incremental indexer parallelizes the parse stage (SQLite writes stay serialized):
+  - default worker count is `min(4, CPU count)`; override with `BSL_INDEX_PARSE_WORKERS` (capped at 32).
+  - each worker uses its own Tree-sitter parser (shared parser is not thread-safe).
+  - a bounded queue back-pressures parsers when commits lag — avoids holding tens of thousands of parsed trees in RAM on huge workspaces (30k+ files).
 
 ## Operational Commands
 - Lint: `ruff check`

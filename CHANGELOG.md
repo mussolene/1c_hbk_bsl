@@ -30,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
 - Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники собираются на **Python 3.12**.
 
+## [0.7.0] - 2026-03-22
+
+### Fixed
+
+- **Индексатор (большие воркспейсы, десятки тысяч файлов):** у каждого потока парсинга свой `BslParser` (tree-sitter Parser не потокобезопасен); очередь результатов перед записью в SQLite ограничена по размеру (backpressure), чтобы не копить гигабайты RAM при опережении парсинга над коммитами; `BSL_INDEX_PARSE_WORKERS` ограничен сверху (32), дефолт без переменной — `min(4, число CPU)`.
+
+### Changed
+
+- **LSP:** `textDocument/diagnostic` (pull) для клиентов с LSP 3.17; при поддержке pull не шлём `publishDiagnostics` на каждое изменение; группировка Problems: `source` = `onec-hbk-bsl · <код правила>`; MCP: `source` для BSL-DEAD выровнен с LSP.
+- Документация: [docs/Production-Notes.md](docs/Production-Notes.md) — индексация и параллелизм.
+
 ## [0.6.9] - 2026-03-22
 
 ### Fixed

@@ -764,7 +764,7 @@ wheels = [
 
 [[package]]
 name = "onec-hbk-bsl"
-version = "0.6.9"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
