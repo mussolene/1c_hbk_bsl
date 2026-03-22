@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
@@ -5222,14 +5223,16 @@ class DiagnosticEngine:
         max_module_lines: int = MAX_MODULE_LINES,
         symbol_index: Any | None = None,
     ) -> None:
-        self._parser = parser or BslParser()
+        # tree_sitter.Parser is not thread-safe — one BslParser per thread unless a
+        # single parser is injected (tests). Required for free-threaded CPython / LSP.
+        self._injected_parser: BslParser | None = parser
+        self._parser_tls = threading.local()
         self._symbol_index = symbol_index
         self._select: set[str] | None = (
             normalize_rule_code_set(select) if select else None
         )
-        # Instrumentation for benchmarks/debug: where we switched to fallback parsing.
-        # Populated on each check_* call.
-        self.last_metrics: dict[str, Any] = {}
+        # Instrumentation for benchmarks/debug: per-thread (free-threading safe).
+        self._metrics_tls = threading.local()
         # Merge user ignores with DEFAULT_DISABLED; select= overrides DEFAULT_DISABLED
         _user_ignore: set[str] = normalize_rule_code_set(ignore) if ignore else set()
         _effective_defaults = self.DEFAULT_DISABLED - (self._select or set())
@@ -5245,6 +5248,22 @@ class DiagnosticEngine:
         self.max_bool_ops = max_bool_ops
         self.min_duplicate_uses = min_duplicate_uses
         self.max_module_lines = max_module_lines
+
+    def _get_parser(self) -> BslParser:
+        """Return the parser for this thread (tree-sitter Parser is not thread-safe)."""
+        if self._injected_parser is not None:
+            return self._injected_parser
+        p: BslParser | None = getattr(self._parser_tls, "parser", None)
+        if p is None:
+            p = BslParser()
+            self._parser_tls.parser = p
+        return p
+
+    @property
+    def last_metrics(self) -> dict[str, Any]:
+        """Metrics from the last completed ``check_*`` in the current thread (free-threading safe)."""
+        data = getattr(self._metrics_tls, "data", None)
+        return dict(data) if isinstance(data, dict) else {}
 
     def _rule_enabled(self, code: str) -> bool:
         """Return True if *code* should be executed."""
@@ -5265,7 +5284,7 @@ class DiagnosticEngine:
         *symbol_index* is optional; when set, enables metadata-aware rules (e.g. BSL280).
         """
         try:
-            tree = self._parser.parse_content(content, file_path=path)
+            tree = self._get_parser().parse_content(content, file_path=path)
         except Exception as exc:
             return [
                 Diagnostic(
@@ -5291,7 +5310,7 @@ class DiagnosticEngine:
         """
         if tree is None:
             try:
-                tree = self._parser.parse_file(path)
+                tree = self._get_parser().parse_file(path)
             except Exception as exc:
                 return [
                     Diagnostic(
@@ -5341,7 +5360,7 @@ class DiagnosticEngine:
         regions_from_tree = _find_regions_from_tree(tree) if tree_is_ts else []
         regions_source = "ast" if regions_from_tree else "regex"
         regex_fallback_regions_used = 0 if regions_from_tree else 1
-        self.last_metrics = {
+        last_metrics: dict[str, Any] = {
             "tree_is_ts": bool(tree_is_ts),
             "proc_source": proc_source,
             "regions_source": regions_source,
@@ -5349,12 +5368,13 @@ class DiagnosticEngine:
             "regex_fallback_regions_used": regex_fallback_regions_used,
         }
         regions = regions_from_tree or _find_regions(content)
-        self.last_metrics.update(
+        last_metrics.update(
             {
                 "procs_count": len(procs),
                 "regions_count": len(regions),
             }
         )
+        self._metrics_tls.data = last_metrics
 
         diagnostics: list[Diagnostic] = []
 
@@ -5738,7 +5758,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl001_syntax_errors(self, path: str, tree: Any) -> list[Diagnostic]:
-        errors = self._parser.extract_errors(tree)
+        errors = self._get_parser().extract_errors(tree)
         return [
             Diagnostic(
                 file=path,

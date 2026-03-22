@@ -87,7 +87,8 @@ _indexer_cache: OrderedDict[str, IncrementalIndexer] = OrderedDict()
 _index: SymbolIndex | None = None
 _indexer: IncrementalIndexer | None = None
 
-_parser: BslParser | None = None
+# tree_sitter.Parser is not thread-safe — one BslParser per thread (free-threading safe).
+_parser_tls = threading.local()
 
 # ---------------------------------------------------------------------------
 # Optional 1c-help MCP proxy (for AI context / snippets)
@@ -186,10 +187,11 @@ def _get_indexer(workspace_root: str | None = None) -> IncrementalIndexer:
 
 
 def _get_parser() -> BslParser:
-    global _parser
-    if _parser is None:
-        _parser = BslParser()
-    return _parser
+    p: BslParser | None = getattr(_parser_tls, "parser", None)
+    if p is None:
+        p = BslParser()
+        _parser_tls.parser = p
+    return p
 
 
 def _mcp_diagnostic_list(issues: list[object]) -> list[dict]:

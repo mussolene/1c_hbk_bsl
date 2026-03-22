@@ -282,10 +282,8 @@ class BslLanguageServer(LanguageServer):
         )
         db_path = resolve_index_db_path(os.getcwd())
         self.symbol_index = SymbolIndex(db_path=db_path)
-        self.parser = BslParser()
         _sel, _ign = parse_env_rule_filters()
         self.diagnostics_engine = DiagnosticEngine(
-            parser=self.parser,
             symbol_index=self.symbol_index,
             select=_sel,
             ignore=_ign,
@@ -296,12 +294,31 @@ class BslLanguageServer(LanguageServer):
         self._docs: dict[str, str] = {}
         # Debounce timers for diagnostics: uri → Timer
         self._diag_timers: dict[str, threading.Timer] = {}
+        # Protect _docs / _diag_timers from concurrent LSP handlers and background threads.
+        self._doc_state_lock = threading.RLock()
+        # tree_sitter.Parser is not thread-safe — one BslParser per thread.
+        self._parser_tls = threading.local()
         # Single-flight guard for workspace reindex.
         self._reindex_lock = threading.Lock()
         self._reindex_running = False
         self._reindex_pending = False
         # Set in initialize from ClientCapabilities.text_document.diagnostic (LSP 3.17 pull).
         self.client_pull_diagnostics: bool = False
+
+    def _thread_bsl_parser(self) -> BslParser:
+        """Return a BSL parser for this thread (underlying tree-sitter Parser is not thread-safe)."""
+        p: BslParser | None = getattr(self._parser_tls, "parser", None)
+        if p is None:
+            p = BslParser()
+            self._parser_tls.parser = p
+        return p
+
+    def _doc_get(self, uri: str, default: str | None = None) -> str | None:
+        """Thread-safe read of cached document text."""
+        with self._doc_state_lock:
+            if default is None:
+                return self._docs.get(uri)
+            return self._docs.get(uri, default)
 
 
 server = BslLanguageServer()
@@ -436,7 +453,8 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
 def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> None:
     """Cache document content on open; push diagnostics only if client has no pull support."""
     doc = params.text_document
-    ls._docs[doc.uri] = doc.text
+    with ls._doc_state_lock:
+        ls._docs[doc.uri] = doc.text
     logger.debug("LSP: opened %s", doc.uri)
     path = _uri_to_path(doc.uri)
     if not ls.client_pull_diagnostics:
@@ -452,14 +470,13 @@ _DIAG_DEBOUNCE_SECS = 0.6
 def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) -> None:
     """Update cached content; debounced push diagnostics only without pull-diagnostic support."""
     uri = params.text_document.uri
-    for change in params.content_changes:
-        ls._docs[uri] = change.text
-    logger.debug("LSP: changed %s", uri)
-
-    # Cancel previous pending timer for this URI
-    old_timer = ls._diag_timers.pop(uri, None)
+    with ls._doc_state_lock:
+        for change in params.content_changes:
+            ls._docs[uri] = change.text
+        old_timer = ls._diag_timers.pop(uri, None)
     if old_timer is not None:
         old_timer.cancel()
+    logger.debug("LSP: changed %s", uri)
 
     if ls.client_pull_diagnostics:
         return
@@ -467,11 +484,13 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
     path = _uri_to_path(uri)
 
     def _run() -> None:
-        ls._diag_timers.pop(uri, None)
+        with ls._doc_state_lock:
+            ls._diag_timers.pop(uri, None)
         _publish_diagnostics(ls, uri, path)
 
     timer = threading.Timer(_DIAG_DEBOUNCE_SECS, _run)
-    ls._diag_timers[uri] = timer
+    with ls._doc_state_lock:
+        ls._diag_timers[uri] = timer
     timer.start()
 
 
@@ -481,12 +500,10 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
     uri = params.text_document.uri
     path = _uri_to_path(uri)
 
-    # Update cache from saved text if provided
-    if params.text is not None:
-        ls._docs[uri] = params.text
-
-    # Cancel any pending debounce timer — save supersedes it
-    old_timer = ls._diag_timers.pop(uri, None)
+    with ls._doc_state_lock:
+        if params.text is not None:
+            ls._docs[uri] = params.text
+        old_timer = ls._diag_timers.pop(uri, None)
     if old_timer is not None:
         old_timer.cancel()
 
@@ -511,7 +528,7 @@ def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[L
 
 def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
     """Run the diagnostic engine and unused-symbol pass (may raise)."""
-    cached = ls._docs.get(uri)
+    cached = ls._doc_get(uri)
     if cached is not None:
         issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
     else:
@@ -615,7 +632,7 @@ def on_definition(
     uri = params.text_document.uri
     pos = params.position
 
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -634,7 +651,7 @@ def on_definition(
     _is_call = _after.startswith("(")
     if not _is_call:
         try:
-            _tree = ls.parser.parse_content(content, file_path=uri)
+            _tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
             local_vars = _extract_scope_vars(_tree, pos.line)
             for lv in local_vars:
                 if lv.name.casefold() == word.casefold():
@@ -783,7 +800,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     """
     uri = params.text_document.uri
     pos = params.position
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -804,7 +821,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     #    and skip when we are in `Новый TypeName` context.
     if not left_word and not _after_new:
         try:
-            _tree = ls.parser.parse_content(content, file_path=uri)
+            _tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
             _engine = BslTypeEngine(_tree)
             _local_vars = _extract_scope_vars(_tree, pos.line)
             for _lv in _local_vars:
@@ -1078,7 +1095,7 @@ def on_references(
     """
     uri = params.text_document.uri
     pos = params.position
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -1130,7 +1147,7 @@ def on_prepare_rename(
     """Check whether the symbol under the cursor can be renamed."""
     uri = params.text_document.uri
     pos = params.position
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -1163,7 +1180,7 @@ def on_rename(
     uri = params.text_document.uri
     pos = params.position
     new_name = params.new_name
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -1233,7 +1250,7 @@ def on_prepare_call_hierarchy(
     """Prepare call hierarchy for the symbol under the cursor."""
     uri = params.text_document.uri
     pos = params.position
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -1367,7 +1384,7 @@ def on_completion(
     """
     uri = params.text_document.uri
     pos = params.position
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     lines = content.splitlines()
 
     if pos.line >= len(lines):
@@ -1435,7 +1452,7 @@ def on_completion(
         # ---- type inference: Зап = Новый Запрос() → Зап. → методы Запрос ---
         if not items:
             try:
-                _inf_tree = ls.parser.parse_content(content, file_path=uri)
+                _inf_tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
                 _inf_engine = BslTypeEngine(_inf_tree)
                 inferred = _inf_engine.scope_at_line(pos.line).get(obj_name)
             except Exception:
@@ -2002,11 +2019,11 @@ def on_code_lens(
 ) -> list[CodeLens] | None:
     """Return code lenses showing cognitive and cyclomatic complexity above each method."""
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
     try:
-        tree = ls.parser.parse_content(content, file_path=uri)
+        tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
         procs = _find_procedures_from_tree(tree)
         lines = content.splitlines()
     except Exception:
@@ -2037,7 +2054,7 @@ def on_formatting(
 ) -> list[TextEdit] | None:
     """Format the entire document."""
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
     indent_size = params.options.tab_size if params.options else 4
@@ -2071,7 +2088,7 @@ def on_range_formatting(
 ) -> list[TextEdit] | None:
     """Format the selected range."""
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
     indent_size = params.options.tab_size if params.options else 4
@@ -2131,7 +2148,7 @@ def on_type_formatting(
     and returns a single TextEdit that replaces the line's leading whitespace.
     """
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
 
@@ -2206,7 +2223,7 @@ def on_document_highlight(
     """Highlight all occurrences of the symbol under the cursor in the document."""
     uri = params.text_document.uri
     pos = params.position
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
     word = _word_at_position(content, pos.line, pos.character)
@@ -2277,7 +2294,7 @@ def on_folding_range(
 ) -> list[FoldingRange] | None:
     """Return folding ranges for BSL block structures using the AST."""
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
 
@@ -2285,7 +2302,7 @@ def on_folding_range(
 
     # 1. AST-based ranges (handles multi-line conditions correctly)
     try:
-        tree = ls.parser.parse_content(content, file_path=uri)
+        tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
         _collect_ast_fold_ranges(tree.root_node, ranges)
     except Exception:
         pass  # fall through to regex pass for regions
@@ -2372,7 +2389,7 @@ def on_semantic_tokens_full(
 ) -> SemanticTokens | None:
     """Return semantic tokens for the entire document."""
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
 
@@ -2454,7 +2471,7 @@ def on_inlay_hint(
 ) -> list[InlayHint] | None:
     """Show parameter name hints at function call sites."""
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
 
@@ -2581,7 +2598,7 @@ def on_signature_help(
 ) -> SignatureHelp | None:
     """Show signature and active parameter for the call under the cursor."""
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     if not content:
         return None
 
@@ -2698,7 +2715,7 @@ def on_code_action(
     """
     actions: list[CodeAction] = []
     uri = params.text_document.uri
-    content = ls._docs.get(uri, "")
+    content = ls._doc_get(uri, "")
     doc_lines = content.splitlines()
 
     for diag in params.context.diagnostics:
@@ -3015,15 +3032,16 @@ def _node_to_dict(node: object, depth: int = 0, max_depth: int = 12) -> dict:
 def on_bsl_parse_tree(ls: BslLanguageServer, params: dict) -> dict:  # type: ignore[type-arg]
     """Return the AST of a document as a JSON-serialisable dict."""
     uri = params.get("uri", "")
-    content = ls._docs.get(uri)
+    content = ls._doc_get(uri)
     if content is None:
         try:
             content = Path(_uri_to_path(uri)).read_text(encoding="utf-8-sig", errors="replace")
         except Exception as exc:
             return {"uri": uri, "tree": None, "error": str(exc)}
     try:
-        tree = ls.parser.parse_content(content, file_path=uri)
-        root = ls.parser.get_root_node(tree)
+        parser = ls._thread_bsl_parser()
+        tree = parser.parse_content(content, file_path=uri)
+        root = parser.get_root_node(tree)
         return {"uri": uri, "tree": _node_to_dict(root), "error": None}
     except Exception as exc:
         return {"uri": uri, "tree": None, "error": str(exc)}
