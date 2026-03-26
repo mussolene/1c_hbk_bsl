@@ -19,7 +19,7 @@ _COLL_ALT = "|".join(re.escape(c) for c in _COLL_SORTED)
 
 # Метаданные.Коллекция.Объект or Коллекция.Объект — object is a single identifier segment.
 _METADATA_REF_RE = re.compile(
-    rf"(?:Метаданные\.)?(?P<coll>{_COLL_ALT})\.(?P<obj>[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z0-9_]*)",
+    rf"\b(?:Метаданные\.)?(?P<coll>{_COLL_ALT})\.(?P<obj>[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z0-9_]*)",
     re.UNICODE,
 )
 

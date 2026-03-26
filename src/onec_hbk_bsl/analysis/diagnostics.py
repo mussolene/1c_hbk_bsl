@@ -12507,6 +12507,10 @@ class DiagnosticEngine:
         _re_comment = re.compile(r"^\s*//")
         _WHITELIST = frozenset({"УстановитьHTTPСоединение", "HTTPСоединение", "НСтр"})
 
+        # Emit at most once per unique identifier per file (BSL LS behaviour)
+        seen_bsl208: set[str] = set()
+        seen_bsl256: set[str] = set()
+
         for idx, line in enumerate(lines):
             if _re_comment.match(line):
                 continue
@@ -12523,7 +12527,8 @@ class DiagnosticEngine:
                 ):
                     continue
                 if _mixed_script_identifier_is_homoglyph_typo(word):
-                    if self._rule_enabled("BSL256"):
+                    if self._rule_enabled("BSL256") and word not in seen_bsl256:
+                        seen_bsl256.add(word)
                         diags.append(
                             Diagnostic(
                                 file=path,
@@ -12539,7 +12544,8 @@ class DiagnosticEngine:
                                 ),
                             )
                         )
-                elif self._rule_enabled("BSL208"):
+                elif self._rule_enabled("BSL208") and word not in seen_bsl208:
+                    seen_bsl208.add(word)
                     diags.append(
                         Diagnostic(
                             file=path,

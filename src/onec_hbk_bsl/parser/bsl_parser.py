@@ -156,26 +156,55 @@ class BslParser:
     # The grammar only accepts bare expressions, not a leading '(' group.
     _IF_NODE_TYPES = frozenset({"if_statement", "elsif_clause"})
     # Multi-line parenthesised RHS is valid BSL, e.g. ``А = (Б И В`` + newline + ``)``;
-    # lone '(' / ')' may appear as ERROR under assignment_statement (not only if_statement).
-    _ASSIGNMENT_SUPPRESS_PARENT = frozenset({"assignment_statement"})
+    # lone '(' / ')' may appear as ERROR under assignment_statement (not only if_statement),
+    # and also inside procedure/function call arguments, for-loop ranges, return values, etc.
+    _ASSIGNMENT_SUPPRESS_PARENT = frozenset({
+        "assignment_statement",
+        "call_statement",
+        "return_statement",
+        "for_statement",
+        "foreach_statement",
+        "arguments",
+        "expression",
+        "const_expression",
+        "property_access",
+    })
 
     def _collect_errors(self, node: Any, errors: list[dict]) -> None:
         """Recursively collect ERROR and MISSING nodes from a tree-sitter tree."""
         if node.type in ("ERROR", "error") or node.is_missing:
             text = node.text if isinstance(node.text, bytes) else b""
             text_stripped = text.strip()
+            # Suppress empty MISSING nodes — grammar artifact for optional constructs.
+            # e.g. ВызватьИсключение; (bare rethrow): rise_error_statement produces
+            # a MISSING identifier node with empty text when expression is omitted.
+            if node.is_missing and text_stripped == b"":
+                return
             # Suppress lone ';' that follows a while_statement — grammar bug.
             # КонецПроцедуры/КонецФункции have no trailing semicolon in BSL,
             # so those remain valid errors and must NOT be suppressed.
-            if text_stripped == b";" and self._prev_sibling_type(node) in self._WHILE_LOOP_NODE_TYPES:
+            # Also handle ';' after else_clause/elseif_clause that ends with while_statement.
+            if text_stripped == b";" and self._prev_sibling_ends_with_while(node):
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
-            # Suppress lone '(' and ')' ERROR nodes where the grammar is incomplete
-            # but the source is valid BSL (see module docstring).
-            if text_stripped in (b"(", b")") and self._should_suppress_lone_paren_error(
-                node
+            # Suppress lone '(' and ')' ERROR nodes (including '((', '))' etc.) where
+            # the grammar is incomplete but the source is valid BSL (see module docstring).
+            if (
+                text_stripped
+                and (
+                    all(c == ord("(") for c in text_stripped)
+                    or all(c == ord(")") for c in text_stripped)
+                )
+                and self._should_suppress_lone_paren_error(node)
             ):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
+            # Suppress ERROR nodes inside member-access (access) nodes where the
+            # first child is a BSL keyword used as a property name — valid 1C pattern
+            # (e.g. Результат.Функция, Объект.Процедура) but rejected by the grammar.
+            if node.type in ("ERROR", "error") and self._is_keyword_as_property_error(node):
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
@@ -200,6 +229,30 @@ class BslParser:
         children = list(parent.children)
         idx = next((i for i, c in enumerate(children) if c.id == node.id), -1)
         return children[idx - 1].type if idx > 0 else ""
+
+    def _prev_sibling_ends_with_while(self, node: Any) -> bool:
+        """Return True when the ';' ERROR should be suppressed as a КонецЦикла; artifact.
+
+        Handles two cases:
+        1. Previous sibling IS a while_statement (simple case).
+        2. Previous sibling is a clause node (else_clause, elseif_clause, etc.)
+           whose last statement is a while_statement.
+        """
+        parent = getattr(node, "parent", None)
+        if parent is None:
+            return False
+        children = list(parent.children)
+        idx = next((i for i, c in enumerate(children) if c.id == node.id), -1)
+        if idx <= 0:
+            return False
+        prev = children[idx - 1]
+        if prev.type in self._WHILE_LOOP_NODE_TYPES:
+            return True
+        # Check if prev is a clause that ends with a while_statement
+        prev_children = [c for c in prev.children if c.type not in (";",)]
+        if prev_children and prev_children[-1].type in self._WHILE_LOOP_NODE_TYPES:
+            return True
+        return False
 
     def _ancestor_is_if(self, node: Any) -> bool:
         """Return True if any ancestor node is an if_statement or elsif_clause."""
@@ -229,6 +282,60 @@ class BslParser:
         if self._ancestor_is_if(node):
             return True
         return self._ancestor_has_type(node, self._ASSIGNMENT_SUPPRESS_PARENT)
+
+    @staticmethod
+    def _is_keyword_as_property_error(node: Any) -> bool:
+        """Return True when an ERROR node represents a keyword used as a member-access
+        property name — a valid 1C pattern the grammar rejects.
+
+        Two structural signatures (tree-sitter-bsl):
+
+        Case A — ERROR nested inside access / property_access:
+          access | property_access
+            ...
+            .
+            ERROR          ← node
+              *_KEYWORD    ← first child ends with '_KEYWORD'
+              ...
+
+        Case B — ERROR node that contains a '.' immediately followed by a *_KEYWORD
+        as direct children (grammar absorbed the member-access into a larger ERROR):
+          ERROR              ← node
+            ...
+            access | identifier
+            .                ← child[i]
+            *_KEYWORD        ← child[i+1]
+            ...
+
+        Case C — ERROR node ending with '.' (dangling dot): the property name is a BSL
+        keyword/constant that the grammar parsed separately as an expression:
+          binary_expression
+            ...
+            ERROR            ← node
+              access: МестоположенияМодуля
+              .               ← last child
+            expression: Неопределено   ← parsed outside the ERROR
+        """
+        children = list(node.children)
+        if not children:
+            return False
+
+        # Case A: parent is a member-access node and first child is a keyword
+        parent = getattr(node, "parent", None)
+        if parent is not None and parent.type in ("access", "property_access"):
+            return children[0].type.endswith("_KEYWORD")
+
+        # Case B: '.' followed immediately by *_KEYWORD among direct children
+        for i in range(len(children) - 1):
+            if children[i].type == "." and children[i + 1].type.endswith("_KEYWORD"):
+                return True
+
+        # Case C: dangling dot — ERROR ends with '.' because the property name is a
+        # BSL constant/keyword parsed by the grammar as a separate expression node.
+        if children[-1].type == ".":
+            return True
+
+        return False
 
 
 # ---------------------------------------------------------------------------
