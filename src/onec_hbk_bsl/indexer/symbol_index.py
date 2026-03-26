@@ -155,7 +155,11 @@ class SymbolIndex:
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path if db_path is not None else resolve_index_db_path(os.getcwd())
-        self._bulk_write_active = False
+        # Per-thread flag: True only in the thread that opened bulk_write().
+        # Using threading.local() avoids cross-thread reads of a shared bool that
+        # caused upsert_file() to skip its transaction wrapper when called from the
+        # LSP/MCP thread while the indexer thread held BEGIN IMMEDIATE.
+        self._bulk_write_tls = threading.local()
         # In-memory DBs are connection-scoped; keep per-instance connection to
         # avoid test isolation issues with the thread-local pool.
         self._mem_conn: sqlite3.Connection | None = None
@@ -270,6 +274,10 @@ class SymbolIndex:
         _safe_pragma("PRAGMA journal_mode=WAL")
         _safe_pragma("PRAGMA journal_mode=DELETE")
         _safe_pragma("PRAGMA synchronous=NORMAL")
+        # Wait up to 10 s before raising "database is locked" — prevents spurious
+        # failures when the LSP/MCP thread tries to write while the indexer thread
+        # holds BEGIN IMMEDIATE (e.g. full workspace reindex on initialize).
+        _safe_pragma("PRAGMA busy_timeout=10000")
         _safe_pragma("PRAGMA cache_size=-131072")   # 128 MB page cache per connection
         _safe_pragma("PRAGMA mmap_size=1073741824")  # 1 GB memory-mapped I/O
         _safe_pragma("PRAGMA temp_store=MEMORY")
@@ -320,6 +328,11 @@ class SymbolIndex:
     # Write operations
     # ------------------------------------------------------------------
 
+    @property
+    def _bulk_write_active(self) -> bool:
+        """True only in the thread that currently holds the bulk_write transaction."""
+        return bool(getattr(self._bulk_write_tls, "active", False))
+
     @contextmanager
     def bulk_write(self):
         """
@@ -327,11 +340,13 @@ class SymbolIndex:
 
         Use around many ``upsert_file`` / ``remove_file`` calls (e.g. full workspace index).
         Skips per-row FTS5 trigger work during inserts; rebuilds ``symbols_fts`` once at the end.
+        Thread-safe: the flag is tracked per-thread so concurrent LSP/MCP writes in other
+        threads still wrap their own transaction instead of piggy-backing on this one.
         """
         conn = self._conn()
         if self._bulk_write_active:
             raise RuntimeError("nested bulk_write is not supported")
-        self._bulk_write_active = True
+        self._bulk_write_tls.active = True
         conn.execute("DROP TRIGGER IF EXISTS symbols_ai")
         conn.execute("DROP TRIGGER IF EXISTS symbols_ad")
         conn.execute("DROP TRIGGER IF EXISTS symbols_au")
@@ -361,7 +376,7 @@ class SymbolIndex:
                 conn.execute("PRAGMA synchronous=NORMAL")
             except sqlite3.OperationalError:
                 pass
-            self._bulk_write_active = False
+            self._bulk_write_tls.active = False
 
     def _upsert_file_impl(
         self,

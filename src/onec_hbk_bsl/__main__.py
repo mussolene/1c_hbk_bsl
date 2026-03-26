@@ -59,6 +59,10 @@ def _run_lsp() -> None:
     # handler.  Rich colours are suppressed because stderr is not a TTY when
     # the process is spawned by VSCode.
     import sys
+    # Signal all subsystems (especially IncrementalIndexer) that we are running
+    # in LSP stdio mode.  Any Rich progress bars or other stdout output would
+    # corrupt the JSON-RPC framing and crash the connection.
+    os.environ["BSL_LSP_MODE"] = "1"
     logging.basicConfig(
         level=logging.WARNING,   # silence noisy pygls INFO startup messages
         format="[bsl-lsp] %(levelname)s %(name)s: %(message)s",

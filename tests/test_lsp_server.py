@@ -139,7 +139,7 @@ class TestPublishDiagnostics:
     def test_publish_diagnostics_unused_separate_source_and_information(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """Dead-code hints use rule-scoped Problems source and Information severity."""
+        """Dead-code hints use rule-scoped Problems source and Warning severity."""
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         bsl = tmp_path / "mod.bsl"
         bsl.write_text(
@@ -173,7 +173,7 @@ class TestPublishDiagnostics:
         assert len(dead) == 1
         assert dead[0].code == "UnusedPrivateMethod"
         assert dead[0].source == "onec-hbk-bsl · BSL-DEAD"
-        assert dead[0].severity == DiagnosticSeverity.Information
+        assert dead[0].severity == DiagnosticSeverity.Warning
         assert dead[0].tags and DiagnosticTag.Unnecessary in dead[0].tags
         lint_sources = {d.source for d in params.diagnostics if not _is_dead(d)}
         assert all(s.startswith("onec-hbk-bsl · BSL") for s in lint_sources)

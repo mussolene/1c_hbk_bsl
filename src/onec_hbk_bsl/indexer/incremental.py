@@ -59,6 +59,8 @@ class IncrementalIndexer:
             default as :class:`SymbolIndex`.
         index:      Existing SymbolIndex instance (overrides db_path).
         on_progress: Optional callback ``fn(current, total, file_path)`` for progress.
+        quiet:      Suppress Rich progress bar output (set True when running inside
+            the LSP server's background thread — stdout is the JSON-RPC pipe).
     """
 
     def __init__(
@@ -66,11 +68,17 @@ class IncrementalIndexer:
         db_path: str | None = None,
         index: SymbolIndex | None = None,
         on_progress: Callable[[int, int, str], None] | None = None,
+        quiet: bool | None = None,
     ) -> None:
         self.index = index or SymbolIndex(db_path=db_path)
         # tree_sitter.Parser is not thread-safe — one BslParser per thread (see _get_parser).
         self._parser_tls = threading.local()
         self._on_progress = on_progress
+        # Suppress Rich progress when quiet=True or when BSL_LSP_MODE env is set
+        # (LSP stdio mode — stdout is the JSON-RPC pipe, any non-JSON output corrupts it).
+        if quiet is None:
+            quiet = os.environ.get("BSL_LSP_MODE", "") not in ("", "0", "false")
+        self._quiet = quiet
         # Parsing can be parallelized; SQLite writes stay serialized in SymbolIndex.
         self._parse_workers = _parse_workers_from_env()
 
@@ -250,14 +258,19 @@ class IncrementalIndexer:
         )
         bulk_ctx = self.index.bulk_write if bulk_enabled and len(files) > 0 else nullcontext
 
-        with Progress(
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-            transient=True,
-        ) as progress:
-            task = progress.add_task("Indexing BSL files", total=len(files))
+        progress_ctx = (
+            nullcontext()
+            if self._quiet
+            else Progress(
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                transient=True,
+            )
+        )
+        with progress_ctx as progress:
+            task = None if progress is None else progress.add_task("Indexing BSL files", total=len(files))
             with bulk_ctx():
                 existing: list[str] = []
                 for path in files:
@@ -267,14 +280,16 @@ class IncrementalIndexer:
                         skipped += 1
                         if self._on_progress:
                             self._on_progress(indexed + skipped + errors, len(files), path)
-                        progress.advance(task)
+                        if progress is not None:
+                            progress.advance(task)
                         continue
                     existing.append(path)
 
                 if self._parse_workers <= 1 or len(existing) <= 1:
                     # Sequential mode.
                     for path in existing:
-                        progress.update(task, description=f"[bold blue]{Path(path).name}")
+                        if progress is not None:
+                            progress.update(task, description=f"[bold blue]{Path(path).name}")
                         parsed = self._parse_file(path)
                         if "error" in parsed:
                             errors += 1
@@ -283,7 +298,8 @@ class IncrementalIndexer:
                             indexed += 1
                         if self._on_progress:
                             self._on_progress(indexed + skipped + errors, len(files), path)
-                        progress.advance(task)
+                        if progress is not None:
+                            progress.advance(task)
                 else:
                     # Parallel parse with daemon workers to avoid stop-timeout regressions
                     # during LSP process shutdown.
@@ -320,7 +336,8 @@ class IncrementalIndexer:
                     processed = 0
                     while processed < len(existing):
                         path, parsed = out_q.get()
-                        progress.update(task, description=f"[bold blue]{Path(path).name}")
+                        if progress is not None:
+                            progress.update(task, description=f"[bold blue]{Path(path).name}")
                         if "error" in parsed:
                             errors += 1
                         else:
@@ -329,7 +346,8 @@ class IncrementalIndexer:
 
                         if self._on_progress:
                             self._on_progress(indexed + skipped + errors, len(files), path)
-                        progress.advance(task)
+                        if progress is not None:
+                            progress.advance(task)
                         processed += 1
 
                     for t in workers:

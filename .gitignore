@@ -70,3 +70,7 @@ tmp/
 ._tmp_mcp_debug/
 ._tmp_mcp_debug2/
 .nosync/
+
+# Local work directories (not for public distribution)
+loadtest-results/
+reports/

@@ -83,6 +83,7 @@ from lsprotocol.types import (
     CompletionParams,
     DefinitionParams,
     DiagnosticOptions,
+    DiagnosticRelatedInformation,
     DiagnosticSeverity,
     DiagnosticTag,
     DidChangeTextDocumentParams,
@@ -288,7 +289,8 @@ class BslLanguageServer(LanguageServer):
             select=_sel,
             ignore=_ign,
         )
-        self.indexer = IncrementalIndexer(index=self.symbol_index)
+        # quiet=True: suppress Rich progress bar that would corrupt the JSON-RPC stdio pipe.
+        self.indexer = IncrementalIndexer(index=self.symbol_index, quiet=True)
         self.platform_api: PlatformApi = get_platform_api()
         # In-memory document cache: uri → content
         self._docs: dict[str, str] = {}
@@ -437,7 +439,7 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
         db_path = resolve_index_db_path(workspace_root)
         if db_path != ls.symbol_index.db_path:
             ls.symbol_index = SymbolIndex(db_path=db_path)
-            ls.indexer = IncrementalIndexer(index=ls.symbol_index)
+            ls.indexer = IncrementalIndexer(index=ls.symbol_index, quiet=True)
 
         logger.info("LSP: scheduling background index of %s (db: %s)", workspace_root, db_path)
         _schedule_workspace_reindex(ls, workspace_root, reason="initialize")
@@ -541,21 +543,58 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
                 path, disk_text, symbol_index=ls.symbol_index
             )
 
-    lsp_diags: list[LspDiagnostic] = []
+    # Group diagnostics by rule code to reduce Problems panel clutter.
+    # Rules that fire many times in one file are collapsed into a single entry
+    # with the extra locations in relatedInformation (up to 50 per rule).
+    # This prevents the VS Code Problems panel from being truncated at ~52 k entries
+    # when a large workspace has many repetitions of the same rule per file.
+    _rule_buckets: dict[str, list] = {}
     for d in issues:
-        pub, code_desc = _lsp_diagnostic_code_fields(d.code)
+        _rule_buckets.setdefault(d.code, []).append(d)
+
+    lsp_diags: list[LspDiagnostic] = []
+    for code, group in _rule_buckets.items():
+        pub, code_desc = _lsp_diagnostic_code_fields(code)
+        first = group[0]
+        rest = group[1:]
+
+        # Build relatedInformation for occurrences beyond the first.
+        related: list[DiagnosticRelatedInformation] | None = None
+        if rest:
+            related = [
+                DiagnosticRelatedInformation(
+                    location=Location(
+                        uri=uri,
+                        range=Range(
+                            start=Position(line=d.line - 1, character=d.character),
+                            end=Position(line=d.end_line - 1, character=d.end_character),
+                        ),
+                    ),
+                    message=translate_message(code, d.message),
+                )
+                for d in rest[:50]  # LSP spec: no hard limit, but 50 is practical
+            ]
+
+        msg = translate_message(code, first.message)
+        if rest:
+            total = len(group)
+            msg = f"{msg} ({total} вхождений)"
+            if total > 51:
+                msg += " — показаны первые 51"
+
         lsp_diags.append(
             LspDiagnostic(
                 range=Range(
-                    start=Position(line=d.line - 1, character=d.character),
-                    end=Position(line=d.end_line - 1, character=d.end_character),
+                    start=Position(line=first.line - 1, character=first.character),
+                    end=Position(line=first.end_line - 1, character=first.end_character),
                 ),
-                severity=_SEV_MAP.get(d.severity, DiagnosticSeverity.Warning),
+                severity=_SEV_MAP.get(first.severity, DiagnosticSeverity.Warning),
                 code=pub,
                 code_description=code_desc,
-                message=translate_message(d.code, d.message),
-                source=_lsp_diagnostic_source(d.code),
-                data={"bsl": d.code},
+                message=msg,
+                source=_lsp_diagnostic_source(code),
+                related_information=related,
+                data={"bsl": code},
             )
         )
 
@@ -571,7 +610,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
                         start=Position(line=sym_line, character=sym_char),
                         end=Position(line=sym_line, character=sym_char + utf16_len(name)),
                     ),
-                    severity=DiagnosticSeverity.Information,
+                    severity=DiagnosticSeverity.Warning,
                     code=dead_pub,
                     code_description=dead_desc,
                     message=f"Неиспользуемая функция или метод: «{name}»",
