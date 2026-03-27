@@ -3119,11 +3119,12 @@ _RE_MCCABE_BOOL = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
 
 # Nesting open/close tokens (re-use _CC_OPEN/_CC_CLOSE shapes)
 _RE_NEST_OPEN = re.compile(
-    r"^\s*(?:Если|If|ДляКаждого|ForEach|Для|For|Пока|While|Попытка|Try)\b",
+    # BSLLS NestedStatements counts only control-flow branches, NOT Try/Except
+    r"^\s*(?:Если|If|ДляКаждого|ForEach|Для|For|Пока|While)\b",
     re.IGNORECASE,
 )
 _RE_NEST_CLOSE = re.compile(
-    r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b",
+    r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo)\b",
     re.IGNORECASE,
 )
 
@@ -6917,6 +6918,7 @@ class DiagnosticEngine:
         re.IGNORECASE,
     )
     _RE_TRY_BLOCK = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+    _RE_TRY_CLOSE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 
     def _rule_bsl028_missing_try_catch(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
@@ -6931,7 +6933,7 @@ class DiagnosticEngine:
                 line = lines[i]
                 if self._RE_TRY_BLOCK.match(line):
                     in_try = True
-                elif _RE_NEST_CLOSE.match(line) and in_try:
+                elif self._RE_TRY_CLOSE.match(line) and in_try:
                     in_try = False
                 if not in_try and self._RE_RISKY_CALL.match(line):
                     diags.append(
@@ -8518,6 +8520,10 @@ class DiagnosticEngine:
 
         for proc in procs:
             if not proc.params:
+                continue
+            # BSLLS skips exported procedures: their signature is public API and
+            # callers may pass arguments that the current implementation ignores.
+            if proc.is_export:
                 continue
             header_line = lines[proc.start_idx]
             body_lines = lines[proc.start_idx + 1 : proc.end_idx]
@@ -12838,6 +12844,9 @@ class DiagnosticEngine:
             if body_start >= proc.end_idx:
                 continue
 
+            # Знач (by-value) parameters are local copies — reassigning is fine.
+            val_cf = {n.casefold() for n in (getattr(proc, "val_params", None) or [])}
+
             # Find params reassigned before use in first non-blank body lines
             for li in range(body_start, min(body_start + 15, proc.end_idx)):
                 if li >= len(lines):
@@ -12848,7 +12857,7 @@ class DiagnosticEngine:
                 am = _re_assign.match(line)
                 if am:
                     lhs = am.group(1).casefold()
-                    if lhs in param_names:
+                    if lhs in param_names and lhs not in val_cf:
                         # Check the RHS doesn't mention the param itself
                         rhs = line[am.end():].strip()
                         if lhs not in rhs.casefold():

@@ -755,6 +755,24 @@ class TestBsl020ExcessiveNesting:
         diags = _check(content, tmp_path, max_nesting_depth=4)
         assert "BSL020" not in _codes(diags)
 
+    def test_try_block_not_counted_in_nesting(self, tmp_path: Path) -> None:
+        """BSLLS не считает Попытка/Try как уровень вложенности."""
+        content = """\
+            Процедура Тест(А, Б, В)
+                Если А Тогда
+                    Если Б Тогда
+                        Попытка
+                            Если В Тогда
+                                А = 1;
+                            КонецЕсли;
+                        КонецПопытки;
+                    КонецЕсли;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_nesting_depth=3)
+        assert "BSL020" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL021 — UnusedValParameter
@@ -2566,6 +2584,17 @@ class TestBsl240RewriteMethodParameter:
         """
         diags = _check(content, tmp_path, select={"BSL240"})
         assert "BSL240" in _codes(diags)
+
+    def test_val_param_reassign_not_flagged(self, tmp_path: Path) -> None:
+        """Знач-параметр — локальная копия, переназначение допустимо."""
+        content = """\
+            Процедура Тест(Знач Строка)
+                Строка = СокрЛП(Строка);
+                Сообщить(Строка);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" not in _codes(diags)
 
 
 # ---------------------------------------------------------------------------
