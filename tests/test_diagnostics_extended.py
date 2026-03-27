@@ -4702,6 +4702,33 @@ class TestBsl147UseOfUICall:
         assert "BSL147" not in _codes(diags)
 
 
+# ---------------------------------------------------------------------------
+# BSL190 — FormDataToValue
+# ---------------------------------------------------------------------------
+
+
+class TestBsl190FormDataToValue:
+    def test_form_data_ru_detected(self, tmp_path: Path) -> None:
+        content = "Рез = ДанныеФормыВЗначение(ДанныеФормы, Тип(\"CatalogObject\"));\n"
+        diags = _check(content, tmp_path, select={"BSL190"})
+        assert "BSL190" in _codes(diags)
+
+    def test_form_data_en_detected(self, tmp_path: Path) -> None:
+        content = 'Obj = FormDataToValue(FormData, Type("CatalogObject"));\n'
+        diags = _check(content, tmp_path, select={"BSL190"})
+        assert "BSL190" in _codes(diags)
+
+    def test_comment_not_detected(self, tmp_path: Path) -> None:
+        content = "// ДанныеФормыВЗначение(ДанныеФормы)\n"
+        diags = _check(content, tmp_path, select={"BSL190"})
+        assert "BSL190" not in _codes(diags)
+
+    def test_string_literal_not_detected(self, tmp_path: Path) -> None:
+        content = 'Текст = "ДанныеФормыВЗначение";\n'
+        diags = _check(content, tmp_path, select={"BSL190"})
+        assert "BSL190" not in _codes(diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA

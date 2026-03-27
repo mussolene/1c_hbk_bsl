@@ -3794,6 +3794,24 @@ _RE_TRY_OPEN = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
 _RE_TRY_CLOSE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 # BSL240 / write-only var assignment
 _RE_MODULE_ASSIGN = re.compile(r'^\s*(\w+)\s*=(?!=)', re.IGNORECASE)
+# BSL186 — trailing comma before ) or ;
+_RE_BSL186_TRAILING_COMMA = re.compile(r",\s*[)\];]")
+# BSL190 — FormDataToValue / ДанныеФормыВЗначение
+_RE_BSL190_FORM_DATA = re.compile(
+    r"\b(?:ДанныеФормыВЗначение|FormDataToValue)\s*\(", re.IGNORECASE
+)
+# BSL197 — duplicate if/elseif branch detection
+_RE_BSL197_IF = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE)
+_RE_BSL197_ELSEIF = re.compile(r"^\s*(?:ИначеЕсли|ElseIf)\b", re.IGNORECASE)
+_RE_BSL197_ELSE = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
+_RE_BSL197_ENDIF = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
+# BSL198 — duplicate if/elseif condition (captures condition group)
+_RE_BSL198_IF_COND = re.compile(
+    r"^\s*(?:Если|If)\s+(.+?)\s+(?:Тогда|Then)\b", re.IGNORECASE | re.UNICODE
+)
+_RE_BSL198_ELSEIF_COND = re.compile(
+    r"^\s*(?:ИначеЕсли|ElseIf)\s+(.+?)\s+(?:Тогда|Then)\b", re.IGNORECASE | re.UNICODE
+)
 # BSL-x module-level Перем / preprocessor lines
 _RE_PERЕМ_LINE = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
 _RE_REGION_LINE = re.compile(r'^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b', re.IGNORECASE)
@@ -5524,7 +5542,7 @@ class DiagnosticEngine:
             "BSL187",  # FieldsFromJoinsWithoutIsNull — TODO
             "BSL188",  # FileSystemAccess — TODO
             "BSL189",  # ForbiddenMetadataName — TODO
-            "BSL190",  # FormDataToValue — TODO
+            # "BSL190" enabled — FormDataToValue implemented
             "BSL191",  # FullOuterJoinQuery — TODO
             "BSL192",  # FunctionNameStartsWithGet — TODO
             "BSL193",  # FunctionOutParameter — TODO
@@ -6146,6 +6164,8 @@ class DiagnosticEngine:
             _rule_tasks.append(("BSL172", lambda: self._rule_bsl172_data_exchange_loading(path, lines, procs)))
         if self._rule_enabled("BSL186"):
             _rule_tasks.append(("BSL186", lambda: self._rule_bsl186_extra_commas(path, lines)))
+        if self._rule_enabled("BSL190"):
+            _rule_tasks.append(("BSL190", lambda: self._rule_bsl190_form_data_to_value(path, lines)))
         if self._rule_enabled("BSL197"):
             _rule_tasks.append(("BSL197", lambda: self._rule_bsl197_if_else_duplicated_code_block(path, lines)))
         if self._rule_enabled("BSL198"):
@@ -12406,18 +12426,14 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Detect trailing commas in method calls or declarations."""
         diags: list[Diagnostic] = []
-        # Trailing comma before ) or ; is suspicious
-        _re_trailing = re.compile(r",\s*[)\];]")
-        _re_comment = re.compile(r"^\s*//")
-
         for idx, line in enumerate(lines):
-            if _re_comment.match(line):
+            if _RE_LINE_COMMENT.match(line):
                 continue
             clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
-            m = _re_trailing.search(clean)
+            m = _RE_BSL186_TRAILING_COMMA.search(clean)
             if m:
                 diags.append(Diagnostic(
                     file=path,
@@ -12432,6 +12448,43 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
+    # BSL190 — FormDataToValue
+    # ------------------------------------------------------------------
+
+    def _rule_bsl190_form_data_to_value(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag calls to ДанныеФормыВЗначение()/FormDataToValue() — slow operation.
+
+        BSLLS: prefer working with server objects directly instead of converting
+        form data to value, which involves full serialization/deserialization.
+        """
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if _RE_LINE_COMMENT.match(line):
+                continue
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+            m = _RE_BSL190_FORM_DATA.search(clean)
+            if m:
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=m.start(),
+                    end_line=idx + 1,
+                    end_character=m.end(),
+                    severity=Severity.WARNING,
+                    code="BSL190",
+                    message=(
+                        "ДанныеФормыВЗначение()/FormDataToValue() — медленная операция; "
+                        "работайте с серверными объектами напрямую"
+                    ),
+                ))
+        return diags
+
+    # ------------------------------------------------------------------
     # BSL197 — IfElseDuplicatedCodeBlock
     # ------------------------------------------------------------------
 
@@ -12440,14 +12493,9 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Detect identical code blocks in consecutive If/ElseIf branches."""
         diags: list[Diagnostic] = []
-        _re_if = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE)
-        _re_elseif = re.compile(r"^\s*(?:ИначеЕсли|ElseIf)\b", re.IGNORECASE)
-        _re_else = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
-        _re_endif = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
-
         i = 0
         while i < len(lines):
-            if not _re_if.match(lines[i]):
+            if not _RE_BSL197_IF.match(lines[i]):
                 i += 1
                 continue
 
@@ -12460,14 +12508,14 @@ class DiagnosticEngine:
 
             while j < len(lines) and depth > 0:
                 bl = lines[j]
-                if _re_if.match(bl):
+                if _RE_BSL197_IF.match(bl):
                     depth += 1
-                elif _re_endif.match(bl):
+                elif _RE_BSL197_ENDIF.match(bl):
                     depth -= 1
                     if depth == 0:
                         branches.append((branch_start, current_body[:]))
                         break
-                if depth == 1 and (_re_elseif.match(bl) or _re_else.match(bl)):
+                if depth == 1 and (_RE_BSL197_ELSEIF.match(bl) or _RE_BSL197_ELSE.match(bl)):
                     branches.append((branch_start, current_body[:]))
                     current_body = []
                     branch_start = j
@@ -12508,19 +12556,9 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Detect duplicate conditions in If/ElseIf chain."""
         diags: list[Diagnostic] = []
-        _re_if = re.compile(
-            r"^\s*(?:Если|If)\s+(.+?)\s+(?:Тогда|Then)\b",
-            re.IGNORECASE | re.UNICODE,
-        )
-        _re_elseif = re.compile(
-            r"^\s*(?:ИначеЕсли|ElseIf)\s+(.+?)\s+(?:Тогда|Then)\b",
-            re.IGNORECASE | re.UNICODE,
-        )
-        _re_endif = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
-
         i = 0
         while i < len(lines):
-            m = _re_if.match(lines[i])
+            m = _RE_BSL198_IF_COND.match(lines[i])
             if not m:
                 i += 1
                 continue
@@ -12530,12 +12568,12 @@ class DiagnosticEngine:
             j = i + 1
             while j < len(lines) and depth > 0:
                 bl = lines[j]
-                if _re_if.match(bl):
+                if _RE_BSL197_IF.match(bl):
                     depth += 1
-                elif _re_endif.match(bl):
+                elif _RE_BSL197_ENDIF.match(bl):
                     depth -= 1
                 elif depth == 1:
-                    em = _re_elseif.match(bl)
+                    em = _RE_BSL198_ELSEIF_COND.match(bl)
                     if em:
                         cond = em.group(1).strip().casefold()
                         if cond in conditions:
