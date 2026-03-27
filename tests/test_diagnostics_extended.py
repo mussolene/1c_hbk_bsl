@@ -2598,35 +2598,49 @@ class TestBsl240RewriteMethodParameter:
 
 
 # ---------------------------------------------------------------------------
-# BSL066 — DeprecatedPlatformMethod
+# BSL066 — DeprecatedFind (BSLLS parity: only Найти() → СтрНайти())
 # ---------------------------------------------------------------------------
 
 
-class TestBsl066DeprecatedPlatformMethod:
-    def test_deprecated_message_detected(self, tmp_path: Path) -> None:
-        content = 'Сообщить("Привет");\n'
+class TestBsl066DeprecatedFind:
+    def test_najti_detected(self, tmp_path: Path) -> None:
+        """Глобальный вызов Найти() флагуется — устаревшая строковая функция."""
+        content = 'Поз = Найти(Строка, "текст");\n'
         diags = _check(content, tmp_path, select={"BSL066"})
         assert "BSL066" in _codes(diags)
 
-    def test_preduprezhdenie_skipped_in_client_command_handler(self, tmp_path: Path) -> None:
-        """Предупреждение() в типовом клиентском ОбработкаКоманды — не BSL066 (модальный сценарий команды)."""
-        content = """\
-            &НаКлиенте
-            Процедура ОбработкаКоманды(ПараметрКоманды, ПараметрыВыполненияКоманды)
-                Предупреждение("Внимание");
-            КонецПроцедуры
-        """
-        diags = _check(content, tmp_path, select={"BSL066", "BSL022"})
-        assert "BSL066" not in _codes(diags)
-        assert "BSL022" not in _codes(diags)
-
-    def test_in_comment_no_warning(self, tmp_path: Path) -> None:
-        content = '// Сообщить("Привет");\n'
+    def test_array_najti_not_flagged(self, tmp_path: Path) -> None:
+        """МойМассив.Найти() — метод объекта, не глобальная функция — не флагуется."""
+        content = 'Элемент = МойМассив.Найти(Значение);\n'
         diags = _check(content, tmp_path, select={"BSL066"})
         assert "BSL066" not in _codes(diags)
 
-    def test_modern_method_no_warning(self, tmp_path: Path) -> None:
-        content = 'ПоказатьОповещение("Привет", , "Заголовок");\n'
+    def test_in_comment_no_warning(self, tmp_path: Path) -> None:
+        content = '// Найти("текст");\n'
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" not in _codes(diags)
+
+    def test_strfind_no_warning(self, tmp_path: Path) -> None:
+        """СтрНайти() — современная замена, не флагуется."""
+        content = 'Поз = СтрНайти(Строка, "текст");\n'
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" not in _codes(diags)
+
+    def test_vreg_nreg_not_deprecated(self, tmp_path: Path) -> None:
+        """Врег/НРег — текущие платформенные функции, не устаревшие."""
+        content = 'Рез = Врег(Строка) + НРег(Другая);\n'
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" not in _codes(diags)
+
+    def test_sokr_functions_not_deprecated(self, tmp_path: Path) -> None:
+        """СокрЛ/СокрП/СокрЛП — текущие платформенные функции, не устаревшие."""
+        content = 'Рез = СокрЛП(СокрЛ(СокрП(Строка)));\n'
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" not in _codes(diags)
+
+    def test_soobshchit_not_bsl066(self, tmp_path: Path) -> None:
+        """Сообщить() — не BSL066 (DeprecatedFind), это DeprecatedMessage."""
+        content = 'Сообщить("Привет");\n'
         diags = _check(content, tmp_path, select={"BSL066"})
         assert "BSL066" not in _codes(diags)
 

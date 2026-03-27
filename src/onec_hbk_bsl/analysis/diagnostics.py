@@ -310,8 +310,8 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["unused"],
     },
     "BSL022": {
-        "name": "DeprecatedMessage",
-        "description": "Предупреждение()/Warning() is a deprecated modal dialog — use status bar messaging instead",
+        "name": "UsingModalWindows",
+        "description": "Предупреждение()/Warning() is a deprecated modal dialog — use ПоказатьПредупреждение() instead",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
@@ -2594,7 +2594,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL063": "Слишком большой модуль",
     "BSL064": "Процедура возвращает значение",
     "BSL065": "Экспортный метод без описания",
-    "BSL066": "Вызов устаревшего метода платформы",
+    "BSL066": "Устаревшая функция Найти() — используйте СтрНайти()",
     "BSL067": "Объявление «Перем» после исполняемого кода",
     "BSL068": "Слишком много ветвей «ИначеЕсли»",
     "BSL069": "Бесконечный цикл",
@@ -2788,7 +2788,7 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL063": "Split the large module into smaller focused modules.",
     "BSL064": "Change 'Процедура' to 'Функция' and add the required return type handling.",
     "BSL065": "Add a // Description comment on the line before the Export method declaration.",
-    "BSL066": "Replace with the modern equivalent platform method.",
+    "BSL066": "Replace Найти() with СтрНайти() / StrFind().",
     "BSL067": "Move all Перем declarations to the start of the method, before any executable statements.",
     "BSL068": "Replace long ИначеЕсли chain with a dictionary/map lookup or polymorphism.",
     "BSL069": "Add a Прервать or exit condition to prevent an infinite loop.",
@@ -3158,7 +3158,8 @@ _BSLLS_NAME_TO_CODE: dict[str, str] = {
     "NumberOfOptionalParams":      "BSL015",
     "NonStandardRegion":           "BSL016",
     "CyclomaticComplexity":        "BSL019",
-    "DeprecatedMessage":           "BSL022",
+    # NOTE: BSLLS DeprecatedMessage flags Сообщить() — not implemented; BSL022 flags Предупреждение()
+    "UsingModalWindows":           "BSL022",
     "UsingServiceTag":             "BSL023",
     "SpaceAtStartComment":         "BSL024",
     "EmptyRegion":                 "BSL026",
@@ -3318,7 +3319,7 @@ _BSLLS_NAME_TO_CODE: dict[str, str] = {
     "UsingExternalCodeTools":                 "BSL267",
     "UsingFindElementByString":               "BSL268",
     "UsingLikeInQuery":                       "BSL269",
-    "UsingModalWindows":                      "BSL270",
+    # "UsingModalWindows" → BSL022 (active impl); BSL270 stub removed to avoid dict key collision
     "UsingObjectNotAvailableUnix":            "BSL271",
     "UsingSynchronousCalls":                  "BSL272",
     "VirtualTableCallWithoutParameters":      "BSL273",
@@ -4068,19 +4069,17 @@ _RE_COMMENT_LINE = re.compile(r'^\s*//')
 # Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
 _RE_FORM_COMPILER_DIRECTIVE_LINE = re.compile(r"^\s*&\S+")
 
-# Deprecated 1C platform methods (BSL066)
+# BSL066 — DeprecatedFind: only Найти() → СтрНайти() (BSLLS parity).
+# Врег/НРег/СокрЛ/СокрП/СокрЛП/Символ/КодСимвола — current platform functions, NOT deprecated.
+# Предупреждение/Вопрос/Сообщить — covered by UsingModalWindows / DeprecatedMessage rules.
+# ВвестиЗначение/ВвестиЧисло/ВвестиДату/ВвестиСтроку — covered by BSL057 DeprecatedInputDialog.
 _DEPRECATED_METHODS = frozenset({
-    # Deprecated in 8.3.x — replaced by async equivalents
-    "предупреждение", "сообщить", "вопрос", "вводзначение", "вводчисло",
-    "вводдату", "вводстроку", "открытьзначение", "редактировать",
-    "warning", "message", "question",
-    # Deprecated string methods (replaced by Str*)
-    "врег", "нрег", "сокрл", "сокрп", "сокрлп",
-    # Deprecated in favour of platform methods
-    "символ", "кодсимвола",
+    "найти",   # Найти() for strings → СтрНайти()
+    "find",    # English alias
 })
+# Negative lookbehind for '.' excludes object method calls like Массив.Найти()
 _RE_DEPRECATED_METHOD = re.compile(
-    r'\b(?:' + '|'.join(re.escape(m) for m in sorted(_DEPRECATED_METHODS)) + r')\s*\(',
+    r'(?<!\.)(?<!\w)\b(?:' + '|'.join(re.escape(m) for m in sorted(_DEPRECATED_METHODS)) + r')\s*\(',
     re.IGNORECASE,
 )
 
@@ -6685,7 +6684,7 @@ class DiagnosticEngine:
         Flag calls to Предупреждение()/Warning() — deprecated modal dialogs.
 
         These block execution and are not allowed in background procedures.
-        Use Сообщить() or status bar notifications instead.
+        Use ПоказатьПредупреждение() / ShowMessageBox() instead.
         """
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
@@ -6706,8 +6705,8 @@ class DiagnosticEngine:
                         severity=Severity.WARNING,
                         code="BSL022",
                         message=(
-                            "Предупреждение()/Warning() is deprecated. "
-                            "Use Сообщить() or status bar messaging instead."
+                            "Предупреждение()/Warning() is a modal dialog deprecated in managed UI. "
+                            "Use ПоказатьПредупреждение() / ShowMessageBox() instead."
                         ),
                     )
                 )
@@ -8705,7 +8704,7 @@ class DiagnosticEngine:
     def _rule_bsl066_deprecated_platform_method(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        """Flag calls to deprecated 1C platform methods."""
+        """Flag calls to deprecated Найти() — use СтрНайти() instead (BSLLS DeprecatedFind)."""
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if _RE_COMMENT_LINE.match(line):
@@ -8713,11 +8712,6 @@ class DiagnosticEngine:
             m = _RE_DEPRECATED_METHOD.search(line)
             if m:
                 method_name = m.group(0).rstrip("(").strip()
-                mn = method_name.casefold()
-                if mn.startswith("предупреждение") or mn.startswith("warning"):
-                    proc = _proc_containing_line(procs, idx)
-                    if proc is not None and _is_typical_client_command_handler(proc, lines):
-                        continue
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -8728,8 +8722,7 @@ class DiagnosticEngine:
                         severity=Severity.WARNING,
                         code="BSL066",
                         message=(
-                            f"'{method_name}' is a deprecated platform method — "
-                            "use its modern asynchronous replacement."
+                            f"'{method_name}' is deprecated — use СтрНайти() / StrFind() instead."
                         ),
                     )
                 )
