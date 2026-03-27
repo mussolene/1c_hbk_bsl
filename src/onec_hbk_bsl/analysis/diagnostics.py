@@ -58,6 +58,7 @@ Engine-level rule selection::
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 import threading
@@ -3784,8 +3785,25 @@ _RE_BSL216_ASSIGN_NOSPACE = re.compile(r"\b(\w+)=(\w)", re.UNICODE)
 _RE_BSL216_PROC_HEADER = re.compile(
     r"^\s*(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE
 )
-# BSL215 — compiler directive (e.g. &НаКлиенте) preceding a proc header
+# BSL215/BSL233 — compiler directive (e.g. &НаКлиенте) preceding a proc header
 _RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
+# BSL044 — function returns non-void value
+_RE_BSL044_RETURN_VALUE = re.compile(r"^\s*(?:Возврат|Return)\s+\S", re.IGNORECASE | re.MULTILINE)
+# BSL049 — try/catch block markers
+_RE_TRY_OPEN = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+_RE_TRY_CLOSE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+# BSL240 / write-only var assignment
+_RE_MODULE_ASSIGN = re.compile(r'^\s*(\w+)\s*=(?!=)', re.IGNORECASE)
+# BSL-x module-level Перем / preprocessor lines
+_RE_PERЕМ_LINE = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
+_RE_REGION_LINE = re.compile(r'^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b', re.IGNORECASE)
+_RE_PREPROC_LINE = re.compile(r'^\s*#', re.IGNORECASE)
+
+
+@functools.lru_cache(maxsize=512)
+def _compile_call_pattern(proc_name: str) -> re.Pattern[str]:
+    """BSL129: cached per-name regex to avoid re-compile on every proc in every file."""
+    return re.compile(r'(?<![.\w])' + re.escape(proc_name) + r'\s*\(', re.IGNORECASE)
 
 def _arithmetic_missing_space_cols_in_line(
     line: str, in_str_at_start: bool = False
@@ -7944,14 +7962,11 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Flag exported Function declarations that never return a value."""
         diags: list[Diagnostic] = []
-        _re_return_value = re.compile(
-            r"^\s*(?:Возврат|Return)\s+\S", re.IGNORECASE | re.MULTILINE
-        )
         for proc in procs:
             if proc.kind != "function" or not proc.is_export:
                 continue
             body = "\n".join(lines[proc.start_idx : proc.end_idx + 1])
-            if not _re_return_value.search(body):
+            if not _RE_BSL044_RETURN_VALUE.search(body):
                 header = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
                 diags.append(
                     Diagnostic(
@@ -8141,9 +8156,6 @@ class DiagnosticEngine:
         are skipped — the raise is only reached when that control flow runs.
         """
         diags: list[Diagnostic] = []
-        _re_try_open = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-        _re_try_close = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
-
         for proc in procs:
             body_lines = lines[proc.start_idx : proc.end_idx + 1]
             base_indent = _proc_body_base_indent(lines, proc)
@@ -8157,9 +8169,9 @@ class DiagnosticEngine:
                 continue
             try_depth = 0
             for rel_idx, line in enumerate(body_lines):
-                if _re_try_open.match(line):
+                if _RE_TRY_OPEN.match(line):
                     try_depth += 1
-                elif _re_try_close.match(line):
+                elif _RE_TRY_CLOSE.match(line):
                     try_depth = max(0, try_depth - 1)
                 elif try_depth == 0 and _RE_RAISE.match(line):
                     raise_indent = len(line) - len(line.lstrip())
@@ -9463,8 +9475,6 @@ class DiagnosticEngine:
         if not module_vars:
             return []
 
-        # Assignment pattern: variable = ...
-        _RE_ASSIGN = re.compile(r'^\s*(\w+)\s*=(?!=)', re.IGNORECASE)
         diags: list[Diagnostic] = []
         for proc in procs:
             # Collect local Перем declarations within this method
@@ -9483,7 +9493,7 @@ class DiagnosticEngine:
             param_vars: set[str] = {p.lower() for p in proc.params}
 
             for idx in range(body_start, min(proc.end_idx, len(lines))):
-                am = _RE_ASSIGN.match(lines[idx])
+                am = _RE_MODULE_ASSIGN.match(lines[idx])
                 if am:
                     var_name = am.group(1).lower()
                     if var_name in module_vars and var_name not in local_vars and var_name not in param_vars:
@@ -11468,10 +11478,7 @@ class DiagnosticEngine:
         """Flag procedures/functions that directly call themselves."""
         diags: list[Diagnostic] = []
         for proc in procs:
-            pattern = re.compile(
-                r'(?<![.\w])' + re.escape(proc.name) + r'\s*\(',
-                re.IGNORECASE,
-            )
+            pattern = _compile_call_pattern(proc.name)
             body_lines = lines[proc.start_idx + 1 : proc.end_idx]
             for rel_idx, line in enumerate(body_lines):
                 if line.strip().startswith("//"):
@@ -12114,9 +12121,7 @@ class DiagnosticEngine:
             for i in range(proc.start_idx, proc.end_idx + 1):
                 inside_proc.add(i)
 
-        _re_perем = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
-        _re_region = re.compile(r'^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b', re.IGNORECASE)
-        _re_preproc = re.compile(r'^\s*#', re.IGNORECASE)
+
         _re_exec = re.compile(r'[А-Яа-яA-Za-z0-9_]')
 
         for idx, line in enumerate(lines):
@@ -12127,11 +12132,11 @@ class DiagnosticEngine:
                 continue
             if stripped.startswith("//"):
                 continue
-            if _re_perем.match(line):
+            if _RE_PERЕМ_LINE.match(line):
                 continue
-            if _re_region.match(line):
+            if _RE_REGION_LINE.match(line):
                 continue
-            if _re_preproc.match(line):
+            if _RE_PREPROC_LINE.match(line):
                 continue
             # Must look like an executable statement (contains identifier chars)
             if _re_exec.search(stripped):
