@@ -4497,6 +4497,25 @@ _RE_BSL240_PARAM_HEADER = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _RE_BSL240_ZNACH = re.compile(r"^\s*(?:Знач|Val)\s+", re.IGNORECASE)
+# BSL029: single-quoted date/string literals (remove before scanning for magic numbers)
+_RE_SINGLE_QUOTED_STRING = re.compile(r"'[^']*'")
+# BSL029: simple direct assignment Var = N; — BSLLS does not flag these
+_RE_BSL029_SIMPLE_ASSIGN = re.compile(
+    r"^\s*[\w\.]+\s*=\s*-?[0-9]+(?:\.[0-9]+)?\s*;?\s*$"
+)
+# BSL029: For loop header — Для X = N По M Цикл — BSLLS does not flag loop bounds
+_RE_BSL029_FOR_HEADER = re.compile(
+    r"^\s*(?:Для|For)\b", re.IGNORECASE
+)
+# BSL029: ternary operator ?(cond, N, M) — BSLLS does not flag numeric values in ternary
+# because they are TernaryOperatorContext, not CallParamContext
+_RE_BSL029_TERNARY = re.compile(r"\?\s*\([^)]*\)")
+# BSL029: Structure.Вставить("key", value) — BSLLS skips second param when first is a
+# string literal (confirmed Structure type). Heuristic: first param is string → structure value.
+_RE_BSL029_STRUCT_INSERT = re.compile(
+    r'\.(?:Вставить|Insert)\s*\(\s*(?:"[^"]*"|\'[^\']*\')\s*,\s*([^)]+)\)',
+    re.IGNORECASE,
+)
 
 
 def _collect_bsl051_delimiter_lines_from_tree(root: Any) -> set[int]:
@@ -5205,6 +5224,7 @@ class DiagnosticEngine:
             "BSL038",  # StringConcatenationInLoop — no direct BSLLS equivalent (BSLLS doesn't flag this)
             "BSL041",  # NotifyDescriptionToModalWindow — no BSLLS equivalent
             "BSL042",  # EmptyExportMethod — BSLLS UnusedLocalMethod has different semantics (non-export dead methods)
+            "BSL065",  # MissingExportComment — our rule checks any comment existence; BSLLS MissingReturnedValueDescription only fires when description exists but lacks return type section (30 FP, 0 TP on 30-file sample)
             "BSL059",  # BoolLiteralComparison — no direct BSLLS equivalent
             "BSL063",  # LargeModule — BSLLS analyze часто не даёт эквивалент на строке 1; включите при необходимости
             "BSL074",  # TodoComment — duplicate of BSL023
@@ -5382,7 +5402,7 @@ class DiagnosticEngine:
             "BSL251",  # TernaryOperatorUsage — TODO
             "BSL252",  # ThisObjectAssign — TODO
             "BSL253",  # TimeoutsInExternalResources — TODO
-            # "BSL254" enabled — TransferringParametersBetweenClientAndServer (server procs; Знач)
+            "BSL254",  # TransferringParametersBetweenClientAndServer — requires cross-reference analysis (which callers are &НаКлиенте); without it produces 32 FP, 0 TP on 30-file sample
             # "BSL255" enabled — TryNumber implemented
             # "BSL256" enabled — Typo (homoglyph Latin/Cyrillic in identifiers; BSLLS priority over BSL208)
             # "BSL257" enabled — UnaryPlusInConcatenation implemented
@@ -7018,12 +7038,28 @@ class DiagnosticEngine:
                 stripped = line.strip()
                 if not stripped or stripped.startswith("//"):
                     continue
+                # Skip multi-line string continuation lines (start with |)
+                if stripped.startswith("|"):
+                    continue
                 # Skip constant-like declarations
                 if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
                     continue
                 # Remove string contents before scanning
                 code_part = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
+                code_part = _RE_SINGLE_QUOTED_STRING.sub("''", code_part)
                 code_part = code_part.split("//")[0]
+                # Skip Для/For loop headers — BSLLS does not flag loop bounds
+                if _RE_BSL029_FOR_HEADER.match(code_part):
+                    continue
+                # Skip simple direct assignments Var = N — BSLLS skips these
+                if _RE_BSL029_SIMPLE_ASSIGN.match(code_part):
+                    continue
+                # Remove ternary operator args — BSLLS does not flag simple numeric
+                # values in ?(cond, N, M) because they are not in CallParamContext
+                code_part = _RE_BSL029_TERNARY.sub("?('',0,0)", code_part)
+                # Remove Structure.Вставить("key", value) second param — BSLLS skips
+                # these when it can confirm the variable is a Структура
+                code_part = _RE_BSL029_STRUCT_INSERT.sub('.Вставить("",0)', code_part)
                 for m in _RE_MAGIC_NUMBER.finditer(code_part):
                     diags.append(
                         Diagnostic(
@@ -12401,7 +12437,8 @@ class DiagnosticEngine:
     # BSL canonical keyword forms (title case)
     _CANONICAL_KEYWORDS: dict[str, str] = {
         "если": "Если", "иначеесли": "ИначеЕсли", "иначе": "Иначе",
-        "конецесли": "КонецЕсли", "для": "Для", "каждого": "Каждого",
+        "конецесли": "КонецЕсли", "для": "Для",
+        # "каждого" omitted — BSLLS accepts both "Каждого" and "каждого" (EACH_LO variant)
         "из": "Из", "цикл": "Цикл", "конеццикла": "КонецЦикла",
         "пока": "Пока", "прервать": "Прервать", "продолжить": "Продолжить",
         "попытка": "Попытка", "исключение": "Исключение",
@@ -12679,7 +12716,7 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         # Выполнить("literal") is less dangerous; Выполнить(var) is suspicious
         _re_exec = re.compile(
-            r"\b(?:Выполнить|Execute)\s*\((.{0,80})\)",
+            r"(?<![.\w])(?:Выполнить|Execute)\s*\((.{0,80})\)",
             re.IGNORECASE | re.UNICODE,
         )
         _re_literal = re.compile(r'^\s*"[^"]*"\s*$')
