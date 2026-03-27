@@ -3617,6 +3617,26 @@ _BSL062_SKIP_STANDARD_COMMAND_PARAMS = frozenset(
         # Первый параметр ПриОпределении..., ПриПолучении..., etc.
         "источникисобытия",
         "eventsource",
+        # ── Стандартный первый параметр событий элементов формы ───────────────
+        # Virtually all form element events: НажатиеКнопки(Элемент), etc.
+        "элемент",
+        "element",
+        "item",
+        # ── Параметры стандартных событий объектов (не-формовые модули) ────────
+        # ОбработкаЗаполнения(ДанныеЗаполнения, ТекстЗаполнения, СтандартнаяОбработка)
+        "данныезаполнения",
+        "fillingdata",
+        "текстзаполнения",
+        "fillingtext",
+        # ОбработкаПроверкиЗаполнения(Отказ, ПроверяемыеРеквизиты)
+        "проверяемыереквизиты",
+        "checkedattributes",
+        # ПриКопировании(КопируемыйОбъект)
+        "копируемыйобъект",
+        "copiedobject",
+        # ПриОтмене(ОтменяемоеДействие)
+        "отменяемоедействие",
+        "cancelledaction",
     }
 )
 
@@ -8596,6 +8616,10 @@ class DiagnosticEngine:
 
         Excludes parameters that start with '_' (convention for intentionally unused).
         """
+        # BSLLS does not run UnusedParameters on form modules — form event handlers
+        # always have platform-defined signatures that may not use all parameters.
+        if path_is_likely_form_module_bsl(path):
+            return []
         diags: list[Diagnostic] = []
         root = getattr(tree, "root_node", None)
         tree_is_ts = root is not None and isinstance(
@@ -12883,6 +12907,10 @@ class DiagnosticEngine:
         proc_node_map: dict[tuple[str, int, str], Any] | None = None,
     ) -> list[Diagnostic]:
         """Detect parameter overwritten before being read."""
+        # BSLLS does not run RewriteMethodParameter on form modules — form event
+        # handlers often intentionally write to parameters (e.g. output params).
+        if path_is_likely_form_module_bsl(path):
+            return []
         diags: list[Diagnostic] = []
         # Pre-check tree validity once — avoids O(P × T) repeated full-tree walks.
         _tree_ok = _ts_tree_ok_for_rules(tree)
@@ -12932,6 +12960,9 @@ class DiagnosticEngine:
 
             # Знач (by-value) parameters are local copies — reassigning is fine.
             val_cf = {n.casefold() for n in (getattr(proc, "val_params", None) or [])}
+            # Optional parameters (with default values) are often intentionally used
+            # as output parameters in 1C — skip them (BSLLS parity).
+            opt_cf = {n.casefold() for n in (getattr(proc, "optional_params", None) or [])}
 
             # Find params reassigned before use in first non-blank body lines
             for li in range(body_start, min(body_start + 15, proc.end_idx)):
@@ -12943,7 +12974,10 @@ class DiagnosticEngine:
                 am = _RE_BSL240_ASSIGN.match(line)
                 if am:
                     lhs = am.group(1).casefold()
-                    if lhs in param_names and lhs not in val_cf:
+                    if (lhs in param_names
+                            and lhs not in val_cf
+                            and lhs not in opt_cf
+                            and lhs not in _BSL062_SKIP_STANDARD_COMMAND_PARAMS):
                         # Check the RHS doesn't mention the param itself
                         rhs = line[am.end():].strip()
                         if lhs not in rhs.casefold():
