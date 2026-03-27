@@ -3520,13 +3520,47 @@ def path_is_likely_form_module_bsl(path: str) -> bool:
     return False
 
 
-# Параметры стандартного обработчика команды — BSLLS не помечает как неиспользуемые.
+# Параметры стандартных обработчиков (команды, события форм) — BSLLS не помечает как неиспользуемые.
 _BSL062_SKIP_STANDARD_COMMAND_PARAMS = frozenset(
     {
+        # Команды
         "параметркоманды",
         "параметрывыполнениякоманды",
         "commandparameter",
         "commandexecutionparameters",
+        # Стандартные события формы
+        "отказ",
+        "cancel",
+        "стандартнаяобработка",
+        "standardprocessing",
+        "текущийэлемент",
+        "currentitem",
+        "данные",
+        "data",
+        "поле",
+        "field",
+        "строка",
+        "row",
+        "колонка",
+        "column",
+        "действие",
+        "action",
+        "адресхранилища",
+        "storageaddress",
+        "параметрыформы",
+        "formparameters",
+        "источник",
+        "source",
+        "причина",
+        "reason",
+        "выбранноезначение",
+        "selectedvalue",
+        "результатвыбора",
+        "selectionresult",
+        "закрытьформу",
+        "closeform",
+        "уникальныйидентификатор",
+        "uniqueid",
     }
 )
 
@@ -4248,6 +4282,19 @@ _STANDARD_REGIONS = frozenset(
         "initialization",
         "variables",
         "localvariables",
+        # Compilation directive regions (form/command modules)
+        "накликенте",
+        "насервере",
+        "накликентенасервере",
+        "накликентенасервереберконтекста",
+        "насервереберконтекста",
+        "обработчикиподписок",
+        "onclient",
+        "onserver",
+        "onclientandserver",
+        "onclientandserverwithoutcontext",
+        "onserverwithoutcontext",
+        "subscriptionhandlers",
         # Common non-canonical but widely used
         "публичныеметоды",
         "публичные",
@@ -5008,8 +5055,13 @@ class DiagnosticEngine:
     DEFAULT_DISABLED: frozenset[str] = frozenset(
         {
             # ── BSL001–BSL070 noise/style preferences ──────────────────────
+            "BSL008",  # TooManyReturns — BSLLS disabled by default
             "BSL013",  # CommentedCode — high false-positive rate
             "BSL018",  # RaiseWithLiteral — opt-in; bare literals are normal; extended syntax is optional
+            "BSL038",  # StringConcatenationInLoop — no direct BSLLS equivalent (BSLLS doesn't flag this)
+            "BSL041",  # NotifyDescriptionToModalWindow — no BSLLS equivalent
+            "BSL042",  # EmptyExportMethod — BSLLS UnusedLocalMethod has different semantics (non-export dead methods)
+            "BSL059",  # BoolLiteralComparison — no direct BSLLS equivalent
             "BSL063",  # LargeModule — BSLLS analyze часто не даёт эквивалент на строке 1; включите при необходимости
             "BSL074",  # TodoComment — duplicate of BSL023
             "BSL120",  # TrailingWhitespace — noisy in diffs
@@ -5219,7 +5271,7 @@ class DiagnosticEngine:
     MAX_PROC_LINES: int = 200
     MAX_RETURNS: int = 3
     MAX_COGNITIVE_COMPLEXITY: int = 15
-    MAX_MCCABE_COMPLEXITY: int = 10
+    MAX_MCCABE_COMPLEXITY: int = 20
     MAX_NESTING_DEPTH: int = 5
     MAX_LINE_LENGTH: int = 120
     MAX_OPTIONAL_PARAMS: int = 3
@@ -7942,8 +7994,11 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         """
-        Flag Перем/Var declarations that appear at module level
-        (outside any procedure or function) — they create shared mutable state.
+        Flag exported Перем/Var declarations at module level (BSLLS ExportVariables).
+
+        Only flags ``Перем Name Экспорт;`` — exported module-level state that leaks
+        outside the module.  Non-exported module variables are intentional and not
+        flagged (matches BSLLS ExportVariables default behaviour).
         """
         diags: list[Diagnostic] = []
         # Build set of line indices that are inside a proc/function
@@ -7955,7 +8010,7 @@ class DiagnosticEngine:
         for idx, line in enumerate(lines):
             if idx in inside:
                 continue
-            m = _RE_VAR_LOCAL.match(line)
+            m = _RE_VAR_MODULE_EXPORT.match(line)
             if m:
                 names = [n.strip() for n in m.group("names").split(",") if n.strip()]
                 diags.append(
@@ -7968,8 +8023,8 @@ class DiagnosticEngine:
                         severity=Severity.INFORMATION,
                         code="BSL054",
                         message=(
-                            f"Module-level variable '{', '.join(names)}' creates shared "
-                            "mutable state — prefer local variables inside methods."
+                            f"Exported module-level variable '{', '.join(names)}' — "
+                            "module-level export state is not recommended (BSLLS ExportVariables)."
                         ),
                     )
                 )
@@ -12195,9 +12250,6 @@ class DiagnosticEngine:
         "экспорт": "Экспорт", "знач": "Знач", "не": "Не", "и": "И",
         "или": "Или", "истина": "Истина", "ложь": "Ложь",
         "неопределено": "Неопределено", "null": "Null",
-        # English equivalents — only flag non-canonical English
-        "if": "Если", "elseif": "ИначеЕсли", "else": "Иначе",
-        "endif": "КонецЕсли",
     }
     # Only flag words that differ in case from their canonical form
     _CANONICAL_RE = re.compile(

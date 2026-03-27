@@ -185,7 +185,7 @@ class TestBsl008TooManyReturnStatements:
                 Возврат "другое";
             КонецФункции
         """
-        diags = _check(content, tmp_path, max_returns=3)
+        diags = _check(content, tmp_path, max_returns=3, select={"BSL008"})
         bsl008 = [d for d in diags if d.code == "BSL008"]
         assert len(bsl008) >= 1
         assert "МногоВозвратов" in bsl008[0].message
@@ -1364,7 +1364,7 @@ class TestBsl038StringConcatInLoop:
                 КонецЦикла;
             КонецПроцедуры
         """
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL038"})
         assert "BSL038" in _codes(diags)
 
     def test_concat_outside_loop_no_warning(self, tmp_path: Path) -> None:
@@ -1402,7 +1402,7 @@ class TestBsl039NestedTernary:
 class TestBsl041NotifyDescription:
     def test_notify_description_detected(self, tmp_path: Path) -> None:
         content = "ОповещениеОЗакрытии = ОписаниеОповещения(\"ОбработкаЗакрытия\", ЭтотОбъект);\n"
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL041"})
         assert "BSL041" in _codes(diags)
 
     def test_notify_description_skipped_in_typical_client_command_handler(self, tmp_path: Path) -> None:
@@ -1888,7 +1888,18 @@ class TestBsl053ExecuteDynamic:
 
 
 class TestBsl054ModuleLevelVariable:
-    def test_module_level_var_detected(self, tmp_path: Path) -> None:
+    def test_module_level_export_var_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Перем МояПеременная Экспорт;
+            Процедура Тест()
+                Сообщить(МояПеременная);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL054"})
+        assert "BSL054" in _codes(diags)
+
+    def test_module_level_non_export_var_no_warning(self, tmp_path: Path) -> None:
+        """Non-exported module-level Перем is not flagged (BSLLS ExportVariables only flags Экспорт)."""
         content = """\
             Перем МояПеременная;
             Процедура Тест()
@@ -1896,7 +1907,7 @@ class TestBsl054ModuleLevelVariable:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL054"})
-        assert "BSL054" in _codes(diags)
+        assert "BSL054" not in _codes(diags)
 
     def test_local_var_no_warning(self, tmp_path: Path) -> None:
         content = """\
