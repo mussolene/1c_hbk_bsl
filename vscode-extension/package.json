@@ -2,7 +2,7 @@
   "name": "1c-hbk-bsl",
   "displayName": "1C HBK BSL",
   "description": "1C Enterprise BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename, and more",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "publisher": "mussolene",
   "icon": "icon.png",
   "license": "MIT",
