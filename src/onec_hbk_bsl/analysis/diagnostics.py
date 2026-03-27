@@ -3779,6 +3779,14 @@ def _build_line_string_states(lines: list[str]) -> list[bool]:
     return states
 
 
+# BSL216 — module-level patterns (avoid re.compile inside the hot loop)
+_RE_BSL216_ASSIGN_NOSPACE = re.compile(r"\b(\w+)=(\w)", re.UNICODE)
+_RE_BSL216_PROC_HEADER = re.compile(
+    r"^\s*(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE
+)
+# BSL215 — compiler directive (e.g. &НаКлиенте) preceding a proc header
+_RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
+
 def _arithmetic_missing_space_cols_in_line(
     line: str, in_str_at_start: bool = False
 ) -> list[int]:
@@ -12743,7 +12751,6 @@ class DiagnosticEngine:
         """Export method parameters must be documented in the preceding comment block."""
         diags: list[Diagnostic] = []
 
-        _re_compiler_directive = re.compile(r"^\s*&\w+\s*$")
         for proc in procs:
             if not proc.params:
                 continue
@@ -12753,7 +12760,7 @@ class DiagnosticEngine:
             block_end = proc.start_idx - 1
             while block_end >= 0 and (
                 lines[block_end].strip() == ""
-                or _re_compiler_directive.match(lines[block_end])
+                or _RE_COMPILER_DIRECTIVE.match(lines[block_end])
             ):
                 block_end -= 1
             # Check if there's a comment block above.
@@ -12928,8 +12935,6 @@ class DiagnosticEngine:
             if region_stack:
                 root_region_at[idx] = region_stack[0]
 
-        _re_compiler_directive = re.compile(r"^\s*&\w+\s*$")
-
         for proc in procs:
             if not proc.is_export:
                 continue
@@ -12943,7 +12948,7 @@ class DiagnosticEngine:
             block_end = proc.start_idx - 1
             while block_end >= 0 and (
                 lines[block_end].strip() == ""
-                or _re_compiler_directive.match(lines[block_end])
+                or _RE_COMPILER_DIRECTIVE.match(lines[block_end])
             ):
                 block_end -= 1
 
@@ -13049,25 +13054,11 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Detect missing spaces around assignment and comparison operators."""
         diags: list[Diagnostic] = []
-        _re_comment = re.compile(r"^\s*//")
-        # Pattern: identifier=expression without spaces (but not ==, :=, >=, <=, !=)
-        _re_no_space = re.compile(
-            r"(?<=[а-яёА-ЯЁa-zA-Z0-9_\)])=(?!=)(?=[а-яёА-ЯЁa-zA-Z0-9_\"'(])"
-            r"|(?<=[а-яёА-ЯЁa-zA-Z0-9_\)])(?<![<>!])=(?!=)|"
-            r"(?<![<>=!])=(?!=)(?=[а-яёА-ЯЁa-zA-Z])",
-            re.UNICODE,
-        )
-        # Simpler: detect Var=Value without spaces (assignment without space)
-        _re_assign_nospace = re.compile(
-            r"\b(\w+)=(\w)",
-            re.UNICODE,
-        )
-
         # Build cross-line string state for multi-line string handling.
         str_states = _build_line_string_states(lines)
 
         for idx, line in enumerate(lines):
-            if _re_comment.match(line):
+            if _RE_LINE_COMMENT.match(line):
                 continue
             in_str_start = str_states[idx]
             clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line) if not in_str_start else line
@@ -13076,10 +13067,7 @@ class DiagnosticEngine:
                 clean = clean[:comment_pos]
             # Skip = check on procedure/function headers — default parameter values
             # (Param = Default) use = without spaces by 1C convention; BSLLS skips these.
-            is_proc_header = bool(re.match(
-                r"^\s*(?:Процедура|Функция|Procedure|Function)\b", clean, re.IGNORECASE
-            ))
-            m = None if is_proc_header else _re_assign_nospace.search(clean)
+            m = None if _RE_BSL216_PROC_HEADER.match(clean) else _RE_BSL216_ASSIGN_NOSPACE.search(clean)
             if m:
                 diags.append(Diagnostic(
                     file=path,
