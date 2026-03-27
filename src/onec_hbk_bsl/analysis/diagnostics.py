@@ -6912,10 +6912,15 @@ class DiagnosticEngine:
             if not proc.val_params:
                 continue
             body = "\n".join(lines[proc.start_idx + 1 : proc.end_idx + 1])
+            # Single alternation scan instead of one re.search per parameter
+            combined = re.compile(
+                r"\b(?:" + "|".join(re.escape(p) for p in proc.val_params) + r")\b",
+                re.IGNORECASE,
+            )
+            referenced = {m.group().casefold() for m in combined.finditer(body)}
+            line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
             for param in proc.val_params:
-                pattern = r"\b" + re.escape(param) + r"\b"
-                if not re.search(pattern, body, re.IGNORECASE):
-                    line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                if param.casefold() not in referenced:
                     diags.append(
                         Diagnostic(
                             file=path,
@@ -12674,17 +12679,32 @@ class DiagnosticEngine:
         if path_is_likely_form_module_bsl(path):
             return []
         diags: list[Diagnostic] = []
-        # Cache rule-enabled flag to avoid O(n) set lookups inside the hot loop.
         _bsl036 = self._rule_enabled("BSL036")
+
+        # Pre-compute BSL036-suppressed line indices once (O(n)) instead of
+        # calling _line_in_triggered_bsl036_condition per line (O(n × 48²)).
+        bsl036_skip: set[int] = set()
+        if _bsl036:
+            for start in range(len(lines)):
+                chunk = self._bsl036_if_condition_chunk(lines, start)
+                if chunk is None:
+                    continue
+                if len(_RE_BOOL_OP.findall(chunk)) <= self.max_bool_ops:
+                    continue
+                # Mark every line in this condition block (start … Тогда)
+                j = start
+                while j < len(lines):
+                    bsl036_skip.add(j)
+                    if self._RE_THEN_WORD.search(lines[j]):
+                        break
+                    j += 1
 
         for idx, line in enumerate(lines):
             if _RE_LINE_COMMENT.match(line):
                 continue
-            if _bsl036 and self._line_triggers_bsl036(lines, idx):
+            if idx in bsl036_skip:
                 continue
-            if _bsl036 and self._line_in_triggered_bsl036_condition(lines, idx):
-                continue
-            # Remove string literals
+            # Remove string literals and inline comment
             clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
