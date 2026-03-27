@@ -4367,7 +4367,10 @@ _RE_CONTINUE = re.compile(r'^\s*(?:Продолжить|Continue)\s*;', re.IGNOR
 
 # Comment that looks like commented-out code (BSL123): // contains = ; or ()
 _RE_COMMENTED_CODE = re.compile(
-    r'^\s*//\s*\w.*(?:;|\(|\) *=|:=)',
+    # Removed \( — parentheses alone don't indicate commented code (doc comments
+    # like "//Параметры: X Тип("Дата")" were incorrectly skipped as "commented code").
+    # Keep ;, ):=, := as strong statement indicators.
+    r'^\s*//\s*\w.*(?:;|\) *=|:=)',
 )
 
 # Hardcoded file path in string literal (BSL100)
