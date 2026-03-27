@@ -3419,10 +3419,28 @@ _RE_DEPRECATED_MSG = re.compile(
 )
 
 # Service tags in comments
+# Matches BSLLS UsingServiceTagDiagnostic default pattern:
+# todo|fixme|!!|mrg|@|отладка|debug|для отладки|{{КОНСТРУКТОР_|}}КОНСТРУКТОР_|{{MRG|}}MRG|...
+# Pattern: //\s*(tag), so tag must follow // with optional whitespace.
 _RE_SERVICE_TAG = re.compile(
-    r"//.*\b(?:TODO|FIXME|HACK|КЕЙС|WORKAROUND|UNDONE|XXX)\b",
+    r"//\s*("
+    r"todo|fixme|!!|mrg|@|отладка|debug|для\s*отладки"
+    r"|(?:\{\{|\}\})КОНСТРУКТОР_|(?:\{\{|\}\})MRG"
+    r"|Вставить\s*содержимое\s*обработчика"
+    r"|Paste\s*handler\s*content|Insert\s*handler\s*code"
+    r"|Insert\s*handler\s*content|Insert\s*handler\s*contents"
+    r")",
     re.IGNORECASE,
 )
+
+# BSL215 — MissingParameterDescription: comment section headers and param entry
+_RE_BSL215_PARAMS_SECTION = re.compile(
+    r"^\s*//\s*(?:Параметры|Parameters)\s*:?\s*$", re.IGNORECASE
+)
+_RE_BSL215_PARAM_ENTRY = re.compile(
+    r"^\s*//\s{1,4}(\w+)\s*[-–]", re.UNICODE
+)
+_RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
 # BSLLS SpaceAtStartCommentDiagnostic — GOOD_COMMENT_PATTERN_STRICT (develop branch):
 # either "//[ \\t].*" or "//{2,}[ \\t]*" end-of-line only (///, ////, bare //).
@@ -3735,7 +3753,9 @@ def _comma_missing_space_after_col_in_line(line: str) -> int | None:
             continue
         if ch == ",":
             nxt = line[i + 1]
-            if nxt not in " \t\n\r," and nxt.isalpha():
+            # BSLLS requires a space after comma; ,, (multiple commas) are also flagged.
+            # Only allow whitespace, closing bracket/paren, or end-of-line after comma.
+            if nxt not in " \t\n\r)]\n":
                 return i
         i += 1
     return None
@@ -5384,7 +5404,7 @@ class DiagnosticEngine:
             "BSL212",  # MissedRequiredParameter — TODO
             "BSL213",  # MissingCommonModuleMethod — TODO
             "BSL214",  # MissingEventSubscriptionHandler — TODO
-            "BSL215",  # MissingParameterDescription — TODO
+            # "BSL215" enabled — MissingParameterDescription implemented
             # "BSL216" enabled — MissingSpace implemented
             "BSL217",  # MissingTempStorageDeletion — TODO
             "BSL218",  # MissingTemporaryFileDeletion — TODO
@@ -5401,7 +5421,7 @@ class DiagnosticEngine:
             # "BSL230" enabled — PairingBrokenTransaction implemented
             "BSL231",  # PrivilegedModuleMethodCall — TODO
             "BSL232",  # ProtectedModule — TODO
-            "BSL233",  # PublicMethodsDescription — TODO
+            # "BSL233" enabled — PublicMethodsDescription implemented
             "BSL234",  # QueryNestedFieldsByDot — TODO
             "BSL235",  # QueryParseError — TODO
             "BSL236",  # QueryToMissingMetadata — TODO
@@ -6010,6 +6030,10 @@ class DiagnosticEngine:
             _rule_tasks.append(("BSL153", lambda: self._rule_bsl153_canonical_spelling_keywords(path, lines)))
         if self._rule_enabled("BSL199"):
             _rule_tasks.append(("BSL199", lambda: self._rule_bsl199_if_else_if_ends_with_else(path, lines)))
+        if self._rule_enabled("BSL215"):
+            _rule_tasks.append(("BSL215", lambda: self._rule_bsl215_missing_parameter_description(path, lines, procs)))
+        if self._rule_enabled("BSL233"):
+            _rule_tasks.append(("BSL233", lambda: self._rule_bsl233_public_methods_description(path, lines, procs)))
         if self._rule_enabled("BSL216"):
             _rule_tasks.append(("BSL216", lambda: self._rule_bsl216_missing_space(path, lines)))
         if self._rule_enabled("BSL254"):
@@ -12528,6 +12552,254 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
+    # BSL215 — MissingParameterDescription
+    # ------------------------------------------------------------------
+
+    def _rule_bsl215_missing_parameter_description(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Export method parameters must be documented in the preceding comment block."""
+        diags: list[Diagnostic] = []
+
+        _re_compiler_directive = re.compile(r"^\s*&\w+\s*$")
+        for proc in procs:
+            if not proc.params:
+                continue
+
+            # Walk backward from proc header to find the comment block.
+            # Skip blank lines and compiler directives (&НаКлиенте, &НаСервере...).
+            block_end = proc.start_idx - 1
+            while block_end >= 0 and (
+                lines[block_end].strip() == ""
+                or _re_compiler_directive.match(lines[block_end])
+            ):
+                block_end -= 1
+            # Check if there's a comment block above.
+            if block_end < 0 or not _RE_BSL215_COMMENT_LINE.match(lines[block_end]):
+                continue  # No comment block → skip (BSL011 handles missing comments)
+
+            # Find the start of the comment block.
+            block_start = block_end
+            while block_start > 0 and _RE_BSL215_COMMENT_LINE.match(lines[block_start - 1]):
+                block_start -= 1
+
+            comment_block = lines[block_start:block_end + 1]
+
+            # Section separator lines (////////...) are not method descriptions.
+            _re_separator = re.compile(r"^\s*/{10,}\s*$")
+            if any(_re_separator.match(cl) for cl in comment_block):
+                continue
+
+            # If the comment block contains a // См. / // See reference link, BSLLS
+            # considers this sufficient documentation and skips the check entirely.
+            _re_see_link = re.compile(r"^\s*//\s*(?:См\.|See)\s+\S", re.IGNORECASE)
+            if any(_re_see_link.match(cl) for cl in comment_block):
+                continue
+
+            # Find "// Параметры:" section.
+            params_section_start = None
+            for ci, cl in enumerate(comment_block):
+                if _RE_BSL215_PARAMS_SECTION.match(cl):
+                    params_section_start = ci
+                    break
+
+            actual_params_cf = {p.casefold() for p in proc.params}
+
+            if params_section_start is None:
+                # No // Параметры: section — all params undocumented.
+                # Flag at the method name position (method header line).
+                header_line = lines[proc.start_idx]
+                diags.append(Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=header_line.index(proc.name),
+                    end_line=proc.start_idx + 1,
+                    end_character=header_line.index(proc.name) + len(proc.name),
+                    severity=Severity.WARNING,
+                    code="BSL215",
+                    message=(
+                        f"Отсутствует описание параметров метода «{proc.name}» "
+                        "в комментарии"
+                    ),
+                ))
+                continue
+
+            # Extract documented param names from the section.
+            documented_cf: dict[str, str] = {}  # casefold → original name
+            # Collect lines after "// Параметры:" that look like param entries.
+            for cl in comment_block[params_section_start + 1:]:
+                # Stop at another section header (e.g. // Возвращаемое значение:)
+                stripped = cl.strip()
+                if stripped == "//" or (
+                    re.match(r"^\s*//\s*\w[\w\s]*:\s*$", cl) and
+                    not _RE_BSL215_PARAM_ENTRY.match(cl)
+                ):
+                    break
+                m = _RE_BSL215_PARAM_ENTRY.match(cl)
+                if m:
+                    pname = m.group(1)
+                    documented_cf[pname.casefold()] = pname
+
+            # Find params from signature that are not in documentation.
+            # Determine line positions of params in multi-line signatures.
+            # Scan from proc.start_idx forward until we find the closing ')'.
+            param_lines: dict[str, int] = {}  # casefold → 0-based line index
+            scan_idx = proc.start_idx
+            paren_depth = 0
+            header_done = False
+            while scan_idx < len(lines) and not header_done:
+                sl = lines[scan_idx]
+                for ch in sl:
+                    if ch == "(":
+                        paren_depth += 1
+                    elif ch == ")":
+                        paren_depth -= 1
+                        if paren_depth == 0:
+                            header_done = True
+                            break
+                # Check each param: if its name appears as a token on this line, record it.
+                for pname in proc.params:
+                    pcf = pname.casefold()
+                    if pcf not in param_lines:
+                        # Use word-boundary search to avoid false matches.
+                        if re.search(r"\b" + re.escape(pname) + r"\b", sl, re.IGNORECASE):
+                            param_lines[pcf] = scan_idx
+                scan_idx += 1
+
+            for pname in proc.params:
+                pcf = pname.casefold()
+                if pcf not in documented_cf:
+                    # This parameter has no description.
+                    param_line_idx = param_lines.get(pcf, proc.start_idx)
+                    pl = lines[param_line_idx]
+                    # Find column of param name.
+                    m = re.search(r"\b" + re.escape(pname) + r"\b", pl, re.IGNORECASE)
+                    col = m.start() if m else 0
+                    diags.append(Diagnostic(
+                        file=path,
+                        line=param_line_idx + 1,
+                        character=col,
+                        end_line=param_line_idx + 1,
+                        end_character=col + len(pname),
+                        severity=Severity.WARNING,
+                        code="BSL215",
+                        message=(
+                            f"Отсутствует описание параметра «{pname}» метода "
+                            f"«{proc.name}» в комментарии"
+                        ),
+                    ))
+
+            # Extra documented params not in signature → flag at method name.
+            extra = [v for k, v in documented_cf.items() if k not in actual_params_cf]
+            if extra:
+                header_line = lines[proc.start_idx]
+                try:
+                    col = header_line.index(proc.name)
+                except ValueError:
+                    col = 0
+                diags.append(Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=col,
+                    end_line=proc.start_idx + 1,
+                    end_character=col + len(proc.name),
+                    severity=Severity.WARNING,
+                    code="BSL215",
+                    message=(
+                        f"Параметры {', '.join(extra)!r} описаны в комментарии, "
+                        f"но отсутствуют в сигнатуре «{proc.name}»"
+                    ),
+                ))
+
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL233 — PublicMethodsDescription
+    # ------------------------------------------------------------------
+
+    _RE_BSL233_API_REGION = re.compile(
+        r"^\s*#(?:Область|Region)\s+(ПрограммныйИнтерфейс|Public)\s*$",
+        re.IGNORECASE,
+    )
+    _RE_BSL233_REGION_START = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE)
+    _RE_BSL233_REGION_END = re.compile(r"^\s*#(?:КонецОбласти|EndRegion)\b", re.IGNORECASE)
+
+    def _rule_bsl233_public_methods_description(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Export methods inside #Область ПрограммныйИнтерфейс must have a description comment."""
+        diags: list[Diagnostic] = []
+
+        # Build map: proc.start_idx → root region name (the outermost #Область).
+        region_stack: list[str] = []
+        root_region_at: dict[int, str] = {}  # line_idx → root region
+
+        for idx, line in enumerate(lines):
+            if self._RE_BSL233_REGION_END.match(line):
+                if region_stack:
+                    region_stack.pop()
+            elif self._RE_BSL233_REGION_START.match(line):
+                m = re.match(r"^\s*#(?:Область|Region)\s+(\S+)", line, re.IGNORECASE)
+                region_name = m.group(1) if m else ""
+                region_stack.append(region_name)
+            # Record root region for this line.
+            if region_stack:
+                root_region_at[idx] = region_stack[0]
+
+        _re_compiler_directive = re.compile(r"^\s*&\w+\s*$")
+
+        for proc in procs:
+            if not proc.is_export:
+                continue
+            root_region = root_region_at.get(proc.start_idx, "")
+            if not self._RE_BSL233_API_REGION.match(
+                f"#Область {root_region}" if root_region else ""
+            ):
+                continue
+
+            # Walk backward to check for a comment block.
+            block_end = proc.start_idx - 1
+            while block_end >= 0 and (
+                lines[block_end].strip() == ""
+                or _re_compiler_directive.match(lines[block_end])
+            ):
+                block_end -= 1
+
+            has_description = (
+                block_end >= 0 and _RE_BSL215_COMMENT_LINE.match(lines[block_end])
+            )
+            # Skip section separators (////...) — not real descriptions.
+            if has_description:
+                blk_s = block_end
+                while blk_s > 0 and _RE_BSL215_COMMENT_LINE.match(lines[blk_s - 1]):
+                    blk_s -= 1
+                block = lines[blk_s:block_end + 1]
+                if any(re.match(r"^\s*/{10,}\s*$", cl) for cl in block):
+                    has_description = False
+
+            if not has_description:
+                header_line = lines[proc.start_idx]
+                try:
+                    col = header_line.index(proc.name)
+                except ValueError:
+                    col = 0
+                diags.append(Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=col,
+                    end_line=proc.start_idx + 1,
+                    end_character=col + len(proc.name),
+                    severity=Severity.INFORMATION,
+                    code="BSL233",
+                    message=(
+                        f"Экспортный метод «{proc.name}» в публичном API "
+                        "должен иметь описание в комментарии"
+                    ),
+                ))
+
+        return diags
+
+    # ------------------------------------------------------------------
     # BSL199 — IfElseIfEndsWithElse
     # ------------------------------------------------------------------
 
@@ -12582,7 +12854,8 @@ class DiagnosticEngine:
                             "добавьте обработку неожиданных значений"
                         ),
                     ))
-            i = j
+            # Advance by 1 (not to j) so nested Если blocks are also examined.
+            i += 1
         return diags
 
     # ------------------------------------------------------------------
@@ -12615,10 +12888,12 @@ class DiagnosticEngine:
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
-            # Skip procedure/function headers
-            if re.match(r"^\s*(?:Процедура|Функция|Procedure|Function)\b", clean, re.IGNORECASE):
-                continue
-            m = _re_assign_nospace.search(clean)
+            # Skip = check on procedure/function headers — default parameter values
+            # (Param = Default) use = without spaces by 1C convention; BSLLS skips these.
+            is_proc_header = bool(re.match(
+                r"^\s*(?:Процедура|Функция|Procedure|Function)\b", clean, re.IGNORECASE
+            ))
+            m = None if is_proc_header else _re_assign_nospace.search(clean)
             if m:
                 diags.append(Diagnostic(
                     file=path,
