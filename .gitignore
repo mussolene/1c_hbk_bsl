@@ -24,6 +24,7 @@ htmlcov/
 node_modules/
 vscode-extension/out/
 vscode-extension/bin/
+vscode-extension/bsl-json.json
 *.vsix
 *.js.map
 
