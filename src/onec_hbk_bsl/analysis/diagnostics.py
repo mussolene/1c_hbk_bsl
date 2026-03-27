@@ -3761,6 +3761,98 @@ def _comma_missing_space_after_col_in_line(line: str) -> int | None:
     return None
 
 
+def _build_line_string_states(lines: list[str]) -> list[bool]:
+    """
+    Returns a list where entry[i] is True if line i *starts* inside a double-quoted string.
+    Needed for multi-line string handling in BSL216 checks.
+    """
+    states: list[bool] = []
+    in_str = False
+    for line in lines:
+        states.append(in_str)
+        for ch in line:
+            if ch == '"':
+                in_str = not in_str
+    return states
+
+
+def _arithmetic_missing_space_cols_in_line(
+    line: str, in_str_at_start: bool = False
+) -> list[int]:
+    """
+    Returns 0-based columns where an arithmetic/comparison binary operator
+    lacks a space on at least one side (BSLLS MissingSpace rule for +/-/*/%).
+    Handles double-quoted strings and single-line comments.
+    Detects unary +/- and skips them.
+    """
+    # Chars that indicate the previous token is a valid LHS of binary operator.
+    _BINARY_LHS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                            "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+                            "0123456789_)]\"|'")
+    # Chars after which +/- is unary (not binary).
+    _UNARY_AFTER = frozenset("(=[,+-*/%<>!&|~")
+
+    # Strip comment: find // outside strings.
+    stripped = line
+    in_s = in_str_at_start
+    for ci, ch in enumerate(line):
+        if ch == '"':
+            in_s = not in_s
+        elif ch == '/' and not in_s and ci + 1 < len(line) and line[ci + 1] == '/':
+            stripped = line[:ci]
+            break
+
+    cols: list[int] = []
+    in_s = in_str_at_start
+    in_sq = False  # inside single-quoted date/string literals '...'
+    prev_non_space = ''
+    i = 0
+    n = len(stripped)
+    while i < n:
+        ch = stripped[i]
+        if ch == '"' and not in_sq:
+            in_s = not in_s
+            prev_non_space = '"'
+            i += 1
+            continue
+        if ch == "'" and not in_s:
+            in_sq = not in_sq
+            prev_non_space = "'"
+            i += 1
+            continue
+        if in_s or in_sq:
+            i += 1
+            continue
+        if ch in ' \t':
+            i += 1
+            continue
+
+        if ch in '+-*/%':
+            # Check for ** (not in BSL but guard anyway).
+            # Determine if binary operator.
+            if ch in '+-' and prev_non_space not in _BINARY_LHS:
+                # Unary.
+                prev_non_space = ch
+                i += 1
+                continue
+            # Space before: prev real char should have been a space.
+            prev_ch = stripped[i - 1] if i > 0 else ''
+            space_before = prev_ch in ' \t'
+            # Space after.
+            next_ch = stripped[i + 1] if i + 1 < n else ''
+            space_after = next_ch in ' \t'
+            if not space_before or not space_after:
+                cols.append(i)
+            prev_non_space = ch
+            i += 1
+            continue
+
+        prev_non_space = ch
+        i += 1
+
+    return cols
+
+
 def _module_export_var_has_preceding_description(lines: list[str], var_line_idx: int) -> bool:
     """Previous non-blank line is a non-empty ``//`` or ``///`` comment (BSLLS MissingVariablesDescription)."""
     j = var_line_idx - 1
@@ -12881,10 +12973,14 @@ class DiagnosticEngine:
             re.UNICODE,
         )
 
+        # Build cross-line string state for multi-line string handling.
+        str_states = _build_line_string_states(lines)
+
         for idx, line in enumerate(lines):
             if _re_comment.match(line):
                 continue
-            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
+            in_str_start = str_states[idx]
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line) if not in_str_start else line
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -12905,6 +13001,21 @@ class DiagnosticEngine:
                     code="BSL216",
                     message=(
                         "Пропущен пробел вокруг оператора «=» — "
+                        "добавьте пробелы для читаемости"
+                    ),
+                ))
+            # Arithmetic operators: +, -, *, /
+            for col in _arithmetic_missing_space_cols_in_line(line, in_str_start):
+                diags.append(Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=col,
+                    end_line=idx + 1,
+                    end_character=col + 1,
+                    severity=Severity.INFORMATION,
+                    code="BSL216",
+                    message=(
+                        "Пропущен пробел вокруг арифметического оператора — "
                         "добавьте пробелы для читаемости"
                     ),
                 ))
