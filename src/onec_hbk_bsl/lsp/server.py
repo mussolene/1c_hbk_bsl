@@ -296,6 +296,8 @@ class BslLanguageServer(LanguageServer):
         self._docs: dict[str, str] = {}
         # Debounce timers for diagnostics: uri → Timer
         self._diag_timers: dict[str, threading.Timer] = {}
+        # Adaptive debounce: uri → last check duration (seconds)
+        self._diag_last_time: dict[str, float] = {}
         # Protect _docs / _diag_timers from concurrent LSP handlers and background threads.
         self._doc_state_lock = threading.RLock()
         # tree_sitter.Parser is not thread-safe — one BslParser per thread.
@@ -465,7 +467,23 @@ def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> Non
         ).start()
 
 
-_DIAG_DEBOUNCE_SECS = 0.6
+_DIAG_DEBOUNCE_SECS = 0.6  # fallback default; adaptive debounce used when timing is known
+_DIAG_DEBOUNCE_MIN = 0.3
+_DIAG_DEBOUNCE_MAX = 3.0
+
+
+def _adaptive_debounce(ls: BslLanguageServer, uri: str) -> float:
+    """Return debounce delay for *uri* scaled to the last observed check duration.
+
+    Keeps the debounce proportional to the actual cost of running diagnostics:
+    fast files stay responsive; large slow files avoid cascading re-checks while
+    the user is typing.  2× multiplier leaves time for a couple of edits before
+    the next check fires.
+    """
+    last = ls._diag_last_time.get(uri, 0.0)
+    if last == 0.0:
+        return _DIAG_DEBOUNCE_SECS
+    return min(max(last * 2.0, _DIAG_DEBOUNCE_MIN), _DIAG_DEBOUNCE_MAX)
 
 
 @server.feature(TEXT_DOCUMENT_DID_CHANGE)
@@ -490,7 +508,7 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
             ls._diag_timers.pop(uri, None)
         _publish_diagnostics(ls, uri, path)
 
-    timer = threading.Timer(_DIAG_DEBOUNCE_SECS, _run)
+    timer = threading.Timer(_adaptive_debounce(ls, uri), _run)
     with ls._doc_state_lock:
         ls._diag_timers[uri] = timer
     timer.start()
@@ -530,7 +548,10 @@ def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[L
 
 def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
     """Run the diagnostic engine and unused-symbol pass (may raise)."""
+    import time as _time
+
     cached = ls._doc_get(uri)
+    _t0 = _time.perf_counter()
     if cached is not None:
         issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
     else:
@@ -542,6 +563,8 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
             issues = ls.diagnostics_engine.check_content(
                 path, disk_text, symbol_index=ls.symbol_index
             )
+    # Record elapsed time for adaptive debounce (no lock needed — float write is atomic).
+    ls._diag_last_time[uri] = _time.perf_counter() - _t0
 
     # Group diagnostics by rule code to reduce Problems panel clutter.
     # Rules that fire many times in one file are collapsed into a single entry

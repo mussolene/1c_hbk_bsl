@@ -4485,6 +4485,19 @@ _RE_BSL051_DELIMITER_FALLBACK = re.compile(
     re.IGNORECASE,
 )
 
+# Pre-compiled patterns shared across hot-path rules (avoid per-call re.compile overhead).
+_RE_LINE_COMMENT = re.compile(r"^\s*//")
+_RE_DOUBLE_QUOTED_STRING = re.compile(r'"[^"]*"')
+_RE_BSL240_ASSIGN = re.compile(
+    r"^\s*(\w+)\s*=\s*(?!.*\b\1\b)",  # LHS = expr not containing LHS
+    re.UNICODE,
+)
+_RE_BSL240_PARAM_HEADER = re.compile(
+    r"^\s*(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\(([^)]*)\)",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL240_ZNACH = re.compile(r"^\s*(?:Знач|Val)\s+", re.IGNORECASE)
+
 
 def _collect_bsl051_delimiter_lines_from_tree(root: Any) -> set[int]:
     """Return 0-based line indices of block delimiter keywords in the CST."""
@@ -4653,6 +4666,32 @@ def _find_proc_definition_node(tree: Any, proc: _ProcInfo) -> Any | None:
         return None
 
     return walk(root)
+
+
+def _build_proc_node_map(tree: Any) -> dict[tuple[str, int, str], Any]:
+    """Single tree walk → mapping (name, start_idx, kind) → tree-sitter node.
+
+    Replaces repeated O(P × T) calls to :func:`_find_proc_definition_node` with
+    a single O(T) pass followed by O(1) dict lookups.  Build once in
+    ``_run_rules``; share across all rules that need per-proc CST nodes
+    (currently BSL062 and BSL240).
+    """
+    out: dict[tuple[str, int, str], Any] = {}
+    root = getattr(tree, "root_node", None)
+    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+        return out
+
+    def collect(node: Any) -> None:
+        if node.type in ("procedure_definition", "function_definition"):
+            info = _ts_node_to_proc_info(node)
+            if info:
+                out[(info.name, info.start_idx, info.kind)] = node
+            return  # BSL does not allow nested procedures
+        for child in node.children:
+            collect(child)
+
+    collect(root)
+    return out
 
 
 def _ts_first_body_statement_line_idx(proc_node: Any) -> int | None:
@@ -5074,7 +5113,7 @@ def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -
         stripped = line.strip()
         if stripped.startswith("//"):
             continue
-        line_no_strings = re.sub(r'"[^"]*"', '""', line)
+        line_no_strings = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
         complexity += len(_RE_MCCABE_BOOL.findall(line_no_strings))
         if _CC_OPEN.match(line):
             complexity += 1 + nesting
@@ -5559,6 +5598,12 @@ class DiagnosticEngine:
         )
         self._metrics_tls.data = last_metrics
 
+        # Build proc→node lookup once (single O(T) tree walk).
+        # Rules BSL062 and BSL240 use this to avoid repeated O(P × T) walks.
+        _proc_node_map: dict[tuple[str, int, str], Any] = (
+            _build_proc_node_map(tree) if tree_is_ts else {}
+        )
+
         _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
 
         if self._rule_enabled("BSL001"):
@@ -5704,7 +5749,7 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 (
                     "BSL062",
-                    lambda: self._rule_bsl062_unused_parameter(path, lines, procs, tree),
+                    lambda: self._rule_bsl062_unused_parameter(path, lines, procs, tree, _proc_node_map),
                 )
             )
         if self._rule_enabled("BSL063"):
@@ -5916,7 +5961,7 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL230"):
             _rule_tasks.append(("BSL230", lambda: self._rule_bsl230_pairing_broken_transaction(path, lines, procs)))
         if self._rule_enabled("BSL240"):
-            _rule_tasks.append(("BSL240", lambda: self._rule_bsl240_rewrite_method_parameter(path, lines, procs, tree)))
+            _rule_tasks.append(("BSL240", lambda: self._rule_bsl240_rewrite_method_parameter(path, lines, procs, tree, _proc_node_map)))
         if self._rule_enabled("BSL263"):
             _rule_tasks.append(("BSL263", lambda: self._rule_bsl263_useless_for_each(path, lines, procs)))
         if self._rule_enabled("BSL265"):
@@ -6977,7 +7022,7 @@ class DiagnosticEngine:
                 if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
                     continue
                 # Remove string contents before scanning
-                code_part = re.sub(r'"[^"]*"', '""', line)
+                code_part = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
                 code_part = code_part.split("//")[0]
                 for m in _RE_MAGIC_NUMBER.finditer(code_part):
                     diags.append(
@@ -8498,7 +8543,12 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl062_unused_parameter(
-        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        tree: Any,
+        proc_node_map: dict[tuple[str, int, str], Any] | None = None,
     ) -> list[Diagnostic]:
         """
         Flag method parameters that are never referenced in the method body.
@@ -8530,7 +8580,12 @@ class DiagnosticEngine:
 
             used_casefold: set[str] | None = None
             if tree_is_ts:
-                proc_node = _find_proc_definition_node(tree, proc)
+                key = (proc.name, proc.start_idx, proc.kind)
+                proc_node = (
+                    proc_node_map.get(key)
+                    if proc_node_map is not None
+                    else _find_proc_definition_node(tree, proc)
+                )
                 if proc_node is not None:
                     used_casefold = _collect_identifier_casefolds_in_proc_body(proc_node)
 
@@ -12094,7 +12149,7 @@ class DiagnosticEngine:
         for idx, line in enumerate(lines):
             if _re_comment.match(line):
                 continue
-            clean = re.sub(r'"[^"]*"', '""', line)
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -12267,7 +12322,7 @@ class DiagnosticEngine:
             if _re_comment.match(line) or _re_header.match(line):
                 continue
             # Remove string literals and count semicolons
-            clean = re.sub(r'"[^"]*"', '""', line)
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -12372,19 +12427,18 @@ class DiagnosticEngine:
         if path_is_likely_form_module_bsl(path):
             return []
         diags: list[Diagnostic] = []
-        _re_comment = re.compile(r"^\s*//")
+        # Cache rule-enabled flag to avoid O(n) set lookups inside the hot loop.
+        _bsl036 = self._rule_enabled("BSL036")
 
         for idx, line in enumerate(lines):
-            if _re_comment.match(line):
+            if _RE_LINE_COMMENT.match(line):
                 continue
-            if self._rule_enabled("BSL036") and self._line_triggers_bsl036(lines, idx):
+            if _bsl036 and self._line_triggers_bsl036(lines, idx):
                 continue
-            if self._rule_enabled("BSL036") and self._line_in_triggered_bsl036_condition(
-                lines, idx
-            ):
+            if _bsl036 and self._line_in_triggered_bsl036_condition(lines, idx):
                 continue
             # Remove string literals
-            clean = re.sub(r'"[^"]*"', '""', line)
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -12496,7 +12550,7 @@ class DiagnosticEngine:
         for idx, line in enumerate(lines):
             if _re_comment.match(line):
                 continue
-            clean = re.sub(r'"[^"]*"', '""', line)
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -12677,7 +12731,7 @@ class DiagnosticEngine:
         for idx, line in enumerate(lines):
             if _re_comment.match(line):
                 continue
-            clean = re.sub(r'"[^"]*"', '""', line)
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -12784,19 +12838,17 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl240_rewrite_method_parameter(
-        self, path: str, lines: list[str], procs: list[Any], tree: Any
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[Any],
+        tree: Any,
+        proc_node_map: dict[tuple[str, int, str], Any] | None = None,
     ) -> list[Diagnostic]:
         """Detect parameter overwritten before being read."""
         diags: list[Diagnostic] = []
-        _re_assign = re.compile(
-            r"^\s*(\w+)\s*=\s*(?!.*\b\1\b)",  # LHS = expr not containing LHS
-            re.UNICODE,
-        )
-        _re_comment = re.compile(r"^\s*//")
-        _re_param_header = re.compile(
-            r"^\s*(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\(([^)]*)\)",
-            re.IGNORECASE | re.UNICODE,
-        )
+        # Pre-check tree validity once — avoids O(P × T) repeated full-tree walks.
+        _tree_ok = _ts_tree_ok_for_rules(tree)
 
         for proc in procs:
             header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
@@ -12805,13 +12857,13 @@ class DiagnosticEngine:
             if proc_params:
                 param_names = {n.casefold() for n in proc_params if n}
             else:
-                hm = _re_param_header.match(header_line)
+                hm = _RE_BSL240_PARAM_HEADER.match(header_line)
                 if not hm:
                     continue
                 raw_params = hm.group(1)
                 for part in split_commas_outside_double_quotes(raw_params):
                     part = part.strip()
-                    part = re.sub(r"^\s*(?:Знач|Val)\s+", "", part, flags=re.IGNORECASE)
+                    part = _RE_BSL240_ZNACH.sub("", part)
                     name = part.split("=")[0].strip()
                     if name:
                         param_names.add(name.casefold())
@@ -12820,8 +12872,13 @@ class DiagnosticEngine:
                 continue
 
             body_start = proc.start_idx + 1
-            if _ts_tree_ok_for_rules(tree):
-                pnode = _find_proc_definition_node(tree, proc)
+            if _tree_ok:
+                key = (proc.name, proc.start_idx, getattr(proc, "kind", "procedure"))
+                pnode = (
+                    proc_node_map.get(key)
+                    if proc_node_map is not None
+                    else _find_proc_definition_node(tree, proc)
+                )
                 if pnode is not None:
                     bl = _ts_first_body_statement_line_idx(pnode)
                     if bl is not None:
@@ -12844,9 +12901,9 @@ class DiagnosticEngine:
                 if li >= len(lines):
                     break
                 line = lines[li]
-                if _re_comment.match(line) or not line.strip():
+                if _RE_LINE_COMMENT.match(line) or not line.strip():
                     continue
-                am = _re_assign.match(line)
+                am = _RE_BSL240_ASSIGN.match(line)
                 if am:
                     lhs = am.group(1).casefold()
                     if lhs in param_names and lhs not in val_cf:
@@ -12986,7 +13043,7 @@ class DiagnosticEngine:
             if stripped.startswith("//"):
                 continue
             # Remove string literals before checking to avoid false positives
-            clean = re.sub(r'"[^"]*"', '""', line)
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             m = _re_unary.search(clean)
             if m:
                 diags.append(Diagnostic(
@@ -13022,7 +13079,7 @@ class DiagnosticEngine:
             if _re_comment.match(line):
                 continue
             # Remove string literals
-            clean = re.sub(r'"[^"]*"', '""', line)
+            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
             # Remove inline comments
             comment_pos = clean.find("//")
             if comment_pos >= 0:
