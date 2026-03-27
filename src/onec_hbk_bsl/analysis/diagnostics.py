@@ -3111,11 +3111,13 @@ _RE_RAISE_SIMPLE_STRING_ONLY = re.compile(
 
 # McCabe: decision-point keywords
 _RE_MCCABE_BRANCH = re.compile(
-    r"^\s*(?:Если|If|ИначеЕсли|ElsIf|Для|For|ДляКаждого|ForEach|Пока|While|Исключение|Except)\b",
+    r"^\s*(?:Если|If|ИначеЕсли|ElsIf|Иначе|Else|Для|For|ДляКаждого|ForEach|Пока|While|Исключение|Except|Перейти|Goto)\b",
     re.IGNORECASE,
 )
 # McCabe: boolean operators (each И/Or adds a path)
 _RE_MCCABE_BOOL = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
+# McCabe: ternary operator ?(
+_RE_MCCABE_TERNARY = re.compile(r"\?\s*\(")
 
 # Nesting open/close tokens (re-use _CC_OPEN/_CC_CLOSE shapes)
 _RE_NEST_OPEN = re.compile(
@@ -5293,6 +5295,7 @@ def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> i
         if _RE_MCCABE_BRANCH.match(line):
             cc += 1
         cc += len(_RE_MCCABE_BOOL.findall(line))
+        cc += len(_RE_MCCABE_TERNARY.findall(line))
     return cc
 
 
