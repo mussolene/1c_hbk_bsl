@@ -6404,33 +6404,47 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         for proc in procs:
             proc_lines = lines[proc.start_idx : proc.end_idx + 1]
-            # Scan body lines (skip header)
+
+            # --- Pass 1: collect all Перем declarations (O(L)) ---
+            declared: list[tuple[str, int]] = []  # (var_name, rel_idx)
+            decl_rel_indices: set[int] = set()
             for rel_idx, line in enumerate(proc_lines[1:], 1):
                 m = _RE_VAR_LOCAL.match(line)
                 if not m:
                     continue
-                # Handle multi-variable declarations: Перем А, Б, В;
-                names_raw = m.group("names")
-                var_names = [n.strip() for n in names_raw.split(",") if n.strip()]
-                # Body is everything after this declaration line
-                body = "\n".join(proc_lines[rel_idx + 1 :])
-                for var_name in var_names:
-                    pattern = r"\b" + re.escape(var_name) + r"\b"
-                    refs = len(re.findall(pattern, body, re.IGNORECASE))
-                    if refs == 0:
-                        abs_idx = proc.start_idx + rel_idx
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=abs_idx + 1,
-                                character=0,
-                                end_line=abs_idx + 1,
-                                end_character=len(line),
-                                severity=Severity.WARNING,
-                                code="BSL007",
-                                message=f"Local variable '{var_name}' is declared but never used",
-                            )
+                decl_rel_indices.add(rel_idx)
+                for var_name in (n.strip() for n in m.group("names").split(",") if n.strip()):
+                    declared.append((var_name, rel_idx))
+
+            if not declared:
+                continue
+
+            # --- Pass 2: single regex scan over body minus declaration lines (O(|body|)) ---
+            body = "\n".join(
+                ln for ri, ln in enumerate(proc_lines)
+                if ri != 0 and ri not in decl_rel_indices
+            )
+            combined = re.compile(
+                r"\b(?:" + "|".join(re.escape(n) for n, _ in declared) + r")\b",
+                re.IGNORECASE,
+            )
+            referenced = {m.group().casefold() for m in combined.finditer(body)}
+
+            for var_name, rel_idx in declared:
+                if var_name.casefold() not in referenced:
+                    abs_idx = proc.start_idx + rel_idx
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=abs_idx + 1,
+                            character=0,
+                            end_line=abs_idx + 1,
+                            end_character=len(proc_lines[rel_idx]),
+                            severity=Severity.WARNING,
+                            code="BSL007",
+                            message=f"Local variable '{var_name}' is declared but never used",
                         )
+                    )
         return diags
 
     # ------------------------------------------------------------------
