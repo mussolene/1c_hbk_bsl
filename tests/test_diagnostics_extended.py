@@ -91,10 +91,11 @@ class TestBsl003NonExportInApiRegion:
 
 
 class TestBsl005HardcodeNetworkAddress:
-    def test_url_detected(self, tmp_path: Path) -> None:
+    def test_url_not_detected(self, tmp_path: Path) -> None:
+        # BSLLS does not flag URLs via BSL005 (only bare IPv4 and UNC paths)
         content = 'Адрес = "http://example.com/api";\n'
         diags = _check(content, tmp_path)
-        assert "BSL005" in _codes(diags)
+        assert "BSL005" not in _codes(diags)
 
     def test_ip_address_detected(self, tmp_path: Path) -> None:
         content = 'Адрес = "192.168.1.100";\n'
@@ -854,10 +855,11 @@ class TestBsl023UsingServiceTag:
         diags = _check(content, tmp_path)
         assert "BSL023" in _codes(diags)
 
-    def test_hack_detected(self, tmp_path: Path) -> None:
+    def test_hack_not_detected(self, tmp_path: Path) -> None:
+        # BSLLS default UsingServiceTag pattern does not include HACK
         content = "// HACK: временный обходной путь\nА = 1;\n"
         diags = _check(content, tmp_path)
-        assert "BSL023" in _codes(diags)
+        assert "BSL023" not in _codes(diags)
 
     def test_normal_comment_no_warning(self, tmp_path: Path) -> None:
         content = "// Обычный комментарий без тегов\nА = 1;\n"
@@ -1680,10 +1682,17 @@ class TestBsl047CurrentDate:
 
 class TestBsl048EmptyFile:
     def test_empty_file_detected(self, tmp_path: Path) -> None:
-        bsl_file = tmp_path / "empty.bsl"
+        # Whitespace-only content (non-zero bytes) is flagged by BSL048
+        content = "   \n\n   \n"
+        diags = _check(content, tmp_path, select={"BSL048"})
+        assert "BSL048" in _codes(diags)
+
+    def test_zero_byte_file_not_detected(self, tmp_path: Path) -> None:
+        # BSLLS does not flag truly empty (0-byte) files — no position to attach
+        bsl_file = tmp_path / "zero.bsl"
         bsl_file.write_text("", encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL048"}).check_file(str(bsl_file))
-        assert "BSL048" in _codes(diags)
+        assert "BSL048" not in _codes(diags)
 
     def test_comments_only_detected(self, tmp_path: Path) -> None:
         content = "// Это комментарий\n// Ещё комментарий\n"
@@ -1703,13 +1712,25 @@ class TestBsl048EmptyFile:
 
 class TestBsl049UnconditionalRaise:
     def test_raise_outside_try_detected(self, tmp_path: Path) -> None:
+        # Multi-statement procedure with unconditional raise — BSLLS flags
+        content = """\
+            Процедура Тест()
+                А = 1;
+                ВызватьИсключение "Ошибка";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL049"})
+        assert "BSL049" in _codes(diags)
+
+    def test_stub_procedure_not_flagged(self, tmp_path: Path) -> None:
+        # BSLLS does not flag stub procedures (single raise statement)
         content = """\
             Процедура Тест()
                 ВызватьИсключение "Ошибка";
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL049"})
-        assert "BSL049" in _codes(diags)
+        assert "BSL049" not in _codes(diags)
 
     def test_raise_inside_try_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -2576,17 +2597,28 @@ class TestBsl240RewriteMethodParameter:
         diags = _check(content, tmp_path, select={"BSL240"})
         assert "BSL240" not in _codes(diags)
 
-    def test_param_reassign_in_body_still_detected(self, tmp_path: Path) -> None:
+    def test_val_param_overwrite_detected(self, tmp_path: Path) -> None:
+        # Знач param overwritten before first use — BSLLS flags this
         content = """\
-            Процедура Тест(П) Экспорт
+            Процедура Тест(Знач П) Экспорт
                 П = 1;
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL240"})
         assert "BSL240" in _codes(diags)
 
-    def test_val_param_reassign_not_flagged(self, tmp_path: Path) -> None:
-        """Знач-параметр — локальная копия, переназначение допустимо."""
+    def test_non_val_param_reassign_not_detected(self, tmp_path: Path) -> None:
+        # Non-Знач params can be output params — BSLLS does not flag them
+        content = """\
+            Процедура Тест(П) Экспорт
+                П = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" not in _codes(diags)
+
+    def test_val_param_read_before_write_not_flagged(self, tmp_path: Path) -> None:
+        """Знач-параметр читается до перезаписи — не ошибка."""
         content = """\
             Процедура Тест(Знач Строка)
                 Строка = СокрЛП(Строка);

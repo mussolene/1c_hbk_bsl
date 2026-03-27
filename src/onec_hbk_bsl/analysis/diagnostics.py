@@ -104,6 +104,9 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
     {
         # Line-length spans the whole line; overlap with trailing string literals must not drop the rule.
         "BSL014",
+        # Method-signature rules span the whole signature line which may contain default-value strings.
+        "BSL015",
+        "BSL031",
         "BSL005",
         "BSL006",
         "BSL012",
@@ -3027,10 +3030,17 @@ _RE_REGION_CLOSE = re.compile(
 # Hardcoded network addresses
 _RE_HARDCODE_NET = re.compile(
     r'"(?:'
-    r'(?:https?|ftp|sftp)://[^"\s]{4,}'            # http(s)/ftp/sftp URL
-    r'|(?:\d{1,3}\.){3}\d{1,3}'                    # bare IPv4
+    r'(?:\d{1,3}\.){3}\d{1,3}'                     # bare IPv4
     r'|\\\\[\w\-.]{2,}\\[\w\-.]+'                  # UNC path
     r')"',
+    re.IGNORECASE,
+)
+# BSLLS: URLs (https?/ftp) are NOT flagged by BSL005 — only bare IPv4 and UNC paths.
+# Popular version prefixes to skip (BSLLS searchPopularVersionExclusion).
+_RE_BSL005_POPULAR_VERSION = re.compile(r'^(?:1|2|3|8\.3|11)\.')
+# Context keywords that indicate a version string context (BSLLS searchWordsExclusion).
+_RE_BSL005_VERSION_CONTEXT = re.compile(
+    r'Верси|Version|ЗапуститьПриложение|RunApp|Пространств|Namespace|Драйвер|Driver',
     re.IGNORECASE,
 )
 
@@ -3078,16 +3088,7 @@ _RE_CREDENTIALS = re.compile(
     re.IGNORECASE,
 )
 
-# Commented-out code heuristic
-_RE_COMMENTED_CODE = re.compile(
-    r"^\s*//\s*(?:"
-    r"(?:Процедура|Функция|Если|ИначеЕсли|Для|Пока|Попытка|Возврат|Перем"
-    r"|Function|Procedure|If|ElsIf|For|While|Try|Return|Var)\b"
-    r"|\w+(?:\.\w+)*\s*\("        # any method call pattern
-    r"|\w+\s*=\s*\w+"             # assignment
-    r")",
-    re.IGNORECASE,
-)
+# Commented-out code heuristic — defined below (search for _RE_COMMENTED_CODE second definition)
 
 # Cognitive complexity branch patterns
 _CC_OPEN = re.compile(
@@ -3956,6 +3957,19 @@ _BSL208_TECH_ACRONYMS: frozenset[str] = frozenset(
 
 _RE_LATIN_RUNS = re.compile(r"[a-zA-Z]+")
 
+# BSLLS allowTrailingPartsInAnotherLanguage=true (default):
+# Words like ЮрФизЛицоID, СтавкаНДСID, МинДлинаИННпоXSD, СоздатьObjectID are allowed because
+# the Latin part is only a trailing (or leading) suffix on an otherwise single-language root.
+# Pattern: [Latin+][Cyrillic+] OR [Cyrillic+][Latin+], no interleaving.
+_RE_BSL208_TRAILING_LANG = re.compile(
+    # BSLLS allowTrailingPartsInAnotherLanguage=true: skip only ALL-CAPS abbreviation
+    # suffixes/prefixes (e.g. ЮрФизЛицоID, МинДлинаИННпоXSD, HTMLОтчёт).
+    # Mixed-script words like ИмяName (both parts are full words) are still flagged.
+    r"^(?:[A-Z]{2,}[А-ЯЁ][А-Яа-яЁё]+[А-Яа-я0-9Ёё_]*"   # ALL-CAPS prefix + Cyrillic
+    r"|[А-ЯЁ][А-Яа-яЁё]+[А-Яа-я0-9Ёё_]*[A-Z]{2,})$",    # Cyrillic + ALL-CAPS suffix
+    re.UNICODE,
+)
+
 
 def _bsl208_word_is_standard_tech_name(word: str) -> bool:
     """True when all Latin substrings in *word* are known technology acronyms.
@@ -4142,7 +4156,7 @@ _RE_INPUT_DIALOG = re.compile(
 
 # Query text block: "ВЫБРАТЬ ... ИЗ ..."
 _RE_QUERY_TEXT_START = re.compile(
-    r'".*(?:ВЫБРАТЬ|SELECT)\b',
+    r'"\s*(?:ВЫБРАТЬ|SELECT)\b',
     re.IGNORECASE,
 )
 _RE_QUERY_WHERE = re.compile(
@@ -4367,10 +4381,16 @@ _RE_CONTINUE = re.compile(r'^\s*(?:Продолжить|Continue)\s*;', re.IGNOR
 
 # Comment that looks like commented-out code (BSL123): // contains = ; or ()
 _RE_COMMENTED_CODE = re.compile(
-    # Removed \( — parentheses alone don't indicate commented code (doc comments
-    # like "//Параметры: X Тип("Дата")" were incorrectly skipped as "commented code").
-    # Keep ;, ):=, := as strong statement indicators.
-    r'^\s*//\s*\w.*(?:;|\) *=|:=)',
+    r"^\s*//\s*(?:"
+    # BSL keywords at start of comment = commented-out control-flow code
+    r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Если|ИначеЕсли|Иначе|КонецЕсли"
+    r"|Для|Пока|КонецЦикла|Попытка|Исключение|КонецПопытки|Возврат|Перем"
+    r"|Function|Procedure|EndProcedure|EndFunction|If|ElsIf|Else|EndIf"
+    r"|For|While|EndDo|Try|Except|EndTry|Return|Var)\b"
+    # OR a line that looks like a statement (ends with ; or contains :=)
+    r"|\w.*(?:;|:=)"
+    r")",
+    re.IGNORECASE,
 )
 
 # Hardcoded file path in string literal (BSL100)
@@ -5361,6 +5381,7 @@ class DiagnosticEngine:
             "BSL018",  # RaiseWithLiteral — opt-in; bare literals are normal; extended syntax is optional
             "BSL038",  # StringConcatenationInLoop — no direct BSLLS equivalent (BSLLS doesn't flag this)
             "BSL041",  # NotifyDescriptionToModalWindow — no BSLLS equivalent
+            "BSL058",  # QueryWithoutWhere — no BSLLS equivalent; all firings are FP vs BSLLS
             "BSL042",  # EmptyExportMethod — BSLLS UnusedLocalMethod has different semantics (non-export dead methods)
             "BSL065",  # MissingExportComment — our rule checks any comment existence; BSLLS MissingReturnedValueDescription only fires when description exists but lacks return type section (30 FP, 0 TP on 30-file sample)
             "BSL059",  # BoolLiteralComparison — no direct BSLLS equivalent
@@ -6325,7 +6346,14 @@ class DiagnosticEngine:
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
                 continue
+            # Skip lines whose context mentions version-related keywords (BSLLS skipStatement)
+            if _RE_BSL005_VERSION_CONTEXT.search(line):
+                continue
             for m in _RE_HARDCODE_NET.finditer(line):
+                matched = m.group().strip('"')
+                # Skip popular version-like prefixes (BSLLS searchPopularVersionExclusion)
+                if _RE_BSL005_POPULAR_VERSION.match(matched):
+                    continue
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -6476,6 +6504,14 @@ class DiagnosticEngine:
             if proc.kind != "procedure":
                 continue
             # Find last non-blank, non-comment line before end marker
+            code_lines_in_body = [
+                lines[i].strip()
+                for i in range(proc.start_idx + 1, proc.end_idx)
+                if i < len(lines) and lines[i].strip() and not lines[i].strip().startswith("//")
+            ]
+            # Skip stub procedures whose only code statement is the return itself
+            if len(code_lines_in_body) <= 1:
+                continue
             for i in range(proc.end_idx - 1, proc.start_idx, -1):
                 if i >= len(lines):
                     continue
@@ -6612,6 +6648,9 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
+            # Skip query string continuation lines (|...) — BSLLS does not flag these for BSL014
+            if line.lstrip().startswith("|"):
+                continue
             length = len(line)
             if length > self.max_line_length:
                 diags.append(
@@ -8044,6 +8083,8 @@ class DiagnosticEngine:
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
         """Flag BSL files that contain no executable code at all."""
+        if not lines:
+            return []  # truly empty file — no position to attach diagnostic; BSLLS skips these
         for line in lines:
             if line.strip() and not _RE_BLANK_OR_COMMENT.match(line):
                 return []
@@ -8079,6 +8120,14 @@ class DiagnosticEngine:
         for proc in procs:
             body_lines = lines[proc.start_idx : proc.end_idx + 1]
             base_indent = _proc_body_base_indent(lines, proc)
+            # Skip stub procs where raise is the only code statement (intentional "not implemented")
+            inner_lines = lines[proc.start_idx + 1 : proc.end_idx]  # exclude header and КонецПроцедуры
+            code_stmts = [
+                ln.strip() for ln in inner_lines
+                if ln.strip() and not ln.strip().startswith("//")
+            ]
+            if len(code_stmts) <= 1:
+                continue
             try_depth = 0
             for rel_idx, line in enumerate(body_lines):
                 if _re_try_open.match(line):
@@ -12286,7 +12335,8 @@ class DiagnosticEngine:
             re.IGNORECASE | re.UNICODE,
         )
         _re_exchange = re.compile(
-            r"(?:ОбменДаннымиЗагрузка|DataExchangeLoad)\b",
+            r"(?:ОбменДанными\.Загрузка|DataExchange\.Load"
+            r"|ОбменДаннымиЗагрузка|DataExchangeLoad)\b",
             re.IGNORECASE,
         )
 
@@ -13194,6 +13244,10 @@ class DiagnosticEngine:
                 # all recognised technology acronyms (e.g. HTTPЗапрос, JSONЗапись).
                 if _bsl208_word_is_standard_tech_name(word):
                     continue
+                # BSLLS allowTrailingPartsInAnotherLanguage=true: skip words where
+                # Latin/Cyrillic appears only as a trailing or leading block (no interleaving).
+                if len(word) >= 4 and _RE_BSL208_TRAILING_LANG.match(word):
+                    continue
                 if not (
                     _re_has_latin.search(word) and _re_has_cyrillic.search(word)
                 ):
@@ -13350,13 +13404,18 @@ class DiagnosticEngine:
             if body_start >= proc.end_idx:
                 continue
 
-            # Знач (by-value) parameters are local copies — reassigning is fine.
+            # BSLLS RewriteMethodParameter only fires for Знач (by-value) parameters:
+            # rewriting a by-value copy is wasteful since the caller won't see the change.
+            # Non-Знач params may be intentional output parameters — BSLLS doesn't flag them.
             val_cf = {n.casefold() for n in (getattr(proc, "val_params", None) or [])}
-            # Optional parameters (with default values) are often intentionally used
-            # as output parameters in 1C — skip them (BSLLS parity).
+            if not val_cf:
+                continue  # no Знач params → nothing to check
+            # Optional Знач params (with default values) are often intentionally conditional-set
+            # (e.g. "Если НаДату = Неопределено Тогда НаДату = ТекущаяДатаСеанса()") — BSLLS skip.
             opt_cf = {n.casefold() for n in (getattr(proc, "optional_params", None) or [])}
+            val_cf -= opt_cf
 
-            # Find params reassigned before use in first non-blank body lines
+            # Find Знач params reassigned before use in first non-blank body lines
             for li in range(body_start, min(body_start + 15, proc.end_idx)):
                 if li >= len(lines):
                     break
@@ -13366,9 +13425,7 @@ class DiagnosticEngine:
                 am = _RE_BSL240_ASSIGN.match(line)
                 if am:
                     lhs = am.group(1).casefold()
-                    if (lhs in param_names
-                            and lhs not in val_cf
-                            and lhs not in opt_cf
+                    if (lhs in val_cf
                             and lhs not in _BSL062_SKIP_STANDARD_COMMAND_PARAMS):
                         # Check the RHS doesn't mention the param itself
                         rhs = line[am.end():].strip()
