@@ -35,11 +35,11 @@ def _edits_for_arguments(node: Any, source: bytes) -> list[tuple[int, int, bytes
 
     if ch[0].type == "(":
         nxt = ch[1]
-        if nxt.type != ")":
+        if nxt.type != ")" and nxt.type != ",":
             s, e = ch[0].end_byte, nxt.start_byte
             if s < e:
                 gap = source[s:e]
-                if gap and _is_whitespace_only(gap):
+                if gap and _is_whitespace_only(gap) and b"\n" not in gap:
                     edits.append((s, e, b""))
 
     if ch[-1].type == ")":
@@ -48,7 +48,7 @@ def _edits_for_arguments(node: Any, source: bytes) -> list[tuple[int, int, bytes
             s, e = prev.end_byte, ch[-1].start_byte
             if s < e:
                 gap = source[s:e]
-                if gap and _is_whitespace_only(gap):
+                if gap and _is_whitespace_only(gap) and b"\n" not in gap:
                     edits.append((s, e, b""))
 
     for i, c in enumerate(ch):
@@ -64,15 +64,17 @@ def _edits_for_arguments(node: Any, source: bytes) -> list[tuple[int, int, bytes
         pe, cb = prev.end_byte, c.start_byte
         ce, nb = c.end_byte, nxt.start_byte
 
-        if pe < cb:
+        # Don't remove space before comma when the previous node is also a comma
+        # (consecutive empty arguments like `( , , , x)` should keep their spaces).
+        if pe < cb and prev.type != ",":
             gap = source[pe:cb]
             if gap:
-                if _is_whitespace_only(gap):
+                if _is_whitespace_only(gap) and b"\n" not in gap:
                     edits.append((pe, cb, b""))
         if ce <= nb:
             if ce < nb:
                 gap = source[ce:nb]
-                if gap != b" ":
+                if gap != b" " and b"\n" not in gap:
                     edits.append((ce, nb, b" "))
             else:
                 edits.append((ce, ce, b" "))

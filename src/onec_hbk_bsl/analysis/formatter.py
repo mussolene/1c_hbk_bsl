@@ -817,6 +817,8 @@ class BslFormatter:
         )
         # Normalise trailing empty lines: max 2 consecutive blanks
         result = self._normalize_blank_lines(formatted)
+        # Strip leading blank lines (BSLLS does not emit them even when source has BOM+newline)
+        result = result.lstrip("\n")
         # Ensure single trailing newline
         result = result.rstrip("\n") + "\n"
         return result
@@ -935,6 +937,21 @@ class BslFormatter:
             if not stripped:
                 if output:
                     result.append("")
+                continue
+
+            # BSL multi-line string continuation: lines starting with | are string
+            # content — preserve content verbatim, only re-apply structural indentation.
+            if stripped.startswith("|"):
+                if output:
+                    extra = 1 if (continuation or in_method_sig) else 0
+                    lvl = base_levels[i] + initial_indent + extra
+                    result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
+                # Update continuation: if the line ends the statement (closing "; or ") we
+                # reset it; otherwise leave continuation unchanged so subsequent | lines are
+                # indented correctly.
+                raw_stripped = stripped.rstrip()
+                if raw_stripped.endswith('";') or raw_stripped.endswith("';"):
+                    continuation = False
                 continue
 
             is_comment_line = stripped.startswith("//")
