@@ -45,8 +45,8 @@ class TestDocCommentBlocks:
         )
         lines = f.format(code).splitlines()
         assert lines[0].strip() == "// Параметры:"
-        assert lines[1].strip() == "//     КраткоеИмя - Строка - описание"
-        assert lines[2].strip() == "//     продолжение описания"
+        assert lines[1].strip() == "//   КраткоеИмя - Строка - описание"
+        assert lines[2].strip() == "//   продолжение описания"
 
     def test_returns_section(self) -> None:
         f = BslFormatter()
@@ -58,7 +58,7 @@ class TestDocCommentBlocks:
         )
         lines = f.format(code).splitlines()
         assert lines[0].strip() == "// Возвращаемое значение:"
-        assert lines[1].strip() == "//     Булево - если ок"
+        assert lines[1].strip() == "//   Булево - если ок"
 
     def test_preamble_then_parameters(self) -> None:
         f = BslFormatter()
@@ -72,9 +72,9 @@ class TestDocCommentBlocks:
         )
         lines = f.format(code).splitlines()
         assert lines[0].strip() == "// Краткое описание метода"
-        assert lines[1].strip() == "//     вторая строка описания"
+        assert lines[1].strip() == "//   вторая строка описания"
         assert lines[2].strip() == "// Параметры:"
-        assert lines[3].strip() == "//     Имя - Строка"
+        assert lines[3].strip() == "//   Имя - Строка"
 
     def test_english_headers(self) -> None:
         f = BslFormatter()
@@ -86,16 +86,16 @@ class TestDocCommentBlocks:
         )
         lines = f.format(code).splitlines()
         assert lines[0].strip() == "// Parameters:"
-        assert lines[1].strip() == "//     Name - String"
+        assert lines[1].strip() == "//   Name - String"
         assert lines[2].strip() == "// Returns:"
-        assert lines[3].strip() == "//     True"
+        assert lines[3].strip() == "//   True"
 
     def test_triple_slash_doc_block(self) -> None:
         f = BslFormatter()
         code = "/// Параметры:\n/// Имя - Строка\n"
         lines = f.format(code).splitlines()
         assert lines[0].strip() == "/// Параметры:"
-        assert lines[1].strip() == "///     Имя - Строка"
+        assert lines[1].strip() == "///   Имя - Строка"
 
     def test_blank_line_between_comments_resets_run(self) -> None:
         f = BslFormatter()
@@ -109,7 +109,7 @@ class TestDocCommentBlocks:
         code = "//  Параметры   :\n// Имя\n"
         lines = f.format(code).splitlines()
         assert lines[0].strip() == "// Параметры:"
-        assert lines[1].strip() == "//     Имя"
+        assert lines[1].strip() == "//   Имя"
 
 
 class TestKeywordNormalisation:

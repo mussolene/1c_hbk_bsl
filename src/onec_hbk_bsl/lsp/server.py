@@ -1626,6 +1626,9 @@ def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str])
 
     Returns ``None`` if the line is not a procedure/function header, or if it is
     already preceded by a ``//`` comment.
+
+    Функция gets an extra ``// Возвращаемое значение:`` section; Процедура does not.
+    Comment format matches BSL024 (space after //) and BSL215 (3-space entry indent).
     """
     m = _RE_PROC_HEADER.match(header_line)
     if not m:
@@ -1634,6 +1637,8 @@ def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str])
         return None  # already documented
     # Preserve exact leading whitespace (tabs vs spaces) — do not replace with spaces.
     prefix = header_line[: len(header_line) - len(header_line.lstrip())]
+    keyword = header_line.lstrip().split()[0]
+    is_function = keyword.casefold() in ("функция", "function")
     func_name, params_str = m.group(1), m.group(2).strip()
     lines = [f"{prefix}// Описание {func_name}."]
     if params_str:
@@ -1642,6 +1647,9 @@ def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str])
             name = parameter_name_from_declaration_fragment(p)
             if name:
                 lines.append(f"{prefix}//   {name} - Тип - Описание")
+    if is_function:
+        lines += [f"{prefix}//", f"{prefix}// Возвращаемое значение:"]
+        lines.append(f"{prefix}//   Тип - Описание")
     lines.append(f"{prefix}//")
     return "\n".join(lines) + "\n"
 

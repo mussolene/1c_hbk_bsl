@@ -1319,6 +1319,34 @@ class TestGenerateDocComment:
         assert result is not None
         assert "Параметры" not in result
 
+    def test_function_gets_return_value_section(self) -> None:
+        from onec_hbk_bsl.lsp.server import _generate_doc_comment
+
+        lines = ["Функция МойМетод(А)\n", "КонецФункции\n"]
+        result = _generate_doc_comment(lines[0], 0, lines)
+        assert result is not None
+        assert "Возвращаемое значение" in result
+        assert "Параметры" in result
+
+    def test_procedure_has_no_return_value_section(self) -> None:
+        from onec_hbk_bsl.lsp.server import _generate_doc_comment
+
+        lines = ["Процедура МойМетод(А)\n", "КонецПроцедуры\n"]
+        result = _generate_doc_comment(lines[0], 0, lines)
+        assert result is not None
+        assert "Возвращаемое значение" not in result
+
+    def test_generated_comment_passes_bsl024(self) -> None:
+        """Every generated comment line must pass BSL024 (space after //)."""
+        from onec_hbk_bsl.analysis.diagnostics import bsl024_should_report_line
+        from onec_hbk_bsl.lsp.server import _generate_doc_comment
+
+        lines = ["Функция Тест(П1, П2)\n", "КонецФункции\n"]
+        result = _generate_doc_comment(lines[0], 0, lines)
+        assert result is not None
+        for line in result.splitlines():
+            assert not bsl024_should_report_line(line), f"BSL024 fires on: {line!r}"
+
     def test_preserves_tab_indent(self) -> None:
         from onec_hbk_bsl.lsp.server import _generate_doc_comment
 

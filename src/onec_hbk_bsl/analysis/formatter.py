@@ -307,13 +307,15 @@ def _find_contiguous_full_line_comment_runs(lines: list[str]) -> list[tuple[int,
 def _normalize_doc_comment_block_stripped(
     stripped_lines: list[str],
     *,
-    inner_spaces: int = 4,
+    inner_spaces: int = 2,
 ) -> list[str]:
     """Normalize a contiguous block of stripped full-line ``//``/``///`` lines (2+ lines).
 
     * Section headers (Параметры / Parameters / …) are collapsed to single spaces.
     * Lines after a section header, and preamble continuation lines before the first
-      header, get a hanging indent (``inner_spaces`` spaces after ``// `` / ``/// ``).
+      header, get a hanging indent of ``inner_spaces`` extra spaces after ``// ``/``/// ``.
+    * Default ``inner_spaces=2`` produces the BSLLS-standard 3-space indent
+      (``//   content``) that also satisfies BSL215 ``\\s{1,4}`` entry pattern.
     """
     sp = " " * inner_spaces
     first_header_idx: int | None = None
