@@ -437,7 +437,7 @@ class TestBsl016NonStandardRegion:
             КонецПроцедуры
             #КонецОбласти
         """
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL016"})
         bsl016 = [d for d in diags if d.code == "BSL016"]
         assert len(bsl016) >= 1
         assert "МояНестандартнаяОбласть" in bsl016[0].message
@@ -449,7 +449,7 @@ class TestBsl016NonStandardRegion:
             КонецПроцедуры
             #КонецОбласти
         """
-        diags = _check(content, tmp_path)
+        diags = _check(content, tmp_path, select={"BSL016"})
         assert "BSL016" not in _codes(diags)
 
 
@@ -2359,6 +2359,38 @@ class TestBsl062UnusedParameter:
             &НаКлиенте
             Процедура МояОперацияЗавершение(Результат, Параметры) Экспорт
                 А = Результат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_optional_param_not_flagged(self, tmp_path: Path) -> None:
+        """Параметры с дефолтным значением (= Неопределено) не флагуются как BSL062."""
+        content = """\
+            Функция ВычислитьЦену(Количество, Скидка = 0, Валюта = Неопределено)
+                Возврат Количество;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_command_param_not_flagged(self, tmp_path: Path) -> None:
+        """Параметр Команда в командных обработчиках формы не флагуется."""
+        content = """\
+            &НаКлиенте
+            Процедура Сохранить(Команда)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_dopolnitelnye_parametry_not_flagged(self, tmp_path: Path) -> None:
+        """ДополнительныеПараметры в колбэках ОписаниеОповещения не флагуются."""
+        content = """\
+            &НаКлиенте
+            Процедура ОткрытьЗавершение(Отказ, ДополнительныеПараметры) Экспорт
+                Сообщить("ok");
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})

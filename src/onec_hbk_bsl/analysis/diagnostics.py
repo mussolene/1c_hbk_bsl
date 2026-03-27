@@ -2938,6 +2938,7 @@ class _ProcInfo:
     val_params: list[str]   # Знач/Val param names (passed by value)
     optional_count: int     # count of params with default values
     header_col: int = 0     # column of the keyword (indent)
+    optional_params: frozenset[str] = frozenset()  # names of optional params (have default value)
 
 
 @dataclass
@@ -3523,12 +3524,14 @@ def path_is_likely_form_module_bsl(path: str) -> bool:
 # Параметры стандартных обработчиков (команды, события форм) — BSLLS не помечает как неиспользуемые.
 _BSL062_SKIP_STANDARD_COMMAND_PARAMS = frozenset(
     {
-        # Команды
+        # ── Команды ────────────────────────────────────────────────────────────
+        "команда",          # Процедура ОткрытьФорму(Команда) — стандартный командный обработчик
+        "command",
         "параметркоманды",
         "параметрывыполнениякоманды",
         "commandparameter",
         "commandexecutionparameters",
-        # Стандартные события формы
+        # ── Стандартные параметры событий форм ────────────────────────────────
         "отказ",
         "cancel",
         "стандартнаяобработка",
@@ -3561,6 +3564,58 @@ _BSL062_SKIP_STANDARD_COMMAND_PARAMS = frozenset(
         "closeform",
         "уникальныйидентификатор",
         "uniqueid",
+        # ── Параметры обработчиков завершения / оповещений ────────────────────
+        # Второй параметр ОписаниеОповещения: Процедура ЗавершениеXXX(Результат, ДополнительныеПараметры)
+        "дополнительныепараметры",
+        "additionalparameters",
+        "параметрыоповещения",
+        "notificationparameters",
+        "допараметры",
+        "доппараметры",
+        "параметрыоповещений",
+        # ── Параметры событий выбора / автоподбора ────────────────────────────
+        "данныевыбора",
+        "choicedata",
+        "параметрыполученияданных",
+        "datagetparameters",
+        "choicedatagetparameters",
+        "ожидание",
+        "ожиданиеввода",
+        "waiting",
+        # ── Параметры событий таблиц и списков ────────────────────────────────
+        "область",          # ПолеТабличногоДокумента...Выбор(Элемент, Область, СтандартнаяОбработка)
+        "area",
+        "расшифровка",
+        "decoding",
+        "идентификаторстроки",
+        "rowid",
+        # ── Параметры событий перетаскивания ──────────────────────────────────
+        "параметрыперетаскивания",
+        "dragparameters",
+        "позиция",
+        "position",
+        # ── Параметры события навигационной ссылки ────────────────────────────
+        "навигационнаяссылка",
+        "navigationlink",
+        "навигационнаяссылкаформат",
+        "navigationlinkformatted",
+        # ── Параметры ПередЗакрытием ──────────────────────────────────────────
+        "завершениеработы",
+        "applicationclosing",
+        "текстпредупреждения",
+        "warningtext",
+        # ── Параметры ПередНачаломДобавления ─────────────────────────────────
+        "копирование",
+        "copy",
+        "копирование",
+        "родитель",
+        "parent",
+        "группа",
+        "group",
+        # ── Параметры обработчиков подписок (переопределяемые модули) ─────────
+        # Первый параметр ПриОпределении..., ПриПолучении..., etc.
+        "источникисобытия",
+        "eventsource",
     }
 )
 
@@ -4529,6 +4584,7 @@ def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
     optional_count = 0
     is_export = False
 
+    optional_params_list: list[str] = []
     for child in node.children:
         ct = child.type
         if ct == "identifier" and not name:
@@ -4555,6 +4611,7 @@ def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
                         val_params.append(param_name)
                     if has_default:
                         optional_count += 1
+                        optional_params_list.append(param_name)
 
     if not name:
         return None
@@ -4570,6 +4627,7 @@ def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
         val_params=val_params,
         optional_count=optional_count,
         header_col=node.start_point[1],
+        optional_params=frozenset(optional_params_list),
     )
 
 
@@ -4702,6 +4760,7 @@ def _find_procedures(content: str) -> list[_ProcInfo]:
         params = [p[0] for p in parsed]
         val_params = [p[0] for p in parsed if p[1]]
         optional_count = sum(1 for p in parsed if p[2])
+        optional_params = frozenset(p[0] for p in parsed if p[2])
 
         end_idx = start_idx + 5
         for e in ends:
@@ -4720,6 +4779,7 @@ def _find_procedures(content: str) -> list[_ProcInfo]:
                 val_params=val_params,
                 optional_count=optional_count,
                 header_col=header_col,
+                optional_params=optional_params,
             )
         )
 
@@ -5102,6 +5162,7 @@ class DiagnosticEngine:
             # ── BSL001–BSL070 noise/style preferences ──────────────────────
             "BSL008",  # TooManyReturns — BSLLS disabled by default
             "BSL013",  # CommentedCode — high false-positive rate
+            "BSL016",  # NonStandardRegion — BSLLS doesn't flag application-specific region names in practice
             "BSL018",  # RaiseWithLiteral — opt-in; bare literals are normal; extended syntax is optional
             "BSL038",  # StringConcatenationInLoop — no direct BSLLS equivalent (BSLLS doesn't flag this)
             "BSL041",  # NotifyDescriptionToModalWindow — no BSLLS equivalent
@@ -8477,6 +8538,10 @@ class DiagnosticEngine:
                 if not param_name.isidentifier():
                     continue
                 if param_name.casefold() in _BSL062_SKIP_STANDARD_COMMAND_PARAMS:
+                    continue
+                # BSLLS does not flag optional parameters (have default values) as unused:
+                # they are part of the public API signature even when not used in the body.
+                if param_name in proc.optional_params:
                     continue
                 if param_name.casefold() in ("параметры", "parameters") and (
                     _is_typical_client_command_handler(proc, lines)
@@ -12330,6 +12395,11 @@ class DiagnosticEngine:
                 word = m.group()
                 canonical = self._CANONICAL_KEYWORDS.get(word.lower())
                 if canonical and word != canonical:
+                    # BSLLS does not flag ALL-CAPS keywords (e.g. ИЛИ, НЕ, ЕСЛИ).
+                    # All-caps is an intentional style used for boolean operators
+                    # in multi-line expressions and is not considered an error.
+                    if word.upper() == word:
+                        continue
                     diags.append(Diagnostic(
                         file=path,
                         line=idx + 1,
