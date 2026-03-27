@@ -3738,6 +3738,51 @@ def _mixed_script_identifier_is_homoglyph_typo(word: str) -> bool:
     return _try_homoglyph_latinize_identifier(word) is not None
 
 
+# Standard technology acronyms used in 1C BSL identifiers — mixing Cyrillic base with a
+# Latin acronym (e.g. HTTPЗапрос, JSONЗапись, XMLЧтение) is the accepted 1C platform
+# convention, not a coding error.  BSLLS skips these implicitly via its built-in type
+# knowledge.  We replicate the same skip with a set of known acronyms: if every
+# contiguous Latin run inside a mixed-script identifier is one of these, the identifier
+# is a well-known platform / technology name and should not be flagged as BSL208.
+_BSL208_TECH_ACRONYMS: frozenset[str] = frozenset(
+    {
+        # Network protocols & data formats
+        "HTTP", "HTTPS", "FTP", "SFTP", "FTPS",
+        "SMTP", "POP", "IMAP",
+        "TCP", "UDP", "IP", "TLS", "SSL",
+        "URL", "URI", "UUID", "GUID",
+        "REST", "SOAP", "WSDL", "API",
+        # Data formats
+        "JSON", "XML", "HTML", "XHTML", "XDTO", "XSL", "XSLT",
+        "CSV", "ZIP", "PDF", "XLS", "XLSX", "DOCX", "ODT",
+        "SQL",
+        # Platform integration
+        "COM", "OLE", "DLL", "EXE",
+        "ADO", "ODP",
+        # Misc abbreviations accepted in 1C names
+        "ODATA",
+    }
+)
+
+_RE_LATIN_RUNS = re.compile(r"[a-zA-Z]+")
+
+
+def _bsl208_word_is_standard_tech_name(word: str) -> bool:
+    """True when all Latin substrings in *word* are known technology acronyms.
+
+    Examples that return True (skip BSL208):
+        HTTPЗапрос, JSONВЗначение, ЧтениеZIP, COMОбъект, XMLЧтение, SQLЗапрос
+
+    Examples that return False (flag BSL208):
+        МойHTMLParserКласс  — "Parser" is not a tech acronym
+        userIDПоле          — "user" is not a tech acronym
+    """
+    latin_runs = _RE_LATIN_RUNS.findall(word)
+    if not latin_runs:
+        return False
+    return all(run.upper() in _BSL208_TECH_ACRONYMS for run in latin_runs)
+
+
 # Statements that MUST end with ;  — simplified: lines inside procs that look
 # like assignment, method call, or return, but have no trailing semicolon.
 # Only used as a heuristic; BSL allows some statements without semicolons.
@@ -12557,8 +12602,6 @@ class DiagnosticEngine:
         _re_has_latin = re.compile(r"[a-zA-Z]")
         _re_has_cyrillic = re.compile(r"[А-ЯЁа-яё]")
         _re_comment = re.compile(r"^\s*//")
-        _WHITELIST = frozenset({"УстановитьHTTPСоединение", "HTTPСоединение", "НСтр"})
-
         # Emit at most once per unique identifier per file (BSL LS behaviour)
         seen_bsl208: set[str] = set()
         seen_bsl256: set[str] = set()
@@ -12572,7 +12615,9 @@ class DiagnosticEngine:
                 clean = clean[:comment_pos]
             for m in _re_word.finditer(clean):
                 word = m.group()
-                if word in _WHITELIST:
+                # Skip well-known 1C platform names where Latin substrings are
+                # all recognised technology acronyms (e.g. HTTPЗапрос, JSONЗапись).
+                if _bsl208_word_is_standard_tech_name(word):
                     continue
                 if not (
                     _re_has_latin.search(word) and _re_has_cyrillic.search(word)

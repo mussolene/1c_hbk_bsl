@@ -1324,6 +1324,33 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         diags = _check(content, tmp_path, select={"BSL208"})
         assert "BSL208" not in _codes(diags)
 
+    def test_platform_tech_names_not_flagged(self, tmp_path: Path) -> None:
+        """Standard 1C platform API names with Latin tech acronyms are not BSL208."""
+        content = """\
+            Процедура Тест()
+                Запрос = Новый HTTPЗапрос("/api");
+                Данные = ЗначениеВJSON(Структура);
+                Читатель = Новый XMLЧтение();
+                Архив = Новый ЧтениеZIP(ПутьКАрхиву);
+                Объект = Новый COMОбъект("ADODB.Connection");
+                ТипJSON = JSONТип;
+                НовыйSQL = "SELECT 1";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208", "BSL256"})
+        assert "BSL208" not in _codes(diags)
+
+    def test_non_acronym_mixed_name_still_flagged(self, tmp_path: Path) -> None:
+        """User-defined mixed-script names that don't use tech acronyms are still flagged."""
+        content = """\
+            Процедура Тест()
+                ИмяName = 1;
+                userIDПользователь = 2;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208"})
+        assert "BSL208" in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL037 — OverrideBuiltinMethod
