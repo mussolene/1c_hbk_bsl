@@ -3895,6 +3895,82 @@ _RE_PERЕМ_LINE = re.compile(r'^\s*(?:Перем|Var)\b', re.IGNORECASE)
 _RE_REGION_LINE = re.compile(r'^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b', re.IGNORECASE)
 _RE_PREPROC_LINE = re.compile(r'^\s*#', re.IGNORECASE)
 
+# BSL007 — «read» of a simple identifier: LHS of ``Имя =`` does not count as a use.
+_BSL007_SIMPLE_ASSIGN_AT_START = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
+
+
+def _bsl007_strip_double_quoted_segments(line: str) -> str:
+    """Replace BSL string literals with spaces (doubled-quote escape)."""
+    out: list[str] = []
+    i, n = 0, len(line)
+    while i < n:
+        if line[i] == '"':
+            out.append(" ")
+            j = i + 1
+            while j < n:
+                if line[j] == '"':
+                    j += 1
+                    if j < n and line[j] == '"':
+                        j += 1
+                    else:
+                        break
+                else:
+                    j += 1
+            i = j
+        else:
+            out.append(line[i])
+            i += 1
+    return "".join(out)
+
+
+def _bsl007_rhs_mentions_name(name: str, raw_line: str) -> bool:
+    """True if *name* appears in the RHS of a leading ``name = …`` assignment on this line."""
+    name_cf = name.casefold()
+    code = raw_line.split("//", 1)[0]
+    code_clean = _bsl007_strip_double_quoted_segments(code)
+    m = _BSL007_SIMPLE_ASSIGN_AT_START.match(code_clean)
+    if not m or m.group(1).casefold() != name_cf:
+        return _bsl007_name_read_in_code_line(name, raw_line)
+    tail = code_clean[m.end() :]
+    return bool(
+        re.search(rf"\b{re.escape(name)}\b", tail, re.IGNORECASE)
+    )
+
+
+def _bsl007_name_read_in_code_line(name: str, raw_line: str) -> bool:
+    """True if *name* is read on this line (not only as LHS of ``name =``)."""
+    if not raw_line.strip() or raw_line.lstrip().startswith("//"):
+        return False
+    code = raw_line.split("//", 1)[0]
+    code_clean = _bsl007_strip_double_quoted_segments(code)
+    m = _BSL007_SIMPLE_ASSIGN_AT_START.match(code_clean)
+    if m and m.group(1).casefold() == name.casefold():
+        tail = code_clean[m.end() :]
+        return bool(re.search(rf"\b{re.escape(name)}\b", tail, re.IGNORECASE))
+    return bool(re.search(rf"\b{re.escape(name)}\b", code_clean, re.IGNORECASE))
+
+
+def _bsl007_name_used_in_file(
+    name: str,
+    lines: list[str],
+    *,
+    assign_lhs_idx: int | None,
+    lo: int,
+    hi: int,
+    skip_indices: set[int],
+) -> bool:
+    """Scan lines [lo, hi] inclusive; on *assign_lhs_idx* only the RHS of ``name =`` counts."""
+    for j in range(lo, hi + 1):
+        if j in skip_indices:
+            continue
+        ln = lines[j]
+        if assign_lhs_idx is not None and j == assign_lhs_idx:
+            if _bsl007_rhs_mentions_name(name, ln):
+                return True
+        elif _bsl007_name_read_in_code_line(name, ln):
+            return True
+    return False
+
 
 @functools.lru_cache(maxsize=512)
 def _compile_call_pattern(proc_name: str) -> re.Pattern[str]:
@@ -6528,49 +6604,128 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
+        inside_proc: set[int] = set()
+        for proc in procs:
+            for i in range(proc.start_idx, proc.end_idx + 1):
+                inside_proc.add(i)
+
+        # --- Module-level simple assigns (BSLLS UnusedLocalVariable on top-level code) ---
+        for idx, line in enumerate(lines):
+            if idx in inside_proc:
+                continue
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if _RE_REGION_LINE.match(line) or _RE_PREPROC_LINE.match(line):
+                continue
+            if _RE_COMPILER_DIRECTIVE.match(stripped):
+                continue
+            m = _RE_MODULE_ASSIGN.match(line)
+            if not m:
+                continue
+            var_name = m.group(1)
+            if _bsl007_name_used_in_file(
+                var_name,
+                lines,
+                assign_lhs_idx=idx,
+                lo=0,
+                hi=len(lines) - 1,
+                skip_indices=set(),
+            ):
+                continue
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=0,
+                    end_line=idx + 1,
+                    end_character=len(line.rstrip()),
+                    severity=Severity.WARNING,
+                    code="BSL007",
+                    message=f"Local variable '{var_name}' is declared but never used",
+                )
+            )
+
         for proc in procs:
             proc_lines = lines[proc.start_idx : proc.end_idx + 1]
+            param_cf = {p.casefold() for p in proc.params}
 
             # --- Pass 1: collect all Перем declarations (O(L)) ---
-            declared: list[tuple[str, int]] = []  # (var_name, rel_idx)
+            declared: list[tuple[str, int]] = []  # (var_name, rel_idx in proc_lines)
             decl_rel_indices: set[int] = set()
-            for rel_idx, line in enumerate(proc_lines[1:], 1):
-                m = _RE_VAR_LOCAL.match(line)
+            for rel_idx, pline in enumerate(proc_lines[1:], 1):
+                m = _RE_VAR_LOCAL.match(pline)
                 if not m:
                     continue
                 decl_rel_indices.add(rel_idx)
                 for var_name in (n.strip() for n in m.group("names").split(",") if n.strip()):
                     declared.append((var_name, rel_idx))
 
-            if not declared:
-                continue
-
-            # --- Pass 2: single regex scan over body minus declaration lines (O(|body|)) ---
-            body = "\n".join(
-                ln for ri, ln in enumerate(proc_lines)
-                if ri != 0 and ri not in decl_rel_indices
-            )
-            combined = re.compile(
-                r"\b(?:" + "|".join(re.escape(n) for n, _ in declared) + r")\b",
-                re.IGNORECASE,
-            )
-            referenced = {m.group().casefold() for m in combined.finditer(body)}
+            declared_cf = {n.casefold() for n, _ in declared}
+            body_lo = proc.start_idx + 1
+            body_hi = proc.end_idx - 1
 
             for var_name, rel_idx in declared:
-                if var_name.casefold() not in referenced:
-                    abs_idx = proc.start_idx + rel_idx
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=abs_idx + 1,
-                            character=0,
-                            end_line=abs_idx + 1,
-                            end_character=len(proc_lines[rel_idx]),
-                            severity=Severity.WARNING,
-                            code="BSL007",
-                            message=f"Local variable '{var_name}' is declared but never used",
-                        )
+                abs_decl = proc.start_idx + rel_idx
+                skip_one = {abs_decl}
+                if _bsl007_name_used_in_file(
+                    var_name,
+                    lines,
+                    assign_lhs_idx=None,
+                    lo=body_lo,
+                    hi=body_hi,
+                    skip_indices=skip_one,
+                ):
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=abs_decl + 1,
+                        character=0,
+                        end_line=abs_decl + 1,
+                        end_character=len(lines[abs_decl].rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL007",
+                        message=f"Local variable '{var_name}' is declared but never used",
                     )
+                )
+
+            # --- Implicit locals: ``Имя =`` without preceding ``Перем`` in this proc ---
+            for rel_idx, pline in enumerate(proc_lines[1:], 1):
+                abs_line = proc.start_idx + rel_idx
+                if abs_line >= proc.end_idx:
+                    continue
+                m = _RE_MODULE_ASSIGN.match(pline)
+                if not m:
+                    continue
+                var_name = m.group(1)
+                if var_name.casefold() in param_cf:
+                    continue
+                if var_name.casefold() in declared_cf:
+                    continue
+                if rel_idx in decl_rel_indices:
+                    continue
+                if _bsl007_name_used_in_file(
+                    var_name,
+                    lines,
+                    assign_lhs_idx=abs_line,
+                    lo=body_lo,
+                    hi=body_hi,
+                    skip_indices=set(),
+                ):
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=abs_line + 1,
+                        character=0,
+                        end_line=abs_line + 1,
+                        end_character=len(lines[abs_line].rstrip()),
+                        severity=Severity.WARNING,
+                        code="BSL007",
+                        message=f"Local variable '{var_name}' is declared but never used",
+                    )
+                )
         return diags
 
     # ------------------------------------------------------------------

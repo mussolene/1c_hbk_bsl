@@ -11,6 +11,8 @@
 | BSL136 | MissingSpaceBeforeComment | Пробел перед хвостовым `//` на строке кода (`_process_code_line_static`) | см. выше |
 | BSL216 | MissingSpace | Пробелы вокруг `=` и операторов сравнения в сегментах кода (`_add_operator_spaces`) | см. выше |
 
+**BSL007** (UnusedLocalVariable) с форматтером напрямую не снимается, но сверяется с BSLLS тем же смоуком `compare_diag_two_servers.py` на `tests/fixtures/format_parity`.
+
 **По умолчанию выключены** (шум или дубли): **BSL120** (хвостовые пробелы), **BSL121** (табы) — форматтер при этом может использовать табы, если LSP/CLI передал `insert_spaces=False` (см. паритет с BSLLS CLI в `format_compare_bslls.py`).
 
 ## Офлайн-сверка с BSLLS

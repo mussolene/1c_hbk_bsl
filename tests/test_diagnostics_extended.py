@@ -164,6 +164,41 @@ class TestBsl007UnusedLocalVariable:
         diags = _check(content, tmp_path)
         assert "BSL007" not in _codes(diags)
 
+    def test_perem_assign_without_read_still_unused(self, tmp_path: Path) -> None:
+        """LHS of ``А = 1`` must not count as a read of ``А`` (BSLLS-style)."""
+        content = """\
+            Процедура Тест()
+                Перем А;
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert "BSL007" in _codes(diags)
+
+    def test_implicit_local_assign_unused(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = 1 + 2;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert "BSL007" in _codes(diags)
+
+    def test_module_level_assign_unused(self, tmp_path: Path) -> None:
+        content = 'А = 1;\n'
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert "BSL007" in _codes(diags)
+
+    def test_module_assign_used_in_procedure(self, tmp_path: Path) -> None:
+        content = """\
+            А = 1;
+            Процедура Тест()
+                Сообщение(А);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert "BSL007" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL008 — TooManyReturnStatements

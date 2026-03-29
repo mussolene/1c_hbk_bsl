@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BSL007 (UnusedLocalVariable):** как у BSLLS — неиспользуемые присваивания **вне процедур** и **неявные локальные** ``Имя =`` в теле метода; в качестве чтения **не** считается вхождение только в LHS ``Имя =`` на той же строке. Смоук-паритет с BSLLS на `tests/fixtures/format_parity` — `scripts/run_bslls_parity.sh` / `compare_diag_two_servers.py`.
 - **Форматтер / BSL055 / BSL136:** не более **одной** пустой строки подряд после полного `format` (как `DiagnosticEngine.MAX_BLANK_LINES` и BSLLS ConsecutiveEmptyLines); пробел перед хвостовым `//` на строке кода. Документация: [docs/FORMATTER_DIAGNOSTICS.md](docs/FORMATTER_DIAGNOSTICS.md).
 - **Toolchain:** минимальная версия Python **3.14** (`requires-python`); CI, smoke PyInstaller и релизные бинарники собираются на **3.14**; Ruff `target-version = py314`, `ruff>=0.9`.
 
