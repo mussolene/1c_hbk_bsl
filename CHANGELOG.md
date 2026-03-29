@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Документация сверки с BSLLS и клиент/серверный контекст правил: [docs/BSLLS_PARITY.md](docs/BSLLS_PARITY.md), [docs/CLIENT_SERVER_DIAGNOSTICS.md](docs/CLIENT_SERVER_DIAGNOSTICS.md); ссылки из [architecture.md](docs/architecture.md) и [BSLLS_BASELINE.md](docs/BSLLS_BASELINE.md).
 
+## [0.7.12] - 2026-03-29
+
+### Added
+
+- **BSL149 (AssignAliasFieldsInQuery):** проверка списка полей `ВЫБРАТЬ`/`SELECT` во встроенных запросах (продолжения `|…` и однострочные литералы до ключевого слова секции); по умолчанию включено; см. [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md).
+
+### Fixed
+
+- **`__version__`:** в рабочей копии (`src/onec_hbk_bsl` + `.git`) сначала **setuptools-scm** по корню репозитория, чтобы `pytest` и локальный запуск с `PYTHONPATH=src` не подхватывали устаревшую версию из чужой установки в site-packages.
+
 ### Changed
 - Документация: объединены гайды CST в [docs/cst_policy.md](docs/cst_policy.md); сокращены [docs/BSLLS_PARITY.md](docs/BSLLS_PARITY.md) и [docs/BSLLS_BASELINE.md](docs/BSLLS_BASELINE.md); объединены дублирующие CST-документы в docs/cst_policy.md; убраны битые ссылки на локальные пути вне репозитория; CI без загрузки отчёта в Codecov.
 

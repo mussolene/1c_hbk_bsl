@@ -133,6 +133,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL142",
         "BSL145",
         "BSL148",
+        # Query-text rules fire on continuation lines (|...) inside string literals.
+        "BSL149",
         "BSL235",
     }
 )
@@ -1341,7 +1343,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["convention", "query"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL150": {
         "name": "BadWords",
@@ -3796,6 +3798,82 @@ _RE_TRY_CLOSE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNO
 _RE_MODULE_ASSIGN = re.compile(r'^\s*(\w+)\s*=(?!=)', re.IGNORECASE)
 # BSL186 — trailing comma before ) or ;
 _RE_BSL186_TRAILING_COMMA = re.compile(r",\s*[)\];]")
+# BSL149 — AssignAliasFieldsInQuery
+_RE_BSL149_SELECT = re.compile(r"\bВЫБРАТЬ\b|\bSELECT\b", re.IGNORECASE)
+# Modifiers after SELECT that are not field names
+_RE_BSL149_SELECT_MODIFIERS = re.compile(
+    r"^\s*(?:РАЗЛИЧНЫЕ|DISTINCT|ПЕРВЫЕ|TOP)\b(?:\s+\d+)?\s*", re.IGNORECASE
+)
+# Clause keywords that end the SELECT field list (or signal UNION)
+_RE_BSL149_CLAUSE_END = re.compile(
+    r"^\s*(?:ПОМЕСТИТЬ|INTO|ИЗ|FROM|ГДЕ|WHERE|СГРУППИРОВАТЬ|GROUP\s+BY|"
+    r"УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
+    r"ИТОГИ|TOTALS|АВТОУПОРЯДОЧИВАНИЕ|AUTOORDER|"
+    r"ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE)\b",
+    re.IGNORECASE,
+)
+# Same keywords for one-line literals: field list may have leading spaces before clause
+_RE_BSL149_CLAUSE_AFTER_FIELDS = re.compile(
+    r"(?:ПОМЕСТИТЬ|INTO|ИЗ|FROM|ГДЕ|WHERE|СГРУППИРОВАТЬ|GROUP\s+BY|"
+    r"УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
+    r"ИТОГИ|TOTALS|АВТОУПОРЯДОЧИВАНИЕ|AUTOORDER|"
+    r"ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE)\b",
+    re.IGNORECASE,
+)
+# UNION/ОБЪЕДИНИТЬ keyword — next SELECT's fields are skipped
+_RE_BSL149_UNION = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)
+# Field has explicit alias: КАК/AS followed by identifier (end of field text)
+_RE_BSL149_HAS_ALIAS = re.compile(r"\b(?:КАК|AS)\s+\w+\s*$", re.IGNORECASE)
+# Query continuation line
+_RE_BSL149_CONTINUATION = re.compile(r"^\s*\|")
+# Inline query comment
+_RE_BSL149_INLINE_COMMENT = re.compile(r"\s*//.*$")
+
+
+def _bsl149_strip_leading_select_modifiers(text: str) -> str:
+    """Strip РАЗЛИЧНЫЕ/DISTINCT, ПЕРВЫЕ/TOP N from the start of a SELECT field list."""
+    t = text.strip()
+    while True:
+        m = _RE_BSL149_SELECT_MODIFIERS.match(t)
+        if not m:
+            break
+        t = t[m.end() :].lstrip()
+    return t
+
+
+def _bsl149_append_missing_alias_diags(
+    path: str,
+    line_idx: int,
+    line: str,
+    field_region: str,
+    diags: list[Diagnostic],
+) -> None:
+    """Append at most one BSL149 diagnostic for *field_region* (comma-separated SELECT list)."""
+    field_region = _bsl149_strip_leading_select_modifiers(field_region)
+    if not field_region:
+        return
+    for seg in field_region.split(","):
+        field = seg.strip().rstrip('";')
+        if not field or field == "*":
+            continue
+        if _RE_BSL149_SELECT.search(field):
+            continue
+        if not _RE_BSL149_HAS_ALIAS.search(field):
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=line_idx + 1,
+                    character=0,
+                    end_line=line_idx + 1,
+                    end_character=len(line),
+                    severity=Severity.INFORMATION,
+                    code="BSL149",
+                    message="Полям запроса следует назначать псевдонимы",
+                )
+            )
+            break
+
+
 # BSL190 — FormDataToValue / ДанныеФормыВЗначение
 _RE_BSL190_FORM_DATA = re.compile(
     r"\b(?:ДанныеФормыВЗначение|FormDataToValue)\s*\(", re.IGNORECASE
@@ -5501,7 +5579,7 @@ class DiagnosticEngine:
             "BSL146",  # ModuleInitializationCode — no BSL-LS equivalent
             # ── BSL148–BSL279 — stubs, disabled until implemented ────────────
             "BSL148",  # AllFunctionPathMustHaveReturn — TODO
-            "BSL149",  # AssignAliasFieldsInQuery — TODO
+            # "BSL149" enabled — AssignAliasFieldsInQuery implemented
             "BSL150",  # BadWords — TODO
             # "BSL151" enabled — BeginTransactionBeforeTryCatch implemented
             "BSL152",  # CachedPublic — TODO
@@ -6162,6 +6240,8 @@ class DiagnosticEngine:
             _rule_tasks.append(("BSL280", _task_bsl280))
         if self._rule_enabled("BSL172"):
             _rule_tasks.append(("BSL172", lambda: self._rule_bsl172_data_exchange_loading(path, lines, procs)))
+        if self._rule_enabled("BSL149"):
+            _rule_tasks.append(("BSL149", lambda: self._rule_bsl149_assign_alias_fields_in_query(path, lines)))
         if self._rule_enabled("BSL186"):
             _rule_tasks.append(("BSL186", lambda: self._rule_bsl186_extra_commas(path, lines)))
         if self._rule_enabled("BSL190"):
@@ -12445,6 +12525,142 @@ class DiagnosticEngine:
                     code="BSL186",
                     message="Лишняя запятая перед закрывающей скобкой или точкой с запятой",
                 ))
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL149 — AssignAliasFieldsInQuery
+    # ------------------------------------------------------------------
+
+    def _rule_bsl149_assign_alias_fields_in_query(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Flag SELECT fields in embedded queries that lack an explicit КАК/AS alias."""
+        diags: list[Diagnostic] = []
+        # State machine across continuation lines
+        in_query = False    # inside a multi-line query string
+        in_select = False   # currently collecting SELECT field lines
+        skip_select = False # next SELECT's fields are skipped (after UNION)
+        paren_depth = 0     # parens depth for nested subqueries
+
+        for idx, line in enumerate(lines):
+            stripped = line.rstrip()
+
+            # ── Non-continuation line: BSL code ──────────────────────────────
+            if not _RE_BSL149_CONTINUATION.match(stripped):
+                # Reset query state when BSL code line doesn't open a query
+                if in_query:
+                    in_query = False
+                    in_select = False
+                    skip_select = False
+                    paren_depth = 0
+                m_sel = _RE_BSL149_SELECT.search(stripped)
+                if m_sel:
+                    tail = stripped[m_sel.end() :]
+                    m_clause = _RE_BSL149_CLAUSE_AFTER_FIELDS.search(tail)
+                    if m_clause:
+                        field_region = tail[: m_clause.start()]
+                        qpos = field_region.find('"')
+                        if qpos >= 0:
+                            field_region = field_region[:qpos]
+                        field_region = _RE_BSL149_INLINE_COMMENT.sub("", field_region).strip()
+                        _bsl149_append_missing_alias_diags(path, idx, line, field_region, diags)
+                    else:
+                        # Multiline text: "ВЫБРАТЬ … then |… continuation lines
+                        in_query = True
+                        in_select = True
+                        skip_select = False
+                        paren_depth = 0
+                continue
+
+            # ── Continuation line |... ────────────────────────────────────────
+            if not in_query:
+                # |ВЫБРАТЬ on a continuation line starts a new query block
+                # (e.g. Новый Запрос("  on the BSL line, |ВЫБРАТЬ on next)
+                if _RE_BSL149_SELECT.search(stripped):
+                    in_query = True
+                    in_select = True
+                    skip_select = False
+                    paren_depth = 0
+                else:
+                    continue
+
+            # Strip leading whitespace + | character
+            raw_content = stripped.lstrip()
+            if raw_content.startswith("|"):
+                raw_content = raw_content[1:]
+
+            # Strip inline query comment (// ...) before any processing
+            content = _RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip()
+
+            # Query separator ; — next query in the same string starts fresh
+            if ";" in content:
+                in_select = False
+                skip_select = False
+                paren_depth = 0
+                # If ВЫБРАТЬ follows the ; on the same piece, handle below
+                after_semi = content[content.index(";") + 1:].strip()
+                if _RE_BSL149_SELECT.search(after_semi):
+                    in_select = not skip_select
+                    skip_select = False
+                continue
+
+            # String concatenation break: content still has a quote → query ended
+            if '"' in content:
+                in_query = False
+                in_select = False
+                skip_select = False
+                paren_depth = 0
+                continue
+
+            # Empty line or pure comment line
+            if not content:
+                continue
+
+            # UNION keyword → skip the NEXT SELECT's fields
+            if _RE_BSL149_UNION.search(content):
+                in_select = False
+                skip_select = True
+                continue
+
+            # SELECT/ВЫБРАТЬ on a continuation line (including nested)
+            if _RE_BSL149_SELECT.search(content):
+                m = _RE_BSL149_SELECT.search(content)
+                # Count parens before the SELECT to determine nesting level
+                before_select = content[: m.start()]
+                paren_depth += before_select.count("(") - before_select.count(")")
+                if paren_depth > 0:
+                    # Nested subquery — always check its fields (reset skip)
+                    in_select = True
+                else:
+                    # Top-level SELECT in union chain
+                    in_select = not skip_select
+                    skip_select = False
+                continue
+
+            # Clause that ends the SELECT field list (FROM / WHERE / ...)
+            if _RE_BSL149_CLAUSE_END.match(content):
+                # Track closing parens from content before clause keyword
+                paren_depth += content.count("(") - content.count(")")
+                if paren_depth < 0:
+                    paren_depth = 0
+                in_select = False
+                continue
+
+            # Closing paren — may end a nested subquery
+            if ")" in content and paren_depth > 0:
+                paren_depth -= content.count(")")
+                paren_depth += content.count("(")
+                if paren_depth < 0:
+                    paren_depth = 0
+                in_select = False
+                continue
+
+            if not in_select:
+                continue
+
+            # ── Check fields on this line ─────────────────────────────────────
+            _bsl149_append_missing_alias_diags(path, idx, line, content, diags)
+
         return diags
 
     # ------------------------------------------------------------------

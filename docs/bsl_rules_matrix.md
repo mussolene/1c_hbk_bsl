@@ -1,6 +1,6 @@
 # Матрица правил BSL: onec-hbk-bsl ↔ BSLLS
 
-Автогенерация: `2026-03-21`. Источники: `src/onec_hbk_bsl/analysis/diagnostics.py` (`RULE_METADATA`, `_BSLLS_NAME_TO_CODE`, `DiagnosticEngine._run_rules`, `DEFAULT_DISABLED`) и при необходимости локальный справочник классов диагностик сопоставимого Java-анализатора (не входит в репозиторий).
+Автогенерация: `2026-03-29`. Источники: `src/onec_hbk_bsl/analysis/diagnostics.py` (`RULE_METADATA`, `_BSLLS_NAME_TO_CODE`, `DiagnosticEngine._run_rules`, `DEFAULT_DISABLED`) и при необходимости локальный справочник классов диагностик сопоставимого Java-анализатора (не входит в репозиторий).
 
 Классификация **фазы вызова** правил (строки / CST / гибрид и т.д., метрика `last_metrics["rule_invoke"]`) описана отдельно: [diagnostics_rule_invoke.md](diagnostics_rule_invoke.md).
 
@@ -10,14 +10,14 @@
 | Показатель                                                    | Значение |
 | ------------------------------------------------------------- | -------- |
 | Кодов в `RULE_METADATA` (BSL001–BSL280)                       | 280      |
-| Кодов с веткой в `_run_rules` (`_rule_enabled`)               | 170      |
-| Кодов в `DEFAULT_DISABLED` по умолчанию                       | 200      |
+| Кодов с веткой в `_run_rules` (`_rule_enabled`)               | 175      |
+| Кодов в `DEFAULT_DISABLED` по умолчанию                       | 184      |
 | Имён в `_BSLLS_NAME_TO_CODE`                                  | 180      |
 | Конкретных классов `*Diagnostic.java` в BSLLS (без Abstract*) | 181      |
 | Совпадение `RULE_METADATA.name` с именем класса BSLLS         | 207      |
 | Правил только в BSLLS (нет такого `name` у нас)               | 2        |
-| Явных `implemented: True` в метаданных                        | 3        |
-| Явных `implemented: False` в метаданных                       | 132      |
+| Явных `implemented: True` в метаданных                        | 4        |
+| Явных `implemented: False` в метаданных                       | 129      |
 
 
 ### Намеренные дубликаты семантики BSLLS (отдельные коды BSL)
@@ -200,7 +200,7 @@
 | BSL146 | —                                            | ModuleInitializationCode                     | INFORMATION | нет        | да             | —           | да              |
 | BSL147 | —                                            | UseOfUICall                                  | WARNING     | нет        | да             | —           | нет             |
 | BSL148 | AllFunctionPathMustHaveReturn                | AllFunctionPathMustHaveReturn                | ERROR       | да         | нет            | нет         | да              |
-| BSL149 | AssignAliasFieldsInQuery                     | AssignAliasFieldsInQuery                     | INFORMATION | да         | нет            | нет         | да              |
+| BSL149 | AssignAliasFieldsInQuery                     | AssignAliasFieldsInQuery                     | INFORMATION | да         | да             | да          | нет             |
 | BSL150 | BadWords                                     | BadWords                                     | WARNING     | да         | нет            | нет         | да              |
 | BSL151 | BeginTransactionBeforeTryCatch               | BeginTransactionBeforeTryCatch               | ERROR       | да         | да             | нет         | да              |
 | BSL152 | CachedPublic                                 | CachedPublic                                 | WARNING     | да         | нет            | нет         | да              |

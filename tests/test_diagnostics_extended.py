@@ -2203,6 +2203,54 @@ class TestBsl058QueryWithoutWhere:
 
 
 # ---------------------------------------------------------------------------
+# BSL149 — AssignAliasFieldsInQuery
+# ---------------------------------------------------------------------------
+
+
+class TestBsl149AssignAliasFieldsInQuery:
+    def test_multiline_select_without_alias_detected(self, tmp_path: Path) -> None:
+        content = '''\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Код,
+            |   Наименование
+            |ИЗ
+            |   Справочник.Номенклатура";
+        '''
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" in _codes(diags)
+
+    def test_multiline_select_with_alias_no_warning(self, tmp_path: Path) -> None:
+        content = '''\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Код КАК Код,
+            |   Наименование КАК Наименование
+            |ИЗ
+            |   Справочник.Номенклатура";
+        '''
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" not in _codes(diags)
+
+    def test_single_line_select_without_alias_detected(self, tmp_path: Path) -> None:
+        content = (
+            'А = "ВЫБРАТЬ Ссылка, Номер ИЗ Документ.РасходнаяНакладная";\n'
+        )
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" in _codes(diags)
+
+    def test_single_line_select_with_alias_no_warning(self, tmp_path: Path) -> None:
+        content = (
+            'А = "ВЫБРАТЬ Ссылка КАК С, Номер КАК Н ИЗ Документ.РасходнаяНакладная";\n'
+        )
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" not in _codes(diags)
+
+    def test_select_star_no_warning(self, tmp_path: Path) -> None:
+        content = 'А = "ВЫБРАТЬ * ИЗ Документ.РасходнаяНакладная";\n'
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL004 — empty «Тогда» (BSLLS EmptyCodeBlock) vs BSL059
 # ---------------------------------------------------------------------------
 

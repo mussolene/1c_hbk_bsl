@@ -7,9 +7,10 @@ Provides:
   - CLI linter (ruff-style output, --check mode)
   - Incremental symbol indexing backed by SQLite
 
-Version: from **git tags** (``vMAJOR.MINOR.PATCH``) via setuptools-scm at build/install time;
-:data:`__version__` uses installed package metadata, then :func:`setuptools_scm.get_version`
-in a dev checkout with setuptools-scm installed.
+Version: from **git tags** (``vMAJOR.MINOR.PATCH``) via setuptools-scm at build/install time.
+:data:`__version__` prefers :func:`setuptools_scm.get_version` when the module is loaded from
+a ``src/onec_hbk_bsl`` tree with a ``.git`` directory (avoids stale ``importlib.metadata`` from
+an unrelated install); otherwise uses installed package metadata, then setuptools-scm fallback.
 """
 
 from __future__ import annotations
@@ -22,6 +23,19 @@ __author__ = "1C HBK BSL Contributors"
 
 
 def _version() -> str:
+    here = Path(__file__).resolve()
+    pkg_dir = here.parent
+    if pkg_dir.name == "onec_hbk_bsl":
+        src_dir = pkg_dir.parent
+        if src_dir.name == "src":
+            repo_root = src_dir.parent
+            if (repo_root / ".git").exists():
+                try:
+                    from setuptools_scm import get_version
+
+                    return get_version(root=str(repo_root))
+                except (ImportError, LookupError):
+                    pass
     try:
         return version("onec-hbk-bsl")
     except PackageNotFoundError:
@@ -31,7 +45,7 @@ def _version() -> str:
 
         root = Path(__file__).resolve().parents[2]
         return get_version(root=str(root))
-    except ImportError, LookupError:
+    except (ImportError, LookupError):
         pass
     return "0.0.0+unknown"
 
