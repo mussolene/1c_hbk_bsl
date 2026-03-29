@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Форматтер / BSL055 / BSL136:** не более **одной** пустой строки подряд после полного `format` (как `DiagnosticEngine.MAX_BLANK_LINES` и BSLLS ConsecutiveEmptyLines); пробел перед хвостовым `//` на строке кода. Документация: [docs/FORMATTER_DIAGNOSTICS.md](docs/FORMATTER_DIAGNOSTICS.md).
 - **Toolchain:** минимальная версия Python **3.14** (`requires-python`); CI, smoke PyInstaller и релизные бинарники собираются на **3.14**; Ruff `target-version = py314`, `ruff>=0.9`.
 
 ### Added

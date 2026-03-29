@@ -584,7 +584,7 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL055": {
         "name": "ConsecutiveEmptyLines",
-        "description": "More than 2 consecutive blank lines reduce readability",
+        "description": "More than one consecutive blank line reduces readability (BSLLS-style)",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
@@ -8595,7 +8595,7 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL055 — Consecutive blank lines (> 2)
+    # BSL055 — Consecutive blank lines (> MAX_BLANK_LINES)
     # ------------------------------------------------------------------
 
     # BSLLS ConsecutiveEmptyLines: flag when more than one blank line in a row.
@@ -8604,7 +8604,7 @@ class DiagnosticEngine:
     def _rule_bsl055_consecutive_blank_lines(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        """Flag runs of more than 2 consecutive blank lines."""
+        """Flag runs of more than ``MAX_BLANK_LINES`` consecutive blank lines."""
         diags: list[Diagnostic] = []
         blank_run = 0
         run_start = 0

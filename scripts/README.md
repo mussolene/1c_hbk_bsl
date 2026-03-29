@@ -16,3 +16,7 @@
 3. GitHub Actions **Release** собирает артефакты; job VSIX перед сборкой вызывает `scripts/sync_version.py`, чтобы `package.json` совпадал с тегом.
 
 Локально без тега на коммите после последнего тега setuptools-scm может выдать версию вида `X.Y.Z.devN+gHASH` — это нормально для разработки.
+
+## Паритет с BSLLS (форматтер и диагностики)
+
+Скрипт **`run_bslls_parity.sh`** вызывает проверки из skill `.cursor/skills/bsl-ast-mcp-skill/checks/` (JAR в `.nosync/` или `BSLLS_JAR`). Отчёты — в **`.nosync/reports/`**. Подробности: [docs/FORMATTER_DIAGNOSTICS.md](../docs/FORMATTER_DIAGNOSTICS.md).

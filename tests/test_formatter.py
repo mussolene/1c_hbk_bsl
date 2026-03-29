@@ -30,6 +30,11 @@ class TestLineCommentNormalization:
         line = result.splitlines()[0].lstrip()
         assert line == "//"
 
+    def test_space_before_trailing_inline_comment(self) -> None:
+        f = BslFormatter()
+        result = f.format("А = 1;// комментарий\n")
+        assert " // комментарий" in result
+
 
 class TestDocCommentBlocks:
     """Contiguous // / /// blocks: Параметры / Возвращаемое значение and hanging text."""
@@ -276,11 +281,12 @@ class TestOperatorSpacing:
 
 
 class TestBlankLines:
-    def test_max_two_consecutive_blanks(self) -> None:
+    def test_max_one_consecutive_blank(self) -> None:
         f = BslFormatter()
         code = "А = 1;\n\n\n\n\nБ = 2;\n"
         result = f.format(code)
-        assert "\n\n\n\n" not in result
+        assert "\n\n\n" not in result
+        assert "А = 1;\n\nБ = 2;" in result
 
     def test_trailing_newline(self) -> None:
         f = BslFormatter()

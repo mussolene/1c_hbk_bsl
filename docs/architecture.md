@@ -107,6 +107,8 @@ Formatted response (dict / LSP Location)
   `Тогда`/`Цикл`, procedure signature tracking — line-based state in `formatter.py`.
 - **Token spacing in argument lists:** `formatter_ast_spacing.py` (comma spacing and related layout on valid CST).
 
+Связь с диагностиками стиля (BSL024, BSL055, BSL136, BSL216): [FORMATTER_DIAGNOSTICS.md](FORMATTER_DIAGNOSTICS.md).
+
 Политика структурных правил и CST: [cst_policy.md](cst_policy.md).
 
 ## SQLite Schema

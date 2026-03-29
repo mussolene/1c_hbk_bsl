@@ -20,6 +20,8 @@
 
 **BSL055:** не более одной пустой строки подряд (`MAX_BLANK_LINES=1`).
 
+**Форматтер:** согласование с BSL024 / BSL055 / BSL136 / BSL216 — [FORMATTER_DIAGNOSTICS.md](FORMATTER_DIAGNOSTICS.md).
+
 Правила клиент/сервер: [CLIENT_SERVER_DIAGNOSTICS.md](CLIENT_SERVER_DIAGNOSTICS.md). Крупные расхождения чаще всего у **BSL256**; намеренные отличия фиксируйте в матрице правил.
 
 ## Справка 1С

@@ -693,6 +693,11 @@ def _process_code_line_static(stripped: str, in_proc_header: bool) -> str:
         if ttype == "code":
             text = _normalize_keywords_in_code(text)
             text = _add_operator_spaces(text, in_proc_header=in_proc_header)
+        elif ttype == "comment" and text.startswith("//") and result_parts:
+            # BSL136 / BSLLS MissingSpaceBeforeComment: space before trailing //
+            prev = result_parts[-1]
+            if prev and not prev[-1].isspace():
+                result_parts.append(" ")
         result_parts.append(text)
     result = "".join(result_parts)
     result = _collapse_spaces_static(result)
@@ -817,7 +822,7 @@ class BslFormatter:
             insert_spaces=insert_spaces,
             text_for_parse=text,
         )
-        # Normalise trailing empty lines: max 2 consecutive blanks
+        # Normalise blank runs: at most one empty line in a row (BSL055 / BSLLS ConsecutiveEmptyLines)
         result = self._normalize_blank_lines(formatted)
         # Strip leading blank lines (BSLLS does not emit them even when source has BOM+newline)
         result = result.lstrip("\n")
@@ -1073,14 +1078,14 @@ class BslFormatter:
 
     @staticmethod
     def _normalize_blank_lines(text: str) -> str:
-        """Reduce consecutive blank lines to at most 2."""
+        """Reduce consecutive blank lines to at most one (matches DiagnosticEngine.MAX_BLANK_LINES)."""
         lines = text.splitlines()
         result: list[str] = []
         blank_count = 0
         for line in lines:
             if line.strip() == "":
                 blank_count += 1
-                if blank_count <= 2:
+                if blank_count <= 1:
                     result.append(line)
             else:
                 blank_count = 0
