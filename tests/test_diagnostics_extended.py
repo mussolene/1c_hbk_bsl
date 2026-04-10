@@ -117,6 +117,40 @@ class TestBsl215MissingParameterDescriptionParity:
 
 
 # ---------------------------------------------------------------------------
+# BSL237 — RedundantAccessToObject
+# ---------------------------------------------------------------------------
+
+
+class TestBsl237RedundantAccessToObjectParity:
+    def test_this_object_property_access_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ, РежимЗаписи)
+                Значение = ЭтотОбъект.ДополнительныеСвойства.Свойство("Флаг");
+            КонецПроцедуры
+        """
+        path = tmp_path / "AccountingRegisters" / "Тест" / "Ext" / "RecordSetModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL237"}).check_file(str(path))
+        bsl237 = [d for d in diags if d.code == "BSL237"]
+        assert len(bsl237) == 1
+        assert bsl237[0].line == 2
+        assert bsl237[0].character == 15
+
+    def test_plain_identifier_without_this_object_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ, РежимЗаписи)
+                Значение = ДополнительныеСвойства.Свойство("Флаг");
+            КонецПроцедуры
+        """
+        path = tmp_path / "AccountingRegisters" / "Тест" / "Ext" / "RecordSetModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL237"}).check_file(str(path))
+        assert "BSL237" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------
 

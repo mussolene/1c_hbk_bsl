@@ -2154,7 +2154,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["redundant", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL238": {
         "name": "RefOveruse",
@@ -3625,6 +3625,33 @@ def path_is_likely_form_module_bsl(path: str) -> bool:
     if p.name.lower() == "module.bsl" and ("forms" in parts or "формы" in parts):
         return True
     return False
+
+
+def _redundant_access_prefix_patterns(path: str) -> list[re.Pattern[str]]:
+    low = path.replace("\\", "/")
+    parts = Path(low).parts
+    patterns = [re.compile(r"\b(?:ЭтотОбъект|ThisObject)\.", re.IGNORECASE | re.UNICODE)]
+
+    if len(parts) >= 3 and parts[-1].lower() == "managermodule.bsl":
+        folder = parts[-3]
+        object_name = parts[-2]
+        collection_map = {
+            "Catalogs": ("Справочники", "Catalogs"),
+            "Documents": ("Документы", "Documents"),
+            "AccountingRegisters": ("РегистрыБухгалтерии", "AccountingRegisters"),
+            "AccumulationRegisters": ("РегистрыНакопления", "AccumulationRegisters"),
+            "CalculationRegisters": ("РегистрыРасчета", "CalculationRegisters"),
+            "InformationRegisters": ("РегистрыСведений", "InformationRegisters"),
+        }
+        prefixes = collection_map.get(folder, (object_name,))
+        for prefix in prefixes:
+            patterns.append(
+                re.compile(
+                    rf"\b{re.escape(prefix)}\.{re.escape(object_name)}\.",
+                    re.IGNORECASE | re.UNICODE,
+                )
+            )
+    return patterns
 
 
 # Параметры стандартных обработчиков (команды, события форм) — BSLLS не помечает как неиспользуемые.
@@ -6103,7 +6130,7 @@ class DiagnosticEngine:
             # "BSL234" enabled — QueryNestedFieldsByDot implemented
             "BSL235",  # QueryParseError — TODO
             "BSL236",  # QueryToMissingMetadata — TODO
-            "BSL237",  # RedundantAccessToObject — TODO
+            # "BSL237" enabled — RedundantAccessToObject implemented
             "BSL238",  # RefOveruse — TODO
             "BSL239",  # ReservedParameterNames — TODO
             # "BSL240" enabled — RewriteMethodParameter implemented
@@ -7123,6 +7150,10 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL234"):
             _rule_tasks.append(
                 ("BSL234", lambda: self._rule_bsl234_query_nested_fields_by_dot(path, lines))
+            )
+        if self._rule_enabled("BSL237"):
+            _rule_tasks.append(
+                ("BSL237", lambda: self._rule_bsl237_redundant_access_to_object(path, lines))
             )
         if self._rule_enabled("BSL216"):
             _rule_tasks.append(("BSL216", lambda: self._rule_bsl216_missing_space(path, lines)))
@@ -15319,6 +15350,53 @@ class DiagnosticEngine:
                         message="Обнаружено разыменование ссылочного поля",
                     )
                 )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL237 — RedundantAccessToObject
+    # ------------------------------------------------------------------
+
+    def _rule_bsl237_redundant_access_to_object(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect redundant access through ЭтотОбъект/ThisObject or module object prefix."""
+        low = path.replace("\\", "/").lower()
+        supported = (
+            low.endswith("/ext/objectmodule.bsl")
+            or low.endswith("/ext/recordsetmodule.bsl")
+            or low.endswith("/ext/managermodule.bsl")
+            or path_is_likely_form_module_bsl(path)
+            or low.endswith("/ext/module.bsl")
+        )
+        if not supported:
+            return []
+
+        diags: list[Diagnostic] = []
+        patterns = _redundant_access_prefix_patterns(path)
+        for line_no, line in enumerate(lines, start=1):
+            if _RE_LINE_COMMENT.match(line):
+                continue
+            clean = _mask_double_quoted_strings_preserve_len(line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+            for pattern in patterns:
+                for match in pattern.finditer(clean):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_no,
+                            character=match.start(),
+                            end_line=line_no,
+                            end_character=match.end() - 1,
+                            severity=Severity.INFORMATION,
+                            code="BSL237",
+                            message=(
+                                "Избавьтесь от избыточного обращения внутри модуля "
+                                "через его имя или псевдоним ЭтотОбъект"
+                            ),
+                        )
+                    )
         return diags
 
     # ------------------------------------------------------------------

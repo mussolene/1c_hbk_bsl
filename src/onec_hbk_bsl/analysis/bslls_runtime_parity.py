@@ -250,6 +250,20 @@ def _copy_root_configuration_context(
         copied.add(resolved)
 
 
+def _copy_full_metadata_xml_tree(
+    *,
+    workspace_root: Path,
+    dest_root: Path,
+    copied: set[Path],
+) -> None:
+    for candidate in workspace_root.rglob("*.xml"):
+        resolved = candidate.resolve()
+        if resolved in copied:
+            continue
+        _copy_file_preserving_rel(candidate, workspace_root, dest_root)
+        copied.add(resolved)
+
+
 def _run_bslls_analyze(
     *,
     jar_path: Path,
@@ -264,7 +278,7 @@ def _run_bslls_analyze(
         src_root.mkdir(parents=True, exist_ok=True)
         out_root.mkdir(parents=True, exist_ok=True)
         copied: set[Path] = set()
-        _copy_root_configuration_context(
+        _copy_full_metadata_xml_tree(
             workspace_root=workspace_root,
             dest_root=src_root,
             copied=copied,
@@ -343,6 +357,7 @@ def compare_with_bslls(
     with tempfile.TemporaryDirectory(prefix="onec-parity-index-") as tmp:
         idx = SymbolIndex(db_path=str(Path(tmp) / "index.sqlite"))
         indexer = IncrementalIndexer(index=idx, quiet=True)
+        indexer.index_metadata(str(workspace_root))
         for path in files:
             indexer.index_file(str(path))
         engine = DiagnosticEngine(profile=profile, symbol_index=idx)
