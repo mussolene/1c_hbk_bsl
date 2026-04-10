@@ -42,6 +42,81 @@ def _codes(diags: list[Diagnostic]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# BSL172 — DataExchangeLoading
+# ---------------------------------------------------------------------------
+
+
+class TestBsl172DataExchangeLoadingParity:
+    def test_requires_exchange_check_with_return(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ, Замещение)
+                Если Отказ Тогда
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        path = tmp_path / "Catalogs" / "Тест" / "Ext" / "RecordSetModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL172"}).check_file(str(path))
+        assert "BSL172" in _codes(diags)
+
+    def test_exchange_check_in_if_branch_satisfies_rule(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ, Замещение)
+                Если ОбменДанными.Загрузка Тогда
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        path = tmp_path / "Catalogs" / "Тест" / "Ext" / "RecordSetModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL172"}).check_file(str(path))
+        assert "BSL172" not in _codes(diags)
+
+    def test_non_supported_module_type_is_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ, СтандартнаяОбработка)
+                Если Отказ Тогда
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL172"}).check_file(str(path))
+        assert "BSL172" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL215 — MissingParameterDescription
+# ---------------------------------------------------------------------------
+
+
+class TestBsl215MissingParameterDescriptionParity:
+    def test_service_comment_is_not_treated_as_doc_block(self, tmp_path: Path) -> None:
+        content = """\
+            // Служебная процедура
+            Процедура Обработать(Параметр)
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL215"})
+        assert "BSL215" not in _codes(diags)
+
+    def test_formal_doc_without_params_section_reports_method(self, tmp_path: Path) -> None:
+        content = """\
+            // Описание метода.
+            //
+            Процедура Обработать(Параметр)
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL215"})
+        assert "BSL215" in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------
 

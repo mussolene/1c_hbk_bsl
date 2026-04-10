@@ -7,7 +7,8 @@ BSL156 CodeOutOfRegion — BSLLS-oriented checks using line spans for #Обла�
 - If the module defines no regions but contains procedures or executable module-level
   code, emit a single diagnostic on line 1 (BSLLS ``regions.isEmpty()`` case).
 
-Does not model BSLLS ``ModuleType.UNKNOWN`` skip or ``checkUnknownModuleType``.
+Skips form modules and avoids the synthetic "line 1" diagnostic when all module
+content is wrapped by preprocessor blocks, matching BSLLS closer.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ import re
 
 _RE_REGION_OPEN_LINE = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE)
 _RE_REGION_CLOSE_LINE = re.compile(r"^\s*#(?:КонецОбласти|EndRegion)\b", re.IGNORECASE)
+_RE_PREPROC_OPEN = re.compile(r"^\s*#(?:Если|If)\b", re.IGNORECASE)
+_RE_PREPROC_CLOSE = re.compile(r"^\s*#(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
 _RE_COMPILER = re.compile(r"^\s*&\w", re.IGNORECASE)
 _RE_MODULE_VAR = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
 _RE_RAISE_STMT = re.compile(
@@ -91,7 +94,25 @@ def _line_span_non_ws(line: str) -> tuple[int, int]:
     return c0, c1
 
 
+def _path_is_form_module(path: str) -> bool:
+    low = path.replace("\\", "/").lower()
+    return low.endswith("/form/module.bsl") and "/forms/" in low
+
+
+def _preprocessor_depths(lines: list[str]) -> list[int]:
+    depths: list[int] = []
+    depth = 0
+    for line in lines:
+        if _RE_PREPROC_CLOSE.match(line):
+            depth = max(0, depth - 1)
+        depths.append(depth)
+        if _RE_PREPROC_OPEN.match(line):
+            depth += 1
+    return depths
+
+
 def bsl156_diagnostics(
+    path: str,
     lines: list[str],
     procedures: list[tuple[int, int, str]],
 ) -> list[tuple[int, int, int, str]]:
@@ -100,9 +121,12 @@ def bsl156_diagnostics(
 
     *procedures*: ``(start_idx, end_idx, name)`` — same indices as ``_ProcInfo``.
     """
+    if _path_is_form_module(path):
+        return []
     intervals = module_region_intervals(lines)
     n = len(lines)
     proc_ranges = [(s, e) for s, e, _ in procedures]
+    preproc_depths = _preprocessor_depths(lines)
 
     def line_in_proc(i: int) -> bool:
         return any(s <= i <= e for s, e in proc_ranges)
@@ -111,11 +135,11 @@ def bsl156_diagnostics(
     msg = "Код вне области (#Область / #Region) (BSLLS CodeOutOfRegion)."
 
     if not intervals:
-        has_proc = bool(procedures)
+        has_proc = any(preproc_depths[s] == 0 for s, _, _ in procedures if 0 <= s < n)
         has_mod = any(
             _is_executable_module_statement_line(lines[i]) or _RE_MODULE_VAR.match(lines[i])
             for i in range(n)
-            if not line_in_proc(i)
+            if not line_in_proc(i) and preproc_depths[i] == 0
         )
         if has_proc or has_mod:
             if n:

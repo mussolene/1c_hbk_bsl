@@ -55,3 +55,27 @@ def test_bsl156_module_var_outside_region(tmp_path: Path) -> None:
     diags = [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
     lines = {d.line for d in diags}
     assert 5 in lines
+
+
+def test_bsl156_form_module_without_regions_is_skipped(tmp_path: Path) -> None:
+    p = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+    p.parent.mkdir(parents=True)
+    p.write_text(
+        "&НаСервере\nПроцедура ПриСозданииНаСервере(Отказ, СтандартнаяОбработка)\nКонецПроцедуры\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL156"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
+
+
+def test_bsl156_no_regions_inside_preprocessor_is_skipped(tmp_path: Path) -> None:
+    p = tmp_path / "RecordSetModule.bsl"
+    p.write_text(
+        "#Если Сервер Тогда\n"
+        "Процедура ПередЗаписью(Отказ, Замещение)\n"
+        "КонецПроцедуры\n"
+        "#КонецЕсли\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL156"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL156"]

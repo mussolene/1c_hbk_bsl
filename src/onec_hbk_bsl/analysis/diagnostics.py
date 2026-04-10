@@ -13347,7 +13347,7 @@ class DiagnosticEngine:
         """Module lines and procedures must lie inside #Область/#Region (BSLLS CodeOutOfRegion)."""
         triples = [(p.start_idx, p.end_idx, p.name) for p in procs]
         diags: list[Diagnostic] = []
-        for line_1, c0, c1, msg in bsl156_diagnostics(lines, triples):
+        for line_1, c0, c1, msg in bsl156_diagnostics(path, lines, triples):
             diags.append(
                 Diagnostic(
                     file=path,
@@ -13679,35 +13679,73 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Handlers ПередЗаписью/ПриЗаписи must check ОбменДаннымиЗагрузка flag."""
         diags: list[Diagnostic] = []
+        low_path = path.replace("\\", "/").lower()
+        if not (
+            low_path.endswith("/ext/objectmodule.bsl")
+            or low_path.endswith("/ext/recordsetmodule.bsl")
+            or low_path.endswith("/ext/valuemanagermodule.bsl")
+        ):
+            return []
         _re_handler = re.compile(
             r"^\s*(?:Процедура|Procedure)\s+"
             r"(?:ПередЗаписью|BeforeWrite|ПриЗаписи|OnWrite|"
-            r"ОбработкаПроверкиЗаполнения|CheckFilling)\s*\(",
+            r"ПередУдалением|BeforeDelete)\s*\(",
             re.IGNORECASE | re.UNICODE,
         )
         _re_exchange = re.compile(
-            r"(?:ОбменДанными\.Загрузка|DataExchange\.Load"
-            r"|ОбменДаннымиЗагрузка|DataExchangeLoad)\b",
+            r"(?:ОбменДанными\.Загрузка|DataExchange\.Load)\b",
             re.IGNORECASE,
         )
+        _re_if = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE | re.UNICODE)
+        _re_endif = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE | re.UNICODE)
+        _re_return = re.compile(r"^\s*(?:Возврат|Return)\b", re.IGNORECASE | re.UNICODE)
 
         for proc in procs:
             start = proc.start_idx
             line = lines[start] if start < len(lines) else ""
-            if not _re_handler.match(line):
+            header_match = _re_handler.match(line)
+            if not header_match:
                 continue
-            # Check if any line in the proc body references ОбменДаннымиЗагрузка
-            body_lines = lines[start : proc.end_idx]
-            has_check = any(_re_exchange.search(bl) for bl in body_lines)
+
+            body_start = start + 1
+            body_end = min(proc.end_idx, len(lines))
+            has_check = False
+            i = body_start
+            while i < body_end:
+                raw = lines[i]
+                if not _re_if.match(raw) or not _re_exchange.search(raw):
+                    i += 1
+                    continue
+                depth = 1
+                j = i + 1
+                branch_has_return = False
+                while j < body_end and depth > 0:
+                    branch_line = lines[j]
+                    if _re_if.match(branch_line):
+                        depth += 1
+                    elif _re_endif.match(branch_line):
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    if _re_return.match(branch_line):
+                        branch_has_return = True
+                    j += 1
+                if branch_has_return:
+                    has_check = True
+                    break
+                i = max(j, i + 1)
             if not has_check:
-                m = _re_handler.match(line)
                 diags.append(
                     Diagnostic(
                         file=path,
                         line=start + 1,
-                        character=m.start() if m else 0,
+                        character=line.find(proc.name) if proc.name in line else 0,
                         end_line=start + 1,
-                        end_character=m.end() if m else len(line),
+                        end_character=(
+                            (line.find(proc.name) + len(proc.name))
+                            if proc.name in line
+                            else len(line)
+                        ),
                         severity=Severity.WARNING,
                         code="BSL172",
                         message=(
@@ -14474,6 +14512,11 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Export method parameters must be documented in the preceding comment block."""
         diags: list[Diagnostic] = []
+        _re_blank_doc_line = re.compile(r"^\s*//\s*$")
+        _re_doc_section = re.compile(
+            r"^\s*//\s*(?:Параметры|Parameters|Возвращаемое значение|Returns?)\s*:?\s*$",
+            re.IGNORECASE,
+        )
 
         for proc in procs:
             if not proc.params:
@@ -14506,6 +14549,13 @@ class DiagnosticEngine:
             # considers this sufficient documentation and skips the check entirely.
             _re_see_link = re.compile(r"^\s*//\s*(?:См\.|See)\s+\S", re.IGNORECASE)
             if any(_re_see_link.match(cl) for cl in comment_block):
+                continue
+
+            # BSLLS uses parsed method descriptions; a lone label comment like
+            # "// Особенности ..." is not a method description and should be skipped.
+            if not any(
+                _re_blank_doc_line.match(cl) or _re_doc_section.match(cl) for cl in comment_block
+            ):
                 continue
 
             # Find "// Параметры:" section.

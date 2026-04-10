@@ -192,6 +192,36 @@ def _copy_file_preserving_rel(source: Path, root: Path, dest_root: Path) -> Path
     return dest
 
 
+def _copy_related_configuration_context(
+    source: Path,
+    *,
+    workspace_root: Path,
+    dest_root: Path,
+    copied: set[Path],
+) -> None:
+    rel = source.resolve().relative_to(workspace_root.resolve())
+    parts = rel.parts
+    if len(parts) < 2:
+        return
+
+    object_name = parts[1]
+    object_dir = workspace_root / parts[0] / object_name
+    object_xml = workspace_root / parts[0] / f"{object_name}.xml"
+
+    candidates: list[Path] = []
+    if object_xml.is_file():
+        candidates.append(object_xml)
+    if object_dir.is_dir():
+        candidates.extend(sorted(object_dir.rglob("*.xml")))
+
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in copied:
+            continue
+        _copy_file_preserving_rel(candidate, workspace_root, dest_root)
+        copied.add(resolved)
+
+
 def _run_bslls_analyze(
     *,
     jar_path: Path,
@@ -205,8 +235,18 @@ def _run_bslls_analyze(
         out_root = tmp_root / "out"
         src_root.mkdir(parents=True, exist_ok=True)
         out_root.mkdir(parents=True, exist_ok=True)
+        copied: set[Path] = set()
         for path in files:
-            _copy_file_preserving_rel(path, workspace_root, src_root)
+            resolved = path.resolve()
+            if resolved not in copied:
+                _copy_file_preserving_rel(path, workspace_root, src_root)
+                copied.add(resolved)
+            _copy_related_configuration_context(
+                path,
+                workspace_root=workspace_root,
+                dest_root=src_root,
+                copied=copied,
+            )
 
         cmd = [
             "java",
