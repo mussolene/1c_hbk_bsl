@@ -2928,6 +2928,7 @@ _BSLLS_LSP_HINT_RULE_NAMES: frozenset[str] = frozenset(
         "FunctionNameStartsWithGet",
         "IncorrectLineBreak",
         "NonStandardRegion",
+        "MissingSpace",
         "PublicMethodsDescription",
         "RedundantAccessToObject",
         "SpaceAtStartComment",
@@ -3905,7 +3906,7 @@ def _proc_containing_line(procs: list[_ProcInfo], line_idx: int) -> _ProcInfo | 
     return None
 
 
-def _comma_missing_space_after_col_in_line(line: str) -> int | None:
+def _comma_missing_space_after_cols_in_line(line: str) -> list[int]:
     """
     0-based column of the last ``,`` immediately followed by a token char (BSLLS MissingSpace),
     only outside ``"..."`` string literals (positions must match *line* for overlap filter).
@@ -3913,7 +3914,7 @@ def _comma_missing_space_after_col_in_line(line: str) -> int | None:
     in_str = False
     i = 0
     n = len(line)
-    last_col: int | None = None
+    cols: list[int] = []
     while i < n - 1:
         ch = line[i]
         if ch == '"':
@@ -3928,9 +3929,14 @@ def _comma_missing_space_after_col_in_line(line: str) -> int | None:
             # BSLLS requires a space after comma; ,, (multiple commas) are also flagged.
             # Only allow whitespace, closing bracket/paren, or end-of-line after comma.
             if nxt not in " \t\n\r)]\n":
-                last_col = i
+                cols.append(i)
         i += 1
-    return last_col
+    return cols
+
+
+def _mask_double_quoted_strings_preserve_len(line: str) -> str:
+    """Replace string contents with spaces while preserving original offsets."""
+    return _RE_DOUBLE_QUOTED_STRING.sub(lambda m: '"' + (" " * (len(m.group(0)) - 2)) + '"', line)
 
 
 def _build_line_string_states(lines: list[str]) -> list[bool]:
@@ -7181,21 +7187,30 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for proc in procs:
-            length = proc.end_idx - proc.start_idx
+            first_body = None
+            last_body = None
+            for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                stripped = lines[idx].strip()
+                if not stripped or stripped.startswith("//"):
+                    continue
+                if first_body is None:
+                    first_body = idx
+                last_body = idx
+            length = 0 if first_body is None or last_body is None else last_body - first_body
             if length > self.max_proc_lines:
-                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                start_col, end_col = _proc_name_span(lines, proc)
                 diags.append(
                     Diagnostic(
                         file=path,
                         line=proc.start_idx + 1,
-                        character=proc.header_col,
+                        character=start_col,
                         end_line=proc.start_idx + 1,
-                        end_character=len(line_text),
+                        end_character=end_col,
                         severity=Severity.WARNING,
                         code="BSL002",
                         message=(
-                            f"{proc.kind.capitalize()} '{proc.name}' is {length} lines long "
-                            f"(maximum {self.max_proc_lines})"
+                            f'Длина метода "{proc.name}" равна {length}, '
+                            f"что больше установленного лимита в {self.max_proc_lines} строк"
                         ),
                     )
                 )
@@ -7402,12 +7417,12 @@ class DiagnosticEngine:
                 Diagnostic(
                     file=path,
                     line=idx + 1,
-                    character=0,
+                    character=line.find(var_name) if var_name in line else 0,
                     end_line=idx + 1,
                     end_character=len(line.rstrip()),
                     severity=Severity.WARNING,
                     code="BSL007",
-                    message=f"Local variable '{var_name}' is declared but never used",
+                    message=f"Удалите неиспользуемую переменную {var_name}",
                 )
             )
 
@@ -7446,12 +7461,12 @@ class DiagnosticEngine:
                     Diagnostic(
                         file=path,
                         line=abs_decl + 1,
-                        character=0,
+                        character=lines[abs_decl].find(var_name) if var_name in lines[abs_decl] else 0,
                         end_line=abs_decl + 1,
                         end_character=len(lines[abs_decl].rstrip()),
                         severity=Severity.WARNING,
                         code="BSL007",
-                        message=f"Local variable '{var_name}' is declared but never used",
+                        message=f"Удалите неиспользуемую переменную {var_name}",
                     )
                 )
 
@@ -7483,12 +7498,12 @@ class DiagnosticEngine:
                     Diagnostic(
                         file=path,
                         line=abs_line + 1,
-                        character=0,
+                        character=lines[abs_line].find(var_name) if var_name in lines[abs_line] else 0,
                         end_line=abs_line + 1,
                         end_character=len(lines[abs_line].rstrip()),
                         severity=Severity.WARNING,
                         code="BSL007",
-                        message=f"Local variable '{var_name}' is declared but never used",
+                        message=f"Удалите неиспользуемую переменную {var_name}",
                     )
                 )
         return diags
@@ -8097,6 +8112,8 @@ class DiagnosticEngine:
         Ранее дублировалось как BSL025 — для паритета с BSLLS JSON используем BSL030.
         """
         diags: list[Diagnostic] = []
+        continuation_re = re.compile(r"^\s*(?:И|Или|AND|OR)\b", re.IGNORECASE)
+        end_kw_re = re.compile(r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b", re.IGNORECASE)
         for proc in procs:
             for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
                 line = lines[i]
@@ -8106,9 +8123,33 @@ class DiagnosticEngine:
                 code_part = stripped.split("//")[0].rstrip()
                 if not code_part:
                     continue
+                if end_kw_re.match(code_part) and not code_part.endswith(";"):
+                    col = len(code_part) - len(code_part.lstrip())
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=i + 1,
+                            character=col,
+                            end_line=i + 1,
+                            end_character=col + len(code_part.lstrip()),
+                            severity=Severity.INFORMATION,
+                            code="BSL030",
+                            message=("Пропущена точка с запятой в конце выражения"),
+                        )
+                    )
+                    continue
                 last_char = code_part[-1]
                 # «)» может завершать вызов — после него нужна «;» (BSLLS SemicolonPresence).
                 if last_char in (";", ",", "(", "|", "+", "-", "*", "/", "="):
+                    continue
+                next_sig = None
+                for j in range(i + 1, min(proc.end_idx, len(lines))):
+                    nxt = lines[j].strip()
+                    if not nxt or nxt.startswith("//"):
+                        continue
+                    next_sig = lines[j]
+                    break
+                if next_sig is not None and continuation_re.match(next_sig):
                     continue
                 if _RE_STMT_NO_SEMI.match(code_part):
                     diags.append(
@@ -8118,7 +8159,7 @@ class DiagnosticEngine:
                             character=len(code_part),
                             end_line=i + 1,
                             end_character=len(code_part),
-                            severity=Severity.WARNING,
+                            severity=Severity.INFORMATION,
                             code="BSL030",
                             message=("Пропущена точка с запятой в конце выражения"),
                         )
@@ -14396,7 +14437,7 @@ class DiagnosticEngine:
             if idx in bsl036_skip:
                 continue
             # Remove string literals and inline comment
-            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
+            clean = _mask_double_quoted_strings_preserve_len(line)
             comment_pos = clean.find("//")
             if comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -14419,7 +14460,7 @@ class DiagnosticEngine:
                             end_character=m.end(),
                             severity=Severity.INFORMATION,
                             code="BSL153",
-                            message=(f"Ключевое слово «{word}» должно быть «{canonical}»"),
+                            message=(f'Ключевое слово "{word}" написано не канонически'),
                         )
                     )
         return diags
@@ -14770,13 +14811,20 @@ class DiagnosticEngine:
                         end_character=m.end(),
                         severity=Severity.INFORMATION,
                         code="BSL216",
-                        message=(
-                            "Пропущен пробел вокруг оператора «=» — добавьте пробелы для читаемости"
-                        ),
+                        message=("Слева и справа от '=' не хватает пробела"),
                     )
                 )
             # Arithmetic operators: +, -, *, /
             for col in _arithmetic_missing_space_cols_in_line(line, in_str_start):
+                op = line[col]
+                left_missing = col > 0 and line[col - 1] not in " \t"
+                right_missing = col + 1 < len(line) and line[col + 1] not in " \t"
+                if left_missing and right_missing:
+                    msg = f"Слева и справа от '{op}' не хватает пробела"
+                elif left_missing:
+                    msg = f"Слева от '{op}' не хватает пробела"
+                else:
+                    msg = f"Справа от '{op}' не хватает пробела"
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -14786,27 +14834,25 @@ class DiagnosticEngine:
                         end_character=col + 1,
                         severity=Severity.INFORMATION,
                         code="BSL216",
-                        message=(
-                            "Пропущен пробел вокруг арифметического оператора — "
-                            "добавьте пробелы для читаемости"
-                        ),
+                        message=msg,
                     )
                 )
                 continue
-            comma_col = _comma_missing_space_after_col_in_line(line.split("//", 1)[0])
-            if comma_col is not None:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=comma_col,
-                        end_line=idx + 1,
-                        end_character=comma_col + 1,
-                        severity=Severity.INFORMATION,
-                        code="BSL216",
-                        message=("Пропущен пробел после запятой — добавьте пробел для читаемости"),
+            comma_cols = _comma_missing_space_after_cols_in_line(line.split("//", 1)[0])
+            if comma_cols:
+                for comma_col in comma_cols:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=comma_col,
+                            end_line=idx + 1,
+                            end_character=comma_col + 1,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=("Справа от ',' не хватает пробела"),
+                        )
                     )
-                )
                 continue
             m_then = _RE_BSL216_BEFORE_THEN.search(clean)
             if m_then:

@@ -144,7 +144,7 @@ class TestBsl006HardcodePath:
 # ---------------------------------------------------------------------------
 
 
-class TestBsl007UnusedLocalVariable:
+class TestBsl007UnusedLocalVariableParity:
     def test_unused_var_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -3331,6 +3331,30 @@ class TestBsl151BeginTransactionBeforeTry:
         assert diags[0].character == 2
 
 
+class TestBsl002MethodSize:
+    def test_message_and_anchor_match_bslls_style(self, tmp_path: Path) -> None:
+        content = "Процедура ОченьДлинная()\\n" + "\n".join(
+            f"    Сообщить({i});" for i in range(205)
+        ) + "\nКонецПроцедуры\n"
+        diags = [d for d in _check(content, tmp_path, select={"BSL002"}) if d.code == "BSL002"]
+        assert len(diags) == 1
+        assert diags[0].character == 10
+        assert 'Длина метода "ОченьДлинная"' in diags[0].message
+
+
+class TestBsl007UnusedLocalVariable:
+    def test_reports_variable_name_span_and_message(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Перем ЛишняяПеременная;
+КонецПроцедуры
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+        assert len(diags) == 1
+        assert diags[0].character == 10
+        assert diags[0].message == "Удалите неиспользуемую переменную ЛишняяПеременная"
+
+
 class TestBsl157CommitTransactionOutsideTryCatch:
     def test_commit_must_be_last_before_except(self, tmp_path: Path) -> None:
         content = """\
@@ -3494,6 +3518,33 @@ class TestBsl178DeprecatedMethods8317:
         assert bsl178[0].character == 4
 
 
+class TestBsl030SemicolonPresence:
+    def test_endif_without_semicolon_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если Истина Тогда
+        Сообщить("ok");
+    КонецЕсли
+КонецПроцедуры
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL030"}) if d.code == "BSL030"]
+        assert len(diags) == 1
+        assert diags[0].line == 4
+        assert diags[0].character == 4
+
+    def test_multiline_condition_continuation_not_flagged(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если ЕстьЗначение
+        И ДопУсловие Тогда
+        Сообщить("ok");
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL030"})
+        assert "BSL030" not in _codes(diags)
+
+
 class TestBsl234QueryNestedFieldsByDot:
     def test_query_nested_field_is_detected(self, tmp_path: Path) -> None:
         content = """\
@@ -3522,6 +3573,36 @@ class TestBsl234QueryNestedFieldsByDot:
 """
         diags = _check(content, tmp_path, select={"BSL234"})
         assert "BSL234" not in _codes(diags)
+
+
+class TestBsl153CanonicalSpellingKeywords:
+    def test_message_and_offset_match_bslls_style(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если Значение и Истина Тогда
+        Возврат;
+    КонецЕсли;
+КонецПроцедуры
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL153"}) if d.code == "BSL153"]
+        assert len(diags) == 1
+        assert diags[0].character == 18
+        assert diags[0].message == 'Ключевое слово "и" написано не канонически'
+
+
+class TestBsl216MissingSpace:
+    def test_messages_match_bslls_style(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Значение = Дата(1,1,1);
+    Итог = А+Б;
+КонецПроцедуры
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL216"}) if d.code == "BSL216"]
+        messages = {d.character: d.message for d in diags}
+        assert messages[21] == "Справа от ',' не хватает пробела"
+        assert messages[23] == "Справа от ',' не хватает пробела"
+        assert messages[12] == "Слева и справа от '+' не хватает пробела"
 
 
 class TestBsl262UsageWriteLogEvent:
