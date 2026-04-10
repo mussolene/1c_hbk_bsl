@@ -153,6 +153,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         # Query-text rules fire on continuation lines (|...) inside string literals.
         "BSL149",
         "BSL210",
+        "BSL234",
         "BSL235",
     }
 )
@@ -2126,7 +2127,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["query", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL235": {
         "name": "QueryParseError",
@@ -6093,7 +6094,7 @@ class DiagnosticEngine:
             "BSL231",  # PrivilegedModuleMethodCall — TODO
             "BSL232",  # ProtectedModule — TODO
             # "BSL233" enabled — PublicMethodsDescription implemented
-            "BSL234",  # QueryNestedFieldsByDot — TODO
+            # "BSL234" enabled — QueryNestedFieldsByDot implemented
             "BSL235",  # QueryParseError — TODO
             "BSL236",  # QueryToMissingMetadata — TODO
             "BSL237",  # RedundantAccessToObject — TODO
@@ -7037,7 +7038,7 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL178"):
             _rule_tasks.append(
-                ("BSL178", lambda: self._rule_bsl178_deprecated_methods_8317(path, tree))
+                ("BSL178", lambda: self._rule_bsl178_deprecated_methods_8317(path, lines, tree))
             )
         if self._rule_enabled("BSL198"):
             _rule_tasks.append(
@@ -7104,12 +7105,14 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL224"):
             _rule_tasks.append(
-                ("BSL224", lambda: self._rule_bsl224_nested_function_in_parameters(path, tree))
+                ("BSL224", lambda: self._rule_bsl224_nested_function_in_parameters(path, lines, tree))
             )
         if self._rule_enabled("BSL233"):
             _rule_tasks.append(
                 ("BSL233", lambda: self._rule_bsl233_public_methods_description(path, lines, procs))
             )
+        if self._rule_enabled("BSL234"):
+            _rule_tasks.append(("BSL234", lambda: self._rule_bsl234_query_nested_fields_by_dot(path, lines)))
         if self._rule_enabled("BSL216"):
             _rule_tasks.append(("BSL216", lambda: self._rule_bsl216_missing_space(path, lines)))
         if self._rule_enabled("BSL254"):
@@ -13450,7 +13453,7 @@ class DiagnosticEngine:
     def _rule_bsl157_commit_transaction_outside_try(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        """ЗафиксироватьТранзакцию()/CommitTransaction() must be inside a Try block."""
+        """ЗафиксироватьТранзакцию()/CommitTransaction() must be the last statement before Except."""
         diags: list[Diagnostic] = []
         _re_commit = re.compile(
             r"^\s*(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(",
@@ -13459,31 +13462,73 @@ class DiagnosticEngine:
         _re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
         _re_except = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
         _re_end_try = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+        _re_comment = re.compile(r"^\s*//")
+        pending: tuple[int, int, int] | None = None
 
         for idx, line in enumerate(lines):
-            if not _re_commit.search(line):
+            if _re_comment.match(line) or not line.strip():
                 continue
-            # Check if we are inside a Попытка block by scanning backwards
-            depth = 0
-            inside_try = False
-            for j in range(idx - 1, max(-1, idx - 200), -1):
-                bl = lines[j]
-                if _re_end_try.match(bl):
-                    depth += 1
-                elif _re_try.match(bl):
-                    if depth == 0:
-                        inside_try = True
-                        break
-                    depth -= 1
-            if not inside_try:
-                m = _re_commit.search(line)
+
+            if _re_try.match(line):
+                if pending is not None:
+                    p_line, p_col, p_end = pending
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=p_line + 1,
+                            character=p_col,
+                            end_line=p_line + 1,
+                            end_character=p_end,
+                            severity=Severity.ERROR,
+                            code="BSL157",
+                            message=(
+                                "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
+                                "Попытка (перед Исключение)"
+                            ),
+                        )
+                    )
+                pending = None
+                continue
+
+            if _re_except.match(line):
+                pending = None
+                continue
+
+            if _re_end_try.match(line):
+                if pending is not None:
+                    p_line, p_col, p_end = pending
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=p_line + 1,
+                            character=p_col,
+                            end_line=p_line + 1,
+                            end_character=p_end,
+                            severity=Severity.ERROR,
+                            code="BSL157",
+                            message=(
+                                "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
+                                "Попытка (перед Исключение)"
+                            ),
+                        )
+                    )
+                pending = None
+                continue
+
+            m = _re_commit.search(line)
+            if m:
+                pending = (idx, len(line) - len(line.lstrip()), m.end())
+                continue
+
+            if pending is not None:
+                p_line, p_col, p_end = pending
                 diags.append(
                     Diagnostic(
                         file=path,
-                        line=idx + 1,
-                        character=m.start() if m else 0,
-                        end_line=idx + 1,
-                        end_character=m.end() if m else len(line),
+                        line=p_line + 1,
+                        character=p_col,
+                        end_line=p_line + 1,
+                        end_character=p_end,
                         severity=Severity.ERROR,
                         code="BSL157",
                         message=(
@@ -13492,6 +13537,24 @@ class DiagnosticEngine:
                         ),
                     )
                 )
+                pending = None
+        if pending is not None:
+            p_line, p_col, p_end = pending
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=p_line + 1,
+                    character=p_col,
+                    end_line=p_line + 1,
+                    end_character=p_end,
+                    severity=Severity.ERROR,
+                    code="BSL157",
+                    message=(
+                        "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
+                        "Попытка (перед Исключение)"
+                    ),
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -14159,12 +14222,13 @@ class DiagnosticEngine:
     # BSL178 — DeprecatedMethods8317
     # ------------------------------------------------------------------
 
-    def _rule_bsl178_deprecated_methods_8317(self, path: str, tree: Any) -> list[Diagnostic]:
+    def _rule_bsl178_deprecated_methods_8317(
+        self, path: str, lines: list[str], tree: Any
+    ) -> list[Diagnostic]:
         """Detect methods deprecated since 8.3.17."""
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
             return []
-        line_texts = _ts_node_text(root).splitlines()
         deprecated = {
             "краткоепредставлениеошибки",
             "brieferrordescription",
@@ -14174,17 +14238,20 @@ class DiagnosticEngine:
             "showerrorinfo",
         }
         diags: list[Diagnostic] = []
-        for call in _ts_global_method_calls(root, line_texts):
+        for call in _ts_global_method_calls(root, lines):
             name_cf = str(call["name"]).casefold()
             if name_cf not in deprecated:
                 continue
+            line_text = lines[call["line"] - 1] if 0 < call["line"] <= len(lines) else ""
+            exact_start = line_text.find(str(call["name"]))
+            start_char = exact_start if exact_start >= 0 else call["character"]
             diags.append(
                 Diagnostic(
                     file=path,
                     line=call["line"],
-                    character=call["character"],
+                    character=start_char,
                     end_line=call["line"],
-                    end_character=call["end_character"],
+                    end_character=start_char + len(str(call["name"])),
                     severity=Severity.INFORMATION,
                     code="BSL178",
                     message=(
@@ -14988,7 +15055,9 @@ class DiagnosticEngine:
     # BSL224 — NestedFunctionInParameters
     # ------------------------------------------------------------------
 
-    def _rule_bsl224_nested_function_in_parameters(self, path: str, tree: Any) -> list[Diagnostic]:
+    def _rule_bsl224_nested_function_in_parameters(
+        self, path: str, lines: list[str], tree: Any
+    ) -> list[Diagnostic]:
         """Detect multiline calls with nested calls in argument list."""
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
@@ -15000,7 +15069,6 @@ class DiagnosticEngine:
             "предопределенноезначение",
             "predefinedvalue",
         }
-        line_texts = _ts_node_text(root).splitlines()
         diags: list[Diagnostic] = []
 
         def call_name_and_args(
@@ -15057,18 +15125,22 @@ class DiagnosticEngine:
 
             start_line_idx = anchor.start_point[0]
             end_line_idx = name_node.end_point[0]
-            start_line_text = line_texts[start_line_idx] if start_line_idx < len(line_texts) else ""
-            end_line_text = line_texts[end_line_idx] if end_line_idx < len(line_texts) else ""
+            start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
+            end_line_text = lines[end_line_idx] if end_line_idx < len(lines) else ""
+            exact_start = start_line_text.find(name)
+            start_char = (
+                exact_start
+                if exact_start >= 0
+                else utf8_byte_offset_to_lsp_character(start_line_text, anchor.start_point[1])
+            )
 
             diags.append(
                 Diagnostic(
                     file=path,
                     line=start_line_idx + 1,
-                    character=utf8_byte_offset_to_lsp_character(
-                        start_line_text, anchor.start_point[1]
-                    ),
+                    character=start_char,
                     end_line=end_line_idx + 1,
-                    end_character=utf8_byte_offset_to_lsp_character(
+                    end_character=start_char + len(name) if start_line_idx == end_line_idx else utf8_byte_offset_to_lsp_character(
                         end_line_text, name_node.end_point[1]
                     ),
                     severity=Severity.INFORMATION,
@@ -15077,6 +15149,67 @@ class DiagnosticEngine:
                 )
             )
 
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL234 — QueryNestedFieldsByDot
+    # ------------------------------------------------------------------
+
+    def _rule_bsl234_query_nested_fields_by_dot(
+        self, path: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        """Detect chained query fields like ``Alias.Field.SubField``."""
+        diags: list[Diagnostic] = []
+        chain_re = re.compile(r"(?<![\w.])([A-Za-zА-Яа-я_]\w*(?:\.[A-Za-zА-Яа-я_]\w*){2,})")
+        value_re = re.compile(r"(?:ЗНАЧЕНИЕ|VALUE)\s*\(", re.IGNORECASE)
+
+        def _mask_value_calls(text: str) -> str:
+            chars = list(text)
+            pos = 0
+            while True:
+                match = value_re.search(text, pos)
+                if match is None:
+                    break
+                depth = 0
+                end = match.end()
+                while end < len(text):
+                    ch = text[end]
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        if depth == 0:
+                            end += 1
+                            break
+                        depth -= 1
+                    end += 1
+                for idx in range(match.start(), min(end, len(chars))):
+                    chars[idx] = " "
+                pos = end
+            return "".join(chars)
+
+        for line_no, line in enumerate(lines, start=1):
+            stripped = line.lstrip()
+            if not stripped.startswith("|"):
+                continue
+            masked = _mask_value_calls(line)
+            for match in chain_re.finditer(masked):
+                trailing = masked[match.end(1) :]
+                if re.match(r"^\s+(?:КАК|AS)\b", trailing, re.IGNORECASE):
+                    continue
+                if re.match(r"^\s*\(", trailing):
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_no,
+                        character=match.start(1),
+                        end_line=line_no,
+                        end_character=match.end(1),
+                        severity=Severity.WARNING,
+                        code="BSL234",
+                        message="Обнаружено разыменование ссылочного поля",
+                    )
+                )
         return diags
 
     # ------------------------------------------------------------------

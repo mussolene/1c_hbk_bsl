@@ -3331,6 +3331,24 @@ class TestBsl151BeginTransactionBeforeTry:
         assert diags[0].character == 2
 
 
+class TestBsl157CommitTransactionOutsideTryCatch:
+    def test_commit_must_be_last_before_except(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Попытка
+        ЗафиксироватьТранзакцию();
+        Сообщить("лишний код");
+    Исключение
+        Сообщить("ошибка");
+    КонецПопытки;
+КонецПроцедуры
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL157"}) if d.code == "BSL157"]
+        assert len(diags) == 1
+        assert diags[0].line == 3
+        assert diags[0].character == 8
+
+
 class TestBsl224NestedFunctionInParameters:
     def test_multiline_nested_call_detected(self, tmp_path: Path) -> None:
         content = """\
@@ -3376,6 +3394,7 @@ class TestBsl224NestedFunctionInParameters:
         bsl224 = [d for d in diags if d.code == "BSL224"]
         assert len(bsl224) == 1
         assert bsl224[0].line == 2
+        assert bsl224[0].character == 11
 
 
 class TestBsl230PairingBrokenTransaction:
@@ -3470,6 +3489,39 @@ class TestBsl178DeprecatedMethods8317:
 """
         diags = _check(content, tmp_path, select={"BSL178"})
         assert "BSL178" in _codes(diags)
+        bsl178 = [d for d in diags if d.code == "BSL178"]
+        assert len(bsl178) == 1
+        assert bsl178[0].character == 4
+
+
+class TestBsl234QueryNestedFieldsByDot:
+    def test_query_nested_field_is_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос.Текст =
+    "ВЫБРАТЬ
+    |    Документ.Партнер.Наименование
+    |ИЗ
+    |    Документ.ТестовыйДокумент КАК Документ";
+КонецПроцедуры
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL234"}) if d.code == "BSL234"]
+        assert len(diags) == 1
+        assert diags[0].line == 4
+        assert diags[0].character == 9
+
+    def test_value_expression_is_ignored(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос.Текст =
+    "ВЫБРАТЬ
+    |    ЗНАЧЕНИЕ(Перечисление.ВидыДоговоровКонтрагентов.СПокупателем)
+    |ИЗ
+    |    Документ.ТестовыйДокумент КАК Документ";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL234"})
+        assert "BSL234" not in _codes(diags)
 
 
 class TestBsl262UsageWriteLogEvent:
