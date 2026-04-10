@@ -37,8 +37,16 @@ def iter_bsl_files(root: Path) -> list[Path]:
     )
 
 
-def pick_files(files: list[Path], *, limit: int | None, sample: int | None, seed: int) -> list[Path]:
+def pick_files(
+    files: list[Path], *, limit: int | None, sample: int | None, seed: int, largest: int | None
+) -> list[Path]:
     picked = files
+    if largest is not None:
+        picked = sorted(
+            picked,
+            key=lambda p: p.stat().st_size,
+            reverse=True,
+        )[:largest]
     if sample is not None and sample < len(picked):
         rng = random.Random(seed)  # noqa: S311 - deterministic dev-only sampling
         picked = sorted(rng.sample(picked, sample))
@@ -47,15 +55,19 @@ def pick_files(files: list[Path], *, limit: int | None, sample: int | None, seed
     return picked
 
 
-def parse_args(argv: list[str]) -> tuple[Path, str, int | None, int | None, int]:
+def parse_args(argv: list[str]) -> tuple[Path, str, int | None, int | None, int, int | None]:
     if not argv:
-        raise SystemExit("Usage: dev_corpus_bench.py <corpus_dir> [--profile=strict-bslls|compat] [--limit=N] [--sample=N] [--seed=N]")
+        raise SystemExit(
+            "Usage: dev_corpus_bench.py <corpus_dir> "
+            "[--profile=strict-bslls|compat] [--limit=N] [--sample=N] [--seed=N] [--largest=N]"
+        )
 
     root = Path(argv[0]).expanduser().resolve()
     profile = DEFAULT_PROFILE
     limit: int | None = None
     sample: int | None = None
     seed = 42
+    largest: int | None = None
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -87,19 +99,26 @@ def parse_args(argv: list[str]) -> tuple[Path, str, int | None, int | None, int]
             seed = int(argv[i])
         elif arg.startswith("--seed="):
             seed = int(arg.split("=", 1)[1])
+        elif arg == "--largest":
+            i += 1
+            if i >= len(argv):
+                raise SystemExit("--largest requires a value")
+            largest = int(argv[i])
+        elif arg.startswith("--largest="):
+            largest = int(arg.split("=", 1)[1])
         else:
             raise SystemExit(f"Unknown argument: {arg}")
         i += 1
-    return root, profile, limit, sample, seed
+    return root, profile, limit, sample, seed, largest
 
 
 def main(argv: list[str]) -> int:
-    root, profile, limit, sample, seed = parse_args(argv)
+    root, profile, limit, sample, seed, largest = parse_args(argv)
     if not root.is_dir():
         raise SystemExit(f"Corpus directory not found: {root}")
 
     files = iter_bsl_files(root)
-    picked = pick_files(files, limit=limit, sample=sample, seed=seed)
+    picked = pick_files(files, limit=limit, sample=sample, seed=seed, largest=largest)
     if not picked:
         raise SystemExit("No .bsl/.os files found in corpus")
 
