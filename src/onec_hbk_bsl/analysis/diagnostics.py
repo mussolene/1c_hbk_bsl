@@ -13746,12 +13746,9 @@ class DiagnosticEngine:
                             if proc.name in line
                             else len(line)
                         ),
-                        severity=Severity.WARNING,
+                        severity=Severity.ERROR,
                         code="BSL172",
-                        message=(
-                            "Обработчик не проверяет «ОбменДаннымиЗагрузка» — "
-                            "добавьте проверку в начало метода"
-                        ),
+                        message="Добавьте проверку признака ОбменДанными.Загрузка в самом начале процедуры",
                     )
                 )
         return diags

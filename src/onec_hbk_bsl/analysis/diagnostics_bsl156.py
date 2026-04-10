@@ -126,7 +126,6 @@ def bsl156_diagnostics(
     intervals = module_region_intervals(lines)
     n = len(lines)
     proc_ranges = [(s, e) for s, e, _ in procedures]
-    preproc_depths = _preprocessor_depths(lines)
 
     def line_in_proc(i: int) -> bool:
         return any(s <= i <= e for s, e in proc_ranges)
@@ -135,18 +134,43 @@ def bsl156_diagnostics(
     msg = "Код вне области (#Область / #Region) (BSLLS CodeOutOfRegion)."
 
     if not intervals:
-        has_proc = any(preproc_depths[s] == 0 for s, _, _ in procedures if 0 <= s < n)
-        has_mod = any(
-            _is_executable_module_statement_line(lines[i]) or _RE_MODULE_VAR.match(lines[i])
-            for i in range(n)
-            if not line_in_proc(i) and preproc_depths[i] == 0
-        )
-        if has_proc or has_mod:
-            if n:
-                c0, c1 = _line_span_non_ws(lines[0])
-                if c1 <= c0:
-                    c0, c1 = 0, 1
-                out.append((1, c0, c1, msg))
+        first_module_var: tuple[int, int, int] | None = None
+        first_module_stmt: tuple[int, int, int] | None = None
+        first_proc: tuple[int, int, int] | None = None
+
+        for i, line in enumerate(lines):
+            if line_in_proc(i):
+                continue
+            if not _is_significant_module_line_raw(line):
+                continue
+            if _RE_MODULE_VAR.match(line) and first_module_var is None:
+                c0, c1 = _line_span_non_ws(line)
+                first_module_var = (i + 1, c0, c1)
+                continue
+            if _is_executable_module_statement_line(line) and first_module_stmt is None:
+                c0, c1 = _line_span_non_ws(line)
+                first_module_stmt = (i + 1, c0, c1)
+
+        for s, _e, _name in procedures:
+            if not (0 <= s < n):
+                continue
+            line = lines[s]
+            m = re.search(
+                r"(?:Процедура|Procedure|Функция|Function)\s+(\w+)",
+                line,
+                re.IGNORECASE,
+            )
+            if m:
+                first_proc = (s + 1, m.start(1), m.end(1))
+            else:
+                c0, c1 = _line_span_non_ws(line)
+                first_proc = (s + 1, c0, c1 if c1 > c0 else max(1, len(line)))
+            break
+
+        first = first_module_var or first_module_stmt or first_proc
+        if first is not None:
+            line_1, c0, c1 = first
+            out.append((line_1, c0, c1, msg))
         return out
 
     for s, e, _name in procedures:

@@ -77,6 +77,16 @@ def _relative_file(path: str | Path, workspace_root: Path) -> str:
         return p.as_posix()
 
 
+def _relative_file_many(path: str | Path, *roots: Path) -> str:
+    p = Path(path).expanduser().resolve()
+    for root in roots:
+        try:
+            return p.relative_to(root.resolve()).as_posix()
+        except ValueError:
+            continue
+    return p.as_posix()
+
+
 def _canonical_rule_name_for_ours(code: str) -> str:
     if code in _CODE_TO_BSLLS_NAME:
         return _CODE_TO_BSLLS_NAME[code]
@@ -112,14 +122,15 @@ def normalize_bslls_json_report(
     report: dict[str, Any],
     *,
     workspace_root: Path,
+    extra_roots: tuple[Path, ...] = (),
 ) -> list[NormalizedDiagnostic]:
     rows: list[NormalizedDiagnostic] = []
     for fileinfo in report.get("fileinfos", []):
-        raw_path = fileinfo.get("mdoRef") or fileinfo.get("path") or ""
+        raw_path = fileinfo.get("path") or fileinfo.get("mdoRef") or ""
         raw_path = str(raw_path)
         if raw_path.startswith("file://"):
             raw_path = unquote(raw_path[7:])
-        file_path = _relative_file(raw_path, workspace_root)
+        file_path = _relative_file_many(raw_path, workspace_root, *extra_roots)
         for diag in fileinfo.get("diagnostics", []):
             rule = str(diag.get("code") or "")
             start = diag.get("range", {}).get("start", {})
@@ -289,7 +300,11 @@ def _run_bslls_analyze(
             cmd[3:3] = ["-c", str(config_path)]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         report = json.loads((out_root / "bsl-json.json").read_text(encoding="utf-8"))
-        return normalize_bslls_json_report(report, workspace_root=src_root)
+        return normalize_bslls_json_report(
+            report,
+            workspace_root=workspace_root,
+            extra_roots=(src_root, Path.cwd()),
+        )
 
 
 def _run_bslls_format(

@@ -78,4 +78,7 @@ def test_bsl156_no_regions_inside_preprocessor_is_skipped(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     engine = DiagnosticEngine(select={"BSL156"})
-    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
+    diags = [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
+    assert len(diags) == 1
+    assert diags[0].line == 2
+    assert diags[0].character == 10
