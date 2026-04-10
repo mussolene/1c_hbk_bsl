@@ -49,7 +49,23 @@ def runtime_rule_codes_from_diagnostics_source(source: str) -> set[str]:
     own line inside a nested tuple; this must stay in sync with tests and
     ``scripts/generate_bslls_parity_artifact.py``.
     """
-    return set(re.findall(r'_rule_tasks\.append\(\s*\(\s*["\'](BSL\d{3})', source))
+    raw_keys = set(re.findall(r'_rule_tasks\.append\(\s*\(\s*["\']([^"\']+)["\']', source))
+    out: set[str] = set()
+    for key in raw_keys:
+        if re.fullmatch(r"BSL\d{3}", key):
+            out.add(key)
+            continue
+        range_match = re.fullmatch(r"BSL(\d{3})-(?:BSL)?(\d{3})", key)
+        if range_match:
+            start = int(range_match.group(1))
+            end = int(range_match.group(2))
+            for num in range(start, end + 1):
+                out.add(f"BSL{num:03d}")
+            continue
+        parts = key.split("_")
+        if parts and all(re.fullmatch(r"BSL\d{3}", part) for part in parts):
+            out.update(parts)
+    return out
 
 
 @dataclass(frozen=True, slots=True)
