@@ -3442,9 +3442,11 @@ class TestBsl151BeginTransactionBeforeTry:
 
 class TestBsl002MethodSize:
     def test_message_and_anchor_match_bslls_style(self, tmp_path: Path) -> None:
-        content = "Процедура ОченьДлинная()\\n" + "\n".join(
-            f"    Сообщить({i});" for i in range(205)
-        ) + "\nКонецПроцедуры\n"
+        content = (
+            "Процедура ОченьДлинная()\\n"
+            + "\n".join(f"    Сообщить({i});" for i in range(205))
+            + "\nКонецПроцедуры\n"
+        )
         diags = [d for d in _check(content, tmp_path, select={"BSL002"}) if d.code == "BSL002"]
         assert len(diags) == 1
         assert diags[0].character == 10

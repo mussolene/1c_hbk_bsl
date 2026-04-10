@@ -7492,7 +7492,9 @@ class DiagnosticEngine:
                     Diagnostic(
                         file=path,
                         line=abs_decl + 1,
-                        character=lines[abs_decl].find(var_name) if var_name in lines[abs_decl] else 0,
+                        character=lines[abs_decl].find(var_name)
+                        if var_name in lines[abs_decl]
+                        else 0,
                         end_line=abs_decl + 1,
                         end_character=len(lines[abs_decl].rstrip()),
                         severity=Severity.WARNING,
@@ -7529,7 +7531,9 @@ class DiagnosticEngine:
                     Diagnostic(
                         file=path,
                         line=abs_line + 1,
-                        character=lines[abs_line].find(var_name) if var_name in lines[abs_line] else 0,
+                        character=lines[abs_line].find(var_name)
+                        if var_name in lines[abs_line]
+                        else 0,
                         end_line=abs_line + 1,
                         end_character=len(lines[abs_line].rstrip()),
                         severity=Severity.WARNING,
@@ -8144,7 +8148,9 @@ class DiagnosticEngine:
         """
         diags: list[Diagnostic] = []
         continuation_re = re.compile(r"^\s*(?:И|Или|AND|OR)\b", re.IGNORECASE)
-        end_kw_re = re.compile(r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b", re.IGNORECASE)
+        end_kw_re = re.compile(
+            r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b", re.IGNORECASE
+        )
         for proc in procs:
             for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
                 line = lines[i]
