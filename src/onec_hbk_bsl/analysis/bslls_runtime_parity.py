@@ -329,17 +329,20 @@ def _run_bslls_format(
 ) -> dict[str, str]:
     with tempfile.TemporaryDirectory(prefix="bslls-parity-format-") as tmp:
         tmp_root = Path(tmp)
-        results: dict[str, str] = {}
         for path in files:
-            copied = _copy_file_preserving_rel(path, workspace_root, tmp_root)
-            subprocess.run(
-                ["java", "-jar", str(jar_path), "format", "-s", str(copied), "-q"],
-                check=True,
-                capture_output=True,
-                text=True,
+            _copy_file_preserving_rel(path, workspace_root, tmp_root)
+        subprocess.run(
+            ["java", "-jar", str(jar_path), "format", "-s", str(tmp_root), "-q"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return {
+            _relative_file(path, workspace_root): (tmp_root / path.resolve().relative_to(workspace_root.resolve())).read_text(
+                encoding="utf-8"
             )
-            results[_relative_file(path, workspace_root)] = copied.read_text(encoding="utf-8")
-        return results
+            for path in files
+        }
 
 
 def compare_with_bslls(
