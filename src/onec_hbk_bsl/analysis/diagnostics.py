@@ -7191,7 +7191,7 @@ class DiagnosticEngine:
             last_body = None
             for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
                 stripped = lines[idx].strip()
-                if not stripped or stripped.startswith("//"):
+                if not stripped:
                     continue
                 if first_body is None:
                     first_body = idx
