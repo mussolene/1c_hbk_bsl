@@ -6561,7 +6561,9 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL039"):
             _rule_tasks.append(("BSL039", lambda: self._rule_bsl039_nested_ternary(path, lines)))
         if self._rule_enabled("BSL040"):
-            _rule_tasks.append(("BSL040", lambda: self._rule_bsl040_using_this_form(path, lines)))
+            _rule_tasks.append(
+                ("BSL040", lambda: self._rule_bsl040_using_this_form(path, lines, procs))
+            )
         if self._rule_enabled("BSL041"):
             _rule_tasks.append(
                 ("BSL041", lambda: self._rule_bsl041_notify_description(path, lines, procs))
@@ -8954,23 +8956,31 @@ class DiagnosticEngine:
     # BSL040 — ЭтаФорма / ThisForm outside event handler context
     # ------------------------------------------------------------------
 
-    def _rule_bsl040_using_this_form(self, path: str, lines: list[str]) -> list[Diagnostic]:
+    def _rule_bsl040_using_this_form(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
         """
-        Flag direct use of ЭтаФорма/ThisForm.
-
-        These are only valid in form module event handlers. Using them in
-        common modules or non-handler procedures causes hard-to-debug errors.
+        BSLLS parity:
+        - check only form modules
+        - skip procedures/functions that already accept ЭтаФорма/ThisForm as a parameter
+        - report each direct token occurrence outside comments/strings
         """
-        # Skip form modules (EDT ``.../Forms/.../Ext/Module.bsl``, ``*форма*``, ``*Form``).
-        if path_is_likely_form_module_bsl(path):
+        if not path_is_likely_form_module_bsl(path):
             return []
 
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
+            proc = _proc_containing_line(procs, idx)
+            if proc is not None and any(
+                re.fullmatch(r"(?:ЭтаФорма|ThisForm)", param, re.IGNORECASE)
+                for param in proc.params
+            ):
                 continue
-            m = _RE_THIS_FORM.search(line)
-            if m:
+            clean = _mask_double_quoted_strings_preserve_len(line)
+            comment_col = clean.find("//")
+            if comment_col >= 0:
+                clean = clean[:comment_col]
+            for m in _RE_THIS_FORM.finditer(clean):
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -8981,8 +8991,7 @@ class DiagnosticEngine:
                         severity=Severity.INFORMATION,
                         code="BSL040",
                         message=(
-                            "ЭтаФорма/ThisForm should only be used in form module handlers. "
-                            "Pass the form as a parameter instead."
+                            "Избегайте использования ЭтаФорма/ThisForm, передавайте форму в параметрах метода"
                         ),
                     )
                 )

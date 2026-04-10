@@ -2159,18 +2159,33 @@ class TestBsl054ModuleLevelVariable:
 
 
 class TestBsl040UsingThisForm:
-    def test_this_form_in_common_module_reported(self, tmp_path: Path) -> None:
+    def test_this_form_in_common_module_skipped(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 ЭтаФорма.Закрыть();
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL040"})
-        assert "BSL040" in _codes(diags)
+        assert "BSL040" not in _codes(diags)
 
-    def test_this_form_in_edt_form_module_skipped(self, tmp_path: Path) -> None:
+    def test_this_form_in_edt_form_module_reported(self, tmp_path: Path) -> None:
         content = """\
             Процедура ПриОткрытии()
+                ЭтаФорма.Закрыть();
+            КонецПроцедуры
+        """
+        form_dir = tmp_path / "Catalogs" / "Foo" / "Forms" / "ФормаЭлемента" / "Ext"
+        form_dir.mkdir(parents=True)
+        bsl_path = form_dir / "Module.bsl"
+        bsl_path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL040"}).check_file(str(bsl_path))
+        assert "BSL040" in _codes(diags)
+
+    def test_this_form_param_suppresses_diagnostic_in_form_module(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Команда(ЭтаФорма)
                 ЭтаФорма.Закрыть();
             КонецПроцедуры
         """
