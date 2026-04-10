@@ -1076,6 +1076,50 @@ class TestBsl024SpaceAtStartComment:
 
 
 # ---------------------------------------------------------------------------
+# BSL200 — IncorrectLineBreak
+# ---------------------------------------------------------------------------
+
+
+class TestBsl200IncorrectLineBreak:
+    def test_line_ending_with_plus_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Сумма = Часть1 +
+                Часть2;
+        """
+        diags = _check(content, tmp_path, select={"BSL200"})
+        assert "BSL200" in _codes(diags)
+
+    def test_line_starting_with_comma_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Имена.Добавить(Первый
+                , Второй);
+        """
+        diags = _check(content, tmp_path, select={"BSL200"})
+        assert "BSL200" in _codes(diags)
+
+    def test_query_assignment_before_query_text_is_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+                "ВЫБРАТЬ
+                | Истина";
+        """
+        diags = _check(content, tmp_path, select={"BSL200"})
+        assert "BSL200" not in _codes(diags)
+
+    def test_operator_inside_string_is_skipped(self, tmp_path: Path) -> None:
+        content = 'Сообщить("Строка +");\n'
+        diags = _check(content, tmp_path, select={"BSL200"})
+        assert "BSL200" not in _codes(diags)
+
+    def test_comment_suffix_is_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            Значение = Истина; // ИЛИ
+        """
+        diags = _check(content, tmp_path, select={"BSL200"})
+        assert "BSL200" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL026 — EmptyRegion
 # ---------------------------------------------------------------------------
 

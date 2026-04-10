@@ -1822,7 +1822,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["style", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL201": {
         "name": "IncorrectUseLikeInQuery",
@@ -3535,6 +3535,8 @@ _BSL024_BSLLS_GOOD_STRICT = re.compile(
     r"(?:(?://[ \t].*)|(?:/{2,}[ \t]*))$",
     re.IGNORECASE,
 )
+_BSL200_INCORRECT_START = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
+_BSL200_INCORRECT_END = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
 
 
 def _bsl024_matches_bslls_good_strict(line: str, comment_col: int) -> bool:
@@ -3608,6 +3610,65 @@ def bsl024_should_report_line(line: str) -> bool:
     if _bsl024_is_compiler_directive_comment(line):
         return False
     return True
+
+
+def _comment_start_outside_double_quotes(line: str, in_str_at_start: bool = False) -> int | None:
+    """Return 0-based ``//`` position outside double-quoted strings, if any."""
+    in_str = in_str_at_start
+    i = 0
+    n = len(line)
+    while i < n - 1:
+        ch = line[i]
+        if ch == '"':
+            in_str = not in_str
+            i += 1
+            continue
+        if not in_str and ch == "/" and line[i + 1] == "/":
+            return i
+        i += 1
+    return None
+
+
+def _span_is_inside_double_quoted_string(
+    line: str,
+    start: int,
+    end: int,
+    *,
+    in_str_at_start: bool = False,
+) -> bool:
+    """True when ``[start, end)`` lies inside a double-quoted string on the line."""
+    in_str = in_str_at_start
+    segment_start: int | None = 0 if in_str else None
+    for idx, ch in enumerate(line):
+        if ch != '"':
+            continue
+        if in_str:
+            if segment_start is None:
+                segment_start = 0
+            if segment_start <= start and idx + 1 >= end:
+                return True
+            in_str = False
+            segment_start = None
+        else:
+            in_str = True
+            segment_start = idx
+    if in_str and segment_start is not None and segment_start <= start:
+        return True
+    return False
+
+
+def _bsl200_query_first_prev_lines(lines: list[str]) -> set[int]:
+    """
+    Lines whose next line starts a query-text block.
+
+    Mirrors BSLLS ``queryStartsAtNextLine`` skip for:
+    ``Запрос.Текст =`` followed by the first query literal line.
+    """
+    query_prev_lines: set[int] = set()
+    for start_idx, _block_lines in _iter_query_text_blocks(lines):
+        if start_idx > 0:
+            query_prev_lines.add(start_idx - 1)
+    return query_prev_lines
 
 
 def path_is_likely_form_module_bsl(path: str) -> bool:
@@ -6342,7 +6403,7 @@ class DiagnosticEngine:
             # "BSL197" enabled — IfElseDuplicatedCodeBlock implemented
             # "BSL198" enabled — IfElseDuplicatedCondition implemented
             # "BSL199" enabled — IfElseIfEndsWithElse implemented
-            "BSL200",  # IncorrectLineBreak — TODO
+            # "BSL200" enabled — IncorrectLineBreak implemented
             "BSL201",  # IncorrectUseLikeInQuery — TODO
             "BSL202",  # IncorrectUseOfStrTemplate — TODO
             "BSL203",  # InternetAccess — TODO
@@ -7379,6 +7440,10 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL199"):
             _rule_tasks.append(
                 ("BSL199", lambda: self._rule_bsl199_if_else_if_ends_with_else(path, lines))
+            )
+        if self._rule_enabled("BSL200"):
+            _rule_tasks.append(
+                ("BSL200", lambda: self._rule_bsl200_incorrect_line_break(path, lines))
             )
         if self._rule_enabled("BSL215"):
             _rule_tasks.append(
@@ -15139,6 +15204,81 @@ class DiagnosticEngine:
                     )
             # Advance by 1 (not to j) so nested Если blocks are also examined.
             i += 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL200 — IncorrectLineBreak
+    # ------------------------------------------------------------------
+
+    def _rule_bsl200_incorrect_line_break(self, path: str, lines: list[str]) -> list[Diagnostic]:
+        """
+        Mirror BSLLS IncorrectLineBreak as a cheap line-based pass.
+
+        Flags:
+        - lines starting with ``)``, ``;``, ``, value`` or ``);``
+        - lines ending with ``И/ИЛИ/AND/OR/+/-/*//%``
+
+        Skips:
+        - matches inside string literals
+        - matches inside comments
+        - the line right before the first query text line
+        """
+        diags: list[Diagnostic] = []
+        str_states = _build_line_string_states(lines)
+        query_prev_lines = _bsl200_query_first_prev_lines(lines)
+
+        for idx, line in enumerate(lines):
+            if idx in query_prev_lines:
+                continue
+
+            in_str_start = str_states[idx]
+            comment_start = _comment_start_outside_double_quotes(line, in_str_start)
+
+            start_match = _BSL200_INCORRECT_START.search(line)
+            if start_match:
+                start = start_match.start(1)
+                end = start_match.end(1)
+                in_comment = comment_start is not None and end >= comment_start
+                in_string = _span_is_inside_double_quoted_string(
+                    line, start, end, in_str_at_start=in_str_start
+                )
+                if not in_comment and not in_string:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=start,
+                            end_line=idx + 1,
+                            end_character=end,
+                            severity=Severity.INFORMATION,
+                            code="BSL200",
+                            message="Некорректный перенос строки",
+                        )
+                    )
+
+            end_match = _BSL200_INCORRECT_END.search(line)
+            if not end_match:
+                continue
+            start = end_match.start(1)
+            end = end_match.end(1)
+            in_comment = comment_start is not None and end >= comment_start
+            in_string = _span_is_inside_double_quoted_string(
+                line, start, end, in_str_at_start=in_str_start
+            )
+            if in_comment or in_string:
+                continue
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=start,
+                    end_line=idx + 1,
+                    end_character=end,
+                    severity=Severity.INFORMATION,
+                    code="BSL200",
+                    message="Некорректный перенос строки",
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
