@@ -222,6 +222,23 @@ def _copy_related_configuration_context(
         copied.add(resolved)
 
 
+def _copy_root_configuration_context(
+    *,
+    workspace_root: Path,
+    dest_root: Path,
+    copied: set[Path],
+) -> None:
+    for name in ("Configuration.xml", "ConfigDumpInfo.xml"):
+        candidate = workspace_root / name
+        if not candidate.is_file():
+            continue
+        resolved = candidate.resolve()
+        if resolved in copied:
+            continue
+        _copy_file_preserving_rel(candidate, workspace_root, dest_root)
+        copied.add(resolved)
+
+
 def _run_bslls_analyze(
     *,
     jar_path: Path,
@@ -236,6 +253,11 @@ def _run_bslls_analyze(
         src_root.mkdir(parents=True, exist_ok=True)
         out_root.mkdir(parents=True, exist_ok=True)
         copied: set[Path] = set()
+        _copy_root_configuration_context(
+            workspace_root=workspace_root,
+            dest_root=src_root,
+            copied=copied,
+        )
         for path in files:
             resolved = path.resolve()
             if resolved not in copied:
