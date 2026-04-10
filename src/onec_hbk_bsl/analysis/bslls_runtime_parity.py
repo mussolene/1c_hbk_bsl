@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -345,13 +346,70 @@ def _run_bslls_format(
         }
 
 
-def compare_with_bslls(
+def compute_baseline_fingerprint(
+    *,
+    workspace_root: Path,
+    files: list[Path],
+    jar_path: Path,
+    config_path: Path | None,
+) -> str:
+    payload = {
+        "workspace_root": str(workspace_root.resolve()),
+        "jar_path": str(jar_path.resolve()),
+        "config_path": str(config_path.resolve()) if config_path is not None else None,
+        "files": [
+            {
+                "path": _relative_file(path, workspace_root),
+                "size": path.stat().st_size,
+                "mtime_ns": path.stat().st_mtime_ns,
+            }
+            for path in files
+        ],
+    }
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def capture_bslls_baseline(
+    *,
+    workspace_root: Path,
+    files: list[Path],
+    config_path: Path | None,
+    jar_path: Path,
+) -> dict[str, Any]:
+    normalized_diags = _run_bslls_analyze(
+        jar_path=jar_path,
+        workspace_root=workspace_root,
+        files=files,
+        config_path=config_path,
+    )
+    formatted = _run_bslls_format(
+        jar_path=jar_path,
+        workspace_root=workspace_root,
+        files=files,
+    )
+    return {
+        "fingerprint": compute_baseline_fingerprint(
+            workspace_root=workspace_root,
+            files=files,
+            jar_path=jar_path,
+            config_path=config_path,
+        ),
+        "workspace_root": str(workspace_root.resolve()),
+        "jar_path": str(jar_path.resolve()),
+        "config_path": str(config_path.resolve()) if config_path is not None else None,
+        "files": [_relative_file(path, workspace_root) for path in files],
+        "diagnostics": [asdict(row) for row in normalized_diags],
+        "formatting": formatted,
+    }
+
+
+def compare_with_bslls_baseline(
     *,
     workspace_root: Path,
     files: list[Path],
     profile: str,
-    config_path: Path | None,
-    jar_path: Path,
+    baseline: dict[str, Any],
 ) -> dict[str, Any]:
     formatter = BslFormatter(profile=profile)
 
@@ -372,31 +430,11 @@ def compare_with_bslls(
         idx.close()
 
     our_diag_norm = normalize_our_diagnostics(our_diags, workspace_root=workspace_root)
-    raw_bslls_diags = _run_bslls_analyze(
-        jar_path=jar_path,
-        workspace_root=workspace_root,
-        files=files,
-        config_path=config_path,
-    )
-    bslls_diag_norm = [
-        NormalizedDiagnostic(
-            file=row.file,
-            line=row.line,
-            character=row.character,
-            severity=row.severity,
-            code=row.code,
-            code_source=row.code_source,
-            message=row.message,
-            message_norm=row.message_norm,
-        )
-        for row in raw_bslls_diags
-    ]
+    bslls_diag_norm = [NormalizedDiagnostic(**row) for row in baseline.get("diagnostics", [])]
 
-    bslls_formatted = _run_bslls_format(
-        jar_path=jar_path,
-        workspace_root=workspace_root,
-        files=files,
-    )
+    bslls_formatted = {
+        str(rel): str(text) for rel, text in dict(baseline.get("formatting", {})).items()
+    }
     for rel, text in bslls_formatted.items():
         formatting.setdefault(rel, {})
         formatting[rel]["bslls"] = text
@@ -422,3 +460,25 @@ def compare_with_bslls(
             "diffs": formatting_diff,
         },
     }
+
+
+def compare_with_bslls(
+    *,
+    workspace_root: Path,
+    files: list[Path],
+    profile: str,
+    config_path: Path | None,
+    jar_path: Path,
+) -> dict[str, Any]:
+    baseline = capture_bslls_baseline(
+        jar_path=jar_path,
+        workspace_root=workspace_root,
+        files=files,
+        config_path=config_path,
+    )
+    return compare_with_bslls_baseline(
+        workspace_root=workspace_root,
+        files=files,
+        profile=profile,
+        baseline=baseline,
+    )
