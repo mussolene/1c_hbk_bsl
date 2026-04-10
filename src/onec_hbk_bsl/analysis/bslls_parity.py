@@ -62,9 +62,17 @@ def runtime_rule_codes_from_diagnostics_source(source: str) -> set[str]:
             for num in range(start, end + 1):
                 out.add(f"BSL{num:03d}")
             continue
+        grouped_codes = re.findall(r"BSL\d{3}", key)
+        if len(grouped_codes) >= 2:
+            out.update(grouped_codes)
+            continue
         parts = key.split("_")
-        if parts and all(re.fullmatch(r"BSL\d{3}", part) for part in parts):
-            out.update(parts)
+        if parts and re.fullmatch(r"BSL\d{3}", parts[0]):
+            head = parts[0]
+            tail = parts[1:]
+            if tail and all(re.fullmatch(r"\d{3}", part) for part in tail):
+                out.add(head)
+                out.update(f"BSL{part}" for part in tail)
     return out
 
 

@@ -153,6 +153,9 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL256",
         # Query-text rules fire on continuation lines (|...) inside string literals.
         "BSL149",
+        "BSL206",
+        "BSL207",
+        "BSL209",
         "BSL210",
         "BSL234",
         "BSL235",
@@ -1876,7 +1879,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["query", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL207": {
         "name": "JoinWithVirtualTable",
@@ -1885,7 +1888,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["query", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL208": {
         "name": "LatinAndCyrillicSymbolInWord",
@@ -1903,7 +1906,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["query", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL210": {
         "name": "LogicalOrInTheWhereSectionOfQuery",
@@ -4121,6 +4124,25 @@ _RE_BSL210_POST_WHERE_KEYWORD = re.compile(
     re.IGNORECASE,
 )
 _BSL210_MESSAGE = "Логическое ИЛИ в секции ГДЕ запроса"
+_RE_QUERY_JOIN_KEYWORD = re.compile(
+    r"\b(?:ЛЕВОЕ|LEFT|ПРАВОЕ|RIGHT|ВНУТРЕННЕЕ|INNER|ПОЛНОЕ|FULL)(?:\s+ВНЕШНЕЕ|\s+OUTER)?\s+"
+    r"(?:СОЕДИНЕНИЕ|JOIN)\b",
+    re.IGNORECASE,
+)
+_RE_QUERY_ON_KEYWORD = re.compile(r"\b(?:ПО|ON)\b", re.IGNORECASE)
+_RE_QUERY_JOIN_END_KEYWORD = re.compile(
+    r"\b(?:ГДЕ|WHERE|СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|"
+    r"ИМЕЮЩИЕ|HAVING|ИТОГИ|TOTALS|ОБЪЕДИНИТЬ|UNION)\b",
+    re.IGNORECASE,
+)
+_RE_QUERY_DATASOURCE_SUBQUERY = re.compile(r"\(\s*(?:ВЫБРАТЬ|SELECT)\b", re.IGNORECASE)
+_RE_QUERY_VIRTUAL_TABLE = re.compile(
+    r"\b(?:Регистр(?:Сведений|Накопления|Бухгалтерии|Расчета)|"
+    r"InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister)"
+    r"\.\w+(?:\.\w+)+\s*\(",
+    re.IGNORECASE,
+)
+_RE_QUERY_COLUMN_REF = re.compile(r"\b\w+\.\w+(?:\.\w+)*\b", re.IGNORECASE)
 
 
 def _bsl210_where_clause_region_bounds(lit: str, where_match: re.Match) -> tuple[int, int]:
@@ -6423,10 +6445,10 @@ class DiagnosticEngine:
             "BSL203",  # InternetAccess — TODO
             "BSL204",  # InvalidCharacterInFile — TODO
             "BSL205",  # IsInRoleMethod — TODO
-            "BSL206",  # JoinWithSubQuery — TODO
-            "BSL207",  # JoinWithVirtualTable — TODO
+            # "BSL206" enabled — JoinWithSubQuery implemented
+            # "BSL207" enabled — JoinWithVirtualTable implemented
             # "BSL208" enabled — LatinAndCyrillicSymbolInWord implemented
-            "BSL209",  # LogicalOrInJoinQuerySection — TODO
+            # "BSL209" enabled — LogicalOrInJoinQuerySection implemented
             # "BSL210" enabled — LogicalOrInTheWhereSectionOfQuery implemented
             "BSL211",  # MetadataObjectNameLength — TODO
             "BSL212",  # MissedRequiredParameter — TODO
@@ -7458,6 +7480,16 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL200"):
             _rule_tasks.append(
                 ("BSL200", lambda: self._rule_bsl200_incorrect_line_break(path, lines))
+            )
+        _bsl206_207_209 = ("BSL206", "BSL207", "BSL209")
+        if any(self._rule_enabled(c) for c in _bsl206_207_209):
+            _rule_tasks.append(
+                (
+                    "BSL206_207_209",
+                    lambda: self._rule_bsl206_207_209_query_join_diagnostics(
+                        path, lines, _bsl206_207_209
+                    ),
+                )
             )
         if self._rule_enabled("BSL215"):
             _rule_tasks.append(
@@ -14455,6 +14487,153 @@ class DiagnosticEngine:
                         )
                     )
                 offset_base += len(part) + 1
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL206 / BSL207 / BSL209 — join-related query diagnostics
+    # ------------------------------------------------------------------
+
+    def _rule_bsl206_207_209_query_join_diagnostics(
+        self,
+        path: str,
+        lines: list[str],
+        codes: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled = {code for code in codes if self._rule_enabled(code)}
+        if not enabled:
+            return []
+
+        diags: list[Diagnostic] = []
+        for start_idx, block_lines in _iter_query_text_blocks(lines):
+            if not any(_RE_QUERY_JOIN_KEYWORD.search(line) for line in block_lines):
+                continue
+
+            pending_datasource = False
+            join_on_active = False
+            join_buffer = ""
+
+            for offset, raw_line in enumerate(block_lines):
+                stripped = raw_line.rstrip()
+                if not stripped:
+                    continue
+
+                is_first = offset == 0
+                if is_first:
+                    quote_pos = raw_line.find('"')
+                    if quote_pos < 0:
+                        continue
+                    content_base = quote_pos + 1
+                    raw_content = raw_line[content_base:]
+                else:
+                    pipe_pos = raw_line.find("|")
+                    if pipe_pos < 0:
+                        continue
+                    after_pipe = raw_line[pipe_pos + 1 :]
+                    leading_ws = len(after_pipe) - len(after_pipe.lstrip())
+                    content_base = pipe_pos + 1 + leading_ws
+                    raw_content = after_pipe.lstrip()
+
+                content = _RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip().lstrip()
+                if not content:
+                    continue
+
+                ended_query = '"' in content
+                head = content.split('"', 1)[0].rstrip() if ended_query else content
+                if not head:
+                    if ended_query:
+                        break
+                    continue
+
+                line_no = start_idx + offset + 1
+
+                if _RE_QUERY_JOIN_END_KEYWORD.search(head):
+                    join_on_active = False
+                    join_buffer = ""
+                    pending_datasource = False
+
+                same_line_datasource = bool(
+                    re.search(r"\b(?:ИЗ|FROM)\s*$", head, re.IGNORECASE)
+                    or re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
+                    or _RE_QUERY_JOIN_KEYWORD.search(head)
+                    or re.search(
+                        r"\b(?:ИЗ|FROM)\s*(\(\s*(?:ВЫБРАТЬ|SELECT)\b)", head, re.IGNORECASE
+                    )
+                    or re.search(
+                        r"\b(?:ИЗ|FROM)\s*(" + _RE_QUERY_VIRTUAL_TABLE.pattern + r")",
+                        head,
+                        re.IGNORECASE,
+                    )
+                )
+
+                if pending_datasource or same_line_datasource:
+                    if "BSL206" in enabled:
+                        subquery_match = _RE_QUERY_DATASOURCE_SUBQUERY.search(head)
+                        if subquery_match:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=content_base + subquery_match.start(),
+                                    end_line=line_no,
+                                    end_character=content_base + subquery_match.end(),
+                                    severity=Severity.WARNING,
+                                    code="BSL206",
+                                    message="Соединение с подзапросом в запросе",
+                                )
+                            )
+                    if "BSL207" in enabled:
+                        virtual_match = _RE_QUERY_VIRTUAL_TABLE.search(head)
+                        if virtual_match:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=content_base + virtual_match.start(),
+                                    end_line=line_no,
+                                    end_character=content_base + virtual_match.end(),
+                                    severity=Severity.WARNING,
+                                    code="BSL207",
+                                    message="Соединение с виртуальной таблицей в запросе",
+                                )
+                            )
+
+                pending_datasource = bool(
+                    re.search(r"\b(?:ИЗ|FROM)\s*$", head, re.IGNORECASE)
+                    or re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
+                    or _RE_QUERY_JOIN_KEYWORD.search(head)
+                ) and not _RE_QUERY_ON_KEYWORD.search(head)
+
+                on_match = _RE_QUERY_ON_KEYWORD.search(head)
+                if on_match:
+                    join_on_active = True
+                    join_buffer = head[on_match.end() :]
+                elif join_on_active:
+                    if _RE_QUERY_JOIN_KEYWORD.search(head):
+                        join_on_active = False
+                        join_buffer = ""
+                    else:
+                        join_buffer += " " + head
+
+                if join_on_active and "BSL209" in enabled:
+                    fields = set(_RE_QUERY_COLUMN_REF.findall(join_buffer))
+                    if len(fields) > 1:
+                        for or_match in _RE_BSL210_OR.finditer(head):
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=content_base + or_match.start(),
+                                    end_line=line_no,
+                                    end_character=content_base + or_match.end(),
+                                    severity=Severity.WARNING,
+                                    code="BSL209",
+                                    message="Логическое ИЛИ в секции соединения запроса",
+                                )
+                            )
+
+                if ended_query:
+                    break
+
         return diags
 
     # ------------------------------------------------------------------

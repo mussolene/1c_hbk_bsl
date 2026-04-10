@@ -3961,6 +3961,72 @@ class TestBsl216MissingSpace:
         assert messages[(4, 17)] == "Справа от ';' не хватает пробела"
 
 
+class TestBsl206207209QueryJoinDiagnostics:
+    def test_join_with_subquery_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Т.Ссылка
+        |ИЗ Справочник.Номенклатура КАК СПр
+        |    ЛЕВОЕ СОЕДИНЕНИЕ
+        |    (ВЫБРАТЬ СС.Ссылка ИЗ Справочник.Договоры КАК СС) КАК Т
+        |ПО СПр.Ссылка = Т.Ссылка";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL206"})
+        assert "BSL206" in _codes(diags)
+
+    def test_join_with_virtual_table_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Т.Измерение
+        |ИЗ Справочник.Номенклатура КАК СПр
+        |    ЛЕВОЕ СОЕДИНЕНИЕ
+        |    РегистрНакопления.Склады.Остатки(Склад = &Склад) КАК Т
+        |ПО СПр.Ссылка = Т.Номенклатура";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL207"})
+        assert "BSL207" in _codes(diags)
+
+    def test_logical_or_in_join_condition_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Т.Ссылка
+        |ИЗ Справочник.Номенклатура КАК СПр
+        |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Договоры КАК Т
+        |    ПО СПр.Ссылка = Т.Владелец
+        |       ИЛИ СПр.Код = Т.Код";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL209"})
+        assert "BSL209" in _codes(diags)
+
+    def test_logical_or_same_field_not_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Т.Ссылка
+        |ИЗ Справочник.Номенклатура КАК СПр
+        |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Договоры КАК Т
+        |    ПО СПр.Код = &Код1
+        |       ИЛИ СПр.Код = &Код2";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL209"})
+        assert "BSL209" not in _codes(diags)
+
+
 class TestBsl262UsageWriteLogEvent:
     def test_write_log_event_with_warning_in_except_detected(self, tmp_path: Path) -> None:
         content = """\
