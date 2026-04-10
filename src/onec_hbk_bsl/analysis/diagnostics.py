@@ -4056,6 +4056,13 @@ _RE_BSL216_PROC_HEADER = re.compile(
     r"^\s*(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE
 )
 _RE_BSL216_BEFORE_THEN = re.compile(r"(?<=\S)(?:Тогда|Then)\b", re.IGNORECASE)
+_RE_BSL216_SEMICOLON_NOSPACE = re.compile(r";(?=\S)")
+_RE_BSL216_LEFT_RIGHT_KEYWORDS = re.compile(r"\b(По|To|Из|In|Или|Or|И|And)\b", re.IGNORECASE)
+_RE_BSL216_LEFT_KEYWORDS = re.compile(r"\b(Экспорт|Export|Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
+_RE_BSL216_RIGHT_KEYWORDS = re.compile(
+    r"\b(Если|If|ИначеЕсли|ElsIf|ElseIf|Пока|While|Для|For|Не|Not|Каждого|Each)\b",
+    re.IGNORECASE,
+)
 # BSL215/BSL233 — compiler directive (e.g. &НаКлиенте) preceding a proc header
 _RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
 # BSL044 — function returns non-void value
@@ -15302,9 +15309,9 @@ class DiagnosticEngine:
             if _RE_LINE_COMMENT.match(line):
                 continue
             in_str_start = str_states[idx]
-            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line) if not in_str_start else line
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
+            clean = _mask_double_quoted_strings_preserve_len(line) if not in_str_start else line
+            comment_pos = _comment_start_outside_double_quotes(line, in_str_start)
+            if comment_pos is not None:
                 clean = clean[:comment_pos]
             # Skip = check on procedure/function headers — default parameter values
             # (Param = Default) use = without spaces by 1C convention; BSLLS skips these.
@@ -15366,18 +15373,81 @@ class DiagnosticEngine:
                         )
                     )
                 continue
-            m_then = _RE_BSL216_BEFORE_THEN.search(clean)
-            if m_then:
+            m_semicolon = _RE_BSL216_SEMICOLON_NOSPACE.search(clean)
+            if m_semicolon:
                 diags.append(
                     Diagnostic(
                         file=path,
                         line=idx + 1,
-                        character=m_then.start(),
+                        character=m_semicolon.start(),
                         end_line=idx + 1,
-                        end_character=m_then.end(),
+                        end_character=m_semicolon.end(),
                         severity=Severity.INFORMATION,
                         code="BSL216",
-                        message=("Слева от 'Тогда' не хватает пробела"),
+                        message=("Справа от ';' не хватает пробела"),
+                    )
+                )
+                continue
+            for m_kw in _RE_BSL216_LEFT_RIGHT_KEYWORDS.finditer(clean):
+                start = m_kw.start(1)
+                end = m_kw.end(1)
+                left_missing = start > 0 and clean[start - 1] not in " \t"
+                right_missing = end < len(clean) and clean[end] not in " \t"
+                if not left_missing and not right_missing:
+                    continue
+                kw = line[start:end]
+                if left_missing and right_missing:
+                    msg = f"Слева и справа от '{kw}' не хватает пробела"
+                elif left_missing:
+                    msg = f"Слева от '{kw}' не хватает пробела"
+                else:
+                    msg = f"Справа от '{kw}' не хватает пробела"
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=start,
+                        end_line=idx + 1,
+                        end_character=end,
+                        severity=Severity.INFORMATION,
+                        code="BSL216",
+                        message=msg,
+                    )
+                )
+            for m_kw in _RE_BSL216_LEFT_KEYWORDS.finditer(clean):
+                start = m_kw.start(1)
+                end = m_kw.end(1)
+                if start <= 0 or clean[start - 1] in " \t":
+                    continue
+                kw = line[start:end]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=start,
+                        end_line=idx + 1,
+                        end_character=end,
+                        severity=Severity.INFORMATION,
+                        code="BSL216",
+                        message=(f"Слева от '{kw}' не хватает пробела"),
+                    )
+                )
+            for m_kw in _RE_BSL216_RIGHT_KEYWORDS.finditer(clean):
+                start = m_kw.start(1)
+                end = m_kw.end(1)
+                if end >= len(clean) or clean[end] in " \t":
+                    continue
+                kw = line[start:end]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=start,
+                        end_line=idx + 1,
+                        end_character=end,
+                        severity=Severity.INFORMATION,
+                        code="BSL216",
+                        message=(f"Справа от '{kw}' не хватает пробела"),
                     )
                 )
         return diags

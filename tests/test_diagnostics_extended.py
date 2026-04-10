@@ -3942,6 +3942,24 @@ class TestBsl216MissingSpace:
         assert messages[23] == "Справа от ',' не хватает пробела"
         assert messages[12] == "Слева и справа от '+' не хватает пробела"
 
+    def test_keyword_and_semicolon_spacing_match_bslls_style(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()Экспорт
+    Для Каждого Элемент Из(Коллекция) Цикл
+        Если(А) И(Б) Тогда
+            А = 1;Б = 2;
+        КонецЕсли;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL216"}) if d.code == "BSL216"]
+        messages = {(d.line, d.character): d.message for d in diags}
+        assert messages[(1, 16)] == "Слева от 'Экспорт' не хватает пробела"
+        assert messages[(2, 24)] == "Справа от 'Из' не хватает пробела"
+        assert messages[(3, 8)] == "Справа от 'Если' не хватает пробела"
+        assert messages[(3, 16)] == "Справа от 'И' не хватает пробела"
+        assert messages[(4, 17)] == "Справа от ';' не хватает пробела"
+
 
 class TestBsl262UsageWriteLogEvent:
     def test_write_log_event_with_warning_in_except_detected(self, tmp_path: Path) -> None:
