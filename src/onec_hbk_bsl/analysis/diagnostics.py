@@ -5055,47 +5055,136 @@ _RE_UI_CALL = re.compile(
 # Standard region names (Russian + English)
 # ---------------------------------------------------------------------------
 
-_STANDARD_REGIONS = frozenset(
-    {
-        # Russian canonical names
-        "программныйинтерфейс",
-        "служебныйпрограммныйинтерфейс",
-        "служебныепроцедурыифункции",
-        "обработчикисобытий",
-        "инициализация",
-        "переменные",
-        "описаниепеременных",
-        "локальныепеременные",
-        # English canonical names
-        "public",
-        "internal",
-        "private",
-        "eventhandlers",
-        "initialization",
-        "variables",
-        "localvariables",
-        # Compilation directive regions (form/command modules)
-        "накликенте",
-        "насервере",
-        "накликентенасервере",
-        "накликентенасервереберконтекста",
-        "насервереберконтекста",
-        "обработчикиподписок",
-        "onclient",
-        "onserver",
-        "onclientandserver",
-        "onclientandserverwithoutcontext",
-        "onserverwithoutcontext",
-        "subscriptionhandlers",
-        # Common non-canonical but widely used
-        "публичныеметоды",
-        "публичные",
-        "служебные",
-        "helpers",
-        "constants",
-        "константы",
-    }
-)
+_STANDARD_REGIONS_BY_KIND: dict[str, frozenset[str]] = {
+    "manager": frozenset(
+        {
+            "программныйинтерфейс",
+            "служебныйпрограммныйинтерфейс",
+            "служебныепроцедурыифункции",
+            "обработчикисобытий",
+            "инициализация",
+            "public",
+            "internal",
+            "private",
+            "eventhandlers",
+            "initialize",
+        }
+    ),
+    "object": frozenset(
+        {
+            "описаниепеременных",
+            "программныйинтерфейс",
+            "служебныйпрограммныйинтерфейс",
+            "служебныепроцедурыифункции",
+            "обработчикисобытий",
+            "инициализация",
+            "variables",
+            "public",
+            "internal",
+            "private",
+            "eventhandlers",
+            "initialize",
+        }
+    ),
+    "form": frozenset(
+        {
+            "описаниепеременных",
+            "обработчикисобытийформы",
+            "обработчикисобытийэлементовшапкиформы",
+            "обработчикикомандформы",
+            "инициализация",
+            "служебныепроцедурыифункции",
+            "variables",
+            "formeventhandlers",
+            "formheaderitemseventhandlers",
+            "formcommandseventhandlers",
+            "initialize",
+            "private",
+        }
+    ),
+    "form-table-prefix": frozenset(
+        {
+            "обработчикисобытийэлементовтаблицыформы",
+            "formtableitemseventhandlers",
+        }
+    ),
+    "common": frozenset(
+        {
+            "программныйинтерфейс",
+            "служебныйпрограммныйинтерфейс",
+            "служебныепроцедурыифункции",
+            "public",
+            "internal",
+            "private",
+        }
+    ),
+    "application": frozenset(
+        {
+            "описаниепеременных",
+            "программныйинтерфейс",
+            "обработчикисобытий",
+            "служебныепроцедурыифункции",
+            "variables",
+            "public",
+            "eventhandlers",
+            "private",
+        }
+    ),
+    "service": frozenset(
+        {
+            "обработчикисобытий",
+            "служебныепроцедурыифункции",
+            "eventhandlers",
+            "private",
+        }
+    ),
+    "external-connection": frozenset(
+        {
+            "программныйинтерфейс",
+            "обработчикисобытий",
+            "служебныепроцедурыифункции",
+            "public",
+            "eventhandlers",
+            "private",
+        }
+    ),
+}
+
+
+def _standard_regions_for_path(path: str) -> frozenset[str]:
+    low = path.replace("\\", "/").lower()
+    if "/forms/" in low and low.endswith("/form/module.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["form"]
+    if low.endswith("/ext/managermodule.bsl") or low.endswith("managermodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["manager"]
+    if low.endswith("/ext/objectmodule.bsl") or low.endswith("objectmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["object"]
+    if low.endswith("/ext/recordsetmodule.bsl") or low.endswith("recordsetmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["object"]
+    if "/commonmodules/" in low:
+        return _STANDARD_REGIONS_BY_KIND["common"]
+    if low.endswith("applicationmodule.bsl") or low.endswith("managedapplicationmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["application"]
+    if low.endswith("ordinaryapplicationmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["application"]
+    if low.endswith("commandmodule.bsl") or low.endswith("sessionmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["service"]
+    if low.endswith("httpservicemodule.bsl") or low.endswith("webservicemodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["service"]
+    if low.endswith("externalconnectionmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["external-connection"]
+    return frozenset()
+
+
+def _is_standard_region_name_for_path(path: str, region_name: str) -> bool:
+    name = region_name.strip().lower()
+    allowed = _standard_regions_for_path(path)
+    if not allowed:
+        return True
+    if name in allowed:
+        return True
+    table_prefixes = _STANDARD_REGIONS_BY_KIND["form-table-prefix"]
+    return any(name.startswith(prefix) for prefix in table_prefixes)
 
 # API region names — methods here must have Export
 _API_REGION_NAMES = frozenset(
@@ -5970,7 +6059,7 @@ class DiagnosticEngine:
             # ── BSL001–BSL070 noise/style preferences ──────────────────────
             "BSL008",  # TooManyReturns — BSLLS disabled by default
             "BSL013",  # CommentedCode — high false-positive rate
-            "BSL016",  # NonStandardRegion — BSLLS doesn't flag application-specific region names in practice
+            "BSL016",  # NonStandardRegion — keep opt-in; BSLLS does not enable it in the strict parity slice
             "BSL018",  # RaiseWithLiteral — opt-in; bare literals are normal; extended syntax is optional
             "BSL038",  # StringConcatenationInLoop — no direct BSLLS equivalent (BSLLS doesn't flag this)
             "BSL041",  # NotifyDescriptionToModalWindow — no BSLLS equivalent
@@ -7810,25 +7899,25 @@ class DiagnosticEngine:
         lines: list[str],
         regions: list[_RegionInfo],
     ) -> list[Diagnostic]:
+        allowed = _standard_regions_for_path(path)
+        if not allowed or not regions:
+            return []
         diags: list[Diagnostic] = []
         for region in regions:
-            if region.name.lower() not in _STANDARD_REGIONS:
+            if not _is_standard_region_name_for_path(path, region.name):
                 line_idx = region.start_idx
                 line_text = lines[line_idx] if line_idx < len(lines) else ""
+                start_char = 1 if line_text.startswith("#") else 0
                 diags.append(
                     Diagnostic(
                         file=path,
                         line=line_idx + 1,
-                        character=0,
+                        character=start_char,
                         end_line=line_idx + 1,
                         end_character=len(line_text),
                         severity=Severity.INFORMATION,
                         code="BSL016",
-                        message=(
-                            f"Non-standard region name: '{region.name}'. "
-                            "Standard names: Public, Internal, Private, "
-                            "EventHandlers, Initialization, Variables"
-                        ),
+                        message=f'Нужно удалить нестандартный раздел "{region.name}"',
                     )
                 )
         return diags

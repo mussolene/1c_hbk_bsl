@@ -579,10 +579,13 @@ class TestBsl016NonStandardRegion:
             КонецПроцедуры
             #КонецОбласти
         """
-        diags = _check(content, tmp_path, select={"BSL016"})
+        path = tmp_path / "AccumulationRegisters" / "Foo" / "Ext" / "ManagerModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL016"}).check_file(str(path))
         bsl016 = [d for d in diags if d.code == "BSL016"]
         assert len(bsl016) >= 1
-        assert "МояНестандартнаяОбласть" in bsl016[0].message
+        assert 'Нужно удалить нестандартный раздел "МояНестандартнаяОбласть"' == bsl016[0].message
 
     def test_standard_region_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -592,6 +595,19 @@ class TestBsl016NonStandardRegion:
             #КонецОбласти
         """
         diags = _check(content, tmp_path, select={"BSL016"})
+        assert "BSL016" not in _codes(diags)
+
+    def test_manager_module_initialize_region_allowed(self, tmp_path: Path) -> None:
+        content = """\
+            #Область Инициализация
+            Процедура ПриСоздании() Экспорт
+            КонецПроцедуры
+            #КонецОбласти
+        """
+        path = tmp_path / "AccumulationRegisters" / "Foo" / "Ext" / "ManagerModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL016"}).check_file(str(path))
         assert "BSL016" not in _codes(diags)
 
 

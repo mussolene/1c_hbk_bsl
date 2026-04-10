@@ -7,7 +7,7 @@ BSL156 CodeOutOfRegion — BSLLS-oriented checks using line spans for #Обла�
 - If the module defines no regions but contains procedures or executable module-level
   code, emit a single diagnostic on line 1 (BSLLS ``regions.isEmpty()`` case).
 
-Skips form modules and avoids the synthetic "line 1" diagnostic when all module
+Avoids the synthetic "line 1" diagnostic when all module
 content is wrapped by preprocessor blocks, matching BSLLS closer.
 """
 
@@ -94,11 +94,6 @@ def _line_span_non_ws(line: str) -> tuple[int, int]:
     return c0, c1
 
 
-def _path_is_form_module(path: str) -> bool:
-    low = path.replace("\\", "/").lower()
-    return low.endswith("/form/module.bsl") and "/forms/" in low
-
-
 def _preprocessor_depths(lines: list[str]) -> list[int]:
     depths: list[int] = []
     depth = 0
@@ -121,8 +116,6 @@ def bsl156_diagnostics(
 
     *procedures*: ``(start_idx, end_idx, name)`` — same indices as ``_ProcInfo``.
     """
-    if _path_is_form_module(path):
-        return []
     intervals = module_region_intervals(lines)
     n = len(lines)
     proc_ranges = [(s, e) for s, e, _ in procedures]

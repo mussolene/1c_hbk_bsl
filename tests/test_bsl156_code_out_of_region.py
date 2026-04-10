@@ -57,7 +57,7 @@ def test_bsl156_module_var_outside_region(tmp_path: Path) -> None:
     assert 5 in lines
 
 
-def test_bsl156_form_module_without_regions_is_skipped(tmp_path: Path) -> None:
+def test_bsl156_form_module_without_regions_reports_procedure(tmp_path: Path) -> None:
     p = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
     p.parent.mkdir(parents=True)
     p.write_text(
@@ -65,7 +65,10 @@ def test_bsl156_form_module_without_regions_is_skipped(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     engine = DiagnosticEngine(select={"BSL156"})
-    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
+    diags = [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
+    assert len(diags) == 1
+    assert diags[0].line == 2
+    assert diags[0].character == 10
 
 
 def test_bsl156_no_regions_inside_preprocessor_is_skipped(tmp_path: Path) -> None:
