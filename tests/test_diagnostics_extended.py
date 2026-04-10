@@ -2805,6 +2805,31 @@ class TestBsl254TransferringParameters:
 
 
 # ---------------------------------------------------------------------------
+# BSL225 — NumberOfValuesInStructureConstructor
+# ---------------------------------------------------------------------------
+
+
+class TestBsl225NumberOfValuesInStructureConstructor:
+    def test_structure_with_too_many_values_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Данные = Новый Структура("Ключ1,Ключ2,Ключ3,Ключ4", 1, 2, 3, 4);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL225"})
+        assert _codes(diags) == ["BSL225"]
+
+    def test_structure_with_three_values_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Данные = Новый Структура("Ключ1,Ключ2,Ключ3", 1, 2, 3);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL225"})
+        assert "BSL225" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL063 — LargeModule
 # ---------------------------------------------------------------------------
 

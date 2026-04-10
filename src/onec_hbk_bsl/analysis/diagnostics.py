@@ -2046,7 +2046,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["design", "readability"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL226": {
         "name": "OSUsersMethod",
@@ -6207,7 +6207,7 @@ class DiagnosticEngine:
             "BSL222",  # MultilingualStringUsingWithTemplate — TODO
             "BSL223",  # NestedConstructorsInStructureDeclaration — TODO
             # "BSL224" enabled — NestedFunctionInParameters implemented
-            "BSL225",  # NumberOfValuesInStructureConstructor — TODO
+            # "BSL225" enabled — NumberOfValuesInStructureConstructor implemented
             "BSL226",  # OSUsersMethod — TODO
             # "BSL227" enabled — OneStatementPerLine implemented
             "BSL228",  # OrderOfParams — TODO
@@ -7232,6 +7232,15 @@ class DiagnosticEngine:
                 (
                     "BSL224",
                     lambda: self._rule_bsl224_nested_function_in_parameters(path, lines, tree),
+                )
+            )
+        if self._rule_enabled("BSL225"):
+            _rule_tasks.append(
+                (
+                    "BSL225",
+                    lambda: self._rule_bsl225_number_of_values_in_structure_constructor(
+                        path, lines, tree
+                    ),
                 )
             )
         if self._rule_enabled("BSL233"):
@@ -15390,6 +15399,60 @@ class DiagnosticEngine:
                     severity=Severity.INFORMATION,
                     code="BSL224",
                     message=f"Вложенный вызов функции в параметрах метода «{name}»",
+                )
+            )
+
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL225 — NumberOfValuesInStructureConstructor
+    # ------------------------------------------------------------------
+
+    def _rule_bsl225_number_of_values_in_structure_constructor(
+        self, path: str, lines: list[str], tree: Any
+    ) -> list[Diagnostic]:
+        """BSLLS parity: New Structure/FixedStructure with more than 4 total arguments."""
+        root = getattr(tree, "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            return []
+
+        type_names = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
+        diags: list[Diagnostic] = []
+
+        for node in _ts_walk(root):
+            if getattr(node, "type", None) != "new_expression":
+                continue
+            type_node = _ts_child_of_type(node, "identifier")
+            if type_node is None:
+                continue
+            type_name = _ts_node_text(type_node).casefold()
+            if type_name not in type_names:
+                continue
+            args = _ts_child_of_type(node, "arguments")
+            if args is None:
+                continue
+            arg_count = len(
+                [child for child in getattr(args, "children", []) or [] if child.type == "expression"]
+            )
+            if arg_count <= 4:
+                continue
+
+            start_line_idx = node.start_point[0]
+            start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
+            start_char = utf8_byte_offset_to_lsp_character(start_line_text, node.start_point[1])
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=start_line_idx + 1,
+                    character=start_char,
+                    end_line=start_line_idx + 1,
+                    end_character=min(len(start_line_text), start_char + len(_ts_node_text(type_node))),
+                    severity=Severity.INFORMATION,
+                    code="BSL225",
+                    message=(
+                        "Сократите количество значений, передаваемых в конструктор "
+                        "Структура/Structure"
+                    ),
                 )
             )
 
