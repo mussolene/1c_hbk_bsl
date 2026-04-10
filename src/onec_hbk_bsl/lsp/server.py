@@ -2834,12 +2834,10 @@ def _fix_bsl024_space_after_double_slash(line: str) -> str | None:
 
     Returns the full replacement line, or None if no fix applies.
     """
-    from onec_hbk_bsl.analysis.diagnostics import bsl024_should_report_line
+    from onec_hbk_bsl.analysis.diagnostics import bsl024_find_report_comment_col
 
-    if not bsl024_should_report_line(line):
-        return None
-    col = line.find("//")
-    if col < 0:
+    col = bsl024_find_report_comment_col(line)
+    if col is None:
         return None
     return line[: col + 2] + " " + line[col + 2 :]
 

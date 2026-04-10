@@ -3564,9 +3564,9 @@ def _bsl024_is_bslls_annotation_comment(line: str, comment_col: int) -> bool:
 
 
 def _bsl024_skip_line_bslls_alignment(line: str) -> bool:
-    """Extra skips aligned with BSLLS / EDT: ``///``, ``//|``, ``//!``, noqa, bsl-disable."""
+    """Extra skips aligned with editor-specific service comments: ``/// ``, ``//|``, ``//!``, noqa, bsl-disable."""
     st = line.lstrip()
-    if st.startswith("///"):
+    if st.startswith("/// ") or st.startswith("///\t"):
         return True
     if st.startswith("//|"):
         return True
@@ -3588,28 +3588,35 @@ def _bsl024_is_compiler_directive_comment(line: str) -> bool:
     return rest.startswith("&")
 
 
-def bsl024_should_report_line(line: str) -> bool:
+def bsl024_find_report_comment_col(line: str) -> int | None:
     """
-    True when ``SpaceAtStartComment`` / BSL024 should flag this line (full-line ``//`` comment).
+    Return the ``//`` column when ``SpaceAtStartComment`` / BSL024 should flag the comment token.
 
     Kept in sync with :meth:`DiagnosticEngine._rule_bsl024_space_at_start_comment`
     and LSP quick-fix for BSL024.
     """
-    stripped = line.strip()
-    if not stripped.startswith("//"):
-        return False
-    col = line.index("//")
+    col = _comment_start_outside_double_quotes(line)
+    if col is None:
+        return None
+    comment_text = line[col:]
     if _bsl024_matches_bslls_good_strict(line, col):
-        return False
+        return None
     if _bsl024_is_bslls_annotation_comment(line, col):
-        return False
-    if _bsl024_skip_line_bslls_alignment(line):
-        return False
-    if _RE_COMMENTED_CODE.match(line):
-        return False
-    if _bsl024_is_compiler_directive_comment(line):
-        return False
-    return True
+        return None
+    if _bsl024_skip_line_bslls_alignment(comment_text):
+        return None
+    if _RE_COMMENTED_CODE.match(comment_text):
+        return None
+    if col == len(line) - len(line.lstrip()) and _bsl024_is_compiler_directive_comment(
+        comment_text
+    ):
+        return None
+    return col
+
+
+def bsl024_should_report_line(line: str) -> bool:
+    """Backward-compatible boolean wrapper over :func:`bsl024_find_report_comment_col`."""
+    return bsl024_find_report_comment_col(line) is not None
 
 
 def _comment_start_outside_double_quotes(line: str, in_str_at_start: bool = False) -> int | None:
@@ -8448,16 +8455,16 @@ class DiagnosticEngine:
         """
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
-            if not bsl024_should_report_line(line):
+            col = bsl024_find_report_comment_col(line)
+            if col is None:
                 continue
-            col = line.index("//")
             diags.append(
                 Diagnostic(
                     file=path,
                     line=idx + 1,
                     character=col,
                     end_line=idx + 1,
-                    end_character=col + 2,
+                    end_character=len(line),
                     severity=Severity.INFORMATION,
                     code="BSL024",
                     message="Comment text should start with a space after '//'",

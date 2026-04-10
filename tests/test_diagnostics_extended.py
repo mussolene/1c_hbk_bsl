@@ -1074,6 +1074,18 @@ class TestBsl024SpaceAtStartComment:
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" not in _codes(diags)
 
+    def test_inline_comment_without_space_reports(self, tmp_path: Path) -> None:
+        content = "Перем1 = 7; //И это плохо\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        bsl024 = [d for d in diags if d.code == "BSL024"]
+        assert len(bsl024) == 1
+        assert bsl024[0].character == content.index("//")
+
+    def test_four_slashes_with_text_reports(self, tmp_path: Path) -> None:
+        content = "////Текст с ошибкой\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL200 — IncorrectLineBreak
