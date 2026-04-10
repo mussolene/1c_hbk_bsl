@@ -2830,6 +2830,37 @@ class TestBsl225NumberOfValuesInStructureConstructor:
 
 
 # ---------------------------------------------------------------------------
+# BSL245 — ServerSideExportFormMethod
+# ---------------------------------------------------------------------------
+
+
+class TestBsl245ServerSideExportFormMethod:
+    def test_server_export_in_form_module_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            &НаСервере
+            Процедура ПолучитьДанные() Экспорт
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert _codes(diags) == ["BSL245"]
+
+    def test_client_export_in_form_module_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            &НаКлиенте
+            Процедура ПолучитьДанные() Экспорт
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert "BSL245" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL063 — LargeModule
 # ---------------------------------------------------------------------------
 

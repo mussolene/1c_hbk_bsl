@@ -2226,7 +2226,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL246": {
         "name": "SetPermissionsForNewObjects",
@@ -6227,7 +6227,7 @@ class DiagnosticEngine:
             "BSL242",  # ScheduledJobHandler — TODO
             "BSL243",  # SelfInsertion — TODO
             "BSL244",  # ServerCallsInFormEvents — TODO
-            "BSL245",  # ServerSideExportFormMethod — TODO
+            # "BSL245" enabled — ServerSideExportFormMethod implemented
             "BSL246",  # SetPermissionsForNewObjects — TODO
             "BSL247",  # SetPrivilegedMode — TODO
             "BSL248",  # SeveralCompilerDirectives — TODO
@@ -7254,6 +7254,10 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL237"):
             _rule_tasks.append(
                 ("BSL237", lambda: self._rule_bsl237_redundant_access_to_object(path, lines))
+            )
+        if self._rule_enabled("BSL245"):
+            _rule_tasks.append(
+                ("BSL245", lambda: self._rule_bsl245_server_side_export_form_method(path, lines, procs))
             )
         if self._rule_enabled("BSL216"):
             _rule_tasks.append(("BSL216", lambda: self._rule_bsl216_missing_space(path, lines)))
@@ -15564,6 +15568,37 @@ class DiagnosticEngine:
                             ),
                         )
                     )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL245 — ServerSideExportFormMethod
+    # ------------------------------------------------------------------
+
+    def _rule_bsl245_server_side_export_form_method(
+        self, path: str, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        """Detect export methods in form modules that are not client-only."""
+        if not path_is_likely_form_module_bsl(path):
+            return []
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.is_export:
+                continue
+            if _procedure_compiler_execution_context(lines, proc) == "client":
+                continue
+            start_char, end_char = _proc_name_span(lines, proc)
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=start_char,
+                    end_line=proc.start_idx + 1,
+                    end_character=end_char,
+                    severity=Severity.WARNING,
+                    code="BSL245",
+                    message="Запрещено создавать серверные экспортные методы в форме",
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
