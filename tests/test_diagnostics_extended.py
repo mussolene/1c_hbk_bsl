@@ -3250,41 +3250,41 @@ class TestBsl076NegativeConditionFirst:
 
 class TestBsl077SelectTopWithoutOrderBy:
     def test_top_without_order_by_detected(self, tmp_path: Path) -> None:
-        content = '''\
+        content = """\
 А = "ВЫБРАТЬ ПЕРВЫЕ 10
 |    Ссылка
 |ИЗ
 |    Документ.РасходнаяНакладная";
-'''
+"""
         diags = _check(content, tmp_path, select={"BSL077"})
         assert "BSL077" in _codes(diags)
 
     def test_top_with_order_by_no_warning(self, tmp_path: Path) -> None:
-        content = '''\
+        content = """\
 А = "ВЫБРАТЬ ПЕРВЫЕ 10
 |    Ссылка
 |ИЗ
 |    Документ.РасходнаяНакладная
 |УПОРЯДОЧИТЬ ПО
 |    Дата";
-'''
+"""
         diags = _check(content, tmp_path, select={"BSL077"})
         assert "BSL077" not in _codes(diags)
 
     def test_top_one_with_where_no_warning(self, tmp_path: Path) -> None:
-        content = '''\
+        content = """\
 А = "SELECT TOP 1
 |    Ref
 |FROM
 |    Document.Invoice
 |WHERE
 |    Posted = TRUE";
-'''
+"""
         diags = _check(content, tmp_path, select={"BSL077"})
         assert "BSL077" not in _codes(diags)
 
     def test_union_reports_each_top(self, tmp_path: Path) -> None:
-        content = '''\
+        content = """\
 А =
 "ВЫБРАТЬ ПЕРВЫЕ 10
 |    Ссылка
@@ -3295,12 +3295,12 @@ class TestBsl077SelectTopWithoutOrderBy:
 |ВЫБРАТЬ ПЕРВЫЕ 20
 |    Ссылка
 |ИЗ Справочник.Склады";
-'''
+"""
         diags = _check(content, tmp_path, select={"BSL077"})
         assert _codes(diags).count("BSL077") == 2
 
     def test_union_with_final_order_by_still_reports_each_top(self, tmp_path: Path) -> None:
-        content = '''\
+        content = """\
 А =
 "ВЫБРАТЬ ПЕРВЫЕ 10
 |    Ссылка
@@ -3313,7 +3313,7 @@ class TestBsl077SelectTopWithoutOrderBy:
 |ИЗ Справочник.Склады
 |УПОРЯДОЧИТЬ ПО
 |    Ссылка";
-'''
+"""
         diags = _check(content, tmp_path, select={"BSL077"})
         assert _codes(diags).count("BSL077") == 2
 

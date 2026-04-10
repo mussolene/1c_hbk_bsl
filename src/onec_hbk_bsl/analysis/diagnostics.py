@@ -7105,14 +7105,19 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL224"):
             _rule_tasks.append(
-                ("BSL224", lambda: self._rule_bsl224_nested_function_in_parameters(path, lines, tree))
+                (
+                    "BSL224",
+                    lambda: self._rule_bsl224_nested_function_in_parameters(path, lines, tree),
+                )
             )
         if self._rule_enabled("BSL233"):
             _rule_tasks.append(
                 ("BSL233", lambda: self._rule_bsl233_public_methods_description(path, lines, procs))
             )
         if self._rule_enabled("BSL234"):
-            _rule_tasks.append(("BSL234", lambda: self._rule_bsl234_query_nested_fields_by_dot(path, lines)))
+            _rule_tasks.append(
+                ("BSL234", lambda: self._rule_bsl234_query_nested_fields_by_dot(path, lines))
+            )
         if self._rule_enabled("BSL216"):
             _rule_tasks.append(("BSL216", lambda: self._rule_bsl216_missing_space(path, lines)))
         if self._rule_enabled("BSL254"):
@@ -13893,7 +13898,9 @@ class DiagnosticEngine:
             content_scan = content[:quote_pos].rstrip() if ended_query else content
 
             tail_has_semi = ";" in content_scan
-            head = content_scan[: content_scan.index(";")].rstrip() if tail_has_semi else content_scan
+            head = (
+                content_scan[: content_scan.index(";")].rstrip() if tail_has_semi else content_scan
+            )
 
             if tail_has_semi and not head:
                 where_stack.clear()
@@ -14039,9 +14046,13 @@ class DiagnosticEngine:
             current_body: list[str] = []
 
             def _normalize_body(body: list[str]) -> list[str]:
-                return [entry.strip() for entry in body if entry.strip() and not comment_re.match(entry)]
+                return [
+                    entry.strip() for entry in body if entry.strip() and not comment_re.match(entry)
+                ]
 
-            def _diag_span_for_body(body: list[str], start: int, header: str) -> tuple[int, int, int]:
+            def _diag_span_for_body(
+                body: list[str], start: int, header: str
+            ) -> tuple[int, int, int]:
                 for offset, raw in enumerate(body, start=1):
                     stripped = raw.strip()
                     if stripped and not comment_re.match(raw):
@@ -15085,7 +15096,9 @@ class DiagnosticEngine:
             return _ts_node_text(ident), ident, args, node, ident
 
         def arg_expr_nodes(args: Any) -> list[Any]:
-            return [child for child in getattr(args, "children", []) or [] if child.type == "expression"]
+            return [
+                child for child in getattr(args, "children", []) or [] if child.type == "expression"
+            ]
 
         def contains_forbidden_nested_call(args: Any) -> bool:
             for child in _ts_walk(args):
@@ -15106,7 +15119,10 @@ class DiagnosticEngine:
             node_type = getattr(node, "type", None)
             if node_type not in {"call_expression", "method_call", "new_expression"}:
                 continue
-            if node_type == "method_call" and getattr(getattr(node, "parent", None), "type", None) == "call_expression":
+            if (
+                node_type == "method_call"
+                and getattr(getattr(node, "parent", None), "type", None) == "call_expression"
+            ):
                 continue
             if node.start_point[0] == node.end_point[0]:
                 continue
@@ -15140,9 +15156,9 @@ class DiagnosticEngine:
                     line=start_line_idx + 1,
                     character=start_char,
                     end_line=end_line_idx + 1,
-                    end_character=start_char + len(name) if start_line_idx == end_line_idx else utf8_byte_offset_to_lsp_character(
-                        end_line_text, name_node.end_point[1]
-                    ),
+                    end_character=start_char + len(name)
+                    if start_line_idx == end_line_idx
+                    else utf8_byte_offset_to_lsp_character(end_line_text, name_node.end_point[1]),
                     severity=Severity.INFORMATION,
                     code="BSL224",
                     message=f"Вложенный вызов функции в параметрах метода «{name}»",
@@ -15228,7 +15244,12 @@ class DiagnosticEngine:
 
         pair_specs = (
             (
-                {"начатьтранзакцию", "begintransaction", "зафиксироватьтранзакцию", "committransaction"},
+                {
+                    "начатьтранзакцию",
+                    "begintransaction",
+                    "зафиксироватьтранзакцию",
+                    "committransaction",
+                },
                 {
                     "начатьтранзакцию": "ЗафиксироватьТранзакцию",
                     "begintransaction": "CommitTransaction",
@@ -15237,7 +15258,12 @@ class DiagnosticEngine:
                 },
             ),
             (
-                {"начатьтранзакцию", "begintransaction", "отменитьтранзакцию", "rollbacktransaction"},
+                {
+                    "начатьтранзакцию",
+                    "begintransaction",
+                    "отменитьтранзакцию",
+                    "rollbacktransaction",
+                },
                 {
                     "начатьтранзакцию": "ОтменитьТранзакцию",
                     "begintransaction": "RollbackTransaction",
@@ -15306,7 +15332,9 @@ class DiagnosticEngine:
     # BSL277 — WrongUseOfRollbackTransactionMethod
     # ------------------------------------------------------------------
 
-    def _rule_bsl277_wrong_use_of_rollback_transaction(self, path: str, tree: Any) -> list[Diagnostic]:
+    def _rule_bsl277_wrong_use_of_rollback_transaction(
+        self, path: str, tree: Any
+    ) -> list[Diagnostic]:
         """Detect RollbackTransaction/ОтменитьТранзакцию outside except or not first there."""
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
@@ -15322,11 +15350,19 @@ class DiagnosticEngine:
                 continue
             children = list(getattr(node, "children", []) or [])
             except_idx = next(
-                (i for i, child in enumerate(children) if getattr(child, "type", None) == "EXCEPT_KEYWORD"),
+                (
+                    i
+                    for i, child in enumerate(children)
+                    if getattr(child, "type", None) == "EXCEPT_KEYWORD"
+                ),
                 None,
             )
             endtry_idx = next(
-                (i for i, child in enumerate(children) if getattr(child, "type", None) == "ENDTRY_KEYWORD"),
+                (
+                    i
+                    for i, child in enumerate(children)
+                    if getattr(child, "type", None) == "ENDTRY_KEYWORD"
+                ),
                 None,
             )
             if except_idx is None:
@@ -15405,11 +15441,19 @@ class DiagnosticEngine:
         def except_children(try_node: Any) -> list[Any]:
             children = list(getattr(try_node, "children", []) or [])
             except_idx = next(
-                (i for i, child in enumerate(children) if getattr(child, "type", None) == "EXCEPT_KEYWORD"),
+                (
+                    i
+                    for i, child in enumerate(children)
+                    if getattr(child, "type", None) == "EXCEPT_KEYWORD"
+                ),
                 None,
             )
             endtry_idx = next(
-                (i for i, child in enumerate(children) if getattr(child, "type", None) == "ENDTRY_KEYWORD"),
+                (
+                    i
+                    for i, child in enumerate(children)
+                    if getattr(child, "type", None) == "ENDTRY_KEYWORD"
+                ),
                 None,
             )
             if except_idx is None:
@@ -15420,7 +15464,11 @@ class DiagnosticEngine:
 
         def arg_is_error_level(expr: Any) -> bool:
             text = _ts_node_text(expr).casefold()
-            return any(root_name in text and level in text for root_name in level_root_names for level in error_level_names)
+            return any(
+                root_name in text and level in text
+                for root_name in level_root_names
+                for level in error_level_names
+            )
 
         for node in _ts_walk(root):
             if getattr(node, "type", None) != "try_statement":
