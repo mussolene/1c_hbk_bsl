@@ -1983,7 +1983,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["resource-management"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL219": {
         "name": "MissingVariablesDescription",
@@ -5292,6 +5292,163 @@ def _ts_method_call_arg_exprs(node: Any) -> list[Any]:
     return [child for child in getattr(args, "children", []) or [] if child.type == "expression"]
 
 
+# BSL218 — BSLLS MissingTemporaryFileDeletion (global GetTempFileName + default delete methods)
+_BSL218_GET_TEMP_NAMES = frozenset({"получитьимявременногофайла", "gettempfilename"})
+_BSL218_DELETE_NAMES = frozenset(
+    {
+        "удалитьфайлы",
+        "deletefiles",
+        "начатьудалениефайлов",
+        "begindeletingfiles",
+        "переместитьфайл",
+        "movefile",
+    }
+)
+_BSL218_SKIP_PROC_CHILD = frozenset(
+    {
+        "PROCEDURE_KEYWORD",
+        "FUNCTION_KEYWORD",
+        "EXPORT_KEYWORD",
+        "identifier",
+        "parameters",
+        "ENDPROCEDURE_KEYWORD",
+        "ENDFUNCTION_KEYWORD",
+    }
+)
+
+
+def _ts_bsl218_skip_error_ancestor(node: Any) -> Any:
+    p = node
+    while p is not None and getattr(p, "type", None) == "ERROR":
+        p = getattr(p, "parent", None)
+    return p
+
+
+def _ts_assignment_lvalue_text(assign: Any) -> str | None:
+    """Left-hand side source text for ``assignment_statement`` (BSLLS ``lValue``)."""
+    if getattr(assign, "type", None) != "assignment_statement":
+        return None
+    parts: list[str] = []
+    for child in getattr(assign, "children", []) or []:
+        if getattr(child, "type", None) == "=":
+            break
+        parts.append(_ts_node_text(child))
+    text = "".join(parts).strip()
+    return text or None
+
+
+def _ts_bsl218_if_then_branch_roots(if_node: Any) -> list[Any]:
+    ch = list(getattr(if_node, "children", []) or [])
+    try:
+        then_i = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == "THEN_KEYWORD")
+    except StopIteration:
+        return []
+    roots: list[Any] = []
+    for j in range(then_i + 1, len(ch)):
+        ct = getattr(ch[j], "type", None)
+        if ct in ("elseif_clause", "else_clause", "ENDIF_KEYWORD"):
+            break
+        roots.append(ch[j])
+    return roots
+
+
+def _ts_bsl218_roots_after_keyword(block_node: Any, keyword_type: str) -> list[Any]:
+    ch = list(getattr(block_node, "children", []) or [])
+    try:
+        ki = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == keyword_type)
+    except StopIteration:
+        return []
+    return ch[ki + 1 :]
+
+
+def _ts_bsl218_loop_body_roots(loop_node: Any) -> list[Any]:
+    ch = list(getattr(loop_node, "children", []) or [])
+    try:
+        do_i = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == "DO_KEYWORD")
+    except StopIteration:
+        return []
+    try:
+        end_i = next(
+            i for i in range(do_i + 1, len(ch)) if getattr(ch[i], "type", None) == "ENDDO_KEYWORD"
+        )
+    except StopIteration:
+        return []
+    return ch[do_i + 1 : end_i]
+
+
+def _ts_bsl218_try_body_roots(try_node: Any) -> list[Any]:
+    ch = list(getattr(try_node, "children", []) or [])
+    try:
+        try_i = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == "TRY_KEYWORD")
+    except StopIteration:
+        return []
+    end_i = len(ch)
+    for j in range(try_i + 1, len(ch)):
+        if getattr(ch[j], "type", None) in ("EXCEPT_KEYWORD", "ENDTRY_KEYWORD"):
+            end_i = j
+            break
+    return ch[try_i + 1 : end_i]
+
+
+def _ts_bsl218_code_block_roots(stmt_parent: Any) -> list[Any] | None:
+    """Map BSLLS ``codeBlock`` to tree-sitter subtree roots (per-branch, like BSLLS)."""
+    t = getattr(stmt_parent, "type", None)
+    if t in ("procedure_definition", "function_definition"):
+        return [
+            c
+            for c in getattr(stmt_parent, "children", []) or []
+            if getattr(c, "type", None) not in _BSL218_SKIP_PROC_CHILD
+        ]
+    if t == "source_file":
+        return [
+            c
+            for c in getattr(stmt_parent, "children", []) or []
+            if getattr(c, "type", None) != "preprocessor"
+        ]
+    if t == "if_statement":
+        return _ts_bsl218_if_then_branch_roots(stmt_parent)
+    if t == "elseif_clause":
+        return _ts_bsl218_roots_after_keyword(stmt_parent, "THEN_KEYWORD")
+    if t == "else_clause":
+        return _ts_bsl218_roots_after_keyword(stmt_parent, "ELSE_KEYWORD")
+    if t in ("while_statement", "for_statement", "for_each_statement"):
+        return _ts_bsl218_loop_body_roots(stmt_parent)
+    if t == "try_statement":
+        return _ts_bsl218_try_body_roots(stmt_parent)
+    return None
+
+
+def _ts_bsl218_subtree_has_deletion_after_line(
+    root: Any,
+    line_texts: list[str],
+    after_line_1based: int,
+    var_name: str,
+) -> bool:
+    """True if a default BSLLS deletion global call passes *var_name* after *after_line*."""
+    var_cf = var_name.casefold()
+    for call in _ts_global_method_calls(root, line_texts):
+        if call["line"] <= after_line_1based:
+            continue
+        if str(call["name"]).casefold() not in _BSL218_DELETE_NAMES:
+            continue
+        for expr in _ts_method_call_arg_exprs(call["node"]):
+            if _ts_node_text(expr).strip().casefold() == var_cf:
+                return True
+    return False
+
+
+def _ts_bsl218_block_has_deletion(
+    roots: list[Any],
+    line_texts: list[str],
+    after_line_1based: int,
+    var_name: str,
+) -> bool:
+    for r in roots:
+        if _ts_bsl218_subtree_has_deletion_after_line(r, line_texts, after_line_1based, var_name):
+            return True
+    return False
+
+
 def _find_procedures_from_tree(tree: Any) -> list[_ProcInfo]:
     """Extract procedure/function definitions from a tree-sitter CST.
 
@@ -6201,7 +6358,7 @@ class DiagnosticEngine:
             # "BSL215" enabled — MissingParameterDescription implemented
             # "BSL216" enabled — MissingSpace implemented
             "BSL217",  # MissingTempStorageDeletion — TODO
-            "BSL218",  # MissingTemporaryFileDeletion — TODO
+            # "BSL218" enabled — MissingTemporaryFileDeletion implemented
             "BSL220",  # MultilineStringInQuery — TODO
             "BSL221",  # MultilingualStringHasAllDeclaredLanguages — TODO
             "BSL222",  # MultilingualStringUsingWithTemplate — TODO
@@ -7242,6 +7399,10 @@ class DiagnosticEngine:
                         path, lines, tree
                     ),
                 )
+            )
+        if self._rule_enabled("BSL218"):
+            _rule_tasks.append(
+                ("BSL218", lambda: self._rule_bsl218_missing_temporary_file_deletion(path, lines, tree))
             )
         if self._rule_enabled("BSL233"):
             _rule_tasks.append(
@@ -15405,6 +15566,123 @@ class DiagnosticEngine:
                     message=f"Вложенный вызов функции в параметрах метода «{name}»",
                 )
             )
+
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL218 — MissingTemporaryFileDeletion
+    # ------------------------------------------------------------------
+
+    def _rule_bsl218_missing_temporary_file_deletion(
+        self, path: str, lines: list[str], tree: Any
+    ) -> list[Diagnostic]:
+        """BSLLS parity: ``ПолучитьИмяВременногоФайла`` / ``GetTempFileName`` without a later delete.
+
+        Matches BSLLS default ``searchDeleteFileMethod`` (global calls only) and scans the
+        enclosing ``codeBlock`` subtree; deletion must appear on a later line with the
+        same parameter text as the assignment l-value (case-insensitive).
+        """
+        root = getattr(tree, "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            return []
+
+        line_texts = lines
+        diags: list[Diagnostic] = []
+
+        for call in _ts_global_method_calls(root, line_texts):
+            if str(call["name"]).casefold() not in _BSL218_GET_TEMP_NAMES:
+                continue
+            method_node = call["node"]
+            assign_anc: Any | None = None
+            cur: Any | None = method_node
+            while cur is not None:
+                if getattr(cur, "type", None) == "assignment_statement":
+                    assign_anc = cur
+                    break
+                cur = getattr(cur, "parent", None)
+
+            span = _ts_method_identifier_span(method_node, line_texts)
+            if span is None:
+                continue
+            line_1, char_1, end_ch = span
+
+            if assign_anc is None:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_1,
+                        character=char_1,
+                        end_line=line_1,
+                        end_character=end_ch,
+                        severity=Severity.WARNING,
+                        code="BSL218",
+                        message=RULE_DESCRIPTIONS_RU["BSL218"],
+                    )
+                )
+                continue
+
+            var_name = _ts_assignment_lvalue_text(assign_anc)
+            if not var_name:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_1,
+                        character=char_1,
+                        end_line=line_1,
+                        end_character=end_ch,
+                        severity=Severity.WARNING,
+                        code="BSL218",
+                        message=RULE_DESCRIPTIONS_RU["BSL218"],
+                    )
+                )
+                continue
+
+            raw_parent = getattr(assign_anc, "parent", None)
+            stmt_parent = _ts_bsl218_skip_error_ancestor(raw_parent)
+            if stmt_parent is None:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_1,
+                        character=char_1,
+                        end_line=line_1,
+                        end_character=end_ch,
+                        severity=Severity.WARNING,
+                        code="BSL218",
+                        message=RULE_DESCRIPTIONS_RU["BSL218"],
+                    )
+                )
+                continue
+
+            roots = _ts_bsl218_code_block_roots(stmt_parent)
+            if not roots:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_1,
+                        character=char_1,
+                        end_line=line_1,
+                        end_character=end_ch,
+                        severity=Severity.WARNING,
+                        code="BSL218",
+                        message=RULE_DESCRIPTIONS_RU["BSL218"],
+                    )
+                )
+                continue
+
+            if not _ts_bsl218_block_has_deletion(roots, line_texts, line_1, var_name):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_1,
+                        character=char_1,
+                        end_line=line_1,
+                        end_character=end_ch,
+                        severity=Severity.WARNING,
+                        code="BSL218",
+                        message=RULE_DESCRIPTIONS_RU["BSL218"],
+                    )
+                )
 
         return diags
 

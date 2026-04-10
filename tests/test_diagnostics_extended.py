@@ -2805,6 +2805,92 @@ class TestBsl254TransferringParameters:
 
 
 # ---------------------------------------------------------------------------
+# BSL218 — MissingTemporaryFileDeletion
+# ---------------------------------------------------------------------------
+
+
+class TestBsl218MissingTemporaryFileDeletion:
+    def test_bare_get_temp_file_name_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ПолучитьИмяВременногоФайла(".xml");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert _codes(diags) == ["BSL218"]
+
+    def test_assigned_temp_without_deletion_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Имя = ПолучитьИмяВременногоФайла(".xml");
+                Сообщить(Имя);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert _codes(diags) == ["BSL218"]
+
+    def test_delete_files_afterwards_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Имя = ПолучитьИмяВременногоФайла(".xml");
+                УдалитьФайлы(Имя);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert "BSL218" not in _codes(diags)
+
+    def test_get_temp_file_name_english_alias(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Имя = GetTempFileName(".xml");
+                DeleteFiles(Имя);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert "BSL218" not in _codes(diags)
+
+    def test_move_file_satisfies_rule(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Имя = ПолучитьИмяВременногоФайла(".xml");
+                ПереместитьФайл(Имя, "куда");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert "BSL218" not in _codes(diags)
+
+    def test_deletion_only_in_same_branch_counts(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Если Истина Тогда
+                    Имя = ПолучитьИмяВременногоФайла(".xml");
+                КонецЕсли;
+                УдалитьФайлы(Имя);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert _codes(diags) == ["BSL218"]
+
+    def test_module_level_with_deletion_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Имя = ПолучитьИмяВременногоФайла(".xml");
+            УдалитьФайлы(Имя);
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert "BSL218" not in _codes(diags)
+
+    def test_qualified_delete_does_not_satisfy_like_bslls_default(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Имя = ПолучитьИмяВременногоФайла(".xml");
+                ОбщегоНазначения.УдалитьФайлы(Имя);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL218"})
+        assert _codes(diags) == ["BSL218"]
+
+
+# ---------------------------------------------------------------------------
 # BSL225 — NumberOfValuesInStructureConstructor
 # ---------------------------------------------------------------------------
 
