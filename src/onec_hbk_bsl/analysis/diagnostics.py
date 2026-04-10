@@ -110,6 +110,7 @@ from onec_hbk_bsl.analysis.diagnostics_cst import (
 from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
     build_enabled_invoke_snapshot,
 )
+from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 from onec_hbk_bsl.parser.bsl_parser import BslParser
@@ -5186,6 +5187,7 @@ def _is_standard_region_name_for_path(path: str, region_name: str) -> bool:
     table_prefixes = _STANDARD_REGIONS_BY_KIND["form-table-prefix"]
     return any(name.startswith(prefix) for prefix in table_prefixes)
 
+
 # API region names — methods here must have Export
 _API_REGION_NAMES = frozenset(
     {
@@ -6612,24 +6614,26 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         """Execute all enabled rules and return filtered, sorted diagnostics."""
         idx = symbol_index if symbol_index is not None else self._symbol_index
-        lines = content.splitlines()
+        snapshot = build_document_snapshot(
+            path,
+            content=content,
+            tree=tree,
+            parser=self._get_parser(),
+        )
+        tree = snapshot.tree
+        lines = snapshot.lines
         suppressions = _parse_suppressions(lines)
 
         # Precompute structural info once (shared across rules).
         # Prefer CST-based extraction (handles multi-line signatures, exact
         # boundaries); fall back to regex when tree-sitter is unavailable.
-        tree_is_ts = (
-            hasattr(tree, "root_node")
-            and hasattr(tree.root_node, "text")
-            and isinstance(tree.root_node.text, (bytes, bytearray))
-        )
-        procs_from_tree = _find_procedures_from_tree(tree)
-        procs = procs_from_tree or _find_procedures(content)
-        proc_source = "ast" if procs_from_tree else "regex"
-        regex_fallback_procs_used = 0 if procs_from_tree else 1
-        regions_from_tree = _find_regions_from_tree(tree) if tree_is_ts else []
-        regions_source = "ast" if regions_from_tree else "regex"
-        regex_fallback_regions_used = 0 if regions_from_tree else 1
+        tree_is_ts = snapshot.is_tree_sitter
+        procs = snapshot.procedures
+        proc_source = "ast" if tree_is_ts else "regex"
+        regex_fallback_procs_used = 0 if tree_is_ts else 1
+        regions = snapshot.regions
+        regions_source = "ast" if tree_is_ts else "regex"
+        regex_fallback_regions_used = 0 if tree_is_ts else 1
         last_metrics: dict[str, Any] = {
             "tree_is_ts": bool(tree_is_ts),
             "proc_source": proc_source,
@@ -6637,7 +6641,6 @@ class DiagnosticEngine:
             "regex_fallback_procs_used": regex_fallback_procs_used,
             "regex_fallback_regions_used": regex_fallback_regions_used,
         }
-        regions = regions_from_tree or _find_regions(content)
         last_metrics.update(
             {
                 "procs_count": len(procs),
@@ -6650,7 +6653,7 @@ class DiagnosticEngine:
         # Build proc→node lookup once (single O(T) tree walk).
         # Rules BSL062 and BSL240 use this to avoid repeated O(P × T) walks.
         _proc_node_map: dict[tuple[str, int, str], Any] = (
-            _build_proc_node_map(tree) if tree_is_ts else {}
+            snapshot.proc_node_map if tree_is_ts else {}
         )
 
         _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
@@ -7402,7 +7405,10 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL218"):
             _rule_tasks.append(
-                ("BSL218", lambda: self._rule_bsl218_missing_temporary_file_deletion(path, lines, tree))
+                (
+                    "BSL218",
+                    lambda: self._rule_bsl218_missing_temporary_file_deletion(path, lines, tree),
+                )
             )
         if self._rule_enabled("BSL233"):
             _rule_tasks.append(
@@ -7418,7 +7424,10 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL245"):
             _rule_tasks.append(
-                ("BSL245", lambda: self._rule_bsl245_server_side_export_form_method(path, lines, procs))
+                (
+                    "BSL245",
+                    lambda: self._rule_bsl245_server_side_export_form_method(path, lines, procs),
+                )
             )
         if self._rule_enabled("BSL216"):
             _rule_tasks.append(("BSL216", lambda: self._rule_bsl216_missing_space(path, lines)))
@@ -15714,7 +15723,11 @@ class DiagnosticEngine:
             if args is None:
                 continue
             arg_count = len(
-                [child for child in getattr(args, "children", []) or [] if child.type == "expression"]
+                [
+                    child
+                    for child in getattr(args, "children", []) or []
+                    if child.type == "expression"
+                ]
             )
             if arg_count <= 4:
                 continue
@@ -15728,7 +15741,9 @@ class DiagnosticEngine:
                     line=start_line_idx + 1,
                     character=start_char,
                     end_line=start_line_idx + 1,
-                    end_character=min(len(start_line_text), start_char + len(_ts_node_text(type_node))),
+                    end_character=min(
+                        len(start_line_text), start_char + len(_ts_node_text(type_node))
+                    ),
                     severity=Severity.INFORMATION,
                     code="BSL225",
                     message=(

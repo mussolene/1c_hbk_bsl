@@ -2197,9 +2197,7 @@ class TestBsl040UsingThisForm:
         diags = DiagnosticEngine(select={"BSL040"}).check_file(str(bsl_path))
         assert "BSL040" in _codes(diags)
 
-    def test_this_form_param_suppresses_diagnostic_in_form_module(
-        self, tmp_path: Path
-    ) -> None:
+    def test_this_form_param_suppresses_diagnostic_in_form_module(self, tmp_path: Path) -> None:
         content = """\
             Процедура Команда(ЭтаФорма)
                 ЭтаФорма.Закрыть();

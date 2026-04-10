@@ -338,9 +338,9 @@ def _run_bslls_format(
             text=True,
         )
         return {
-            _relative_file(path, workspace_root): (tmp_root / path.resolve().relative_to(workspace_root.resolve())).read_text(
-                encoding="utf-8"
-            )
+            _relative_file(path, workspace_root): (
+                tmp_root / path.resolve().relative_to(workspace_root.resolve())
+            ).read_text(encoding="utf-8")
             for path in files
         }
 

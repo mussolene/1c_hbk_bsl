@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
+from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_ast_spacing import normalize_argument_list_spacing
 from onec_hbk_bsl.analysis.formatter_structural import ast_structural_indent_levels, tree_has_errors
 from onec_hbk_bsl.parser.bsl_parser import BslParser
@@ -674,14 +675,17 @@ def _heuristic_structural_indent_levels(lines: list[str]) -> list[int]:
     return out
 
 
-def _compute_structural_indent_levels(lines: list[str], text: str) -> list[int]:
+def _compute_structural_indent_levels(
+    lines: list[str], text: str, tree: object | None = None
+) -> list[int]:
     """Per-line base indent: CST (structural) + heuristic merge for special lines."""
     n = len(lines)
     if n == 0:
         return []
     heur = _heuristic_structural_indent_levels(lines)
-    parser = BslParser()
-    tree = parser.parse_content(text)
+    if tree is None:
+        parser = BslParser()
+        tree = parser.parse_content(text)
     if getattr(tree, "content", None) is not None:
         return heur
     if tree_has_errors(tree.root_node):
@@ -846,16 +850,19 @@ class BslFormatter:
             content = content[1:]
         lines = _expand_block_headers_one_line(content.splitlines())
         text = "\n".join(lines)
-        parser = BslParser()
-        tree = parser.parse_content(text)
-        if getattr(tree, "content", None) is None and not tree_has_errors(tree.root_node):
-            text = normalize_argument_list_spacing(text, tree.root_node)
-            lines = text.splitlines()
+        snapshot = build_document_snapshot(path="<format>", content=text)
+        if snapshot.tree_ok:
+            normalized = normalize_argument_list_spacing(text, snapshot.root_node)
+            if normalized != text:
+                text = normalized
+                snapshot = build_document_snapshot(path="<format>", content=text)
+                lines = snapshot.lines
         formatted, _ = self._format_lines(
             lines,
             indent_size=indent_size,
             insert_spaces=insert_spaces,
             text_for_parse=text,
+            tree=snapshot.tree,
         )
         # Normalise blank runs: at most one empty line in a row (BSL055 / BSLLS ConsecutiveEmptyLines)
         result = self._normalize_blank_lines(formatted)
@@ -890,7 +897,8 @@ class BslFormatter:
         e = min(len(all_lines) - 1, end_line)
 
         selected = all_lines[s : e + 1]
-        full_base = _compute_structural_indent_levels(all_lines, content)
+        snapshot = build_document_snapshot(path="<format-range>", content=content)
+        full_base = _compute_structural_indent_levels(all_lines, content, tree=snapshot.tree)
         slice_base = full_base[s : e + 1] if full_base else []
         formatted, _ = self._format_lines(
             selected,
@@ -899,6 +907,7 @@ class BslFormatter:
             insert_spaces=insert_spaces,
             text_for_parse=content,
             base_levels=slice_base,
+            tree=snapshot.tree,
         )
         return formatted + "\n"
 
@@ -920,7 +929,8 @@ class BslFormatter:
             return 0
         if target > len(full_lines):
             return 0
-        base_levels = _compute_structural_indent_levels(full_lines, full_text)
+        snapshot = build_document_snapshot(path="<indent>", content=full_text)
+        base_levels = _compute_structural_indent_levels(full_lines, full_text, tree=snapshot.tree)
         next_struct = (
             base_levels[target]
             if target < len(base_levels)
@@ -935,6 +945,7 @@ class BslFormatter:
             text_for_parse=full_text,
             base_levels=base_levels[:target],
             next_line_structural=next_struct,
+            tree=snapshot.tree,
         )
         return next_level
 
@@ -949,6 +960,7 @@ class BslFormatter:
         text_for_parse: str | None = None,
         base_levels: list[int] | None = None,
         next_line_structural: int | None = None,
+        tree: object | None = None,
     ) -> tuple[str, int]:
         """Core formatting pass: keyword normalisation, indentation, spacing.
 
@@ -965,9 +977,9 @@ class BslFormatter:
         """
         text = text_for_parse if text_for_parse is not None else "\n".join(lines)
         if base_levels is None:
-            base_levels = _compute_structural_indent_levels(lines, text)
+            base_levels = _compute_structural_indent_levels(lines, text, tree=tree)
         if len(base_levels) != len(lines):
-            base_levels = _compute_structural_indent_levels(lines, text)
+            base_levels = _compute_structural_indent_levels(lines, text, tree=tree)
 
         comment_multiline = (
             _precompute_multiline_doc_comment_stripped(lines)
