@@ -1,0 +1,701 @@
+from __future__ import annotations
+
+import re
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from onec_hbk_bsl.analysis.diagnostics import _ProcInfo
+
+
+def _diag_module() -> Any:
+    from onec_hbk_bsl.analysis import diagnostics as _diag
+
+    return _diag
+
+
+def run_bsl192_193_194_228_266_method_contract_diagnostics(
+    path: str,
+    lines: list[str],
+    procs: list[_ProcInfo],
+    codes: tuple[str, ...],
+    rule_enabled: Any,
+) -> list[Any]:
+    _diag = _diag_module()
+    enabled = {code for code in codes if rule_enabled(code)}
+    if not enabled:
+        return []
+
+    diags: list[Any] = []
+    for proc in procs:
+        start_char, end_char = _diag._proc_name_span(lines, proc)
+
+        if (
+            "BSL192" in enabled
+            and proc.kind == "function"
+            and _diag._RE_BSL192_GET.match(proc.name)
+        ):
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=start_char,
+                    end_line=proc.start_idx + 1,
+                    end_character=end_char,
+                    severity=_diag.Severity.INFORMATION,
+                    code="BSL192",
+                    message="Имя функции должно начинаться с «Получить»",
+                )
+            )
+
+        if "BSL228" in enabled and proc.optional_params:
+            seen_optional = False
+            for param in proc.params:
+                if param in proc.optional_params:
+                    seen_optional = True
+                    continue
+                if seen_optional:
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=start_char,
+                            end_line=proc.start_idx + 1,
+                            end_character=end_char,
+                            severity=_diag.Severity.INFORMATION,
+                            code="BSL228",
+                            message="Порядок параметров метода не соответствует соглашению",
+                        )
+                    )
+                    break
+
+        if "BSL193" in enabled and proc.kind == "function":
+            ref_params = {
+                p.casefold()
+                for p in proc.params
+                if p.casefold() not in {n.casefold() for n in proc.val_params}
+            }
+            seen_out: set[str] = set()
+            for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+                code_line = lines[idx].split("//", 1)[0]
+                m_assign = _diag._RE_ASSIGN_LHS.match(code_line)
+                if not m_assign:
+                    continue
+                lhs_cf = m_assign.group("name").casefold()
+                if lhs_cf in ref_params and lhs_cf not in seen_out:
+                    seen_out.add(lhs_cf)
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=m_assign.start("name"),
+                            end_line=idx + 1,
+                            end_character=m_assign.end("name"),
+                            severity=_diag.Severity.WARNING,
+                            code="BSL193",
+                            message="Функция изменяет параметр-ссылку (out-параметр)",
+                        )
+                    )
+
+        if (
+            "BSL194" in enabled
+            and proc.kind == "function"
+            and not proc.name.casefold().startswith(("подключаемый_", "attachable_"))
+        ):
+            return_exprs: list[str] = []
+            for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+                code_line = lines[idx].split("//", 1)[0]
+                m_return = _diag._RE_RETURN_SIMPLE_EXPR.match(code_line)
+                if not m_return:
+                    continue
+                expr = m_return.group(1).strip()
+                if not (
+                    re.fullmatch(r"-?\d+(?:\.\d+)?", expr)
+                    or re.fullmatch(r'"(?:[^"]|"")*"', expr)
+                    or expr.casefold()
+                    in {"истина", "ложь", "true", "false", "неопределено", "undefined", "null"}
+                ):
+                    return_exprs = []
+                    break
+                return_exprs.append(expr.casefold())
+            if len(return_exprs) > 1 and len(set(return_exprs)) == 1:
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=start_char,
+                        end_line=proc.start_idx + 1,
+                        end_character=end_char,
+                        severity=_diag.Severity.INFORMATION,
+                        code="BSL194",
+                        message="Функция всегда возвращает одно и то же примитивное значение",
+                    )
+                )
+
+        if "BSL266" in enabled:
+            cancel_params = {p.casefold() for p in proc.params if _diag._RE_BSL266_CANCEL.match(p)}
+            if cancel_params:
+                for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+                    code_line = lines[idx].split("//", 1)[0].strip()
+                    m_assign = _diag._RE_ASSIGN_LHS.match(code_line)
+                    if not m_assign:
+                        continue
+                    lhs = m_assign.group("name")
+                    lhs_cf = lhs.casefold()
+                    if lhs_cf not in cancel_params:
+                        continue
+                    rhs = code_line[m_assign.end() :].rstrip().rstrip(";").strip()
+                    rhs_cf = rhs.casefold()
+                    valid = rhs_cf in {"истина", "true"} or (
+                        re.search(r"\b(?:или|or)\b", rhs, re.IGNORECASE)
+                        and re.search(rf"\b{re.escape(lhs)}\b", rhs, re.IGNORECASE)
+                    )
+                    if not valid:
+                        diags.append(
+                            _diag.Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=m_assign.start("name"),
+                                end_line=idx + 1,
+                                end_character=len(lines[idx].rstrip()),
+                                severity=_diag.Severity.WARNING,
+                                code="BSL266",
+                                message="Параметр «Отказ» изменяется некорректно",
+                            )
+                        )
+
+    return diags
+
+
+def run_bsl212_missed_required_parameter(
+    path: str,
+    content: str,
+    lines: list[str],
+    procs: list[_ProcInfo],
+    calls: list[Any],
+) -> list[Any]:
+    _diag = _diag_module()
+    proc_by_name = {proc.name.casefold(): proc for proc in procs}
+    if not proc_by_name or not calls:
+        return []
+
+    diags: list[Any] = []
+    line_starts = _diag.line_start_offsets(content)
+    for call in calls:
+        callee = proc_by_name.get(call.callee_name.casefold())
+        if callee is None:
+            continue
+        required_params = [p for p in callee.params if p not in callee.optional_params]
+        if not required_params:
+            continue
+        arg_presence = _diag._extract_call_argument_presence(
+            content,
+            line_starts,
+            line=call.caller_line,
+            character=call.caller_character,
+            callee_name=call.callee_name,
+        )
+        if arg_presence is None:
+            continue
+
+        missed: list[str] = []
+        for idx, param_name in enumerate(callee.params):
+            if param_name in callee.optional_params:
+                continue
+            if idx >= len(arg_presence) or not arg_presence[idx]:
+                missed.append(param_name)
+
+        if not missed:
+            continue
+        line_text = lines[call.caller_line - 1] if 0 <= call.caller_line - 1 < len(lines) else ""
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=call.caller_line,
+                character=call.caller_character,
+                end_line=call.caller_line,
+                end_character=len(line_text.rstrip()),
+                severity=_diag.Severity.ERROR,
+                code="BSL212",
+                message=f"Пропущен обязательный параметр в вызове метода: {', '.join(missed)}",
+            )
+        )
+    return diags
+
+
+def run_bsl215_missing_parameter_description(
+    path: str,
+    lines: list[str],
+    procs: list[_ProcInfo],
+) -> list[Any]:
+    _diag = _diag_module()
+    diags: list[Any] = []
+    re_blank_doc_line = re.compile(r"^\s*//\s*$")
+    re_doc_section = re.compile(
+        r"^\s*//\s*(?:Параметры|Parameters|Возвращаемое значение|Returns?)\s*:?\s*$",
+        re.IGNORECASE,
+    )
+
+    for proc in procs:
+        if not proc.params:
+            continue
+
+        block_end = proc.start_idx - 1
+        while block_end >= 0 and (
+            lines[block_end].strip() == "" or _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end])
+        ):
+            block_end -= 1
+        if block_end < 0 or not _diag._RE_BSL215_COMMENT_LINE.match(lines[block_end]):
+            continue
+
+        block_start = block_end
+        while block_start > 0 and _diag._RE_BSL215_COMMENT_LINE.match(lines[block_start - 1]):
+            block_start -= 1
+
+        comment_block = lines[block_start : block_end + 1]
+        re_separator = re.compile(r"^\s*/{10,}\s*$")
+        if any(re_separator.match(cl) for cl in comment_block):
+            continue
+
+        re_see_link = re.compile(r"^\s*//\s*(?:См\.|See)\s+\S", re.IGNORECASE)
+        if any(re_see_link.match(cl) for cl in comment_block):
+            continue
+
+        if not any(re_blank_doc_line.match(cl) or re_doc_section.match(cl) for cl in comment_block):
+            continue
+
+        params_section_start = None
+        for ci, cl in enumerate(comment_block):
+            if _diag._RE_BSL215_PARAMS_SECTION.match(cl):
+                params_section_start = ci
+                break
+
+        actual_params_cf = {p.casefold() for p in proc.params}
+
+        if params_section_start is None:
+            header_line = lines[proc.start_idx]
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=header_line.index(proc.name),
+                    end_line=proc.start_idx + 1,
+                    end_character=header_line.index(proc.name) + len(proc.name),
+                    severity=_diag.Severity.WARNING,
+                    code="BSL215",
+                    message=f"Отсутствует описание параметров метода «{proc.name}» в комментарии",
+                )
+            )
+            continue
+
+        documented_cf: dict[str, str] = {}
+        for cl in comment_block[params_section_start + 1 :]:
+            stripped = cl.strip()
+            if stripped == "//" or (
+                re.match(r"^\s*//\s*\w[\w\s]*:\s*$", cl)
+                and not _diag._RE_BSL215_PARAM_ENTRY.match(cl)
+            ):
+                break
+            m = _diag._RE_BSL215_PARAM_ENTRY.match(cl)
+            if m:
+                pname = m.group(1)
+                documented_cf[pname.casefold()] = pname
+
+        param_lines: dict[str, int] = {}
+        scan_idx = proc.start_idx
+        paren_depth = 0
+        header_done = False
+        while scan_idx < len(lines) and not header_done:
+            sl = lines[scan_idx]
+            for ch in sl:
+                if ch == "(":
+                    paren_depth += 1
+                elif ch == ")":
+                    paren_depth -= 1
+                    if paren_depth == 0:
+                        header_done = True
+                        break
+            for pname in proc.params:
+                pcf = pname.casefold()
+                if pcf not in param_lines and re.search(
+                    r"\b" + re.escape(pname) + r"\b", sl, re.IGNORECASE
+                ):
+                    param_lines[pcf] = scan_idx
+            scan_idx += 1
+
+        for pname in proc.params:
+            pcf = pname.casefold()
+            if pcf not in documented_cf:
+                param_line_idx = param_lines.get(pcf, proc.start_idx)
+                pl = lines[param_line_idx]
+                m = re.search(r"\b" + re.escape(pname) + r"\b", pl, re.IGNORECASE)
+                col = m.start() if m else 0
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=param_line_idx + 1,
+                        character=col,
+                        end_line=param_line_idx + 1,
+                        end_character=col + len(pname),
+                        severity=_diag.Severity.WARNING,
+                        code="BSL215",
+                        message=f"Отсутствует описание параметра «{pname}» метода «{proc.name}» в комментарии",
+                    )
+                )
+
+        extra = [v for k, v in documented_cf.items() if k not in actual_params_cf]
+        if extra:
+            header_line = lines[proc.start_idx]
+            try:
+                col = header_line.index(proc.name)
+            except ValueError:
+                col = 0
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=col,
+                    end_line=proc.start_idx + 1,
+                    end_character=col + len(proc.name),
+                    severity=_diag.Severity.WARNING,
+                    code="BSL215",
+                    message=(
+                        f"Параметры {', '.join(extra)!r} описаны в комментарии, "
+                        f"но отсутствуют в сигнатуре «{proc.name}»"
+                    ),
+                )
+            )
+
+    return diags
+
+
+_RE_BSL233_API_REGION = re.compile(
+    r"^\s*#(?:Область|Region)\s+(ПрограммныйИнтерфейс|Public)\s*$",
+    re.IGNORECASE,
+)
+_RE_BSL233_REGION_START = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE)
+_RE_BSL233_REGION_END = re.compile(r"^\s*#(?:КонецОбласти|EndRegion)\b", re.IGNORECASE)
+
+
+def run_bsl233_public_methods_description(
+    path: str,
+    lines: list[str],
+    procs: list[_ProcInfo],
+) -> list[Any]:
+    _diag = _diag_module()
+    diags: list[Any] = []
+    region_stack: list[str] = []
+    root_region_at: dict[int, str] = {}
+
+    for idx, line in enumerate(lines):
+        if _RE_BSL233_REGION_END.match(line):
+            if region_stack:
+                region_stack.pop()
+        elif _RE_BSL233_REGION_START.match(line):
+            m = re.match(r"^\s*#(?:Область|Region)\s+(\S+)", line, re.IGNORECASE)
+            region_name = m.group(1) if m else ""
+            region_stack.append(region_name)
+        if region_stack:
+            root_region_at[idx] = region_stack[0]
+
+    for proc in procs:
+        if not proc.is_export:
+            continue
+        root_region = root_region_at.get(proc.start_idx, "")
+        if not _RE_BSL233_API_REGION.match(f"#Область {root_region}" if root_region else ""):
+            continue
+
+        block_end = proc.start_idx - 1
+        while block_end >= 0 and (
+            lines[block_end].strip() == "" or _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end])
+        ):
+            block_end -= 1
+
+        has_description = block_end >= 0 and _diag._RE_BSL215_COMMENT_LINE.match(lines[block_end])
+        if has_description:
+            blk_s = block_end
+            while blk_s > 0 and _diag._RE_BSL215_COMMENT_LINE.match(lines[blk_s - 1]):
+                blk_s -= 1
+            block = lines[blk_s : block_end + 1]
+            if any(re.match(r"^\s*/{10,}\s*$", cl) for cl in block):
+                has_description = False
+
+        if not has_description:
+            header_line = lines[proc.start_idx]
+            try:
+                col = header_line.index(proc.name)
+            except ValueError:
+                col = 0
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=col,
+                    end_line=proc.start_idx + 1,
+                    end_character=col + len(proc.name),
+                    severity=_diag.Severity.INFORMATION,
+                    code="BSL233",
+                    message=f"Экспортный метод «{proc.name}» в публичном API должен иметь описание в комментарии",
+                )
+            )
+
+    return diags
+
+
+def run_bsl254_transferring_parameters(
+    symbol_index: Any,
+    path: str,
+    lines: list[str],
+    procs: list[_ProcInfo],
+) -> list[Any]:
+    _diag = _diag_module()
+    if symbol_index is None:
+        return []
+
+    diags: list[Any] = []
+    file_lines_cache: dict[str, list[str]] = {path: lines}
+    proc_cache: dict[str, list[_ProcInfo]] = {path: procs}
+    for proc in procs:
+        if _diag._procedure_compiler_execution_context(lines, proc) != "server":
+            continue
+        if not proc.params:
+            continue
+        missing_val = [
+            p
+            for p in proc.params
+            if p and p.casefold() not in {n.casefold() for n in proc.val_params}
+        ]
+        if not missing_val:
+            continue
+        callers = getattr(symbol_index, "find_callers", lambda *_args, **_kwargs: [])(
+            proc.name,
+            limit=200,
+        )
+        client_callers = [
+            row
+            for row in callers
+            if _diag._caller_is_client_method(
+                str(row.get("caller_file") or ""),
+                row.get("caller_name"),
+                int(row.get("caller_line") or 0),
+                current_path=path,
+                current_lines=lines,
+                current_procs=procs,
+                file_lines_cache=file_lines_cache,
+                proc_cache=proc_cache,
+            )
+        ]
+        if not client_callers:
+            continue
+        header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+        assigned = _diag._proc_assigned_param_names(lines, proc)
+        for param_name in missing_val:
+            if param_name.casefold() in assigned:
+                continue
+            span = _diag._proc_param_name_span(header_line, param_name)
+            if span is None:
+                c0 = proc.header_col
+                c1 = len(header_line.rstrip())
+            else:
+                c0, c1 = span
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=c0,
+                    end_line=proc.start_idx + 1,
+                    end_character=c1,
+                    severity=_diag.Severity.WARNING,
+                    code="BSL254",
+                    message=f'Установите модификатор "Знач" для параметра {param_name} метода {proc.name}',
+                )
+            )
+    return diags
+
+
+def run_bsl224_nested_function_in_parameters(
+    path: str,
+    lines: list[str],
+    tree: Any,
+) -> list[Any]:
+    _diag = _diag_module()
+    root = getattr(tree, "root_node", None)
+    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+        return []
+
+    allowed_names = {"нстр", "nstr", "предопределенноезначение", "predefinedvalue"}
+    diags: list[Any] = []
+
+    def call_name_and_args(node: Any) -> tuple[str, Any | None, Any | None, Any | None, Any | None]:
+        if getattr(node, "type", None) == "call_expression":
+            method_node = _diag._ts_child_of_type(node, "method_call")
+            if method_node is not None:
+                name, _, args, _, name_node = call_name_and_args(method_node)
+                return name, name_node, args, method_node, name_node
+            return "", None, None, None, None
+        ident = _diag._ts_child_of_type(node, "identifier")
+        args = _diag._ts_child_of_type(node, "arguments")
+        return _diag._ts_node_text(ident), ident, args, node, ident
+
+    def arg_expr_nodes(args: Any) -> list[Any]:
+        return [
+            child for child in getattr(args, "children", []) or [] if child.type == "expression"
+        ]
+
+    def contains_forbidden_nested_call(args: Any) -> bool:
+        for child in _diag._ts_walk(args):
+            node_type = getattr(child, "type", None)
+            if node_type == "call_expression":
+                return True
+            if node_type == "method_call":
+                name, _, _, _, _ = call_name_and_args(child)
+                if name.casefold() not in allowed_names:
+                    return True
+            elif node_type == "new_expression":
+                _, _, nested_args, _, _ = call_name_and_args(child)
+                if nested_args is not None and arg_expr_nodes(nested_args):
+                    return True
+        return False
+
+    for node in _diag._ts_walk(root):
+        node_type = getattr(node, "type", None)
+        if node_type not in {"call_expression", "method_call", "new_expression"}:
+            continue
+        if (
+            node_type == "method_call"
+            and getattr(getattr(node, "parent", None), "type", None) == "call_expression"
+        ):
+            continue
+        if node.start_point[0] == node.end_point[0]:
+            continue
+
+        name, anchor, args, call_node, name_node = call_name_and_args(node)
+        if anchor is None or args is None or call_node is None or name_node is None:
+            continue
+
+        exprs = arg_expr_nodes(args)
+        if not exprs:
+            continue
+        if not any(expr.start_point[0] != expr.end_point[0] for expr in exprs):
+            continue
+        if not contains_forbidden_nested_call(args):
+            continue
+
+        start_line_idx = anchor.start_point[0]
+        end_line_idx = name_node.end_point[0]
+        start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
+        end_line_text = lines[end_line_idx] if end_line_idx < len(lines) else ""
+        exact_start = start_line_text.find(name)
+        start_char = (
+            exact_start
+            if exact_start >= 0
+            else _diag.utf8_byte_offset_to_lsp_character(start_line_text, anchor.start_point[1])
+        )
+
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line_idx + 1,
+                character=start_char,
+                end_line=end_line_idx + 1,
+                end_character=start_char + len(name)
+                if start_line_idx == end_line_idx
+                else _diag.utf8_byte_offset_to_lsp_character(end_line_text, name_node.end_point[1]),
+                severity=_diag.Severity.INFORMATION,
+                code="BSL224",
+                message=f"Вложенный вызов функции в параметрах метода «{name}»",
+            )
+        )
+
+    return diags
+
+
+def run_bsl240_rewrite_method_parameter(
+    path: str,
+    lines: list[str],
+    procs: list[_ProcInfo],
+    tree: Any,
+    proc_node_map: dict[tuple[str, int, str], Any] | None = None,
+) -> list[Any]:
+    _diag = _diag_module()
+    diags: list[Any] = []
+    for proc in procs:
+        if _diag.path_is_likely_form_module_bsl(path):
+            return []
+        tree_ok = _diag._ts_tree_ok_for_rules(tree)
+        header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+        param_names: set[str] = set()
+        proc_params = getattr(proc, "params", None)
+        if proc_params:
+            param_names = {n.casefold() for n in proc_params if n}
+        else:
+            hm = _diag._RE_BSL240_PARAM_HEADER.match(header_line)
+            if not hm:
+                continue
+            raw_params = hm.group(1)
+            for part in _diag.split_commas_outside_double_quotes(raw_params):
+                part = part.strip()
+                part = _diag._RE_BSL240_ZNACH.sub("", part)
+                name = part.split("=")[0].strip()
+                if name:
+                    param_names.add(name.casefold())
+
+        if not param_names:
+            continue
+
+        body_start = proc.start_idx + 1
+        if tree_ok:
+            key = (proc.name, proc.start_idx, getattr(proc, "kind", "procedure"))
+            pnode = (
+                proc_node_map.get(key)
+                if proc_node_map is not None
+                else _diag._find_proc_definition_node(tree, proc)
+            )
+            if pnode is not None:
+                bl = _diag._ts_first_body_statement_line_idx(pnode)
+                if bl is not None:
+                    body_start = bl
+                else:
+                    body_start = _diag._proc_body_start_line_idx_fallback(lines, proc)
+            else:
+                body_start = _diag._proc_body_start_line_idx_fallback(lines, proc)
+        else:
+            body_start = _diag._proc_body_start_line_idx_fallback(lines, proc)
+
+        if body_start >= proc.end_idx:
+            continue
+
+        val_cf = {n.casefold() for n in (getattr(proc, "val_params", None) or [])}
+        if not val_cf:
+            continue
+        opt_cf = {n.casefold() for n in (getattr(proc, "optional_params", None) or [])}
+        val_cf -= opt_cf
+
+        for li in range(body_start, min(body_start + 15, proc.end_idx)):
+            if li >= len(lines):
+                break
+            line = lines[li]
+            if _diag._RE_LINE_COMMENT.match(line) or not line.strip():
+                continue
+            am = _diag._RE_BSL240_ASSIGN.match(line)
+            if am:
+                lhs = am.group(1).casefold()
+                if lhs in val_cf and lhs not in _diag._BSL062_SKIP_STANDARD_COMMAND_PARAMS:
+                    rhs = line[am.end() :].strip()
+                    if lhs not in rhs.casefold():
+                        diags.append(
+                            _diag.Diagnostic(
+                                file=path,
+                                line=li + 1,
+                                character=am.start(),
+                                end_line=li + 1,
+                                end_character=am.end(),
+                                severity=_diag.Severity.WARNING,
+                                code="BSL240",
+                                message=(
+                                    f"Параметр «{am.group(1)}» перезаписывается "
+                                    "до первого использования — вероятно ошибка"
+                                ),
+                            )
+                        )
+                        param_names.discard(lhs)
+    return diags
