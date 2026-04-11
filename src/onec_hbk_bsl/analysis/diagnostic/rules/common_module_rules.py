@@ -5,19 +5,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from onec_hbk_bsl.analysis.diagnostic.rules.bsl152 import (
-    bsl152_public_region_name_spans,
-    common_module_xml_for_module_bsl,
-    return_values_reuse_cached_from_xml_text,
+from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
+    bsl154_code_after_async_spans,
+    bsl155_code_block_before_sub,
+    bsl156_diagnostics,
 )
-from onec_hbk_bsl.analysis.diagnostic.rules.bsl154 import bsl154_code_after_async_spans
-from onec_hbk_bsl.analysis.diagnostic.rules.bsl155 import bsl155_code_block_before_sub
-from onec_hbk_bsl.analysis.diagnostic.rules.bsl156 import bsl156_diagnostics
 
 if TYPE_CHECKING:
     from onec_hbk_bsl.analysis.diagnostics import _ProcInfo, _RegionInfo
 
 _RE_SIMPLE_LHS_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)")
+_RVR_RE = re.compile(
+    r"<ReturnValuesReuse>\s*([^<]+?)\s*</ReturnValuesReuse>",
+    re.IGNORECASE,
+)
 _API_REGION_NAMES_CF = frozenset(
     {
         "public",
@@ -26,6 +27,9 @@ _API_REGION_NAMES_CF = frozenset(
         "служебныйпрограммныйинтерфейс",
     }
 )
+_CACHED_REUSE_VALUES = frozenset({"duringrequest", "duringsession"})
+_RE_REGION_NAME_COL = re.compile(r"^\s*#(?:Область|Region)\s+(\S+)", re.IGNORECASE)
+_PUBLIC_REGION_NAMES = frozenset({"public", "программныйинтерфейс"})
 _RE_NAME_CACHED = re.compile(r"повторноеиспользование|повтисп|cached", re.IGNORECASE)
 _RE_NAME_CLIENT = re.compile(r"клиент|client", re.IGNORECASE)
 _RE_NAME_CLIENT_SERVER = re.compile(r"клиентсервер|clientserver", re.IGNORECASE)
@@ -311,6 +315,72 @@ def _diag_types() -> tuple[type[Any], Any]:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
     return _diag.Diagnostic, _diag.Severity
+
+
+def common_module_xml_for_module_bsl(module_bsl_path: str) -> Path | None:
+    p = Path(module_bsl_path)
+    lower_parts = {x.lower() for x in p.parts}
+    if "commonmodules" not in lower_parts and "общиемодули" not in lower_parts:
+        return None
+    if p.name.lower() != "module.bsl":
+        return None
+    if p.parent.name.lower() != "ext":
+        return None
+    mod_dir = p.parent.parent
+    xml = mod_dir / f"{mod_dir.name}.xml"
+    return xml if xml.is_file() else None
+
+
+def return_values_reuse_cached_from_xml_text(raw: str) -> bool:
+    m = _RVR_RE.search(raw)
+    if not m:
+        return False
+    val = m.group(1).strip().casefold()
+    val = val.split(":")[-1].strip()
+    return val in _CACHED_REUSE_VALUES
+
+
+def common_module_bslls_cached_reuse(module_bsl_path: str) -> bool:
+    xp = common_module_xml_for_module_bsl(module_bsl_path)
+    if xp is None:
+        return False
+    try:
+        raw = xp.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    return return_values_reuse_cached_from_xml_text(raw)
+
+
+def _is_public_program_interface_region(name: str) -> bool:
+    return name.strip().casefold() in _PUBLIC_REGION_NAMES
+
+
+def bsl152_public_region_name_spans(
+    module_bsl_path: str,
+    lines: list[str],
+    regions: list[tuple[str, int, int]],
+    procedures: list[tuple[int, int]],
+) -> list[tuple[int, int, int]]:
+    if not common_module_bslls_cached_reuse(module_bsl_path):
+        return []
+
+    out: list[tuple[int, int, int]] = []
+    for name, r0, r1 in regions:
+        if not _is_public_program_interface_region(name):
+            continue
+        has_sub = any(r0 < ps < r1 for ps, _ in procedures)
+        if not has_sub:
+            continue
+        if r0 < 0 or r0 >= len(lines):
+            continue
+        line = lines[r0]
+        m = _RE_REGION_NAME_COL.match(line)
+        if not m:
+            continue
+        c0 = m.start(1)
+        c1 = m.end(1)
+        out.append((r0 + 1, c0, c1))
+    return out
 
 
 def run_bsl152_cached_public(

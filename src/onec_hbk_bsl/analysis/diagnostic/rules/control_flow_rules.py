@@ -1,10 +1,5 @@
 """
-BSL148 AllFunctionPathMustHaveReturn — BSLLS-oriented analysis on tree-sitter.
-
-Defaults: ``loopsExecutedAtLeastOnce=True`` (while/for at module level do not open
-an extra implicit-exit path through the loop), ``ignoreMissingElseOnExit=False``.
-
-``preprocessor`` nodes are skipped for control flow (content unchanged).
+Control-flow rules that need dedicated CFG/tree helpers.
 """
 
 from __future__ import annotations
@@ -172,19 +167,14 @@ def _try_always_returns(try_node: Any) -> bool:
 
 def _if_always_returns(if_node: Any) -> bool:
     branches, has_else = _collect_if_branches(if_node)
-    if not branches:
-        return False
-    if not has_else:
+    if not branches or not has_else:
         return False
     return all(_stmt_list_always_returns(b) for b in branches)
 
 
 def _if_may_exit_to_successor_without_return(if_node: Any) -> bool:
-    """Some execution of *if_node* reaches the statement after the if without return."""
     branches, has_else = _collect_if_branches(if_node)
-    if not branches:
-        return True
-    if not has_else:
+    if not branches or not has_else:
         return True
     return any(not _stmt_list_always_returns(b) for b in branches)
 
@@ -209,8 +199,6 @@ def implicit_exit_reachable(
     loops_executed_at_least_once: bool,
     at_top_level: bool,
 ) -> bool:
-    """∃ path through *stmts* that ends after the last stmt without return/raise."""
-
     def walk(i: int) -> bool:
         if i >= len(stmts):
             return True
@@ -222,81 +210,35 @@ def implicit_exit_reachable(
             return walk(i + 1)
         if t == "if_statement":
             if _if_may_exit_to_successor_without_return(s):
-                return walk(i + 1)
+                return True
             return False
         if t in ("while_statement", "for_statement", "for_each_statement"):
-            if t == "while_statement" and _while_literal_true(s):
-                return False
-            if (
-                loops_executed_at_least_once
-                and at_top_level
-                and t in ("for_statement", "for_each_statement")
-                and i + 1 >= len(stmts)
-            ):
-                return False
-            if loops_executed_at_least_once and at_top_level:
-                return walk(i + 1)
-            if not _loop_body_always_returns(s):
+            if not loops_executed_at_least_once or not at_top_level:
                 return True
-            return walk(i + 1)
+            if t == "while_statement" and not _while_literal_true(s):
+                return True
+            if _loop_body_always_returns(s):
+                return False
+            return True
         if t == "try_statement":
-            if not _try_always_returns(s):
-                return True
-            return walk(i + 1)
+            return not _try_always_returns(s)
         return walk(i + 1)
 
     return walk(0)
 
 
-def _fn_subtree_has_parse_error(fn_def: Any) -> bool:
-    def w(n: Any) -> bool:
-        if getattr(n, "type", None) == "ERROR":
-            return True
-        if bool(getattr(n, "is_missing", False)):
-            return True
-        return any(w(c) for c in getattr(n, "children", []) or [])
-
-    return w(fn_def)
-
-
-def _fn_has_return(fn_def: Any) -> bool:
-    found = False
-
-    def w(n: Any) -> None:
-        nonlocal found
-        if getattr(n, "type", None) == "return_statement":
-            found = True
-            return
-        for c in getattr(n, "children", []) or []:
-            w(c)
-
-    for c in _function_body_children(fn_def):
-        w(c)
-    return found
-
-
-def bsl148_function_name_spans(
-    tree: Any, *, loops_executed_at_least_once: bool = True
-) -> list[_Span]:
-    root = getattr(tree, "root_node", None)
-    if root is None:
-        return []
-    out: list[_Span] = []
-
-    def scan(n: Any) -> None:
-        if getattr(n, "type", None) == "function_definition":
-            if not _fn_subtree_has_parse_error(n) and _fn_has_return(n):
-                body = _function_body_children(n)
-                if implicit_exit_reachable(
-                    body,
-                    loops_executed_at_least_once=loops_executed_at_least_once,
-                    at_top_level=True,
-                ):
-                    sp = _identifier_span(n)
-                    if sp is not None:
-                        out.append(sp)
-        for c in getattr(n, "children", []) or []:
-            scan(c)
-
-    scan(root)
+def bsl148_function_name_spans(root: Any) -> list[tuple[int, int, int]]:
+    out: list[tuple[int, int, int]] = []
+    for ch in getattr(root, "children", []) or []:
+        if getattr(ch, "type", None) != "function":
+            continue
+        ident = _identifier_span(ch)
+        if ident is None:
+            continue
+        if implicit_exit_reachable(
+            _function_body_children(ch),
+            loops_executed_at_least_once=True,
+            at_top_level=True,
+        ):
+            out.append((ident.line0 + 1, ident.col0, ident.col1))
     return out

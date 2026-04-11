@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from onec_hbk_bsl.analysis.diagnostic.rules.bsl154 import path_matches_bsl154_module_types
+from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
+    path_matches_bsl154_module_types,
+)
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
 
