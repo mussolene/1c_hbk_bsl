@@ -15,7 +15,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import copy_metadata
+import spellchecker
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 
 ROOT = Path(SPECPATH).resolve().parent
 SRC_MAIN = ROOT / "src" / "onec_hbk_bsl" / "__main__.py"
@@ -26,6 +27,11 @@ datas: list = [(str(ROOT / "data"), "data")]
 datas += copy_metadata("fastmcp")
 # onec-hbk-bsl __version__ uses importlib.metadata.version("onec-hbk-bsl") when bundled.
 datas += copy_metadata("onec-hbk-bsl")
+# Typo parity uses importlib.resources against this package at runtime.
+datas += collect_data_files("onec_hbk_bsl.bslls_typo_data")
+# pyspellchecker loads bundled resources/*.json.gz at runtime via pkgutil.get_data.
+SPELLCHECKER_ROOT = Path(spellchecker.__file__).resolve().parent
+datas += [(str(SPELLCHECKER_ROOT / "resources"), "spellchecker/resources")]
 
 binaries: list = []
 
@@ -37,6 +43,8 @@ hiddenimports: list = [
     "uvicorn.protocols.http.auto",
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan.on",
+    "onec_hbk_bsl.bslls_typo_data",
+    "spellchecker",
 ]
 
 excludes = [

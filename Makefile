@@ -1,4 +1,6 @@
-.PHONY: install install-build dev test lint fmt check-all sync-version reset-extension-placeholder build build-check extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
+.PHONY: install install-build dev test lint fmt check-all sync-version reset-extension-placeholder \
+	build build-fast build-check bench-30 compare-java extension-bin sync-extension-bin \
+	vsix dist clean docker-build docker-up docker-down
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
 
@@ -20,8 +22,9 @@ reset-extension-placeholder:
 	$(PYTHON3) scripts/reset_extension_placeholder.py
 
 # ── Тесты и линтинг ──────────────────────────────────────────────────────────
-# Prefer python3 when `python` is not on PATH (e.g. some macOS setups).
+# Use explicit python3 by default. Local .venv may not contain the full build/runtime deps.
 PYTHON3 ?= python3
+SPELLCHECKER_RES := $(shell $(PYTHON3) -c "from pathlib import Path; import spellchecker; print(Path(spellchecker.__file__).resolve().parent / 'resources')")
 
 test:
 	$(PYTHON3) -m pytest
@@ -63,12 +66,39 @@ EXTENSION_BIN = $(EXTENSION_BIN_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
 build:
 	@echo "→ PyInstaller onefile ($(PLATFORM))..."
 	@mkdir -p $(DIST_DIR)
-	.venv/bin/python -m PyInstaller --clean --noconfirm \
+	$(PYTHON3) -m PyInstaller --clean --noconfirm \
 		--workpath build/pyinstaller \
 		--distpath $(DIST_DIR) \
 		$(SPEC)
 	@echo "✓ Готово: $(BUILD_OUT)"
 	@ls -lh $(BUILD_OUT)
+
+# Faster local build loop than onefile. Useful for startup checks and smoke testing.
+build-fast:
+	@echo "→ PyInstaller onedir ($(PLATFORM))..."
+	@rm -rf $(DIST_DIR)/$(BIN_NAME)
+	@mkdir -p $(DIST_DIR)
+	$(PYTHON3) -m PyInstaller --clean --noconfirm \
+		--onedir \
+		--name $(BIN_NAME) \
+		--workpath build/pyinstaller \
+		--distpath $(DIST_DIR) \
+		--paths src \
+		--add-data "data:data" \
+		--add-data "$(SPELLCHECKER_RES):spellchecker/resources" \
+		--collect-data onec_hbk_bsl.bslls_typo_data \
+		--hidden-import spellchecker \
+		--copy-metadata fastmcp \
+		--copy-metadata onec-hbk-bsl \
+		--hidden-import uvicorn.loops \
+		--hidden-import uvicorn.loops.auto \
+		--hidden-import uvicorn.protocols.http.auto \
+		--hidden-import uvicorn.protocols.websockets.auto \
+		--hidden-import uvicorn.lifespan.on \
+		--hidden-import onec_hbk_bsl.bslls_typo_data \
+		$(ENTRY)
+	@echo "✓ Готово: $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)"
+	@ls -lh $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)
 
 # Скопировать свежий бинарник в vscode-extension/bin/ (для vsce package / отладки расширения)
 sync-extension-bin:
@@ -95,6 +125,12 @@ vsix: sync-version extension-bin
 build-check: build
 	$(BUILD_OUT) --help
 	$(BUILD_OUT) --version
+
+bench-30:
+	$(PYTHON3) scripts/dev_corpus_bench.py /Users/maxon/git/config --limit 30 --profile strict-bslls
+
+compare-java:
+	$(PYTHON3) scripts/dev_corpus_speed_compare.py /Users/maxon/git/config --limit 30 --profile strict-bslls
 
 # Пакет для дистрибуции с версией из установленного пакета (setuptools-scm / git)
 dist: build
