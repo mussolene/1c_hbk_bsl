@@ -312,7 +312,7 @@ def _run_bslls_analyze(
             "-q",
         ]
         if config_path is not None:
-            cmd[3:3] = ["-c", str(config_path)]
+            cmd[4:4] = ["-c", str(config_path)]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         report = json.loads((out_root / "bsl-json.json").read_text(encoding="utf-8"))
         return normalize_bslls_json_report(
