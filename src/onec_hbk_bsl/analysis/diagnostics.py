@@ -157,8 +157,11 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL207",
         "BSL209",
         "BSL210",
+        "BSL220",
         "BSL191",
         "BSL201",
+        "BSL269",
+        "BSL273",
         "BSL234",
         "BSL235",
     }
@@ -2007,7 +2010,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["query", "style"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL221": {
         "name": "MultilingualStringHasAllDeclaredLanguages",
@@ -2142,7 +2145,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["query", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL236": {
         "name": "QueryToMissingMetadata",
@@ -2448,7 +2451,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["query", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL270": {
         "name": "UsingModalWindows",
@@ -2484,7 +2487,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["query", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL274": {
         "name": "WrongDataPathForFormElements",
@@ -4156,6 +4159,24 @@ _RE_QUERY_LIKE_TAIL_STOP = re.compile(
     r"ИМЕЮЩИЕ|HAVING|ИТОГИ|TOTALS|ОБЪЕДИНИТЬ|UNION)\b|,",
     re.IGNORECASE,
 )
+_QUERY_VIRTUAL_TABLE_NAME_PATTERN = (
+    r"(?:Регистр(?:Сведений|Накопления|Бухгалтерии|Расчета)|"
+    r"InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister)"
+    r"\.\w+(?:\.\w+)+"
+)
+_RE_QUERY_VIRTUAL_TABLE_CALL = re.compile(
+    rf"\b(?P<name>{_QUERY_VIRTUAL_TABLE_NAME_PATTERN})\s*(?P<open>\()?",
+    re.IGNORECASE,
+)
+_RE_QUERY_PARSE_ERROR_TAIL_KEYWORD = re.compile(
+    r"\b(?:ИЗ|FROM|КАК|AS|ПО|ON|ГДЕ|WHERE|ЛЕВОЕ|LEFT|ПРАВОЕ|RIGHT|"
+    r"ВНУТРЕННЕЕ|INNER|ПОЛНОЕ|FULL|СОЕДИНЕНИЕ|JOIN)\s*$",
+    re.IGNORECASE,
+)
+_RE_QUERY_PARSE_ERROR_TAIL_OPERATOR = re.compile(
+    r"(?:[=<>+\-*/]|\b(?:И|AND|ИЛИ|OR)\b)\s*$", re.IGNORECASE
+)
+_RE_QUERY_FIELD_REF = re.compile(r"\b(?P<alias>\w+)\.(?P<field>\w+(?:\.\w+)*)\b", re.IGNORECASE)
 
 
 def _bsl210_where_clause_region_bounds(lit: str, where_match: re.Match) -> tuple[int, int]:
@@ -4280,7 +4301,7 @@ def _iter_query_text_blocks(lines: list[str]):
 
 
 def _iter_query_text_content_lines(start_idx: int, block_lines: list[str]):
-    """Yield normalized query text lines as ``(line_no, content_base, head, ended_query)``."""
+    """Yield query text lines as ``(line_no, content_base, content, head, ended_query)``."""
     for offset, raw_line in enumerate(block_lines):
         stripped = raw_line.rstrip()
         if not stripped:
@@ -4313,9 +4334,53 @@ def _iter_query_text_content_lines(start_idx: int, block_lines: list[str]):
                 break
             continue
 
-        yield start_idx + offset + 1, content_base, head, ended_query
+        yield start_idx + offset + 1, content_base, content, head, ended_query
         if ended_query:
             break
+
+
+def _find_matching_paren(text: str, open_idx: int) -> int:
+    depth = 0
+    i = open_idx
+    while i < len(text):
+        ch = text[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def _split_top_level_args(text: str) -> list[str]:
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for idx, ch in enumerate(text):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif ch == "," and depth == 0:
+            parts.append(text[start:idx])
+            start = idx + 1
+    parts.append(text[start:])
+    return parts
+
+
+def _query_has_balanced_parens(lines: list[str]) -> bool:
+    depth = 0
+    for line in lines:
+        for ch in line:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth < 0:
+                    return False
+    return depth == 0
 
 
 # BSL190 — FormDataToValue / ДанныеФормыВЗначение
@@ -6510,7 +6575,7 @@ class DiagnosticEngine:
             # "BSL216" enabled — MissingSpace implemented
             "BSL217",  # MissingTempStorageDeletion — TODO
             # "BSL218" enabled — MissingTemporaryFileDeletion implemented
-            "BSL220",  # MultilineStringInQuery — TODO
+            # "BSL220" enabled — MultilineStringInQuery implemented
             "BSL221",  # MultilingualStringHasAllDeclaredLanguages — TODO
             "BSL222",  # MultilingualStringUsingWithTemplate — TODO
             "BSL223",  # NestedConstructorsInStructureDeclaration — TODO
@@ -6525,7 +6590,7 @@ class DiagnosticEngine:
             "BSL232",  # ProtectedModule — TODO
             # "BSL233" enabled — PublicMethodsDescription implemented
             # "BSL234" enabled — QueryNestedFieldsByDot implemented
-            "BSL235",  # QueryParseError — TODO
+            # "BSL235" enabled — QueryParseError implemented
             "BSL236",  # QueryToMissingMetadata — TODO
             # "BSL237" enabled — RedundantAccessToObject implemented
             "BSL238",  # RefOveruse — TODO
@@ -6559,11 +6624,11 @@ class DiagnosticEngine:
             "BSL266",  # UsingCancelParameter — TODO
             "BSL267",  # UsingExternalCodeTools — TODO
             "BSL268",  # UsingFindElementByString — TODO
-            "BSL269",  # UsingLikeInQuery — TODO
+            # "BSL269" enabled — UsingLikeInQuery implemented
             "BSL270",  # UsingModalWindows — TODO
             "BSL271",  # UsingObjectNotAvailableUnix — TODO
             "BSL272",  # UsingSynchronousCalls — TODO
-            "BSL273",  # VirtualTableCallWithoutParameters — TODO
+            # "BSL273" enabled — VirtualTableCallWithoutParameters implemented
             "BSL274",  # WrongDataPathForFormElements — TODO
             "BSL275",  # WrongHttpServiceHandler — TODO
             "BSL276",  # WrongUseFunctionProceedWithCall — TODO
@@ -7532,6 +7597,16 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL200"):
             _rule_tasks.append(
                 ("BSL200", lambda: self._rule_bsl200_incorrect_line_break(path, lines))
+            )
+        _bsl220_235_269_273 = ("BSL220", "BSL235", "BSL269", "BSL273")
+        if any(self._rule_enabled(c) for c in _bsl220_235_269_273):
+            _rule_tasks.append(
+                (
+                    "BSL220_235_269_273",
+                    lambda: self._rule_bsl220_235_269_273_query_text_diagnostics(
+                        path, lines, _bsl220_235_269_273
+                    ),
+                )
             )
         _bsl191_201 = ("BSL191", "BSL201")
         if any(self._rule_enabled(c) for c in _bsl191_201):
@@ -14550,6 +14625,125 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
+    # BSL220 / BSL235 / BSL269 / BSL273 — query text diagnostics
+    # ------------------------------------------------------------------
+
+    def _rule_bsl220_235_269_273_query_text_diagnostics(
+        self,
+        path: str,
+        lines: list[str],
+        codes: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled = {code for code in codes if self._rule_enabled(code)}
+        if not enabled:
+            return []
+
+        diags: list[Diagnostic] = []
+        for start_idx, block_lines in _iter_query_text_blocks(lines):
+            content_lines = list(_iter_query_text_content_lines(start_idx, block_lines))
+            if not content_lines:
+                continue
+
+            if "BSL235" in enabled and (
+                not _query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
+                or any(
+                    _RE_QUERY_PARSE_ERROR_TAIL_KEYWORD.search(head)
+                    or _RE_QUERY_PARSE_ERROR_TAIL_OPERATOR.search(head)
+                    for _, _, _, head, _ in content_lines
+                )
+            ):
+                line_no, content_base, _content, head, _ = content_lines[-1]
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_no,
+                        character=content_base,
+                        end_line=line_no,
+                        end_character=content_base + len(head),
+                        severity=Severity.ERROR,
+                        code="BSL235",
+                        message="Синтаксическая ошибка в тексте встроенного запроса",
+                    )
+                )
+
+            for line_no, content_base, content, head, _ended_query in content_lines:
+                if "BSL220" in enabled:
+                    multi_match = re.search(r'"{4,}', content)
+                    if multi_match:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=line_no,
+                                character=content_base + multi_match.start(),
+                                end_line=line_no,
+                                end_character=content_base + multi_match.end(),
+                                severity=Severity.INFORMATION,
+                                code="BSL220",
+                                message="Многострочная строка внутри текста запроса",
+                            )
+                        )
+
+                if "BSL269" in enabled:
+                    for match in _RE_QUERY_LIKE_OPERATOR.finditer(head):
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=line_no,
+                                character=content_base + match.start(),
+                                end_line=line_no,
+                                end_character=content_base + match.end(),
+                                severity=Severity.INFORMATION,
+                                code="BSL269",
+                                message="Оператор ПОДОБНО может привести к полному сканированию таблицы",
+                            )
+                        )
+
+                if "BSL273" in enabled:
+                    for match in _RE_QUERY_VIRTUAL_TABLE_CALL.finditer(head):
+                        open_match = match.group("open")
+                        if open_match is None:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=content_base + match.start("name"),
+                                    end_line=line_no,
+                                    end_character=content_base + match.end("name"),
+                                    severity=Severity.WARNING,
+                                    code="BSL273",
+                                    message="Обращение к виртуальной таблице без параметров",
+                                )
+                            )
+                            continue
+
+                        open_idx = match.end("open") - 1
+                        close_idx = _find_matching_paren(head, open_idx)
+                        if close_idx < 0:
+                            continue
+                        args = head[open_idx + 1 : close_idx]
+                        parts = [part.strip() for part in _split_top_level_args(args)]
+                        if not parts or all(not part for part in parts):
+                            is_violation = True
+                        elif len(parts) == 1:
+                            is_violation = False
+                        else:
+                            is_violation = all(not part for part in parts[1:])
+                        if is_violation:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=content_base + match.start("name"),
+                                    end_line=line_no,
+                                    end_character=content_base + close_idx + 1,
+                                    severity=Severity.WARNING,
+                                    code="BSL273",
+                                    message="Обращение к виртуальной таблице без параметров",
+                                )
+                            )
+        return diags
+
+    # ------------------------------------------------------------------
     # BSL191 / BSL201 — query text diagnostics
     # ------------------------------------------------------------------
 
@@ -14565,9 +14759,13 @@ class DiagnosticEngine:
 
         diags: list[Diagnostic] = []
         for start_idx, block_lines in _iter_query_text_blocks(lines):
-            for line_no, content_base, head, _ended_query in _iter_query_text_content_lines(
-                start_idx, block_lines
-            ):
+            for (
+                line_no,
+                content_base,
+                _content,
+                head,
+                _ended_query,
+            ) in _iter_query_text_content_lines(start_idx, block_lines):
                 if "BSL191" in enabled:
                     for match in _RE_QUERY_FULL_OUTER_JOIN.finditer(head):
                         diags.append(
@@ -14632,9 +14830,13 @@ class DiagnosticEngine:
             join_on_active = False
             join_buffer = ""
 
-            for line_no, content_base, head, _ended_query in _iter_query_text_content_lines(
-                start_idx, block_lines
-            ):
+            for (
+                line_no,
+                content_base,
+                _content,
+                head,
+                _ended_query,
+            ) in _iter_query_text_content_lines(start_idx, block_lines):
                 if _RE_QUERY_JOIN_END_KEYWORD.search(head):
                     join_on_active = False
                     join_buffer = ""

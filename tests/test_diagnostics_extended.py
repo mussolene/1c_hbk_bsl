@@ -4100,6 +4100,67 @@ class TestBsl191201QueryTextDiagnostics:
         assert "BSL201" not in _codes(diags)
 
 
+class TestBsl220235269273QueryTextDiagnostics:
+    def test_multiline_string_in_query_detected(self, tmp_path: Path) -> None:
+        content = '''\
+Процедура Тест()
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |   ЕСТЬNULL(Поле, """") КАК Поле
+        |ИЗ Справочник.Номенклатура";
+КонецПроцедуры
+'''
+        diags = _check(content, tmp_path, select={"BSL220"})
+        assert "BSL220" in _codes(diags)
+
+    def test_using_like_in_query_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |   Таблица.Поле1 ПОДОБНО &Параметр КАК Поле2
+        |ИЗ Документ.Документ КАК Таблица";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL269"})
+        assert "BSL269" in _codes(diags)
+
+    def test_virtual_table_without_parameters_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |   Т.Ссылка
+        |ИЗ РегистрНакопления.Склады.Остатки() КАК Т";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL273"})
+        assert "BSL273" in _codes(diags)
+
+    def test_virtual_table_with_restrictive_parameter_allowed(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |   Т.Ссылка
+        |ИЗ РегистрНакопления.Склады.Остатки(, Склад = &Параметр) КАК Т";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL273"})
+        assert "BSL273" not in _codes(diags)
+
+    def test_query_parse_error_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос.Текст =
+        "ВЫБРАТЬ Поле
+        |ИЗ Справочник.Контрагенты КАК";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL235"})
+        assert "BSL235" in _codes(diags)
+
+
 class TestBsl262UsageWriteLogEvent:
     def test_write_log_event_with_warning_in_except_detected(self, tmp_path: Path) -> None:
         content = """\
