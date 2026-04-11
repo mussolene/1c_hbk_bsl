@@ -119,6 +119,9 @@ from onec_hbk_bsl.analysis.passes.metadata_pass import (
 from onec_hbk_bsl.analysis.passes.method_pass import (
     extend_method_contract_rule_tasks,
 )
+from onec_hbk_bsl.analysis.passes.module_pass import (
+    extend_module_rule_tasks,
+)
 from onec_hbk_bsl.analysis.passes.query_pass import (
     extend_query_join_rule_tasks,
     extend_query_metadata_rule_tasks,
@@ -8052,62 +8055,23 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL157", lambda: self._rule_bsl157_commit_transaction_outside_try(path, lines))
             )
-        if self._rule_enabled("BSL158") and idx is not None:
-            _rule_tasks.append(
-                ("BSL158", lambda: self._rule_bsl158_common_module_assign(path, lines, idx))
-            )
-        if self._rule_enabled("BSL159"):
-            _rule_tasks.append(
-                ("BSL159", lambda: self._rule_bsl159_common_module_invalid_type(path, lines))
-            )
-        if self._rule_enabled("BSL160"):
-            _rule_tasks.append(
-                (
-                    "BSL160",
-                    lambda: self._rule_bsl160_common_module_missing_api(
-                        path, lines, regions, procs
-                    ),
-                )
-            )
-        _bsl161_168 = (
-            "BSL161",
-            "BSL162",
-            "BSL163",
-            "BSL164",
-            "BSL165",
-            "BSL166",
-            "BSL167",
-            "BSL168",
+        extend_module_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            content=content,
+            lines=lines,
+            procs=procs,
+            regions=regions,
+            tree=tree,
+            idx=idx,
         )
-        if any(self._rule_enabled(c) for c in _bsl161_168):
-            _rule_tasks.append(
-                (
-                    "BSL161-168",
-                    lambda: self._rule_bsl161_168_common_module_names(path, lines, _bsl161_168),
-                )
-            )
-        if self._rule_enabled("BSL173"):
-            _rule_tasks.append(
-                ("BSL173", lambda: self._rule_bsl173_deleting_collection_item(path, lines, procs))
-            )
         if self._rule_enabled("BSL257"):
             _rule_tasks.append(
                 ("BSL257", lambda: self._rule_bsl257_unary_plus_in_concatenation(path, lines))
             )
         if self._rule_enabled("BSL279"):
             _rule_tasks.append(("BSL279", lambda: self._rule_bsl279_yo_letter_usage(path, lines)))
-        if self._rule_enabled("BSL280") and idx is not None:
-
-            def _task_bsl280() -> list[Diagnostic]:
-                from onec_hbk_bsl.analysis.metadata_refs import diagnostics_unknown_metadata_objects
-
-                return diagnostics_unknown_metadata_objects(path, content, idx)
-
-            _rule_tasks.append(("BSL280", _task_bsl280))
-        if self._rule_enabled("BSL172"):
-            _rule_tasks.append(
-                ("BSL172", lambda: self._rule_bsl172_data_exchange_loading(path, lines, procs))
-            )
         if self._rule_enabled("BSL149"):
             _rule_tasks.append(
                 ("BSL149", lambda: self._rule_bsl149_assign_alias_fields_in_query(path, lines))
@@ -8120,10 +8084,6 @@ class DiagnosticEngine:
             _rule_tasks.append(("BSL150", lambda: self._rule_bsl150_bad_words(path, lines)))
         if self._rule_enabled("BSL186"):
             _rule_tasks.append(("BSL186", lambda: self._rule_bsl186_extra_commas(path, lines)))
-        if self._rule_enabled("BSL190"):
-            _rule_tasks.append(
-                ("BSL190", lambda: self._rule_bsl190_form_data_to_value(path, lines))
-            )
         if self._rule_enabled("BSL197"):
             _rule_tasks.append(
                 ("BSL197", lambda: self._rule_bsl197_if_else_duplicated_code_block(path, lines))
@@ -8247,17 +8207,6 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL234"):
             _rule_tasks.append(
                 ("BSL234", lambda: self._rule_bsl234_query_nested_fields_by_dot(path, lines))
-            )
-        if self._rule_enabled("BSL237"):
-            _rule_tasks.append(
-                ("BSL237", lambda: self._rule_bsl237_redundant_access_to_object(path, lines))
-            )
-        if self._rule_enabled("BSL245"):
-            _rule_tasks.append(
-                (
-                    "BSL245",
-                    lambda: self._rule_bsl245_server_side_export_form_method(path, lines, procs),
-                )
             )
         extend_style_tail_rule_tasks(
             _rule_tasks,
