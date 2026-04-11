@@ -4161,6 +4161,65 @@ class TestBsl220235269273QueryTextDiagnostics:
         assert "BSL235" in _codes(diags)
 
 
+class TestBsl192193194228266MethodContractDiagnostics:
+    def test_function_name_starts_with_get_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция ПолучитьДанные()
+    Возврат 1;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL192"})
+        assert "BSL192" in _codes(diags)
+
+    def test_function_out_parameter_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(Параметр)
+    Параметр = Истина;
+    Возврат Ложь;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL193"})
+        assert "BSL193" in _codes(diags)
+
+    def test_function_returns_same_primitive_detected(self, tmp_path: Path) -> None:
+        content = """\
+Функция Тест(Значение)
+    Если Значение Тогда
+        Возврат Истина;
+    КонецЕсли;
+    Возврат Истина;
+КонецФункции
+"""
+        diags = _check(content, tmp_path, select={"BSL194"})
+        assert "BSL194" in _codes(diags)
+
+    def test_order_of_params_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест(Первый = 1, Второй)
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL228"})
+        assert "BSL228" in _codes(diags)
+
+    def test_using_cancel_parameter_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура ПередЗаписью(Отказ)
+    Отказ = Ложь;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL266"})
+        assert "BSL266" in _codes(diags)
+
+    def test_using_cancel_parameter_true_allowed(self, tmp_path: Path) -> None:
+        content = """\
+Процедура ПередЗаписью(Отказ)
+    Отказ = Истина;
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL266"})
+        assert "BSL266" not in _codes(diags)
+
+
 class TestBsl262UsageWriteLogEvent:
     def test_write_log_event_with_warning_in_except_detected(self, tmp_path: Path) -> None:
         content = """\

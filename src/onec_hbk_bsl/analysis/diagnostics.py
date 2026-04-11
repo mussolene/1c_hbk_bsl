@@ -1758,7 +1758,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["naming", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL193": {
         "name": "FunctionOutParameter",
@@ -1767,7 +1767,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["design"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL194": {
         "name": "FunctionReturnsSamePrimitive",
@@ -1776,7 +1776,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["redundant", "design"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL195": {
         "name": "GetFormMethod",
@@ -2082,7 +2082,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["design", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL229": {
         "name": "OrdinaryAppSupport",
@@ -2424,7 +2424,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "events"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL267": {
         "name": "UsingExternalCodeTools",
@@ -4080,6 +4080,9 @@ _RE_TRY_OPEN = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
 _RE_TRY_CLOSE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 # BSL240 / write-only var assignment
 _RE_MODULE_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
+_RE_ASSIGN_LHS = re.compile(r"^\s*(?P<name>\w+)\s*=(?!=)", re.IGNORECASE)
+_RE_BSL192_GET = re.compile(r"^(?:Получить|Get)\w*$", re.IGNORECASE)
+_RE_BSL266_CANCEL = re.compile(r"^(?:Отказ|Cancel)$", re.IGNORECASE)
 # BSL186 — trailing comma before ) or ;
 _RE_BSL186_TRAILING_COMMA = re.compile(r",\s*[)\];]")
 # BSL149 — AssignAliasFieldsInQuery
@@ -5033,6 +5036,7 @@ _RE_CONNECTION_STRING = re.compile(
 
 # Else after Return detection (BSL091)
 _RE_RETURN_STMT = re.compile(r"^\s*(?:Возврат|Return)\b", re.IGNORECASE)
+_RE_RETURN_SIMPLE_EXPR = re.compile(r"^\s*(?:Возврат|Return)\s+(.+?);?\s*$", re.IGNORECASE)
 
 # HTTP request in loop (BSL086) — ПолучитьДанные, ВыполнитьЗапросHTTP, HTTPЗапрос etc.
 _RE_HTTP_REQUEST = re.compile(
@@ -6548,9 +6552,9 @@ class DiagnosticEngine:
             "BSL189",  # ForbiddenMetadataName — TODO
             # "BSL190" enabled — FormDataToValue implemented
             # "BSL191" enabled — FullOuterJoinQuery implemented
-            "BSL192",  # FunctionNameStartsWithGet — TODO
-            "BSL193",  # FunctionOutParameter — TODO
-            "BSL194",  # FunctionReturnsSamePrimitive — TODO
+            # "BSL192" enabled — FunctionNameStartsWithGet implemented
+            # "BSL193" enabled — FunctionOutParameter implemented
+            # "BSL194" enabled — FunctionReturnsSamePrimitive implemented
             "BSL195",  # GetFormMethod — TODO
             "BSL196",  # GlobalContextMethodCollision8312 — TODO
             # "BSL197" enabled — IfElseDuplicatedCodeBlock implemented
@@ -6583,7 +6587,7 @@ class DiagnosticEngine:
             # "BSL225" enabled — NumberOfValuesInStructureConstructor implemented
             "BSL226",  # OSUsersMethod — TODO
             # "BSL227" enabled — OneStatementPerLine implemented
-            "BSL228",  # OrderOfParams — TODO
+            # "BSL228" enabled — OrderOfParams implemented
             "BSL229",  # OrdinaryAppSupport — TODO
             # "BSL230" enabled — PairingBrokenTransaction implemented
             "BSL231",  # PrivilegedModuleMethodCall — TODO
@@ -6621,7 +6625,7 @@ class DiagnosticEngine:
             # "BSL263" enabled — UseLessForEach implemented
             "BSL264",  # UseSystemInformation — TODO
             # "BSL265" enabled — UselessTernaryOperator implemented
-            "BSL266",  # UsingCancelParameter — TODO
+            # "BSL266" enabled — UsingCancelParameter implemented
             "BSL267",  # UsingExternalCodeTools — TODO
             "BSL268",  # UsingFindElementByString — TODO
             # "BSL269" enabled — UsingLikeInQuery implemented
@@ -7614,6 +7618,16 @@ class DiagnosticEngine:
                 (
                     "BSL191_201",
                     lambda: self._rule_bsl191_201_query_text_diagnostics(path, lines, _bsl191_201),
+                )
+            )
+        _bsl192_193_194_228_266 = ("BSL192", "BSL193", "BSL194", "BSL228", "BSL266")
+        if any(self._rule_enabled(c) for c in _bsl192_193_194_228_266):
+            _rule_tasks.append(
+                (
+                    "BSL192_193_194_228_266",
+                    lambda: self._rule_bsl192_193_194_228_266_method_contract_diagnostics(
+                        path, lines, procs, _bsl192_193_194_228_266
+                    ),
                 )
             )
         _bsl206_207_209 = ("BSL206", "BSL207", "BSL209")
@@ -14805,6 +14819,157 @@ class DiagnosticEngine:
                                 message="Некорректное использование ПОДОБНО в запросе",
                             )
                         )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL192 / BSL193 / BSL194 / BSL228 / BSL266 — method contract diagnostics
+    # ------------------------------------------------------------------
+
+    def _rule_bsl192_193_194_228_266_method_contract_diagnostics(
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        codes: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled = {code for code in codes if self._rule_enabled(code)}
+        if not enabled:
+            return []
+
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            start_char, end_char = _proc_name_span(lines, proc)
+
+            if "BSL192" in enabled and proc.kind == "function" and _RE_BSL192_GET.match(proc.name):
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=start_char,
+                        end_line=proc.start_idx + 1,
+                        end_character=end_char,
+                        severity=Severity.INFORMATION,
+                        code="BSL192",
+                        message="Имя функции должно начинаться с «Получить»",
+                    )
+                )
+
+            if "BSL228" in enabled and proc.optional_params:
+                seen_optional = False
+                for param in proc.params:
+                    if param in proc.optional_params:
+                        seen_optional = True
+                        continue
+                    if seen_optional:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=proc.start_idx + 1,
+                                character=start_char,
+                                end_line=proc.start_idx + 1,
+                                end_character=end_char,
+                                severity=Severity.INFORMATION,
+                                code="BSL228",
+                                message="Порядок параметров метода не соответствует соглашению",
+                            )
+                        )
+                        break
+
+            if "BSL193" in enabled and proc.kind == "function":
+                ref_params = {
+                    p.casefold()
+                    for p in proc.params
+                    if p.casefold() not in {n.casefold() for n in proc.val_params}
+                }
+                seen_out: set[str] = set()
+                for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+                    code_line = lines[idx].split("//", 1)[0]
+                    m_assign = _RE_ASSIGN_LHS.match(code_line)
+                    if not m_assign:
+                        continue
+                    lhs_cf = m_assign.group("name").casefold()
+                    if lhs_cf in ref_params and lhs_cf not in seen_out:
+                        seen_out.add(lhs_cf)
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=m_assign.start("name"),
+                                end_line=idx + 1,
+                                end_character=m_assign.end("name"),
+                                severity=Severity.WARNING,
+                                code="BSL193",
+                                message="Функция изменяет параметр-ссылку (out-параметр)",
+                            )
+                        )
+
+            if (
+                "BSL194" in enabled
+                and proc.kind == "function"
+                and not proc.name.casefold().startswith(("подключаемый_", "attachable_"))
+            ):
+                return_exprs: list[str] = []
+                for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+                    code_line = lines[idx].split("//", 1)[0]
+                    m_return = _RE_RETURN_SIMPLE_EXPR.match(code_line)
+                    if not m_return:
+                        continue
+                    expr = m_return.group(1).strip()
+                    if not (
+                        re.fullmatch(r"-?\d+(?:\.\d+)?", expr)
+                        or re.fullmatch(r'"(?:[^"]|"")*"', expr)
+                        or expr.casefold()
+                        in {"истина", "ложь", "true", "false", "неопределено", "undefined", "null"}
+                    ):
+                        return_exprs = []
+                        break
+                    return_exprs.append(expr.casefold())
+                if len(return_exprs) > 1 and len(set(return_exprs)) == 1:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=start_char,
+                            end_line=proc.start_idx + 1,
+                            end_character=end_char,
+                            severity=Severity.INFORMATION,
+                            code="BSL194",
+                            message="Функция всегда возвращает одно и то же примитивное значение",
+                        )
+                    )
+
+            if "BSL266" in enabled:
+                cancel_params = {p.casefold() for p in proc.params if _RE_BSL266_CANCEL.match(p)}
+                if cancel_params:
+                    for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+                        code_line = lines[idx].split("//", 1)[0].strip()
+                        m_assign = _RE_ASSIGN_LHS.match(code_line)
+                        if not m_assign:
+                            continue
+                        lhs = m_assign.group("name")
+                        lhs_cf = lhs.casefold()
+                        if lhs_cf not in cancel_params:
+                            continue
+                        rhs = code_line[m_assign.end() :].rstrip().rstrip(";").strip()
+                        rhs_cf = rhs.casefold()
+                        valid = rhs_cf in {"истина", "true"} or (
+                            re.search(r"\b(?:или|or)\b", rhs, re.IGNORECASE)
+                            and re.search(rf"\b{re.escape(lhs)}\b", rhs, re.IGNORECASE)
+                        )
+                        if not valid:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=idx + 1,
+                                    character=m_assign.start("name"),
+                                    end_line=idx + 1,
+                                    end_character=len(lines[idx].rstrip()),
+                                    severity=Severity.WARNING,
+                                    code="BSL266",
+                                    message="Параметр «Отказ» изменяется некорректно",
+                                )
+                            )
+
         return diags
 
     # ------------------------------------------------------------------
