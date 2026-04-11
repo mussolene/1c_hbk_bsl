@@ -113,6 +113,9 @@ from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+from onec_hbk_bsl.analysis.passes.core_pass import (
+    extend_core_rule_tasks,
+)
 from onec_hbk_bsl.analysis.passes.metadata_pass import (
     extend_metadata_rule_tasks,
 )
@@ -7470,90 +7473,16 @@ class DiagnosticEngine:
 
         _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
 
-        if self._rule_enabled("BSL001"):
-            _rule_tasks.append(("BSL001", lambda: self._rule_bsl001_syntax_errors(path, tree)))
-        if self._rule_enabled("BSL002"):
-            _rule_tasks.append(
-                ("BSL002", lambda: self._rule_bsl002_method_size(path, lines, procs))
-            )
-        if self._rule_enabled("BSL003"):
-            _rule_tasks.append(
-                (
-                    "BSL003",
-                    lambda: self._rule_bsl003_non_export_in_api_region(path, lines, procs, regions),
-                )
-            )
-        # BSL004 (EmptyCodeBlock) before BSL059: empty «Тогда» must report BSL004, not BooleanLiteralComparison.
-        if self._rule_enabled("BSL004"):
-            _rule_tasks.append(
-                ("BSL004", lambda: self._rule_bsl004_empty_except(path, lines, tree))
-            )
-        if self._rule_enabled("BSL005"):
-            _rule_tasks.append(
-                ("BSL005", lambda: self._rule_bsl005_hardcode_network_address(path, lines))
-            )
-        if self._rule_enabled("BSL006"):
-            _rule_tasks.append(("BSL006", lambda: self._rule_bsl006_hardcode_path(path, lines)))
-        if self._rule_enabled("BSL007"):
-            _rule_tasks.append(
-                ("BSL007", lambda: self._rule_bsl007_unused_local_variable(path, lines, procs))
-            )
-        if self._rule_enabled("BSL008"):
-            _rule_tasks.append(
-                ("BSL008", lambda: self._rule_bsl008_too_many_returns(path, lines, procs))
-            )
-        if self._rule_enabled("BSL009"):
-            _rule_tasks.append(("BSL009", lambda: self._rule_bsl009_self_assign(path, lines, tree)))
-        if self._rule_enabled("BSL010"):
-            _rule_tasks.append(
-                ("BSL010", lambda: self._rule_bsl010_useless_return(path, lines, procs))
-            )
-        if self._rule_enabled("BSL011"):
-            _rule_tasks.append(
-                ("BSL011", lambda: self._rule_bsl011_cognitive_complexity(path, lines, procs))
-            )
-        if self._rule_enabled("BSL012"):
-            _rule_tasks.append(
-                ("BSL012", lambda: self._rule_bsl012_hardcode_credentials(path, lines))
-            )
-        if self._rule_enabled("BSL013"):
-            _rule_tasks.append(("BSL013", lambda: self._rule_bsl013_commented_code(path, lines)))
-        if self._rule_enabled("BSL014"):
-            _rule_tasks.append(("BSL014", lambda: self._rule_bsl014_line_too_long(path, lines)))
-        if self._rule_enabled("BSL015"):
-            _rule_tasks.append(
-                ("BSL015", lambda: self._rule_bsl015_optional_params_count(path, lines, procs))
-            )
-        if self._rule_enabled("BSL016"):
-            _rule_tasks.append(
-                ("BSL016", lambda: self._rule_bsl016_non_standard_region(path, lines, regions))
-            )
-        if self._rule_enabled("BSL017"):
-            _rule_tasks.append(
-                ("BSL017", lambda: self._rule_bsl017_export_in_command_module(path, lines, procs))
-            )
-        if self._rule_enabled("BSL018"):
-            _rule_tasks.append(
-                ("BSL018", lambda: self._rule_bsl018_raise_with_literal(path, lines, tree))
-            )
-        if self._rule_enabled("BSL019"):
-            _rule_tasks.append(
-                ("BSL019", lambda: self._rule_bsl019_cyclomatic_complexity(path, lines, procs))
-            )
-        if self._rule_enabled("BSL020"):
-            _rule_tasks.append(
-                ("BSL020", lambda: self._rule_bsl020_excessive_nesting(path, lines, procs))
-            )
-        if self._rule_enabled("BSL021"):
-            _rule_tasks.append(
-                ("BSL021", lambda: self._rule_bsl021_unused_val_parameter(path, lines, procs))
-            )
-        if self._rule_enabled("BSL022"):
-            _rule_tasks.append(
-                ("BSL022", lambda: self._rule_bsl022_deprecated_message(path, lines, procs))
-            )
-        if self._rule_enabled("BSL023"):
-            _rule_tasks.append(("BSL023", lambda: self._rule_bsl023_service_tag(path, lines)))
+        extend_core_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            procs=procs,
+            regions=regions,
+            tree=tree,
+            proc_node_map=_proc_node_map,
+        )
         extend_style_comment_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -7561,213 +7490,6 @@ class DiagnosticEngine:
             lines=lines,
             procs=procs,
         )
-        if self._rule_enabled("BSL025"):
-            _rule_tasks.append(("BSL025", lambda: self._rule_bsl025_empty_statement(path, lines)))
-        if self._rule_enabled("BSL026"):
-            _rule_tasks.append(
-                ("BSL026", lambda: self._rule_bsl026_empty_region(path, lines, regions))
-            )
-        if self._rule_enabled("BSL027"):
-            _rule_tasks.append(("BSL027", lambda: self._rule_bsl027_use_goto(path, lines)))
-        if self._rule_enabled("BSL028"):
-            _rule_tasks.append(
-                ("BSL028", lambda: self._rule_bsl028_missing_try_catch(path, lines, procs))
-            )
-        if self._rule_enabled("BSL029"):
-            _rule_tasks.append(
-                ("BSL029", lambda: self._rule_bsl029_magic_number(path, lines, procs))
-            )
-        if self._rule_enabled("BSL031"):
-            _rule_tasks.append(
-                ("BSL031", lambda: self._rule_bsl031_number_of_params(path, lines, procs))
-            )
-        if self._rule_enabled("BSL032"):
-            _rule_tasks.append(
-                ("BSL032", lambda: self._rule_bsl032_function_return_value(path, lines, procs))
-            )
-        if self._rule_enabled("BSL148"):
-            _rule_tasks.append(
-                ("BSL148", lambda: self._rule_bsl148_all_function_paths_return(path, tree))
-            )
-        if self._rule_enabled("BSL033"):
-            _rule_tasks.append(
-                ("BSL033", lambda: self._rule_bsl033_query_in_loop(path, lines, procs, tree))
-            )
-        if self._rule_enabled("BSL034"):
-            _rule_tasks.append(
-                ("BSL034", lambda: self._rule_bsl034_unused_error_variable(path, lines, procs))
-            )
-        if self._rule_enabled("BSL035"):
-            _rule_tasks.append(
-                ("BSL035", lambda: self._rule_bsl035_duplicate_string_literal(path, lines, procs))
-            )
-        if self._rule_enabled("BSL036"):
-            _rule_tasks.append(("BSL036", lambda: self._rule_bsl036_complex_condition(path, lines)))
-        if self._rule_enabled("BSL037"):
-            _rule_tasks.append(
-                ("BSL037", lambda: self._rule_bsl037_override_builtin(path, lines, procs))
-            )
-        if self._rule_enabled("BSL038"):
-            _rule_tasks.append(
-                (
-                    "BSL038",
-                    lambda: self._rule_bsl038_string_concat_in_loop(path, lines, procs, tree),
-                )
-            )
-        if self._rule_enabled("BSL039"):
-            _rule_tasks.append(("BSL039", lambda: self._rule_bsl039_nested_ternary(path, lines)))
-        if self._rule_enabled("BSL040"):
-            _rule_tasks.append(
-                ("BSL040", lambda: self._rule_bsl040_using_this_form(path, lines, procs))
-            )
-        if self._rule_enabled("BSL041"):
-            _rule_tasks.append(
-                ("BSL041", lambda: self._rule_bsl041_deprecated_message(path, lines))
-            )
-        if self._rule_enabled("BSL042"):
-            _rule_tasks.append(
-                ("BSL042", lambda: self._rule_bsl042_empty_export_method(path, lines, procs))
-            )
-        if self._rule_enabled("BSL043"):
-            _rule_tasks.append(
-                ("BSL043", lambda: self._rule_bsl043_too_many_variables(path, lines, procs))
-            )
-        if self._rule_enabled("BSL044"):
-            _rule_tasks.append(
-                ("BSL044", lambda: self._rule_bsl044_function_no_return_value(path, lines, procs))
-            )
-        if self._rule_enabled("BSL045"):
-            _rule_tasks.append(
-                ("BSL045", lambda: self._rule_bsl045_multiline_string_literal(path, lines))
-            )
-        if self._rule_enabled("BSL046"):
-            _rule_tasks.append(
-                ("BSL046", lambda: self._rule_bsl046_missing_else_branch(path, lines, procs))
-            )
-        if self._rule_enabled("BSL047"):
-            _rule_tasks.append(("BSL047", lambda: self._rule_bsl047_current_date(path, lines)))
-        if self._rule_enabled("BSL048"):
-            _rule_tasks.append(("BSL048", lambda: self._rule_bsl048_empty_file(path, lines)))
-        if self._rule_enabled("BSL049"):
-            _rule_tasks.append(
-                ("BSL049", lambda: self._rule_bsl049_unconditional_raise(path, lines, procs))
-            )
-        if self._rule_enabled("BSL050"):
-            _rule_tasks.append(
-                ("BSL050", lambda: self._rule_bsl050_large_transaction(path, lines, procs))
-            )
-        if self._rule_enabled("BSL051"):
-            _rule_tasks.append(
-                (
-                    "BSL051",
-                    lambda: self._rule_bsl051_unreachable_code(path, lines, procs, tree),
-                )
-            )
-        if self._rule_enabled("BSL052"):
-            _rule_tasks.append(
-                ("BSL052", lambda: self._rule_bsl052_useless_condition(path, lines, tree))
-            )
-        if self._rule_enabled("BSL053"):
-            _rule_tasks.append(("BSL053", lambda: self._rule_bsl053_execute_dynamic(path, lines)))
-        if self._rule_enabled("BSL054"):
-            _rule_tasks.append(
-                ("BSL054", lambda: self._rule_bsl054_module_level_variable(path, lines, procs))
-            )
-        if self._rule_enabled("BSL219"):
-            _rule_tasks.append(
-                (
-                    "BSL219",
-                    lambda: self._rule_bsl219_missing_variables_description(path, lines, procs),
-                )
-            )
-        if self._rule_enabled("BSL055"):
-            _rule_tasks.append(
-                ("BSL055", lambda: self._rule_bsl055_consecutive_blank_lines(path, lines))
-            )
-        if self._rule_enabled("BSL056"):
-            _rule_tasks.append(
-                ("BSL056", lambda: self._rule_bsl056_short_method_name(path, lines, procs))
-            )
-        if self._rule_enabled("BSL057"):
-            _rule_tasks.append(
-                ("BSL057", lambda: self._rule_bsl057_deprecated_input_dialog(path, lines))
-            )
-        if self._rule_enabled("BSL058"):
-            _rule_tasks.append(
-                ("BSL058", lambda: self._rule_bsl058_query_without_where(path, lines))
-            )
-        if self._rule_enabled("BSL059"):
-            _rule_tasks.append(
-                ("BSL059", lambda: self._rule_bsl059_bool_literal_comparison(path, lines, tree))
-            )
-        if self._rule_enabled("BSL060"):
-            _rule_tasks.append(
-                ("BSL060", lambda: self._rule_bsl060_double_negation(path, lines, tree))
-            )
-        if self._rule_enabled("BSL061"):
-            _rule_tasks.append(
-                ("BSL061", lambda: self._rule_bsl061_abrupt_loop_exit(path, lines, tree))
-            )
-        if self._rule_enabled("BSL062"):
-            _rule_tasks.append(
-                (
-                    "BSL062",
-                    lambda: self._rule_bsl062_unused_parameter(
-                        path, lines, procs, tree, _proc_node_map
-                    ),
-                )
-            )
-        if self._rule_enabled("BSL063"):
-            _rule_tasks.append(("BSL063", lambda: self._rule_bsl063_large_module(path, lines)))
-        if self._rule_enabled("BSL064"):
-            _rule_tasks.append(
-                ("BSL064", lambda: self._rule_bsl064_procedure_returns_value(path, lines, procs))
-            )
-        if self._rule_enabled("BSL065"):
-            _rule_tasks.append(
-                ("BSL065", lambda: self._rule_bsl065_missing_export_comment(path, lines, procs))
-            )
-        if self._rule_enabled("BSL066"):
-            _rule_tasks.append(
-                ("BSL066", lambda: self._rule_bsl066_deprecated_platform_method(path, lines, procs))
-            )
-        if self._rule_enabled("BSL067"):
-            _rule_tasks.append(
-                ("BSL067", lambda: self._rule_bsl067_var_after_code(path, lines, procs))
-            )
-        if self._rule_enabled("BSL068"):
-            _rule_tasks.append(("BSL068", lambda: self._rule_bsl068_too_many_elseif(path, lines)))
-        if self._rule_enabled("BSL069"):
-            _rule_tasks.append(("BSL069", lambda: self._rule_bsl069_infinite_loop(path, lines)))
-        if self._rule_enabled("BSL070"):
-            _rule_tasks.append(
-                ("BSL070", lambda: self._rule_bsl070_empty_loop_body(path, lines, tree))
-            )
-        if self._rule_enabled("BSL071"):
-            _rule_tasks.append(
-                ("BSL071", lambda: self._rule_bsl071_magic_number(path, lines, procs))
-            )
-        if self._rule_enabled("BSL072"):
-            _rule_tasks.append(
-                ("BSL072", lambda: self._rule_bsl072_string_concat_in_loop(path, lines))
-            )
-        if self._rule_enabled("BSL073"):
-            _rule_tasks.append(
-                ("BSL073", lambda: self._rule_bsl073_missing_else_branch(path, lines))
-            )
-        if self._rule_enabled("BSL074"):
-            _rule_tasks.append(("BSL074", lambda: self._rule_bsl074_todo_comment(path, lines)))
-        if self._rule_enabled("BSL075"):
-            _rule_tasks.append(
-                (
-                    "BSL075",
-                    lambda: self._rule_bsl075_global_variable_modification(path, lines, procs),
-                )
-            )
-        if self._rule_enabled("BSL076"):
-            _rule_tasks.append(
-                ("BSL076", lambda: self._rule_bsl076_negative_condition_first(path, lines))
-            )
         extend_query_top_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -7775,44 +7497,6 @@ class DiagnosticEngine:
             lines=lines,
             query_blocks=_query_blocks,
         )
-        if self._rule_enabled("BSL078"):
-            _rule_tasks.append(
-                ("BSL078", lambda: self._rule_bsl078_raise_without_message(path, lines))
-            )
-        if self._rule_enabled("BSL079"):
-            _rule_tasks.append(("BSL079", lambda: self._rule_bsl079_using_goto(path, lines)))
-        if self._rule_enabled("BSL080"):
-            _rule_tasks.append(("BSL080", lambda: self._rule_bsl080_silent_catch(path, lines)))
-        if self._rule_enabled("BSL081"):
-            _rule_tasks.append(("BSL081", lambda: self._rule_bsl081_long_method_chain(path, lines)))
-        if self._rule_enabled("BSL082"):
-            _rule_tasks.append(
-                ("BSL082", lambda: self._rule_bsl082_missing_newline_at_eof(path, lines))
-            )
-        if self._rule_enabled("BSL083"):
-            _rule_tasks.append(
-                ("BSL083", lambda: self._rule_bsl083_too_many_module_variables(path, lines, procs))
-            )
-        if self._rule_enabled("BSL084"):
-            _rule_tasks.append(
-                ("BSL084", lambda: self._rule_bsl084_function_with_no_return(path, lines, procs))
-            )
-        if self._rule_enabled("BSL085"):
-            _rule_tasks.append(
-                ("BSL085", lambda: self._rule_bsl085_literal_boolean_condition(path, lines, tree))
-            )
-        if self._rule_enabled("BSL086"):
-            _rule_tasks.append(
-                ("BSL086", lambda: self._rule_bsl086_http_request_in_loop(path, lines))
-            )
-        if self._rule_enabled("BSL087"):
-            _rule_tasks.append(
-                ("BSL087", lambda: self._rule_bsl087_object_creation_in_loop(path, lines))
-            )
-        if self._rule_enabled("BSL088"):
-            _rule_tasks.append(
-                ("BSL088", lambda: self._rule_bsl088_missing_parameter_comment(path, lines, procs))
-            )
         if self._rule_enabled("BSL089"):
             _rule_tasks.append(
                 ("BSL089", lambda: self._rule_bsl089_transaction_in_loop(path, lines))
