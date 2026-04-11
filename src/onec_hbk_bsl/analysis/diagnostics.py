@@ -113,6 +113,9 @@ from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+from onec_hbk_bsl.analysis.passes.metadata_pass import (
+    extend_metadata_rule_tasks,
+)
 from onec_hbk_bsl.analysis.passes.method_pass import (
     extend_method_contract_rule_tasks,
 )
@@ -121,6 +124,9 @@ from onec_hbk_bsl.analysis.passes.query_pass import (
     extend_query_metadata_rule_tasks,
     extend_query_text_rule_tasks,
     extend_query_top_rule_tasks,
+)
+from onec_hbk_bsl.analysis.passes.security_pass import (
+    extend_security_rule_tasks,
 )
 from onec_hbk_bsl.analysis.passes.style_pass import (
     extend_style_comment_rule_tasks,
@@ -8171,41 +8177,16 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL199", lambda: self._rule_bsl199_if_else_if_ends_with_else(path, lines))
             )
-        _bsl180_184_185_188_203_226_247_250_264_267_270_272 = (
-            "BSL180",
-            "BSL184",
-            "BSL185",
-            "BSL188",
-            "BSL203",
-            "BSL226",
-            "BSL247",
-            "BSL250",
-            "BSL264",
-            "BSL267",
-            "BSL270",
-            "BSL272",
+        extend_security_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            tree=tree,
+            symbols=_symbols,
+            calls=_calls,
+            procs=procs,
         )
-        if any(self._rule_enabled(c) for c in _bsl180_184_185_188_203_226_247_250_264_267_270_272):
-            _rule_tasks.append(
-                (
-                    "BSL180_184_185_188_203_226_247_250_264_267_270_272",
-                    lambda: self._rule_bsl180_184_185_188_203_226_247_250_264_267_270_272_api_pool(
-                        path,
-                        lines,
-                        _bsl180_184_185_188_203_226_247_250_264_267_270_272,
-                    ),
-                )
-            )
-        _bsl175_176_177_179_195 = ("BSL175", "BSL176", "BSL177", "BSL179", "BSL195")
-        if any(self._rule_enabled(c) for c in _bsl175_176_177_179_195):
-            _rule_tasks.append(
-                (
-                    "BSL175_176_177_179_195",
-                    lambda: self._rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
-                        path, lines, _symbols, _calls, _bsl175_176_177_179_195
-                    ),
-                )
-            )
         extend_query_text_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -8224,25 +8205,15 @@ class DiagnosticEngine:
             calls=_calls,
             proc_node_map=_proc_node_map,
         )
-        _bsl171_204_217_248_251_252_259_268 = (
-            "BSL171",
-            "BSL204",
-            "BSL217",
-            "BSL248",
-            "BSL251",
-            "BSL252",
-            "BSL259",
-            "BSL268",
+        extend_metadata_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            content=content,
+            lines=lines,
+            tree=tree,
+            procs=procs,
         )
-        if any(self._rule_enabled(c) for c in _bsl171_204_217_248_251_252_259_268):
-            _rule_tasks.append(
-                (
-                    "BSL171_204_217_248_251_252_259_268",
-                    lambda: self._rule_bsl171_204_217_248_251_252_259_268_light_pool(
-                        path, content, lines, tree, procs, _bsl171_204_217_248_251_252_259_268
-                    ),
-                )
-            )
         extend_query_join_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -8250,43 +8221,6 @@ class DiagnosticEngine:
             lines=lines,
             query_blocks=_query_blocks,
         )
-        _bsl202_205_223_243_249 = ("BSL202", "BSL205", "BSL223", "BSL243", "BSL249")
-        if any(self._rule_enabled(c) for c in _bsl202_205_223_243_249):
-            _rule_tasks.append(
-                (
-                    "BSL202_205_223_243_249",
-                    lambda: self._rule_bsl202_205_223_243_249_light_call_pool(
-                        path, lines, tree, _bsl202_205_223_243_249
-                    ),
-                )
-            )
-        _bsl229_275_278 = ("BSL229", "BSL275", "BSL278")
-        if any(self._rule_enabled(c) for c in _bsl229_275_278):
-            _rule_tasks.append(
-                (
-                    "BSL229_275_278",
-                    lambda: self._rule_bsl229_275_278_local_xml_pool(
-                        path, lines, procs, _bsl229_275_278
-                    ),
-                )
-            )
-        _bsl169_170_181_182_196_260 = (
-            "BSL169",
-            "BSL170",
-            "BSL181",
-            "BSL182",
-            "BSL196",
-            "BSL260",
-        )
-        if any(self._rule_enabled(c) for c in _bsl169_170_181_182_196_260):
-            _rule_tasks.append(
-                (
-                    "BSL169_170_181_182_196_260",
-                    lambda: self._rule_bsl169_170_181_182_196_260_light_pool(
-                        path, lines, procs, _bsl169_170_181_182_196_260
-                    ),
-                )
-            )
         extend_query_metadata_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -8294,40 +8228,6 @@ class DiagnosticEngine:
             lines=lines,
             query_blocks=_query_blocks,
         )
-        _bsl189_211_213_214_231_232_241_242_246_274 = (
-            "BSL189",
-            "BSL211",
-            "BSL213",
-            "BSL214",
-            "BSL231",
-            "BSL232",
-            "BSL241",
-            "BSL242",
-            "BSL246",
-            "BSL274",
-        )
-        if any(self._rule_enabled(c) for c in _bsl189_211_213_214_231_232_241_242_246_274):
-            _rule_tasks.append(
-                (
-                    "BSL189_211_213_214_231_232_241_242_246_274",
-                    lambda: self._rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
-                        path,
-                        lines,
-                        procs,
-                        _bsl189_211_213_214_231_232_241_242_246_274,
-                    ),
-                )
-            )
-        _bsl244_253_261 = ("BSL244", "BSL253", "BSL261")
-        if any(self._rule_enabled(c) for c in _bsl244_253_261):
-            _rule_tasks.append(
-                (
-                    "BSL244_253_261",
-                    lambda: self._rule_bsl244_253_261_runtime_pool(
-                        path, lines, procs, _bsl244_253_261
-                    ),
-                )
-            )
         if self._rule_enabled("BSL225"):
             _rule_tasks.append(
                 (
