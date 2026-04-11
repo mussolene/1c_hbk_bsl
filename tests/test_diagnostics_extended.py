@@ -4220,6 +4220,44 @@ class TestBsl192193194228266MethodContractDiagnostics:
         assert "BSL266" not in _codes(diags)
 
 
+class TestBsl212MissedRequiredParameter:
+    def test_missing_required_parameter_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Цель(Первый, Второй)
+КонецПроцедуры
+
+Процедура Тест()
+    Цель(1);
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL212"})
+        assert "BSL212" in _codes(diags)
+
+    def test_empty_argument_slot_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Цель(Первый, Второй)
+КонецПроцедуры
+
+Процедура Тест()
+    Цель(1, );
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL212"})
+        assert "BSL212" in _codes(diags)
+
+    def test_optional_parameter_not_required(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Цель(Первый, Второй = 2)
+КонецПроцедуры
+
+Процедура Тест()
+    Цель(1);
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL212"})
+        assert "BSL212" not in _codes(diags)
+
+
 class TestBsl262UsageWriteLogEvent:
     def test_write_log_event_with_warning_in_except_detected(self, tmp_path: Path) -> None:
         content = """\

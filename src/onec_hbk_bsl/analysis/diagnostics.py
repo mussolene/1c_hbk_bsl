@@ -1938,7 +1938,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL213": {
         "name": "MissingCommonModuleMethod",
@@ -4386,6 +4386,34 @@ def _query_has_balanced_parens(lines: list[str]) -> bool:
     return depth == 0
 
 
+def _extract_call_argument_presence(
+    content: str,
+    line_starts: list[int],
+    *,
+    line: int,
+    character: int,
+    callee_name: str,
+) -> list[bool] | None:
+    """Return per-position argument presence for a call starting at ``line:character``."""
+    if line <= 0 or line > len(line_starts):
+        return None
+    start = line_starts[line - 1] + character
+    if start < 0 or start >= len(content):
+        return None
+    tail = content[start:]
+    m = re.match(rf"{re.escape(callee_name)}\s*\(", tail, re.IGNORECASE)
+    if not m:
+        return None
+    open_idx = start + m.end() - 1
+    close_idx = _find_matching_paren(content, open_idx)
+    if close_idx < 0:
+        return None
+    args_text = content[open_idx + 1 : close_idx]
+    if not args_text.strip():
+        return []
+    return [bool(part.strip()) for part in _split_top_level_args(args_text)]
+
+
 # BSL190 — FormDataToValue / ДанныеФормыВЗначение
 _RE_BSL190_FORM_DATA = re.compile(r"\b(?:ДанныеФормыВЗначение|FormDataToValue)\s*\(", re.IGNORECASE)
 # BSL197 — duplicate if/elseif branch detection
@@ -6572,7 +6600,7 @@ class DiagnosticEngine:
             # "BSL209" enabled — LogicalOrInJoinQuerySection implemented
             # "BSL210" enabled — LogicalOrInTheWhereSectionOfQuery implemented
             "BSL211",  # MetadataObjectNameLength — TODO
-            "BSL212",  # MissedRequiredParameter — TODO
+            # "BSL212" enabled — MissedRequiredParameter implemented
             "BSL213",  # MissingCommonModuleMethod — TODO
             "BSL214",  # MissingEventSubscriptionHandler — TODO
             # "BSL215" enabled — MissingParameterDescription implemented
@@ -6873,6 +6901,7 @@ class DiagnosticEngine:
         _proc_node_map: dict[tuple[str, int, str], Any] = (
             snapshot.proc_node_map if tree_is_ts else {}
         )
+        _calls = snapshot.calls
 
         _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
 
@@ -7627,6 +7656,15 @@ class DiagnosticEngine:
                     "BSL192_193_194_228_266",
                     lambda: self._rule_bsl192_193_194_228_266_method_contract_diagnostics(
                         path, lines, procs, _bsl192_193_194_228_266
+                    ),
+                )
+            )
+        if self._rule_enabled("BSL212"):
+            _rule_tasks.append(
+                (
+                    "BSL212",
+                    lambda: self._rule_bsl212_missed_required_parameter(
+                        path, content, lines, procs, _calls
                     ),
                 )
             )
@@ -14975,6 +15013,64 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
     # BSL206 / BSL207 / BSL209 — join-related query diagnostics
     # ------------------------------------------------------------------
+
+    def _rule_bsl212_missed_required_parameter(
+        self,
+        path: str,
+        content: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        calls: list[Any],
+    ) -> list[Diagnostic]:
+        """Flag same-file calls that omit required parameters."""
+        proc_by_name = {proc.name.casefold(): proc for proc in procs}
+        if not proc_by_name or not calls:
+            return []
+
+        diags: list[Diagnostic] = []
+        line_starts = line_start_offsets(content)
+        for call in calls:
+            callee = proc_by_name.get(call.callee_name.casefold())
+            if callee is None:
+                continue
+            required_params = [p for p in callee.params if p not in callee.optional_params]
+            if not required_params:
+                continue
+            arg_presence = _extract_call_argument_presence(
+                content,
+                line_starts,
+                line=call.caller_line,
+                character=call.caller_character,
+                callee_name=call.callee_name,
+            )
+            if arg_presence is None:
+                continue
+
+            missed: list[str] = []
+            for idx, param_name in enumerate(callee.params):
+                if param_name in callee.optional_params:
+                    continue
+                if idx >= len(arg_presence) or not arg_presence[idx]:
+                    missed.append(param_name)
+
+            if not missed:
+                continue
+            line_text = (
+                lines[call.caller_line - 1] if 0 <= call.caller_line - 1 < len(lines) else ""
+            )
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=call.caller_line,
+                    character=call.caller_character,
+                    end_line=call.caller_line,
+                    end_character=len(line_text.rstrip()),
+                    severity=Severity.ERROR,
+                    code="BSL212",
+                    message=f"Пропущен обязательный параметр в вызове метода: {', '.join(missed)}",
+                )
+            )
+        return diags
 
     def _rule_bsl206_207_209_query_join_diagnostics(
         self,
