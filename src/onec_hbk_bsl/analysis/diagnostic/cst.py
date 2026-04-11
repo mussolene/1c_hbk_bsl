@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 
 
@@ -52,8 +53,6 @@ def _diag(
     message: str,
     node: Any,
 ) -> Any:
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     sev = Severity(severity) if isinstance(severity, str) else severity
     line, ch, end_line, end_ch = _span_from(node)
     return Diagnostic(
@@ -122,8 +121,6 @@ def _double_negation_span(node: Any) -> tuple[int, int, int, int] | None:
 
 def diagnostics_bsl060_from_tree(path: str, root: Any) -> list[Any]:
     """BSL060 — double negation ``НЕ НЕ`` / ``Not Not``."""
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     diags: list[Any] = []
     seen: set[tuple[int, int, int, int]] = set()
 
@@ -174,8 +171,6 @@ def _expr_is_only_string_literal(expr: Any) -> bool:
 
 def diagnostics_bsl018_from_tree(path: str, root: Any) -> list[Any]:
     """BSL018 — ``ВызватьИсключение`` with only a string literal (no extended args)."""
-    from onec_hbk_bsl.analysis.diagnostics import Severity
-
     diags: list[Any] = []
 
     def visit(node: Any) -> None:
@@ -233,8 +228,6 @@ def _literal_boolean_from_if_expression(expr: Any) -> str | None:
 
 def diagnostics_bsl085_from_tree(path: str, root: Any, lines: list[str]) -> list[Any]:
     """BSL085 — literal boolean in ``Если`` / ``ИначеЕсли`` condition (with ``Тогда``)."""
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     diags: list[Any] = []
 
     def _from_if_like(node: Any) -> None:
@@ -293,8 +286,6 @@ def _bsl004_append_empty_block(
     anchor_kw: Any,
     message: str,
 ) -> None:
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     diags.append(
         Diagnostic(
             file=path,
@@ -428,8 +419,6 @@ def _try_except_has_only_comments_or_empty(
 
 def diagnostics_bsl004_from_tree(path: str, root: Any) -> list[Any]:
     """BSL004 — empty code blocks (BSLLS ``EmptyCodeBlock``): empty Except, empty Тогда."""
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     diags: list[Any] = []
     empty_then_msg = (
         "Empty code block: 'Тогда' branch contains no statements — add logic or remove the branch."
@@ -481,8 +470,6 @@ def _if_clause_last_statement_is_return(clause_children: list[Any]) -> bool:
 
 
 def _emit_bsl091_else(else_node: Any, path: str, diags: list[Any]) -> None:
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     else_kw = next(
         (c for c in getattr(else_node, "children", []) or [] if c.type == "ELSE_KEYWORD"),
         else_node,
@@ -575,8 +562,6 @@ def _else_clause_is_empty(else_node: Any) -> bool:
 
 def diagnostics_bsl092_from_tree(path: str, root: Any) -> list[Any]:
     """BSL092 — empty ``Иначе`` block."""
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     diags: list[Any] = []
 
     def visit(node: Any) -> None:
@@ -631,8 +616,6 @@ def _loop_body_has_executable(loop_node: Any) -> bool:
 
 def diagnostics_bsl070_from_tree(path: str, root: Any) -> list[Any]:
     """BSL070 — empty loop body."""
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     diags: list[Any] = []
 
     def visit(node: Any) -> None:
@@ -675,8 +658,6 @@ def diagnostics_bsl070_from_tree(path: str, root: Any) -> list[Any]:
 
 def diagnostics_bsl061_from_tree(path: str, root: Any) -> list[Any]:
     """BSL061 — ``Прервать``/``Break`` as last statement in loop body."""
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
-
     diags: list[Any] = []
 
     def visit(node: Any) -> None:

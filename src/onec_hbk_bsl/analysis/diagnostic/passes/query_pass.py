@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo
 
 if TYPE_CHECKING:
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, DiagnosticEngine
+    from onec_hbk_bsl.analysis.diagnostic.engine import DiagnosticEngine
+    from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
 
 
 def extend_query_top_rule_tasks(

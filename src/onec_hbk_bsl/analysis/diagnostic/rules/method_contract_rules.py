@@ -4,7 +4,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from onec_hbk_bsl.analysis.diagnostics import _ProcInfo
+    from onec_hbk_bsl.analysis.diagnostic.models import ProcInfo as _ProcInfo
 
 
 def _diag_module() -> Any:

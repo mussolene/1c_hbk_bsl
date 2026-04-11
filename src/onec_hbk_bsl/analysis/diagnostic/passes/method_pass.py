@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from onec_hbk_bsl.analysis.diagnostics import Diagnostic, ProcInfo
+    from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, ProcInfo
 
 
 def extend_method_contract_rule_tasks(

@@ -66,8 +66,6 @@ import os
 import re
 import threading
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
@@ -101,8 +99,48 @@ from onec_hbk_bsl.analysis.diagnostic.cst import (
 from onec_hbk_bsl.analysis.diagnostic.cst import (
     ts_tree_ok_for_rules as _ts_tree_ok_for_rules,
 )
+from onec_hbk_bsl.analysis.diagnostic.discovery import (
+    build_proc_node_map as _build_proc_node_map,
+    collect_identifier_casefolds_in_proc_body as _collect_identifier_casefolds_in_proc_body,
+    export_description_anchor_line_idx as _export_description_anchor_line_idx,
+    find_proc_definition_node as _find_proc_definition_node,
+    find_procedures as _find_procedures,
+    find_procedures_from_tree as _find_procedures_from_tree,
+    find_regions as _find_regions,
+    find_regions_from_tree as _find_regions_from_tree,
+    proc_body_start_line_idx_fallback as _proc_body_start_line_idx_fallback,
+    ts_first_body_statement_line_idx as _ts_first_body_statement_line_idx,
+)
+from onec_hbk_bsl.analysis.diagnostic.execution import (
+    execute_diagnostic_rule_tasks as _execute_diagnostic_rule_tasks,
+)
 from onec_hbk_bsl.analysis.diagnostic.registry import (
     build_enabled_invoke_snapshot,
+)
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    build_line_string_states as _build_line_string_states,
+)
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    comma_missing_space_after_cols_in_line as _comma_missing_space_after_cols_in_line,
+)
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    comment_start_outside_double_quotes as _comment_start_outside_double_quotes,
+)
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    mask_double_quoted_strings_preserve_len as _mask_double_quoted_strings_preserve_len,
+)
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    span_is_inside_double_quoted_string as _span_is_inside_double_quoted_string,
+)
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    strip_inline_comment_preserve_strings as _strip_inline_comment_preserve_strings,
+)
+from onec_hbk_bsl.analysis.diagnostic.suppression import (
+    Suppressions as _Suppressions,
+)
+from onec_hbk_bsl.analysis.diagnostic.suppression import (
+    is_suppressed as _is_suppressed,
+    parse_suppressions as _parse_suppressions,
 )
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
@@ -193,6 +231,12 @@ from onec_hbk_bsl.analysis.diagnostic.passes.style_pass import (
     extend_style_spacing_rule_tasks,
     extend_style_tail_rule_tasks,
     extend_style_token_rule_tasks,
+)
+from onec_hbk_bsl.analysis.diagnostic.models import (
+    Diagnostic,
+    ProcInfo,
+    RegionInfo,
+    Severity,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     run_bsl152_cached_public,
@@ -3059,18 +3103,6 @@ RULE_FIX_HINTS: dict[str, str] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Core data types
-# ---------------------------------------------------------------------------
-
-
-class Severity(IntEnum):
-    ERROR = 1
-    WARNING = 2
-    INFORMATION = 3
-    HINT = 4
-
-
 _BSLLS_LSP_HINT_RULE_NAMES: frozenset[str] = frozenset(
     {
         "CanonicalSpellingKeywords",
@@ -3101,41 +3133,6 @@ _BSLLS_LSP_HINT_RULE_NAMES: frozenset[str] = frozenset(
 )
 
 
-@dataclass
-class Diagnostic:
-    """A single diagnostic issue found in a BSL file."""
-
-    file: str
-    line: int  # 1-based
-    character: int  # 0-based column
-    end_line: int
-    end_character: int
-    severity: Severity
-    code: str  # e.g. "BSL001"
-    message: str
-
-    def to_dict(self, *, include_rule_name: bool = False) -> dict:
-        d = {
-            "file": self.file,
-            "line": self.line,
-            "character": self.character,
-            "end_line": self.end_line,
-            "end_character": self.end_character,
-            "severity": self.severity.name,
-            "code": self.code,
-            "message": self.message,
-        }
-        if include_rule_name:
-            d["rule_name"] = display_name_for_rule_code(self.code)
-        return d
-
-    def __str__(self) -> str:
-        return (
-            f"{self.file}:{self.line}:{self.character}: "
-            f"{self.severity.name[0]} {self.code} {self.message}"
-        )
-
-
 def lsp_compat_severity(code: str, severity: Severity) -> Severity:
     """
     Map internal severities to BSLLS-like LSP-facing severities.
@@ -3156,29 +3153,8 @@ def lsp_compat_severity(code: str, severity: Severity) -> Severity:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class _ProcInfo:
-    """Procedure or function definition extracted from source."""
-
-    name: str
-    kind: str  # 'procedure' | 'function'
-    start_idx: int  # 0-based line index (header line)
-    end_idx: int  # 0-based line index (КонецПроцедуры/КонецФункции)
-    is_export: bool
-    params: list[str]  # all param names (no defaults, no Val prefix)
-    val_params: list[str]  # Знач/Val param names (passed by value)
-    optional_count: int  # count of params with default values
-    header_col: int = 0  # column of the keyword (indent)
-    optional_params: frozenset[str] = frozenset()  # names of optional params (have default value)
-
-
-@dataclass
-class _RegionInfo:
-    """#Область / #Region block."""
-
-    name: str
-    start_idx: int  # 0-based
-    end_idx: int  # 0-based
+_ProcInfo = ProcInfo
+_RegionInfo = RegionInfo
 
 
 # ---------------------------------------------------------------------------
@@ -3791,51 +3767,6 @@ def bsl024_should_report_line(line: str) -> bool:
     return bsl024_find_report_comment_col(line) is not None
 
 
-def _comment_start_outside_double_quotes(line: str, in_str_at_start: bool = False) -> int | None:
-    """Return 0-based ``//`` position outside double-quoted strings, if any."""
-    in_str = in_str_at_start
-    i = 0
-    n = len(line)
-    while i < n - 1:
-        ch = line[i]
-        if ch == '"':
-            in_str = not in_str
-            i += 1
-            continue
-        if not in_str and ch == "/" and line[i + 1] == "/":
-            return i
-        i += 1
-    return None
-
-
-def _span_is_inside_double_quoted_string(
-    line: str,
-    start: int,
-    end: int,
-    *,
-    in_str_at_start: bool = False,
-) -> bool:
-    """True when ``[start, end)`` lies inside a double-quoted string on the line."""
-    in_str = in_str_at_start
-    segment_start: int | None = 0 if in_str else None
-    for idx, ch in enumerate(line):
-        if ch != '"':
-            continue
-        if in_str:
-            if segment_start is None:
-                segment_start = 0
-            if segment_start <= start and idx + 1 >= end:
-                return True
-            in_str = False
-            segment_start = None
-        else:
-            in_str = True
-            segment_start = idx
-    if in_str and segment_start is not None and segment_start <= start:
-        return True
-    return False
-
-
 def _bsl200_query_first_prev_lines(lines: list[str]) -> set[int]:
     """
     Lines whose next line starts a query-text block.
@@ -4076,61 +4007,6 @@ def _caller_is_client_method(
     return (
         proc is not None and _procedure_compiler_execution_context(caller_lines, proc) == "client"
     )
-
-
-def _comma_missing_space_after_cols_in_line(line: str) -> list[int]:
-    """
-    0-based column of the last ``,`` immediately followed by a token char (BSLLS MissingSpace),
-    only outside ``"..."`` string literals (positions must match *line* for overlap filter).
-    """
-    in_str = False
-    i = 0
-    n = len(line)
-    cols: list[int] = []
-    while i < n - 1:
-        ch = line[i]
-        if ch == '"':
-            in_str = not in_str
-            i += 1
-            continue
-        if in_str:
-            i += 1
-            continue
-        if ch == ",":
-            nxt = line[i + 1]
-            # BSLLS requires a space after comma; ,, (multiple commas) are also flagged.
-            # Only allow whitespace, closing bracket/paren, or end-of-line after comma.
-            if nxt not in " \t\n\r)]\n":
-                cols.append(i)
-        i += 1
-    return cols
-
-
-def _mask_double_quoted_strings_preserve_len(line: str) -> str:
-    """Replace string contents with spaces while preserving original offsets."""
-    return _RE_DOUBLE_QUOTED_STRING.sub(lambda m: '"' + (" " * (len(m.group(0)) - 2)) + '"', line)
-
-
-def _strip_inline_comment_preserve_strings(line: str) -> str:
-    """Remove ``//`` comments while ignoring occurrences inside double-quoted strings."""
-    masked = _mask_double_quoted_strings_preserve_len(line)
-    comment_pos = masked.find("//")
-    return line[:comment_pos] if comment_pos >= 0 else line
-
-
-def _build_line_string_states(lines: list[str]) -> list[bool]:
-    """
-    Returns a list where entry[i] is True if line i *starts* inside a double-quoted string.
-    Needed for multi-line string handling in BSL216 checks.
-    """
-    states: list[bool] = []
-    in_str = False
-    for line in lines:
-        states.append(in_str)
-        for ch in line:
-            if ch == '"':
-                in_str = not in_str
-    return states
 
 
 # BSL216 — module-level patterns (avoid re.compile inside the hot loop)
@@ -6119,21 +5995,6 @@ def _ts_bsl218_block_has_deletion(
     return False
 
 
-def _find_procedures_from_tree(tree: Any) -> list[_ProcInfo]:
-    """Extract procedure/function definitions from a tree-sitter CST.
-
-    Handles multi-line signatures correctly (e.g. params on multiple lines).
-    Returns empty list if *tree* is not a real tree-sitter tree.
-    """
-    root = getattr(tree, "root_node", None)
-    if root is None or not isinstance(getattr(root, "text", None), (bytes, type(None))):
-        return []
-
-    result: list[_ProcInfo] = []
-    _collect_procs_from_node(root, result)
-    return result
-
-
 # BSL051 — tree-sitter nodes that close or branch control flow (not executable body).
 # Matches keyword roles in formatter_structural (if/while/for/try).
 _BSL051_BLOCK_DELIMITER_TYPES = frozenset(
@@ -6262,17 +6123,6 @@ def _bsl052_collect_literal_if_nodes(root: Any, out: list[tuple[int, str]]) -> N
     walk(root)
 
 
-def _collect_procs_from_node(node: Any, result: list[_ProcInfo]) -> None:
-    """Recursively walk the CST collecting procedure/function definition nodes."""
-    if node.type in ("procedure_definition", "function_definition"):
-        proc = _ts_node_to_proc_info(node)
-        if proc:
-            result.append(proc)
-        return  # BSL does not allow nested procedures
-    for child in node.children:
-        _collect_procs_from_node(child, result)
-
-
 def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
     """Convert a tree-sitter procedure/function node to _ProcInfo."""
     name = ""
@@ -6326,275 +6176,6 @@ def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
         header_col=node.start_point[1],
         optional_params=frozenset(optional_params_list),
     )
-
-
-def _find_proc_definition_node(tree: Any, proc: _ProcInfo) -> Any | None:
-    """Return the tree-sitter procedure/function node matching *proc*, or None."""
-    root = getattr(tree, "root_node", None)
-    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-        return None
-
-    def walk(node: Any) -> Any | None:
-        if node.type in ("procedure_definition", "function_definition"):
-            info = _ts_node_to_proc_info(node)
-            if (
-                info
-                and info.name == proc.name
-                and info.start_idx == proc.start_idx
-                and info.kind == proc.kind
-            ):
-                return node
-        for child in node.children:
-            found = walk(child)
-            if found is not None:
-                return found
-        return None
-
-    return walk(root)
-
-
-def _build_proc_node_map(tree: Any) -> dict[tuple[str, int, str], Any]:
-    """Single tree walk → mapping (name, start_idx, kind) → tree-sitter node.
-
-    Replaces repeated O(P × T) calls to :func:`_find_proc_definition_node` with
-    a single O(T) pass followed by O(1) dict lookups.  Build once in
-    ``_run_rules``; share across all rules that need per-proc CST nodes
-    (currently BSL062 and BSL240).
-    """
-    out: dict[tuple[str, int, str], Any] = {}
-    root = getattr(tree, "root_node", None)
-    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-        return out
-
-    def collect(node: Any) -> None:
-        if node.type in ("procedure_definition", "function_definition"):
-            info = _ts_node_to_proc_info(node)
-            if info:
-                out[(info.name, info.start_idx, info.kind)] = node
-            return  # BSL does not allow nested procedures
-        for child in node.children:
-            collect(child)
-
-    collect(root)
-    return out
-
-
-def _ts_first_body_statement_line_idx(proc_node: Any) -> int | None:
-    """First 0-based line of a body statement (after ``parameters`` and optional ``Экспорт``)."""
-    seen_params = False
-    for ch in proc_node.children:
-        if ch.type == "parameters":
-            seen_params = True
-            continue
-        if not seen_params:
-            continue
-        if ch.type == "EXPORT_KEYWORD":
-            continue
-        if ch.type in ("ENDPROCEDURE_KEYWORD", "ENDFUNCTION_KEYWORD"):
-            return None
-        return ch.start_point[0]
-    return None
-
-
-def _proc_body_start_line_idx_fallback(lines: list[str], proc: _ProcInfo) -> int:
-    """First line after procedure/function header when CST is unavailable (paren balance)."""
-    i = proc.start_idx
-    depth = 0
-    started = False
-    while i < len(lines) and i <= proc.end_idx:
-        for ch in lines[i]:
-            if ch == "(":
-                depth += 1
-                started = True
-            elif ch == ")":
-                depth -= 1
-        if started and depth == 0:
-            return i + 1
-        i += 1
-    return proc.start_idx + 1
-
-
-def _export_description_anchor_line_idx(lines: list[str], header_idx: int) -> int | None:
-    """
-    Index of the line that must be a ``//`` description for BSL065.
-
-    Skips blank lines and form/compiler ``&...`` lines between comment and header.
-    """
-    j = header_idx - 1
-    while j >= 0:
-        raw = lines[j]
-        if not raw.strip():
-            j -= 1
-            continue
-        if _RE_FORM_COMPILER_DIRECTIVE_LINE.match(raw):
-            j -= 1
-            continue
-        return j
-    return None
-
-
-def _collect_identifier_casefolds_in_proc_body(proc_node: Any) -> set[str]:
-    """
-    Identifier names in the method body from the CST (excluding the ``parameters`` subtree).
-
-    Includes the procedure/function name identifier and all references in the body.
-    """
-    out: set[str] = set()
-
-    def walk(n: Any) -> None:
-        if n.type == "parameters":
-            return
-        if n.type == "identifier":
-            t = _ts_node_text(n)
-            if t:
-                out.add(t.casefold())
-        for c in n.children:
-            walk(c)
-
-    for child in proc_node.children:
-        if child.type == "parameters":
-            continue
-        walk(child)
-    return out
-
-
-def _find_procedures(content: str) -> list[_ProcInfo]:
-    """Extract procedure/function definitions via regex (fallback only).
-
-    Prefer _find_procedures_from_tree() when a tree-sitter tree is available.
-    This regex path is kept as a fallback for the regex-tree (_RegexTree) mode.
-    """
-    ends: list[int] = []
-    for m in _RE_END_PROC.finditer(content):
-        ends.append(content[: m.start()].count("\n"))
-    ends.sort()
-
-    result: list[_ProcInfo] = []
-    for m in _RE_PROC_HEADER.finditer(content):
-        start_idx = content[: m.start()].count("\n")
-        kw = m.group("kw").lower()
-        name = m.group("name")
-        params_str = m.group("params") or ""
-        is_export = bool(m.group("export"))
-        kind = "function" if kw in ("функция", "function") else "procedure"
-        header_col = len(m.group("indent"))
-
-        parsed = _parse_params(params_str)
-        params = [p[0] for p in parsed]
-        val_params = [p[0] for p in parsed if p[1]]
-        optional_count = sum(1 for p in parsed if p[2])
-        optional_params = frozenset(p[0] for p in parsed if p[2])
-
-        end_idx = start_idx + 5
-        for e in ends:
-            if e > start_idx:
-                end_idx = e
-                break
-
-        result.append(
-            _ProcInfo(
-                name=name,
-                kind=kind,
-                start_idx=start_idx,
-                end_idx=end_idx,
-                is_export=is_export,
-                params=params,
-                val_params=val_params,
-                optional_count=optional_count,
-                header_col=header_col,
-                optional_params=optional_params,
-            )
-        )
-
-    return result
-
-
-def _find_regions(content: str) -> list[_RegionInfo]:
-    """Extract all #Область/#Region blocks from BSL source."""
-    opens: list[tuple[int, str]] = []
-    closes: list[int] = []
-
-    for m in _RE_REGION_OPEN.finditer(content):
-        line_idx = content[: m.start()].count("\n")
-        opens.append((line_idx, m.group("name")))
-
-    for m in _RE_REGION_CLOSE.finditer(content):
-        line_idx = content[: m.start()].count("\n")
-        closes.append(line_idx)
-
-    closes_sorted = sorted(closes)
-    used_closes: set[int] = set()
-
-    result: list[_RegionInfo] = []
-    for start_idx, name in sorted(opens, key=lambda x: x[0]):
-        end_idx = start_idx + 1
-        for c in closes_sorted:
-            if c > start_idx and c not in used_closes:
-                end_idx = c
-                used_closes.add(c)
-                break
-        result.append(_RegionInfo(name=name, start_idx=start_idx, end_idx=end_idx))
-
-    return result
-
-
-def _find_regions_from_tree(tree: Any) -> list[_RegionInfo]:
-    """
-    Extract #Область/#Region blocks from a tree-sitter CST.
-
-    Returns an empty list if *tree* is not a real tree-sitter tree
-    (fallback to regex is expected).
-    """
-
-    root = getattr(tree, "root_node", None)
-    if root is None or not isinstance(getattr(root, "text", None), bytes):
-        return []
-
-    opens: list[tuple[int, str]] = []
-    closes: list[int] = []
-
-    def visit(node: Any) -> None:
-        if getattr(node, "type", None) == "preprocessor":
-            child_types = {getattr(c, "type", None) for c in getattr(node, "children", [])}
-
-            start_idx = node.start_point[0] if getattr(node, "start_point", None) else 0
-
-            if "PREPROC_REGION_KEYWORD" in child_types:
-                region_name = ""
-                seen_keyword = False
-                for c in getattr(node, "children", []):
-                    if getattr(c, "type", None) == "PREPROC_REGION_KEYWORD":
-                        seen_keyword = True
-                        continue
-                    if seen_keyword and getattr(c, "type", None) == "identifier":
-                        region_name = _ts_node_text(c)
-                        break
-                opens.append((start_idx, region_name))
-                return
-
-            if "PREPROC_ENDREGION_KEYWORD" in child_types:
-                closes.append(node.start_point[0])
-                return
-
-        for child in getattr(node, "children", []):
-            visit(child)
-
-    visit(root)
-
-    closes_sorted = sorted(closes)
-    used_closes: set[int] = set()
-
-    result: list[_RegionInfo] = []
-    for start_idx, name in sorted(opens, key=lambda x: x[0]):
-        end_idx = start_idx + 1
-        for c in closes_sorted:
-            if c > start_idx and c not in used_closes:
-                end_idx = c
-                used_closes.add(c)
-                break
-        result.append(_RegionInfo(name=name, start_idx=start_idx, end_idx=end_idx))
-
-    return result
 
 
 def _ts_node_is_under_parameters(node: Any) -> bool:
@@ -6829,127 +6410,6 @@ def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> i
         cc += len(_RE_MCCABE_BOOL.findall(line))
         cc += len(_RE_MCCABE_TERNARY.findall(line))
     return cc
-
-
-# ---------------------------------------------------------------------------
-# Rule task execution (within one file)
-# ---------------------------------------------------------------------------
-
-
-def _execute_diagnostic_rule_tasks(
-    tasks: list[tuple[str, Callable[[], list[Diagnostic]]]],
-) -> list[Diagnostic]:
-    """
-    Run enabled rule callables in declaration order.
-
-    Rules must run in the main thread: tree-sitter ``Parser`` is not thread-safe,
-    and optional ``symbol_index`` backends (e.g. SQLite) are not shared across
-    worker threads.
-    """
-    out: list[Diagnostic] = []
-    for _code, fn in tasks:
-        out.extend(fn())
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Inline suppression helpers
-# ---------------------------------------------------------------------------
-
-# Type alias: maps 1-based line → suppressed codes (empty set = all codes)
-_Suppressions = dict[int, set[str]]
-
-
-_BSLLS_OFF_FLAGS = frozenset({"off", "выкл"})
-
-
-def _parse_suppressions(lines: list[str]) -> _Suppressions:
-    """
-    Scan source lines for inline and block suppression comments.
-
-    Supported forms (case-insensitive):
-
-    Line-level (suppress only the annotated line)::
-
-        // noqa                    — suppress all rules on this line
-        // noqa: BSL001, BSL002    — suppress specific rules
-        // bsl-disable: BSL001     — onec-hbk-bsl style
-
-    Block-level BSLLS (compatible with 1c-syntax/bsl-language-server)::
-
-        // BSLLS-off               — disable ALL rules from this line onward
-        // BSLLS-on                — re-enable all rules
-        // BSLLS:CognitiveComplexity-off   — disable specific rule from this line
-        // BSLLS:CognitiveComplexity-on    — re-enable specific rule
-        // BSLLS:MethodSize-выкл   — Russian flags also accepted
-        // BSLLS:MethodSize-вкл
-
-    Block suppression affects the comment line itself AND all subsequent lines
-    until the matching ``-on`` / ``-вкл`` comment.  Multiple rules can be
-    independently nested and toggled.
-
-    Returns a dict mapping 1-based line numbers to a set of suppressed codes.
-    An empty set means "suppress ALL rules on that line".
-    """
-    result: _Suppressions = {}
-
-    # Block-level BSLLS state tracked across lines
-    block_all: bool = False  # BSLLS-off (no specific rule) is active
-    block_codes: set[str] = set()  # specific BSL codes currently block-suppressed
-
-    for idx, line in enumerate(lines):
-        line_no = idx + 1
-
-        # ── Step 1: update block state from BSLLS comments ───────────────
-        # Changes take effect ON the line where the comment appears.
-        for bm in _RE_BSLLS.finditer(line):
-            name = bm.group("name")
-            is_off = bm.group("flag").lower() in _BSLLS_OFF_FLAGS
-
-            if name is None:
-                # // BSLLS-off / // BSLLS-on  — affects all rules
-                if is_off:
-                    block_all = True
-                    block_codes.clear()  # individual tracking subsumed
-                else:
-                    block_all = False
-                    block_codes.clear()
-            else:
-                # // BSLLS:RuleName-off/on
-                bsl_code = _BSLLS_NAME_TO_CODE.get(name)
-                if bsl_code:
-                    if is_off:
-                        block_codes.add(bsl_code)
-                    else:
-                        block_codes.discard(bsl_code)
-                # Names not in the mapping are silently ignored
-
-        # ── Step 2: collect line-level noqa/bsl-disable comment ──────────
-        noqa_all = False
-        noqa_codes: set[str] = set()
-        m = _RE_NOQA.search(line)
-        if m is not None:
-            codes_str = m.group("codes")
-            if codes_str:
-                noqa_codes = {c.strip().upper() for c in codes_str.split(",") if c.strip()}
-            else:
-                noqa_all = True
-
-        # ── Step 3: merge into result for this line ───────────────────────
-        if block_all or noqa_all:
-            result[line_no] = set()  # suppress ALL
-        elif block_codes or noqa_codes:
-            result[line_no] = set(block_codes) | noqa_codes
-
-    return result
-
-
-def _is_suppressed(diag: Diagnostic, suppressed: _Suppressions) -> bool:
-    """Return True if *diag* is covered by an inline suppression."""
-    codes = suppressed.get(diag.line)
-    if codes is None:
-        return False
-    return len(codes) == 0 or diag.code.upper() in codes
 
 
 DiagnosticEngine = import_module("onec_hbk_bsl.analysis.diagnostic.engine").DiagnosticEngine

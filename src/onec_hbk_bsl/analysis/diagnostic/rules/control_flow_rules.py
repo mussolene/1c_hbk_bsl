@@ -227,7 +227,11 @@ def implicit_exit_reachable(
     return walk(0)
 
 
-def bsl148_function_name_spans(root: Any) -> list[tuple[int, int, int]]:
+def bsl148_function_name_spans(
+    root: Any,
+    *,
+    loops_executed_at_least_once: bool = True,
+) -> list[tuple[int, int, int]]:
     out: list[tuple[int, int, int]] = []
     for ch in getattr(root, "children", []) or []:
         if getattr(ch, "type", None) != "function":
@@ -237,7 +241,7 @@ def bsl148_function_name_spans(root: Any) -> list[tuple[int, int, int]]:
             continue
         if implicit_exit_reachable(
             _function_body_children(ch),
-            loops_executed_at_least_once=True,
+            loops_executed_at_least_once=loops_executed_at_least_once,
             at_top_level=True,
         ):
             out.append((ident.line0 + 1, ident.col0, ident.col1))

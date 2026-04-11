@@ -10,6 +10,11 @@ rule bodies are migrated out of ``diagnostics.py``.
 from __future__ import annotations
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
+from onec_hbk_bsl.analysis.diagnostic.execution import execute_diagnostic_rule_tasks
+from onec_hbk_bsl.analysis.diagnostic.suppression import (
+    is_suppressed,
+    parse_suppressions,
+)
 from onec_hbk_bsl.analysis.diagnostics import *  # noqa: F401,F403
 
 globals().update(
@@ -464,7 +469,7 @@ class DiagnosticEngine:
         )
         tree = snapshot.tree
         lines = snapshot.lines
-        suppressions = _parse_suppressions(lines)
+        suppressions = parse_suppressions(lines)
 
         # Precompute structural info once (shared across rules).
         # Prefer CST-based extraction (handles multi-line signatures, exact
@@ -869,9 +874,9 @@ class DiagnosticEngine:
             procs=procs,
             tree=tree,
         )
-        diagnostics = _execute_diagnostic_rule_tasks(_rule_tasks)
+        diagnostics = execute_diagnostic_rule_tasks(_rule_tasks)
         # Apply inline suppressions
-        diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
+        diagnostics = [d for d in diagnostics if not is_suppressed(d, suppressions)]
         _str_ranges = double_quoted_string_ranges(content)
         if _str_ranges:
             _line_starts = line_start_offsets(content)

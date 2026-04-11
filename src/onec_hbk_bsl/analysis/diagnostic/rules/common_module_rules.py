@@ -12,7 +12,8 @@ from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
 )
 
 if TYPE_CHECKING:
-    from onec_hbk_bsl.analysis.diagnostics import _ProcInfo, _RegionInfo
+    from onec_hbk_bsl.analysis.diagnostic.models import ProcInfo as _ProcInfo
+    from onec_hbk_bsl.analysis.diagnostic.models import RegionInfo as _RegionInfo
 
 _RE_SIMPLE_LHS_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)")
 _RVR_RE = re.compile(
