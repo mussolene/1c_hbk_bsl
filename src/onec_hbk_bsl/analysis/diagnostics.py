@@ -143,6 +143,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL090",
         "BSL100",
         "BSL106",
+        "BSL221",
+        "BSL222",
         "BSL110",
         "BSL119",
         "BSL132",
@@ -2023,7 +2025,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["localization"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL222": {
         "name": "MultilingualStringUsingWithTemplate",
@@ -2032,7 +2034,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["localization", "style"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL223": {
         "name": "NestedConstructorsInStructureDeclaration",
@@ -2185,7 +2187,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["naming", "suspicious"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL240": {
         "name": "RewriteMethodParameter",
@@ -2473,7 +2475,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["compatibility"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL272": {
         "name": "UsingSynchronousCalls",
@@ -2518,7 +2520,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "extensions"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL277": {
         "name": "WrongUseOfRollbackTransactionMethod",
@@ -3532,6 +3534,18 @@ _BSL223_STRUCTURE_NAMES = frozenset(
 _BSL249_STYLE_CONSTRUCTOR_NAMES = frozenset(
     {"цвет", "color", "шрифт", "font", "граница", "border", "рамка", "frame", "кисть", "brush"}
 )
+_RE_BSL221_NSTR = re.compile(r"\b(?:НСтр|NStr)\s*\(\s*\"(?P<body>[^\"]*)\"\s*\)", re.IGNORECASE)
+_RE_BSL221_LANG = re.compile(r"(?:^|;)\s*(?P<lang>[A-Za-z]{2})\s*=", re.IGNORECASE)
+_RE_BSL271_UNIX_UNAVAILABLE_NEW = re.compile(
+    r"\b(?:Новый|New)\s+(?P<name>COMОбъект|COMObject|Почта|Mail)\b",
+    re.IGNORECASE,
+)
+_RE_BSL271_PLATFORM_GUARD = re.compile(r"\b(?:Linux_x86|Windows|MacOS)\b", re.IGNORECASE)
+_RE_BSL276_PROCEED_WITH_CALL = re.compile(
+    r"\b(?:ПродолжитьВызов|ProceedWithCall)\s*\(",
+    re.IGNORECASE,
+)
+_RE_BSL276_AROUND_ANNOTATION = re.compile(r"^\s*&(?:Вместо|Instead|Around)\b", re.IGNORECASE)
 
 # Service tags in comments
 # Matches BSLLS UsingServiceTagDiagnostic default pattern:
@@ -6953,8 +6967,8 @@ class DiagnosticEngine:
             "BSL217",  # MissingTempStorageDeletion implemented; off by default (BSLLS activatedByDefault=false)
             # "BSL218" enabled — MissingTemporaryFileDeletion implemented
             # "BSL220" enabled — MultilineStringInQuery implemented
-            "BSL221",  # MultilingualStringHasAllDeclaredLanguages — TODO
-            "BSL222",  # MultilingualStringUsingWithTemplate — TODO
+            # "BSL221" enabled — MultilingualStringHasAllDeclaredLanguages implemented
+            # "BSL222" enabled — MultilingualStringUsingWithTemplate implemented
             # "BSL223" enabled — NestedConstructorsInStructureDeclaration implemented
             # "BSL224" enabled — NestedFunctionInParameters implemented
             # "BSL225" enabled — NumberOfValuesInStructureConstructor implemented
@@ -6971,7 +6985,7 @@ class DiagnosticEngine:
             "BSL236",  # QueryToMissingMetadata — TODO
             # "BSL237" enabled — RedundantAccessToObject implemented
             "BSL238",  # RefOveruse — TODO
-            "BSL239",  # ReservedParameterNames — TODO
+            # "BSL239" enabled — ReservedParameterNames implemented
             # "BSL240" enabled — RewriteMethodParameter implemented
             "BSL241",  # SameMetadataObjectAndChildNames — TODO
             "BSL242",  # ScheduledJobHandler — TODO
@@ -7003,12 +7017,12 @@ class DiagnosticEngine:
             # "BSL268" enabled — UsingFindElementByString implemented
             # "BSL269" enabled — UsingLikeInQuery implemented
             # "BSL270" enabled — UsingModalWindows implemented
-            "BSL271",  # UsingObjectNotAvailableUnix — TODO
+            # "BSL271" enabled — UsingObjectNotAvailableUnix implemented
             # "BSL272" enabled — UsingSynchronousCalls implemented
             # "BSL273" enabled — VirtualTableCallWithoutParameters implemented
             "BSL274",  # WrongDataPathForFormElements — TODO
             "BSL275",  # WrongHttpServiceHandler — TODO
-            "BSL276",  # WrongUseFunctionProceedWithCall — TODO
+            # "BSL276" enabled — WrongUseFunctionProceedWithCall implemented
             # "BSL277" enabled — WrongUseOfRollbackTransactionMethod implemented
             "BSL278",  # WrongWebServiceHandler — TODO
             # "BSL279" enabled — YoLetterUsage implemented
@@ -7049,6 +7063,8 @@ class DiagnosticEngine:
         max_module_lines: int = MAX_MODULE_LINES,
         symbol_index: Any | None = None,
         bad_words_pattern: str = "",
+        reserved_parameter_names_pattern: str = "",
+        declared_languages: str = "ru",
         bsl148_loops_executed_at_least_once: bool = True,
     ) -> None:
         # tree_sitter.Parser is not thread-safe — one BslParser per thread unless a
@@ -7088,6 +7104,16 @@ class DiagnosticEngine:
             )
         except re.error:
             self._bad_words_re = None
+        _rpp = reserved_parameter_names_pattern.strip()
+        try:
+            self._reserved_parameter_names_re: re.Pattern[str] | None = (
+                re.compile(f"^(?:{_rpp})$", re.IGNORECASE) if _rpp else None
+            )
+        except re.error:
+            self._reserved_parameter_names_re = None
+        self._declared_languages = {
+            part.strip().casefold() for part in declared_languages.split(",") if part.strip()
+        } or {"ru"}
 
     def _get_parser(self) -> BslParser:
         """Return the parser for this thread (tree-sitter Parser is not thread-safe)."""
@@ -8094,6 +8120,16 @@ class DiagnosticEngine:
                     "BSL202_205_223_243_249",
                     lambda: self._rule_bsl202_205_223_243_249_light_call_pool(
                         path, lines, tree, _bsl202_205_223_243_249
+                    ),
+                )
+            )
+        _bsl221_222_239_271_276 = ("BSL221", "BSL222", "BSL239", "BSL271", "BSL276")
+        if any(self._rule_enabled(c) for c in _bsl221_222_239_271_276):
+            _rule_tasks.append(
+                (
+                    "BSL221_222_239_271_276",
+                    lambda: self._rule_bsl221_222_239_271_276_light_pool(
+                        path, lines, tree, procs, _bsl221_222_239_271_276
                     ),
                 )
             )
@@ -18211,6 +18247,158 @@ class DiagnosticEngine:
                                 ),
                             )
                         )
+
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL221 / BSL222 / BSL239 / BSL271 / BSL276 — lightweight mixed pool
+    # ------------------------------------------------------------------
+
+    def _rule_bsl221_222_239_271_276_light_pool(
+        self,
+        path: str,
+        lines: list[str],
+        tree: Any,
+        procs: list[_ProcInfo],
+        enabled: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled_set = set(enabled)
+        diags: list[Diagnostic] = []
+
+        if {"BSL221", "BSL222"} & enabled_set:
+            for idx, raw_line in enumerate(lines):
+                if _RE_LINE_COMMENT.match(raw_line):
+                    continue
+                line = _strip_inline_comment_preserve_strings(raw_line)
+                for match in _RE_BSL221_NSTR.finditer(line):
+                    langs = {
+                        m.group("lang").casefold()
+                        for m in _RE_BSL221_LANG.finditer(match.group("body"))
+                    }
+                    missing = self._declared_languages - langs
+                    if not missing:
+                        continue
+                    code = (
+                        "BSL222"
+                        if re.search(r"\b(?:СтрШаблон|StrTemplate)\s*\(", line, re.IGNORECASE)
+                        else "BSL221"
+                    )
+                    if code not in enabled_set:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start(),
+                            end_line=idx + 1,
+                            end_character=match.end(),
+                            severity=Severity.WARNING if code == "BSL222" else Severity.INFORMATION,
+                            code=code,
+                            message=(
+                                "НСтр() не содержит все объявленные языки"
+                                if code == "BSL221"
+                                else "Не используйте неполную НСтр() внутри СтрШаблон()/StrTemplate()"
+                            ),
+                        )
+                    )
+
+        if "BSL239" in enabled_set and self._reserved_parameter_names_re is not None:
+            for proc in procs:
+                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+                for param in proc.params:
+                    if not self._reserved_parameter_names_re.fullmatch(param):
+                        continue
+                    col = line_text.find(param)
+                    if col < 0:
+                        col = proc.header_col
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=col,
+                            end_line=proc.start_idx + 1,
+                            end_character=col + len(param),
+                            severity=Severity.WARNING,
+                            code="BSL239",
+                            message=f'Имя параметра "{param}" входит в список зарезервированных',
+                        )
+                    )
+
+        root = getattr(tree, "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            return diags
+
+        line_texts = lines
+        if {"BSL271", "BSL276"} & enabled_set:
+            for node in _ts_walk(root):
+                node_type = getattr(node, "type", None)
+                if "BSL271" in enabled_set and node_type == "new_expression":
+                    type_node = _ts_child_of_type(node, "identifier")
+                    if type_node is None:
+                        continue
+                    type_name = _ts_node_text(type_node)
+                    if not _RE_BSL271_UNIX_UNAVAILABLE_NEW.search(f"Новый {type_name}"):
+                        continue
+                    guarded = False
+                    cur = getattr(node, "parent", None)
+                    while cur is not None:
+                        if getattr(cur, "type", None) in {
+                            "if_statement",
+                            "elseif_clause",
+                        } and _RE_BSL271_PLATFORM_GUARD.search(_ts_node_text(cur)):
+                            guarded = True
+                            break
+                        cur = getattr(cur, "parent", None)
+                    if guarded:
+                        continue
+                    line_idx = node.start_point[0]
+                    line_text = line_texts[line_idx] if line_idx < len(line_texts) else ""
+                    start_char = utf8_byte_offset_to_lsp_character(line_text, node.start_point[1])
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_idx + 1,
+                            character=start_char,
+                            end_line=line_idx + 1,
+                            end_character=min(len(line_text), start_char + len(type_name)),
+                            severity=Severity.ERROR,
+                            code="BSL271",
+                            message=f'Объект "{type_name}" недоступен на Linux/Unix без платформенной проверки',
+                        )
+                    )
+
+                if "BSL276" in enabled_set and node_type == "method_call":
+                    ident = _ts_child_of_type(node, "identifier")
+                    if ident is None:
+                        continue
+                    name = _ts_node_text(ident)
+                    if name.casefold() not in {"продолжитьвызов", "proceedwithcall"}:
+                        continue
+                    line_1, char_1, end_char = _ts_method_identifier_span(node, line_texts) or (
+                        0,
+                        0,
+                        0,
+                    )
+                    proc = _proc_containing_line(procs, max(0, line_1 - 1))
+                    if proc is not None:
+                        annotation_lines = lines[max(0, proc.start_idx - 3) : proc.start_idx + 1]
+                        if any(
+                            _RE_BSL276_AROUND_ANNOTATION.match(annotation_line)
+                            for annotation_line in annotation_lines
+                        ):
+                            continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_1,
+                            character=char_1,
+                            end_line=line_1,
+                            end_character=end_char,
+                            severity=Severity.ERROR,
+                            code="BSL276",
+                            message="ПродолжитьВызов()/ProceedWithCall() допустим только в методах расширения с аннотацией Вместо",
+                        )
+                    )
 
         return diags
 

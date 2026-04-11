@@ -5800,6 +5800,44 @@ class TestAdditionalParityBatch:
         diags = _check("ЦветФона = Новый Цвет(255, 0, 0);\n", tmp_path, select={"BSL249"})
         assert "BSL249" in _codes(diags)
 
+    def test_bsl221_missing_declared_language_detected(self, tmp_path: Path) -> None:
+        diags = _check("Сообщение = НСтр(\"en = 'Done'\");\n", tmp_path, select={"BSL221"})
+        assert "BSL221" in _codes(diags)
+
+    def test_bsl222_nstr_inside_template_detected(self, tmp_path: Path) -> None:
+        diags = _check(
+            'Сообщение = СтрШаблон("%1", НСтр("en = \'Done\'"));\n',
+            tmp_path,
+            select={"BSL222"},
+        )
+        assert "BSL222" in _codes(diags)
+
+    def test_bsl239_reserved_parameter_names_detected(self, tmp_path: Path) -> None:
+        content = "Процедура Тест(Дата)\nКонецПроцедуры\n"
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+
+        diags = DiagnosticEngine(
+            select={"BSL239"},
+            reserved_parameter_names_pattern="Дата|Date",
+        ).check_file(str(p))
+        assert "BSL239" in [d.code for d in diags]
+
+    def test_bsl271_unix_unavailable_object_detected(self, tmp_path: Path) -> None:
+        diags = _check(
+            'Компонента = Новый COMОбъект("Excel.Application");\n', tmp_path, select={"BSL271"}
+        )
+        assert "BSL271" in _codes(diags)
+
+    def test_bsl276_proceed_with_call_without_annotation_detected(self, tmp_path: Path) -> None:
+        diags = _check(
+            "Процедура Тест()\n    ПродолжитьВызов();\nКонецПроцедуры\n",
+            tmp_path,
+            select={"BSL276"},
+        )
+        assert "BSL276" in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL132 — RepeatedStringLiteral
