@@ -7,12 +7,12 @@ from typing import Any
 
 import pytest
 
-from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
-from onec_hbk_bsl.analysis.diagnostics_common_module import (
+from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     common_module_has_api_region,
     common_module_name_convention_issues,
     common_module_xml_flags_invalid,
 )
+from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
 
 class _FakeIndex158:
