@@ -113,6 +113,8 @@ from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
 from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+from onec_hbk_bsl.indexer.metadata_parser import crawl_config
+from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 # When a diagnostic span overlaps a "..." literal, drop the warning unless the rule
@@ -153,6 +155,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL148",
         "BSL171",
         "BSL179",
+        "BSL253",
+        "BSL260",
         # BSLLS Typo checks string literal contents.
         "BSL256",
         # Query-text rules fire on continuation lines (|...) inside string literals.
@@ -163,7 +167,10 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL210",
         "BSL220",
         "BSL191",
+        "BSL187",
         "BSL201",
+        "BSL236",
+        "BSL238",
         "BSL269",
         "BSL273",
         "BSL234",
@@ -1557,7 +1564,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "directive"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL170": {
         "name": "CompilationDirectiveNeedLess",
@@ -1566,7 +1573,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["redundant", "directive"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL171": {
         "name": "CrazyMultilineString",
@@ -1602,7 +1609,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["transaction", "error-handling"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL175": {
         "name": "DeprecatedAttributes8312",
@@ -1665,7 +1672,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "suspicious"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL182": {
         "name": "ExcessiveAutoTestCheck",
@@ -1674,7 +1681,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["testing"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL183": {
         "name": "ExecuteExternalCode",
@@ -1719,7 +1726,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["query", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL188": {
         "name": "FileSystemAccess",
@@ -1737,7 +1744,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["naming", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL190": {
         "name": "FormDataToValue",
@@ -1800,7 +1807,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "compatibility"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL197": {
         "name": "IfElseDuplicatedCodeBlock",
@@ -1935,7 +1942,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["naming", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL212": {
         "name": "MissedRequiredParameter",
@@ -1953,7 +1960,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["correctness", "module"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL214": {
         "name": "MissingEventSubscriptionHandler",
@@ -1962,7 +1969,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["correctness", "events"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL215": {
         "name": "MissingParameterDescription",
@@ -2115,7 +2122,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security", "access-control"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL232": {
         "name": "ProtectedModule",
@@ -2124,7 +2131,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["design"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL233": {
         "name": "PublicMethodsDescription",
@@ -2160,7 +2167,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["query", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL237": {
         "name": "RedundantAccessToObject",
@@ -2178,7 +2185,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["performance", "readability"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL239": {
         "name": "ReservedParameterNames",
@@ -2205,7 +2212,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["naming", "design"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL242": {
         "name": "ScheduledJobHandler",
@@ -2214,7 +2221,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "scheduled-jobs"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL243": {
         "name": "SelfInsertion",
@@ -2232,7 +2239,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "ui", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL245": {
         "name": "ServerSideExportFormMethod",
@@ -2250,7 +2257,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["security", "access-control"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL247": {
         "name": "SetPrivilegedMode",
@@ -2313,7 +2320,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["robustness", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL254": {
         "name": "TransferringParametersBetweenClientAndServer",
@@ -2376,7 +2383,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "robustness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL261": {
         "name": "UnsafeSafeModeMethodCall",
@@ -2385,7 +2392,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["security", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL262": {
         "name": "UsageWriteLogEvent",
@@ -2502,7 +2509,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL275": {
         "name": "WrongHttpServiceHandler",
@@ -3549,6 +3556,138 @@ _RE_BSL276_AROUND_ANNOTATION = re.compile(r"^\s*&(?:Вместо|Instead|Around)
 _RE_XML_BOOL_SIMPLE = r"<{tag}>\s*(true|false)\s*</{tag}>"
 _RE_BSL275_HANDLER = re.compile(r"<Handler>\s*([^<]*)\s*</Handler>", re.IGNORECASE)
 _RE_BSL278_PROCNAME = re.compile(r"<ProcedureName>\s*([^<]*)\s*</ProcedureName>", re.IGNORECASE)
+_RE_XML_NAME_SIMPLE = re.compile(r"<Name>\s*([^<]+?)\s*</Name>", re.IGNORECASE)
+_RE_XML_DIMENSION_BLOCK = re.compile(
+    r"<Dimension\b.*?>.*?<Name>\s*([^<]+?)\s*</Name>.*?<DenyIncompleteValues>\s*(true|false)\s*</DenyIncompleteValues>.*?</Dimension>",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_XML_SET_FOR_NEW_OBJECTS = re.compile(
+    r"<SetForNewObjects>\s*(true|false)\s*</SetForNewObjects>",
+    re.IGNORECASE,
+)
+_RE_XML_METHOD_NAME = re.compile(r"<MethodName>\s*([^<]+?)\s*</MethodName>", re.IGNORECASE)
+_RE_XML_EVENT_HANDLER = re.compile(
+    r"<Handler>\s*([^<]+?)\s*</Handler>|<Method>\s*([^<]+?)\s*</Method>",
+    re.IGNORECASE,
+)
+_RE_XML_DATAPATH = re.compile(r"<DataPath>\s*([^<]+?)\s*</DataPath>", re.IGNORECASE)
+_RE_XML_PROTECTED = re.compile(
+    r"<(?:IsProtected|Protected)>\s*true\s*</(?:IsProtected|Protected)>", re.IGNORECASE
+)
+_RE_XML_PRIVILEGED = re.compile(r"<Privileged>\s*true\s*</Privileged>", re.IGNORECASE)
+
+
+def _path_is_command_module_bsl(path: str) -> bool:
+    low = path.replace("\\", "/").lower()
+    return (
+        low.endswith("/ext/commandmodule.bsl") or "/commands/" in low or "/commoncommands/" in low
+    )
+
+
+@functools.lru_cache(maxsize=32)
+def _config_root_for_file(path: str) -> str | None:
+    try:
+        p = Path(path).resolve()
+    except OSError:
+        p = Path(path)
+    for parent in (p.parent, *p.parents):
+        if (parent / "Configuration.xml").exists():
+            return str(parent)
+    return None
+
+
+@functools.lru_cache(maxsize=8)
+def _crawl_config_cached(config_root: str) -> dict[str, Any]:
+    objects = crawl_config(config_root)
+    by_name: dict[str, Any] = {}
+    for obj in objects:
+        by_name[obj.name.casefold()] = obj
+    return {"objects": objects, "by_name": by_name}
+
+
+@functools.lru_cache(maxsize=256)
+def _read_text_cached(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return ""
+
+
+def _current_module_xml_context(path: str) -> dict[str, str]:
+    low = path.replace("\\", "/")
+    parts = Path(low).parts
+    out: dict[str, str] = {}
+    for idx, part in enumerate(parts):
+        if part in FOLDER_TO_KIND:
+            out["folder"] = part
+            if idx + 1 < len(parts):
+                out["object_name"] = parts[idx + 1]
+            if "forms" in [p.casefold() for p in parts[idx + 1 :]]:
+                try:
+                    forms_idx = next(
+                        i for i in range(idx + 1, len(parts)) if parts[i].casefold() == "forms"
+                    )
+                    if forms_idx + 1 < len(parts):
+                        out["form_name"] = parts[forms_idx + 1]
+                except StopIteration:
+                    pass
+            break
+    return out
+
+
+def _current_object_xml_path(path: str) -> Path | None:
+    root = _config_root_for_file(path)
+    if root is None:
+        return None
+    ctx = _current_module_xml_context(path)
+    folder = ctx.get("folder")
+    object_name = ctx.get("object_name")
+    if folder and object_name:
+        return Path(root) / folder / f"{object_name}.xml"
+    if "/commonmodules/" in path.replace("\\", "/").lower():
+        mod_name = Path(path).parent.parent.name
+        return Path(root) / "CommonModules" / f"{mod_name}.xml"
+    return None
+
+
+def _current_form_xml_path(path: str) -> Path | None:
+    root = _config_root_for_file(path)
+    if root is None:
+        return None
+    ctx = _current_module_xml_context(path)
+    folder = ctx.get("folder")
+    object_name = ctx.get("object_name")
+    form_name = ctx.get("form_name")
+    if not (folder and object_name and form_name):
+        return None
+    return Path(root) / folder / object_name / "Forms" / form_name / "Ext" / "Form.xml"
+
+
+@functools.lru_cache(maxsize=64)
+def _common_module_file_map(config_root: str) -> dict[str, dict[str, Any]]:
+    root = Path(config_root) / "CommonModules"
+    result: dict[str, dict[str, Any]] = {}
+    if not root.exists():
+        return result
+    for xml_file in root.glob("*.xml"):
+        name = xml_file.stem
+        raw = _read_text_cached(str(xml_file))
+        module_file = root / name / "Ext" / "Module.bsl"
+        proc_names: set[str] = set()
+        if module_file.exists():
+            snap = build_document_snapshot(
+                str(module_file),
+                content=_read_text_cached(str(module_file)),
+            )
+            proc_names = {proc.name.casefold() for proc in snap.procedures}
+        result[name.casefold()] = {
+            "name": name,
+            "privileged": bool(_RE_XML_PRIVILEGED.search(raw)),
+            "protected": bool(_RE_XML_PROTECTED.search(raw)),
+            "proc_names": proc_names,
+        }
+    return result
+
 
 # Service tags in comments
 # Matches BSLLS UsingServiceTagDiagnostic default pattern:
@@ -8143,6 +8282,67 @@ class DiagnosticEngine:
                     "BSL229_275_278",
                     lambda: self._rule_bsl229_275_278_local_xml_pool(
                         path, lines, procs, _bsl229_275_278
+                    ),
+                )
+            )
+        _bsl169_170_181_182_196_260 = (
+            "BSL169",
+            "BSL170",
+            "BSL181",
+            "BSL182",
+            "BSL196",
+            "BSL260",
+        )
+        if any(self._rule_enabled(c) for c in _bsl169_170_181_182_196_260):
+            _rule_tasks.append(
+                (
+                    "BSL169_170_181_182_196_260",
+                    lambda: self._rule_bsl169_170_181_182_196_260_light_pool(
+                        path, lines, procs, _bsl169_170_181_182_196_260
+                    ),
+                )
+            )
+        _bsl174_187_236_238 = ("BSL174", "BSL187", "BSL236", "BSL238")
+        if any(self._rule_enabled(c) for c in _bsl174_187_236_238):
+            _rule_tasks.append(
+                (
+                    "BSL174_187_236_238",
+                    lambda: self._rule_bsl174_187_236_238_query_metadata_pool(
+                        path, lines, _bsl174_187_236_238
+                    ),
+                )
+            )
+        _bsl189_211_213_214_231_232_241_242_246_274 = (
+            "BSL189",
+            "BSL211",
+            "BSL213",
+            "BSL214",
+            "BSL231",
+            "BSL232",
+            "BSL241",
+            "BSL242",
+            "BSL246",
+            "BSL274",
+        )
+        if any(self._rule_enabled(c) for c in _bsl189_211_213_214_231_232_241_242_246_274):
+            _rule_tasks.append(
+                (
+                    "BSL189_211_213_214_231_232_241_242_246_274",
+                    lambda: self._rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
+                        path,
+                        lines,
+                        procs,
+                        _bsl189_211_213_214_231_232_241_242_246_274,
+                    ),
+                )
+            )
+        _bsl244_253_261 = ("BSL244", "BSL253", "BSL261")
+        if any(self._rule_enabled(c) for c in _bsl244_253_261):
+            _rule_tasks.append(
+                (
+                    "BSL244_253_261",
+                    lambda: self._rule_bsl244_253_261_runtime_pool(
+                        path, lines, procs, _bsl244_253_261
                     ),
                 )
             )
@@ -18558,6 +18758,750 @@ class DiagnosticEngine:
                 if _proc_by_name(handler_name) is None:
                     _add_line1("BSL278", f"Не найден обработчик веб-сервиса {handler_name}")
 
+        return diags
+
+    def _rule_bsl169_170_181_182_196_260_light_pool(
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        enabled: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled_set = set(enabled)
+        diags: list[Diagnostic] = []
+        is_form_or_command = path_is_likely_form_module_bsl(path) or _path_is_command_module_bsl(
+            path
+        )
+        collision_names = {
+            "проверитьбит",
+            "проверитьпобитовоймаске",
+            "установитьбит",
+            "побитовоеи",
+            "побитовоеили",
+            "побитовоене",
+            "побитовоеине",
+            "побитовоеисключительноеили",
+            "побитовыйсдвигвлево",
+            "побитовыйсдвигвправо",
+            "checkbit",
+            "checkbybitmask",
+            "setbit",
+            "bitwiseand",
+            "bitwiseor",
+            "bitwisenot",
+            "bitwiseandnot",
+            "bitwisexor",
+            "bitwiseshiftleft",
+            "bitwiseshiftright",
+        }
+
+        for proc in procs:
+            annotation_lines: list[tuple[int, str]] = []
+            j = proc.start_idx - 1
+            while j >= 0:
+                line = lines[j]
+                if not line.strip() or _RE_LINE_COMMENT.match(line):
+                    j -= 1
+                    continue
+                if line.lstrip().startswith("&"):
+                    annotation_lines.append((j, line))
+                    j -= 1
+                    continue
+                break
+            if "BSL169" in enabled_set and is_form_or_command and not annotation_lines:
+                c0, c1 = _proc_name_span(lines, proc)
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=c0,
+                        end_line=proc.start_idx + 1,
+                        end_character=c1,
+                        severity=Severity.WARNING,
+                        code="BSL169",
+                        message=f"Для метода {proc.name} потеряна директива компиляции",
+                    )
+                )
+            if "BSL170" in enabled_set and not is_form_or_command:
+                for ann_idx, ann_line in annotation_lines:
+                    col = ann_line.find("&")
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=ann_idx + 1,
+                            character=max(col, 0),
+                            end_line=ann_idx + 1,
+                            end_character=max(col, 0) + max(len(ann_line.strip()), 1),
+                            severity=Severity.WARNING,
+                            code="BSL170",
+                            message="Директива компиляции в этом модуле избыточна",
+                        )
+                    )
+            if "BSL182" in enabled_set:
+                hits: list[tuple[int, int]] = []
+                for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
+                    line = _strip_inline_comment_preserve_strings(lines[idx])
+                    if re.search(r"\b(?:АвтоТестПроверка|AutoTestCheck)\b", line, re.IGNORECASE):
+                        col = re.search(
+                            r"\b(?:АвтоТестПроверка|AutoTestCheck)\b",
+                            line,
+                            re.IGNORECASE,
+                        )
+                        if col is not None:
+                            hits.append((idx, col.start()))
+                for idx, col in hits[1:]:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=col,
+                            end_line=idx + 1,
+                            end_character=col + len("АвтоТестПроверка"),
+                            severity=Severity.WARNING,
+                            code="BSL182",
+                            message="Избыточная повторная проверка АвтоТестПроверка",
+                        )
+                    )
+            if "BSL196" in enabled_set and proc.name.casefold() in collision_names:
+                c0, c1 = _proc_name_span(lines, proc)
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=c0,
+                        end_line=proc.start_idx + 1,
+                        end_character=c1,
+                        severity=Severity.ERROR,
+                        code="BSL196",
+                        message=f"Имя метода {proc.name} конфликтует с глобальным контекстом 8.3.12",
+                    )
+                )
+            if "BSL181" in enabled_set:
+                seen_inserts: set[tuple[str, str, str]] = set()
+                for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
+                    line = _strip_inline_comment_preserve_strings(lines[idx])
+                    for match in re.finditer(
+                        r"\b(?P<target>\w+)\.(?P<method>Добавить|Add|Вставить|Insert)\s*\((?P<arg>[^)]*)\)",
+                        line,
+                        re.IGNORECASE,
+                    ):
+                        key = (
+                            match.group("target").casefold(),
+                            match.group("method").casefold(),
+                            re.sub(r"\s+", "", match.group("arg")).casefold(),
+                        )
+                        if key in seen_inserts:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=idx + 1,
+                                    character=match.start("target"),
+                                    end_line=idx + 1,
+                                    end_character=match.end("arg"),
+                                    severity=Severity.WARNING,
+                                    code="BSL181",
+                                    message="Обнаружена дублирующаяся вставка в коллекцию",
+                                )
+                            )
+                        else:
+                            seen_inserts.add(key)
+        if "BSL260" in enabled_set:
+            for idx, raw_line in enumerate(lines):
+                line = _strip_inline_comment_preserve_strings(raw_line)
+                assign = re.search(
+                    r"(?P<var>\w+)\s*=\s*(?P<expr>\w+(?:\.\w+)*\.(?:НайтиПоКоду|FindByCode)\s*\([^)]*\))",
+                    line,
+                    re.IGNORECASE,
+                )
+                if assign is None:
+                    continue
+                var_name = assign.group("var")
+                lookahead = "\n".join(lines[idx + 1 : min(len(lines), idx + 4)])
+                if re.search(
+                    rf"\b(?:ЗначениеЗаполнено|ValueIsFilled)\s*\([^)]*\b{re.escape(var_name)}\b",
+                    lookahead,
+                    re.IGNORECASE,
+                ) or re.search(
+                    rf"\b{re.escape(var_name)}\b\s*(?:=|<>)\s*(?:Неопределено|Undefined)",
+                    lookahead,
+                    re.IGNORECASE,
+                ):
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=assign.start("expr"),
+                        end_line=idx + 1,
+                        end_character=assign.end("expr"),
+                        severity=Severity.WARNING,
+                        code="BSL260",
+                        message="Использование НайтиПоКоду() небезопасно без проверки результата",
+                    )
+                )
+        return diags
+
+    def _rule_bsl174_187_236_238_query_metadata_pool(
+        self,
+        path: str,
+        lines: list[str],
+        enabled: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled_set = set(enabled)
+        diags: list[Diagnostic] = []
+        root = _config_root_for_file(path)
+        meta_names: set[str] = set()
+        if root is not None:
+            crawl = _crawl_config_cached(root)
+            meta_names = set(crawl["by_name"].keys())
+
+        object_xml = _current_object_xml_path(path)
+        if "BSL174" in enabled_set and object_xml is not None:
+            xml_text = _read_text_cached(str(object_xml))
+            for match in _RE_XML_DIMENSION_BLOCK.finditer(xml_text):
+                if match.group(2).lower() == "false":
+                    line_text = lines[0] if lines else ""
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=1,
+                            character=0,
+                            end_line=1,
+                            end_character=max(len(line_text.rstrip()), 1),
+                            severity=Severity.WARNING,
+                            code="BSL174",
+                            message=(
+                                f"Измерение {match.group(1)} должно запрещать незаполненные значения"
+                            ),
+                        )
+                    )
+
+        for start_idx, block_lines in _iter_query_text_blocks(lines):
+            query_lines = list(_iter_query_text_content_lines(start_idx, block_lines))
+            if not query_lines:
+                continue
+            query_text = "\n".join(head for _ln, _base, _content, head, _end in query_lines)
+            left_join_aliases: set[str] = set()
+            for line_no, content_base, _content, head, _ended in query_lines:
+                if "BSL236" in enabled_set:
+                    for match in re.finditer(
+                        r"\b(?:ИЗ|FROM|СОЕДИНЕНИЕ|JOIN)\s+([A-Za-zА-Яа-яЁё_][\w]*)",
+                        head,
+                        re.IGNORECASE,
+                    ):
+                        name = match.group(1)
+                        if name.casefold() in {
+                            "выбрать",
+                            "select",
+                            "как",
+                            "as",
+                            "левое",
+                            "правое",
+                            "полное",
+                            "внутреннее",
+                        }:
+                            continue
+                        if meta_names and name.casefold() not in meta_names:
+                            col = content_base + match.start(1)
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=col,
+                                    end_line=line_no,
+                                    end_character=col + len(name),
+                                    severity=Severity.ERROR,
+                                    code="BSL236",
+                                    message=f"Запрос обращается к несуществующим метаданным {name}",
+                                )
+                            )
+                if "BSL238" in enabled_set:
+                    for match in re.finditer(r"\.(?:Ссылка|Ref)\.", head, re.IGNORECASE):
+                        col = content_base + match.start()
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=line_no,
+                                character=col,
+                                end_line=line_no,
+                                end_character=col + len(match.group(0)),
+                                severity=Severity.INFORMATION,
+                                code="BSL238",
+                                message="Избыточное использование .Ссылка в запросе",
+                            )
+                        )
+                if "BSL187" in enabled_set:
+                    for join_match in re.finditer(
+                        r"\b(?:ЛЕВОЕ\s+СОЕДИНЕНИЕ|LEFT\s+JOIN)\b.*?\b(?:КАК|AS)\s+([A-Za-zА-Яа-яЁё_]\w*)",
+                        head,
+                        re.IGNORECASE,
+                    ):
+                        left_join_aliases.add(join_match.group(1).casefold())
+            if "BSL187" in enabled_set and left_join_aliases:
+                has_isnull = re.search(r"\b(?:ЕСТЬNULL|ISNULL)\s*\(", query_text, re.IGNORECASE)
+                if not has_isnull:
+                    for line_no, content_base, _content, head, _ended in query_lines:
+                        for alias in left_join_aliases:
+                            match = re.search(rf"\b{re.escape(alias)}\.\w+", head, re.IGNORECASE)
+                            if match is None:
+                                continue
+                            col = content_base + match.start()
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=col,
+                                    end_line=line_no,
+                                    end_character=col + len(match.group(0)),
+                                    severity=Severity.ERROR,
+                                    code="BSL187",
+                                    message="Поля из внешнего соединения должны использоваться с ЕСТЬNULL/ISNULL",
+                                )
+                            )
+                            break
+        return diags
+
+    def _rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        enabled: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled_set = set(enabled)
+        diags: list[Diagnostic] = []
+        root = _config_root_for_file(path)
+        line_text = lines[0] if lines else ""
+        object_xml = _current_object_xml_path(path)
+        crawl = _crawl_config_cached(root) if root is not None else {"objects": [], "by_name": {}}
+        module_map = _common_module_file_map(root) if root is not None else {}
+
+        forbidden_names = {
+            "catalog",
+            "catalogs",
+            "document",
+            "documents",
+            "справочник",
+            "справочники",
+            "документ",
+            "документы",
+            "enum",
+            "enums",
+            "перечисление",
+            "перечисления",
+            "tasks",
+            "задачи",
+        }
+
+        if object_xml is not None:
+            ctx = _current_module_xml_context(path)
+            object_name = ctx.get("object_name", object_xml.stem)
+            meta_obj = crawl["by_name"].get(object_name.casefold())
+            if "BSL189" in enabled_set:
+                if object_name.casefold() in forbidden_names:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=1,
+                            character=0,
+                            end_line=1,
+                            end_character=max(len(line_text.rstrip()), 1),
+                            severity=Severity.ERROR,
+                            code="BSL189",
+                            message=f"Запрещенное имя объекта метаданных {object_name}",
+                        )
+                    )
+                if meta_obj is not None:
+                    for member in meta_obj.members:
+                        check_name = member.name.split(".")[-1]
+                        if check_name.casefold() in forbidden_names:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=1,
+                                    character=0,
+                                    end_line=1,
+                                    end_character=max(len(line_text.rstrip()), 1),
+                                    severity=Severity.ERROR,
+                                    code="BSL189",
+                                    message=f"Запрещенное имя реквизита или части {check_name}",
+                                )
+                            )
+                            break
+            if "BSL211" in enabled_set and len(object_name) > 80:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=1,
+                        character=0,
+                        end_line=1,
+                        end_character=max(len(line_text.rstrip()), 1),
+                        severity=Severity.WARNING,
+                        code="BSL211",
+                        message="Имя объекта метаданных превышает допустимую длину 80",
+                    )
+                )
+            if "BSL241" in enabled_set and meta_obj is not None:
+                obj_cf = meta_obj.name.casefold()
+                for member in meta_obj.members:
+                    raw_name = member.name.split(".")
+                    if len(raw_name) == 1 and raw_name[0].casefold() == obj_cf:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=1,
+                                character=0,
+                                end_line=1,
+                                end_character=max(len(line_text.rstrip()), 1),
+                                severity=Severity.ERROR,
+                                code="BSL241",
+                                message=f"Имя дочернего объекта совпадает с именем {meta_obj.name}",
+                            )
+                        )
+                        break
+                    if len(raw_name) == 2 and raw_name[0].casefold() == raw_name[1].casefold():
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=1,
+                                character=0,
+                                end_line=1,
+                                end_character=max(len(line_text.rstrip()), 1),
+                                severity=Severity.ERROR,
+                                code="BSL241",
+                                message=f"Имя реквизита совпадает с именем табличной части {raw_name[0]}",
+                            )
+                        )
+                        break
+
+        if "BSL274" in enabled_set and path_is_likely_form_module_bsl(path):
+            form_xml = _current_form_xml_path(path)
+            if form_xml is not None:
+                form_text = _read_text_cached(str(form_xml))
+                for match in _RE_XML_DATAPATH.finditer(form_text):
+                    if match.group(1).startswith("~"):
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=1,
+                                character=0,
+                                end_line=1,
+                                end_character=max(len(line_text.rstrip()), 1),
+                                severity=Severity.ERROR,
+                                code="BSL274",
+                                message=f"Путь к данным элемента формы некорректен: {match.group(1)}",
+                            )
+                        )
+                        break
+
+        if (
+            "BSL246" in enabled_set
+            and path.replace("\\", "/").lower().endswith("/ext/managedapplicationmodule.bsl")
+            and root is not None
+        ):
+            roles_dir = Path(root) / "Roles"
+            for xml_file in roles_dir.glob("*.xml"):
+                role_name = xml_file.stem
+                if role_name in {"FullAccess", "ПолныеПрава"}:
+                    continue
+                text = _read_text_cached(str(xml_file))
+                match = _RE_XML_SET_FOR_NEW_OBJECTS.search(text)
+                if match and match.group(1).lower() == "true":
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=1,
+                            character=0,
+                            end_line=1,
+                            end_character=max(len(line_text.rstrip()), 1),
+                            severity=Severity.ERROR,
+                            code="BSL246",
+                            message=f"Роль {role_name} задает права для новых объектов",
+                        )
+                    )
+
+        if (
+            "BSL232" in enabled_set
+            and path.replace("\\", "/").lower().endswith("/ext/sessionmodule.bsl")
+            and root is not None
+        ):
+            cfg_root = Path(root)
+            protected_found = False
+            for xml_file in cfg_root.rglob("*.xml"):
+                if xml_file.name in {"Configuration.xml", "ConfigDumpInfo.xml"}:
+                    continue
+                if _RE_XML_PROTECTED.search(_read_text_cached(str(xml_file))):
+                    protected_found = True
+                    break
+            if protected_found:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=1,
+                        character=0,
+                        end_line=1,
+                        end_character=max(len(line_text.rstrip()), 1),
+                        severity=Severity.WARNING,
+                        code="BSL232",
+                        message="В конфигурации обнаружены защищенные модули",
+                    )
+                )
+
+        if "BSL231" in enabled_set and root is not None:
+            low = path.replace("\\", "/").lower()
+            current_common = ""
+            if "/commonmodules/" in low:
+                current_common = Path(path).parent.parent.name.casefold()
+            current_privileged = bool(
+                current_common and module_map.get(current_common, {}).get("privileged")
+            )
+            for idx, raw_line in enumerate(lines):
+                line = _strip_inline_comment_preserve_strings(raw_line)
+                for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
+                    mod_cf = match.group("mod").casefold()
+                    if mod_cf == current_common:
+                        continue
+                    info = module_map.get(mod_cf)
+                    if info and info.get("privileged") and not current_privileged:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=match.start("mod"),
+                                end_line=idx + 1,
+                                end_character=match.end("meth"),
+                                severity=Severity.WARNING,
+                                code="BSL231",
+                                message=f"Вызов метода привилегированного модуля {info['name']}",
+                            )
+                        )
+
+        if (
+            ({"BSL213", "BSL214", "BSL242"} & enabled_set)
+            and root is not None
+            and "/commonmodules/" in path.replace("\\", "/").lower()
+        ):
+            module_name = Path(path).parent.parent.name
+            proc_names = {proc.name.casefold(): proc for proc in procs}
+            root_path = Path(root)
+            if "BSL213" in enabled_set:
+                for idx, raw_line in enumerate(lines):
+                    line = _strip_inline_comment_preserve_strings(raw_line)
+                    for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
+                        mod_cf = match.group("mod").casefold()
+                        info = module_map.get(mod_cf)
+                        if info and match.group("meth").casefold() not in info.get(
+                            "proc_names", set()
+                        ):
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=idx + 1,
+                                    character=match.start("mod"),
+                                    end_line=idx + 1,
+                                    end_character=match.end("meth"),
+                                    severity=Severity.ERROR,
+                                    code="BSL213",
+                                    message=(
+                                        f"Метод {match.group('meth')} отсутствует в общем модуле {info['name']}"
+                                    ),
+                                )
+                            )
+            if "BSL214" in enabled_set:
+                for xml_file in (root_path / "EventSubscriptions").glob("*.xml"):
+                    text = _read_text_cached(str(xml_file))
+                    for match in _RE_XML_EVENT_HANDLER.finditer(text):
+                        handler = (match.group(1) or match.group(2) or "").strip()
+                        if not handler.startswith(f"{module_name}."):
+                            continue
+                        meth = handler.split(".", 1)[1]
+                        if meth.casefold() not in proc_names:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=1,
+                                    character=0,
+                                    end_line=1,
+                                    end_character=max(len(line_text.rstrip()), 1),
+                                    severity=Severity.ERROR,
+                                    code="BSL214",
+                                    message=f"Обработчик подписки на событие {handler} не существует",
+                                )
+                            )
+            if "BSL242" in enabled_set:
+                handlers_seen: dict[str, str] = {}
+                for xml_file in (root_path / "ScheduledJobs").glob("*.xml"):
+                    text = _read_text_cached(str(xml_file))
+                    for match in _RE_XML_METHOD_NAME.finditer(text):
+                        handler = match.group(1).strip()
+                        if not handler.startswith(f"CommonModule.{module_name}."):
+                            continue
+                        meth = handler.split(".")[-1]
+                        proc = proc_names.get(meth.casefold())
+                        if proc is None:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=1,
+                                    character=0,
+                                    end_line=1,
+                                    end_character=max(len(line_text.rstrip()), 1),
+                                    severity=Severity.ERROR,
+                                    code="BSL242",
+                                    message=f"Обработчик регламентного задания {handler} не найден",
+                                )
+                            )
+                            continue
+                        if not proc.is_export:
+                            start_char, end_char = _proc_name_span(lines, proc)
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=proc.start_idx + 1,
+                                    character=start_char,
+                                    end_line=proc.start_idx + 1,
+                                    end_character=end_char,
+                                    severity=Severity.ERROR,
+                                    code="BSL242",
+                                    message=f"Обработчик регламентного задания {handler} должен быть экспортным",
+                                )
+                            )
+                        if proc.optional_count > 0 or proc.params:
+                            start_char, end_char = _proc_name_span(lines, proc)
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=proc.start_idx + 1,
+                                    character=start_char,
+                                    end_line=proc.start_idx + 1,
+                                    end_character=end_char,
+                                    severity=Severity.ERROR,
+                                    code="BSL242",
+                                    message=f"Обработчик регламентного задания {handler} не должен принимать параметры",
+                                )
+                            )
+                        if handler in handlers_seen and handlers_seen[handler] != xml_file.stem:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=1,
+                                    character=0,
+                                    end_line=1,
+                                    end_character=max(len(line_text.rstrip()), 1),
+                                    severity=Severity.ERROR,
+                                    code="BSL242",
+                                    message=f"Один и тот же обработчик {handler} используется несколькими заданиями",
+                                )
+                            )
+                        handlers_seen[handler] = xml_file.stem
+        return diags
+
+    def _rule_bsl244_253_261_runtime_pool(
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        enabled: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled_set = set(enabled)
+        diags: list[Diagnostic] = []
+        server_proc_names = {
+            proc.name.casefold()
+            for proc in procs
+            if _procedure_compiler_execution_context(lines, proc) == "server"
+        }
+
+        if "BSL244" in enabled_set and path_is_likely_form_module_bsl(path):
+            for idx, raw_line in enumerate(lines):
+                line = _strip_inline_comment_preserve_strings(raw_line)
+                proc = _proc_containing_line(procs, idx)
+                if proc is None:
+                    continue
+                name_cf = proc.name.casefold()
+                is_form_event = name_cf.startswith("при") or name_cf.startswith("on")
+                if not is_form_event:
+                    continue
+                for match in re.finditer(r"\b(?P<call>\w+)\s*\(", line):
+                    if match.group("call").casefold() in server_proc_names:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=match.start("call"),
+                                end_line=idx + 1,
+                                end_character=match.end("call"),
+                                severity=Severity.ERROR,
+                                code="BSL244",
+                                message="Серверный вызов в обработчике события формы",
+                            )
+                        )
+
+        timeout_types = {
+            "httpсоединение": 4,
+            "httpconnection": 4,
+            "ftpсоединение": 5,
+            "ftpconnection": 5,
+            "wsопределения": 3,
+            "wsdefinitions": 3,
+            "wsпрокси": 4,
+            "wsproxy": 4,
+            "интернетпочтовыйпрофиль": 5,
+            "internetmailprofile": 5,
+        }
+        if "BSL253" in enabled_set:
+            for idx, raw_line in enumerate(lines):
+                line = _strip_inline_comment_preserve_strings(raw_line)
+                match = re.search(
+                    r"\b(?:Новый|New)\s+(?P<type>\w+)\s*\((?P<args>.*)\)", line, re.IGNORECASE
+                )
+                if match is None:
+                    continue
+                type_cf = match.group("type").casefold()
+                need_idx = timeout_types.get(type_cf)
+                if need_idx is None:
+                    continue
+                args = _split_top_level_args(match.group("args"))
+                if len(args) > need_idx and args[need_idx].strip():
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=match.start("type"),
+                        end_line=idx + 1,
+                        end_character=match.end("args") + 1,
+                        severity=Severity.ERROR,
+                        code="BSL253",
+                        message="Внешний ресурс создается без явного таймаута",
+                    )
+                )
+
+        if "BSL261" in enabled_set:
+            for idx, raw_line in enumerate(lines):
+                line = _strip_inline_comment_preserve_strings(raw_line)
+                if not re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE):
+                    continue
+                if re.search(
+                    r"\b(?:Если|If)\b.*\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE
+                ) or re.search(
+                    r"\b(?:И|And|Или|Or)\b",
+                    line,
+                    re.IGNORECASE,
+                ):
+                    match = re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE)
+                    if match is not None:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=match.start(),
+                                end_line=idx + 1,
+                                end_character=match.end(),
+                                severity=Severity.ERROR,
+                                code="BSL261",
+                                message="Небезопасное использование метода безопасного режима",
+                            )
+                        )
         return diags
 
     # ------------------------------------------------------------------

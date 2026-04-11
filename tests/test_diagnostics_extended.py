@@ -356,6 +356,226 @@ class TestLocalXmlParityBatch:
         assert "веб-сервиса" in diags[0].message
 
 
+class TestTailParityBatches:
+    def test_compilation_and_name_tail_pool(self, tmp_path: Path) -> None:
+        form_path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        form_path.parent.mkdir(parents=True)
+        form_path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура ПроверитьБит()
+                КонецПроцедуры
+
+                Процедура Обработчик()
+                    АвтоТестПроверка();
+                    АвтоТестПроверка();
+                    Коллекция.Добавить(Значение);
+                    Коллекция.Добавить(Значение);
+                    Найденный = Каталог.НайтиПоКоду("001");
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL169", "BSL181", "BSL182", "BSL196"}).check_file(
+            str(form_path)
+        )
+        got = set(_codes(diags))
+        assert {"BSL169", "BSL181", "BSL182", "BSL196"} <= got
+
+    def test_needless_compilation_directive_in_manager_module(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Ext" / "ManagerModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаКлиенте
+                Процедура Метод()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL170"}).check_file(str(path))
+        assert "BSL170" in _codes(diags)
+
+    def test_unsafe_find_by_code_tail_rule(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Ext" / "ManagerModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Метод()
+                    Найденный = Каталог.НайтиПоКоду("001");
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL260"}).check_file(str(path))
+        assert "BSL260" in _codes(diags)
+
+    def test_metadata_tail_pool(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "Roles").mkdir(parents=True)
+        (root / "Roles" / "Менеджер.xml").write_text(
+            "<Role><SetForNewObjects>true</SetForNewObjects></Role>",
+            encoding="utf-8",
+        )
+        obj_dir = root / "InformationRegisters" / ("X" * 81)
+        (obj_dir / "Forms" / "Форма" / "Ext").mkdir(parents=True)
+        (root / "InformationRegisters" / f"{'X' * 81}.xml").write_text(
+            textwrap.dedent(
+                f"""\
+                <MetaDataObject>
+                    <InformationRegister>
+                        <Properties><Name>{"X" * 81}</Name></Properties>
+                        <ChildObjects>
+                            <Attribute><Properties><Name>{"X" * 81}</Name></Properties></Attribute>
+                            <Dimension>
+                                <Properties>
+                                    <Name>Измерение</Name>
+                                    <DenyIncompleteValues>false</DenyIncompleteValues>
+                                </Properties>
+                            </Dimension>
+                        </ChildObjects>
+                    </InformationRegister>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        (obj_dir / "Forms" / "Форма" / "Ext" / "Form.xml").write_text(
+            "<Form><Items><Item><DataPath>~ПлохойПуть</DataPath></Item></Items></Form>",
+            encoding="utf-8",
+        )
+        module_path = obj_dir / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        module_path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Метод()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        app_module = root / "Ext" / "ManagedApplicationModule.bsl"
+        app_module.parent.mkdir(parents=True)
+        app_module.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n", encoding="utf-8"
+        )
+        diags_form = DiagnosticEngine(select={"BSL174", "BSL211", "BSL241", "BSL274"}).check_file(
+            str(module_path)
+        )
+        assert {"BSL174", "BSL211", "BSL241", "BSL274"} <= set(_codes(diags_form))
+        diags_app = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
+        assert "BSL246" in _codes(diags_app)
+
+    def test_common_module_cross_reference_tail_pool(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Обычный" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Привилегированный" / "Ext").mkdir(parents=True)
+        (root / "ScheduledJobs").mkdir(parents=True)
+        (root / "EventSubscriptions").mkdir(parents=True)
+        (root / "CommonModules" / "Обычный.xml").write_text(
+            "<CommonModule><Name>Обычный</Name></CommonModule>", encoding="utf-8"
+        )
+        (root / "CommonModules" / "Привилегированный.xml").write_text(
+            "<CommonModule><Name>Привилегированный</Name><Privileged>true</Privileged><Protected>true</Protected></CommonModule>",
+            encoding="utf-8",
+        )
+        (root / "ScheduledJobs" / "Задание.xml").write_text(
+            "<ScheduledJob><MethodName>CommonModule.Обычный.НетЭкспорта</MethodName></ScheduledJob>",
+            encoding="utf-8",
+        )
+        (root / "EventSubscriptions" / "Подписка.xml").write_text(
+            "<EventSubscription><Handler>Обычный.НеСуществующий</Handler></EventSubscription>",
+            encoding="utf-8",
+        )
+        ordinary_module = root / "CommonModules" / "Обычный" / "Ext" / "Module.bsl"
+        ordinary_module.write_text(
+            textwrap.dedent(
+                """\
+                Процедура НетЭкспорта()
+                    Привилегированный.Метод();
+                    Обычный.Отсутствующий();
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "Привилегированный" / "Ext" / "Module.bsl").write_text(
+            "Процедура Метод() Экспорт\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        session_module = root / "Ext" / "SessionModule.bsl"
+        session_module.parent.mkdir(parents=True)
+        session_module.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n", encoding="utf-8"
+        )
+        diags = DiagnosticEngine(select={"BSL213", "BSL214", "BSL231", "BSL242"}).check_file(
+            str(ordinary_module)
+        )
+        assert {"BSL213", "BSL214", "BSL231", "BSL242"} <= set(_codes(diags))
+        session_diags = DiagnosticEngine(select={"BSL232"}).check_file(str(session_module))
+        assert "BSL232" in _codes(session_diags)
+
+    def test_query_and_runtime_tail_pool(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "Catalogs").mkdir(exist_ok=True)
+        (tmp_path / "Catalogs" / "Тест.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>Тест</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаКлиенте
+                Процедура ПриОткрытии()
+                    СерверныйМетод();
+                    Соединение = Новый HTTPСоединение("x", 80, "u", "p");
+                    Если БезопасныйРежим() И Истина Тогда
+                    КонецЕсли;
+                    Запрос = Новый Запрос;
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |  Левое.Тест КАК Поле,
+                    |  Левое.Ссылка.Код КАК Код
+                    |ИЗ НесуществующийСправочник КАК Основание
+                    |    ЛЕВОЕ СОЕДИНЕНИЕ НесуществующийСправочник КАК Левое
+                    |    ПО Истина";
+                КонецПроцедуры
+
+                &НаСервере
+                Процедура СерверныйМетод()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(
+            select={"BSL187", "BSL236", "BSL238", "BSL244", "BSL261"}
+        ).check_file(str(path))
+        assert {"BSL187", "BSL236", "BSL238", "BSL244", "BSL261"} <= set(_codes(diags))
+
+    def test_external_resource_timeout_tail_rule(self, tmp_path: Path) -> None:
+        diags = _check(
+            """\
+            Процедура Метод()
+                Соединение = Новый HTTPСоединение("x", 80, "u", "p");
+            КонецПроцедуры
+            """,
+            tmp_path,
+            select={"BSL253"},
+        )
+        assert "BSL253" in _codes(diags)
+
+
 # ---------------------------------------------------------------------------
 # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
 # ---------------------------------------------------------------------------
