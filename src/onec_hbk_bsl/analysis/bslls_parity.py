@@ -49,7 +49,9 @@ def runtime_rule_codes_from_diagnostics_source(source: str) -> set[str]:
     own line inside a nested tuple; this must stay in sync with tests and
     ``scripts/generate_bslls_parity_artifact.py``.
     """
-    raw_keys = set(re.findall(r'_rule_tasks\.append\(\s*\(\s*["\']([^"\']+)["\']', source))
+    raw_keys = set(
+        re.findall(r'(?:_rule_tasks|tasks)\.append\(\s*\(\s*["\']([^"\']+)["\']', source)
+    )
     out: set[str] = set()
     for key in raw_keys:
         if re.fullmatch(r"BSL\d{3}", key):
@@ -73,6 +75,16 @@ def runtime_rule_codes_from_diagnostics_source(source: str) -> set[str]:
             if tail and all(re.fullmatch(r"\d{3}", part) for part in tail):
                 out.add(head)
                 out.update(f"BSL{part}" for part in tail)
+    return out
+
+
+def runtime_rule_codes_from_paths(paths: list[str | Path]) -> set[str]:
+    """Collect runtime rule codes from one or more orchestration source files."""
+    out: set[str] = set()
+    for path in paths:
+        out.update(
+            runtime_rule_codes_from_diagnostics_source(Path(path).read_text(encoding="utf-8"))
+        )
     return out
 
 

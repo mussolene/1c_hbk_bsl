@@ -113,6 +113,12 @@ from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+from onec_hbk_bsl.analysis.passes.query_pass import (
+    extend_query_join_rule_tasks,
+    extend_query_metadata_rule_tasks,
+    extend_query_text_rule_tasks,
+    extend_query_top_rule_tasks,
+)
 from onec_hbk_bsl.indexer.metadata_parser import crawl_config
 from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
 from onec_hbk_bsl.parser.bsl_parser import BslParser
@@ -7746,15 +7752,13 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL076", lambda: self._rule_bsl076_negative_condition_first(path, lines))
             )
-        if self._rule_enabled("BSL077"):
-            _rule_tasks.append(
-                (
-                    "BSL077",
-                    lambda: self._rule_bsl077_select_top_without_order_by(
-                        path, lines, _query_blocks
-                    ),
-                )
-            )
+        extend_query_top_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            query_blocks=_query_blocks,
+        )
         if self._rule_enabled("BSL078"):
             _rule_tasks.append(
                 ("BSL078", lambda: self._rule_bsl078_raise_without_message(path, lines))
@@ -8211,26 +8215,13 @@ class DiagnosticEngine:
                     ),
                 )
             )
-        _bsl220_235_269_273 = ("BSL220", "BSL235", "BSL269", "BSL273")
-        if any(self._rule_enabled(c) for c in _bsl220_235_269_273):
-            _rule_tasks.append(
-                (
-                    "BSL220_235_269_273",
-                    lambda: self._rule_bsl220_235_269_273_query_text_diagnostics(
-                        path, lines, _bsl220_235_269_273, _query_blocks
-                    ),
-                )
-            )
-        _bsl191_201 = ("BSL191", "BSL201")
-        if any(self._rule_enabled(c) for c in _bsl191_201):
-            _rule_tasks.append(
-                (
-                    "BSL191_201",
-                    lambda: self._rule_bsl191_201_query_text_diagnostics(
-                        path, lines, _bsl191_201, _query_blocks
-                    ),
-                )
-            )
+        extend_query_text_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            query_blocks=_query_blocks,
+        )
         _bsl192_193_194_228_266 = ("BSL192", "BSL193", "BSL194", "BSL228", "BSL266")
         if any(self._rule_enabled(c) for c in _bsl192_193_194_228_266):
             _rule_tasks.append(
@@ -8269,16 +8260,13 @@ class DiagnosticEngine:
                     ),
                 )
             )
-        _bsl206_207_209 = ("BSL206", "BSL207", "BSL209")
-        if any(self._rule_enabled(c) for c in _bsl206_207_209):
-            _rule_tasks.append(
-                (
-                    "BSL206_207_209",
-                    lambda: self._rule_bsl206_207_209_query_join_diagnostics(
-                        path, lines, _bsl206_207_209, _query_blocks
-                    ),
-                )
-            )
+        extend_query_join_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            query_blocks=_query_blocks,
+        )
         if self._rule_enabled("BSL215"):
             _rule_tasks.append(
                 (
@@ -8333,16 +8321,13 @@ class DiagnosticEngine:
                     ),
                 )
             )
-        _bsl174_187_236_238 = ("BSL174", "BSL187", "BSL236", "BSL238")
-        if any(self._rule_enabled(c) for c in _bsl174_187_236_238):
-            _rule_tasks.append(
-                (
-                    "BSL174_187_236_238",
-                    lambda: self._rule_bsl174_187_236_238_query_metadata_pool(
-                        path, lines, _bsl174_187_236_238, _query_blocks
-                    ),
-                )
-            )
+        extend_query_metadata_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            query_blocks=_query_blocks,
+        )
         _bsl189_211_213_214_231_232_241_242_246_274 = (
             "BSL189",
             "BSL211",

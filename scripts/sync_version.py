@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXT = ROOT / "vscode-extension"
+PY_VERSION = ROOT / "src" / "onec_hbk_bsl" / "_version.py"
 
 
 def _version_from_scm() -> str:
@@ -57,6 +58,13 @@ def main() -> int:
     pkg["version"] = ver
     pkg_path.write_text(json.dumps(pkg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"vscode-extension/package.json: {old!r} → {ver!r}")
+
+    PY_VERSION.write_text(
+        '"""Generated version metadata for runtime use."""\n\n'
+        f'__version__ = "{ver}"\n',
+        encoding="utf-8",
+    )
+    print(f"src/onec_hbk_bsl/_version.py: updated to {ver!r}")
 
     r = subprocess.run(
         ["npm", "install", "--package-lock-only", "--ignore-scripts"],

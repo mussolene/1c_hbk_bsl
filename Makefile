@@ -1,14 +1,20 @@
 .PHONY: install install-build dev test lint fmt check-all sync-version reset-extension-placeholder \
-	build build-fast build-check bench-30 compare-java extension-bin sync-extension-bin \
+	build build-fast build-nuitka build-check bench-30 compare-java extension-bin sync-extension-bin \
 	vsix dist clean docker-build docker-up docker-down
+
+# ── Python runtime ───────────────────────────────────────────────────────────
+
+PYTHON3 ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
 
 install:
-	uv pip install -e ".[dev]"
+	$(PYTHON3) -m pip install --upgrade pip setuptools wheel
+	$(PYTHON3) -m pip install --no-build-isolation -e ".[dev]"
 
 install-build:
-	uv pip install -e ".[dev,build]"
+	$(PYTHON3) -m pip install --upgrade pip setuptools wheel
+	$(PYTHON3) -m pip install --no-build-isolation -e ".[dev,build]"
 
 dev: install
 	@echo "Dev environment ready. Run: onec-hbk-bsl --help"
@@ -22,8 +28,6 @@ reset-extension-placeholder:
 	$(PYTHON3) scripts/reset_extension_placeholder.py
 
 # ── Тесты и линтинг ──────────────────────────────────────────────────────────
-# Use explicit python3 by default. Local .venv may not contain the full build/runtime deps.
-PYTHON3 ?= python3
 SPELLCHECKER_RES := $(shell $(PYTHON3) -c "from pathlib import Path; import spellchecker; print(Path(spellchecker.__file__).resolve().parent / 'resources')")
 
 test:
@@ -58,6 +62,9 @@ else
 endif
 
 BUILD_OUT = $(DIST_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
+NUITKA_OUT_DIR = $(DIST_DIR)/nuitka
+NUITKA_APP_DIR = $(NUITKA_OUT_DIR)/__main__.dist
+NUITKA_BIN = $(NUITKA_APP_DIR)/__main__.bin
 
 # Бинарник для локальной упаковки VSIX (совпадает с путём в extension.ts → bin/)
 EXTENSION_BIN_DIR = vscode-extension/bin
@@ -99,6 +106,26 @@ build-fast:
 		$(ENTRY)
 	@echo "✓ Готово: $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)"
 	@ls -lh $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)
+
+# Experimental fast-runtime native build. Better candidate than PyInstaller for startup-sensitive CLI.
+build-nuitka:
+	@echo "→ Nuitka standalone ($(PLATFORM))..."
+	@rm -rf $(NUITKA_OUT_DIR)
+	@mkdir -p $(NUITKA_OUT_DIR)
+	$(PYTHON3) -m nuitka \
+		--standalone \
+		--assume-yes-for-downloads \
+		--output-dir=$(NUITKA_OUT_DIR) \
+		--nofollow-import-to=pytest,_pytest,tkinter,matplotlib,numpy,pandas,IPython \
+		--include-package-data=onec_hbk_bsl.bslls_typo_data \
+		--include-data-dir="$(SPELLCHECKER_RES)=spellchecker/resources" \
+		--include-module=spellchecker \
+		--include-distribution-metadata=fastmcp \
+		--include-distribution-metadata=onec-hbk-bsl \
+		src/onec_hbk_bsl/__main__.py
+	@test -f $(NUITKA_BIN) || (echo "Нет $(NUITKA_BIN)" >&2 && exit 1)
+	@echo "✓ Готово: $(NUITKA_BIN)"
+	@ls -lh $(NUITKA_BIN)
 
 # Скопировать свежий бинарник в vscode-extension/bin/ (для vsce package / отладки расширения)
 sync-extension-bin:
