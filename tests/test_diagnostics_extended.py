@@ -260,6 +260,88 @@ class TestSecurityApiParityBatch:
         diags = _check(content, tmp_path, select={"BSL185"})
         assert "BSL185" in _codes(diags)
 
+
+# ---------------------------------------------------------------------------
+# BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
+# ---------------------------------------------------------------------------
+
+
+class TestLightParityBatch:
+    def test_bsl171_crazy_multiline_string(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Сообщить("a"
+                    "b");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL171"})
+        assert "BSL171" in _codes(diags)
+
+    def test_bsl204_invalid_character_in_file(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    //\u00a0NBSP\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL204"})
+        bsl204 = [d for d in diags if d.code == "BSL204"]
+        assert len(bsl204) == 1
+        assert "неразрывного пробела" in bsl204[0].message
+
+    def test_bsl217_missing_temp_storage_deletion(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Адрес = ПолучитьИзВременногоХранилища(Ссылка);
+                Сообщить(Адрес);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL217"})
+        assert "BSL217" in _codes(diags)
+
+    def test_bsl248_several_compiler_directives(self, tmp_path: Path) -> None:
+        content = """\
+            &НаКлиенте
+            &НаСервере
+            Процедура Тест()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL248"})
+        assert "BSL248" in _codes(diags)
+
+    def test_bsl251_ternary_operator_usage(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Значение = ?(Истина, 1, 2);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL251"})
+        assert "BSL251" in _codes(diags)
+
+    def test_bsl252_this_object_assign_in_form_module(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ЭтотОбъект = 1;
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL252"}).check_file(str(path))
+        assert "BSL252" in _codes(diags)
+
+    def test_bsl259_unknown_preprocessor_symbol(self, tmp_path: Path) -> None:
+        content = """\
+            #Если Сервер И Неизвестно Тогда
+            #КонецЕсли
+        """
+        diags = _check(content, tmp_path, select={"BSL259"})
+        assert "BSL259" in _codes(diags)
+
+    def test_bsl268_find_by_string_literal(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Справочник)
+                Элемент = Справочник.НайтиПоНаименованию("Тест");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL268"})
+        assert "BSL268" in _codes(diags)
+
     def test_bsl188_file_system_access(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()

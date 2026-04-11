@@ -149,6 +149,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL142",
         "BSL145",
         "BSL148",
+        "BSL171",
         "BSL179",
         # BSLLS Typo checks string literal contents.
         "BSL256",
@@ -1570,7 +1571,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["style", "readability"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL172": {
         "name": "DataExchangeLoading",
@@ -1867,7 +1868,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MINOR",
         "tags": ["correctness", "encoding"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL205": {
         "name": "IsInRoleMethod",
@@ -1984,7 +1985,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["resource-management", "memory"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL218": {
         "name": "MissingTemporaryFileDeletion",
@@ -2263,7 +2264,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "directive"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL249": {
         "name": "StyleElementConstructors",
@@ -2290,7 +2291,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["style", "readability"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL252": {
         "name": "ThisObjectAssign",
@@ -2299,7 +2300,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["correctness", "suspicious"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL253": {
         "name": "TimeoutsInExternalResources",
@@ -2362,7 +2363,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "directive"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL260": {
         "name": "UnsafeFindByCode",
@@ -2443,7 +2444,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL269": {
         "name": "UsingLikeInQuery",
@@ -5265,6 +5266,65 @@ _RE_BSL272_SYNC = re.compile(
     r"\b(?P<name>" + "|".join(re.escape(k) for k in _BSL272_SYNC_REPLACEMENTS) + r")\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_RE_BSL171_ADJACENT_LITERALS = re.compile(r'"[^"]*"\s+"[^"]*"', re.UNICODE)
+_RE_BSL251_TERNARY = re.compile(r"\?\s*\(", re.UNICODE)
+_RE_BSL252_THIS_OBJECT_ASSIGN = re.compile(
+    r"^\s*(?P<name>ЭтотОбъект|ThisObject)\s*=",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL217_GET_FROM_TEMP_STORAGE_NAMES = frozenset(
+    {"получитьизвременногохранилища", "getfromtempstorage"}
+)
+_BSL217_DELETE_FROM_TEMP_STORAGE_NAMES = frozenset(
+    {"удалитьизвременногохранилища", "deletefromtempstorage"}
+)
+_RE_BSL268_FIND_BY_STRING = re.compile(
+    r"\.(?P<name>НайтиПоНаименованию|FindByDescription|НайтиПоКоду|FindByCode|НайтиПоНомеру|FindByNumber)\s*\(\s*(?P<arg>\"[^\"]*\"|\d+)?",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL259_PREPROC_IF = re.compile(r"^\s*#(?:Если|If)\s+(?P<expr>.+?)\s+Тогда\s*$", re.IGNORECASE)
+_BSL259_ALLOWED_PREPROC_SYMBOLS = frozenset(
+    {
+        "сервер",
+        "клиент",
+        "вебклиент",
+        "webclient",
+        "тонкийклиент",
+        "thinclient",
+        "толстыйклиент",
+        "thickclient",
+        "обычноеприложение",
+        "ordinaryapplication",
+        "управляемоеприложение",
+        "managedapplication",
+        "внешнеесоединение",
+        "externalconnection",
+        "мобильныйклиент",
+        "mobileclient",
+        "мобильноеустройствоклиент",
+        "mobileappclient",
+        "мобильныйавтономныйсервер",
+        "mobileofflineserver",
+        "linux",
+        "windows",
+        "macos",
+        "debuginfo",
+        "debug",
+        "_",
+    }
+)
+_BSL259_PREPROC_KEYWORDS = frozenset({"и", "или", "не", "and", "or", "not", "истина", "ложь"})
+_BSL204_ILLEGAL_CHARS = {
+    "\u00ad": 'Нужно исправить на правильный символ "-"',
+    "\u2012": 'Нужно исправить на правильный символ "-"',
+    "\u2013": 'Нужно исправить на правильный символ "-"',
+    "\u2014": 'Нужно исправить на правильный символ "-"',
+    "\u2015": 'Нужно исправить на правильный символ "-"',
+    "\u2212": 'Нужно исправить на правильный символ "-"',
+    "\u00a0": "Нужно заменить символ неразрывного пробела на обычный пробел",
+}
+_RE_BSL248_COMPILER_DIRECTIVE = re.compile(r"^\s*&(?:На|At)\w+", re.IGNORECASE | re.UNICODE)
+_RE_BSL259_IDENTIFIER = re.compile(r"\b[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*\b", re.UNICODE)
 # Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
 _RE_FORM_COMPILER_DIRECTIVE_LINE = re.compile(r"^\s*&\S+")
 
@@ -6832,7 +6892,7 @@ class DiagnosticEngine:
             # "BSL161"–"BSL168" enabled — CommonModuleName* (sibling module XML + name)
             "BSL169",  # CompilationDirectiveLost — TODO
             "BSL170",  # CompilationDirectiveNeedLess — TODO
-            "BSL171",  # CrazyMultilineString — TODO
+            # "BSL171" enabled — CrazyMultilineString implemented
             # "BSL172" enabled — DataExchangeLoading implemented
             # "BSL173" enabled — DeletingCollectionItem implemented
             "BSL174",  # DenyIncompleteValues — TODO
@@ -6865,7 +6925,7 @@ class DiagnosticEngine:
             # "BSL201" enabled — IncorrectUseLikeInQuery implemented
             "BSL202",  # IncorrectUseOfStrTemplate — TODO
             "BSL203",  # InternetAccess implemented; off by default (BSLLS activatedByDefault=false)
-            "BSL204",  # InvalidCharacterInFile — TODO
+            # "BSL204" enabled — InvalidCharacterInFile implemented
             "BSL205",  # IsInRoleMethod — TODO
             # "BSL206" enabled — JoinWithSubQuery implemented
             # "BSL207" enabled — JoinWithVirtualTable implemented
@@ -6878,7 +6938,7 @@ class DiagnosticEngine:
             "BSL214",  # MissingEventSubscriptionHandler — TODO
             # "BSL215" enabled — MissingParameterDescription implemented
             # "BSL216" enabled — MissingSpace implemented
-            "BSL217",  # MissingTempStorageDeletion — TODO
+            "BSL217",  # MissingTempStorageDeletion implemented; off by default (BSLLS activatedByDefault=false)
             # "BSL218" enabled — MissingTemporaryFileDeletion implemented
             # "BSL220" enabled — MultilineStringInQuery implemented
             "BSL221",  # MultilingualStringHasAllDeclaredLanguages — TODO
@@ -6908,18 +6968,18 @@ class DiagnosticEngine:
             # "BSL245" enabled — ServerSideExportFormMethod implemented
             "BSL246",  # SetPermissionsForNewObjects — TODO
             # "BSL247" enabled — SetPrivilegedMode implemented
-            "BSL248",  # SeveralCompilerDirectives — TODO
+            # "BSL248" enabled — SeveralCompilerDirectives implemented
             "BSL249",  # StyleElementConstructors — TODO
             # "BSL250" enabled — TempFilesDir implemented
-            "BSL251",  # TernaryOperatorUsage — TODO
-            "BSL252",  # ThisObjectAssign — TODO
+            "BSL251",  # TernaryOperatorUsage implemented; off by default (BSLLS activatedByDefault=false)
+            # "BSL252" enabled — ThisObjectAssign implemented
             "BSL253",  # TimeoutsInExternalResources — TODO
             # "BSL254" enabled — TransferringParametersBetweenClientAndServer implemented via call index
             # "BSL255" enabled — TryNumber implemented
             # "BSL256" enabled — Typo (homoglyph Latin/Cyrillic in identifiers; BSLLS priority over BSL208)
             # "BSL257" enabled — UnaryPlusInConcatenation implemented
             # "BSL258" enabled — UnionAll implemented
-            "BSL259",  # UnknownPreprocessorSymbol — TODO
+            # "BSL259" enabled — UnknownPreprocessorSymbol implemented
             "BSL260",  # UnsafeFindByCode — TODO
             "BSL261",  # UnsafeSafeModeMethodCall — TODO
             # "BSL262" enabled — UsageWriteLogEvent implemented
@@ -6928,7 +6988,7 @@ class DiagnosticEngine:
             # "BSL265" enabled — UselessTernaryOperator implemented
             # "BSL266" enabled — UsingCancelParameter implemented
             # "BSL267" enabled — UsingExternalCodeTools implemented
-            "BSL268",  # UsingFindElementByString — TODO
+            # "BSL268" enabled — UsingFindElementByString implemented
             # "BSL269" enabled — UsingLikeInQuery implemented
             # "BSL270" enabled — UsingModalWindows implemented
             "BSL271",  # UsingObjectNotAvailableUnix — TODO
@@ -7965,6 +8025,25 @@ class DiagnosticEngine:
                     "BSL192_193_194_228_266",
                     lambda: self._rule_bsl192_193_194_228_266_method_contract_diagnostics(
                         path, lines, procs, _bsl192_193_194_228_266
+                    ),
+                )
+            )
+        _bsl171_204_217_248_251_252_259_268 = (
+            "BSL171",
+            "BSL204",
+            "BSL217",
+            "BSL248",
+            "BSL251",
+            "BSL252",
+            "BSL259",
+            "BSL268",
+        )
+        if any(self._rule_enabled(c) for c in _bsl171_204_217_248_251_252_259_268):
+            _rule_tasks.append(
+                (
+                    "BSL171_204_217_248_251_252_259_268",
+                    lambda: self._rule_bsl171_204_217_248_251_252_259_268_light_pool(
+                        path, content, lines, tree, procs, _bsl171_204_217_248_251_252_259_268
                     ),
                 )
             )
@@ -15317,6 +15396,501 @@ class DiagnosticEngine:
                                 )
                             )
 
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
+    # ------------------------------------------------------------------
+
+    def _rule_bsl171_204_217_248_251_252_259_268_light_pool(
+        self,
+        path: str,
+        content: str,
+        lines: list[str],
+        tree: Any,
+        procs: list[_ProcInfo],
+        codes: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled = {code for code in codes if self._rule_enabled(code)}
+        if not enabled:
+            return []
+
+        diags: list[Diagnostic] = []
+        root = getattr(tree, "root_node", None)
+        tree_ok = root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
+
+        if "BSL171" in enabled:
+            diags.extend(
+                self._rule_bsl171_crazy_multiline_string(path, lines, tree if tree_ok else None)
+            )
+        if "BSL204" in enabled:
+            diags.extend(self._rule_bsl204_invalid_character_in_file(path, content, lines))
+        if "BSL217" in enabled:
+            diags.extend(
+                self._rule_bsl217_missing_temp_storage_deletion(
+                    path, lines, tree if tree_ok else None
+                )
+            )
+        if "BSL248" in enabled:
+            diags.extend(
+                self._rule_bsl248_several_compiler_directives(
+                    path, lines, tree if tree_ok else None, procs
+                )
+            )
+        if "BSL251" in enabled:
+            diags.extend(
+                self._rule_bsl251_ternary_operator_usage(path, lines, tree if tree_ok else None)
+            )
+        if "BSL252" in enabled:
+            diags.extend(
+                self._rule_bsl252_this_object_assign(path, lines, tree if tree_ok else None)
+            )
+        if "BSL259" in enabled:
+            diags.extend(
+                self._rule_bsl259_unknown_preprocessor_symbol(
+                    path, lines, tree if tree_ok else None
+                )
+            )
+        if "BSL268" in enabled:
+            diags.extend(
+                self._rule_bsl268_using_find_element_by_string(
+                    path, lines, tree if tree_ok else None
+                )
+            )
+        return diags
+
+    def _rule_bsl171_crazy_multiline_string(
+        self, path: str, lines: list[str], tree: Any | None
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        if tree is not None:
+            for node in _ts_walk(tree.root_node):
+                if getattr(node, "type", None) != "ERROR":
+                    continue
+                text = _ts_node_text(node).strip()
+                if not (text.startswith('"') and text.endswith('"')):
+                    continue
+                line_idx = node.start_point[0]
+                line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_idx + 1,
+                        character=utf8_byte_offset_to_lsp_character(line_text, node.start_point[1]),
+                        end_line=line_idx + 1,
+                        end_character=utf8_byte_offset_to_lsp_character(
+                            line_text, node.end_point[1]
+                        ),
+                        severity=Severity.INFORMATION,
+                        code="BSL171",
+                        message=RULE_DESCRIPTIONS_RU["BSL171"],
+                    )
+                )
+        if diags:
+            return diags
+
+        for idx, line in enumerate(lines):
+            match = _RE_BSL171_ADJACENT_LITERALS.search(line)
+            if match is not None:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=match.start(),
+                        end_line=idx + 1,
+                        end_character=match.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL171",
+                        message=RULE_DESCRIPTIONS_RU["BSL171"],
+                    )
+                )
+                continue
+            if idx == 0:
+                continue
+            prev = lines[idx - 1].rstrip()
+            cur = line.lstrip()
+            if prev.endswith('"') and cur.startswith('"'):
+                end_character = min(
+                    len(line.rstrip()), len(line) - len(cur) + len(cur.split('"', 2)[1]) + 2
+                )
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=len(line) - len(cur),
+                        end_line=idx + 1,
+                        end_character=end_character,
+                        severity=Severity.INFORMATION,
+                        code="BSL171",
+                        message=RULE_DESCRIPTIONS_RU["BSL171"],
+                    )
+                )
+        return diags
+
+    def _rule_bsl204_invalid_character_in_file(
+        self, path: str, content: str, lines: list[str]
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for line_idx, line in enumerate(lines, start=1):
+            for col, ch in enumerate(line):
+                message = _BSL204_ILLEGAL_CHARS.get(ch)
+                if message is None:
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_idx,
+                        character=col,
+                        end_line=line_idx,
+                        end_character=col + 1,
+                        severity=Severity.WARNING,
+                        code="BSL204",
+                        message=message,
+                    )
+                )
+        if content and content[-1] in _BSL204_ILLEGAL_CHARS:
+            col = len(lines[-1]) if lines else 0
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=len(lines),
+                    character=col,
+                    end_line=len(lines),
+                    end_character=col + 1,
+                    severity=Severity.WARNING,
+                    code="BSL204",
+                    message=_BSL204_ILLEGAL_CHARS[content[-1]],
+                )
+            )
+        return diags
+
+    def _rule_bsl217_missing_temp_storage_deletion(
+        self, path: str, lines: list[str], tree: Any | None
+    ) -> list[Diagnostic]:
+        if tree is None:
+            return []
+        line_texts = lines
+        diags: list[Diagnostic] = []
+
+        for call in _ts_global_method_calls(tree.root_node, line_texts):
+            if str(call["name"]).casefold() not in _BSL217_GET_FROM_TEMP_STORAGE_NAMES:
+                continue
+            method_node = call["node"]
+            assign_anc: Any | None = None
+            cur: Any | None = method_node
+            while cur is not None:
+                if getattr(cur, "type", None) == "assignment_statement":
+                    assign_anc = cur
+                    break
+                cur = getattr(cur, "parent", None)
+
+            span = _ts_method_identifier_span(method_node, line_texts)
+            if span is None:
+                continue
+            line_1, char_1, end_ch = span
+
+            if assign_anc is None:
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_1,
+                        character=char_1,
+                        end_line=line_1,
+                        end_character=end_ch,
+                        severity=Severity.WARNING,
+                        code="BSL217",
+                        message=RULE_DESCRIPTIONS_RU["BSL217"],
+                    )
+                )
+                continue
+
+            var_name = _ts_assignment_lvalue_text(assign_anc)
+            if not var_name:
+                continue
+            stmt_parent = _ts_bsl218_skip_error_ancestor(getattr(assign_anc, "parent", None))
+            roots = _ts_bsl218_code_block_roots(stmt_parent) if stmt_parent is not None else None
+            if not roots:
+                continue
+            deleted = False
+            for subtree in roots:
+                for later_call in _ts_global_method_calls(subtree, line_texts):
+                    if later_call["line"] <= line_1:
+                        continue
+                    if (
+                        str(later_call["name"]).casefold()
+                        not in _BSL217_DELETE_FROM_TEMP_STORAGE_NAMES
+                    ):
+                        continue
+                    for expr in _ts_method_call_arg_exprs(later_call["node"]):
+                        if _ts_node_text(expr).strip().casefold() == var_name.casefold():
+                            deleted = True
+                            break
+                    if deleted:
+                        break
+                if deleted:
+                    break
+            if deleted:
+                continue
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=line_1,
+                    character=char_1,
+                    end_line=line_1,
+                    end_character=end_ch,
+                    severity=Severity.WARNING,
+                    code="BSL217",
+                    message=RULE_DESCRIPTIONS_RU["BSL217"],
+                )
+            )
+        return diags
+
+    def _rule_bsl248_several_compiler_directives(
+        self, path: str, lines: list[str], tree: Any | None, procs: list[_ProcInfo]
+    ) -> list[Diagnostic]:
+        if tree is None:
+            return []
+        diags: list[Diagnostic] = []
+        root = tree.root_node
+        children = list(getattr(root, "children", []) or [])
+        proc_by_line = {proc.start_idx: proc for proc in procs}
+
+        idx = 0
+        while idx < len(children):
+            directives: list[Any] = []
+            while idx < len(children) and getattr(children[idx], "type", None) == "preprocessor":
+                if _ts_node_text(children[idx]).strip().startswith("&"):
+                    directives.append(children[idx])
+                idx += 1
+            if idx >= len(children):
+                break
+            node = children[idx]
+            node_type = getattr(node, "type", None)
+            if len(directives) > 1 and node_type in {
+                "procedure_definition",
+                "function_definition",
+                "var_definition",
+            }:
+                if node_type in {"procedure_definition", "function_definition"}:
+                    proc = proc_by_line.get(node.start_point[0])
+                    if proc is not None:
+                        start_char, end_char = _proc_name_span(lines, proc)
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=proc.start_idx + 1,
+                                character=start_char,
+                                end_line=proc.start_idx + 1,
+                                end_character=end_char,
+                                severity=Severity.ERROR,
+                                code="BSL248",
+                                message=RULE_DESCRIPTIONS_RU["BSL248"],
+                            )
+                        )
+                else:
+                    line_idx = node.start_point[0]
+                    line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_idx + 1,
+                            character=0,
+                            end_line=line_idx + 1,
+                            end_character=len(line_text.rstrip()),
+                            severity=Severity.ERROR,
+                            code="BSL248",
+                            message=RULE_DESCRIPTIONS_RU["BSL248"],
+                        )
+                    )
+            idx += 1
+        return diags
+
+    def _rule_bsl251_ternary_operator_usage(
+        self, path: str, lines: list[str], tree: Any | None
+    ) -> list[Diagnostic]:
+        if tree is None:
+            return []
+        diags: list[Diagnostic] = []
+        for node in _ts_walk(tree.root_node):
+            if getattr(node, "type", None) != "ternary_expression":
+                continue
+            line_idx = node.start_point[0]
+            line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=line_idx + 1,
+                    character=utf8_byte_offset_to_lsp_character(line_text, node.start_point[1]),
+                    end_line=line_idx + 1,
+                    end_character=utf8_byte_offset_to_lsp_character(line_text, node.end_point[1]),
+                    severity=Severity.INFORMATION,
+                    code="BSL251",
+                    message=RULE_DESCRIPTIONS_RU["BSL251"],
+                )
+            )
+        return diags
+
+    def _rule_bsl252_this_object_assign(
+        self, path: str, lines: list[str], tree: Any | None
+    ) -> list[Diagnostic]:
+        low = path.replace("\\", "/").lower()
+        if not (path_is_likely_form_module_bsl(path) or _RE_COMMON_MODULE_PATH.search(low)):
+            return []
+        if tree is None:
+            return []
+        diags: list[Diagnostic] = []
+        for node in _ts_walk(tree.root_node):
+            if getattr(node, "type", None) != "assignment_statement":
+                continue
+            ident = _ts_child_of_type(node, "identifier")
+            if ident is None:
+                continue
+            if _ts_node_text(ident).casefold() not in {"этотобъект", "thisobject"}:
+                continue
+            line_idx = ident.start_point[0]
+            line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=line_idx + 1,
+                    character=utf8_byte_offset_to_lsp_character(line_text, ident.start_point[1]),
+                    end_line=line_idx + 1,
+                    end_character=utf8_byte_offset_to_lsp_character(line_text, ident.end_point[1]),
+                    severity=Severity.ERROR,
+                    code="BSL252",
+                    message=RULE_DESCRIPTIONS_RU["BSL252"],
+                )
+            )
+        return diags
+
+    def _rule_bsl259_unknown_preprocessor_symbol(
+        self, path: str, lines: list[str], tree: Any | None
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        if tree is not None:
+            for node in _ts_walk(tree.root_node):
+                if getattr(node, "type", None) != "preprocessor":
+                    continue
+                expr = _ts_child_of_type(node, "expression")
+                if expr is None:
+                    continue
+                for child in _ts_walk(expr):
+                    if getattr(child, "type", None) != "identifier":
+                        continue
+                    name = _ts_node_text(child)
+                    if name.casefold() in _BSL259_ALLOWED_PREPROC_SYMBOLS:
+                        continue
+                    line_idx = child.start_point[0]
+                    line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_idx + 1,
+                            character=utf8_byte_offset_to_lsp_character(
+                                line_text, child.start_point[1]
+                            ),
+                            end_line=line_idx + 1,
+                            end_character=utf8_byte_offset_to_lsp_character(
+                                line_text, child.end_point[1]
+                            ),
+                            severity=Severity.WARNING,
+                            code="BSL259",
+                            message=f'Неизвестный символ препроцессора "{name}"',
+                        )
+                    )
+            return diags
+
+        for idx, line in enumerate(lines):
+            match = _RE_BSL259_PREPROC_IF.match(line)
+            if match is None:
+                continue
+            expr_text = match.group("expr")
+            for ident in _RE_BSL259_IDENTIFIER.finditer(expr_text):
+                name = ident.group(0)
+                if name.casefold() in _BSL259_ALLOWED_PREPROC_SYMBOLS | _BSL259_PREPROC_KEYWORDS:
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=ident.start(),
+                        end_line=idx + 1,
+                        end_character=ident.end(),
+                        severity=Severity.WARNING,
+                        code="BSL259",
+                        message=f'Неизвестный символ препроцессора "{name}"',
+                    )
+                )
+        return diags
+
+    def _rule_bsl268_using_find_element_by_string(
+        self, path: str, lines: list[str], tree: Any | None
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        target_names = {
+            "найтипонаименованию",
+            "findbydescription",
+            "найтипокоду",
+            "findbycode",
+            "найтипономеру",
+            "findbynumber",
+        }
+        if tree is not None:
+            for node in _ts_walk(tree.root_node):
+                if getattr(node, "type", None) != "method_call":
+                    continue
+                ident = _ts_child_of_type(node, "identifier")
+                if ident is None:
+                    continue
+                name = _ts_node_text(ident)
+                if name.casefold() not in target_names:
+                    continue
+                args = _ts_method_call_arg_exprs(node)
+                if len(args) > 1:
+                    continue
+                if args:
+                    arg_text = _ts_node_text(args[0]).strip()
+                    if arg_text and not (
+                        (arg_text.startswith('"') and arg_text.endswith('"'))
+                        or re.fullmatch(r"\d+(?:\.\d+)?", arg_text)
+                    ):
+                        continue
+                line_idx = ident.start_point[0]
+                line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_idx + 1,
+                        character=utf8_byte_offset_to_lsp_character(
+                            line_text, ident.start_point[1]
+                        ),
+                        end_line=line_idx + 1,
+                        end_character=utf8_byte_offset_to_lsp_character(
+                            line_text, ident.end_point[1]
+                        ),
+                        severity=Severity.WARNING,
+                        code="BSL268",
+                        message=f'Использование метода "{name}" снижает производительность поиска',
+                    )
+                )
+            return diags
+
+        for idx, line in enumerate(lines):
+            match = _RE_BSL268_FIND_BY_STRING.search(line)
+            if match is None:
+                continue
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=idx + 1,
+                    character=match.start("name"),
+                    end_line=idx + 1,
+                    end_character=match.end("name"),
+                    severity=Severity.WARNING,
+                    code="BSL268",
+                    message=f'Использование метода "{match.group("name")}" снижает производительность поиска',
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
