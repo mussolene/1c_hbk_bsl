@@ -74,9 +74,9 @@ def run_bsl218_missing_temporary_file_deletion(path: str, lines: list[str], tree
                     character=char_1,
                     end_line=line_1,
                     end_character=end_ch,
-                    severity=_diag.Severity.WARNING,
+                    severity=_diag.Severity.ERROR,
                     code="BSL218",
-                    message=_diag.RULE_DESCRIPTIONS_RU["BSL218"],
+                    message="Нужно добавить удаление временного файла после использования",
                 )
             )
             continue
@@ -90,9 +90,9 @@ def run_bsl218_missing_temporary_file_deletion(path: str, lines: list[str], tree
                     character=char_1,
                     end_line=line_1,
                     end_character=end_ch,
-                    severity=_diag.Severity.WARNING,
+                    severity=_diag.Severity.ERROR,
                     code="BSL218",
-                    message=_diag.RULE_DESCRIPTIONS_RU["BSL218"],
+                    message="Нужно добавить удаление временного файла после использования",
                 )
             )
             continue
@@ -107,9 +107,9 @@ def run_bsl218_missing_temporary_file_deletion(path: str, lines: list[str], tree
                     character=char_1,
                     end_line=line_1,
                     end_character=end_ch,
-                    severity=_diag.Severity.WARNING,
+                    severity=_diag.Severity.ERROR,
                     code="BSL218",
-                    message=_diag.RULE_DESCRIPTIONS_RU["BSL218"],
+                    message="Нужно добавить удаление временного файла после использования",
                 )
             )
             continue
@@ -123,9 +123,9 @@ def run_bsl218_missing_temporary_file_deletion(path: str, lines: list[str], tree
                     character=char_1,
                     end_line=line_1,
                     end_character=end_ch,
-                    severity=_diag.Severity.WARNING,
+                    severity=_diag.Severity.ERROR,
                     code="BSL218",
-                    message=_diag.RULE_DESCRIPTIONS_RU["BSL218"],
+                    message="Нужно добавить удаление временного файла после использования",
                 )
             )
             continue
@@ -138,9 +138,9 @@ def run_bsl218_missing_temporary_file_deletion(path: str, lines: list[str], tree
                     character=char_1,
                     end_line=line_1,
                     end_character=end_ch,
-                    severity=_diag.Severity.WARNING,
+                    severity=_diag.Severity.ERROR,
                     code="BSL218",
-                    message=_diag.RULE_DESCRIPTIONS_RU["BSL218"],
+                    message="Нужно добавить удаление временного файла после использования",
                 )
             )
 

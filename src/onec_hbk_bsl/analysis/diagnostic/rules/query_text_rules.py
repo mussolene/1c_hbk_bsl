@@ -23,6 +23,22 @@ def run_bsl220_235_269_273_query_text_diagnostics(
         return []
 
     diags: list[Any] = []
+
+    def _has_plain_tail_parse_error(
+        content_lines: list[tuple[int, int, str, str, bool]],
+    ) -> bool:
+        line_no, content_base, content, head, ended_query = content_lines[-1]
+        _ = (line_no, content_base)
+        if not ended_query:
+            return False
+        tail = content.split('"', 1)[1].strip() if '"' in content else ""
+        if tail not in {"", ";"}:
+            return False
+        return bool(
+            _diag._RE_QUERY_PARSE_ERROR_TAIL_KEYWORD.search(head)
+            or _diag._RE_QUERY_PARSE_ERROR_TAIL_OPERATOR.search(head)
+        )
+
     if query_blocks is None:
         blocks_iter = None
     else:
@@ -35,11 +51,7 @@ def run_bsl220_235_269_273_query_text_diagnostics(
 
         if "BSL235" in enabled and (
             not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
-            or any(
-                _diag._RE_QUERY_PARSE_ERROR_TAIL_KEYWORD.search(head)
-                or _diag._RE_QUERY_PARSE_ERROR_TAIL_OPERATOR.search(head)
-                for _, _, _, head, _ in content_lines
-            )
+            or _has_plain_tail_parse_error(content_lines)
         ):
             line_no, content_base, _content, head, _ = content_lines[-1]
             diags.append(
@@ -139,11 +151,7 @@ def run_bsl220_235_269_273_query_text_diagnostics(
 
             if "BSL235" in enabled and (
                 not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
-                or any(
-                    _diag._RE_QUERY_PARSE_ERROR_TAIL_KEYWORD.search(head)
-                    or _diag._RE_QUERY_PARSE_ERROR_TAIL_OPERATOR.search(head)
-                    for _, _, _, head, _ in content_lines
-                )
+                or _has_plain_tail_parse_error(content_lines)
             ):
                 line_no, content_base, _content, head, _ = content_lines[-1]
                 diags.append(

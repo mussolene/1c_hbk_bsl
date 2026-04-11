@@ -1,10 +1,12 @@
 .PHONY: install install-build dev test lint fmt check-all sync-version reset-extension-placeholder \
-	build build-fast build-nuitka build-check bench-30 compare-java extension-bin sync-extension-bin \
-	vsix dist clean docker-build docker-up docker-down
+	build build-fast build-nuitka build-check bench-30 compare-java corpus-largest-3-sync parity-largest-3 \
+	extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
 
 # ── Python runtime ───────────────────────────────────────────────────────────
 
 PYTHON3 ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+CONFIG_ROOT ?= /Users/maxon/git/config
+CORPUS_LARGEST_3 ?= $(CURDIR)/corpus-largest-3
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
 
@@ -154,10 +156,23 @@ build-check: build
 	$(BUILD_OUT) --version
 
 bench-30:
-	$(PYTHON3) scripts/dev_corpus_bench.py /Users/maxon/git/config --limit 30 --profile strict-bslls
+	$(PYTHON3) scripts/dev_corpus_bench.py $(CONFIG_ROOT) --limit 30 --profile strict-bslls
 
 compare-java:
-	$(PYTHON3) scripts/dev_corpus_speed_compare.py /Users/maxon/git/config --limit 30 --profile strict-bslls
+	$(PYTHON3) scripts/dev_corpus_speed_compare.py $(CONFIG_ROOT) --limit 30 --profile strict-bslls
+
+corpus-largest-3-sync:
+	rm -rf "$(CORPUS_LARGEST_3)"
+	mkdir -p "$(CORPUS_LARGEST_3)"
+	cd "$(CONFIG_ROOT)" && rsync -a --relative \
+		'DataProcessors/ДокументооборотСКонтролирующимиОрганами/Ext/ObjectModule.bsl' \
+		'Reports/РегламентированныйОтчетРасчетПоСтраховымВзносам/Ext/ObjectModule.bsl' \
+		'DataProcessors/ДокументооборотСКонтролирующимиОрганами/Forms/КонтейнерКлиентскихМетодов/Ext/Form/Module.bsl' \
+		"$(CORPUS_LARGEST_3)/"
+	find "$(CORPUS_LARGEST_3)" -type f | sort
+
+parity-largest-3:
+	$(PYTHON3) scripts/dev_corpus_parity.py "$(CORPUS_LARGEST_3)" --profile strict-bslls
 
 # Пакет для дистрибуции с версией из установленного пакета (setuptools-scm / git)
 dist: build

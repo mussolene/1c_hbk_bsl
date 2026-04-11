@@ -299,6 +299,7 @@ from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 _proc_param_name_span = _proc_helpers.proc_param_name_span
+_proc_param_location = _proc_helpers.proc_param_location
 
 # When a diagnostic span overlaps a "..." literal, drop the warning unless the rule
 # is meant to inspect string contents (secrets, duplicates, concat, magic numbers, …).
@@ -4222,16 +4223,24 @@ def _bsl149_append_missing_alias_diags(
         if _RE_BSL149_SELECT.search(field):
             continue
         if not _RE_BSL149_HAS_ALIAS.search(field):
+            field_start = 0
+            field_end = len(line.rstrip())
+            match = re.search(rf"\b{re.escape(field)}\b", line, re.IGNORECASE)
+            if match:
+                field_start = match.start()
+                field_end = match.end()
             diags.append(
                 Diagnostic(
                     file=path,
                     line=line_idx + 1,
-                    character=0,
+                    character=field_start,
                     end_line=line_idx + 1,
-                    end_character=len(line),
+                    end_character=field_end,
                     severity=Severity.INFORMATION,
                     code="BSL149",
-                    message="Полям запроса следует назначать псевдонимы",
+                    message=(
+                        f'Полю "{field}" не назначен псевдоним или пропущено ключевое слово КАК'
+                    ),
                 )
             )
             break
@@ -4633,12 +4642,21 @@ _BSL208_TECH_ACRONYMS: frozenset[str] = frozenset(
         "EXE",
         "ADO",
         "ODP",
+        "BASE64",
+        "PKCS",
+        "PKCS7",
+        "X509",
+        "CNS",
+        "ASCII",
+        "EMAIL",
+        "REPLYTO",
+        "TO",
         # Misc abbreviations accepted in 1C names
         "ODATA",
     }
 )
 
-_RE_LATIN_RUNS = re.compile(r"[a-zA-Z]+")
+_RE_LATIN_RUNS = re.compile(r"[a-zA-Z]+[0-9]*")
 
 # BSLLS allowTrailingPartsInAnotherLanguage=true (default):
 # Words like ЮрФизЛицоID, СтавкаНДСID, МинДлинаИННпоXSD, СоздатьObjectID are allowed because

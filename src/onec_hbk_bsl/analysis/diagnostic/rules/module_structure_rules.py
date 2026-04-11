@@ -218,7 +218,7 @@ def bsl156_diagnostics(
         return any(s <= i <= e for s, e in proc_ranges)
 
     out: list[tuple[int, int, int, str]] = []
-    msg = "Код вне области (#Область / #Region) (BSLLS CodeOutOfRegion)."
+    msg = "Переместите код в область"
 
     if not intervals:
         first_module_var: tuple[int, int, int] | None = None

@@ -67,7 +67,60 @@ def resolve_bslls_jar(repo_root: Path) -> Path:
 
 
 def normalize_message(message: str) -> str:
-    return " ".join(str(message).split())
+    text = " ".join(str(message).split())
+    return (
+        text.replace("«", '"')
+        .replace("»", '"')
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("…", "...")
+    )
+
+
+def _character_close_enough(left: int, right: int, *, tolerance: int = 2) -> bool:
+    return abs(int(left) - int(right)) <= tolerance
+
+
+def _near_match_key(diag: NormalizedDiagnostic) -> tuple[str, int, str]:
+    return (diag.file, diag.line, diag.code)
+
+
+def _match_near_diagnostics(
+    only_ours: list[NormalizedDiagnostic],
+    only_bslls: list[NormalizedDiagnostic],
+) -> tuple[
+    list[tuple[NormalizedDiagnostic, NormalizedDiagnostic]],
+    list[NormalizedDiagnostic],
+    list[NormalizedDiagnostic],
+]:
+    remaining_bslls = list(only_bslls)
+    matched: list[tuple[NormalizedDiagnostic, NormalizedDiagnostic]] = []
+    unmatched_ours: list[NormalizedDiagnostic] = []
+
+    for our_diag in only_ours:
+        want = _near_match_key(our_diag)
+        candidate_idx: int | None = None
+        best_distance: int | None = None
+        for idx, bslls_diag in enumerate(remaining_bslls):
+            if _near_match_key(bslls_diag) != want:
+                continue
+            distance = abs(our_diag.character - bslls_diag.character)
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                candidate_idx = idx
+        if candidate_idx is None:
+            unmatched_ours.append(our_diag)
+            continue
+        bslls_diag = remaining_bslls[candidate_idx]
+        if not _character_close_enough(our_diag.character, bslls_diag.character):
+            unmatched_ours.append(our_diag)
+            continue
+        matched.append((our_diag, bslls_diag))
+        remaining_bslls.pop(candidate_idx)
+
+    return matched, unmatched_ours, remaining_bslls
 
 
 def _relative_file(path: str | Path, workspace_root: Path) -> str:
@@ -160,8 +213,8 @@ def diff_diagnostics(
     ours_keys = set(ours_by_key)
     bslls_keys = set(bslls_by_key)
 
-    only_ours = [asdict(ours_by_key[key]) for key in sorted(ours_keys - bslls_keys)]
-    only_bslls = [asdict(bslls_by_key[key]) for key in sorted(bslls_keys - ours_keys)]
+    only_ours_rows = [ours_by_key[key] for key in sorted(ours_keys - bslls_keys)]
+    only_bslls_rows = [bslls_by_key[key] for key in sorted(bslls_keys - ours_keys)]
 
     severity_mismatch: list[dict[str, Any]] = []
     message_mismatch: list[dict[str, Any]] = []
@@ -185,6 +238,34 @@ def diff_diagnostics(
                 }
             )
 
+    near_pairs, unmatched_only_ours, unmatched_only_bslls = _match_near_diagnostics(
+        only_ours_rows,
+        only_bslls_rows,
+    )
+    anchor_mismatch: list[dict[str, Any]] = []
+    anchor_and_severity_mismatch: list[dict[str, Any]] = []
+    anchor_and_message_mismatch: list[dict[str, Any]] = []
+    anchor_message_severity_mismatch: list[dict[str, Any]] = []
+    for our_diag, bslls_diag in near_pairs:
+        record = {
+            "ours": asdict(our_diag),
+            "bslls": asdict(bslls_diag),
+            "character_delta": int(our_diag.character) - int(bslls_diag.character),
+        }
+        same_severity = our_diag.severity == bslls_diag.severity
+        same_message = our_diag.message_norm == bslls_diag.message_norm
+        if same_severity and same_message:
+            anchor_mismatch.append(record)
+        elif (not same_severity) and same_message:
+            anchor_and_severity_mismatch.append(record)
+        elif same_severity and (not same_message):
+            anchor_and_message_mismatch.append(record)
+        else:
+            anchor_message_severity_mismatch.append(record)
+
+    only_ours = [asdict(row) for row in unmatched_only_ours]
+    only_bslls = [asdict(row) for row in unmatched_only_bslls]
+
     return {
         "only_ours": only_ours,
         "only_bslls": only_bslls,
@@ -192,7 +273,30 @@ def diff_diagnostics(
         "top_only_bslls_codes": Counter(d["code"] for d in only_bslls).most_common(10),
         "severity_mismatch": severity_mismatch,
         "message_mismatch": message_mismatch,
-        "exact_match": not (only_ours or only_bslls or severity_mismatch or message_mismatch),
+        "anchor_mismatch": anchor_mismatch,
+        "anchor_and_severity_mismatch": anchor_and_severity_mismatch,
+        "anchor_and_message_mismatch": anchor_and_message_mismatch,
+        "anchor_message_severity_mismatch": anchor_message_severity_mismatch,
+        "near_match": not (
+            only_ours
+            or only_bslls
+            or severity_mismatch
+            or message_mismatch
+            or anchor_mismatch
+            or anchor_and_severity_mismatch
+            or anchor_and_message_mismatch
+            or anchor_message_severity_mismatch
+        ),
+        "exact_match": not (
+            only_ours
+            or only_bslls
+            or severity_mismatch
+            or message_mismatch
+            or anchor_mismatch
+            or anchor_and_severity_mismatch
+            or anchor_and_message_mismatch
+            or anchor_message_severity_mismatch
+        ),
     }
 
 
@@ -425,7 +529,12 @@ def compare_with_bslls_baseline(
         for path in files:
             rel = _relative_file(path, workspace_root)
             content = path.read_text(encoding="utf-8", errors="ignore")
-            our_diags.extend(engine.check_content(str(path), content, symbol_index=idx))
+            diags = [
+                d
+                for d in engine.check_content(str(path), content, symbol_index=idx)
+                if engine._rule_enabled(d.code)
+            ]
+            our_diags.extend(diags)
             formatting[rel] = {"ours": formatter.format(content)}
         idx.close()
 

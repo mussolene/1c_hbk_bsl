@@ -308,7 +308,9 @@ def run_bsl225_number_of_values_in_structure_constructor(
                 ),
                 severity=_diag.Severity.INFORMATION,
                 code="BSL225",
-                message="Сократите количество значений, передаваемых в конструктор Структура/Structure",
+                message=(
+                    "Уменьшите количество значений свойств, передаваемых в конструктор структуры"
+                ),
             )
         )
     return diags
@@ -429,7 +431,7 @@ def run_bsl245_server_side_export_form_method(
                 character=start_char,
                 end_line=proc.start_idx + 1,
                 end_character=end_char,
-                severity=_diag.Severity.WARNING,
+                severity=_diag.Severity.ERROR,
                 code="BSL245",
                 message="Запрещено создавать серверные экспортные методы в форме",
             )

@@ -17,6 +17,12 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     strip_leading_val_keywords,
 )
 from onec_hbk_bsl.analysis.call_graph import Call, extract_calls
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    build_line_string_states,
+    comment_start_outside_double_quotes,
+    mask_double_quoted_strings_preserve_len,
+    strip_inline_comment_preserve_strings,
+)
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.symbols import Symbol, extract_symbols
 from onec_hbk_bsl.parser.bsl_parser import BslParser
@@ -415,6 +421,12 @@ class DocumentSnapshot:
     _symbols: list[Symbol] | None = None
     _calls: list[Call] | None = None
     _query_blocks: list[QueryTextBlockInfo] | None = None
+    _line_string_states: list[bool] | None = None
+    _comment_starts: list[int | None] | None = None
+    _masked_lines: list[str] | None = None
+    _code_lines_wo_comments: list[str] | None = None
+    _line_lengths: list[int] | None = None
+    _blank_line_flags: list[bool] | None = None
 
     @property
     def root_node(self) -> Any | None:
@@ -487,6 +499,52 @@ class DocumentSnapshot:
         if self._query_blocks is None:
             self._query_blocks = _build_query_text_blocks(self.lines)
         return self._query_blocks
+
+    @property
+    def line_string_states(self) -> list[bool]:
+        if self._line_string_states is None:
+            self._line_string_states = build_line_string_states(self.lines)
+        return self._line_string_states
+
+    @property
+    def comment_starts(self) -> list[int | None]:
+        if self._comment_starts is None:
+            states = self.line_string_states
+            self._comment_starts = [
+                comment_start_outside_double_quotes(line, states[idx])
+                for idx, line in enumerate(self.lines)
+            ]
+        return self._comment_starts
+
+    @property
+    def masked_lines(self) -> list[str]:
+        if self._masked_lines is None:
+            states = self.line_string_states
+            self._masked_lines = [
+                line if states[idx] else mask_double_quoted_strings_preserve_len(line)
+                for idx, line in enumerate(self.lines)
+            ]
+        return self._masked_lines
+
+    @property
+    def code_lines_without_comments(self) -> list[str]:
+        if self._code_lines_wo_comments is None:
+            self._code_lines_wo_comments = [
+                strip_inline_comment_preserve_strings(line) for line in self.lines
+            ]
+        return self._code_lines_wo_comments
+
+    @property
+    def line_lengths(self) -> list[int]:
+        if self._line_lengths is None:
+            self._line_lengths = [len(line) for line in self.lines]
+        return self._line_lengths
+
+    @property
+    def blank_line_flags(self) -> list[bool]:
+        if self._blank_line_flags is None:
+            self._blank_line_flags = [line.strip() == "" for line in self.lines]
+        return self._blank_line_flags
 
 
 def build_document_snapshot(

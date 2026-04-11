@@ -10,6 +10,7 @@ cProfile для check_content() на синтетических BSL файлах
     python scripts/bench_profile.py 3000 --top=30
     python scripts/bench_profile.py 3000 --runs=5
 """
+
 from __future__ import annotations
 
 import cProfile
@@ -52,11 +53,8 @@ def profile_size(size: int, top_n: int, runs: int) -> None:
     ps = pstats.Stats(pr, stream=buf).sort_stats("cumulative")
     ps.print_stats(top_n)
 
-    print(f"\n{'='*72}")
-    print(
-        f"PROFILE: bench_{size}.bsl ({n_lines} lines), "
-        f"{runs} runs, top-{top_n} by cumtime"
-    )
+    print(f"\n{'=' * 72}")
+    print(f"PROFILE: bench_{size}.bsl ({n_lines} lines), {runs} runs, top-{top_n} by cumtime")
     print("=" * 72)
     print(buf.getvalue())
 

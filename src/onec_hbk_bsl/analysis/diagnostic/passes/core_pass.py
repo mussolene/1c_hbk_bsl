@@ -13,6 +13,7 @@ def extend_core_rule_tasks(
     regions: list[tuple[int, int]],
     tree: object,
     proc_node_map: dict[tuple[str, int, str], object],
+    snapshot: object,
 ) -> None:
     if engine._rule_enabled("BSL001"):
         rule_tasks.append(("BSL001", lambda: engine._rule_bsl001_syntax_errors(path, tree)))
@@ -56,7 +57,9 @@ def extend_core_rule_tasks(
     if engine._rule_enabled("BSL013"):
         rule_tasks.append(("BSL013", lambda: engine._rule_bsl013_commented_code(path, lines)))
     if engine._rule_enabled("BSL014"):
-        rule_tasks.append(("BSL014", lambda: engine._rule_bsl014_line_too_long(path, lines)))
+        rule_tasks.append(
+            ("BSL014", lambda: engine._rule_bsl014_line_too_long(path, lines, snapshot))
+        )
     if engine._rule_enabled("BSL015"):
         rule_tasks.append(
             ("BSL015", lambda: engine._rule_bsl015_optional_params_count(path, lines, procs))
@@ -104,7 +107,9 @@ def extend_core_rule_tasks(
             ("BSL028", lambda: engine._rule_bsl028_missing_try_catch(path, lines, procs))
         )
     if engine._rule_enabled("BSL029"):
-        rule_tasks.append(("BSL029", lambda: engine._rule_bsl029_magic_number(path, lines, procs)))
+        rule_tasks.append(
+            ("BSL029", lambda: engine._rule_bsl029_magic_number(path, lines, procs, snapshot))
+        )
     if engine._rule_enabled("BSL031"):
         rule_tasks.append(
             ("BSL031", lambda: engine._rule_bsl031_number_of_params(path, lines, procs))
@@ -127,7 +132,10 @@ def extend_core_rule_tasks(
         )
     if engine._rule_enabled("BSL035"):
         rule_tasks.append(
-            ("BSL035", lambda: engine._rule_bsl035_duplicate_string_literal(path, lines, procs))
+            (
+                "BSL035",
+                lambda: engine._rule_bsl035_duplicate_string_literal(path, lines, procs, snapshot),
+            )
         )
     if engine._rule_enabled("BSL036"):
         rule_tasks.append(("BSL036", lambda: engine._rule_bsl036_complex_condition(path, lines)))
@@ -202,7 +210,7 @@ def extend_core_rule_tasks(
         )
     if engine._rule_enabled("BSL055"):
         rule_tasks.append(
-            ("BSL055", lambda: engine._rule_bsl055_consecutive_blank_lines(path, lines))
+            ("BSL055", lambda: engine._rule_bsl055_consecutive_blank_lines(path, lines, snapshot))
         )
     if engine._rule_enabled("BSL056"):
         rule_tasks.append(

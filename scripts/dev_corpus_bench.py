@@ -32,7 +32,8 @@ DEFAULT_PROFILE = "strict-bslls"
 
 def iter_bsl_files(root: Path) -> list[Path]:
     return sorted(
-        p for p in root.rglob("*")
+        p
+        for p in root.rglob("*")
         if p.is_file() and (p.suffix.lower() in BSL_SUFFIXES or p.name == "Module.bsl")
     )
 

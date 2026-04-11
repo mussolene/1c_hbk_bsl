@@ -60,8 +60,7 @@ def main() -> int:
     print(f"vscode-extension/package.json: {old!r} → {ver!r}")
 
     PY_VERSION.write_text(
-        '"""Generated version metadata for runtime use."""\n\n'
-        f'__version__ = "{ver}"\n',
+        f'"""Generated version metadata for runtime use."""\n\n__version__ = "{ver}"\n',
         encoding="utf-8",
     )
     print(f"src/onec_hbk_bsl/_version.py: updated to {ver!r}")

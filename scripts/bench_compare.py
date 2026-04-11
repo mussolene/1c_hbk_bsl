@@ -13,6 +13,7 @@
      100        12.5        10.1     -19.2%
     3000       412.3        98.7     -76.1%
 """
+
 from __future__ import annotations
 
 import sys
@@ -55,7 +56,9 @@ def main() -> None:
         sys.exit(1)
 
     print(f"\nComparing: {before_path}  →  {after_path}")
-    print(f"\n{'lines':>8}  {'before_ms':>10}  {'after_ms':>10}  {'delta%':>8}  {'diags_b':>8}  {'diags_a':>8}")
+    print(
+        f"\n{'lines':>8}  {'before_ms':>10}  {'after_ms':>10}  {'delta%':>8}  {'diags_b':>8}  {'diags_a':>8}"
+    )
     print("-" * 68)
 
     for size in all_sizes:

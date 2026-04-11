@@ -229,12 +229,6 @@ def run_bsl215_missing_parameter_description(
 ) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
-    re_blank_doc_line = re.compile(r"^\s*//\s*$")
-    re_doc_section = re.compile(
-        r"^\s*//\s*(?:Параметры|Parameters|Возвращаемое значение|Returns?)\s*:?\s*$",
-        re.IGNORECASE,
-    )
-
     for proc in procs:
         if not proc.params:
             continue
@@ -260,7 +254,10 @@ def run_bsl215_missing_parameter_description(
         if any(re_see_link.match(cl) for cl in comment_block):
             continue
 
-        if not any(re_blank_doc_line.match(cl) or re_doc_section.match(cl) for cl in comment_block):
+        # BSLLS treats any adjacent comment block as method documentation.
+        # Blank/service one-line comments still establish the presence of a doc block,
+        # after which missing parameter descriptions should be reported.
+        if not any(cl.strip().startswith("//") for cl in comment_block):
             continue
 
         params_section_start = None
@@ -282,7 +279,7 @@ def run_bsl215_missing_parameter_description(
                     end_character=header_line.index(proc.name) + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
-                    message=f"Отсутствует описание параметров метода «{proc.name}» в комментарии",
+                    message="Необходимо добавить описание всех параметров метода",
                 )
             )
             continue
@@ -338,7 +335,7 @@ def run_bsl215_missing_parameter_description(
                         end_character=col + len(pname),
                         severity=_diag.Severity.WARNING,
                         code="BSL215",
-                        message=f"Отсутствует описание параметра «{pname}» метода «{proc.name}» в комментарии",
+                        message=f'Необходимо добавить описание параметра "{pname}"',
                     )
                 )
 
@@ -486,23 +483,24 @@ def run_bsl254_transferring_parameters(
         ]
         if not client_callers:
             continue
-        header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
         assigned = _diag._proc_assigned_param_names(lines, proc)
         for param_name in missing_val:
             if param_name.casefold() in assigned:
                 continue
-            span = _diag._proc_param_name_span(header_line, param_name)
-            if span is None:
+            location = _diag._proc_param_location(lines, proc, param_name)
+            if location is None:
+                line_idx = proc.start_idx
+                header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
                 c0 = proc.header_col
                 c1 = len(header_line.rstrip())
             else:
-                c0, c1 = span
+                line_idx, c0, c1 = location
             diags.append(
                 _diag.Diagnostic(
                     file=path,
-                    line=proc.start_idx + 1,
+                    line=line_idx + 1,
                     character=c0,
-                    end_line=proc.start_idx + 1,
+                    end_line=line_idx + 1,
                     end_character=c1,
                     severity=_diag.Severity.WARNING,
                     code="BSL254",
@@ -602,7 +600,7 @@ def run_bsl224_nested_function_in_parameters(
                 else _diag.utf8_byte_offset_to_lsp_character(end_line_text, name_node.end_point[1]),
                 severity=_diag.Severity.INFORMATION,
                 code="BSL224",
-                message=f"Вложенный вызов функции в параметрах метода «{name}»",
+                message=f'Уберите инициализацию параметров метода "{name}" вложенными методами',
             )
         )
 

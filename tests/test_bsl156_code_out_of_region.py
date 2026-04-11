@@ -17,6 +17,7 @@ def test_bsl156_no_regions_flags_line1(tmp_path: Path) -> None:
     diags = [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
     assert len(diags) >= 1
     assert any(d.line == 1 for d in diags)
+    assert any(d.message == "Переместите код в область" for d in diags)
 
 
 def test_bsl156_proc_inside_region_clean(tmp_path: Path) -> None:

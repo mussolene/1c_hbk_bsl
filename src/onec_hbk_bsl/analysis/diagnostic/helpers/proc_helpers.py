@@ -30,6 +30,33 @@ def proc_param_name_span(header_line: str, param_name: str) -> tuple[int, int] |
     return start, open_paren + 1 + m.end()
 
 
+def proc_param_location(
+    lines: list[str], proc: Any, param_name: str
+) -> tuple[int, int, int] | None:
+    scan_idx = proc.start_idx
+    paren_depth = 0
+    header_started = False
+    while 0 <= scan_idx < len(lines):
+        line = lines[scan_idx]
+        for ch in line:
+            if ch == "(":
+                paren_depth += 1
+                header_started = True
+            elif ch == ")":
+                paren_depth -= 1
+                if header_started and paren_depth <= 0:
+                    paren_depth = 0
+        import re
+
+        match = re.search(rf"\b{re.escape(param_name)}\b", line, re.IGNORECASE)
+        if match:
+            return scan_idx, match.start(), match.end()
+        if header_started and paren_depth == 0:
+            break
+        scan_idx += 1
+    return None
+
+
 def proc_by_name_and_line(procs: list[Any], name: str, line_1based: int) -> Any | None:
     line_idx = max(0, line_1based - 1)
     for proc in procs:

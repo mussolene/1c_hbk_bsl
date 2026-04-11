@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from onec_hbk_bsl.analysis.diagnostic.engine import DiagnosticEngine
     from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
-    from onec_hbk_bsl.analysis.document_snapshot import ProcInfo
+    from onec_hbk_bsl.analysis.document_snapshot import DocumentSnapshot, ProcInfo
 
 
 def extend_style_comment_rule_tasks(
@@ -18,10 +18,13 @@ def extend_style_comment_rule_tasks(
     path: str,
     lines: list[str],
     procs: list[ProcInfo],
+    snapshot: DocumentSnapshot,
 ) -> None:
     """Append early style/comment tasks in declaration order."""
     if engine._rule_enabled("BSL024"):
-        tasks.append(("BSL024", lambda: engine._rule_bsl024_space_at_start_comment(path, lines)))
+        tasks.append(
+            ("BSL024", lambda: engine._rule_bsl024_space_at_start_comment(path, lines, snapshot))
+        )
 
     if engine._rule_enabled("BSL030"):
 
@@ -53,6 +56,7 @@ def extend_style_token_rule_tasks(
     engine: DiagnosticEngine,
     path: str,
     lines: list[str],
+    snapshot: DocumentSnapshot,
 ) -> None:
     """Append keyword/line-break style tasks in declaration order."""
     if engine._rule_enabled("BSL153"):
@@ -60,7 +64,9 @@ def extend_style_token_rule_tasks(
             ("BSL153", lambda: engine._rule_bsl153_canonical_spelling_keywords(path, lines))
         )
     if engine._rule_enabled("BSL200"):
-        tasks.append(("BSL200", lambda: engine._rule_bsl200_incorrect_line_break(path, lines)))
+        tasks.append(
+            ("BSL200", lambda: engine._rule_bsl200_incorrect_line_break(path, lines, snapshot))
+        )
 
 
 def extend_style_tail_rule_tasks(
@@ -70,6 +76,7 @@ def extend_style_tail_rule_tasks(
     path: str,
     lines: list[str],
     procs: list[ProcInfo],
+    snapshot: DocumentSnapshot,
 ) -> None:
     """Append late style tasks in declaration order."""
     if engine._rule_enabled("BSL227"):
@@ -77,4 +84,4 @@ def extend_style_tail_rule_tasks(
             ("BSL227", lambda: engine._rule_bsl227_one_statement_per_line(path, lines, procs))
         )
     if engine._rule_enabled("BSL216"):
-        tasks.append(("BSL216", lambda: engine._rule_bsl216_missing_space(path, lines)))
+        tasks.append(("BSL216", lambda: engine._rule_bsl216_missing_space(path, lines, snapshot)))

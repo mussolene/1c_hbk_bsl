@@ -517,6 +517,7 @@ class DiagnosticEngine:
             regions=regions,
             tree=tree,
             proc_node_map=_proc_node_map,
+            snapshot=snapshot,
         )
         extend_style_comment_rule_tasks(
             _rule_tasks,
@@ -524,6 +525,7 @@ class DiagnosticEngine:
             path=path,
             lines=lines,
             procs=procs,
+            snapshot=snapshot,
         )
         extend_query_top_rule_tasks(
             _rule_tasks,
@@ -803,6 +805,7 @@ class DiagnosticEngine:
             engine=self,
             path=path,
             lines=lines,
+            snapshot=snapshot,
         )
         extend_security_rule_tasks(
             _rule_tasks,
@@ -865,6 +868,7 @@ class DiagnosticEngine:
             path=path,
             lines=lines,
             procs=procs,
+            snapshot=snapshot,
         )
         extend_runtime_tail_rule_tasks(
             _rule_tasks,
@@ -873,6 +877,7 @@ class DiagnosticEngine:
             lines=lines,
             procs=procs,
             tree=tree,
+            snapshot=snapshot,
         )
         diagnostics = execute_diagnostic_rule_tasks(_rule_tasks)
         # Apply inline suppressions
@@ -1374,8 +1379,8 @@ class DiagnosticEngine:
                         severity=Severity.WARNING,
                         code="BSL011",
                         message=(
-                            f"{proc.kind.capitalize()} '{proc.name}' has cognitive complexity "
-                            f"{cc} (maximum {self.max_cognitive_complexity})"
+                            f'Уменьшите когнитивную сложность "{proc.name}" '
+                            f"с {cc} до {self.max_cognitive_complexity}"
                         ),
                     )
                 )
@@ -1454,13 +1459,18 @@ class DiagnosticEngine:
     # BSL014 — Line too long
     # ------------------------------------------------------------------
 
-    def _rule_bsl014_line_too_long(self, path: str, lines: list[str]) -> list[Diagnostic]:
+    def _rule_bsl014_line_too_long(
+        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
+    ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
+        line_lengths = (
+            snapshot.line_lengths if snapshot is not None else [len(line) for line in lines]
+        )
         for idx, line in enumerate(lines):
             # Skip query string continuation lines (|...) — BSLLS does not flag these for BSL014
             if line.lstrip().startswith("|"):
                 continue
-            length = len(line)
+            length = line_lengths[idx]
             if length > self.max_line_length:
                 diags.append(
                     Diagnostic(
@@ -1471,7 +1481,10 @@ class DiagnosticEngine:
                         end_character=length,
                         severity=Severity.INFORMATION,
                         code="BSL014",
-                        message=f"Line is {length} characters long (maximum {self.max_line_length})",
+                        message=(
+                            f"Длина строки {length} превышает максимально допустимую "
+                            f"{self.max_line_length}"
+                        ),
                     )
                 )
         return diags
@@ -1645,8 +1658,8 @@ class DiagnosticEngine:
                         severity=Severity.WARNING,
                         code="BSL019",
                         message=(
-                            f"{proc.kind.capitalize()} '{proc.name}' has cyclomatic "
-                            f"complexity {cc} (maximum {self.max_mccabe_complexity})"
+                            f'Уменьшите цикломатическую сложность "{proc.name}" '
+                            f"с {cc} до {self.max_mccabe_complexity}"
                         ),
                     )
                 )
@@ -1668,7 +1681,7 @@ class DiagnosticEngine:
                 line = lines[i]
                 if _RE_NEST_OPEN.match(line):
                     nesting += 1
-                    if nesting > self.max_nesting_depth and i not in reported:
+                    if nesting == self.max_nesting_depth + 1 and i not in reported:
                         reported.add(i)
                         diags.append(
                             Diagnostic(
@@ -1807,7 +1820,9 @@ class DiagnosticEngine:
     # BSL024 — No space after // in comment
     # ------------------------------------------------------------------
 
-    def _rule_bsl024_space_at_start_comment(self, path: str, lines: list[str]) -> list[Diagnostic]:
+    def _rule_bsl024_space_at_start_comment(
+        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
+    ) -> list[Diagnostic]:
         """
         Require a space after ``//`` in single-line comments (BSLLS ``SpaceAtStartComment``).
 
@@ -1815,7 +1830,7 @@ class DiagnosticEngine:
         skips commented-code lines (BSLLS ``CodeRecognizer``), ``//!``, ``//|``, noqa.
         """
         diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
+        for idx, line in enumerate(snapshot.lines if snapshot is not None else lines):
             col = bsl024_find_report_comment_col(line)
             if col is None:
                 continue
@@ -1828,7 +1843,10 @@ class DiagnosticEngine:
                     end_character=len(line),
                     severity=Severity.INFORMATION,
                     code="BSL024",
-                    message="Comment text should start with a space after '//'",
+                    message=(
+                        "Между символами комментария '//' и самим текстом комментария "
+                        "должен быть пробел."
+                    ),
                 )
             )
         return diags
@@ -2036,7 +2054,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl029_magic_number(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         """
         Detect numeric literals > 1 used directly in executable code.
@@ -2047,6 +2069,10 @@ class DiagnosticEngine:
         - Comment lines and strings
         """
         diags: list[Diagnostic] = []
+        masked_lines = snapshot.masked_lines if snapshot is not None else None
+        code_lines_wo_comments = (
+            snapshot.code_lines_without_comments if snapshot is not None else None
+        )
         for proc in procs:
             for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
                 line = lines[i]
@@ -2061,15 +2087,26 @@ class DiagnosticEngine:
                     continue
                 # Mask string contents before scanning while preserving original
                 # character offsets for resulting diagnostics.
-                code_part = _RE_DOUBLE_QUOTED_STRING.sub(
-                    lambda m: '"' + (" " * max(0, len(m.group(0)) - 2)) + '"',
-                    line,
+                code_part = (
+                    code_lines_wo_comments[i]
+                    if code_lines_wo_comments is not None
+                    else line.split("//")[0]
+                )
+                code_part = (
+                    masked_lines[i]
+                    if masked_lines is not None
+                    else _RE_DOUBLE_QUOTED_STRING.sub(
+                        lambda m: '"' + (" " * max(0, len(m.group(0)) - 2)) + '"',
+                        code_part,
+                    )
                 )
                 code_part = _RE_SINGLE_QUOTED_STRING.sub(
                     lambda m: "'" + (" " * max(0, len(m.group(0)) - 2)) + "'",
                     code_part,
                 )
-                code_part = code_part.split("//")[0]
+                comment_pos = code_part.find("//")
+                if comment_pos >= 0:
+                    code_part = code_part[:comment_pos]
                 # Skip Для/For loop headers — BSLLS does not flag loop bounds
                 if _RE_BSL029_FOR_HEADER.match(code_part):
                     continue
@@ -2093,8 +2130,9 @@ class DiagnosticEngine:
                             severity=Severity.INFORMATION,
                             code="BSL029",
                             message=(
-                                f"Magic number {m.group()!r} — "
-                                "extract to a named constant for readability."
+                                "Создайте константу с понятным названием, "
+                                f'присвойте ей значение "{m.group()}" и используйте '
+                                "эту константу вместо магического числа."
                             ),
                         )
                     )
@@ -2378,7 +2416,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl035_duplicate_string_literal(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         """
         Flag string literals that appear *min_duplicate_uses* or more times **within
@@ -2396,12 +2438,19 @@ class DiagnosticEngine:
         from collections import Counter
 
         diags: list[Diagnostic] = []
+        code_lines_wo_comments = (
+            snapshot.code_lines_without_comments if snapshot is not None else None
+        )
         for scope_lines in _bsl035_scope_line_indices(lines, procs):
             counts: Counter[str] = Counter()
             positions: dict[str, list[tuple[int, int]]] = {}
 
             for idx in scope_lines:
-                line = lines[idx]
+                line = (
+                    code_lines_wo_comments[idx]
+                    if code_lines_wo_comments is not None
+                    else lines[idx]
+                )
                 if line.strip().startswith("//"):
                     continue
                 for m in _RE_STRING_LITERAL.finditer(line):
@@ -2429,8 +2478,8 @@ class DiagnosticEngine:
                             severity=Severity.INFORMATION,
                             code="BSL035",
                             message=(
-                                f'String "{val}" is duplicated {count} times — '
-                                "extract to a named constant"
+                                "Необходимо избавиться от многократного использования "
+                                f'строкового литерала "{val}"'
                             ),
                         )
                     )
@@ -2503,8 +2552,7 @@ class DiagnosticEngine:
         for idx, line in enumerate(lines):
             if not self._line_triggers_bsl036(lines, idx):
                 continue
-            chunk = self._bsl036_if_condition_chunk(lines, idx) or line
-            ops = len(_RE_BOOL_OP.findall(chunk)) + 1
+            _ = self._bsl036_if_condition_chunk(lines, idx) or line
             char = len(line) - len(line.lstrip())
             kw = line.lstrip()
             if kw.lower().startswith("если "):
@@ -2521,14 +2569,10 @@ class DiagnosticEngine:
                     line=idx + 1,
                     character=char,
                     end_line=idx + 1,
-                    end_character=len(line),
+                    end_character=char + 1,
                     severity=Severity.INFORMATION,
                     code="BSL036",
-                    message=(
-                        f"Condition has {ops} boolean operators "
-                        f"(maximum {self.max_bool_ops}) — "
-                        "extract sub-conditions into named variables"
-                    ),
+                    message="Выделите условие оператора Если в отдельный метод или переменную",
                 )
             )
         return diags
@@ -3273,20 +3317,17 @@ class DiagnosticEngine:
                 continue
             m = _RE_VAR_MODULE_EXPORT.match(line)
             if m:
-                names = [n.strip() for n in m.group("names").split(",") if n.strip()]
+                start_char = m.start("names")
                 diags.append(
                     Diagnostic(
                         file=path,
                         line=idx + 1,
-                        character=len(line) - len(line.lstrip()),
+                        character=start_char,
                         end_line=idx + 1,
                         end_character=len(line),
-                        severity=Severity.INFORMATION,
+                        severity=Severity.WARNING,
                         code="BSL054",
-                        message=(
-                            f"Exported module-level variable '{', '.join(names)}' — "
-                            "module-level export state is not recommended (BSLLS ExportVariables)."
-                        ),
+                        message="Не рекомендуется использовать экспортные переменные. Это может стать источником трудновоспроизводимых ошибок",
                     )
                 )
         return diags
@@ -3320,20 +3361,17 @@ class DiagnosticEngine:
                 continue
             if _module_export_var_has_preceding_description(lines, idx):
                 continue
-            names = [n.strip() for n in m.group("names").split(",") if n.strip()]
+            start_char = m.start("names")
             diags.append(
                 Diagnostic(
                     file=path,
                     line=idx + 1,
-                    character=len(line) - len(line.lstrip()),
+                    character=start_char,
                     end_line=idx + 1,
                     end_character=len(line),
                     severity=Severity.INFORMATION,
                     code="BSL219",
-                    message=(
-                        "Add a description comment on the line before this exported module variable "
-                        f"('{', '.join(names)}')."
-                    ),
+                    message="Добавьте описание переменной",
                 )
             )
         return diags
@@ -3345,13 +3383,20 @@ class DiagnosticEngine:
     # BSLLS ConsecutiveEmptyLines: flag when more than one blank line in a row.
     MAX_BLANK_LINES: int = 1
 
-    def _rule_bsl055_consecutive_blank_lines(self, path: str, lines: list[str]) -> list[Diagnostic]:
+    def _rule_bsl055_consecutive_blank_lines(
+        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
+    ) -> list[Diagnostic]:
         """Flag runs of more than ``MAX_BLANK_LINES`` consecutive blank lines."""
         diags: list[Diagnostic] = []
         blank_run = 0
         run_start = 0
-        for idx, line in enumerate(lines):
-            if line.strip() == "":
+        blank_flags = (
+            snapshot.blank_line_flags
+            if snapshot is not None
+            else [line.strip() == "" for line in lines]
+        )
+        for idx, is_blank in enumerate(blank_flags):
+            if is_blank:
                 if blank_run == 0:
                     run_start = idx
                 blank_run += 1
@@ -3390,7 +3435,7 @@ class DiagnosticEngine:
                 )
             )
         # BSLLS: лишняя пустая строка в самом конце модуля (после КонецПроцедуры / #КонецОбласти и т.п.).
-        if len(lines) >= 2 and lines[-1].strip() == "" and lines[-2].strip() != "":
+        if len(lines) >= 2 and blank_flags[-1] and not blank_flags[-2]:
             diags.append(
                 Diagnostic(
                     file=path,
@@ -6338,6 +6383,22 @@ class DiagnosticEngine:
             }
             return aliases.get(raw, raw)
 
+        standard_aliases = {
+            "public",
+            "internal",
+            "private",
+            "eventhandlers",
+            "formeventhandlers",
+        }
+
+        def region_is_effectively_empty(region: _RegionInfo) -> bool:
+            for line_idx in range(region.start_idx + 1, min(region.end_idx, len(lines))):
+                stripped = lines[line_idx].strip()
+                if not stripped or stripped.startswith("//") or stripped.startswith("#"):
+                    continue
+                return False
+            return True
+
         diags: list[Diagnostic] = []
         seen: dict[str, _RegionInfo] = {}
         for region in regions:
@@ -6345,6 +6406,10 @@ class DiagnosticEngine:
             if not key:
                 continue
             if key not in seen:
+                seen[key] = region
+                continue
+            prev = seen[key]
+            if key not in standard_aliases and not region_is_effectively_empty(prev):
                 seen[key] = region
                 continue
             line = lines[region.start_idx] if 0 <= region.start_idx < len(lines) else ""
@@ -6357,9 +6422,10 @@ class DiagnosticEngine:
                     end_character=len(line.rstrip()),
                     severity=Severity.INFORMATION,
                     code="BSL131",
-                    message=f'Область "{region.name}" уже объявлена выше в модуле',
+                    message=f'Нужно удалить дубли раздела "{region.name}"',
                 )
             )
+            seen[key] = region
         return diags
 
     # ------------------------------------------------------------------
@@ -7143,10 +7209,7 @@ class DiagnosticEngine:
                             end_character=p_end,
                             severity=Severity.ERROR,
                             code="BSL157",
-                            message=(
-                                "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
-                                "Попытка (перед Исключение)"
-                            ),
+                            message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
                         )
                     )
                 pending = None
@@ -7168,10 +7231,7 @@ class DiagnosticEngine:
                             end_character=p_end,
                             severity=Severity.ERROR,
                             code="BSL157",
-                            message=(
-                                "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
-                                "Попытка (перед Исключение)"
-                            ),
+                            message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
                         )
                     )
                 pending = None
@@ -7193,10 +7253,7 @@ class DiagnosticEngine:
                         end_character=p_end,
                         severity=Severity.ERROR,
                         code="BSL157",
-                        message=(
-                            "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
-                            "Попытка (перед Исключение)"
-                        ),
+                        message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
                     )
                 )
                 pending = None
@@ -7211,10 +7268,7 @@ class DiagnosticEngine:
                     end_character=p_end,
                     severity=Severity.ERROR,
                     code="BSL157",
-                    message=(
-                        "ЗафиксироватьТранзакцию() должна вызываться внутри блока "
-                        "Попытка (перед Исключение)"
-                    ),
+                    message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
                 )
             )
         return diags
@@ -8580,7 +8634,12 @@ class DiagnosticEngine:
     # BSL200 — IncorrectLineBreak
     # ------------------------------------------------------------------
 
-    def _rule_bsl200_incorrect_line_break(self, path: str, lines: list[str]) -> list[Diagnostic]:
+    def _rule_bsl200_incorrect_line_break(
+        self,
+        path: str,
+        lines: list[str],
+        snapshot: DocumentSnapshot | None = None,
+    ) -> list[Diagnostic]:
         """
         Mirror BSLLS IncorrectLineBreak as a cheap line-based pass.
 
@@ -8594,7 +8653,19 @@ class DiagnosticEngine:
         - the line right before the first query text line
         """
         diags: list[Diagnostic] = []
-        str_states = _build_line_string_states(lines)
+        str_states = (
+            snapshot.line_string_states
+            if snapshot is not None
+            else _build_line_string_states(lines)
+        )
+        comment_starts = (
+            snapshot.comment_starts
+            if snapshot is not None
+            else [
+                _comment_start_outside_double_quotes(line, str_states[idx])
+                for idx, line in enumerate(lines)
+            ]
+        )
         query_prev_lines = _bsl200_query_first_prev_lines(lines)
 
         for idx, line in enumerate(lines):
@@ -8602,7 +8673,7 @@ class DiagnosticEngine:
                 continue
 
             in_str_start = str_states[idx]
-            comment_start = _comment_start_outside_double_quotes(line, in_str_start)
+            comment_start = comment_starts[idx]
 
             start_match = _BSL200_INCORRECT_START.search(line)
             if start_match:
@@ -8622,7 +8693,9 @@ class DiagnosticEngine:
                             end_character=end,
                             severity=Severity.INFORMATION,
                             code="BSL200",
-                            message="Некорректный перенос строки",
+                            message=(
+                                "Проверьте правильность переноса операндов, операторов и параметров"
+                            ),
                         )
                     )
 
@@ -8646,7 +8719,7 @@ class DiagnosticEngine:
                     end_character=end,
                     severity=Severity.INFORMATION,
                     code="BSL200",
-                    message="Некорректный перенос строки",
+                    message=("Проверьте правильность переноса операндов, операторов и параметров"),
                 )
             )
         return diags
@@ -8655,18 +8728,47 @@ class DiagnosticEngine:
     # BSL216 — MissingSpace
     # ------------------------------------------------------------------
 
-    def _rule_bsl216_missing_space(self, path: str, lines: list[str]) -> list[Diagnostic]:
+    def _rule_bsl216_missing_space(
+        self,
+        path: str,
+        lines: list[str],
+        snapshot: DocumentSnapshot | None = None,
+    ) -> list[Diagnostic]:
         """Detect missing spaces around assignment and comparison operators."""
         diags: list[Diagnostic] = []
-        # Build cross-line string state for multi-line string handling.
-        str_states = _build_line_string_states(lines)
+        str_states = (
+            snapshot.line_string_states
+            if snapshot is not None
+            else _build_line_string_states(lines)
+        )
+        masked_lines = (
+            snapshot.masked_lines
+            if snapshot is not None
+            else [
+                line if str_states[idx] else _mask_double_quoted_strings_preserve_len(line)
+                for idx, line in enumerate(lines)
+            ]
+        )
+        comment_starts = (
+            snapshot.comment_starts
+            if snapshot is not None
+            else [
+                _comment_start_outside_double_quotes(line, str_states[idx])
+                for idx, line in enumerate(lines)
+            ]
+        )
+        code_lines_wo_comments = (
+            snapshot.code_lines_without_comments
+            if snapshot is not None
+            else [_strip_inline_comment_preserve_strings(line) for line in lines]
+        )
 
         for idx, line in enumerate(lines):
             if _RE_LINE_COMMENT.match(line):
                 continue
             in_str_start = str_states[idx]
-            clean = _mask_double_quoted_strings_preserve_len(line) if not in_str_start else line
-            comment_pos = _comment_start_outside_double_quotes(line, in_str_start)
+            clean = masked_lines[idx]
+            comment_pos = comment_starts[idx]
             if comment_pos is not None:
                 clean = clean[:comment_pos]
             # Skip = check on procedure/function headers — default parameter values
@@ -8677,13 +8779,14 @@ class DiagnosticEngine:
                 else _RE_BSL216_ASSIGN_NOSPACE.search(clean)
             )
             if m:
+                eq_col = m.end(1)
                 diags.append(
                     Diagnostic(
                         file=path,
                         line=idx + 1,
-                        character=m.start(),
+                        character=eq_col,
                         end_line=idx + 1,
-                        end_character=m.end(),
+                        end_character=eq_col + 1,
                         severity=Severity.INFORMATION,
                         code="BSL216",
                         message=("Слева и справа от '=' не хватает пробела"),
@@ -8713,7 +8816,7 @@ class DiagnosticEngine:
                     )
                 )
                 continue
-            comma_cols = _comma_missing_space_after_cols_in_line(line.split("//", 1)[0])
+            comma_cols = _comma_missing_space_after_cols_in_line(code_lines_wo_comments[idx])
             if comma_cols:
                 for comma_col in comma_cols:
                     diags.append(
@@ -8837,7 +8940,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl208_bsl256_latin_cyrillic_and_typo(
-        self, path: str, lines: list[str], procs: list[Any]
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[Any],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         """
         Mixed Latin/Cyrillic identifiers for **LatinAndCyrillicSymbolInWord** (BSL208).
@@ -8853,12 +8960,18 @@ class DiagnosticEngine:
         # Emit at most once per unique identifier per file (BSL LS behaviour)
         seen_bsl208: set[str] = set()
 
+        masked_lines = snapshot.masked_lines if snapshot is not None else None
+        comment_starts = snapshot.comment_starts if snapshot is not None else None
         for idx, line in enumerate(lines):
             if _re_comment.match(line):
                 continue
-            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
+            clean = (
+                masked_lines[idx]
+                if masked_lines is not None
+                else _RE_DOUBLE_QUOTED_STRING.sub('""', line)
+            )
+            comment_pos = comment_starts[idx] if comment_starts is not None else clean.find("//")
+            if comment_pos is not None and comment_pos >= 0:
                 clean = clean[:comment_pos]
             for m in _re_word.finditer(clean):
                 word = m.group()
@@ -8881,12 +8994,9 @@ class DiagnosticEngine:
                             character=m.start(),
                             end_line=idx + 1,
                             end_character=m.end(),
-                            severity=Severity.WARNING,
+                            severity=Severity.INFORMATION,
                             code="BSL208",
-                            message=(
-                                f"Идентификатор «{word}» содержит кириллицу и латиницу "
-                                "одновременно — визуально неотличимо от другого имени"
-                            ),
+                            message="Нельзя использовать латинские и кириллические символы в одном идентификаторе",
                         )
                     )
         return diags

@@ -16,6 +16,7 @@
     python scripts/bench_per_rule.py 3000 --runs=5
     python scripts/bench_per_rule.py --top=20         # top-20 правил
 """
+
 from __future__ import annotations
 
 import sys
@@ -71,7 +72,9 @@ def run_per_rule(size: int, runs: int) -> tuple[dict[str, float], dict[str, int]
     rule_calls: dict[str, int] = {}
 
     original = _diag_module._execute_diagnostic_rule_tasks
-    _diag_module._execute_diagnostic_rule_tasks = _make_instrumented_executor(rule_times, rule_calls)
+    _diag_module._execute_diagnostic_rule_tasks = _make_instrumented_executor(
+        rule_times, rule_calls
+    )
     try:
         engine = DiagnosticEngine()
         # warm-up: не засчитываем
@@ -102,7 +105,7 @@ def print_report(
     total_ms = sum(times.values()) * 1000
     sorted_rules = sorted(times.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
-    print(f"\n{'='*68}")
+    print(f"\n{'=' * 68}")
     print(f"bench_{size}.bsl  ({n_lines} lines, {runs} runs)")
     print(f"Total rule time: {total_ms:.1f} ms  |  Top-{top_n} slowest rules:")
     print(f"{'rule':>12}  {'total_ms':>10}  {'mean_ms/run':>12}  {'calls':>6}  {'% total':>8}")

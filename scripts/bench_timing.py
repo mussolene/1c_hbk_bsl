@@ -10,6 +10,7 @@
     python scripts/bench_timing.py --runs=10
     python scripts/bench_timing.py 1000 3000   # только эти размеры
 """
+
 from __future__ import annotations
 
 import sys
@@ -25,9 +26,7 @@ SIZES = [100, 500, 1000, 3000, 5000]
 DEFAULT_RUNS = 5
 
 
-def measure(
-    engine: DiagnosticEngine, path_str: str, content: str, runs: int
-) -> tuple[float, int]:
+def measure(engine: DiagnosticEngine, path_str: str, content: str, runs: int) -> tuple[float, int]:
     """Возвращает (mean_ms, diag_count). Trimmed mean — убираем min и max."""
     # warm-up: загрузка grammar, JIT прогрев
     diags = engine.check_content(path_str, content)
