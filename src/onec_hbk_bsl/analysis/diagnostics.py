@@ -82,7 +82,7 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     strip_leading_val_keywords,
 )
 from onec_hbk_bsl.analysis.bslls_parity import merge_profile_with_select
-from onec_hbk_bsl.analysis.diagnostics_bsl148 import bsl148_function_name_spans
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl148 import bsl148_function_name_spans
 from onec_hbk_bsl.analysis.diagnostic.cst import (
     diagnostics_bsl004_from_tree,
     diagnostics_bsl018_from_tree,

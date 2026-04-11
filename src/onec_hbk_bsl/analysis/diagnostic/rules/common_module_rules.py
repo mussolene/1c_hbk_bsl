@@ -3,10 +3,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from onec_hbk_bsl.analysis.diagnostics_bsl152 import bsl152_public_region_name_spans
-from onec_hbk_bsl.analysis.diagnostics_bsl154 import bsl154_code_after_async_spans
-from onec_hbk_bsl.analysis.diagnostics_bsl155 import bsl155_code_block_before_sub
-from onec_hbk_bsl.analysis.diagnostics_bsl156 import bsl156_diagnostics
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl152 import bsl152_public_region_name_spans
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl154 import bsl154_code_after_async_spans
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl155 import bsl155_code_block_before_sub
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl156 import bsl156_diagnostics
 from onec_hbk_bsl.analysis.diagnostics_common_module import (
     bsl158_common_module_assign_spans,
     bsl160_common_module_missing_api,

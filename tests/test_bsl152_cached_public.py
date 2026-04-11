@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl152 import common_module_bslls_cached_reuse
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
-from onec_hbk_bsl.analysis.diagnostics_bsl152 import common_module_bslls_cached_reuse
 
 
 def _write_cached_module(

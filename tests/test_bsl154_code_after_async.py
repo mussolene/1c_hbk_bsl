@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl154 import path_matches_bsl154_module_types
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
-from onec_hbk_bsl.analysis.diagnostics_bsl154 import path_matches_bsl154_module_types
 
 
 def _form_module_path(root: Path) -> Path:

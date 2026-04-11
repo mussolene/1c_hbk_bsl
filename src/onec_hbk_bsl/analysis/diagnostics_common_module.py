@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.diagnostics_bsl152 import (
+from onec_hbk_bsl.analysis.diagnostic.rules.bsl152 import (
     common_module_xml_for_module_bsl,
     return_values_reuse_cached_from_xml_text,
 )
