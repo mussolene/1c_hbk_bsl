@@ -4027,6 +4027,79 @@ class TestBsl206207209QueryJoinDiagnostics:
         assert "BSL209" not in _codes(diags)
 
 
+class TestBsl191201QueryTextDiagnostics:
+    def test_full_outer_join_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Товары.Ссылка
+        |ИЗ Справочник.Номенклатура КАК Товары
+        |    ЛЕВОЕ СОЕДИНЕНИЕ ПланПродаж КАК ПланПродаж
+        |        ПОЛНОЕ ВНЕШНЕЕ СОЕДИНЕНИЕ ФактическиеПродажи КАК Факт
+        |        ПО ПланПродаж.Номенклатура = Факт.Номенклатура
+        |    ПО Товары.Ссылка = ПланПродаж.Номенклатура";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL191"})
+        assert "BSL191" in _codes(diags)
+
+    def test_left_join_not_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Товары.Ссылка
+        |ИЗ Справочник.Номенклатура КАК Товары
+        |    ЛЕВОЕ СОЕДИНЕНИЕ ПланПродаж КАК ПланПродаж
+        |    ПО Товары.Ссылка = ПланПродаж.Номенклатура";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL191"})
+        assert "BSL191" not in _codes(diags)
+
+    def test_like_with_field_rhs_detected(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Таблица.Поле1 ПОДОБНО Таблица.Поле2 КАК Результат
+        |ИЗ Документ.Документ КАК Таблица";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL201"})
+        assert "BSL201" in _codes(diags)
+
+    def test_like_with_parameter_rhs_allowed(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Таблица.Поле1 ПОДОБНО &Параметр КАК Результат
+        |ИЗ Документ.Документ КАК Таблица";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL201"})
+        assert "BSL201" not in _codes(diags)
+
+    def test_like_with_string_rhs_allowed(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Запрос = Новый Запрос;
+    Запрос.Текст =
+        "ВЫБРАТЬ
+        |  Таблица.Поле1 ПОДОБНО ""Строка"" КАК Результат
+        |ИЗ Документ.Документ КАК Таблица";
+КонецПроцедуры
+"""
+        diags = _check(content, tmp_path, select={"BSL201"})
+        assert "BSL201" not in _codes(diags)
+
+
 class TestBsl262UsageWriteLogEvent:
     def test_write_log_event_with_warning_in_except_detected(self, tmp_path: Path) -> None:
         content = """\

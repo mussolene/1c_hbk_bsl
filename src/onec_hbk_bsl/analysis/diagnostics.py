@@ -157,6 +157,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL207",
         "BSL209",
         "BSL210",
+        "BSL191",
+        "BSL201",
         "BSL234",
         "BSL235",
     }
@@ -1744,7 +1746,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["query", "design"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL192": {
         "name": "FunctionNameStartsWithGet",
@@ -1834,7 +1836,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["query", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL202": {
         "name": "IncorrectUseOfStrTemplate",
@@ -4143,6 +4145,17 @@ _RE_QUERY_VIRTUAL_TABLE = re.compile(
     re.IGNORECASE,
 )
 _RE_QUERY_COLUMN_REF = re.compile(r"\b\w+\.\w+(?:\.\w+)*\b", re.IGNORECASE)
+_RE_QUERY_FULL_OUTER_JOIN = re.compile(
+    r"\b(?:ПОЛНОЕ(?:\s+ВНЕШНЕЕ)?|FULL(?:\s+OUTER)?)\s+(?:СОЕДИНЕНИЕ|JOIN)\b",
+    re.IGNORECASE,
+)
+_RE_QUERY_LIKE_OPERATOR = re.compile(r"\b(?:ПОДОБНО|LIKE)\b", re.IGNORECASE)
+_RE_QUERY_LIKE_TAIL_STOP = re.compile(
+    r"\b(?:КАК|AS|И|AND|ИЛИ|OR|ПО|ON|ГДЕ|WHERE|"
+    r"СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|"
+    r"ИМЕЮЩИЕ|HAVING|ИТОГИ|TOTALS|ОБЪЕДИНИТЬ|UNION)\b|,",
+    re.IGNORECASE,
+)
 
 
 def _bsl210_where_clause_region_bounds(lit: str, where_match: re.Match) -> tuple[int, int]:
@@ -4264,6 +4277,45 @@ def _iter_query_text_blocks(lines: list[str]):
             j += 1
         yield i, block_lines
         i = j
+
+
+def _iter_query_text_content_lines(start_idx: int, block_lines: list[str]):
+    """Yield normalized query text lines as ``(line_no, content_base, head, ended_query)``."""
+    for offset, raw_line in enumerate(block_lines):
+        stripped = raw_line.rstrip()
+        if not stripped:
+            continue
+
+        is_first = offset == 0
+        if is_first:
+            quote_pos = raw_line.find('"')
+            if quote_pos < 0:
+                continue
+            content_base = quote_pos + 1
+            raw_content = raw_line[content_base:]
+        else:
+            pipe_pos = raw_line.find("|")
+            if pipe_pos < 0:
+                continue
+            after_pipe = raw_line[pipe_pos + 1 :]
+            leading_ws = len(after_pipe) - len(after_pipe.lstrip())
+            content_base = pipe_pos + 1 + leading_ws
+            raw_content = after_pipe.lstrip()
+
+        content = _RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip().lstrip()
+        if not content:
+            continue
+
+        ended_query = '"' in content
+        head = content.split('"', 1)[0].rstrip() if ended_query else content
+        if not head:
+            if ended_query:
+                break
+            continue
+
+        yield start_idx + offset + 1, content_base, head, ended_query
+        if ended_query:
+            break
 
 
 # BSL190 — FormDataToValue / ДанныеФормыВЗначение
@@ -6430,7 +6482,7 @@ class DiagnosticEngine:
             "BSL188",  # FileSystemAccess — TODO
             "BSL189",  # ForbiddenMetadataName — TODO
             # "BSL190" enabled — FormDataToValue implemented
-            "BSL191",  # FullOuterJoinQuery — TODO
+            # "BSL191" enabled — FullOuterJoinQuery implemented
             "BSL192",  # FunctionNameStartsWithGet — TODO
             "BSL193",  # FunctionOutParameter — TODO
             "BSL194",  # FunctionReturnsSamePrimitive — TODO
@@ -6440,7 +6492,7 @@ class DiagnosticEngine:
             # "BSL198" enabled — IfElseDuplicatedCondition implemented
             # "BSL199" enabled — IfElseIfEndsWithElse implemented
             # "BSL200" enabled — IncorrectLineBreak implemented
-            "BSL201",  # IncorrectUseLikeInQuery — TODO
+            # "BSL201" enabled — IncorrectUseLikeInQuery implemented
             "BSL202",  # IncorrectUseOfStrTemplate — TODO
             "BSL203",  # InternetAccess — TODO
             "BSL204",  # InvalidCharacterInFile — TODO
@@ -7480,6 +7532,14 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL200"):
             _rule_tasks.append(
                 ("BSL200", lambda: self._rule_bsl200_incorrect_line_break(path, lines))
+            )
+        _bsl191_201 = ("BSL191", "BSL201")
+        if any(self._rule_enabled(c) for c in _bsl191_201):
+            _rule_tasks.append(
+                (
+                    "BSL191_201",
+                    lambda: self._rule_bsl191_201_query_text_diagnostics(path, lines, _bsl191_201),
+                )
             )
         _bsl206_207_209 = ("BSL206", "BSL207", "BSL209")
         if any(self._rule_enabled(c) for c in _bsl206_207_209):
@@ -14490,6 +14550,66 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
+    # BSL191 / BSL201 — query text diagnostics
+    # ------------------------------------------------------------------
+
+    def _rule_bsl191_201_query_text_diagnostics(
+        self,
+        path: str,
+        lines: list[str],
+        codes: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled = {code for code in codes if self._rule_enabled(code)}
+        if not enabled:
+            return []
+
+        diags: list[Diagnostic] = []
+        for start_idx, block_lines in _iter_query_text_blocks(lines):
+            for line_no, content_base, head, _ended_query in _iter_query_text_content_lines(
+                start_idx, block_lines
+            ):
+                if "BSL191" in enabled:
+                    for match in _RE_QUERY_FULL_OUTER_JOIN.finditer(head):
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=line_no,
+                                character=content_base + match.start(),
+                                end_line=line_no,
+                                end_character=content_base + match.end(),
+                                severity=Severity.WARNING,
+                                code="BSL191",
+                                message="Полное внешнее соединение в запросе",
+                            )
+                        )
+
+                if "BSL201" in enabled:
+                    for match in _RE_QUERY_LIKE_OPERATOR.finditer(head):
+                        rhs = head[match.end() :].lstrip()
+                        if not rhs:
+                            continue
+                        stop_match = _RE_QUERY_LIKE_TAIL_STOP.search(rhs)
+                        rhs = rhs[: stop_match.start()] if stop_match else rhs
+                        rhs = rhs.strip()
+                        if not rhs:
+                            continue
+                        if "&" in rhs or '"' in rhs:
+                            continue
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=line_no,
+                                character=content_base + match.start(),
+                                end_line=line_no,
+                                end_character=content_base + match.end(),
+                                severity=Severity.WARNING,
+                                code="BSL201",
+                                message="Некорректное использование ПОДОБНО в запросе",
+                            )
+                        )
+        return diags
+
+    # ------------------------------------------------------------------
     # BSL206 / BSL207 / BSL209 — join-related query diagnostics
     # ------------------------------------------------------------------
 
@@ -14512,40 +14632,9 @@ class DiagnosticEngine:
             join_on_active = False
             join_buffer = ""
 
-            for offset, raw_line in enumerate(block_lines):
-                stripped = raw_line.rstrip()
-                if not stripped:
-                    continue
-
-                is_first = offset == 0
-                if is_first:
-                    quote_pos = raw_line.find('"')
-                    if quote_pos < 0:
-                        continue
-                    content_base = quote_pos + 1
-                    raw_content = raw_line[content_base:]
-                else:
-                    pipe_pos = raw_line.find("|")
-                    if pipe_pos < 0:
-                        continue
-                    after_pipe = raw_line[pipe_pos + 1 :]
-                    leading_ws = len(after_pipe) - len(after_pipe.lstrip())
-                    content_base = pipe_pos + 1 + leading_ws
-                    raw_content = after_pipe.lstrip()
-
-                content = _RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip().lstrip()
-                if not content:
-                    continue
-
-                ended_query = '"' in content
-                head = content.split('"', 1)[0].rstrip() if ended_query else content
-                if not head:
-                    if ended_query:
-                        break
-                    continue
-
-                line_no = start_idx + offset + 1
-
+            for line_no, content_base, head, _ended_query in _iter_query_text_content_lines(
+                start_idx, block_lines
+            ):
                 if _RE_QUERY_JOIN_END_KEYWORD.search(head):
                     join_on_active = False
                     join_buffer = ""
@@ -14630,9 +14719,6 @@ class DiagnosticEngine:
                                     message="Логическое ИЛИ в секции соединения запроса",
                                 )
                             )
-
-                if ended_query:
-                    break
 
         return diags
 
