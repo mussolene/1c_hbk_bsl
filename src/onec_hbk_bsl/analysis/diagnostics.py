@@ -1389,7 +1389,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["transaction", "error-handling"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL152": {
         "name": "CachedPublic",
@@ -1407,7 +1407,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["convention", "style"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL154": {
         "name": "CodeAfterAsyncCall",
@@ -1443,7 +1443,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["transaction", "error-handling"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL158": {
         "name": "CommonModuleAssign",
@@ -1578,7 +1578,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["correctness", "data-exchange"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL173": {
         "name": "DeletingCollectionItem",
@@ -1587,7 +1587,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness", "loop"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL174": {
         "name": "DenyIncompleteValues",
@@ -1677,7 +1677,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "CRITICAL",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL184": {
         "name": "ExecuteExternalCodeInCommonModule",
@@ -1704,7 +1704,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MINOR",
         "tags": ["syntax", "style"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL187": {
         "name": "FieldsFromJoinsWithoutIsNull",
@@ -1740,7 +1740,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["performance", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL191": {
         "name": "FullOuterJoinQuery",
@@ -1803,7 +1803,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["suspicious", "duplicate"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL198": {
         "name": "IfElseDuplicatedCondition",
@@ -1812,7 +1812,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["suspicious", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL199": {
         "name": "IfElseIfEndsWithElse",
@@ -1821,7 +1821,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["design", "robustness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL200": {
         "name": "IncorrectLineBreak",
@@ -1902,7 +1902,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["suspicious", "naming"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL209": {
         "name": "LogicalOrInJoinQuerySection",
@@ -1965,7 +1965,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["documentation", "api"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL216": {
         "name": "MissingSpace",
@@ -1974,7 +1974,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["style", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL217": {
         "name": "MissingTempStorageDeletion",
@@ -2073,7 +2073,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["style", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL228": {
         "name": "OrderOfParams",
@@ -2100,7 +2100,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["transaction", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL231": {
         "name": "PrivilegedModuleMethodCall",
@@ -2127,7 +2127,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["documentation", "api"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL234": {
         "name": "QueryNestedFieldsByDot",
@@ -2190,7 +2190,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["suspicious", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL241": {
         "name": "SameMetadataObjectAndChildNames",
@@ -2325,7 +2325,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["error-handling", "suspicious"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL256": {
         "name": "Typo",
@@ -2343,7 +2343,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["suspicious", "correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL258": {
         "name": "UnionAll",
@@ -2352,7 +2352,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["query", "performance"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL259": {
         "name": "UnknownPreprocessorSymbol",
@@ -2397,7 +2397,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["redundant", "suspicious"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL264": {
         "name": "UseSystemInformation",
@@ -2415,7 +2415,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["redundant", "readability"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL266": {
         "name": "UsingCancelParameter",
@@ -2541,7 +2541,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
         "tags": ["style", "convention"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL280": {
         "name": "UnknownMetadataObjectReference",
