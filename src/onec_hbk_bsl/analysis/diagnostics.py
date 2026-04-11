@@ -128,6 +128,9 @@ from onec_hbk_bsl.analysis.passes.query_pass import (
     extend_query_text_rule_tasks,
     extend_query_top_rule_tasks,
 )
+from onec_hbk_bsl.analysis.passes.runtime_tail_pass import (
+    extend_runtime_tail_rule_tasks,
+)
 from onec_hbk_bsl.analysis.passes.security_pass import (
     extend_security_rule_tasks,
 )
@@ -8072,60 +8075,9 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL279"):
             _rule_tasks.append(("BSL279", lambda: self._rule_bsl279_yo_letter_usage(path, lines)))
-        if self._rule_enabled("BSL149"):
-            _rule_tasks.append(
-                ("BSL149", lambda: self._rule_bsl149_assign_alias_fields_in_query(path, lines))
-            )
         if self._rule_enabled("BSL210"):
             _rule_tasks.append(
                 ("BSL210", lambda: self._rule_bsl210_logical_or_in_where(path, lines))
-            )
-        if self._rule_enabled("BSL150"):
-            _rule_tasks.append(("BSL150", lambda: self._rule_bsl150_bad_words(path, lines)))
-        if self._rule_enabled("BSL186"):
-            _rule_tasks.append(("BSL186", lambda: self._rule_bsl186_extra_commas(path, lines)))
-        if self._rule_enabled("BSL197"):
-            _rule_tasks.append(
-                ("BSL197", lambda: self._rule_bsl197_if_else_duplicated_code_block(path, lines))
-            )
-        if self._rule_enabled("BSL178"):
-            _rule_tasks.append(
-                ("BSL178", lambda: self._rule_bsl178_deprecated_methods_8317(path, lines, tree))
-            )
-        if self._rule_enabled("BSL198"):
-            _rule_tasks.append(
-                ("BSL198", lambda: self._rule_bsl198_if_else_duplicated_condition(path, lines))
-            )
-        if self._rule_enabled("BSL258"):
-            _rule_tasks.append(("BSL258", lambda: self._rule_bsl258_union_without_all(path, lines)))
-        if self._rule_enabled("BSL183"):
-            _rule_tasks.append(
-                ("BSL183", lambda: self._rule_bsl183_execute_external_code(path, lines))
-            )
-        if self._rule_enabled("BSL208") or self._rule_enabled("BSL256"):
-
-            def _task_bsl208_bsl256() -> list[Diagnostic]:
-                out = self._rule_bsl208_bsl256_latin_cyrillic_and_typo(path, lines, procs)
-                if self._rule_enabled("BSL256"):
-                    out.extend(self._rule_bsl256_bslls_typo_spellcheck(path, tree))
-                return out
-
-            _rule_tasks.append(("BSL208_BSL256", _task_bsl208_bsl256))
-        if self._rule_enabled("BSL230"):
-            _rule_tasks.append(
-                ("BSL230", lambda: self._rule_bsl230_pairing_broken_transaction(path, tree))
-            )
-        if self._rule_enabled("BSL263"):
-            _rule_tasks.append(
-                ("BSL263", lambda: self._rule_bsl263_useless_for_each(path, lines, procs))
-            )
-        if self._rule_enabled("BSL265"):
-            _rule_tasks.append(
-                ("BSL265", lambda: self._rule_bsl265_useless_ternary_operator(path, lines))
-            )
-        if self._rule_enabled("BSL262"):
-            _rule_tasks.append(
-                ("BSL262", lambda: self._rule_bsl262_usage_write_log_event(path, tree))
             )
         extend_style_token_rule_tasks(
             _rule_tasks,
@@ -8133,10 +8085,6 @@ class DiagnosticEngine:
             path=path,
             lines=lines,
         )
-        if self._rule_enabled("BSL199"):
-            _rule_tasks.append(
-                ("BSL199", lambda: self._rule_bsl199_if_else_if_ends_with_else(path, lines))
-            )
         extend_security_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -8188,22 +8136,6 @@ class DiagnosticEngine:
             lines=lines,
             query_blocks=_query_blocks,
         )
-        if self._rule_enabled("BSL225"):
-            _rule_tasks.append(
-                (
-                    "BSL225",
-                    lambda: self._rule_bsl225_number_of_values_in_structure_constructor(
-                        path, lines, tree
-                    ),
-                )
-            )
-        if self._rule_enabled("BSL218"):
-            _rule_tasks.append(
-                (
-                    "BSL218",
-                    lambda: self._rule_bsl218_missing_temporary_file_deletion(path, lines, tree),
-                )
-            )
         if self._rule_enabled("BSL234"):
             _rule_tasks.append(
                 ("BSL234", lambda: self._rule_bsl234_query_nested_fields_by_dot(path, lines))
@@ -8215,12 +8147,14 @@ class DiagnosticEngine:
             lines=lines,
             procs=procs,
         )
-        if self._rule_enabled("BSL255"):
-            _rule_tasks.append(("BSL255", lambda: self._rule_bsl255_try_number(path, lines)))
-        if self._rule_enabled("BSL277"):
-            _rule_tasks.append(
-                ("BSL277", lambda: self._rule_bsl277_wrong_use_of_rollback_transaction(path, tree))
-            )
+        extend_runtime_tail_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            procs=procs,
+            tree=tree,
+        )
         diagnostics = _execute_diagnostic_rule_tasks(_rule_tasks)
         # Apply inline suppressions
         diagnostics = [d for d in diagnostics if not _is_suppressed(d, suppressions)]
