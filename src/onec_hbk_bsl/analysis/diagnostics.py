@@ -149,6 +149,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL142",
         "BSL145",
         "BSL148",
+        "BSL179",
         # BSLLS Typo checks string literal contents.
         "BSL256",
         # Query-text rules fire on continuation lines (|...) inside string literals.
@@ -1601,20 +1602,20 @@ RULE_METADATA: dict[str, dict] = {
     "BSL175": {
         "name": "DeprecatedAttributes8312",
         "description": "Deprecated platform attribute used (removed in 8.3.12+)",
-        "severity": "WARNING",
+        "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["deprecated", "compatibility"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL176": {
         "name": "DeprecatedMethodCall",
         "description": "Deprecated platform method called — use the modern replacement",
-        "severity": "WARNING",
+        "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["deprecated"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL177": {
         "name": "DeprecatedMethods8310",
@@ -1623,7 +1624,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["deprecated", "compatibility"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL178": {
         "name": "DeprecatedMethods8317",
@@ -1641,7 +1642,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["deprecated", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL180": {
         "name": "DisableSafeMode",
@@ -1785,7 +1786,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["deprecated", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL196": {
         "name": "GlobalContextMethodCollision8312",
@@ -4992,6 +4993,118 @@ _RE_RETURN_VALUE = re.compile(
 
 # Comment line (BSL065 — export method comment check)
 _RE_COMMENT_LINE = re.compile(r"^\s*//")
+
+_BSL175_ATTR_REPLACEMENTS: dict[str, str] = {
+    "отображатьшкалу": "ОтображатьШкалы",
+    "showscale": "ShowScales",
+    "линиишкалы": "ЛинииШкал",
+    "цветшкалы": "ЦветШкал",
+    "отображатьподписишкалысерий": "ШкалаСерий.ПоложениеПодписейШкалы",
+    "showseriesscalelabels": "SeriesScale.ScaleLabelLocation",
+    "отображатьподписишкалыточек": "ШкалаТочек.ПоложениеПодписейШкалы",
+    "showpointsscalelabels": "PointsScale.ScaleLabelLocation",
+    "отображатьподписишкалызначений": "ШкалаЗначений.ПоложениеПодписейШкалы",
+    "showvaluesscalelabels": "ValuesScale.ScaleLabelLocation",
+    "отображатьлиниизначенийшкалы": "ШкалаЗначений.ОтображениеЛинийСетки",
+    "showscalevaluelines": "ValuesScale.GridLinesShowMode",
+    "форматшкалызначений": "ШкалаЗначений.ФорматПодписей",
+    "valuescaleformat": "ValuesScale.LabelFormat",
+    "ориентацияметок": "ШкалаТочек.ОриентацияПодписей",
+    "labelsorientation": "PointsScale.LabelOrientation",
+    "отображатьлегенду": (
+        "одно из свойств ОбластьЛегендыДиаграммы, "
+        "ОбластьЛегендыДиаграммыГанта или ОбластьЛегендыСводнойДиаграммы"
+    ),
+    "showlegend": (
+        "one of the properties of ChartLegendArea, GanttChartLegendArea or PivotChartLegendArea"
+    ),
+    "отображатьзаголовок": (
+        "одно из свойств ОбластьЗаголовкаДиаграммы, "
+        "ОбластьЗаголовкаДиаграммыГанта или ОбластьЗаголовкаСводнойДиаграммы"
+    ),
+    "showtitle": (
+        "one of the properties of ChartTitleArea, GanttChartTitleArea or PivotChartTitleArea"
+    ),
+    "палитрацветов": "ОписаниеПалитрыЦветов.ПалитраЦветов",
+    "colorpalette": "ColorPaletteDescription.ColorPalette",
+    "цветначалаградиентнойпалитры": "ОписаниеПалитрыЦветов.ЦветНачалаГрадиентнойПалитры",
+    "gradientpalettestartcolor": "ColorPaletteDescription.GradientPaletteStartColor",
+    "цветконцаградиентнойпалитры": "ОписаниеПалитрыЦветов.ЦветКонцаГрадиентнойПалитры",
+    "gradientpaletteendcolor": "ColorPaletteDescription.GradientPaletteEndColor",
+    "максимальноеколичествоцветовградиентнойпалитры": (
+        "ОписаниеПалитрыЦветов.МаксимальноеКоличествоЦветовГрадиентнойПалитры"
+    ),
+    "gradientpalettemaxcolors": "ColorPaletteDescription.GradientPaletteMaxColors",
+}
+_BSL175_METHOD_REPLACEMENTS: dict[str, str] = {
+    "получитьпалитру": "ОписаниеПалитрыЦветов.ПолучитьПалитру",
+    "getpalette": "ColorPaletteDescription.GetPalette",
+    "установитьпалитру": "ОписаниеПалитрыЦветов.УстановитьПалитру",
+    "setpalette": "ColorPaletteDescription.SetPalette",
+}
+_BSL175_ENUM_REPLACEMENTS: dict[str, str] = {
+    "ориентацияметокдиаграммы": "ОриентацияПодписейДиаграммы",
+    "horizontal": "AlwaysHorizontal",
+    "горизонтальная": "ГоризонтальнаяВсегда",
+}
+_BSL175_GLOBAL_METHODS = frozenset({"очиститьжурналрегистрации", "cleareventlog"})
+_RE_BSL175_ATTRIBUTE = re.compile(
+    r"\b(?:ОбластьПостроенияДиаграммы|ChartPlotArea|Диаграмма|Chart|"
+    r"ДиаграммаГанта|GanttChart|СводнаяДиаграмма|PivotChart)\.(?P<name>\w+)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL175_CHILD_FORM_ITEMS = re.compile(
+    r"\b(?:ГруппировкаПодчиненныхЭлементовФормы|ChildFormItemsGroup)\.(?P<name>\w+)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL175_GLOBAL_METHOD = re.compile(
+    r"\b(?P<name>ОчиститьЖурналРегистрации|ClearEventLog)\s*\(",
+    re.IGNORECASE,
+)
+_RE_BSL175_ENUM_NAME = re.compile(r"\b(?P<name>ОриентацияМетокДиаграммы)\b", re.IGNORECASE)
+
+_BSL177_METHOD_REPLACEMENTS: dict[str, str] = {
+    "установитькраткийзаголовокприложения": "КлиентскоеПриложение.УстановитьКраткийЗаголовок",
+    "получитькраткийзаголовокприложения": "КлиентскоеПриложение.ПолучитьКраткийЗаголовок",
+    "установитьзаголовокклиентскогоприложения": "КлиентскоеПриложение.УстановитьЗаголовок",
+    "получитьзаголовокклиентскогоприложения": "КлиентскоеПриложение.ПолучитьЗаголовок",
+    "текущийвариантосновногошрифтаклиентскогоприложения": (
+        "КлиентскоеПриложение.ТекущийВариантОсновногоШрифта"
+    ),
+    "текущийвариантинтерфейсаклиентскогоприложения": (
+        "КлиентскоеПриложение.ТекущийВариантИнтерфейса"
+    ),
+    "setshortapplicationcaption": "ClientApplication.SetShortCaption",
+    "getshortapplicationcaption": "ClientApplication.GetShortCaption",
+    "setclientapplicationcaption": "ClientApplication.SetCaption",
+    "getclientapplicationcaption": "ClientApplication.GetCaption",
+    "clientapplicationbasefontcurrentvariant": "ClientApplication.CurrentBaseFontVariant",
+    "clientapplicationinterfacecurrentvariant": "ClientApplication.CurrentInterfaceVariant",
+}
+_RE_BSL177_GLOBAL_METHOD = re.compile(
+    r"\b(?P<name>"
+    r"УстановитьКраткийЗаголовокПриложения|ПолучитьКраткийЗаголовокПриложения|"
+    r"УстановитьЗаголовокКлиентскогоПриложения|ПолучитьЗаголовокКлиентскогоПриложения|"
+    r"ТекущийВариантОсновногоШрифтаКлиентскогоПриложения|"
+    r"ТекущийВариантИнтерфейсаКлиентскогоПриложения|"
+    r"SetShortApplicationCaption|GetShortApplicationCaption|"
+    r"SetClientApplicationCaption|GetClientApplicationCaption|"
+    r"ClientApplicationBaseFontCurrentVariant|ClientApplicationInterfaceCurrentVariant"
+    r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL179_MANAGED_FORM = re.compile(
+    r"\b(?:Тип|Type)\s*\(\s*\"(?P<name>УправляемаяФорма|ManagedForm)\"\s*\)",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL195_GET_FORM = re.compile(
+    r"(?P<name>ПолучитьФорму|GetForm)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL176_DEPRECATED_DOC = re.compile(
+    r"(?:@deprecated\b|\bdeprecated\b|\bobsolete\b|\bустар(?:ел|ела|ело|евш\w*)\b)",
+    re.IGNORECASE | re.UNICODE,
+)
 # Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
 _RE_FORM_COMPILER_DIRECTIVE_LINE = re.compile(r"^\s*&\S+")
 
@@ -6563,11 +6676,11 @@ class DiagnosticEngine:
             # "BSL172" enabled — DataExchangeLoading implemented
             # "BSL173" enabled — DeletingCollectionItem implemented
             "BSL174",  # DenyIncompleteValues — TODO
-            "BSL175",  # DeprecatedAttributes8312 — TODO
-            "BSL176",  # DeprecatedMethodCall — TODO
-            "BSL177",  # DeprecatedMethods8310 — TODO
+            # "BSL175" enabled — DeprecatedAttributes8312 implemented
+            # "BSL176" enabled — DeprecatedMethodCall implemented
+            # "BSL177" enabled — DeprecatedMethods8310 implemented
             # "BSL178" enabled — DeprecatedMethods8317 implemented
-            "BSL179",  # DeprecatedTypeManagedForm — TODO
+            # "BSL179" enabled — DeprecatedTypeManagedForm implemented
             "BSL180",  # DisableSafeMode — TODO
             "BSL181",  # DuplicatedInsertionIntoCollection — TODO
             "BSL182",  # ExcessiveAutoTestCheck — TODO
@@ -6583,7 +6696,7 @@ class DiagnosticEngine:
             # "BSL192" enabled — FunctionNameStartsWithGet implemented
             # "BSL193" enabled — FunctionOutParameter implemented
             # "BSL194" enabled — FunctionReturnsSamePrimitive implemented
-            "BSL195",  # GetFormMethod — TODO
+            # "BSL195" enabled — GetFormMethod implemented
             "BSL196",  # GlobalContextMethodCollision8312 — TODO
             # "BSL197" enabled — IfElseDuplicatedCodeBlock implemented
             # "BSL198" enabled — IfElseDuplicatedCondition implemented
@@ -6901,6 +7014,7 @@ class DiagnosticEngine:
         _proc_node_map: dict[tuple[str, int, str], Any] = (
             snapshot.proc_node_map if tree_is_ts else {}
         )
+        _symbols = snapshot.symbols
         _calls = snapshot.calls
 
         _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
@@ -7630,6 +7744,16 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL200"):
             _rule_tasks.append(
                 ("BSL200", lambda: self._rule_bsl200_incorrect_line_break(path, lines))
+            )
+        _bsl175_176_177_179_195 = ("BSL175", "BSL176", "BSL177", "BSL179", "BSL195")
+        if any(self._rule_enabled(c) for c in _bsl175_176_177_179_195):
+            _rule_tasks.append(
+                (
+                    "BSL175_176_177_179_195",
+                    lambda: self._rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
+                        path, lines, _symbols, _calls, _bsl175_176_177_179_195
+                    ),
+                )
             )
         _bsl220_235_269_273 = ("BSL220", "BSL235", "BSL269", "BSL273")
         if any(self._rule_enabled(c) for c in _bsl220_235_269_273):
@@ -15428,6 +15552,220 @@ class DiagnosticEngine:
                         ),
                     )
                 )
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL175 / BSL176 / BSL177 / BSL179 / BSL195 — deprecated API pool
+    # ------------------------------------------------------------------
+
+    def _rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
+        self,
+        path: str,
+        lines: list[str],
+        symbols: list[Any],
+        calls: list[Any],
+        enabled_codes: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        """Batch deprecated API diagnostics sharing one lightweight source pass."""
+        enabled = set(enabled_codes)
+        diags: list[Diagnostic] = []
+
+        deprecated_locals: dict[str, str] = {}
+        deprecated_callers: set[str] = set()
+        if "BSL176" in enabled:
+            for sym in symbols:
+                if getattr(sym, "kind", "") not in {"procedure", "function"}:
+                    continue
+                doc_comment = getattr(sym, "doc_comment", "") or ""
+                if not _RE_BSL176_DEPRECATED_DOC.search(doc_comment):
+                    continue
+                name = getattr(sym, "name", "")
+                if not name:
+                    continue
+                deprecated_locals[name.casefold()] = name
+                deprecated_callers.add(name.casefold())
+
+        for idx, line in enumerate(lines):
+            if _RE_LINE_COMMENT.match(line):
+                continue
+            clean = _mask_double_quoted_strings_preserve_len(line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+                line = line[:comment_pos]
+
+            if "BSL175" in enabled:
+                for match in _RE_BSL175_ATTRIBUTE.finditer(clean):
+                    name = match.group("name")
+                    replacement = _BSL175_ATTR_REPLACEMENTS.get(name.casefold())
+                    if not replacement:
+                        continue
+                    if name.casefold() in _BSL175_METHOD_REPLACEMENTS:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=match.start("name"),
+                                end_line=idx + 1,
+                                end_character=match.end("name"),
+                                severity=Severity.INFORMATION,
+                                code="BSL175",
+                                message=(
+                                    f'Метод "{name}" устарел. Вместо него стоит использовать '
+                                    f'"{replacement}"'
+                                ),
+                            )
+                        )
+                    else:
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=match.start("name"),
+                                end_line=idx + 1,
+                                end_character=match.end("name"),
+                                severity=Severity.INFORMATION,
+                                code="BSL175",
+                                message=(
+                                    f'Атрибут "{name}" устарел. Вместо него стоит использовать '
+                                    f"{replacement}"
+                                ),
+                            )
+                        )
+                for match in _RE_BSL175_CHILD_FORM_ITEMS.finditer(clean):
+                    name = match.group("name")
+                    replacement = _BSL175_ENUM_REPLACEMENTS.get(name.casefold())
+                    if not replacement:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL175",
+                            message=(
+                                f'Используется старое наименование "{name}". Вместо него '
+                                f'необходимо использовать "{replacement}"'
+                            ),
+                        )
+                    )
+                for match in _RE_BSL175_ENUM_NAME.finditer(clean):
+                    name = match.group("name")
+                    replacement = _BSL175_ENUM_REPLACEMENTS.get(name.casefold())
+                    if not replacement:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL175",
+                            message=(
+                                f'Используется старое наименование "{name}". Вместо него '
+                                f'необходимо использовать "{replacement}"'
+                            ),
+                        )
+                    )
+                for match in _RE_BSL175_GLOBAL_METHOD.finditer(clean):
+                    name = match.group("name")
+                    if name.casefold() not in _BSL175_GLOBAL_METHODS:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL175",
+                            message=f'Метод "{name}" устарел и больше не используется',
+                        )
+                    )
+
+            if "BSL177" in enabled:
+                for match in _RE_BSL177_GLOBAL_METHOD.finditer(clean):
+                    name = match.group("name")
+                    replacement = _BSL177_METHOD_REPLACEMENTS.get(name.casefold())
+                    if not replacement:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL177",
+                            message=(
+                                f'Метод "{name}" устарел. Следует использовать "{replacement}".'
+                            ),
+                        )
+                    )
+
+            if "BSL179" in enabled:
+                for match in _RE_BSL179_MANAGED_FORM.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start(),
+                            end_line=idx + 1,
+                            end_character=match.end(),
+                            severity=Severity.INFORMATION,
+                            code="BSL179",
+                            message='Замените устаревшее использование типа "УправляемаяФорма"',
+                        )
+                    )
+
+            if "BSL195" in enabled:
+                for match in _RE_BSL195_GET_FORM.finditer(clean):
+                    name = match.group("name")
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL195",
+                            message="Не рекомендуемое использование метода ПолучитьФорму",
+                        )
+                    )
+
+        if "BSL176" in enabled and deprecated_locals:
+            for call in calls:
+                callee_name = getattr(call, "callee_name", "")
+                if not callee_name:
+                    continue
+                callee_cf = callee_name.casefold()
+                if callee_cf not in deprecated_locals:
+                    continue
+                caller_name = getattr(call, "caller_name", None)
+                if caller_name and caller_name.casefold() in deprecated_callers:
+                    continue
+                start_char = int(getattr(call, "caller_character", 0))
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=int(getattr(call, "caller_line", 1)),
+                        character=start_char,
+                        end_line=int(getattr(call, "caller_line", 1)),
+                        end_character=start_char + len(callee_name),
+                        severity=Severity.INFORMATION,
+                        code="BSL176",
+                        message=f'Удалите вызов устаревшего метода "{callee_name}".',
+                    )
+                )
+
         return diags
 
     # ------------------------------------------------------------------

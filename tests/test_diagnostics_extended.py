@@ -151,6 +151,78 @@ class TestBsl237RedundantAccessToObjectParity:
 
 
 # ---------------------------------------------------------------------------
+# BSL175 / BSL176 / BSL177 / BSL179 / BSL195 — deprecated API parity
+# ---------------------------------------------------------------------------
+
+
+class TestDeprecatedApiParityBatch:
+    def test_bsl175_deprecated_chart_attribute_and_global_method(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Значение = ОбластьПостроенияДиаграммы.ОтображатьШкалу;
+                ОчиститьЖурналРегистрации(Отбор);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL175"})
+        bsl175 = [d for d in diags if d.code == "BSL175"]
+        assert len(bsl175) == 2
+        assert any("ОтображатьШкалу" in d.message for d in bsl175)
+        assert any("ОчиститьЖурналРегистрации" in d.message for d in bsl175)
+
+    def test_bsl176_same_file_deprecated_method_call(self, tmp_path: Path) -> None:
+        content = """\
+            // Deprecated. Use НовыйМетод instead.
+            Процедура СтарыйМетод()
+            КонецПроцедуры
+
+            Процедура НовыйМетод()
+                СтарыйМетод();
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL176"})
+        bsl176 = [d for d in diags if d.code == "BSL176"]
+        assert len(bsl176) == 1
+        assert bsl176[0].line == 6
+        assert "СтарыйМетод" in bsl176[0].message
+
+    def test_bsl177_deprecated_client_app_method(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Test()
+                test = GetShortApplicationCaption();
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL177"})
+        bsl177 = [d for d in diags if d.code == "BSL177"]
+        assert len(bsl177) == 1
+        assert "ClientApplication.GetShortCaption" in bsl177[0].message
+
+    def test_bsl179_managed_form_type(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Test()
+                Если Type(Form) = Type("ManagedForm") Тогда
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL179"})
+        bsl179 = [d for d in diags if d.code == "BSL179"]
+        assert len(bsl179) == 1
+        assert bsl179[0].line == 2
+
+    def test_bsl195_get_form_method(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Форма = ПолучитьФорму("Обработка.УниверсальныйРедактор.Форма");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL195"})
+        bsl195 = [d for d in diags if d.code == "BSL195"]
+        assert len(bsl195) == 1
+        assert bsl195[0].line == 2
+        assert bsl195[0].message == "Не рекомендуемое использование метода ПолучитьФорму"
+
+
+# ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------
 
