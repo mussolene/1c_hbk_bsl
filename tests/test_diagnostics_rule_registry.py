@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA, DiagnosticEngine
-from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
+from onec_hbk_bsl.analysis.diagnostic.registry import (
     RulePhase,
     build_enabled_invoke_snapshot,
     infer_rule_invoke,
 )
+from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA, DiagnosticEngine
 
 
 def test_infer_explicit_bsl014_line() -> None:

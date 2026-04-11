@@ -83,7 +83,7 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
 )
 from onec_hbk_bsl.analysis.bslls_parity import merge_profile_with_select
 from onec_hbk_bsl.analysis.diagnostics_bsl148 import bsl148_function_name_spans
-from onec_hbk_bsl.analysis.diagnostics_cst import (
+from onec_hbk_bsl.analysis.diagnostic.cst import (
     diagnostics_bsl004_from_tree,
     diagnostics_bsl018_from_tree,
     diagnostics_bsl060_from_tree,
@@ -96,10 +96,10 @@ from onec_hbk_bsl.analysis.diagnostics_cst import (
     ts_elseif_then_branch_empty,
     ts_if_main_then_branch_empty,
 )
-from onec_hbk_bsl.analysis.diagnostics_cst import (
+from onec_hbk_bsl.analysis.diagnostic.cst import (
     ts_tree_ok_for_rules as _ts_tree_ok_for_rules,
 )
-from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
+from onec_hbk_bsl.analysis.diagnostic.registry import (
     build_enabled_invoke_snapshot,
 )
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
