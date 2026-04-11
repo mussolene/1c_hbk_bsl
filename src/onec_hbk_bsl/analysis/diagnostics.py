@@ -113,6 +113,9 @@ from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+from onec_hbk_bsl.analysis.passes.method_pass import (
+    extend_method_contract_rule_tasks,
+)
 from onec_hbk_bsl.analysis.passes.query_pass import (
     extend_query_join_rule_tasks,
     extend_query_metadata_rule_tasks,
@@ -8146,15 +8149,6 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL230", lambda: self._rule_bsl230_pairing_broken_transaction(path, tree))
             )
-        if self._rule_enabled("BSL240"):
-            _rule_tasks.append(
-                (
-                    "BSL240",
-                    lambda: self._rule_bsl240_rewrite_method_parameter(
-                        path, lines, procs, tree, _proc_node_map
-                    ),
-                )
-            )
         if self._rule_enabled("BSL263"):
             _rule_tasks.append(
                 ("BSL263", lambda: self._rule_bsl263_useless_for_each(path, lines, procs))
@@ -8219,16 +8213,17 @@ class DiagnosticEngine:
             lines=lines,
             query_blocks=_query_blocks,
         )
-        _bsl192_193_194_228_266 = ("BSL192", "BSL193", "BSL194", "BSL228", "BSL266")
-        if any(self._rule_enabled(c) for c in _bsl192_193_194_228_266):
-            _rule_tasks.append(
-                (
-                    "BSL192_193_194_228_266",
-                    lambda: self._rule_bsl192_193_194_228_266_method_contract_diagnostics(
-                        path, lines, procs, _bsl192_193_194_228_266
-                    ),
-                )
-            )
+        extend_method_contract_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            content=content,
+            lines=lines,
+            procs=procs,
+            tree=tree,
+            calls=_calls,
+            proc_node_map=_proc_node_map,
+        )
         _bsl171_204_217_248_251_252_259_268 = (
             "BSL171",
             "BSL204",
@@ -8248,15 +8243,6 @@ class DiagnosticEngine:
                     ),
                 )
             )
-        if self._rule_enabled("BSL212"):
-            _rule_tasks.append(
-                (
-                    "BSL212",
-                    lambda: self._rule_bsl212_missed_required_parameter(
-                        path, content, lines, procs, _calls
-                    ),
-                )
-            )
         extend_query_join_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -8264,13 +8250,6 @@ class DiagnosticEngine:
             lines=lines,
             query_blocks=_query_blocks,
         )
-        if self._rule_enabled("BSL215"):
-            _rule_tasks.append(
-                (
-                    "BSL215",
-                    lambda: self._rule_bsl215_missing_parameter_description(path, lines, procs),
-                )
-            )
         _bsl202_205_223_243_249 = ("BSL202", "BSL205", "BSL223", "BSL243", "BSL249")
         if any(self._rule_enabled(c) for c in _bsl202_205_223_243_249):
             _rule_tasks.append(
@@ -8278,16 +8257,6 @@ class DiagnosticEngine:
                     "BSL202_205_223_243_249",
                     lambda: self._rule_bsl202_205_223_243_249_light_call_pool(
                         path, lines, tree, _bsl202_205_223_243_249
-                    ),
-                )
-            )
-        _bsl221_222_239_271_276 = ("BSL221", "BSL222", "BSL239", "BSL271", "BSL276")
-        if any(self._rule_enabled(c) for c in _bsl221_222_239_271_276):
-            _rule_tasks.append(
-                (
-                    "BSL221_222_239_271_276",
-                    lambda: self._rule_bsl221_222_239_271_276_light_pool(
-                        path, lines, tree, procs, _bsl221_222_239_271_276
                     ),
                 )
             )
@@ -8359,13 +8328,6 @@ class DiagnosticEngine:
                     ),
                 )
             )
-        if self._rule_enabled("BSL224"):
-            _rule_tasks.append(
-                (
-                    "BSL224",
-                    lambda: self._rule_bsl224_nested_function_in_parameters(path, lines, tree),
-                )
-            )
         if self._rule_enabled("BSL225"):
             _rule_tasks.append(
                 (
@@ -8381,10 +8343,6 @@ class DiagnosticEngine:
                     "BSL218",
                     lambda: self._rule_bsl218_missing_temporary_file_deletion(path, lines, tree),
                 )
-            )
-        if self._rule_enabled("BSL233"):
-            _rule_tasks.append(
-                ("BSL233", lambda: self._rule_bsl233_public_methods_description(path, lines, procs))
             )
         if self._rule_enabled("BSL234"):
             _rule_tasks.append(
@@ -8408,10 +8366,6 @@ class DiagnosticEngine:
             lines=lines,
             procs=procs,
         )
-        if self._rule_enabled("BSL254"):
-            _rule_tasks.append(
-                ("BSL254", lambda: self._rule_bsl254_transferring_parameters(path, lines, procs))
-            )
         if self._rule_enabled("BSL255"):
             _rule_tasks.append(("BSL255", lambda: self._rule_bsl255_try_number(path, lines)))
         if self._rule_enabled("BSL277"):
