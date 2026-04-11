@@ -153,6 +153,18 @@ from onec_hbk_bsl.analysis.rules.method_contract_rules import (
     run_bsl240_rewrite_method_parameter,
     run_bsl254_transferring_parameters,
 )
+from onec_hbk_bsl.analysis.rules.query_runtime_rules import (
+    run_bsl149_assign_alias_fields_in_query,
+    run_bsl210_logical_or_in_where,
+    run_bsl225_number_of_values_in_structure_constructor,
+    run_bsl230_pairing_broken_transaction,
+    run_bsl234_query_nested_fields_by_dot,
+    run_bsl237_redundant_access_to_object,
+    run_bsl245_server_side_export_form_method,
+    run_bsl258_union_without_all,
+    run_bsl262_usage_write_log_event,
+    run_bsl277_wrong_use_of_rollback_transaction,
+)
 from onec_hbk_bsl.analysis.rules.runtime_tail_rules import (
     run_bsl178_deprecated_methods_8317,
     run_bsl186_extra_commas,
@@ -14236,249 +14248,14 @@ class DiagnosticEngine:
     def _rule_bsl149_assign_alias_fields_in_query(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        """Flag SELECT fields in embedded queries that lack an explicit КАК/AS alias."""
-        diags: list[Diagnostic] = []
-        # State machine across continuation lines
-        in_query = False  # inside a multi-line query string
-        in_select = False  # currently collecting SELECT field lines
-        skip_select = False  # next SELECT's fields are skipped (after UNION)
-        paren_depth = 0  # parens depth for nested subqueries
-
-        for idx, line in enumerate(lines):
-            stripped = line.rstrip()
-
-            # ── Non-continuation line: BSL code ──────────────────────────────
-            if not _RE_BSL149_CONTINUATION.match(stripped):
-                # Reset query state when BSL code line doesn't open a query
-                if in_query:
-                    in_query = False
-                    in_select = False
-                    skip_select = False
-                    paren_depth = 0
-                m_sel = _RE_BSL149_SELECT.search(stripped)
-                if m_sel:
-                    tail = stripped[m_sel.end() :]
-                    m_clause = _RE_BSL149_CLAUSE_AFTER_FIELDS.search(tail)
-                    if m_clause:
-                        field_region = tail[: m_clause.start()]
-                        qpos = field_region.find('"')
-                        if qpos >= 0:
-                            field_region = field_region[:qpos]
-                        field_region = _RE_BSL149_INLINE_COMMENT.sub("", field_region).strip()
-                        _bsl149_append_missing_alias_diags(path, idx, line, field_region, diags)
-                    else:
-                        # Multiline text: "ВЫБРАТЬ … then |… continuation lines
-                        in_query = True
-                        in_select = True
-                        skip_select = False
-                        paren_depth = 0
-                continue
-
-            # ── Continuation line |... ────────────────────────────────────────
-            if not in_query:
-                # |ВЫБРАТЬ on a continuation line starts a new query block
-                # (e.g. Новый Запрос("  on the BSL line, |ВЫБРАТЬ on next)
-                if _RE_BSL149_SELECT.search(stripped):
-                    in_query = True
-                    in_select = True
-                    skip_select = False
-                    paren_depth = 0
-                else:
-                    continue
-
-            # Strip leading whitespace + | character
-            raw_content = stripped.lstrip()
-            if raw_content.startswith("|"):
-                raw_content = raw_content[1:]
-
-            # Strip inline query comment (// ...) before any processing
-            content = _RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip()
-
-            # Query separator ; — next query in the same string starts fresh
-            if ";" in content:
-                in_select = False
-                skip_select = False
-                paren_depth = 0
-                # If ВЫБРАТЬ follows the ; on the same piece, handle below
-                after_semi = content[content.index(";") + 1 :].strip()
-                if _RE_BSL149_SELECT.search(after_semi):
-                    in_select = not skip_select
-                    skip_select = False
-                continue
-
-            # String concatenation break: content still has a quote → query ended
-            if '"' in content:
-                in_query = False
-                in_select = False
-                skip_select = False
-                paren_depth = 0
-                continue
-
-            # Empty line or pure comment line
-            if not content:
-                continue
-
-            # UNION keyword → skip the NEXT SELECT's fields
-            if _RE_BSL149_UNION.search(content):
-                in_select = False
-                skip_select = True
-                continue
-
-            # SELECT/ВЫБРАТЬ on a continuation line (including nested)
-            if _RE_BSL149_SELECT.search(content):
-                m = _RE_BSL149_SELECT.search(content)
-                # Count parens before the SELECT to determine nesting level
-                before_select = content[: m.start()]
-                paren_depth += before_select.count("(") - before_select.count(")")
-                if paren_depth > 0:
-                    # Nested subquery — always check its fields (reset skip)
-                    in_select = True
-                else:
-                    # Top-level SELECT in union chain
-                    in_select = not skip_select
-                    skip_select = False
-                continue
-
-            # Clause that ends the SELECT field list (FROM / WHERE / ...)
-            if _RE_BSL149_CLAUSE_END.match(content):
-                # Track closing parens from content before clause keyword
-                paren_depth += content.count("(") - content.count(")")
-                if paren_depth < 0:
-                    paren_depth = 0
-                in_select = False
-                continue
-
-            # Closing paren — may end a nested subquery
-            if ")" in content and paren_depth > 0:
-                paren_depth -= content.count(")")
-                paren_depth += content.count("(")
-                if paren_depth < 0:
-                    paren_depth = 0
-                in_select = False
-                continue
-
-            if not in_select:
-                continue
-
-            # ── Check fields on this line ─────────────────────────────────────
-            _bsl149_append_missing_alias_diags(path, idx, line, content, diags)
-
-        return diags
+        return run_bsl149_assign_alias_fields_in_query(path, lines)
 
     # ------------------------------------------------------------------
     # BSL210 — LogicalOrInTheWhereSectionOfQuery
     # ------------------------------------------------------------------
 
     def _rule_bsl210_logical_or_in_where(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Flag ИЛИ/OR inside embedded-query WHERE sections (BSLLS parity heuristic)."""
-        diags: list[Diagnostic] = []
-        in_query = False
-        gp = 0
-        where_stack: list[int] = []
-
-        for idx, line in enumerate(lines):
-            stripped = line.rstrip()
-            if not _RE_BSL149_CONTINUATION.match(stripped):
-                if in_query:
-                    in_query = False
-                    gp = 0
-                    where_stack.clear()
-                diags.extend(self._bsl210_scan_line_literal_queries(path, idx, line))
-                m_sel = _RE_BSL149_SELECT.search(stripped)
-                if m_sel:
-                    tail = stripped[m_sel.end() :]
-                    if not _RE_BSL149_CLAUSE_AFTER_FIELDS.search(tail):
-                        in_query = True
-                        gp = 0
-                        where_stack.clear()
-                continue
-
-            if not in_query:
-                if _RE_BSL149_SELECT.search(stripped):
-                    in_query = True
-                    gp = 0
-                    where_stack.clear()
-                else:
-                    continue
-
-            raw_content = stripped.lstrip()
-            if raw_content.startswith("|"):
-                raw_content = raw_content[1:]
-            content = _RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip()
-            content = content.lstrip()
-
-            line_rs = line.rstrip()
-            pipe_pos = line_rs.find("|")
-            if pipe_pos < 0:
-                continue
-            after_pipe = line_rs[pipe_pos + 1 :]
-            leading_ws = len(after_pipe) - len(after_pipe.lstrip())
-            content_base = pipe_pos + 1 + leading_ws
-
-            quote_pos = content.find('"')
-            ended_query = quote_pos >= 0
-            content_scan = content[:quote_pos].rstrip() if ended_query else content
-
-            tail_has_semi = ";" in content_scan
-            head = (
-                content_scan[: content_scan.index(";")].rstrip() if tail_has_semi else content_scan
-            )
-
-            if tail_has_semi and not head:
-                where_stack.clear()
-                gp = 0
-                if ended_query:
-                    in_query = False
-                continue
-
-            if not head:
-                if ended_query:
-                    in_query = False
-                    gp = 0
-                    where_stack.clear()
-                continue
-
-            if _RE_BSL149_UNION.search(head):
-                where_stack.clear()
-                continue
-
-            if where_stack and _RE_BSL210_LINE_ENDS_WHERE.match(head):
-                if gp == where_stack[-1]:
-                    where_stack.pop()
-
-            if _RE_BSL210_LINE_IS_WHERE.match(head):
-                where_stack.append(gp)
-
-            if where_stack:
-                for om in _RE_BSL210_OR.finditer(head):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=content_base + om.start(),
-                            end_line=idx + 1,
-                            end_character=content_base + om.end(),
-                            severity=Severity.WARNING,
-                            code="BSL210",
-                            message=_BSL210_MESSAGE,
-                        )
-                    )
-
-            gp += head.count("(") - head.count(")")
-            if gp < 0:
-                gp = 0
-            while where_stack and gp < where_stack[-1]:
-                where_stack.pop()
-
-            if tail_has_semi:
-                where_stack.clear()
-                gp = 0
-            if ended_query:
-                in_query = False
-                gp = 0
-                where_stack.clear()
-
-        return diags
+        return run_bsl210_logical_or_in_where(path, lines)
 
     def _bsl210_scan_line_literal_queries(self, path: str, idx: int, line: str) -> list[Diagnostic]:
         """One-line (or same-line) literals: ВЫБРАТЬ ... ГДЕ ... ИЛИ ..."""
@@ -16048,42 +15825,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl258_union_without_all(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Detect ОБЪЕДИНИТЬ/UNION without ALL in query strings."""
-        diags: list[Diagnostic] = []
-        # ОБЪЕДИНИТЬ not followed by ВСЕ (after optional whitespace)
-        _re_union = re.compile(
-            r"\b(?:ОБЪЕДИНИТЬ|UNION)\b(?!\s+(?:ВСЕ|ALL)\b)",
-            re.IGNORECASE,
-        )
-        in_query = False
-        for idx, line in enumerate(lines):
-            stripped = line.strip()
-            # Detect query string start/end heuristic
-            if '|"' in line or line.strip().startswith("|"):
-                in_query = True
-            if stripped.endswith('";') or (stripped.endswith('"') and "ВЫБРАТЬ" not in stripped):
-                in_query = False
-
-            # Check for UNION/ОБЪЕДИНИТЬ
-            check_line = line if in_query else line
-            m = _re_union.search(check_line)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.WARNING,
-                        code="BSL258",
-                        message=(
-                            "«ОБЪЕДИНИТЬ» без «ВСЕ» выполняет дедупликацию — "
-                            "используйте «ОБЪЕДИНИТЬ ВСЕ» если дубли допустимы"
-                        ),
-                    )
-                )
-        return diags
+        return run_bsl258_union_without_all(path, lines)
 
     # ------------------------------------------------------------------
     # BSL153 — CanonicalSpellingKeywords
@@ -17972,58 +17714,7 @@ class DiagnosticEngine:
     def _rule_bsl225_number_of_values_in_structure_constructor(
         self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
-        """BSLLS parity: New Structure/FixedStructure with more than 4 total arguments."""
-        root = getattr(tree, "root_node", None)
-        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-            return []
-
-        type_names = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
-        diags: list[Diagnostic] = []
-
-        for node in _ts_walk(root):
-            if getattr(node, "type", None) != "new_expression":
-                continue
-            type_node = _ts_child_of_type(node, "identifier")
-            if type_node is None:
-                continue
-            type_name = _ts_node_text(type_node).casefold()
-            if type_name not in type_names:
-                continue
-            args = _ts_child_of_type(node, "arguments")
-            if args is None:
-                continue
-            arg_count = len(
-                [
-                    child
-                    for child in getattr(args, "children", []) or []
-                    if child.type == "expression"
-                ]
-            )
-            if arg_count <= 4:
-                continue
-
-            start_line_idx = node.start_point[0]
-            start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
-            start_char = utf8_byte_offset_to_lsp_character(start_line_text, node.start_point[1])
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=start_line_idx + 1,
-                    character=start_char,
-                    end_line=start_line_idx + 1,
-                    end_character=min(
-                        len(start_line_text), start_char + len(_ts_node_text(type_node))
-                    ),
-                    severity=Severity.INFORMATION,
-                    code="BSL225",
-                    message=(
-                        "Сократите количество значений, передаваемых в конструктор "
-                        "Структура/Structure"
-                    ),
-                )
-            )
-
-        return diags
+        return run_bsl225_number_of_values_in_structure_constructor(path, lines, tree)
 
     # ------------------------------------------------------------------
     # BSL234 — QueryNestedFieldsByDot
@@ -18032,59 +17723,7 @@ class DiagnosticEngine:
     def _rule_bsl234_query_nested_fields_by_dot(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        """Detect chained query fields like ``Alias.Field.SubField``."""
-        diags: list[Diagnostic] = []
-        chain_re = re.compile(r"(?<![\w.])([A-Za-zА-Яа-я_]\w*(?:\.[A-Za-zА-Яа-я_]\w*){2,})")
-        value_re = re.compile(r"(?:ЗНАЧЕНИЕ|VALUE)\s*\(", re.IGNORECASE)
-
-        def _mask_value_calls(text: str) -> str:
-            chars = list(text)
-            pos = 0
-            while True:
-                match = value_re.search(text, pos)
-                if match is None:
-                    break
-                depth = 0
-                end = match.end()
-                while end < len(text):
-                    ch = text[end]
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        if depth == 0:
-                            end += 1
-                            break
-                        depth -= 1
-                    end += 1
-                for idx in range(match.start(), min(end, len(chars))):
-                    chars[idx] = " "
-                pos = end
-            return "".join(chars)
-
-        for line_no, line in enumerate(lines, start=1):
-            stripped = line.lstrip()
-            if not stripped.startswith("|"):
-                continue
-            masked = _mask_value_calls(line)
-            for match in chain_re.finditer(masked):
-                trailing = masked[match.end(1) :]
-                if re.match(r"^\s+(?:КАК|AS)\b", trailing, re.IGNORECASE):
-                    continue
-                if re.match(r"^\s*\(", trailing):
-                    continue
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=line_no,
-                        character=match.start(1),
-                        end_line=line_no,
-                        end_character=match.end(1),
-                        severity=Severity.WARNING,
-                        code="BSL234",
-                        message="Обнаружено разыменование ссылочного поля",
-                    )
-                )
-        return diags
+        return run_bsl234_query_nested_fields_by_dot(path, lines)
 
     # ------------------------------------------------------------------
     # BSL237 — RedundantAccessToObject
@@ -18093,45 +17732,7 @@ class DiagnosticEngine:
     def _rule_bsl237_redundant_access_to_object(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        """Detect redundant access through ЭтотОбъект/ThisObject or module object prefix."""
-        low = path.replace("\\", "/").lower()
-        supported = (
-            low.endswith("/ext/objectmodule.bsl")
-            or low.endswith("/ext/recordsetmodule.bsl")
-            or low.endswith("/ext/managermodule.bsl")
-            or path_is_likely_form_module_bsl(path)
-            or low.endswith("/ext/module.bsl")
-        )
-        if not supported:
-            return []
-
-        diags: list[Diagnostic] = []
-        patterns = _redundant_access_prefix_patterns(path)
-        for line_no, line in enumerate(lines, start=1):
-            if _RE_LINE_COMMENT.match(line):
-                continue
-            clean = _mask_double_quoted_strings_preserve_len(line)
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
-                clean = clean[:comment_pos]
-            for pattern in patterns:
-                for match in pattern.finditer(clean):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=line_no,
-                            character=match.start(),
-                            end_line=line_no,
-                            end_character=match.end() - 1,
-                            severity=Severity.INFORMATION,
-                            code="BSL237",
-                            message=(
-                                "Избавьтесь от избыточного обращения внутри модуля "
-                                "через его имя или псевдоним ЭтотОбъект"
-                            ),
-                        )
-                    )
-        return diags
+        return run_bsl237_redundant_access_to_object(path, lines)
 
     # ------------------------------------------------------------------
     # BSL245 — ServerSideExportFormMethod
@@ -18140,129 +17741,14 @@ class DiagnosticEngine:
     def _rule_bsl245_server_side_export_form_method(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        """Detect export methods in form modules that are not client-only."""
-        if not path_is_likely_form_module_bsl(path):
-            return []
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            if not proc.is_export:
-                continue
-            if _procedure_compiler_execution_context(lines, proc) == "client":
-                continue
-            start_char, end_char = _proc_name_span(lines, proc)
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=proc.start_idx + 1,
-                    character=start_char,
-                    end_line=proc.start_idx + 1,
-                    end_character=end_char,
-                    severity=Severity.WARNING,
-                    code="BSL245",
-                    message="Запрещено создавать серверные экспортные методы в форме",
-                )
-            )
-        return diags
+        return run_bsl245_server_side_export_form_method(path, lines, procs)
 
     # ------------------------------------------------------------------
     # BSL230 — PairingBrokenTransaction
     # ------------------------------------------------------------------
 
     def _rule_bsl230_pairing_broken_transaction(self, path: str, tree: Any) -> list[Diagnostic]:
-        """Detect broken Begin/Commit and Begin/Rollback pairing like BSLLS."""
-        root = getattr(tree, "root_node", None)
-        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-            return []
-
-        line_texts = _ts_node_text(root).splitlines()
-        diags: list[Diagnostic] = []
-        begin_names = {"начатьтранзакцию", "begintransaction"}
-
-        pair_specs = (
-            (
-                {
-                    "начатьтранзакцию",
-                    "begintransaction",
-                    "зафиксироватьтранзакцию",
-                    "committransaction",
-                },
-                {
-                    "начатьтранзакцию": "ЗафиксироватьТранзакцию",
-                    "begintransaction": "CommitTransaction",
-                    "зафиксироватьтранзакцию": "НачатьТранзакцию",
-                    "committransaction": "BeginTransaction",
-                },
-            ),
-            (
-                {
-                    "начатьтранзакцию",
-                    "begintransaction",
-                    "отменитьтранзакцию",
-                    "rollbacktransaction",
-                },
-                {
-                    "начатьтранзакцию": "ОтменитьТранзакцию",
-                    "begintransaction": "RollbackTransaction",
-                    "отменитьтранзакцию": "НачатьТранзакцию",
-                    "rollbacktransaction": "BeginTransaction",
-                },
-            ),
-        )
-
-        proc_nodes = [
-            node
-            for node in _ts_walk(root)
-            if getattr(node, "type", None) in {"procedure_definition", "function_definition"}
-        ]
-
-        for proc_node in proc_nodes:
-            calls = _ts_global_method_calls(proc_node, line_texts)
-            if not calls:
-                continue
-            for allowed_names, pair_names in pair_specs:
-                begin_stack: list[dict[str, Any]] = []
-                for call in calls:
-                    name_cf = str(call["name"]).casefold()
-                    if name_cf not in allowed_names:
-                        continue
-                    if name_cf in begin_names:
-                        begin_stack.append(call)
-                    elif begin_stack:
-                        begin_stack.pop()
-                    else:
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=call["line"],
-                                character=call["character"],
-                                end_line=call["line"],
-                                end_character=call["end_character"],
-                                severity=Severity.ERROR,
-                                code="BSL230",
-                                message=(
-                                    f'Отсутствует парный вызов "{pair_names[name_cf]}" '
-                                    f'для метода "{call["name"]}"'
-                                ),
-                            )
-                        )
-                for call in begin_stack:
-                    name_cf = str(call["name"]).casefold()
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=call["line"],
-                            character=call["character"],
-                            end_line=call["line"],
-                            end_character=call["end_character"],
-                            severity=Severity.ERROR,
-                            code="BSL230",
-                            message=(
-                                f'Отсутствует парный вызов "{pair_names[name_cf]}" '
-                                f'для метода "{call["name"]}"'
-                            ),
-                        )
-                    )
-        return diags
+        return run_bsl230_pairing_broken_transaction(path, tree)
 
     # ------------------------------------------------------------------
     # BSL277 — WrongUseOfRollbackTransactionMethod
@@ -18271,169 +17757,14 @@ class DiagnosticEngine:
     def _rule_bsl277_wrong_use_of_rollback_transaction(
         self, path: str, tree: Any
     ) -> list[Diagnostic]:
-        """Detect RollbackTransaction/ОтменитьТранзакцию outside except or not first there."""
-        root = getattr(tree, "root_node", None)
-        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-            return []
-
-        line_texts = _ts_node_text(root).splitlines()
-        rollback_names = {"отменитьтранзакцию", "rollbacktransaction"}
-        diags: list[Diagnostic] = []
-        rollback_in_except_ids: set[int] = set()
-
-        for node in _ts_walk(root):
-            if getattr(node, "type", None) != "try_statement":
-                continue
-            children = list(getattr(node, "children", []) or [])
-            except_idx = next(
-                (
-                    i
-                    for i, child in enumerate(children)
-                    if getattr(child, "type", None) == "EXCEPT_KEYWORD"
-                ),
-                None,
-            )
-            endtry_idx = next(
-                (
-                    i
-                    for i, child in enumerate(children)
-                    if getattr(child, "type", None) == "ENDTRY_KEYWORD"
-                ),
-                None,
-            )
-            if except_idx is None:
-                continue
-            if endtry_idx is None:
-                endtry_idx = len(children)
-            except_calls: list[dict[str, Any]] = []
-            for child in children[except_idx + 1 : endtry_idx]:
-                except_calls.extend(_ts_global_method_calls(child, line_texts))
-            if not except_calls:
-                continue
-            rollback_is_first = str(except_calls[0]["name"]).casefold() in rollback_names
-            for call in except_calls:
-                name_cf = str(call["name"]).casefold()
-                if name_cf not in rollback_names:
-                    continue
-                rollback_in_except_ids.add(id(call["node"]))
-                if rollback_is_first:
-                    continue
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=call["line"],
-                        character=call["character"],
-                        end_line=call["line"],
-                        end_character=call["end_character"],
-                        severity=Severity.ERROR,
-                        code="BSL277",
-                        message=(
-                            "Метод ОтменитьТранзакцию() должен быть в попытке и первым "
-                            "методом блока исключения"
-                        ),
-                    )
-                )
-
-        for call in _ts_global_method_calls(root, line_texts):
-            name_cf = str(call["name"]).casefold()
-            if name_cf not in rollback_names:
-                continue
-            if id(call["node"]) in rollback_in_except_ids:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=call["line"],
-                    character=call["character"],
-                    end_line=call["line"],
-                    end_character=call["end_character"],
-                    severity=Severity.ERROR,
-                    code="BSL277",
-                    message=(
-                        "Метод ОтменитьТранзакцию() должен быть в попытке и первым "
-                        "методом блока исключения"
-                    ),
-                )
-            )
-
-        return diags
+        return run_bsl277_wrong_use_of_rollback_transaction(path, tree)
 
     # ------------------------------------------------------------------
     # BSL262 — UsageWriteLogEvent
     # ------------------------------------------------------------------
 
     def _rule_bsl262_usage_write_log_event(self, path: str, tree: Any) -> list[Diagnostic]:
-        """Detect WriteLogEvent/ЗаписьЖурналаРегистрации misuse inside except blocks."""
-        root = getattr(tree, "root_node", None)
-        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-            return []
-
-        line_texts = _ts_node_text(root).splitlines()
-        diags: list[Diagnostic] = []
-        target_names = {"записьжурналарегистрации", "writelogevent"}
-        level_root_names = {"уровеньжурналарегистрации", "eventloglevel"}
-        error_level_names = {"ошибка", "error"}
-
-        def except_children(try_node: Any) -> list[Any]:
-            children = list(getattr(try_node, "children", []) or [])
-            except_idx = next(
-                (
-                    i
-                    for i, child in enumerate(children)
-                    if getattr(child, "type", None) == "EXCEPT_KEYWORD"
-                ),
-                None,
-            )
-            endtry_idx = next(
-                (
-                    i
-                    for i, child in enumerate(children)
-                    if getattr(child, "type", None) == "ENDTRY_KEYWORD"
-                ),
-                None,
-            )
-            if except_idx is None:
-                return []
-            if endtry_idx is None:
-                endtry_idx = len(children)
-            return children[except_idx + 1 : endtry_idx]
-
-        def arg_is_error_level(expr: Any) -> bool:
-            text = _ts_node_text(expr).casefold()
-            return any(
-                root_name in text and level in text
-                for root_name in level_root_names
-                for level in error_level_names
-            )
-
-        for node in _ts_walk(root):
-            if getattr(node, "type", None) != "try_statement":
-                continue
-            for child in except_children(node):
-                for call in _ts_global_method_calls(child, line_texts):
-                    if str(call["name"]).casefold() not in target_names:
-                        continue
-                    args = _ts_method_call_arg_exprs(call["node"])
-                    if len(args) < 2:
-                        continue
-                    if arg_is_error_level(args[1]):
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=call["line"],
-                            character=call["character"],
-                            end_line=call["line"],
-                            end_character=call["end_character"],
-                            severity=Severity.INFORMATION,
-                            code="BSL262",
-                            message=(
-                                'Нужно указывать уровень "Ошибка" при записи в журнал '
-                                "регистрации внутри блока Исключение-КонецПопытки"
-                            ),
-                        )
-                    )
-        return diags
+        return run_bsl262_usage_write_log_event(path, tree)
 
     # ------------------------------------------------------------------
     # BSL240 — RewriteMethodParameter
