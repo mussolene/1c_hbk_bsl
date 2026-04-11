@@ -119,6 +119,12 @@ from onec_hbk_bsl.analysis.passes.query_pass import (
     extend_query_text_rule_tasks,
     extend_query_top_rule_tasks,
 )
+from onec_hbk_bsl.analysis.passes.style_pass import (
+    extend_style_comment_rule_tasks,
+    extend_style_spacing_rule_tasks,
+    extend_style_tail_rule_tasks,
+    extend_style_token_rule_tasks,
+)
 from onec_hbk_bsl.indexer.metadata_parser import crawl_config
 from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
 from onec_hbk_bsl.parser.bsl_parser import BslParser
@@ -7533,10 +7539,13 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL023"):
             _rule_tasks.append(("BSL023", lambda: self._rule_bsl023_service_tag(path, lines)))
-        if self._rule_enabled("BSL024"):
-            _rule_tasks.append(
-                ("BSL024", lambda: self._rule_bsl024_space_at_start_comment(path, lines))
-            )
+        extend_style_comment_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            procs=procs,
+        )
         if self._rule_enabled("BSL025"):
             _rule_tasks.append(("BSL025", lambda: self._rule_bsl025_empty_statement(path, lines)))
         if self._rule_enabled("BSL026"):
@@ -7553,14 +7562,6 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL029", lambda: self._rule_bsl029_magic_number(path, lines, procs))
             )
-        if self._rule_enabled("BSL030"):
-
-            def _task_bsl030() -> list[Diagnostic]:
-                a = self._rule_bsl030_header_semicolon(path, lines)
-                a.extend(self._rule_bsl030_statement_missing_semicolon(path, lines, procs))
-                return a
-
-            _rule_tasks.append(("BSL030", _task_bsl030))
         if self._rule_enabled("BSL031"):
             _rule_tasks.append(
                 ("BSL031", lambda: self._rule_bsl031_number_of_params(path, lines, procs))
@@ -7968,10 +7969,12 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL135", lambda: self._rule_bsl135_nested_function_calls(path, lines))
             )
-        if self._rule_enabled("BSL136"):
-            _rule_tasks.append(
-                ("BSL136", lambda: self._rule_bsl136_missing_space_before_comment(path, lines))
-            )
+        extend_style_spacing_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+        )
         if self._rule_enabled("BSL137"):
             _rule_tasks.append(
                 ("BSL137", lambda: self._rule_bsl137_use_of_find_by_description(path, lines))
@@ -8124,10 +8127,6 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL198", lambda: self._rule_bsl198_if_else_duplicated_condition(path, lines))
             )
-        if self._rule_enabled("BSL227"):
-            _rule_tasks.append(
-                ("BSL227", lambda: self._rule_bsl227_one_statement_per_line(path, lines, procs))
-            )
         if self._rule_enabled("BSL258"):
             _rule_tasks.append(("BSL258", lambda: self._rule_bsl258_union_without_all(path, lines)))
         if self._rule_enabled("BSL183"):
@@ -8168,17 +8167,15 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL262", lambda: self._rule_bsl262_usage_write_log_event(path, tree))
             )
-        if self._rule_enabled("BSL153"):
-            _rule_tasks.append(
-                ("BSL153", lambda: self._rule_bsl153_canonical_spelling_keywords(path, lines))
-            )
+        extend_style_token_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+        )
         if self._rule_enabled("BSL199"):
             _rule_tasks.append(
                 ("BSL199", lambda: self._rule_bsl199_if_else_if_ends_with_else(path, lines))
-            )
-        if self._rule_enabled("BSL200"):
-            _rule_tasks.append(
-                ("BSL200", lambda: self._rule_bsl200_incorrect_line_break(path, lines))
             )
         _bsl180_184_185_188_203_226_247_250_264_267_270_272 = (
             "BSL180",
@@ -8404,8 +8401,13 @@ class DiagnosticEngine:
                     lambda: self._rule_bsl245_server_side_export_form_method(path, lines, procs),
                 )
             )
-        if self._rule_enabled("BSL216"):
-            _rule_tasks.append(("BSL216", lambda: self._rule_bsl216_missing_space(path, lines)))
+        extend_style_tail_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            lines=lines,
+            procs=procs,
+        )
         if self._rule_enabled("BSL254"):
             _rule_tasks.append(
                 ("BSL254", lambda: self._rule_bsl254_transferring_parameters(path, lines, procs))
