@@ -498,12 +498,13 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["design", "ui"],
     },
     "BSL041": {
-        "name": "NotifyDescriptionToModalWindow",
-        "description": "ОписаниеОповещения/NotifyDescription call with modal window is deprecated",
-        "severity": "INFORMATION",
+        "name": "DeprecatedMessage",
+        "description": "Сообщить()/Message() is deprecated and should be replaced with structured UX or logging",
+        "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
-        "sonar_severity": "MINOR",
+        "sonar_severity": "MAJOR",
         "tags": ["deprecated", "ui"],
+        "implemented": True,
     },
     "BSL042": {
         "name": "UnusedLocalMethod",
@@ -1221,12 +1222,13 @@ RULE_METADATA: dict[str, dict] = {
         "tags": ["style", "readability"],
     },
     "BSL131": {
-        "name": "EmptyRegion",
-        "description": "#Область/#Region immediately followed by #КонецОбласти/#EndRegion with no code inside",
+        "name": "DuplicateRegion",
+        "description": "A region name is duplicated within the same module",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["style"],
+        "implemented": True,
     },
     "BSL132": {
         "name": "DuplicateStringLiteral",
@@ -1850,7 +1852,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "CRITICAL",
         "tags": ["correctness"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL203": {
         "name": "InternetAccess",
@@ -1877,7 +1879,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security", "access-control"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL206": {
         "name": "JoinWithSubQuery",
@@ -2039,7 +2041,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["readability", "design"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL224": {
         "name": "NestedFunctionInParameters",
@@ -2219,7 +2221,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["correctness", "suspicious"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL244": {
         "name": "ServerCallsInFormEvents",
@@ -2273,7 +2275,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["ui", "design"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL250": {
         "name": "TempFilesDir",
@@ -2605,7 +2607,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL038": "Конкатенация строк в цикле",
     "BSL039": "Вложенный тернарный оператор",
     "BSL040": "Использование «ЭтаФорма» вне обработчика событий",
-    "BSL041": "Устаревший вызов с ОписаниеОповещения к модальному окну",
+    "BSL041": "Использование устаревшего метода Сообщить()/Message()",
     "BSL042": "Пустой экспортный метод",
     "BSL043": "Слишком много локальных переменных",
     "BSL044": "Функция не возвращает значение",
@@ -2889,7 +2891,7 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL128": "Remove or move the dead code before the unconditional Возврат statement.",
     "BSL129": "Add a base-case guard to prevent infinite recursion, or refactor to an iterative approach.",
     "BSL130": "Split the long comment into multiple shorter lines (max 120 characters each).",
-    "BSL131": "Populate the region with code or remove the empty #Область/#КонецОбласти block.",
+    "BSL131": "Переименуйте или объедините области с одинаковым именем.",
     "BSL132": "Extract the repeated string literal to a named constant at the top of the module.",
     "BSL133": "Reorder parameters so all optional (default-valued) ones come after required ones.",
     "BSL134": "Refactor the function by extracting logic into smaller helper procedures/functions.",
@@ -3252,14 +3254,15 @@ _BSLLS_NAME_TO_CODE: dict[str, str] = {
     "NumberOfOptionalParams": "BSL015",
     "NonStandardRegion": "BSL016",
     "CyclomaticComplexity": "BSL019",
-    # NOTE: BSLLS DeprecatedMessage flags Сообщить() — not implemented; BSL022 flags Предупреждение()
     "UsingModalWindows": "BSL022",
+    "DeprecatedMessage": "BSL041",
     "UsingServiceTag": "BSL023",
     "SpaceAtStartComment": "BSL024",
     "EmptyRegion": "BSL026",
     "MagicNumber": "BSL029",
     "NumberOfParams": "BSL031",
     "DuplicateStringLiteral": "BSL035",
+    "DuplicateRegion": "BSL131",
     "NestedTernaryOperator": "BSL039",
     "UsingThisForm": "BSL040",
     "UnreachableCode": "BSL051",
@@ -3517,6 +3520,17 @@ def parse_env_rule_profile() -> str | None:
 _RE_DEPRECATED_MSG = re.compile(
     r"^\s*(?:Предупреждение|Warning)\s*\(",
     re.IGNORECASE,
+)
+_RE_DEPRECATED_MESSAGE = re.compile(
+    r"\b(?:Сообщить|Message)\s*\(",
+    re.IGNORECASE,
+)
+_RE_BSL202_STRTEMPLATE = re.compile(r"\b(?:СтрШаблон|StrTemplate)\s*\(", re.IGNORECASE)
+_BSL223_STRUCTURE_NAMES = frozenset(
+    {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
+)
+_BSL249_STYLE_CONSTRUCTOR_NAMES = frozenset(
+    {"цвет", "color", "шрифт", "font", "граница", "border", "рамка", "frame", "кисть", "brush"}
 )
 
 # Service tags in comments
@@ -6800,7 +6814,6 @@ class DiagnosticEngine:
             "BSL016",  # NonStandardRegion — keep opt-in; BSLLS does not enable it in the strict parity slice
             "BSL018",  # RaiseWithLiteral — opt-in; bare literals are normal; extended syntax is optional
             "BSL038",  # StringConcatenationInLoop — no direct BSLLS equivalent (BSLLS doesn't flag this)
-            "BSL041",  # NotifyDescriptionToModalWindow — no BSLLS equivalent
             "BSL058",  # QueryWithoutWhere — no BSLLS equivalent; all firings are FP vs BSLLS
             "BSL042",  # EmptyExportMethod — BSLLS UnusedLocalMethod has different semantics (non-export dead methods)
             "BSL065",  # MissingExportComment — our rule checks any comment existence; BSLLS MissingReturnedValueDescription only fires when description exists but lacks return type section (30 FP, 0 TP on 30-file sample)
@@ -6863,7 +6876,6 @@ class DiagnosticEngine:
             "BSL128",  # DeadCodeAfterReturn — duplicate of BSL051
             "BSL129",  # RecursiveCall — no BSL-LS equivalent
             "BSL130",  # LongCommentLine — duplicate of BSL014
-            "BSL131",  # EmptyRegion — duplicate of BSL026
             "BSL132",  # RepeatedStringLiteral — duplicate of BSL035
             "BSL134",  # CyclomaticComplexity — duplicate of BSL019
             "BSL135",  # NestedFunctionCalls — no BSL-LS equivalent
@@ -6923,10 +6935,10 @@ class DiagnosticEngine:
             # "BSL199" enabled — IfElseIfEndsWithElse implemented
             # "BSL200" enabled — IncorrectLineBreak implemented
             # "BSL201" enabled — IncorrectUseLikeInQuery implemented
-            "BSL202",  # IncorrectUseOfStrTemplate — TODO
+            # "BSL202" enabled — IncorrectUseOfStrTemplate implemented
             "BSL203",  # InternetAccess implemented; off by default (BSLLS activatedByDefault=false)
             # "BSL204" enabled — InvalidCharacterInFile implemented
-            "BSL205",  # IsInRoleMethod — TODO
+            # "BSL205" enabled — IsInRoleMethod implemented
             # "BSL206" enabled — JoinWithSubQuery implemented
             # "BSL207" enabled — JoinWithVirtualTable implemented
             # "BSL208" enabled — LatinAndCyrillicSymbolInWord implemented
@@ -6943,7 +6955,7 @@ class DiagnosticEngine:
             # "BSL220" enabled — MultilineStringInQuery implemented
             "BSL221",  # MultilingualStringHasAllDeclaredLanguages — TODO
             "BSL222",  # MultilingualStringUsingWithTemplate — TODO
-            "BSL223",  # NestedConstructorsInStructureDeclaration — TODO
+            # "BSL223" enabled — NestedConstructorsInStructureDeclaration implemented
             # "BSL224" enabled — NestedFunctionInParameters implemented
             # "BSL225" enabled — NumberOfValuesInStructureConstructor implemented
             # "BSL226" enabled — OSUsersMethod implemented
@@ -6963,13 +6975,13 @@ class DiagnosticEngine:
             # "BSL240" enabled — RewriteMethodParameter implemented
             "BSL241",  # SameMetadataObjectAndChildNames — TODO
             "BSL242",  # ScheduledJobHandler — TODO
-            "BSL243",  # SelfInsertion — TODO
+            # "BSL243" enabled — SelfInsertion implemented
             "BSL244",  # ServerCallsInFormEvents — TODO
             # "BSL245" enabled — ServerSideExportFormMethod implemented
             "BSL246",  # SetPermissionsForNewObjects — TODO
             # "BSL247" enabled — SetPrivilegedMode implemented
             # "BSL248" enabled — SeveralCompilerDirectives implemented
-            "BSL249",  # StyleElementConstructors — TODO
+            # "BSL249" enabled — StyleElementConstructors implemented
             # "BSL250" enabled — TempFilesDir implemented
             "BSL251",  # TernaryOperatorUsage implemented; off by default (BSLLS activatedByDefault=false)
             # "BSL252" enabled — ThisObjectAssign implemented
@@ -7396,7 +7408,7 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL041"):
             _rule_tasks.append(
-                ("BSL041", lambda: self._rule_bsl041_notify_description(path, lines, procs))
+                ("BSL041", lambda: self._rule_bsl041_deprecated_message(path, lines))
             )
         if self._rule_enabled("BSL042"):
             _rule_tasks.append(
@@ -7733,7 +7745,9 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL130"):
             _rule_tasks.append(("BSL130", lambda: self._rule_bsl130_long_comment_line(path, lines)))
         if self._rule_enabled("BSL131"):
-            _rule_tasks.append(("BSL131", lambda: self._rule_bsl131_empty_region(path, lines)))
+            _rule_tasks.append(
+                ("BSL131", lambda: self._rule_bsl131_duplicate_region(path, lines, regions))
+            )
         if self._rule_enabled("BSL132"):
             _rule_tasks.append(
                 ("BSL132", lambda: self._rule_bsl132_repeated_string_literal(path, lines, content))
@@ -8071,6 +8085,16 @@ class DiagnosticEngine:
                 (
                     "BSL215",
                     lambda: self._rule_bsl215_missing_parameter_description(path, lines, procs),
+                )
+            )
+        _bsl202_205_223_243_249 = ("BSL202", "BSL205", "BSL223", "BSL243", "BSL249")
+        if any(self._rule_enabled(c) for c in _bsl202_205_223_243_249):
+            _rule_tasks.append(
+                (
+                    "BSL202_205_223_243_249",
+                    lambda: self._rule_bsl202_205_223_243_249_light_call_pool(
+                        path, lines, tree, _bsl202_205_223_243_249
+                    ),
                 )
             )
         if self._rule_enabled("BSL224"):
@@ -9956,26 +9980,18 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL041 — ОписаниеОповещения / NotifyDescription (deprecated modal)
+    # BSL041 — DeprecatedMessage
     # ------------------------------------------------------------------
 
-    def _rule_bsl041_notify_description(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Flag ОписаниеОповещения() usage — this API is tied to legacy modal windows.
-
-        The modern equivalent is async handlers via background tasks or form callbacks.
-        """
+    def _rule_bsl041_deprecated_message(self, path: str, lines: list[str]) -> list[Diagnostic]:
+        """Detect direct Сообщить()/Message() calls."""
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
+            if _RE_LINE_COMMENT.match(line):
                 continue
-            m = _RE_NOTIFY_DESCRIPTION.search(line)
+            clean = _strip_inline_comment_preserve_strings(line)
+            m = _RE_DEPRECATED_MESSAGE.search(clean)
             if m:
-                proc = _proc_containing_line(procs, idx)
-                if proc is not None and _is_typical_client_command_handler(proc, lines):
-                    continue
                 diags.append(
                     Diagnostic(
                         file=path,
@@ -9983,11 +9999,11 @@ class DiagnosticEngine:
                         character=m.start(),
                         end_line=idx + 1,
                         end_character=m.end(),
-                        severity=Severity.INFORMATION,
+                        severity=Severity.WARNING,
                         code="BSL041",
                         message=(
-                            "ОписаниеОповещения()/NotifyDescription() is linked to "
-                            "deprecated modal window APIs. Use async event handlers."
+                            "Метод Сообщить()/Message() устарел. "
+                            "Используйте журналирование или не модальный UI API."
                         ),
                     )
                 )
@@ -13558,37 +13574,55 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL131 — EmptyRegion
+    # BSL131 — DuplicateRegion
     # ------------------------------------------------------------------
 
-    def _rule_bsl131_empty_region(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Flag #Область immediately followed by #КонецОбласти with no code in between."""
+    def _rule_bsl131_duplicate_region(
+        self, path: str, lines: list[str], regions: list[_RegionInfo]
+    ) -> list[Diagnostic]:
+        """Detect duplicated region names, including BSLLS standard-region synonyms."""
+
+        def normalize(name: str) -> str:
+            raw = re.sub(r"\s+", "", name).casefold()
+            aliases = {
+                "программныйинтерфейс": "public",
+                "публичный": "public",
+                "public": "public",
+                "служебныйпрограммныйинтерфейс": "internal",
+                "служебный": "internal",
+                "internal": "internal",
+                "служебныепроцедурыифункции": "private",
+                "приватный": "private",
+                "private": "private",
+                "обработчикисобытий": "eventhandlers",
+                "eventhandlers": "eventhandlers",
+                "обработчикисобытийформы": "formeventhandlers",
+                "formeventhandlers": "formeventhandlers",
+            }
+            return aliases.get(raw, raw)
+
         diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if not _RE_REGION_OPEN_LINE.match(line):
+        seen: dict[str, _RegionInfo] = {}
+        for region in regions:
+            key = normalize(region.name)
+            if not key:
                 continue
-            # Look ahead for first non-blank line
-            for j in range(idx + 1, len(lines)):
-                next_stripped = lines[j].strip()
-                if not next_stripped:
-                    continue
-                if _RE_REGION_CLOSE_LINE.match(lines[j]):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=len(line) - len(line.lstrip()),
-                            end_line=idx + 1,
-                            end_character=len(line.rstrip()),
-                            severity=Severity.INFORMATION,
-                            code="BSL131",
-                            message=(
-                                "Empty region: #Область is immediately followed by "
-                                "#КонецОбласти with no code inside — remove or populate it."
-                            ),
-                        )
-                    )
-                break
+            if key not in seen:
+                seen[key] = region
+                continue
+            line = lines[region.start_idx] if 0 <= region.start_idx < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=region.start_idx + 1,
+                    character=len(line) - len(line.lstrip()),
+                    end_line=region.start_idx + 1,
+                    end_character=len(line.rstrip()),
+                    severity=Severity.INFORMATION,
+                    code="BSL131",
+                    message=f'Область "{region.name}" уже объявлена выше в модуле',
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -17978,6 +18012,205 @@ class DiagnosticEngine:
                         message=RULE_DESCRIPTIONS_RU["BSL218"],
                     )
                 )
+
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL202 / BSL205 / BSL223 / BSL243 / BSL249 — lightweight call pool
+    # ------------------------------------------------------------------
+
+    def _rule_bsl202_205_223_243_249_light_call_pool(
+        self, path: str, lines: list[str], tree: Any, enabled: tuple[str, ...]
+    ) -> list[Diagnostic]:
+        root = getattr(tree, "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            return []
+
+        enabled_set = set(enabled)
+        diags: list[Diagnostic] = []
+
+        def placeholder_indexes(template: str) -> set[int]:
+            out: set[int] = set()
+            i = 0
+            while i < len(template):
+                if template[i] != "%":
+                    i += 1
+                    continue
+                if i + 1 < len(template) and template[i + 1] == "%":
+                    i += 2
+                    continue
+                if i + 1 < len(template) and template[i + 1] == "(":
+                    j = i + 2
+                    digits: list[str] = []
+                    while j < len(template) and template[j].isdigit():
+                        digits.append(template[j])
+                        j += 1
+                    if digits and j < len(template) and template[j] == ")":
+                        out.add(int("".join(digits)))
+                        i = j + 1
+                        continue
+                j = i + 1
+                digits = []
+                while j < len(template) and template[j].isdigit():
+                    digits.append(template[j])
+                    j += 1
+                if digits:
+                    out.add(int("".join(digits)))
+                    i = j
+                    continue
+                i += 1
+            return out
+
+        if {"BSL202", "BSL205", "BSL223"} & enabled_set:
+            line_texts = lines
+            for node in _ts_walk(root):
+                node_type = getattr(node, "type", None)
+
+                if "BSL223" in enabled_set and node_type == "new_expression":
+                    type_node = _ts_child_of_type(node, "identifier")
+                    if (
+                        type_node is not None
+                        and _ts_node_text(type_node).casefold() in _BSL223_STRUCTURE_NAMES
+                    ):
+                        args = _ts_method_call_arg_exprs(node)
+                        if len(args) > 1:
+                            nested = False
+                            for expr in args[1:]:
+                                for child in _ts_walk(expr):
+                                    if getattr(child, "type", None) != "new_expression":
+                                        continue
+                                    nested_args = _ts_method_call_arg_exprs(child)
+                                    if len(nested_args) > 1:
+                                        nested = True
+                                        break
+                                if nested:
+                                    break
+                            if nested:
+                                line_idx = node.start_point[0]
+                                line_text = (
+                                    line_texts[line_idx] if line_idx < len(line_texts) else ""
+                                )
+                                start_char = utf8_byte_offset_to_lsp_character(
+                                    line_text, node.start_point[1]
+                                )
+                                diags.append(
+                                    Diagnostic(
+                                        file=path,
+                                        line=line_idx + 1,
+                                        character=start_char,
+                                        end_line=line_idx + 1,
+                                        end_character=min(
+                                            len(line_text),
+                                            start_char + len(_ts_node_text(type_node)),
+                                        ),
+                                        severity=Severity.INFORMATION,
+                                        code="BSL223",
+                                        message=(
+                                            "Избегайте вложенных конструкторов в объявлении структуры"
+                                        ),
+                                    )
+                                )
+
+                if node_type != "method_call":
+                    continue
+                ident = _ts_child_of_type(node, "identifier")
+                if ident is None:
+                    continue
+                name_cf = _ts_node_text(ident).casefold()
+                span = _ts_method_identifier_span(node, line_texts)
+                if span is None:
+                    continue
+                line_1, char_1, end_char = span
+
+                if "BSL202" in enabled_set and name_cf in {"стршаблон", "strtemplate"}:
+                    args = _ts_method_call_arg_exprs(node)
+                    if args:
+                        first = _ts_node_text(args[0]).strip()
+                        if len(first) >= 2 and first[0] == '"' and first[-1] == '"':
+                            template = first[1:-1].replace('""', '"')
+                            indexes = placeholder_indexes(template)
+                            expected = max(indexes) if indexes else 0
+                            actual = max(0, len(args) - 1)
+                            if expected != actual:
+                                diags.append(
+                                    Diagnostic(
+                                        file=path,
+                                        line=line_1,
+                                        character=char_1,
+                                        end_line=line_1,
+                                        end_character=end_char,
+                                        severity=Severity.ERROR,
+                                        code="BSL202",
+                                        message=(
+                                            "Количество параметров СтрШаблон()/StrTemplate() "
+                                            "не соответствует шаблону"
+                                        ),
+                                    )
+                                )
+
+                if "BSL205" in enabled_set and name_cf in {"рольдоступна", "isinrole"}:
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_1,
+                            character=char_1,
+                            end_line=line_1,
+                            end_character=end_char,
+                            severity=Severity.WARNING,
+                            code="BSL205",
+                            message=(
+                                "Избегайте использования РольДоступна()/IsInRole(), "
+                                "проверяйте права через разрешения"
+                            ),
+                        )
+                    )
+
+        if {"BSL243", "BSL249"} & enabled_set:
+            for idx, raw_line in enumerate(lines):
+                if _RE_LINE_COMMENT.match(raw_line):
+                    continue
+                line = _strip_inline_comment_preserve_strings(raw_line)
+                if "BSL243" in enabled_set:
+                    for m in re.finditer(
+                        r"\b(?P<obj>\w+)\s*\.\s*(?:Вставить|Insert|Добавить|Add)\s*\((?P<args>[^)]*)\)",
+                        line,
+                        re.IGNORECASE,
+                    ):
+                        obj = m.group("obj").casefold()
+                        parts = [part.strip() for part in _split_top_level_args(m.group("args"))]
+                        relevant = [part for part in parts if part]
+                        if any(part.casefold() == obj for part in relevant):
+                            start = m.start("obj")
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=idx + 1,
+                                    character=start,
+                                    end_line=idx + 1,
+                                    end_character=start + len(m.group("obj")),
+                                    severity=Severity.ERROR,
+                                    code="BSL243",
+                                    message="Нельзя вставлять объект в самого себя",
+                                )
+                            )
+                if "BSL249" in enabled_set:
+                    for m in re.finditer(r"\b(?:Новый|New)\s+(?P<name>\w+)\b", line, re.IGNORECASE):
+                        if m.group("name").casefold() not in _BSL249_STYLE_CONSTRUCTOR_NAMES:
+                            continue
+                        diags.append(
+                            Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=m.start("name"),
+                                end_line=idx + 1,
+                                end_character=m.end("name"),
+                                severity=Severity.INFORMATION,
+                                code="BSL249",
+                                message=(
+                                    "Используйте встроенные элементы стиля вместо явного конструктора"
+                                ),
+                            )
+                        )
 
         return diags
 

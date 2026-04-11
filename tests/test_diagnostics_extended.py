@@ -1953,31 +1953,23 @@ class TestBsl039NestedTernary:
 
 
 # ---------------------------------------------------------------------------
-# BSL041 — NotifyDescriptionToModalWindow
+# BSL041 — DeprecatedMessage
 # ---------------------------------------------------------------------------
 
 
-class TestBsl041NotifyDescription:
-    def test_notify_description_detected(self, tmp_path: Path) -> None:
-        content = 'ОповещениеОЗакрытии = ОписаниеОповещения("ОбработкаЗакрытия", ЭтотОбъект);\n'
+class TestBsl041DeprecatedMessage:
+    def test_soobshchit_detected(self, tmp_path: Path) -> None:
+        content = 'Сообщить("Готово");\n'
         diags = _check(content, tmp_path, select={"BSL041"})
         assert "BSL041" in _codes(diags)
 
-    def test_notify_description_skipped_in_typical_client_command_handler(
-        self, tmp_path: Path
-    ) -> None:
-        """ОписаниеОповещения в типовом ОбработкаКоманды (&НаКлиенте) — допустимый паттерн (не путь CommonCommands)."""
-        content = """\
-            &НаКлиенте
-            Процедура ОбработкаКоманды(ПараметрКоманды, ПараметрыВыполненияКоманды)
-                О = Новый ОписаниеОповещения("Колбэк", ЭтотОбъект);
-            КонецПроцедуры
-        """
+    def test_message_detected(self, tmp_path: Path) -> None:
+        content = 'Message("Done");\n'
         diags = _check(content, tmp_path, select={"BSL041"})
-        assert "BSL041" not in _codes(diags)
+        assert "BSL041" in _codes(diags)
 
     def test_in_comment_not_flagged(self, tmp_path: Path) -> None:
-        content = '// ОписаниеОповещения("ОбработкаЗакрытия", ЭтотОбъект)\n'
+        content = '// Сообщить("Готово")\n'
         diags = _check(content, tmp_path)
         assert "BSL041" not in _codes(diags)
 
@@ -5748,13 +5740,15 @@ class TestBsl130LongCommentLine:
 
 
 # ---------------------------------------------------------------------------
-# BSL131 — EmptyRegion
+# BSL131 — DuplicateRegion
 # ---------------------------------------------------------------------------
 
 
-class TestBsl131EmptyRegion:
-    def test_empty_region_detected(self, tmp_path: Path) -> None:
-        content = "#Область ПустаяОбласть\n#КонецОбласти\n"
+class TestBsl131DuplicateRegion:
+    def test_duplicate_region_detected(self, tmp_path: Path) -> None:
+        content = (
+            "#Область Публичный\nА = 1;\n#КонецОбласти\n#Область Public\nБ = 2;\n#КонецОбласти\n"
+        )
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
         from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
@@ -5762,14 +5756,49 @@ class TestBsl131EmptyRegion:
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert "BSL131" in [d.code for d in diags]
 
-    def test_region_with_code_no_warning(self, tmp_path: Path) -> None:
-        content = "#Область СОдержимым\nА = 1;\n#КонецОбласти\n"
+    def test_unique_region_names_no_warning(self, tmp_path: Path) -> None:
+        content = "#Область Первая\nА = 1;\n#КонецОбласти\n#Область Вторая\nБ = 2;\n#КонецОбласти\n"
         p = tmp_path / "test.bsl"
         p.write_text(content, encoding="utf-8")
         from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert "BSL131" not in [d.code for d in diags]
+
+
+# ---------------------------------------------------------------------------
+# BSL202 / BSL205 / BSL223 / BSL243 / BSL249
+# ---------------------------------------------------------------------------
+
+
+class TestAdditionalParityBatch:
+    def test_bsl202_strtemplate_mismatch_detected(self, tmp_path: Path) -> None:
+        diags = _check('СтрШаблон("%1 %2", Значение);\n', tmp_path, select={"BSL202"})
+        assert "BSL202" in _codes(diags)
+
+    def test_bsl205_isinrole_detected(self, tmp_path: Path) -> None:
+        diags = _check(
+            'Если РольДоступна("ПолныеПрава") Тогда\nКонецЕсли;\n',
+            tmp_path,
+            select={"BSL205"},
+        )
+        assert "BSL205" in _codes(diags)
+
+    def test_bsl223_nested_structure_ctor_detected(self, tmp_path: Path) -> None:
+        diags = _check(
+            'А = Новый Структура("Ключ, Значение", Новый Структура("Вложенный, Значение", 1));\n',
+            tmp_path,
+            select={"BSL223"},
+        )
+        assert "BSL223" in _codes(diags)
+
+    def test_bsl243_self_insertion_detected(self, tmp_path: Path) -> None:
+        diags = _check("Массив.Добавить(Массив);\n", tmp_path, select={"BSL243"})
+        assert "BSL243" in _codes(diags)
+
+    def test_bsl249_style_constructor_detected(self, tmp_path: Path) -> None:
+        diags = _check("ЦветФона = Новый Цвет(255, 0, 0);\n", tmp_path, select={"BSL249"})
+        assert "BSL249" in _codes(diags)
 
 
 # ---------------------------------------------------------------------------
