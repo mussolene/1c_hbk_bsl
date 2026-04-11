@@ -25,7 +25,8 @@ SRC_MAIN = ROOT / "src" / "onec_hbk_bsl" / "__main__.py"
 datas: list = [(str(ROOT / "data"), "data")]
 # fastmcp reads __version__ via importlib.metadata.version("fastmcp") at import time — needs dist-info in the bundle.
 datas += copy_metadata("fastmcp")
-# onec-hbk-bsl __version__ uses importlib.metadata.version("onec-hbk-bsl") when bundled.
+# Keep project metadata available in the bundle; runtime version lookup itself
+# falls back to generated _version.py when frozen.
 datas += copy_metadata("onec-hbk-bsl")
 # Typo parity uses importlib.resources against this package at runtime.
 datas += collect_data_files("onec_hbk_bsl.bslls_typo_data")
@@ -48,6 +49,7 @@ hiddenimports: list = [
 ]
 
 excludes = [
+    "setuptools_scm",
     "pytest",
     "_pytest",
     "unittest",
