@@ -223,6 +223,124 @@ class TestDeprecatedApiParityBatch:
 
 
 # ---------------------------------------------------------------------------
+# BSL180 / BSL184 / BSL185 / BSL188 / BSL203 / BSL226 / BSL247 / BSL250 /
+# BSL264 / BSL267 / BSL270 / BSL272 — security/context API pool
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityApiParityBatch:
+    def test_bsl180_disable_safe_mode(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Метод()
+                УстановитьБезопасныйРежим(Ложь);
+                УстановитьБезопасныйРежим(Истина);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL180"})
+        assert _codes(diags) == ["BSL180"]
+
+    def test_bsl184_execute_external_code_in_common_module(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ВыполнитьПроизвольныйКод(Строка)
+                Выполнить(Строка);
+            КонецПроцедуры
+        """
+        path = tmp_path / "CommonModules" / "Тест" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL184"}).check_file(str(path))
+        assert "BSL184" in _codes(diags)
+
+    def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Метод()
+                ЗапуститьПриложение(СтрокаКоманды, ТекущийКаталог);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL185"})
+        assert "BSL185" in _codes(diags)
+
+    def test_bsl188_file_system_access(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Метод()
+                Значение = Новый File(ИмяФайла);
+                КопироватьФайл("a", "b");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL188"})
+        assert _codes(diags).count("BSL188") == 2
+
+    def test_bsl203_internet_access(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура HTTP()
+                HTTPСоединение = Новый HTTPСоединение("zabbix.localhost", 80);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL203"})
+        assert "BSL203" in _codes(diags)
+
+    def test_bsl226_os_users(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Users = OSUsers();
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL226"})
+        assert "BSL226" in _codes(diags)
+
+    def test_bsl247_set_privileged_mode(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Метод()
+                УстановитьПривилегированныйРежим(Истина);
+                УстановитьПривилегированныйРежим(Ложь);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL247"})
+        assert _codes(diags) == ["BSL247"]
+
+    def test_bsl250_temp_files_dir(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Test()
+                Catalog = TempFilesDir();
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL250"})
+        assert "BSL250" in _codes(diags)
+
+    def test_bsl264_use_system_information(self, tmp_path: Path) -> None:
+        content = 'СистемнаяИнформация = Новый("SystemInfo");\n'
+        diags = _check(content, tmp_path, select={"BSL264"})
+        assert "BSL264" in _codes(diags)
+
+    def test_bsl267_using_external_code_tools(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ИмяОтчета = ExternalReports.Connect("Path", Истина);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL267"})
+        assert "BSL267" in _codes(diags)
+
+    def test_bsl270_using_modal_windows(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Предупреждение("Текст");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL270"})
+        assert "BSL270" in _codes(diags)
+
+    def test_bsl272_using_synchronous_calls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ЗапуститьПриложение("cmd", "");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL272"})
+        assert "BSL272" in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------
 

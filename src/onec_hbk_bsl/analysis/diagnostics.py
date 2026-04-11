@@ -1651,7 +1651,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "CRITICAL",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL181": {
         "name": "DuplicatedInsertionIntoCollection",
@@ -1687,7 +1687,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "CRITICAL",
         "tags": ["security", "module"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL185": {
         "name": "ExternalAppStarting",
@@ -1696,7 +1696,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL186": {
         "name": "ExtraCommas",
@@ -1723,7 +1723,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security", "compatibility"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL189": {
         "name": "ForbiddenMetadataName",
@@ -1858,7 +1858,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL204": {
         "name": "InvalidCharacterInFile",
@@ -2065,7 +2065,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL227": {
         "name": "OneStatementPerLine",
@@ -2254,7 +2254,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "CRITICAL",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL248": {
         "name": "SeveralCompilerDirectives",
@@ -2281,7 +2281,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security", "compatibility"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL251": {
         "name": "TernaryOperatorUsage",
@@ -2407,7 +2407,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL265": {
         "name": "UselessTernaryOperator",
@@ -2434,7 +2434,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "SECURITY_HOTSPOT",
         "sonar_severity": "MAJOR",
         "tags": ["security"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL268": {
         "name": "UsingFindElementByString",
@@ -2461,7 +2461,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["deprecated", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL271": {
         "name": "UsingObjectNotAvailableUnix",
@@ -2479,7 +2479,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["performance", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL273": {
         "name": "VirtualTableCallWithoutParameters",
@@ -4044,6 +4044,13 @@ def _mask_double_quoted_strings_preserve_len(line: str) -> str:
     return _RE_DOUBLE_QUOTED_STRING.sub(lambda m: '"' + (" " * (len(m.group(0)) - 2)) + '"', line)
 
 
+def _strip_inline_comment_preserve_strings(line: str) -> str:
+    """Remove ``//`` comments while ignoring occurrences inside double-quoted strings."""
+    masked = _mask_double_quoted_strings_preserve_len(line)
+    comment_pos = masked.find("//")
+    return line[:comment_pos] if comment_pos >= 0 else line
+
+
 def _build_line_string_states(lines: list[str]) -> list[bool]:
     """
     Returns a list where entry[i] is True if line i *starts* inside a double-quoted string.
@@ -5103,6 +5110,159 @@ _RE_BSL195_GET_FORM = re.compile(
 )
 _RE_BSL176_DEPRECATED_DOC = re.compile(
     r"(?:@deprecated\b|\bdeprecated\b|\bobsolete\b|\bустар(?:ел|ела|ело|евш\w*)\b)",
+    re.IGNORECASE | re.UNICODE,
+)
+
+_RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
+_RE_BSL180_DISABLE_SAFE_MODE = re.compile(
+    r"\b(?P<name>"
+    r"УстановитьБезопасныйРежим|SetSafeMode|"
+    r"УстановитьОтключениеБезопасногоРежима|SetSafeModeDisabled"
+    r")\s*\(\s*(?P<arg>[^)]*)\)",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL184_EXECUTE_EXTERNAL_CODE = re.compile(
+    r"\b(?P<name>Выполнить|Execute|Вычислить|Eval)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL185_EXTERNAL_APP = re.compile(
+    r"\b(?P<name>"
+    r"КомандаСистемы|System|ЗапуститьСистему|RunSystem|ЗапуститьПриложение|RunApp|"
+    r"НачатьЗапускПриложения|BeginRunningApplication|ЗапуститьПриложениеАсинх|RunAppAsync|"
+    r"ЗапуститьПрограмму|ОткрытьПроводник|ОткрытьФайл|ПерейтиПоНавигационнойСсылке|"
+    r"GotoURL|ОткрытьНавигационнуюСсылку"
+    r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL188_FILESYSTEM_METHOD = re.compile(
+    r"\b(?P<name>"
+    r"ЗначениеВФайл|ValueToFile|КопироватьФайл|FileCopy|ОбъединитьФайлы|MergeFiles|"
+    r"ПереместитьФайл|MoveFile|РазделитьФайл|SplitFile|СоздатьКаталог|CreateDirectory|"
+    r"УдалитьФайлы|DeleteFiles|КаталогПрограммы|BinDir|КаталогВременныхФайлов|TempFilesDir|"
+    r"КаталогДокументов|DocumentsDir|РабочийКаталогДанныхПользователя|UserDataWorkDir|"
+    r"НачатьПодключениеРасширенияРаботыСФайлами|BeginAttachingFileSystemExtension|"
+    r"НачатьУстановкуРасширенияРаботыСФайлами|BeginInstallFileSystemExtension|"
+    r"УстановитьРасширениеРаботыСФайлами|InstallFileSystemExtension|"
+    r"УстановитьРасширениеРаботыСФайламиАсинх|InstallFileSystemExtensionAsync|"
+    r"ПодключитьРасширениеРаботыСФайламиАсинх|AttachFileSystemExtensionAsync|"
+    r"КаталогВременныхФайловАсинх|TempFilesDirAsync|КаталогДокументовАсинх|DocumentsDirAsync|"
+    r"НачатьПолучениеКаталогаВременныхФайлов|BeginGettingTempFilesDir|"
+    r"НачатьПолучениеКаталогаДокументов|BeginGettingDocumentsDir|"
+    r"НачатьПолучениеРабочегоКаталогаДанныхПользователя|BeginGettingUserDataWorkDir|"
+    r"РабочийКаталогДанныхПользователяАсинх|UserDataWorkDirAsync|"
+    r"КопироватьФайлАсинх|CopyFileAsync|НайтиФайлыАсинх|FindFilesAsync|"
+    r"НачатьКопированиеФайла|BeginCopyingFile|НачатьПеремещениеФайла|BeginMovingFile|"
+    r"НачатьПоискФайлов|BeginFindingFiles|НачатьСозданиеДвоичныхДанныхИзФайла|"
+    r"BeginCreateBinaryDataFromFile|НачатьСозданиеКаталога|BeginCreatingDirectory|"
+    r"НачатьУдалениеФайлов|BeginDeletingFiles|ПереместитьФайлАсинх|MoveFileAsync|"
+    r"СоздатьДвоичныеДанныеИзФайлаАсинх|CreateBinaryDataFromFileAsync|"
+    r"СоздатьКаталогАсинх|CreateDirectoryAsync|УдалитьФайлыАсинх|DeleteFilesAsync"
+    r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL188_FILESYSTEM_NEW = re.compile(
+    r"\b(?:Новый|New)\s*(?:\(\s*)?(?P<type>"
+    r"File|Файл|xBase|HTMLWriter|ЗаписьHTML|HTMLReader|ЧтениеHTML|"
+    r"FastInfosetReader|ЧтениеFastInfoset|FastInfosetWriter|ЗаписьFastInfoset|"
+    r"XSLTransform|ПреобразованиеXSL|ZipFileWriter|ЗаписьZipФайла|ZipFileReader|"
+    r"ЧтениеZipФайла|TextReader|ЧтениеТекста|TextWriter|ЗаписьТекста|TextExtraction|"
+    r"ИзвлечениеТекста|BinaryData|ДвоичныеДанные|FileStream|ФайловыйПоток|"
+    r"FileStreamsManager|МенеджерФайловыхПотоков|DataWriter|ЗаписьДанных|DataReader|ЧтениеДанных"
+    r")\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL203_INTERNET_NEW = re.compile(
+    r"\b(?:Новый|New)\s*(?:\(\s*)?(?P<type>"
+    r"FTPСоединение|FTPConnection|HTTPСоединение|HTTPConnection|WSОпределения|WSDefinitions|"
+    r"WSПрокси|WSProxy|ИнтернетПочтовыйПрофиль|InternetMailProfile|ИнтернетПочта|"
+    r"InternetMail|Почта|Mail|HTTPЗапрос|HTTPRequest|ИнтернетПрокси|InternetProxy"
+    r")\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL226_OS_USERS = re.compile(
+    r"\b(?P<name>ПользователиОС|OSUsers)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL247_SET_PRIVILEGED = re.compile(
+    r"\b(?P<name>УстановитьПривилегированныйРежим|SetPrivilegedMode)\s*\(\s*(?P<arg>[^)]*)\)",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL250_TEMPFILES = re.compile(
+    r"\b(?P<name>КаталогВременныхФайлов|TempFilesDir)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL264_SYSTEM_INFO = re.compile(
+    r"\b(?:Новый|New)\s*(?:\(\s*)?(?P<type>\"СистемнаяИнформация\"|\"SystemInfo\"|СистемнаяИнформация|SystemInfo)",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_BSL267_EXTERNAL_CODE_TOOLS = re.compile(
+    r"\b(?:ВнешниеОбработки|ExternalDataProcessors|ВнешниеОтчеты|ExternalReports|"
+    r"РасширенияКонфигурации|ConfigurationExtensions)\.(?P<name>Создать|Create|Подключить|Connect)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL270_MODAL_REPLACEMENTS: dict[str, str] = {
+    "ВОПРОС": "ПоказатьВопрос",
+    "DOQUERYBOX": "ShowQueryBox",
+    "ОТКРЫТЬФОРМУМОДАЛЬНО": "ОткрытьФорму",
+    "OPENFORMMODAL": "OpenForm",
+    "ОТКРЫТЬЗНАЧЕНИЕ": "ПоказатьЗначение",
+    "OPENVALUE": "ShowValue",
+    "ПРЕДУПРЕЖДЕНИЕ": "ПоказатьПредупреждение",
+    "DOMESSAGEBOX": "ShowMessageBox",
+    "ВВЕСТИДАТУ": "ПоказатьВводДаты",
+    "INPUTDATE": "ShowInputDate",
+    "ВВЕСТИЗНАЧЕНИЕ": "ПоказатьВводЗначения",
+    "INPUTVALUE": "ShowInputValue",
+    "ВВЕСТИСТРОКУ": "ПоказатьВводСтроки",
+    "INPUTSTRING": "ShowInputString",
+    "ВВЕСТИЧИСЛО": "ПоказатьВводЧисла",
+    "INPUTNUMBER": "ShowInputNumber",
+    "УСТАНОВИТЬВНЕШНЮЮКОМПОНЕНТУ": "НачатьУстановкуВнешнейКомпоненты",
+    "INSTALLADDIN": "BeginInstallAddIn",
+    "УСТАНОВИТЬРАСШИРЕНИЕРАБОТЫСФАЙЛАМИ": "НачатьУстановкуРасширенияРаботыСФайлами",
+    "INSTALLFILESYSTEMEXTENSION": "BeginInstallFileSystemExtension",
+    "УСТАНОВИТЬРАСШИРЕНИЕРАБОТЫСКРИПТОГРАФИЕЙ": "НачатьУстановкуРасширенияРаботыСКриптографией",
+    "INSTALLCRYPTOEXTENSION": "BeginInstallCryptoExtension",
+    "ПОМЕСТИТЬФАЙЛ": "НачатьПомещениеФайла",
+    "PUTFILE": "BeginPutFile",
+}
+_RE_BSL270_MODAL = re.compile(
+    r"\b(?P<name>" + "|".join(re.escape(k) for k in _BSL270_MODAL_REPLACEMENTS) + r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL272_SYNC_REPLACEMENTS: dict[str, str] = {
+    **_BSL270_MODAL_REPLACEMENTS,
+    "ПОДКЛЮЧИТЬРАСШИРЕНИЕРАБОТЫСКРИПТОГРАФИЕЙ": "НачатьПодключениеРасширенияРаботыСКриптографией",
+    "ATTACHCRYPTOEXTENSION": "BeginAttachingCryptoExtension",
+    "ПОДКЛЮЧИТЬРАСШИРЕНИЕРАБОТЫСФАЙЛАМИ": "НачатьПодключениеРасширенияРаботыСФайлами",
+    "ATTACHFILESYSTEMEXTENSION": "BeginAttachingFileSystemExtension",
+    "КОПИРОВАТЬФАЙЛ": "НачатьКопированиеФайла",
+    "FILECOPY": "BeginCopyingFile",
+    "ПЕРЕМЕСТИТЬФАЙЛ": "НачатьПеремещениеФайла",
+    "MOVEFILE": "BeginMovingFile",
+    "НАЙТИФАЙЛЫ": "НачатьПоискФайлов",
+    "FINDFILES": "BeginFindingFiles",
+    "УДАЛИТЬФАЙЛЫ": "НачатьУдалениеФайлов",
+    "DELETEFILES": "BeginDeletingFiles",
+    "СОЗДАТЬКАТАЛОГ": "НачатьСозданиеКаталога",
+    "CREATEDIRECTORY": "BeginCreatingDirectory",
+    "КАТАЛОГВРЕМЕННЫХФАЙЛОВ": "НачатьПолучениеКаталогаВременныхФайлов",
+    "TEMPFILESDIR": "BeginGettingTempFilesDir",
+    "КАТАЛОГДОКУМЕНТОВ": "НачатьПолучениеКаталогаДокументов",
+    "DOCUMENTSDIR": "BeginGettingDocumentsDir",
+    "РАБОЧИЙКАТАЛОГДАННЫХПОЛЬЗОВАТЕЛЯ": "НачатьПолучениеРабочегоКаталогаДанныхПользователя",
+    "USERDATAWORKDIR": "BeginGettingUserDataWorkDir",
+    "ПОЛУЧИТЬФАЙЛЫ": "НачатьПолучениеФайлов",
+    "GETFILES": "BeginGettingFiles",
+    "ПОМЕСТИТЬФАЙЛЫ": "НачатьПомещениеФайлов",
+    "PUTFILES": "BeginPuttingFiles",
+    "ЗАПРОСИТЬРАЗРЕШЕНИЕПОЛЬЗОВАТЕЛЯ": "НачатьЗапросРазрешенияПользователя",
+    "REQUESTUSERPERMISSION": "BeginRequestingUserPermission",
+    "ЗАПУСТИТЬПРИЛОЖЕНИЕ": "НачатьЗапускПриложения",
+    "RUNAPP": "BeginRunningApplication",
+}
+_RE_BSL272_SYNC = re.compile(
+    r"\b(?P<name>" + "|".join(re.escape(k) for k in _BSL272_SYNC_REPLACEMENTS) + r")\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
 # Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
@@ -6681,15 +6841,15 @@ class DiagnosticEngine:
             # "BSL177" enabled — DeprecatedMethods8310 implemented
             # "BSL178" enabled — DeprecatedMethods8317 implemented
             # "BSL179" enabled — DeprecatedTypeManagedForm implemented
-            "BSL180",  # DisableSafeMode — TODO
+            # "BSL180" enabled — DisableSafeMode implemented
             "BSL181",  # DuplicatedInsertionIntoCollection — TODO
             "BSL182",  # ExcessiveAutoTestCheck — TODO
             # "BSL183" enabled — ExecuteExternalCode implemented
-            "BSL184",  # ExecuteExternalCodeInCommonModule — TODO
-            "BSL185",  # ExternalAppStarting — TODO
+            # "BSL184" enabled — ExecuteExternalCodeInCommonModule implemented
+            # "BSL185" enabled — ExternalAppStarting implemented
             # "BSL186" enabled — ExtraCommas implemented
             "BSL187",  # FieldsFromJoinsWithoutIsNull — TODO
-            "BSL188",  # FileSystemAccess — TODO
+            "BSL188",  # FileSystemAccess implemented; off by default (BSLLS activatedByDefault=false)
             "BSL189",  # ForbiddenMetadataName — TODO
             # "BSL190" enabled — FormDataToValue implemented
             # "BSL191" enabled — FullOuterJoinQuery implemented
@@ -6704,7 +6864,7 @@ class DiagnosticEngine:
             # "BSL200" enabled — IncorrectLineBreak implemented
             # "BSL201" enabled — IncorrectUseLikeInQuery implemented
             "BSL202",  # IncorrectUseOfStrTemplate — TODO
-            "BSL203",  # InternetAccess — TODO
+            "BSL203",  # InternetAccess implemented; off by default (BSLLS activatedByDefault=false)
             "BSL204",  # InvalidCharacterInFile — TODO
             "BSL205",  # IsInRoleMethod — TODO
             # "BSL206" enabled — JoinWithSubQuery implemented
@@ -6726,7 +6886,7 @@ class DiagnosticEngine:
             "BSL223",  # NestedConstructorsInStructureDeclaration — TODO
             # "BSL224" enabled — NestedFunctionInParameters implemented
             # "BSL225" enabled — NumberOfValuesInStructureConstructor implemented
-            "BSL226",  # OSUsersMethod — TODO
+            # "BSL226" enabled — OSUsersMethod implemented
             # "BSL227" enabled — OneStatementPerLine implemented
             # "BSL228" enabled — OrderOfParams implemented
             "BSL229",  # OrdinaryAppSupport — TODO
@@ -6747,10 +6907,10 @@ class DiagnosticEngine:
             "BSL244",  # ServerCallsInFormEvents — TODO
             # "BSL245" enabled — ServerSideExportFormMethod implemented
             "BSL246",  # SetPermissionsForNewObjects — TODO
-            "BSL247",  # SetPrivilegedMode — TODO
+            # "BSL247" enabled — SetPrivilegedMode implemented
             "BSL248",  # SeveralCompilerDirectives — TODO
             "BSL249",  # StyleElementConstructors — TODO
-            "BSL250",  # TempFilesDir — TODO
+            # "BSL250" enabled — TempFilesDir implemented
             "BSL251",  # TernaryOperatorUsage — TODO
             "BSL252",  # ThisObjectAssign — TODO
             "BSL253",  # TimeoutsInExternalResources — TODO
@@ -6764,15 +6924,15 @@ class DiagnosticEngine:
             "BSL261",  # UnsafeSafeModeMethodCall — TODO
             # "BSL262" enabled — UsageWriteLogEvent implemented
             # "BSL263" enabled — UseLessForEach implemented
-            "BSL264",  # UseSystemInformation — TODO
+            "BSL264",  # UseSystemInformation implemented; off by default (BSLLS activatedByDefault=false)
             # "BSL265" enabled — UselessTernaryOperator implemented
             # "BSL266" enabled — UsingCancelParameter implemented
-            "BSL267",  # UsingExternalCodeTools — TODO
+            # "BSL267" enabled — UsingExternalCodeTools implemented
             "BSL268",  # UsingFindElementByString — TODO
             # "BSL269" enabled — UsingLikeInQuery implemented
-            "BSL270",  # UsingModalWindows — TODO
+            # "BSL270" enabled — UsingModalWindows implemented
             "BSL271",  # UsingObjectNotAvailableUnix — TODO
-            "BSL272",  # UsingSynchronousCalls — TODO
+            # "BSL272" enabled — UsingSynchronousCalls implemented
             # "BSL273" enabled — VirtualTableCallWithoutParameters implemented
             "BSL274",  # WrongDataPathForFormElements — TODO
             "BSL275",  # WrongHttpServiceHandler — TODO
@@ -7744,6 +7904,31 @@ class DiagnosticEngine:
         if self._rule_enabled("BSL200"):
             _rule_tasks.append(
                 ("BSL200", lambda: self._rule_bsl200_incorrect_line_break(path, lines))
+            )
+        _bsl180_184_185_188_203_226_247_250_264_267_270_272 = (
+            "BSL180",
+            "BSL184",
+            "BSL185",
+            "BSL188",
+            "BSL203",
+            "BSL226",
+            "BSL247",
+            "BSL250",
+            "BSL264",
+            "BSL267",
+            "BSL270",
+            "BSL272",
+        )
+        if any(self._rule_enabled(c) for c in _bsl180_184_185_188_203_226_247_250_264_267_270_272):
+            _rule_tasks.append(
+                (
+                    "BSL180_184_185_188_203_226_247_250_264_267_270_272",
+                    lambda: self._rule_bsl180_184_185_188_203_226_247_250_264_267_270_272_api_pool(
+                        path,
+                        lines,
+                        _bsl180_184_185_188_203_226_247_250_264_267_270_272,
+                    ),
+                )
             )
         _bsl175_176_177_179_195 = ("BSL175", "BSL176", "BSL177", "BSL179", "BSL195")
         if any(self._rule_enabled(c) for c in _bsl175_176_177_179_195):
@@ -15765,6 +15950,250 @@ class DiagnosticEngine:
                         message=f'Удалите вызов устаревшего метода "{callee_name}".',
                     )
                 )
+
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL180 / BSL184 / BSL185 / BSL188 / BSL203 / BSL226 / BSL247 /
+    # BSL250 / BSL264 / BSL267 / BSL270 / BSL272 — security/context API pool
+    # ------------------------------------------------------------------
+
+    def _rule_bsl180_184_185_188_203_226_247_250_264_267_270_272_api_pool(
+        self,
+        path: str,
+        lines: list[str],
+        enabled_codes: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled = set(enabled_codes)
+        diags: list[Diagnostic] = []
+        is_common_module = bool(_RE_COMMON_MODULE_PATH.search(path))
+
+        for idx, raw_line in enumerate(lines):
+            if _RE_LINE_COMMENT.match(raw_line):
+                continue
+            line = _strip_inline_comment_preserve_strings(raw_line)
+            if not line.strip():
+                continue
+
+            if "BSL180" in enabled:
+                for match in _RE_BSL180_DISABLE_SAFE_MODE.finditer(line):
+                    name = match.group("name")
+                    arg = match.group("arg").strip()
+                    name_cf = name.casefold()
+                    if name_cf in {"установитьбезопасныйрежим", "setsafemode"}:
+                        if arg.casefold() in {"истина", "true"}:
+                            continue
+                    else:
+                        if arg.casefold() in {"ложь", "false"}:
+                            continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL180",
+                            message="Проверьте отключение безопасного режима",
+                        )
+                    )
+
+            if "BSL184" in enabled and is_common_module:
+                for match in _RE_BSL184_EXECUTE_EXTERNAL_CODE.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL184",
+                            message=(
+                                "Выполнение произвольного кода в общем модуле на сервере "
+                                "является потенциальной уязвимостью"
+                            ),
+                        )
+                    )
+
+            if "BSL185" in enabled:
+                for match in _RE_BSL185_EXTERNAL_APP.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL185",
+                            message="Проверьте запуск внешнего приложения",
+                        )
+                    )
+
+            if "BSL188" in enabled:
+                for match in _RE_BSL188_FILESYSTEM_METHOD.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL188",
+                            message="Проверьте обращение к файловой системе",
+                        )
+                    )
+                for match in _RE_BSL188_FILESYSTEM_NEW.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=max(0, match.start("type") - len("Новый ")),
+                            end_line=idx + 1,
+                            end_character=match.start("type"),
+                            severity=Severity.WARNING,
+                            code="BSL188",
+                            message="Проверьте обращение к файловой системе",
+                        )
+                    )
+
+            if "BSL203" in enabled:
+                for match in _RE_BSL203_INTERNET_NEW.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=max(0, match.start("type") - len("Новый ")),
+                            end_line=idx + 1,
+                            end_character=match.start("type"),
+                            severity=Severity.WARNING,
+                            code="BSL203",
+                            message="Проверьте обращение к Интернет-ресурсам",
+                        )
+                    )
+
+            if "BSL226" in enabled:
+                for match in _RE_BSL226_OS_USERS.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL226",
+                            message="Проверить потенциально вредоносное использование метода ПользователиОС",
+                        )
+                    )
+
+            if "BSL247" in enabled:
+                for match in _RE_BSL247_SET_PRIVILEGED.finditer(line):
+                    arg = match.group("arg").strip()
+                    if arg.casefold() in {"ложь", "false"}:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL247",
+                            message="Проверьте установку привилегированного режима",
+                        )
+                    )
+
+            if "BSL250" in enabled:
+                for match in _RE_BSL250_TEMPFILES.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL250",
+                            message="Не рекомендуемый вызов функции КаталогВременныхФайлов()",
+                        )
+                    )
+
+            if "BSL264" in enabled:
+                for match in _RE_BSL264_SYSTEM_INFO.finditer(line):
+                    anchor_start = max(0, line.rfind("Новый", 0, match.start("type") + 1))
+                    anchor_end = anchor_start + len("Новый")
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=anchor_start,
+                            end_line=idx + 1,
+                            end_character=anchor_end,
+                            severity=Severity.WARNING,
+                            code="BSL264",
+                            message="Избавьтесь от использования объекта `СистемнаяИнформация`",
+                        )
+                    )
+
+            if "BSL267" in enabled:
+                for match in _RE_BSL267_EXTERNAL_CODE_TOOLS.finditer(line):
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start(),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL267",
+                            message="Запрещено использование возможности выполнения внешнего кода",
+                        )
+                    )
+
+            if "BSL270" in enabled:
+                for match in _RE_BSL270_MODAL.finditer(line):
+                    method_name = match.group("name")
+                    replacement = _BSL270_MODAL_REPLACEMENTS.get(method_name.upper(), "")
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL270",
+                            message=(
+                                f"Вместо модального метода `{method_name}` необходимо "
+                                f"использовать `{replacement}`"
+                            ),
+                        )
+                    )
+
+            if "BSL272" in enabled:
+                for match in _RE_BSL272_SYNC.finditer(line):
+                    method_name = match.group("name")
+                    replacement = _BSL272_SYNC_REPLACEMENTS.get(method_name.upper(), "")
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.WARNING,
+                            code="BSL272",
+                            message=(
+                                f"Вместо синхронного метода `{method_name}` необходимо "
+                                f"использовать `{replacement}`"
+                            ),
+                        )
+                    )
 
         return diags
 
