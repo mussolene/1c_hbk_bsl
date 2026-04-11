@@ -210,39 +210,84 @@ def implicit_exit_reachable(
             return walk(i + 1)
         if t == "if_statement":
             if _if_may_exit_to_successor_without_return(s):
-                return True
+                return walk(i + 1)
             return False
         if t in ("while_statement", "for_statement", "for_each_statement"):
-            if not loops_executed_at_least_once or not at_top_level:
-                return True
-            if t == "while_statement" and not _while_literal_true(s):
-                return True
-            if _loop_body_always_returns(s):
+            if t == "while_statement" and _while_literal_true(s):
                 return False
-            return True
+            if (
+                loops_executed_at_least_once
+                and at_top_level
+                and t in ("for_statement", "for_each_statement")
+                and i + 1 >= len(stmts)
+            ):
+                return False
+            if loops_executed_at_least_once and at_top_level:
+                return walk(i + 1)
+            if not _loop_body_always_returns(s):
+                return True
+            return walk(i + 1)
         if t == "try_statement":
-            return not _try_always_returns(s)
+            if not _try_always_returns(s):
+                return True
+            return walk(i + 1)
         return walk(i + 1)
 
     return walk(0)
 
 
+def _fn_subtree_has_parse_error(fn_def: Any) -> bool:
+    def walk(node: Any) -> bool:
+        if getattr(node, "type", None) == "ERROR":
+            return True
+        if bool(getattr(node, "is_missing", False)):
+            return True
+        return any(walk(child) for child in getattr(node, "children", []) or [])
+
+    return walk(fn_def)
+
+
+def _fn_has_return(fn_def: Any) -> bool:
+    found = False
+
+    def walk(node: Any) -> None:
+        nonlocal found
+        if getattr(node, "type", None) == "return_statement":
+            found = True
+            return
+        for child in getattr(node, "children", []) or []:
+            walk(child)
+
+    for child in _function_body_children(fn_def):
+        walk(child)
+    return found
+
+
 def bsl148_function_name_spans(
-    root: Any,
+    tree_or_root: Any,
     *,
     loops_executed_at_least_once: bool = True,
 ) -> list[tuple[int, int, int]]:
+    root = getattr(tree_or_root, "root_node", None)
+    if root is None:
+        root = tree_or_root
+
     out: list[tuple[int, int, int]] = []
-    for ch in getattr(root, "children", []) or []:
-        if getattr(ch, "type", None) != "function":
-            continue
-        ident = _identifier_span(ch)
-        if ident is None:
-            continue
-        if implicit_exit_reachable(
-            _function_body_children(ch),
-            loops_executed_at_least_once=loops_executed_at_least_once,
-            at_top_level=True,
-        ):
-            out.append((ident.line0 + 1, ident.col0, ident.col1))
+
+    def scan(node: Any) -> None:
+        if getattr(node, "type", None) == "function_definition":
+            if not _fn_subtree_has_parse_error(node) and _fn_has_return(node):
+                body = _function_body_children(node)
+                if implicit_exit_reachable(
+                    body,
+                    loops_executed_at_least_once=loops_executed_at_least_once,
+                    at_top_level=True,
+                ):
+                    ident = _identifier_span(node)
+                    if ident is not None:
+                        out.append((ident.line0 + 1, ident.col0, ident.col1))
+        for child in getattr(node, "children", []) or []:
+            scan(child)
+
+    scan(root)
     return out

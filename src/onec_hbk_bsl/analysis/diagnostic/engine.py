@@ -2216,17 +2216,17 @@ class DiagnosticEngine:
         if root is None or not isinstance(getattr(root, "text", None), (bytes, type(None))):
             return []
         diags: list[Diagnostic] = []
-        for sp in bsl148_function_name_spans(
-            tree,
+        for line0, col0, col1 in bsl148_function_name_spans(
+            root,
             loops_executed_at_least_once=self.bsl148_loops_executed_at_least_once,
         ):
             diags.append(
                 Diagnostic(
                     file=path,
-                    line=sp.line0 + 1,
-                    character=sp.col0,
-                    end_line=sp.line1 + 1,
-                    end_character=sp.col1,
+                    line=line0,
+                    character=col0,
+                    end_line=line0,
+                    end_character=col1,
                     severity=Severity.ERROR,
                     code="BSL148",
                     message=(
