@@ -110,7 +110,7 @@ from onec_hbk_bsl.analysis.diagnostics_cst import (
 from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
     build_enabled_invoke_snapshot,
 )
-from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
+from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 from onec_hbk_bsl.indexer.metadata_parser import crawl_config
@@ -4521,6 +4521,29 @@ def _iter_query_text_content_lines(start_idx: int, block_lines: list[str]):
             break
 
 
+def _snapshot_query_blocks(lines: list[str], query_blocks: list[QueryTextBlockInfo] | None):
+    if query_blocks is not None:
+        for block in query_blocks:
+            yield block.start_idx, list(block.block_lines)
+        return
+    yield from _iter_query_text_blocks(lines)
+
+
+def _query_block_content_line_tuples(
+    block: QueryTextBlockInfo,
+) -> list[tuple[int, int, str, str, bool]]:
+    return [
+        (
+            line.line_no,
+            line.content_base,
+            line.content,
+            line.head,
+            line.ended_query,
+        )
+        for line in block.content_lines
+    ]
+
+
 def _find_matching_paren(text: str, open_idx: int) -> int:
     depth = 0
     i = open_idx
@@ -7416,6 +7439,7 @@ class DiagnosticEngine:
         )
         _symbols = snapshot.symbols
         _calls = snapshot.calls
+        _query_blocks = snapshot.query_text_blocks
 
         _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
 
@@ -7724,7 +7748,12 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL077"):
             _rule_tasks.append(
-                ("BSL077", lambda: self._rule_bsl077_select_top_without_order_by(path, lines))
+                (
+                    "BSL077",
+                    lambda: self._rule_bsl077_select_top_without_order_by(
+                        path, lines, _query_blocks
+                    ),
+                )
             )
         if self._rule_enabled("BSL078"):
             _rule_tasks.append(
@@ -8188,7 +8217,7 @@ class DiagnosticEngine:
                 (
                     "BSL220_235_269_273",
                     lambda: self._rule_bsl220_235_269_273_query_text_diagnostics(
-                        path, lines, _bsl220_235_269_273
+                        path, lines, _bsl220_235_269_273, _query_blocks
                     ),
                 )
             )
@@ -8197,7 +8226,9 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 (
                     "BSL191_201",
-                    lambda: self._rule_bsl191_201_query_text_diagnostics(path, lines, _bsl191_201),
+                    lambda: self._rule_bsl191_201_query_text_diagnostics(
+                        path, lines, _bsl191_201, _query_blocks
+                    ),
                 )
             )
         _bsl192_193_194_228_266 = ("BSL192", "BSL193", "BSL194", "BSL228", "BSL266")
@@ -8244,7 +8275,7 @@ class DiagnosticEngine:
                 (
                     "BSL206_207_209",
                     lambda: self._rule_bsl206_207_209_query_join_diagnostics(
-                        path, lines, _bsl206_207_209
+                        path, lines, _bsl206_207_209, _query_blocks
                     ),
                 )
             )
@@ -8308,7 +8339,7 @@ class DiagnosticEngine:
                 (
                     "BSL174_187_236_238",
                     lambda: self._rule_bsl174_187_236_238_query_metadata_pool(
-                        path, lines, _bsl174_187_236_238
+                        path, lines, _bsl174_187_236_238, _query_blocks
                     ),
                 )
             )
@@ -11902,11 +11933,25 @@ class DiagnosticEngine:
         self,
         path: str,
         lines: list[str],
+        query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
         """Flag query text with TOP/ПЕРВЫЕ used without ORDER BY/УПОРЯДОЧИТЬ."""
         diags: list[Diagnostic] = []
-        for start_idx, block_lines in _iter_query_text_blocks(lines):
-            query_text = "\n".join(block_lines)
+        if query_blocks is None:
+            blocks_iter = [
+                QueryTextBlockInfo(
+                    start_idx=start_idx,
+                    block_lines=tuple(block_lines),
+                    content_lines=tuple(),
+                )
+                for start_idx, block_lines in _iter_query_text_blocks(lines)
+            ]
+        else:
+            blocks_iter = query_blocks
+        for block in blocks_iter:
+            start_idx = block.start_idx
+            block_lines = list(block.block_lines)
+            query_text = block.query_text
             top_matches = list(_RE_QUERY_TOP.finditer(query_text))
             if not top_matches:
                 continue
@@ -15356,14 +15401,20 @@ class DiagnosticEngine:
         path: str,
         lines: list[str],
         codes: tuple[str, ...],
+        query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
         enabled = {code for code in codes if self._rule_enabled(code)}
         if not enabled:
             return []
 
         diags: list[Diagnostic] = []
-        for start_idx, block_lines in _iter_query_text_blocks(lines):
-            content_lines = list(_iter_query_text_content_lines(start_idx, block_lines))
+        if query_blocks is None:
+            blocks_iter = None
+        else:
+            blocks_iter = query_blocks
+
+        for block in blocks_iter or ():
+            content_lines = _query_block_content_line_tuples(block)
             if not content_lines:
                 continue
 
@@ -15464,6 +15515,109 @@ class DiagnosticEngine:
                                     message="Обращение к виртуальной таблице без параметров",
                                 )
                             )
+        if query_blocks is None:
+            for start_idx, block_lines in _iter_query_text_blocks(lines):
+                content_lines = list(_iter_query_text_content_lines(start_idx, block_lines))
+                if not content_lines:
+                    continue
+
+                if "BSL235" in enabled and (
+                    not _query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
+                    or any(
+                        _RE_QUERY_PARSE_ERROR_TAIL_KEYWORD.search(head)
+                        or _RE_QUERY_PARSE_ERROR_TAIL_OPERATOR.search(head)
+                        for _, _, _, head, _ in content_lines
+                    )
+                ):
+                    line_no, content_base, _content, head, _ = content_lines[-1]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=line_no,
+                            character=content_base,
+                            end_line=line_no,
+                            end_character=content_base + len(head),
+                            severity=Severity.ERROR,
+                            code="BSL235",
+                            message="Синтаксическая ошибка в тексте встроенного запроса",
+                        )
+                    )
+
+                for line_no, content_base, content, head, _ended_query in content_lines:
+                    if "BSL220" in enabled:
+                        multi_match = re.search(r'"{4,}', content)
+                        if multi_match:
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=content_base + multi_match.start(),
+                                    end_line=line_no,
+                                    end_character=content_base + multi_match.end(),
+                                    severity=Severity.INFORMATION,
+                                    code="BSL220",
+                                    message="Многострочная строка внутри текста запроса",
+                                )
+                            )
+
+                    if "BSL269" in enabled:
+                        for match in _RE_QUERY_LIKE_OPERATOR.finditer(head):
+                            diags.append(
+                                Diagnostic(
+                                    file=path,
+                                    line=line_no,
+                                    character=content_base + match.start(),
+                                    end_line=line_no,
+                                    end_character=content_base + match.end(),
+                                    severity=Severity.INFORMATION,
+                                    code="BSL269",
+                                    message="Оператор ПОДОБНО может привести к полному сканированию таблицы",
+                                )
+                            )
+
+                    if "BSL273" in enabled:
+                        for match in _RE_QUERY_VIRTUAL_TABLE_CALL.finditer(head):
+                            open_match = match.group("open")
+                            if open_match is None:
+                                diags.append(
+                                    Diagnostic(
+                                        file=path,
+                                        line=line_no,
+                                        character=content_base + match.start("name"),
+                                        end_line=line_no,
+                                        end_character=content_base + match.end("name"),
+                                        severity=Severity.WARNING,
+                                        code="BSL273",
+                                        message="Обращение к виртуальной таблице без параметров",
+                                    )
+                                )
+                                continue
+
+                            open_idx = match.end("open") - 1
+                            close_idx = _find_matching_paren(head, open_idx)
+                            if close_idx < 0:
+                                continue
+                            args = head[open_idx + 1 : close_idx]
+                            parts = [part.strip() for part in _split_top_level_args(args)]
+                            if not parts or all(not part for part in parts):
+                                is_violation = True
+                            elif len(parts) == 1:
+                                is_violation = False
+                            else:
+                                is_violation = all(not part for part in parts[1:])
+                            if is_violation:
+                                diags.append(
+                                    Diagnostic(
+                                        file=path,
+                                        line=line_no,
+                                        character=content_base + match.start("name"),
+                                        end_line=line_no,
+                                        end_character=content_base + close_idx + 1,
+                                        severity=Severity.WARNING,
+                                        code="BSL273",
+                                        message="Обращение к виртуальной таблице без параметров",
+                                    )
+                                )
         return diags
 
     # ------------------------------------------------------------------
@@ -15475,20 +15629,32 @@ class DiagnosticEngine:
         path: str,
         lines: list[str],
         codes: tuple[str, ...],
+        query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
         enabled = {code for code in codes if self._rule_enabled(code)}
         if not enabled:
             return []
 
         diags: list[Diagnostic] = []
-        for start_idx, block_lines in _iter_query_text_blocks(lines):
-            for (
-                line_no,
-                content_base,
-                _content,
-                head,
-                _ended_query,
-            ) in _iter_query_text_content_lines(start_idx, block_lines):
+        if query_blocks is None:
+            blocks = (
+                (
+                    start_idx,
+                    list(_iter_query_text_content_lines(start_idx, block_lines)),
+                )
+                for start_idx, block_lines in _iter_query_text_blocks(lines)
+            )
+        else:
+            blocks = (
+                (
+                    block.start_idx,
+                    _query_block_content_line_tuples(block),
+                )
+                for block in query_blocks
+            )
+
+        for _start_idx, content_lines in blocks:
+            for line_no, content_base, _content, head, _ended_query in content_lines:
                 if "BSL191" in enabled:
                     for match in _RE_QUERY_FULL_OUTER_JOIN.finditer(head):
                         diags.append(
@@ -16243,13 +16409,33 @@ class DiagnosticEngine:
         path: str,
         lines: list[str],
         codes: tuple[str, ...],
+        query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
         enabled = {code for code in codes if self._rule_enabled(code)}
         if not enabled:
             return []
 
         diags: list[Diagnostic] = []
-        for start_idx, block_lines in _iter_query_text_blocks(lines):
+        if query_blocks is None:
+            blocks = (
+                (
+                    start_idx,
+                    list(block_lines),
+                    list(_iter_query_text_content_lines(start_idx, block_lines)),
+                )
+                for start_idx, block_lines in _iter_query_text_blocks(lines)
+            )
+        else:
+            blocks = (
+                (
+                    block.start_idx,
+                    list(block.block_lines),
+                    _query_block_content_line_tuples(block),
+                )
+                for block in query_blocks
+            )
+
+        for _start_idx, block_lines, content_lines in blocks:
             if not any(_RE_QUERY_JOIN_KEYWORD.search(line) for line in block_lines):
                 continue
 
@@ -16257,13 +16443,7 @@ class DiagnosticEngine:
             join_on_active = False
             join_buffer = ""
 
-            for (
-                line_no,
-                content_base,
-                _content,
-                head,
-                _ended_query,
-            ) in _iter_query_text_content_lines(start_idx, block_lines):
+            for line_no, content_base, _content, head, _ended_query in content_lines:
                 if _RE_QUERY_JOIN_END_KEYWORD.search(head):
                     join_on_active = False
                     join_buffer = ""
@@ -18946,6 +19126,7 @@ class DiagnosticEngine:
         path: str,
         lines: list[str],
         enabled: tuple[str, ...],
+        query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
         enabled_set = set(enabled)
         diags: list[Diagnostic] = []
@@ -18976,8 +19157,15 @@ class DiagnosticEngine:
                         )
                     )
 
-        for start_idx, block_lines in _iter_query_text_blocks(lines):
-            query_lines = list(_iter_query_text_content_lines(start_idx, block_lines))
+        if query_blocks is None:
+            blocks = (
+                list(_iter_query_text_content_lines(start_idx, block_lines))
+                for start_idx, block_lines in _iter_query_text_blocks(lines)
+            )
+        else:
+            blocks = (_query_block_content_line_tuples(block) for block in query_blocks)
+
+        for query_lines in blocks:
             if not query_lines:
                 continue
             query_text = "\n".join(head for _ln, _base, _content, head, _end in query_lines)

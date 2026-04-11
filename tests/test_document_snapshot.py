@@ -47,3 +47,25 @@ def test_snapshot_falls_back_to_regex_views_when_tree_is_not_real_ts(tmp_path: P
 
     assert snapshot.procedures[0].name == "Имя"
     assert snapshot.regions[0].name == "Test"
+
+
+def test_snapshot_collects_embedded_query_blocks(tmp_path: Path) -> None:
+    content = """\
+Процедура Тест()
+    Запрос.Текст =
+    "ВЫБРАТЬ
+    |    Поле
+    |ИЗ Справочник.Номенклатура // comment
+    |ГДЕ Поле ПОДОБНО \"Тест%\"";
+КонецПроцедуры
+"""
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+
+    assert len(snapshot.query_text_blocks) == 1
+    block = snapshot.query_text_blocks[0]
+    assert block.start_idx == 2
+    assert "ВЫБРАТЬ" in block.query_text
+    assert len(block.content_lines) == 4
+    assert block.content_lines[0].line_no == 3
+    assert block.content_lines[1].head == "Поле"
+    assert block.content_lines[2].head == "ИЗ Справочник.Номенклатура"

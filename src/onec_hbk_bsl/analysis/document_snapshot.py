@@ -38,6 +38,8 @@ _RE_REGION_CLOSE = re.compile(
     r"^\s*#(?:КонецОбласти|EndRegion)\b.*$",
     re.IGNORECASE | re.MULTILINE,
 )
+_RE_QUERY_TEXT_START = re.compile(r'"\s*(?:ВЫБРАТЬ|SELECT)\b', re.IGNORECASE)
+_RE_QUERY_INLINE_COMMENT = re.compile(r"\s*//.*$")
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,34 @@ class RegionInfo:
     name: str
     start_idx: int
     end_idx: int
+
+
+@dataclass(frozen=True)
+class QueryTextLineInfo:
+    """One logical content line inside an embedded query string block."""
+
+    line_no: int
+    content_base: int
+    content: str
+    head: str
+    ended_query: bool
+
+
+@dataclass(frozen=True)
+class QueryTextBlockInfo:
+    """Embedded query string block with pre-split logical lines."""
+
+    start_idx: int
+    block_lines: tuple[str, ...]
+    content_lines: tuple[QueryTextLineInfo, ...]
+
+    @property
+    def query_text(self) -> str:
+        return "\n".join(self.block_lines)
+
+    @property
+    def head_text(self) -> str:
+        return "\n".join(line.head for line in self.content_lines)
 
 
 def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
@@ -301,6 +331,75 @@ def _build_proc_node_map(tree: Any) -> dict[tuple[str, int, str], Any]:
     return result
 
 
+def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
+    result: list[QueryTextBlockInfo] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not _RE_QUERY_TEXT_START.search(line):
+            i += 1
+            continue
+        block_lines = [line]
+        j = i + 1
+        while j < len(lines) and (lines[j].lstrip().startswith("|") or not lines[j].strip()):
+            block_lines.append(lines[j])
+            j += 1
+
+        content_lines: list[QueryTextLineInfo] = []
+        for offset, raw_line in enumerate(block_lines):
+            stripped = raw_line.rstrip()
+            if not stripped:
+                continue
+
+            if offset == 0:
+                quote_pos = raw_line.find('"')
+                if quote_pos < 0:
+                    continue
+                content_base = quote_pos + 1
+                raw_content = raw_line[content_base:]
+            else:
+                pipe_pos = raw_line.find("|")
+                if pipe_pos < 0:
+                    continue
+                after_pipe = raw_line[pipe_pos + 1 :]
+                leading_ws = len(after_pipe) - len(after_pipe.lstrip())
+                content_base = pipe_pos + 1 + leading_ws
+                raw_content = after_pipe.lstrip()
+
+            content = _RE_QUERY_INLINE_COMMENT.sub("", raw_content).rstrip().lstrip()
+            if not content:
+                continue
+
+            ended_query = '"' in content
+            head = content.split('"', 1)[0].rstrip() if ended_query else content
+            if not head:
+                if ended_query:
+                    break
+                continue
+
+            content_lines.append(
+                QueryTextLineInfo(
+                    line_no=i + offset + 1,
+                    content_base=content_base,
+                    content=content,
+                    head=head,
+                    ended_query=ended_query,
+                )
+            )
+            if ended_query:
+                break
+
+        result.append(
+            QueryTextBlockInfo(
+                start_idx=i,
+                block_lines=tuple(block_lines),
+                content_lines=tuple(content_lines),
+            )
+        )
+        i = j
+    return result
+
+
 @dataclass(slots=True)
 class DocumentSnapshot:
     """One parsed view of a BSL document with lazily derived analysis data."""
@@ -315,6 +414,7 @@ class DocumentSnapshot:
     _proc_node_map: dict[tuple[str, int, str], Any] | None = None
     _symbols: list[Symbol] | None = None
     _calls: list[Call] | None = None
+    _query_blocks: list[QueryTextBlockInfo] | None = None
 
     @property
     def root_node(self) -> Any | None:
@@ -381,6 +481,12 @@ class DocumentSnapshot:
         if self._calls is None:
             self._calls = extract_calls(self.tree, file_path=self.path)
         return self._calls
+
+    @property
+    def query_text_blocks(self) -> list[QueryTextBlockInfo]:
+        if self._query_blocks is None:
+            self._query_blocks = _build_query_text_blocks(self.lines)
+        return self._query_blocks
 
 
 def build_document_snapshot(
