@@ -101,6 +101,33 @@ from onec_hbk_bsl.analysis.diagnostics_rule_registry import (
 )
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
+from onec_hbk_bsl.analysis.helpers import proc_helpers as _proc_helpers
+from onec_hbk_bsl.analysis.helpers.config_helpers import (
+    _RE_BSL275_HANDLER,
+    _RE_BSL278_PROCNAME,
+    _RE_XML_BOOL_SIMPLE,
+)
+from onec_hbk_bsl.analysis.helpers.config_helpers import (
+    path_is_command_module_bsl as _path_is_command_module_bsl,
+)
+from onec_hbk_bsl.analysis.helpers.proc_helpers import (
+    is_client_notify_completion_export_handler as _is_client_notify_completion_export_handler,
+)
+from onec_hbk_bsl.analysis.helpers.proc_helpers import (
+    is_typical_client_command_handler as _is_typical_client_command_handler,
+)
+from onec_hbk_bsl.analysis.helpers.proc_helpers import (
+    proc_by_name_and_line as _proc_by_name_and_line,
+)
+from onec_hbk_bsl.analysis.helpers.proc_helpers import (
+    proc_containing_line as _proc_containing_line,
+)
+from onec_hbk_bsl.analysis.helpers.proc_helpers import (
+    proc_name_span as _proc_name_span,
+)
+from onec_hbk_bsl.analysis.helpers.proc_helpers import (
+    procedure_compiler_execution_context as _procedure_compiler_execution_context,
+)
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 from onec_hbk_bsl.analysis.passes.core_pass import (
     extend_core_rule_tasks,
@@ -190,9 +217,9 @@ from onec_hbk_bsl.analysis.rules.runtime_tail_rules import (
     run_bsl263_useless_for_each,
     run_bsl265_useless_ternary_operator,
 )
-from onec_hbk_bsl.indexer.metadata_parser import crawl_config
-from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
 from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+_proc_param_name_span = _proc_helpers.proc_param_name_span
 
 # When a diagnostic span overlaps a "..." literal, drop the warning unless the rule
 # is meant to inspect string contents (secrets, duplicates, concat, magic numbers, …).
@@ -3157,19 +3184,6 @@ def _proc_body_base_indent(lines: list[str], proc: _ProcInfo) -> int:
     return 0
 
 
-def _proc_name_span(lines: list[str], proc: _ProcInfo) -> tuple[int, int]:
-    """Best-effort span of the procedure/function name on the header line."""
-    if 0 <= proc.start_idx < len(lines):
-        header_line = lines[proc.start_idx]
-        try:
-            start = header_line.index(proc.name)
-            return start, start + len(proc.name)
-        except ValueError:
-            pass
-    start = proc.header_col
-    return start, start + len(proc.name)
-
-
 def _line_starts_with_raise_statement(line: str) -> bool:
     """True if the line begins with ВызватьИсключение/Raise (not a // comment)."""
     if line.strip().startswith("//"):
@@ -3630,140 +3644,6 @@ _RE_BSL276_PROCEED_WITH_CALL = re.compile(
     re.IGNORECASE,
 )
 _RE_BSL276_AROUND_ANNOTATION = re.compile(r"^\s*&(?:Вместо|Instead|Around)\b", re.IGNORECASE)
-_RE_XML_BOOL_SIMPLE = r"<{tag}>\s*(true|false)\s*</{tag}>"
-_RE_BSL275_HANDLER = re.compile(r"<Handler>\s*([^<]*)\s*</Handler>", re.IGNORECASE)
-_RE_BSL278_PROCNAME = re.compile(r"<ProcedureName>\s*([^<]*)\s*</ProcedureName>", re.IGNORECASE)
-_RE_XML_NAME_SIMPLE = re.compile(r"<Name>\s*([^<]+?)\s*</Name>", re.IGNORECASE)
-_RE_XML_DIMENSION_BLOCK = re.compile(
-    r"<Dimension\b.*?>.*?<Name>\s*([^<]+?)\s*</Name>.*?<DenyIncompleteValues>\s*(true|false)\s*</DenyIncompleteValues>.*?</Dimension>",
-    re.IGNORECASE | re.DOTALL,
-)
-_RE_XML_SET_FOR_NEW_OBJECTS = re.compile(
-    r"<SetForNewObjects>\s*(true|false)\s*</SetForNewObjects>",
-    re.IGNORECASE,
-)
-_RE_XML_METHOD_NAME = re.compile(r"<MethodName>\s*([^<]+?)\s*</MethodName>", re.IGNORECASE)
-_RE_XML_EVENT_HANDLER = re.compile(
-    r"<Handler>\s*([^<]+?)\s*</Handler>|<Method>\s*([^<]+?)\s*</Method>",
-    re.IGNORECASE,
-)
-_RE_XML_DATAPATH = re.compile(r"<DataPath>\s*([^<]+?)\s*</DataPath>", re.IGNORECASE)
-_RE_XML_PROTECTED = re.compile(
-    r"<(?:IsProtected|Protected)>\s*true\s*</(?:IsProtected|Protected)>", re.IGNORECASE
-)
-_RE_XML_PRIVILEGED = re.compile(r"<Privileged>\s*true\s*</Privileged>", re.IGNORECASE)
-
-
-def _path_is_command_module_bsl(path: str) -> bool:
-    low = path.replace("\\", "/").lower()
-    return (
-        low.endswith("/ext/commandmodule.bsl") or "/commands/" in low or "/commoncommands/" in low
-    )
-
-
-@functools.lru_cache(maxsize=32)
-def _config_root_for_file(path: str) -> str | None:
-    try:
-        p = Path(path).resolve()
-    except OSError:
-        p = Path(path)
-    for parent in (p.parent, *p.parents):
-        if (parent / "Configuration.xml").exists():
-            return str(parent)
-    return None
-
-
-@functools.lru_cache(maxsize=8)
-def _crawl_config_cached(config_root: str) -> dict[str, Any]:
-    objects = crawl_config(config_root)
-    by_name: dict[str, Any] = {}
-    for obj in objects:
-        by_name[obj.name.casefold()] = obj
-    return {"objects": objects, "by_name": by_name}
-
-
-@functools.lru_cache(maxsize=256)
-def _read_text_cached(path: str) -> str:
-    try:
-        return Path(path).read_text(encoding="utf-8-sig", errors="replace")
-    except OSError:
-        return ""
-
-
-def _current_module_xml_context(path: str) -> dict[str, str]:
-    low = path.replace("\\", "/")
-    parts = Path(low).parts
-    out: dict[str, str] = {}
-    for idx, part in enumerate(parts):
-        if part in FOLDER_TO_KIND:
-            out["folder"] = part
-            if idx + 1 < len(parts):
-                out["object_name"] = parts[idx + 1]
-            if "forms" in [p.casefold() for p in parts[idx + 1 :]]:
-                try:
-                    forms_idx = next(
-                        i for i in range(idx + 1, len(parts)) if parts[i].casefold() == "forms"
-                    )
-                    if forms_idx + 1 < len(parts):
-                        out["form_name"] = parts[forms_idx + 1]
-                except StopIteration:
-                    pass
-            break
-    return out
-
-
-def _current_object_xml_path(path: str) -> Path | None:
-    root = _config_root_for_file(path)
-    if root is None:
-        return None
-    ctx = _current_module_xml_context(path)
-    folder = ctx.get("folder")
-    object_name = ctx.get("object_name")
-    if folder and object_name:
-        return Path(root) / folder / f"{object_name}.xml"
-    if "/commonmodules/" in path.replace("\\", "/").lower():
-        mod_name = Path(path).parent.parent.name
-        return Path(root) / "CommonModules" / f"{mod_name}.xml"
-    return None
-
-
-def _current_form_xml_path(path: str) -> Path | None:
-    root = _config_root_for_file(path)
-    if root is None:
-        return None
-    ctx = _current_module_xml_context(path)
-    folder = ctx.get("folder")
-    object_name = ctx.get("object_name")
-    form_name = ctx.get("form_name")
-    if not (folder and object_name and form_name):
-        return None
-    return Path(root) / folder / object_name / "Forms" / form_name / "Ext" / "Form.xml"
-
-
-@functools.lru_cache(maxsize=64)
-def _common_module_file_map(config_root: str) -> dict[str, dict[str, Any]]:
-    root = Path(config_root) / "CommonModules"
-    result: dict[str, dict[str, Any]] = {}
-    if not root.exists():
-        return result
-    for xml_file in root.glob("*.xml"):
-        name = xml_file.stem
-        raw = _read_text_cached(str(xml_file))
-        module_file = root / name / "Ext" / "Module.bsl"
-        proc_names: set[str] = set()
-        if module_file.exists():
-            snap = build_document_snapshot(
-                str(module_file),
-                content=_read_text_cached(str(module_file)),
-            )
-            proc_names = {proc.name.casefold() for proc in snap.procedures}
-        result[name.casefold()] = {
-            "name": name,
-            "privileged": bool(_RE_XML_PRIVILEGED.search(raw)),
-            "protected": bool(_RE_XML_PROTECTED.search(raw)),
-            "proc_names": proc_names,
-        }
-    return result
 
 
 # Service tags in comments
@@ -4098,86 +3978,6 @@ _BSL062_SKIP_STANDARD_COMMAND_PARAMS = frozenset(
 )
 
 
-def _procedure_compiler_execution_context(lines: list[str], proc: _ProcInfo) -> str:
-    """
-    ``&НаКлиенте`` / ``&НаСервере`` / ``&НаКлиентеНаСервере`` непосредственно перед объявлением метода.
-
-    Returns one of: ``client``, ``server``, ``both``, ``none``.
-    """
-    j = proc.start_idx - 1
-    saw_client = False
-    saw_server = False
-    while j >= 0:
-        raw = lines[j]
-        if not raw.strip():
-            j -= 1
-            continue
-        if raw.strip().startswith("//"):
-            j -= 1
-            continue
-        s = raw.strip()
-        if not s.startswith("&"):
-            break
-        u = s.casefold().replace(" ", "")
-        if "наклиентенасервере" in u:
-            return "both"
-        if "наклиенте" in u and "насервере" not in u:
-            saw_client = True
-        elif "насервере" in u and "наклиенте" not in u:
-            saw_server = True
-        j -= 1
-    if saw_client and saw_server:
-        return "both"
-    if saw_client:
-        return "client"
-    if saw_server:
-        return "server"
-    return "none"
-
-
-def _is_typical_client_command_handler(proc: _ProcInfo, lines: list[str]) -> bool:
-    """
-    Типовой обработчик команды: ``Процедура ОбработкаКоманды`` в клиентском (или смешанном)
-    контексте компилятора. Серверный контекст исключаем — это уже не «ввод команды» на клиенте.
-
-    Заменяет эвристику ``.../CommonCommands/.../CommandModule.bsl``: одно и то же имя метода
-    встречается в общих командах и в ``Catalogs/.../Commands/.../CommandModule.bsl``.
-    """
-    if proc.name.strip().casefold() != "обработкакоманды":
-        return False
-    ctx = _procedure_compiler_execution_context(lines, proc)
-    return ctx in ("client", "both", "none")
-
-
-def _is_client_notify_completion_export_handler(proc: _ProcInfo, lines: list[str]) -> bool:
-    """
-    Экспортный клиентский обработчик завершения для «ОписаниеОповещения» (имя *Завершение / *Completion).
-
-    Сигнатура платформенная; второй параметр «Параметры» часто не используется — это не ошибка.
-    Отдельный комментарий к экспорту обычно избыточен (как в BSLLS на типовых CommandModule).
-    """
-    if not proc.is_export:
-        return False
-    ctx = _procedure_compiler_execution_context(lines, proc)
-    if ctx not in ("client", "both", "none"):
-        return False
-    n = proc.name.strip().casefold()
-    return n.endswith("завершение") or n.endswith("completion")
-
-
-def _proc_param_name_span(header_line: str, param_name: str) -> tuple[int, int] | None:
-    open_paren = header_line.find("(")
-    close_paren = header_line.rfind(")")
-    if open_paren < 0:
-        return None
-    haystack = header_line[open_paren + 1 : close_paren if close_paren > open_paren else None]
-    m = re.search(rf"\b{re.escape(param_name)}\b", haystack, re.IGNORECASE)
-    if not m:
-        return None
-    start = open_paren + 1 + m.start()
-    return start, open_paren + 1 + m.end()
-
-
 def _proc_assigned_param_names(lines: list[str], proc: _ProcInfo) -> set[str]:
     assigned: set[str] = set()
     body_start = _proc_body_start_line_idx_fallback(lines, proc)
@@ -4189,14 +3989,6 @@ def _proc_assigned_param_names(lines: list[str], proc: _ProcInfo) -> set[str]:
         if am:
             assigned.add(am.group(1).casefold())
     return assigned
-
-
-def _proc_by_name_and_line(procs: list[_ProcInfo], name: str, line_1based: int) -> _ProcInfo | None:
-    line_idx = max(0, line_1based - 1)
-    for proc in procs:
-        if proc.name.casefold() == name.casefold() and proc.start_idx <= line_idx <= proc.end_idx:
-            return proc
-    return None
 
 
 def _load_file_lines_cached(
@@ -4249,14 +4041,6 @@ def _caller_is_client_method(
     return (
         proc is not None and _procedure_compiler_execution_context(caller_lines, proc) == "client"
     )
-
-
-def _proc_containing_line(procs: list[_ProcInfo], line_idx: int) -> _ProcInfo | None:
-    """Procedure/function whose body includes 0-based line index *line_idx*."""
-    for p in procs:
-        if p.start_idx <= line_idx <= p.end_idx:
-            return p
-    return None
 
 
 def _comma_missing_space_after_cols_in_line(line: str) -> list[int]:
