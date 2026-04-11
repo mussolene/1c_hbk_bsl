@@ -2097,7 +2097,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["compatibility", "ui"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL230": {
         "name": "PairingBrokenTransaction",
@@ -2511,7 +2511,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["correctness", "http"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL276": {
         "name": "WrongUseFunctionProceedWithCall",
@@ -2538,7 +2538,7 @@ RULE_METADATA: dict[str, dict] = {
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["correctness", "web-service"],
-        "implemented": False,
+        "implemented": True,
     },
     "BSL279": {
         "name": "YoLetterUsage",
@@ -3546,6 +3546,9 @@ _RE_BSL276_PROCEED_WITH_CALL = re.compile(
     re.IGNORECASE,
 )
 _RE_BSL276_AROUND_ANNOTATION = re.compile(r"^\s*&(?:Вместо|Instead|Around)\b", re.IGNORECASE)
+_RE_XML_BOOL_SIMPLE = r"<{tag}>\s*(true|false)\s*</{tag}>"
+_RE_BSL275_HANDLER = re.compile(r"<Handler>\s*([^<]*)\s*</Handler>", re.IGNORECASE)
+_RE_BSL278_PROCNAME = re.compile(r"<ProcedureName>\s*([^<]*)\s*</ProcedureName>", re.IGNORECASE)
 
 # Service tags in comments
 # Matches BSLLS UsingServiceTagDiagnostic default pattern:
@@ -6975,7 +6978,7 @@ class DiagnosticEngine:
             # "BSL226" enabled — OSUsersMethod implemented
             # "BSL227" enabled — OneStatementPerLine implemented
             # "BSL228" enabled — OrderOfParams implemented
-            "BSL229",  # OrdinaryAppSupport — TODO
+            # "BSL229" enabled — OrdinaryAppSupport implemented
             # "BSL230" enabled — PairingBrokenTransaction implemented
             "BSL231",  # PrivilegedModuleMethodCall — TODO
             "BSL232",  # ProtectedModule — TODO
@@ -7021,10 +7024,10 @@ class DiagnosticEngine:
             # "BSL272" enabled — UsingSynchronousCalls implemented
             # "BSL273" enabled — VirtualTableCallWithoutParameters implemented
             "BSL274",  # WrongDataPathForFormElements — TODO
-            "BSL275",  # WrongHttpServiceHandler — TODO
+            # "BSL275" enabled — WrongHttpServiceHandler implemented
             # "BSL276" enabled — WrongUseFunctionProceedWithCall implemented
             # "BSL277" enabled — WrongUseOfRollbackTransactionMethod implemented
-            "BSL278",  # WrongWebServiceHandler — TODO
+            # "BSL278" enabled — WrongWebServiceHandler implemented
             # "BSL279" enabled — YoLetterUsage implemented
         }
     )
@@ -8130,6 +8133,16 @@ class DiagnosticEngine:
                     "BSL221_222_239_271_276",
                     lambda: self._rule_bsl221_222_239_271_276_light_pool(
                         path, lines, tree, procs, _bsl221_222_239_271_276
+                    ),
+                )
+            )
+        _bsl229_275_278 = ("BSL229", "BSL275", "BSL278")
+        if any(self._rule_enabled(c) for c in _bsl229_275_278):
+            _rule_tasks.append(
+                (
+                    "BSL229_275_278",
+                    lambda: self._rule_bsl229_275_278_local_xml_pool(
+                        path, lines, procs, _bsl229_275_278
                     ),
                 )
             )
@@ -18399,6 +18412,151 @@ class DiagnosticEngine:
                             message="ПродолжитьВызов()/ProceedWithCall() допустим только в методах расширения с аннотацией Вместо",
                         )
                     )
+
+        return diags
+
+    # ------------------------------------------------------------------
+    # BSL229 / BSL275 / BSL278 — local XML-backed pool
+    # ------------------------------------------------------------------
+
+    def _rule_bsl229_275_278_local_xml_pool(
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        enabled: tuple[str, ...],
+    ) -> list[Diagnostic]:
+        enabled_set = set(enabled)
+        diags: list[Diagnostic] = []
+        low = path.replace("\\", "/").lower()
+        file_path = Path(path)
+
+        def _line1_span() -> tuple[int, int]:
+            if lines:
+                return 0, max(len(lines[0].rstrip()), 1)
+            return 0, 1
+
+        def _add_line1(code: str, message: str) -> None:
+            c0, c1 = _line1_span()
+            severity_name = str(RULE_METADATA.get(code, {}).get("severity", "WARNING")).upper()
+            severity = getattr(Severity, severity_name, Severity.WARNING)
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=1,
+                    character=c0,
+                    end_line=1,
+                    end_character=c1,
+                    severity=severity,
+                    code=code,
+                    message=message,
+                )
+            )
+
+        def _find_config_root(start: Path) -> Path | None:
+            for parent in (start.parent, *start.parents):
+                if (parent / "Configuration.xml").exists():
+                    return parent
+            return None
+
+        def _xml_bool_tag_local(xml_text: str, tag: str) -> bool | None:
+            match = re.search(
+                _RE_XML_BOOL_SIMPLE.format(tag=re.escape(tag)),
+                xml_text,
+                re.IGNORECASE,
+            )
+            if match is None:
+                return None
+            return match.group(1).lower() == "true"
+
+        def _proc_by_name(name: str) -> _ProcInfo | None:
+            target = name.casefold()
+            for proc in procs:
+                if proc.name.casefold() == target:
+                    return proc
+            return None
+
+        if "BSL229" in enabled_set and low.endswith("/ext/sessionmodule.bsl"):
+            config_root = _find_config_root(file_path)
+            if config_root is not None:
+                try:
+                    config_text = (config_root / "Configuration.xml").read_text(
+                        encoding="utf-8-sig",
+                        errors="replace",
+                    )
+                except OSError:
+                    config_text = ""
+                if config_text:
+                    managed_in_ordinary = _xml_bool_tag_local(
+                        config_text,
+                        "UseManagedFormInOrdinaryApplication",
+                    )
+                    ordinary_in_managed = _xml_bool_tag_local(
+                        config_text,
+                        "UseOrdinaryFormInManagedApplication",
+                    )
+                    if managed_in_ordinary is False:
+                        _add_line1(
+                            "BSL229",
+                            "Конфигурация не поддерживает использование управляемых форм в обычном приложении",
+                        )
+                    if ordinary_in_managed is True:
+                        _add_line1(
+                            "BSL229",
+                            "Конфигурация использует обычные формы в режиме управляемого приложения",
+                        )
+
+        if "BSL275" in enabled_set and low.endswith("/ext/module.bsl") and "/httpservices/" in low:
+            service_dir = file_path.parent.parent
+            service_xml = service_dir.parent / f"{service_dir.name}.xml"
+            try:
+                xml_text = service_xml.read_text(encoding="utf-8-sig", errors="replace")
+            except OSError:
+                xml_text = ""
+            for handler_match in _RE_BSL275_HANDLER.finditer(xml_text):
+                handler_name = handler_match.group(1).strip()
+                if not handler_name:
+                    _add_line1("BSL275", "Не указан обработчик метода HTTP-сервиса")
+                    continue
+                proc = _proc_by_name(handler_name)
+                if proc is None:
+                    _add_line1("BSL275", f"Не найден обработчик HTTP-сервиса {handler_name}")
+                    continue
+                if len(proc.params) != 1:
+                    start_char, end_char = _proc_name_span(lines, proc)
+                    severity_name = str(
+                        RULE_METADATA.get("BSL275", {}).get("severity", "ERROR")
+                    ).upper()
+                    severity = getattr(Severity, severity_name, Severity.ERROR)
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=start_char,
+                            end_line=proc.start_idx + 1,
+                            end_character=end_char,
+                            severity=severity,
+                            code="BSL275",
+                            message=(
+                                f"Обработчик HTTP-сервиса {handler_name} должен принимать ровно один параметр"
+                            ),
+                        )
+                    )
+
+        if "BSL278" in enabled_set and low.endswith("/ext/module.bsl") and "/webservices/" in low:
+            service_dir = file_path.parent.parent
+            service_xml = service_dir.parent / f"{service_dir.name}.xml"
+            try:
+                xml_text = service_xml.read_text(encoding="utf-8-sig", errors="replace")
+            except OSError:
+                xml_text = ""
+            for proc_match in _RE_BSL278_PROCNAME.finditer(xml_text):
+                handler_name = proc_match.group(1).strip()
+                if not handler_name:
+                    _add_line1("BSL278", "Не указан обработчик операции веб-сервиса")
+                    continue
+                if _proc_by_name(handler_name) is None:
+                    _add_line1("BSL278", f"Не найден обработчик веб-сервиса {handler_name}")
 
         return diags
 

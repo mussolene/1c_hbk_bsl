@@ -261,6 +261,101 @@ class TestSecurityApiParityBatch:
         assert "BSL185" in _codes(diags)
 
 
+class TestLocalXmlParityBatch:
+    def test_bsl229_reports_ordinary_application_flags_from_configuration(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        (root / "Ext").mkdir(parents=True)
+        (root / "Configuration.xml").write_text(
+            textwrap.dedent(
+                """\
+                <Configuration>
+                    <UseManagedFormInOrdinaryApplication>false</UseManagedFormInOrdinaryApplication>
+                    <UseOrdinaryFormInManagedApplication>true</UseOrdinaryFormInManagedApplication>
+                </Configuration>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path = root / "Ext" / "SessionModule.bsl"
+        module_path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура ПриНачалеРаботыСистемы()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL229"}).check_file(str(module_path))
+        assert _codes(diags) == ["BSL229", "BSL229"]
+
+    def test_bsl275_reports_missing_and_wrong_http_handlers(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        module_path = root / "HTTPServices" / "Сервис" / "Ext" / "Module.bsl"
+        module_path.parent.mkdir(parents=True)
+        (root / "HTTPServices" / "Сервис.xml").write_text(
+            textwrap.dedent(
+                """\
+                <HTTPService>
+                    <UrlTemplates>
+                        <Item>
+                            <Methods>
+                                <Item><Handler></Handler></Item>
+                                <Item><Handler>Обработчик</Handler></Item>
+                            </Methods>
+                        </Item>
+                    </UrlTemplates>
+                </HTTPService>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Обработчик(Запрос, Ответ)
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL275"}).check_file(str(module_path))
+        assert _codes(diags) == ["BSL275", "BSL275"]
+        assert any(diag.line == 1 for diag in diags)
+        assert any(diag.line == 1 and "HTTP-сервиса" in diag.message for diag in diags)
+
+    def test_bsl278_reports_missing_web_service_handler(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        module_path = root / "WebServices" / "Сервис" / "Ext" / "Module.bsl"
+        module_path.parent.mkdir(parents=True)
+        (root / "WebServices" / "Сервис.xml").write_text(
+            textwrap.dedent(
+                """\
+                <WebService>
+                    <Operations>
+                        <Item><ProcedureName>НеСуществует</ProcedureName></Item>
+                    </Operations>
+                </WebService>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Обработчик()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL278"}).check_file(str(module_path))
+        assert _codes(diags) == ["BSL278"]
+        assert "веб-сервиса" in diags[0].message
+
+
 # ---------------------------------------------------------------------------
 # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
 # ---------------------------------------------------------------------------
