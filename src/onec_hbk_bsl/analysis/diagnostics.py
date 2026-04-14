@@ -4023,6 +4023,14 @@ _RE_BSL216_RIGHT_KEYWORDS = re.compile(
     r"\b(Если|If|ИначеЕсли|ElsIf|ElseIf|Пока|While|Для|For|Не|Not|Каждого|Each)\b",
     re.IGNORECASE,
 )
+_RE_BSL216_ANY_KEYWORD = re.compile(
+    r"\b(?:"
+    r"По|To|Из|In|Или|Or|И|And|"
+    r"Экспорт|Export|Тогда|Then|Цикл|Do|"
+    r"Если|If|ИначеЕсли|ElsIf|ElseIf|Пока|While|Для|For|Не|Not|Каждого|Each"
+    r")\b",
+    re.IGNORECASE,
+)
 # BSL215/BSL233 — compiler directive (e.g. &НаКлиенте) preceding a proc header
 _RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
 # BSL044 — function returns non-void value
@@ -4067,6 +4075,10 @@ _RE_BSL149_HAS_ALIAS = re.compile(r"\b(?:КАК|AS)\s+\w+\s*$", re.IGNORECASE)
 _RE_BSL149_CONTINUATION = re.compile(r"^\s*\|")
 # Inline query comment
 _RE_BSL149_INLINE_COMMENT = re.compile(r"\s*//.*$")
+_RE_BSL029_ANY_DIGIT = re.compile(r"\d")
+_RE_BSL208_WORD = re.compile(r"\b[a-zA-ZА-ЯЁа-яё_][a-zA-ZА-ЯЁа-яё0-9_]*\b", re.UNICODE)
+_RE_BSL208_HAS_LATIN = re.compile(r"[a-zA-Z]")
+_RE_BSL208_HAS_CYRILLIC = re.compile(r"[А-ЯЁа-яё]")
 
 # BSL210 — LogicalOrInTheWhereSectionOfQuery
 _RE_BSL210_OR = re.compile(r"\b(?:ИЛИ|OR)\b", re.IGNORECASE)

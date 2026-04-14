@@ -13,6 +13,7 @@ def extend_security_rule_tasks(
     symbols: list[tuple[str, int, int]],
     calls: list[tuple[str, int, int]],
     procs: list[object],
+    snapshot: object,
 ) -> None:
     bsl180_184_185_188_203_226_247_250_264_267_270_272 = (
         "BSL180",
@@ -38,6 +39,7 @@ def extend_security_rule_tasks(
                     path,
                     lines,
                     bsl180_184_185_188_203_226_247_250_264_267_270_272,
+                    snapshot,
                 ),
             )
         )
@@ -59,7 +61,7 @@ def extend_security_rule_tasks(
             (
                 "BSL202_205_223_243_249",
                 lambda: engine._rule_bsl202_205_223_243_249_light_call_pool(
-                    path, lines, tree, bsl202_205_223_243_249
+                    path, lines, tree, bsl202_205_223_243_249, snapshot
                 ),
             )
         )
@@ -70,7 +72,7 @@ def extend_security_rule_tasks(
             (
                 "BSL244_253_261",
                 lambda: engine._rule_bsl244_253_261_runtime_pool(
-                    path, lines, procs, bsl244_253_261
+                    path, lines, procs, bsl244_253_261, snapshot
                 ),
             )
         )

@@ -12,6 +12,7 @@ def extend_metadata_rule_tasks(
     lines: list[str],
     tree: object,
     procs: list[object],
+    snapshot: object,
 ) -> None:
     bsl171_204_217_248_251_252_259_268 = (
         "BSL171",
@@ -57,7 +58,7 @@ def extend_metadata_rule_tasks(
             (
                 "BSL169_170_181_182_196_260",
                 lambda: engine._rule_bsl169_170_181_182_196_260_light_pool(
-                    path, lines, procs, bsl169_170_181_182_196_260
+                    path, lines, procs, bsl169_170_181_182_196_260, snapshot
                 ),
             )
         )
@@ -83,6 +84,7 @@ def extend_metadata_rule_tasks(
                     lines,
                     procs,
                     bsl189_211_213_214_231_232_241_242_246_274,
+                    snapshot,
                 ),
             )
         )

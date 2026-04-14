@@ -10,8 +10,90 @@ def _diag_module() -> Any:
     return _diag
 
 
-def run_bsl149_assign_alias_fields_in_query(path: str, lines: list[str]) -> list[Any]:
+def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[Any]) -> list[Any]:
     _diag = _diag_module()
+    diags: list[Any] = []
+    for block in query_blocks:
+        in_select = True
+        skip_select = False
+        paren_depth = 0
+        first_content_line = True
+        for (
+            line_no,
+            _content_base,
+            _content,
+            head,
+            _ended_query,
+        ) in _diag._query_block_content_line_tuples(block):
+            idx = line_no - 1
+            line = lines[idx]
+            content = head
+
+            if first_content_line:
+                first_content_line = False
+                m_sel = _diag._RE_BSL149_SELECT.search(content)
+                if m_sel:
+                    tail = content[m_sel.end() :]
+                    m_clause = _diag._RE_BSL149_CLAUSE_AFTER_FIELDS.search(tail)
+                    if m_clause:
+                        field_region = tail[: m_clause.start()].strip()
+                        _diag._bsl149_append_missing_alias_diags(
+                            path, idx, line, field_region, diags
+                        )
+                        in_select = False
+                        continue
+
+            if ";" in content:
+                in_select = False
+                skip_select = False
+                paren_depth = 0
+                after_semi = content[content.index(";") + 1 :].strip()
+                if _diag._RE_BSL149_SELECT.search(after_semi):
+                    in_select = not skip_select
+                    skip_select = False
+                continue
+
+            if not content:
+                continue
+            if _diag._RE_BSL149_UNION.search(content):
+                in_select = False
+                skip_select = True
+                continue
+            if _diag._RE_BSL149_SELECT.search(content):
+                m = _diag._RE_BSL149_SELECT.search(content)
+                before_select = content[: m.start()]
+                paren_depth += before_select.count("(") - before_select.count(")")
+                if paren_depth > 0:
+                    in_select = True
+                else:
+                    in_select = not skip_select
+                    skip_select = False
+                continue
+            if _diag._RE_BSL149_CLAUSE_END.match(content):
+                paren_depth += content.count("(") - content.count(")")
+                if paren_depth < 0:
+                    paren_depth = 0
+                in_select = False
+                continue
+            if ")" in content and paren_depth > 0:
+                paren_depth -= content.count(")")
+                paren_depth += content.count("(")
+                if paren_depth < 0:
+                    paren_depth = 0
+                in_select = False
+                continue
+            if not in_select:
+                continue
+            _diag._bsl149_append_missing_alias_diags(path, idx, line, content, diags)
+    return diags
+
+
+def run_bsl149_assign_alias_fields_in_query(
+    path: str, lines: list[str], query_blocks: list[Any] | None = None
+) -> list[Any]:
+    _diag = _diag_module()
+    if query_blocks is not None:
+        return _run_bsl149_on_query_blocks(path, lines, query_blocks)
     diags: list[Any] = []
     in_query = False
     in_select = False

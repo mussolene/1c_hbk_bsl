@@ -16,6 +16,7 @@ def run_bsl174_187_236_238_query_metadata_pool(
     lines: list[str],
     enabled: tuple[str, ...],
     query_blocks: list[Any] | None = None,
+    cleaned_lines: list[str] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     enabled_set = set(enabled)
@@ -50,7 +51,7 @@ def run_bsl174_187_236_238_query_metadata_pool(
     if query_blocks is None:
         blocks = (
             list(_diag._iter_query_text_content_lines(start_idx, block_lines))
-            for start_idx, block_lines in _diag._iter_query_text_blocks(lines)
+            for start_idx, block_lines in _diag._iter_query_text_blocks(cleaned_lines or lines)
         )
     else:
         blocks = (_diag._query_block_content_line_tuples(block) for block in query_blocks)
@@ -145,6 +146,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     lines: list[str],
     procs: list[Any],
     enabled: tuple[str, ...],
+    cleaned_lines: list[str] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     enabled_set = set(enabled)
@@ -154,6 +156,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     object_xml = _diag._current_object_xml_path(path)
     crawl = _diag._crawl_config_cached(root) if root is not None else {"objects": [], "by_name": {}}
     module_map = _diag._common_module_file_map(root) if root is not None else {}
+    clean = cleaned_lines or lines
 
     forbidden_names = {
         "catalog",
@@ -334,8 +337,8 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         current_privileged = bool(
             current_common and module_map.get(current_common, {}).get("privileged")
         )
-        for idx, raw_line in enumerate(lines):
-            line = _diag._strip_inline_comment_preserve_strings(raw_line)
+        for idx, _raw_line in enumerate(lines):
+            line = clean[idx]
             for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
                 mod_cf = match.group("mod").casefold()
                 if mod_cf == current_common:
@@ -364,8 +367,8 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         proc_names = {proc.name.casefold(): proc for proc in procs}
         root_path = Path(root)
         if "BSL213" in enabled_set:
-            for idx, raw_line in enumerate(lines):
-                line = _diag._strip_inline_comment_preserve_strings(raw_line)
+            for idx, _raw_line in enumerate(lines):
+                line = clean[idx]
                 for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
                     mod_cf = match.group("mod").casefold()
                     info = module_map.get(mod_cf)
@@ -479,10 +482,12 @@ def run_bsl244_253_261_runtime_pool(
     lines: list[str],
     procs: list[Any],
     enabled: tuple[str, ...],
+    cleaned_lines: list[str] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     enabled_set = set(enabled)
     diags: list[Any] = []
+    clean = cleaned_lines or lines
     server_proc_names = {
         proc.name.casefold()
         for proc in procs
@@ -490,8 +495,7 @@ def run_bsl244_253_261_runtime_pool(
     }
 
     if "BSL244" in enabled_set and _diag.path_is_likely_form_module_bsl(path):
-        for idx, raw_line in enumerate(lines):
-            line = _diag._strip_inline_comment_preserve_strings(raw_line)
+        for idx, line in enumerate(clean):
             proc = _diag._proc_containing_line(procs, idx)
             if proc is None:
                 continue
@@ -527,8 +531,7 @@ def run_bsl244_253_261_runtime_pool(
         "internetmailprofile": 5,
     }
     if "BSL253" in enabled_set:
-        for idx, raw_line in enumerate(lines):
-            line = _diag._strip_inline_comment_preserve_strings(raw_line)
+        for idx, line in enumerate(clean):
             match = re.search(
                 r"\b(?:Новый|New)\s+(?P<type>\w+)\s*\((?P<args>.*)\)", line, re.IGNORECASE
             )
@@ -555,8 +558,7 @@ def run_bsl244_253_261_runtime_pool(
             )
 
     if "BSL261" in enabled_set:
-        for idx, raw_line in enumerate(lines):
-            line = _diag._strip_inline_comment_preserve_strings(raw_line)
+        for idx, line in enumerate(clean):
             if not re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE):
                 continue
             if re.search(

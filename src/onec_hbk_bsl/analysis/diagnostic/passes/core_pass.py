@@ -36,7 +36,10 @@ def extend_core_rule_tasks(
         rule_tasks.append(("BSL006", lambda: engine._rule_bsl006_hardcode_path(path, lines)))
     if engine._rule_enabled("BSL007"):
         rule_tasks.append(
-            ("BSL007", lambda: engine._rule_bsl007_unused_local_variable(path, lines, procs))
+            (
+                "BSL007",
+                lambda: engine._rule_bsl007_unused_local_variable(path, lines, procs, snapshot),
+            )
         )
     if engine._rule_enabled("BSL008"):
         rule_tasks.append(
@@ -199,13 +202,18 @@ def extend_core_rule_tasks(
         rule_tasks.append(("BSL053", lambda: engine._rule_bsl053_execute_dynamic(path, lines)))
     if engine._rule_enabled("BSL054"):
         rule_tasks.append(
-            ("BSL054", lambda: engine._rule_bsl054_module_level_variable(path, lines, procs))
+            (
+                "BSL054",
+                lambda: engine._rule_bsl054_module_level_variable(path, lines, procs, snapshot),
+            )
         )
     if engine._rule_enabled("BSL219"):
         rule_tasks.append(
             (
                 "BSL219",
-                lambda: engine._rule_bsl219_missing_variables_description(path, lines, procs),
+                lambda: engine._rule_bsl219_missing_variables_description(
+                    path, lines, procs, snapshot
+                ),
             )
         )
     if engine._rule_enabled("BSL055"):

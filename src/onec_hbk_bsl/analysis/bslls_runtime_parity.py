@@ -57,12 +57,18 @@ def resolve_bslls_jar(repo_root: Path) -> Path:
             return jar
         raise FileNotFoundError(f"BSLLS_JAR does not exist: {jar}")
 
+    cache_dir = Path.home() / ".cache/onec-hbk-bsl/bslls"
+    cached_jars = sorted(cache_dir.glob("*-exec.jar"))
+    if cached_jars:
+        return cached_jars[-1]
+
     default = repo_root / ".nosync/bsl-language-server/build/libs"
     jars = sorted(default.glob("*-exec.jar"))
     if jars:
         return jars[-1]
     raise FileNotFoundError(
-        "BSLLS exec.jar not found; set BSLLS_JAR or build .nosync/bsl-language-server"
+        "BSLLS exec.jar not found; set BSLLS_JAR, download to ~/.cache/onec-hbk-bsl/bslls, "
+        "or build .nosync/bsl-language-server"
     )
 
 

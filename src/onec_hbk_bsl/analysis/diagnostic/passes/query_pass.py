@@ -95,6 +95,7 @@ def extend_query_metadata_rule_tasks(
     path: str,
     lines: list[str],
     query_blocks: list[QueryTextBlockInfo],
+    snapshot: object,
 ) -> None:
     """Append metadata-aware query tasks in declaration order."""
     bsl174_187_236_238 = ("BSL174", "BSL187", "BSL236", "BSL238")
@@ -103,7 +104,7 @@ def extend_query_metadata_rule_tasks(
             (
                 "BSL174_187_236_238",
                 lambda: engine._rule_bsl174_187_236_238_query_metadata_pool(
-                    path, lines, bsl174_187_236_238, query_blocks
+                    path, lines, bsl174_187_236_238, query_blocks, snapshot
                 ),
             )
         )

@@ -213,9 +213,19 @@ def bsl156_diagnostics(
     intervals = module_region_intervals(lines)
     n = len(lines)
     proc_ranges = [(s, e) for s, e, _ in procedures]
+    inside_proc = [False] * n
+    for s, e in proc_ranges:
+        start = max(0, s)
+        end = min(n - 1, e)
+        for idx in range(start, end + 1):
+            inside_proc[idx] = True
 
-    def line_in_proc(i: int) -> bool:
-        return any(s <= i <= e for s, e in proc_ranges)
+    inside_region = [False] * n
+    for s, e in intervals:
+        start = max(0, s)
+        end = min(n - 1, e)
+        for idx in range(start, end + 1):
+            inside_region[idx] = True
 
     out: list[tuple[int, int, int, str]] = []
     msg = "Переместите код в область"
@@ -226,7 +236,7 @@ def bsl156_diagnostics(
         first_proc: tuple[int, int, int] | None = None
 
         for i, line in enumerate(lines):
-            if line_in_proc(i):
+            if inside_proc[i]:
                 continue
             if not _is_significant_module_line_raw(line):
                 continue
@@ -277,16 +287,16 @@ def bsl156_diagnostics(
             out.append((s + 1, c0, c1, msg))
 
     for i, line in enumerate(lines):
-        if line_in_proc(i):
+        if inside_proc[i]:
             continue
         if not _is_significant_module_line_raw(line):
             continue
         if _RE_MODULE_VAR.match(line):
-            if not line_in_any_region(i, intervals):
+            if not inside_region[i]:
                 c0, c1 = _line_span_non_ws(line)
                 out.append((i + 1, c0, c1, msg))
             continue
-        if _is_executable_module_statement_line(line) and not line_in_any_region(i, intervals):
+        if _is_executable_module_statement_line(line) and not inside_region[i]:
             c0, c1 = _line_span_non_ws(line)
             out.append((i + 1, c0, c1, msg))
 

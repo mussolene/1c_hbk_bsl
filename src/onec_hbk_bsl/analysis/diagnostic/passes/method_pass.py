@@ -18,6 +18,7 @@ def extend_method_contract_rule_tasks(
     tree: object,
     calls: list[tuple[str, int, int]],
     proc_node_map: dict[str, object],
+    snapshot: object,
 ) -> None:
     bsl192_193_194_228_266 = ("BSL192", "BSL193", "BSL194", "BSL228", "BSL266")
     if any(engine._rule_enabled(code) for code in bsl192_193_194_228_266):
@@ -54,7 +55,7 @@ def extend_method_contract_rule_tasks(
             (
                 "BSL221_222_239_271_276",
                 lambda: engine._rule_bsl221_222_239_271_276_light_pool(
-                    path, lines, tree, procs, bsl221_222_239_271_276
+                    path, lines, tree, procs, bsl221_222_239_271_276, snapshot
                 ),
             )
         )

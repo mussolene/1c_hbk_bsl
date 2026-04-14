@@ -9,6 +9,8 @@ rule bodies are migrated out of ``diagnostics.py``.
 
 from __future__ import annotations
 
+from collections import Counter
+
 import onec_hbk_bsl.analysis.diagnostics as _diag
 from onec_hbk_bsl.analysis.diagnostic.execution import execute_diagnostic_rule_tasks
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
@@ -777,7 +779,10 @@ class DiagnosticEngine:
             )
         if self._rule_enabled("BSL157"):
             _rule_tasks.append(
-                ("BSL157", lambda: self._rule_bsl157_commit_transaction_outside_try(path, lines))
+                (
+                    "BSL157",
+                    lambda: self._rule_bsl157_commit_transaction_outside_try(path, lines, snapshot),
+                )
             )
         extend_module_rule_tasks(
             _rule_tasks,
@@ -816,6 +821,7 @@ class DiagnosticEngine:
             symbols=_symbols,
             calls=_calls,
             procs=procs,
+            snapshot=snapshot,
         )
         extend_query_text_rule_tasks(
             _rule_tasks,
@@ -834,6 +840,7 @@ class DiagnosticEngine:
             tree=tree,
             calls=_calls,
             proc_node_map=_proc_node_map,
+            snapshot=snapshot,
         )
         extend_metadata_rule_tasks(
             _rule_tasks,
@@ -843,6 +850,7 @@ class DiagnosticEngine:
             lines=lines,
             tree=tree,
             procs=procs,
+            snapshot=snapshot,
         )
         extend_query_join_rule_tasks(
             _rule_tasks,
@@ -857,6 +865,7 @@ class DiagnosticEngine:
             path=path,
             lines=lines,
             query_blocks=_query_blocks,
+            snapshot=snapshot,
         )
         if self._rule_enabled("BSL234"):
             _rule_tasks.append(
@@ -1124,13 +1133,34 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl007_unused_local_variable(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         inside_proc: set[int] = set()
         for proc in procs:
             for i in range(proc.start_idx, proc.end_idx + 1):
                 inside_proc.add(i)
+
+        code_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
+
+        def _read_names_by_line(raw_line: str) -> set[str]:
+            if not raw_line.strip():
+                return set()
+            code_clean = _bsl007_strip_double_quoted_segments(raw_line)
+            m = _BSL007_SIMPLE_ASSIGN_AT_START.match(code_clean)
+            if m:
+                tail = code_clean[m.end() :]
+                return {name.casefold() for name in re.findall(r"\b\w+\b", tail, re.IGNORECASE)}
+            return {name.casefold() for name in re.findall(r"\b\w+\b", code_clean, re.IGNORECASE)}
+
+        line_read_names = [_read_names_by_line(line) for line in code_lines]
+        file_read_counts: Counter[str] = Counter()
+        for names in line_read_names:
+            file_read_counts.update(names)
 
         # --- Module-level simple assigns (BSLLS UnusedLocalVariable on top-level code) ---
         for idx, line in enumerate(lines):
@@ -1147,14 +1177,7 @@ class DiagnosticEngine:
             if not m:
                 continue
             var_name = m.group(1)
-            if _bsl007_name_used_in_file(
-                var_name,
-                lines,
-                assign_lhs_idx=idx,
-                lo=0,
-                hi=len(lines) - 1,
-                skip_indices=set(),
-            ):
+            if file_read_counts.get(var_name.casefold(), 0) > 0:
                 continue
             diags.append(
                 Diagnostic(
@@ -1187,18 +1210,16 @@ class DiagnosticEngine:
             declared_cf = {n.casefold() for n, _ in declared}
             body_lo = proc.start_idx + 1
             body_hi = proc.end_idx - 1
+            proc_read_counts: Counter[str] = Counter()
+            for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
+                proc_read_counts.update(line_read_names[abs_idx])
 
             for var_name, rel_idx in declared:
                 abs_decl = proc.start_idx + rel_idx
-                skip_one = {abs_decl}
-                if _bsl007_name_used_in_file(
-                    var_name,
-                    lines,
-                    assign_lhs_idx=None,
-                    lo=body_lo,
-                    hi=body_hi,
-                    skip_indices=skip_one,
-                ):
+                uses = proc_read_counts.get(var_name.casefold(), 0) - (
+                    1 if var_name.casefold() in line_read_names[abs_decl] else 0
+                )
+                if uses > 0:
                     continue
                 diags.append(
                     Diagnostic(
@@ -1230,14 +1251,7 @@ class DiagnosticEngine:
                     continue
                 if rel_idx in decl_rel_indices:
                     continue
-                if _bsl007_name_used_in_file(
-                    var_name,
-                    lines,
-                    assign_lhs_idx=abs_line,
-                    lo=body_lo,
-                    hi=body_hi,
-                    skip_indices=set(),
-                ):
+                if proc_read_counts.get(var_name.casefold(), 0) > 0:
                     continue
                 diags.append(
                     Diagnostic(
@@ -2084,6 +2098,8 @@ class DiagnosticEngine:
                     continue
                 # Skip constant-like declarations
                 if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
+                    continue
+                if not _RE_BSL029_ANY_DIGIT.search(line):
                     continue
                 # Mask string contents before scanning while preserving original
                 # character offsets for resulting diagnostics.
@@ -3296,7 +3312,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl054_module_level_variable(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         """
         Flag exported Перем/Var declarations at module level (BSLLS ExportVariables).
@@ -3312,10 +3332,11 @@ class DiagnosticEngine:
             for i in range(proc.start_idx, proc.end_idx + 1):
                 inside.add(i)
 
+        clean_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
         for idx, line in enumerate(lines):
             if idx in inside:
                 continue
-            m = _RE_VAR_MODULE_EXPORT.match(line)
+            m = _RE_VAR_MODULE_EXPORT.match(clean_lines[idx])
             if m:
                 start_char = m.start("names")
                 diags.append(
@@ -3337,7 +3358,11 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl219_missing_variables_description(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
+        self,
+        path: str,
+        lines: list[str],
+        procs: list[_ProcInfo],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         """
         Flag module-level ``Перем … Экспорт`` without a preceding ``//`` / ``///`` description line.
@@ -3350,10 +3375,11 @@ class DiagnosticEngine:
             for i in range(proc.start_idx, proc.end_idx + 1):
                 inside.add(i)
 
+        clean_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
         for idx, line in enumerate(lines):
             if idx in inside:
                 continue
-            code_part = line.split("//", 1)[0].rstrip()
+            code_part = clean_lines[idx].rstrip()
             if not code_part.strip():
                 continue
             m = _RE_VAR_MODULE_EXPORT.match(code_part)
@@ -7179,7 +7205,7 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl157_commit_transaction_outside_try(
-        self, path: str, lines: list[str]
+        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
     ) -> list[Diagnostic]:
         """ЗафиксироватьТранзакцию()/CommitTransaction() must be the last statement before Except."""
         diags: list[Diagnostic] = []
@@ -7190,11 +7216,11 @@ class DiagnosticEngine:
         _re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
         _re_except = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
         _re_end_try = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
-        _re_comment = re.compile(r"^\s*//")
         pending: tuple[int, int, int] | None = None
+        clean_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
 
-        for idx, line in enumerate(lines):
-            if _re_comment.match(line) or not line.strip():
+        for idx, line in enumerate(clean_lines):
+            if not line.strip():
                 continue
 
             if _re_try.match(line):
@@ -7303,9 +7329,13 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl149_assign_alias_fields_in_query(
-        self, path: str, lines: list[str]
+        self,
+        path: str,
+        lines: list[str],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl149_assign_alias_fields_in_query(path, lines)
+        query_blocks = snapshot.query_text_blocks if snapshot is not None else None
+        return run_bsl149_assign_alias_fields_in_query(path, lines, query_blocks)
 
     # ------------------------------------------------------------------
     # BSL210 — LogicalOrInTheWhereSectionOfQuery
@@ -8244,15 +8274,21 @@ class DiagnosticEngine:
         path: str,
         lines: list[str],
         enabled_codes: tuple[str, ...],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         enabled = set(enabled_codes)
         diags: list[Diagnostic] = []
         is_common_module = bool(_RE_COMMON_MODULE_PATH.search(path))
+        clean_lines = (
+            snapshot.code_lines_without_comments
+            if snapshot is not None
+            else [_strip_inline_comment_preserve_strings(line) for line in lines]
+        )
 
         for idx, raw_line in enumerate(lines):
             if _RE_LINE_COMMENT.match(raw_line):
                 continue
-            line = _strip_inline_comment_preserve_strings(raw_line)
+            line = clean_lines[idx]
             if not line.strip():
                 continue
 
@@ -8771,11 +8807,17 @@ class DiagnosticEngine:
             comment_pos = comment_starts[idx]
             if comment_pos is not None:
                 clean = clean[:comment_pos]
+            has_equals = "=" in clean
+            has_arithmetic_ops = any(op in line for op in "+-*/%")
+            code_no_comments = code_lines_wo_comments[idx]
+            has_comma = "," in code_no_comments
+            has_semicolon = ";" in clean
+            has_keyword_candidate = bool(_RE_BSL216_ANY_KEYWORD.search(clean))
             # Skip = check on procedure/function headers — default parameter values
             # (Param = Default) use = without spaces by 1C convention; BSLLS skips these.
             m = (
                 None
-                if _RE_BSL216_PROC_HEADER.match(clean)
+                if not has_equals or _RE_BSL216_PROC_HEADER.match(clean)
                 else _RE_BSL216_ASSIGN_NOSPACE.search(clean)
             )
             if m:
@@ -8793,30 +8835,33 @@ class DiagnosticEngine:
                     )
                 )
             # Arithmetic operators: +, -, *, /
-            for col in _arithmetic_missing_space_cols_in_line(line, in_str_start):
-                op = line[col]
-                left_missing = col > 0 and line[col - 1] not in " \t"
-                right_missing = col + 1 < len(line) and line[col + 1] not in " \t"
-                if left_missing and right_missing:
-                    msg = f"Слева и справа от '{op}' не хватает пробела"
-                elif left_missing:
-                    msg = f"Слева от '{op}' не хватает пробела"
-                else:
-                    msg = f"Справа от '{op}' не хватает пробела"
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=col,
-                        end_line=idx + 1,
-                        end_character=col + 1,
-                        severity=Severity.INFORMATION,
-                        code="BSL216",
-                        message=msg,
+            if has_arithmetic_ops:
+                for col in _arithmetic_missing_space_cols_in_line(line, in_str_start):
+                    op = line[col]
+                    left_missing = col > 0 and line[col - 1] not in " \t"
+                    right_missing = col + 1 < len(line) and line[col + 1] not in " \t"
+                    if left_missing and right_missing:
+                        msg = f"Слева и справа от '{op}' не хватает пробела"
+                    elif left_missing:
+                        msg = f"Слева от '{op}' не хватает пробела"
+                    else:
+                        msg = f"Справа от '{op}' не хватает пробела"
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=col,
+                            end_line=idx + 1,
+                            end_character=col + 1,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=msg,
+                        )
                     )
-                )
-                continue
-            comma_cols = _comma_missing_space_after_cols_in_line(code_lines_wo_comments[idx])
+                    continue
+            comma_cols = (
+                _comma_missing_space_after_cols_in_line(code_no_comments) if has_comma else []
+            )
             if comma_cols:
                 for comma_col in comma_cols:
                     diags.append(
@@ -8832,7 +8877,7 @@ class DiagnosticEngine:
                         )
                     )
                 continue
-            m_semicolon = _RE_BSL216_SEMICOLON_NOSPACE.search(clean)
+            m_semicolon = _RE_BSL216_SEMICOLON_NOSPACE.search(clean) if has_semicolon else None
             if m_semicolon:
                 diags.append(
                     Diagnostic(
@@ -8847,68 +8892,69 @@ class DiagnosticEngine:
                     )
                 )
                 continue
-            for m_kw in _RE_BSL216_LEFT_RIGHT_KEYWORDS.finditer(clean):
-                start = m_kw.start(1)
-                end = m_kw.end(1)
-                left_missing = start > 0 and clean[start - 1] not in " \t"
-                right_missing = end < len(clean) and clean[end] not in " \t"
-                if not left_missing and not right_missing:
-                    continue
-                kw = line[start:end]
-                if left_missing and right_missing:
-                    msg = f"Слева и справа от '{kw}' не хватает пробела"
-                elif left_missing:
-                    msg = f"Слева от '{kw}' не хватает пробела"
-                else:
-                    msg = f"Справа от '{kw}' не хватает пробела"
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=start,
-                        end_line=idx + 1,
-                        end_character=end,
-                        severity=Severity.INFORMATION,
-                        code="BSL216",
-                        message=msg,
+            if has_keyword_candidate:
+                for m_kw in _RE_BSL216_LEFT_RIGHT_KEYWORDS.finditer(clean):
+                    start = m_kw.start(1)
+                    end = m_kw.end(1)
+                    left_missing = start > 0 and clean[start - 1] not in " \t"
+                    right_missing = end < len(clean) and clean[end] not in " \t"
+                    if not left_missing and not right_missing:
+                        continue
+                    kw = line[start:end]
+                    if left_missing and right_missing:
+                        msg = f"Слева и справа от '{kw}' не хватает пробела"
+                    elif left_missing:
+                        msg = f"Слева от '{kw}' не хватает пробела"
+                    else:
+                        msg = f"Справа от '{kw}' не хватает пробела"
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=start,
+                            end_line=idx + 1,
+                            end_character=end,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=msg,
+                        )
                     )
-                )
-            for m_kw in _RE_BSL216_LEFT_KEYWORDS.finditer(clean):
-                start = m_kw.start(1)
-                end = m_kw.end(1)
-                if start <= 0 or clean[start - 1] in " \t":
-                    continue
-                kw = line[start:end]
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=start,
-                        end_line=idx + 1,
-                        end_character=end,
-                        severity=Severity.INFORMATION,
-                        code="BSL216",
-                        message=(f"Слева от '{kw}' не хватает пробела"),
+                for m_kw in _RE_BSL216_LEFT_KEYWORDS.finditer(clean):
+                    start = m_kw.start(1)
+                    end = m_kw.end(1)
+                    if start <= 0 or clean[start - 1] in " \t":
+                        continue
+                    kw = line[start:end]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=start,
+                            end_line=idx + 1,
+                            end_character=end,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=(f"Слева от '{kw}' не хватает пробела"),
+                        )
                     )
-                )
-            for m_kw in _RE_BSL216_RIGHT_KEYWORDS.finditer(clean):
-                start = m_kw.start(1)
-                end = m_kw.end(1)
-                if end >= len(clean) or clean[end] in " \t":
-                    continue
-                kw = line[start:end]
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=start,
-                        end_line=idx + 1,
-                        end_character=end,
-                        severity=Severity.INFORMATION,
-                        code="BSL216",
-                        message=(f"Справа от '{kw}' не хватает пробела"),
+                for m_kw in _RE_BSL216_RIGHT_KEYWORDS.finditer(clean):
+                    start = m_kw.start(1)
+                    end = m_kw.end(1)
+                    if end >= len(clean) or clean[end] in " \t":
+                        continue
+                    kw = line[start:end]
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=start,
+                            end_line=idx + 1,
+                            end_character=end,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=(f"Справа от '{kw}' не хватает пробела"),
+                        )
                     )
-                )
         return diags
 
     # ------------------------------------------------------------------
@@ -8953,9 +8999,6 @@ class DiagnosticEngine:
         (Python-only engine; see :mod:`onec_hbk_bsl.analysis.bslls_typo`).
         """
         diags: list[Diagnostic] = []
-        _re_word = re.compile(r"\b[a-zA-ZА-ЯЁа-яё_][a-zA-ZА-ЯЁа-яё0-9_]*\b", re.UNICODE)
-        _re_has_latin = re.compile(r"[a-zA-Z]")
-        _re_has_cyrillic = re.compile(r"[А-ЯЁа-яё]")
         _re_comment = re.compile(r"^\s*//")
         # Emit at most once per unique identifier per file (BSL LS behaviour)
         seen_bsl208: set[str] = set()
@@ -8973,7 +9016,9 @@ class DiagnosticEngine:
             comment_pos = comment_starts[idx] if comment_starts is not None else clean.find("//")
             if comment_pos is not None and comment_pos >= 0:
                 clean = clean[:comment_pos]
-            for m in _re_word.finditer(clean):
+            if not (_RE_BSL208_HAS_LATIN.search(clean) and _RE_BSL208_HAS_CYRILLIC.search(clean)):
+                continue
+            for m in _RE_BSL208_WORD.finditer(clean):
                 word = m.group()
                 # Skip well-known 1C platform names where Latin substrings are
                 # all recognised technology acronyms (e.g. HTTPЗапрос, JSONЗапись).
@@ -8983,7 +9028,7 @@ class DiagnosticEngine:
                 # Latin/Cyrillic appears only as a trailing or leading block (no interleaving).
                 if len(word) >= 4 and _RE_BSL208_TRAILING_LANG.match(word):
                     continue
-                if not (_re_has_latin.search(word) and _re_has_cyrillic.search(word)):
+                if not (_RE_BSL208_HAS_LATIN.search(word) and _RE_BSL208_HAS_CYRILLIC.search(word)):
                     continue
                 if self._rule_enabled("BSL208") and word not in seen_bsl208:
                     seen_bsl208.add(word)
@@ -9048,7 +9093,12 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl202_205_223_243_249_light_call_pool(
-        self, path: str, lines: list[str], tree: Any, enabled: tuple[str, ...]
+        self,
+        path: str,
+        lines: list[str],
+        tree: Any,
+        enabled: tuple[str, ...],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
@@ -9056,6 +9106,11 @@ class DiagnosticEngine:
 
         enabled_set = set(enabled)
         diags: list[Diagnostic] = []
+        clean_lines = (
+            snapshot.code_lines_without_comments
+            if snapshot is not None
+            else [_strip_inline_comment_preserve_strings(line) for line in lines]
+        )
 
         def placeholder_indexes(template: str) -> set[int]:
             out: set[int] = set()
@@ -9194,10 +9249,7 @@ class DiagnosticEngine:
                     )
 
         if {"BSL243", "BSL249"} & enabled_set:
-            for idx, raw_line in enumerate(lines):
-                if _RE_LINE_COMMENT.match(raw_line):
-                    continue
-                line = _strip_inline_comment_preserve_strings(raw_line)
+            for idx, line in enumerate(clean_lines):
                 if "BSL243" in enabled_set:
                     for m in re.finditer(
                         r"\b(?P<obj>\w+)\s*\.\s*(?:Вставить|Insert|Добавить|Add)\s*\((?P<args>[^)]*)\)",
@@ -9253,15 +9305,18 @@ class DiagnosticEngine:
         tree: Any,
         procs: list[_ProcInfo],
         enabled: tuple[str, ...],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         enabled_set = set(enabled)
         diags: list[Diagnostic] = []
+        clean_lines = (
+            snapshot.code_lines_without_comments
+            if snapshot is not None
+            else [_strip_inline_comment_preserve_strings(line) for line in lines]
+        )
 
         if {"BSL221", "BSL222"} & enabled_set:
-            for idx, raw_line in enumerate(lines):
-                if _RE_LINE_COMMENT.match(raw_line):
-                    continue
-                line = _strip_inline_comment_preserve_strings(raw_line)
+            for idx, line in enumerate(clean_lines):
                 for match in _RE_BSL221_NSTR.finditer(line):
                     langs = {
                         m.group("lang").casefold()
@@ -9545,11 +9600,17 @@ class DiagnosticEngine:
         lines: list[str],
         procs: list[_ProcInfo],
         enabled: tuple[str, ...],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         enabled_set = set(enabled)
         diags: list[Diagnostic] = []
         is_form_or_command = path_is_likely_form_module_bsl(path) or _path_is_command_module_bsl(
             path
+        )
+        clean_lines = (
+            snapshot.code_lines_without_comments
+            if snapshot is not None
+            else [_strip_inline_comment_preserve_strings(line) for line in lines]
         )
         collision_names = {
             "проверитьбит",
@@ -9619,7 +9680,7 @@ class DiagnosticEngine:
             if "BSL182" in enabled_set:
                 hits: list[tuple[int, int]] = []
                 for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
-                    line = _strip_inline_comment_preserve_strings(lines[idx])
+                    line = clean_lines[idx]
                     if re.search(r"\b(?:АвтоТестПроверка|AutoTestCheck)\b", line, re.IGNORECASE):
                         col = re.search(
                             r"\b(?:АвтоТестПроверка|AutoTestCheck)\b",
@@ -9658,7 +9719,7 @@ class DiagnosticEngine:
             if "BSL181" in enabled_set:
                 seen_inserts: set[tuple[str, str, str]] = set()
                 for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
-                    line = _strip_inline_comment_preserve_strings(lines[idx])
+                    line = clean_lines[idx]
                     for match in re.finditer(
                         r"\b(?P<target>\w+)\.(?P<method>Добавить|Add|Вставить|Insert)\s*\((?P<arg>[^)]*)\)",
                         line,
@@ -9684,14 +9745,14 @@ class DiagnosticEngine:
                             )
                         else:
                             seen_inserts.add(key)
-        if "BSL260" in enabled_set:
-            for idx, raw_line in enumerate(lines):
-                line = _strip_inline_comment_preserve_strings(raw_line)
-                assign = re.search(
-                    r"(?P<var>\w+)\s*=\s*(?P<expr>\w+(?:\.\w+)*\.(?:НайтиПоКоду|FindByCode)\s*\([^)]*\))",
-                    line,
-                    re.IGNORECASE,
-                )
+            if "BSL260" in enabled_set:
+                for idx, _raw_line in enumerate(lines):
+                    line = clean_lines[idx]
+                    assign = re.search(
+                        r"(?P<var>\w+)\s*=\s*(?P<expr>\w+(?:\.\w+)*\.(?:НайтиПоКоду|FindByCode)\s*\([^)]*\))",
+                        line,
+                        re.IGNORECASE,
+                    )
                 if assign is None:
                     continue
                 var_name = assign.group("var")
@@ -9726,8 +9787,15 @@ class DiagnosticEngine:
         lines: list[str],
         enabled: tuple[str, ...],
         query_blocks: list[QueryTextBlockInfo] | None = None,
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl174_187_236_238_query_metadata_pool(path, lines, enabled, query_blocks)
+        return run_bsl174_187_236_238_query_metadata_pool(
+            path,
+            lines,
+            enabled,
+            query_blocks,
+            snapshot.code_lines_without_comments if snapshot is not None else None,
+        )
 
     def _rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         self,
@@ -9735,9 +9803,14 @@ class DiagnosticEngine:
         lines: list[str],
         procs: list[_ProcInfo],
         enabled: tuple[str, ...],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
         return run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
-            path, lines, procs, enabled
+            path,
+            lines,
+            procs,
+            enabled,
+            snapshot.code_lines_without_comments if snapshot is not None else None,
         )
 
     def _rule_bsl244_253_261_runtime_pool(
@@ -9746,8 +9819,15 @@ class DiagnosticEngine:
         lines: list[str],
         procs: list[_ProcInfo],
         enabled: tuple[str, ...],
+        snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl244_253_261_runtime_pool(path, lines, procs, enabled)
+        return run_bsl244_253_261_runtime_pool(
+            path,
+            lines,
+            procs,
+            enabled,
+            snapshot.code_lines_without_comments if snapshot is not None else None,
+        )
 
     # ------------------------------------------------------------------
     # BSL225 — NumberOfValuesInStructureConstructor
