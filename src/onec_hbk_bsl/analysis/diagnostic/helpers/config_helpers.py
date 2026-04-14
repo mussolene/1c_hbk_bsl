@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import functools
 import re
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
+from onec_hbk_bsl.analysis.document_snapshot import (
+    find_procedure_names_from_tree,
+    find_procedure_names_in_content,
+)
 from onec_hbk_bsl.indexer.metadata_parser import crawl_config
 from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
+from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 _RE_XML_BOOL_SIMPLE = r"<{tag}>\s*(true|false)\s*</{tag}>"
 _RE_BSL275_HANDLER = re.compile(r"<Handler>\s*([^<]*)\s*</Handler>", re.IGNORECASE)
@@ -40,7 +45,7 @@ def path_is_command_module_bsl(path: str) -> bool:
     )
 
 
-@functools.lru_cache(maxsize=32)
+@functools.lru_cache(maxsize=128)
 def config_root_for_file(path: str) -> str | None:
     try:
         p = Path(path).resolve()
@@ -52,7 +57,7 @@ def config_root_for_file(path: str) -> str | None:
     return None
 
 
-@functools.lru_cache(maxsize=8)
+@functools.lru_cache(maxsize=16)
 def crawl_config_cached(config_root: str) -> dict[str, Any]:
     objects = crawl_config(config_root)
     by_name: dict[str, Any] = {}
@@ -61,7 +66,20 @@ def crawl_config_cached(config_root: str) -> dict[str, Any]:
     return {"objects": objects, "by_name": by_name}
 
 
-@functools.lru_cache(maxsize=256)
+@functools.lru_cache(maxsize=16)
+def metadata_name_index_cached(config_root: str) -> frozenset[str]:
+    root = Path(config_root)
+    names: set[str] = set()
+    for folder_name in FOLDER_TO_KIND:
+        folder = root / folder_name
+        if not folder.exists():
+            continue
+        for xml_file in folder.glob("*.xml"):
+            names.add(xml_file.stem.casefold())
+    return frozenset(names)
+
+
+@functools.lru_cache(maxsize=4096)
 def read_text_cached(path: str) -> str:
     try:
         return Path(path).read_text(encoding="utf-8-sig", errors="replace")
@@ -69,6 +87,7 @@ def read_text_cached(path: str) -> str:
         return ""
 
 
+@functools.lru_cache(maxsize=1024)
 def current_module_xml_context(path: str) -> dict[str, str]:
     low = path.replace("\\", "/")
     parts = Path(low).parts
@@ -119,8 +138,22 @@ def current_form_xml_path(path: str) -> Path | None:
     return Path(root) / folder / object_name / "Forms" / form_name / "Ext" / "Form.xml"
 
 
-@functools.lru_cache(maxsize=64)
+@functools.lru_cache(maxsize=128)
 def common_module_file_map(config_root: str) -> dict[str, dict[str, Any]]:
+    module_index = common_module_index_cached(config_root)
+    result: dict[str, dict[str, Any]] = {}
+    for name_cf, info in module_index.items():
+        result[name_cf] = {
+            "name": info["name"],
+            "privileged": bool(info["privileged"]),
+            "protected": bool(info["protected"]),
+            "proc_names": common_module_proc_names_for_module_cached(config_root, name_cf),
+        }
+    return result
+
+
+@functools.lru_cache(maxsize=128)
+def common_module_index_cached(config_root: str) -> dict[str, dict[str, Any]]:
     root = Path(config_root) / "CommonModules"
     result: dict[str, dict[str, Any]] = {}
     if not root.exists():
@@ -129,16 +162,120 @@ def common_module_file_map(config_root: str) -> dict[str, dict[str, Any]]:
         name = xml_file.stem
         raw = read_text_cached(str(xml_file))
         module_file = root / name / "Ext" / "Module.bsl"
-        proc_names: set[str] = set()
-        if module_file.exists():
-            snap = build_document_snapshot(
-                str(module_file), content=read_text_cached(str(module_file))
-            )
-            proc_names = {proc.name.casefold() for proc in snap.procedures}
         result[name.casefold()] = {
             "name": name,
             "privileged": bool(_RE_XML_PRIVILEGED.search(raw)),
             "protected": bool(_RE_XML_PROTECTED.search(raw)),
-            "proc_names": proc_names,
+            "module_file": str(module_file) if module_file.exists() else "",
         }
     return result
+
+
+@functools.lru_cache(maxsize=128)
+def common_module_privileged_map_cached(config_root: str) -> dict[str, dict[str, Any]]:
+    module_index = common_module_index_cached(config_root)
+    return {
+        name_cf: {"name": info["name"], "privileged": bool(info["privileged"])}
+        for name_cf, info in module_index.items()
+    }
+
+
+@functools.lru_cache(maxsize=4096)
+def common_module_proc_names_for_file_cached(module_file: str) -> frozenset[str]:
+    content = read_text_cached(module_file)
+    if not content:
+        return frozenset()
+    tree = BslParser().parse_content(content, file_path=module_file)
+    names = find_procedure_names_from_tree(tree)
+    if names:
+        return names
+    return find_procedure_names_in_content(content)
+
+
+@functools.lru_cache(maxsize=4096)
+def common_module_proc_names_for_module_cached(config_root: str, module_name_cf: str) -> frozenset[str]:
+    info = common_module_index_cached(config_root).get(module_name_cf)
+    if info is None:
+        return frozenset()
+    module_file = str(info.get("module_file") or "")
+    if not module_file:
+        return frozenset()
+    return common_module_proc_names_for_file_cached(module_file)
+
+
+@functools.lru_cache(maxsize=128)
+def common_module_proc_names_map_cached(config_root: str) -> dict[str, frozenset[str]]:
+    result: dict[str, frozenset[str]] = {}
+    module_index = common_module_index_cached(config_root)
+    for name_cf in module_index:
+        result[name_cf] = common_module_proc_names_for_module_cached(config_root, name_cf)
+    return result
+
+
+@functools.lru_cache(maxsize=128)
+def roles_with_new_objects_cached(config_root: str) -> tuple[str, ...]:
+    roles_dir = Path(config_root) / "Roles"
+    flagged: list[str] = []
+    if not roles_dir.exists():
+        return ()
+    for xml_file in roles_dir.glob("*.xml"):
+        role_name = xml_file.stem
+        if role_name in {"FullAccess", "ПолныеПрава"}:
+            continue
+        text = read_text_cached(str(xml_file))
+        match = _RE_XML_SET_FOR_NEW_OBJECTS.search(text)
+        if match and match.group(1).lower() == "true":
+            flagged.append(role_name)
+    return tuple(flagged)
+
+
+@functools.lru_cache(maxsize=32)
+def config_has_protected_modules_cached(config_root: str) -> bool:
+    root = Path(config_root)
+    for xml_file in root.rglob("*.xml"):
+        if xml_file.name in {"Configuration.xml", "ConfigDumpInfo.xml"}:
+            continue
+        if _RE_XML_PROTECTED.search(read_text_cached(str(xml_file))):
+            return True
+    return False
+
+
+@functools.lru_cache(maxsize=128)
+def event_subscription_handlers_by_module_cached(config_root: str) -> dict[str, tuple[str, ...]]:
+    handlers: dict[str, list[str]] = defaultdict(list)
+    subs_dir = Path(config_root) / "EventSubscriptions"
+    if not subs_dir.exists():
+        return {}
+    for xml_file in subs_dir.glob("*.xml"):
+        text = read_text_cached(str(xml_file))
+        for match in _RE_XML_EVENT_HANDLER.finditer(text):
+            handler = (match.group(1) or match.group(2) or "").strip()
+            if "." not in handler:
+                continue
+            module_name, meth = handler.split(".", 1)
+            if module_name and meth:
+                handlers[module_name.casefold()].append(handler)
+    return {module_name: tuple(values) for module_name, values in handlers.items()}
+
+
+@functools.lru_cache(maxsize=128)
+def scheduled_job_handlers_by_module_cached(
+    config_root: str,
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    handlers: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    jobs_dir = Path(config_root) / "ScheduledJobs"
+    if not jobs_dir.exists():
+        return {}
+    prefix = "commonmodule."
+    for xml_file in jobs_dir.glob("*.xml"):
+        text = read_text_cached(str(xml_file))
+        for match in _RE_XML_METHOD_NAME.finditer(text):
+            handler = match.group(1).strip()
+            handler_cf = handler.casefold()
+            if not handler_cf.startswith(prefix):
+                continue
+            parts = handler.split(".", 2)
+            if len(parts) != 3 or not parts[1] or not parts[2]:
+                continue
+            handlers[parts[1].casefold()].append((handler, xml_file.stem))
+    return {module_name: tuple(values) for module_name, values in handlers.items()}

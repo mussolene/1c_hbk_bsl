@@ -283,16 +283,18 @@ def ts_clause_body_is_empty(body: list[Any]) -> bool:
 def _bsl004_append_empty_block(
     path: str,
     diags: list[Any],
-    anchor_kw: Any,
+    anchor_node: Any,
     message: str,
 ) -> None:
+    line = anchor_node.start_point[0] + 1
+    character = anchor_node.start_point[1]
     diags.append(
         Diagnostic(
             file=path,
-            line=anchor_kw.start_point[0] + 1,
-            character=anchor_kw.start_point[1],
-            end_line=anchor_kw.end_point[0] + 1,
-            end_character=anchor_kw.end_point[1],
+            line=line,
+            character=character,
+            end_line=line,
+            end_character=character + 1,
             severity=Severity.WARNING,
             code="BSL004",
             message=message,
@@ -313,12 +315,11 @@ def _bsl004_emit_empty_then_for_elseif_clause(
         j += 1
     if j >= len(ech) or getattr(ech[j], "type", None) != "THEN_KEYWORD":
         return
-    then_kw = ech[j]
     j += 1
     body = ech[j:]
     if not ts_clause_body_is_empty(body):
         return
-    _bsl004_append_empty_block(path, diags, then_kw, empty_msg)
+    _bsl004_append_empty_block(path, diags, elseif_node, empty_msg)
 
 
 def ts_if_main_then_branch_empty(if_stmt: Any) -> bool:
@@ -375,7 +376,6 @@ def _bsl004_emit_empty_then_for_if_statement(
         i += 1
     if i >= len(ch) or getattr(ch[i], "type", None) != "THEN_KEYWORD":
         return
-    then_kw = ch[i]
     i += 1
     start = i
     while i < len(ch) and getattr(ch[i], "type", None) not in (
@@ -386,7 +386,7 @@ def _bsl004_emit_empty_then_for_if_statement(
         i += 1
     body = ch[start:i]
     if ts_clause_body_is_empty(body):
-        _bsl004_append_empty_block(path, diags, then_kw, empty_msg)
+        _bsl004_append_empty_block(path, diags, if_stmt, empty_msg)
     while i < len(ch):
         if getattr(ch[i], "type", None) == "elseif_clause":
             _bsl004_emit_empty_then_for_elseif_clause(ch[i], path, diags, empty_msg)
@@ -420,9 +420,7 @@ def _try_except_has_only_comments_or_empty(
 def diagnostics_bsl004_from_tree(path: str, root: Any) -> list[Any]:
     """BSL004 — empty code blocks (BSLLS ``EmptyCodeBlock``): empty Except, empty Тогда."""
     diags: list[Any] = []
-    empty_then_msg = (
-        "Empty code block: 'Тогда' branch contains no statements — add logic or remove the branch."
-    )
+    empty_then_msg = "Наполните блок кодом или удалите его"
 
     def visit(node: Any) -> None:
         nt = getattr(node, "type", None)

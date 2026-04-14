@@ -73,6 +73,23 @@ class TestBslStatusTool:
             mcp_module._index = original_index
             mcp_module._DB_PATH = original_db
 
+    def test_status_includes_index_size_and_contract_fields(self, tmp_path: Path) -> None:
+        f = _make_bsl(tmp_path, "demo.bsl", "Процедура Тест()\nКонецПроцедуры\n")
+        app = _make_app(tmp_path)
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        tools["bsl_index_file"].fn(file_path=f, workspace_root=str(tmp_path))
+        result = tools["bsl_status"].fn(workspace_root=str(tmp_path))
+        assert result["ready"] is True
+        assert result["indexing"] is False
+        assert result["reindex_running"] is False
+        assert result["reindex_pending"] is False
+        assert result["index_size_bytes"] == (
+            result["db_size_bytes"] + result["wal_size_bytes"] + result["shm_size_bytes"]
+        )
+        assert result["index_size_bytes"] > 0
+
 
 class TestBslListRulesTool:
     def test_list_rules_returns_all_rules(self, tmp_path: Path) -> None:

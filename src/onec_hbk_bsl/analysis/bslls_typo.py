@@ -297,6 +297,9 @@ def spellcheck_typo_diagnostics(
     root = getattr(tree, "root_node", None)
     if root is None:
         return []
+    source_bytes = getattr(root, "text", None)
+    if not isinstance(source_bytes, (bytes, bytearray)):
+        return []
 
     stack: list[Any] = [root]
     diags: list[dict[str, Any]] = []
@@ -317,7 +320,7 @@ def spellcheck_typo_diagnostics(
             if FORMAT_STRING_PATTERN.search(text):
                 continue
             inner = _QUOTE_PATTERN.sub("", text).strip()
-            _emit_parts_for_source_text(node, inner, cfg, _checker, path, diags)
+            _emit_parts_for_source_text(node, text, inner, source_bytes, cfg, _checker, path, diags)
         elif ntype == "identifier" and _identifier_typo_context_ok(node):
             raw_t = node.text
             inner = (
@@ -325,7 +328,7 @@ def spellcheck_typo_diagnostics(
                 if isinstance(raw_t, (bytes, bytearray))
                 else str(raw_t)
             )
-            _emit_parts_for_source_text(node, inner, cfg, _checker, path, diags)
+            _emit_parts_for_source_text(node, inner, inner, source_bytes, cfg, _checker, path, diags)
         elif ntype == "property" and _property_typo_context_ok(node):
             raw_t = node.text
             inner = (
@@ -333,14 +336,25 @@ def spellcheck_typo_diagnostics(
                 if isinstance(raw_t, (bytes, bytearray))
                 else str(raw_t)
             )
-            _emit_parts_for_source_text(node, inner.strip(), cfg, _checker, path, diags)
+            _emit_parts_for_source_text(
+                node,
+                inner,
+                inner.strip(),
+                source_bytes,
+                cfg,
+                _checker,
+                path,
+                diags,
+            )
 
     return diags
 
 
 def _emit_parts_for_source_text(
     node: Any,
+    source_text: str,
     inner: str,
+    source_bytes: bytes,
     cfg: BsllsTypoConfig,
     checker: SpellFn,
     path: str,
@@ -348,6 +362,8 @@ def _emit_parts_for_source_text(
 ) -> None:
     if not inner:
         return
+    line, character = _line_char_from_byte_offset(source_bytes, node.start_byte)
+    end_line, end_character = _line_char_from_byte_offset(source_bytes, node.end_byte)
     for part in split_by_character_type_camel_case(inner):
         if len(part) < cfg.min_word_length:
             continue
@@ -355,16 +371,28 @@ def _emit_parts_for_source_text(
             continue
         if not checker(part):
             continue
-        sl, sc = node.start_point
-        el, ec = node.end_point
         out.append(
             {
                 "file": path,
-                "line": sl + 1,
-                "character": sc,
-                "end_line": el + 1,
-                "end_character": ec,
+                "line": line,
+                "character": character,
+                "end_line": end_line,
+                "end_character": end_character,
                 "code": "BSL256",
                 "message": cfg.message_fmt % part,
             }
         )
+
+
+def _line_char_from_byte_offset(
+    source_bytes: bytes,
+    offset: int,
+) -> tuple[int, int]:
+    prefix = source_bytes[:offset]
+    line = prefix.count(b"\n") + 1
+    line_start = prefix.rfind(b"\n")
+    if line_start >= 0:
+        line_bytes = prefix[line_start + 1 :]
+    else:
+        line_bytes = prefix
+    return line, len(line_bytes.decode("utf-8", errors="replace"))

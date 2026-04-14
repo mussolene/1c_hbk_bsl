@@ -166,10 +166,34 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     common_module_file_map as _common_module_file_map,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    common_module_index_cached as _common_module_index_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    common_module_privileged_map_cached as _common_module_privileged_map_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    common_module_proc_names_for_module_cached as _common_module_proc_names_for_module_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    common_module_proc_names_for_file_cached as _common_module_proc_names_for_file_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    common_module_proc_names_map_cached as _common_module_proc_names_map_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    config_has_protected_modules_cached as _config_has_protected_modules_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     config_root_for_file as _config_root_for_file,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     crawl_config_cached as _crawl_config_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    event_subscription_handlers_by_module_cached as _event_subscription_handlers_by_module_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    metadata_name_index_cached as _metadata_name_index_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     current_form_xml_path as _current_form_xml_path,
@@ -182,6 +206,12 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     read_text_cached as _read_text_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    roles_with_new_objects_cached as _roles_with_new_objects_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    scheduled_job_handlers_by_module_cached as _scheduled_job_handlers_by_module_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.proc_helpers import (
     is_client_notify_completion_export_handler as _is_client_notify_completion_export_handler,
@@ -3126,6 +3156,7 @@ _BSLLS_LSP_HINT_RULE_NAMES: frozenset[str] = frozenset(
         "PublicMethodsDescription",
         "RedundantAccessToObject",
         "SpaceAtStartComment",
+        "Typo",
         "UsageWriteLogEvent",
         "UselessTernaryOperator",
         "UsingServiceTag",
@@ -6293,11 +6324,6 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
         ):
             start = node.start_point
             end = node.end_point
-            left_t = ""
-            for c in getattr(node, "children", []) or []:
-                if getattr(c, "type", None) == "identifier":
-                    left_t = _ts_node_text(c)
-                    break
             diags.append(
                 Diagnostic(
                     file=path,
@@ -6305,9 +6331,9 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
                     character=start[1],
                     end_line=end[0] + 1,
                     end_character=end[1],
-                    severity=Severity.WARNING,
+                    severity=Severity.ERROR,
                     code="BSL009",
-                    message=f"Self-assignment: variable '{left_t}' is assigned to itself",
+                    message="Удалите бесполезное присваивание переменной самой себе",
                 )
             )
         for c in getattr(node, "children", []) or []:

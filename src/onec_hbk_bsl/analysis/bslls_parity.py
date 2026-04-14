@@ -26,6 +26,7 @@ BSLLS_OS_ONLY_NAMES = frozenset(
 BSLLS_DEFAULT_DISABLED_NAMES = frozenset(
     {
         "BadWords",
+        "CodeOutOfRegion",
         "CodeAfterAsyncCall",
         "DenyIncompleteValues",
         "FieldsFromJoinsWithoutIsNull",

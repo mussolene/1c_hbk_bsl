@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from onec_hbk_bsl.analysis.formatter import BslFormatter
 
 
@@ -327,6 +329,31 @@ class TestFormatRange:
         result = f.format(code, indent_size=4, insert_spaces=False)
         assert "\n\t&НаКлиенте\n" not in result
         assert "\n&НаКлиенте\n" in result
+
+    def test_indent_at_uses_prefix_context(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        f = BslFormatter()
+        code = (
+            "Процедура Тест()\n"
+            "    Если Истина Тогда\n"
+            "        Сообщить(1);\n"
+            "    КонецЕсли;\n"
+            "КонецПроцедуры\n"
+            "Процедура Хвост()\n"
+            "КонецПроцедуры\n"
+        )
+        lines = code.splitlines()
+        target = 2
+        captured: dict[str, int] = {}
+        original = f._layout_context
+
+        def spy(*, path: str, content: str, lines: list[str]):
+            captured["lines"] = len(lines)
+            return original(path=path, content=content, lines=lines)
+
+        monkeypatch.setattr(f, "_layout_context", spy)
+        level = f._indent_at(lines, target, 4, insert_spaces=True, full_text=code)
+        assert level >= 0
+        assert captured["lines"] == target + 1
 
 
 class TestComments:

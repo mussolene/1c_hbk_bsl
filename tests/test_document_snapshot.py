@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
+from onec_hbk_bsl.analysis.document_snapshot import (
+    build_document_snapshot,
+    find_procedure_names_from_tree,
+    find_procedure_names_in_content,
+)
 
 
 def test_snapshot_collects_core_document_views(tmp_path: Path) -> None:
@@ -69,3 +73,33 @@ def test_snapshot_collects_embedded_query_blocks(tmp_path: Path) -> None:
     assert block.content_lines[0].line_no == 3
     assert block.content_lines[1].head == "Поле"
     assert block.content_lines[2].head == "ИЗ Справочник.Номенклатура"
+
+
+def test_procedure_name_extractors_handle_async_declarations(tmp_path: Path) -> None:
+    content = """\
+Асинх Функция ПолучитьАсинх(Парам = Неопределено) Экспорт
+    Возврат Парам;
+КонецФункции
+
+Асинх Процедура ЗаписатьАсинх()
+КонецПроцедуры
+"""
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+
+    assert find_procedure_names_from_tree(snapshot.tree) == frozenset(
+        {"получитьасинх", "записатьасинх"}
+    )
+    assert find_procedure_names_in_content(content) == frozenset(
+        {"получитьасинх", "записатьасинх"}
+    )
+
+
+def test_regex_fallback_snapshot_collects_async_procedures(tmp_path: Path) -> None:
+    content = """\
+Асинх Функция ВерсияАсинх() Экспорт
+    Возврат 1;
+КонецФункции
+"""
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content, tree=object())
+
+    assert [proc.name for proc in snapshot.procedures] == ["ВерсияАсинх"]

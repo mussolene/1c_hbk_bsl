@@ -1319,9 +1319,9 @@ class DiagnosticEngine:
                         character=m.start(),
                         end_line=idx + 1,
                         end_character=m.end(),
-                        severity=Severity.WARNING,
+                        severity=Severity.ERROR,
                         code="BSL009",
-                        message=f"Self-assignment: variable '{m.group(1)}' is assigned to itself",
+                        message="Удалите бесполезное присваивание переменной самой себе",
                     )
                 )
         return diags
@@ -9753,32 +9753,32 @@ class DiagnosticEngine:
                         line,
                         re.IGNORECASE,
                     )
-                if assign is None:
-                    continue
-                var_name = assign.group("var")
-                lookahead = "\n".join(lines[idx + 1 : min(len(lines), idx + 4)])
-                if re.search(
-                    rf"\b(?:ЗначениеЗаполнено|ValueIsFilled)\s*\([^)]*\b{re.escape(var_name)}\b",
-                    lookahead,
-                    re.IGNORECASE,
-                ) or re.search(
-                    rf"\b{re.escape(var_name)}\b\s*(?:=|<>)\s*(?:Неопределено|Undefined)",
-                    lookahead,
-                    re.IGNORECASE,
-                ):
-                    continue
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=assign.start("expr"),
-                        end_line=idx + 1,
-                        end_character=assign.end("expr"),
-                        severity=Severity.WARNING,
-                        code="BSL260",
-                        message="Использование НайтиПоКоду() небезопасно без проверки результата",
+                    if assign is None:
+                        continue
+                    var_name = assign.group("var")
+                    lookahead = "\n".join(lines[idx + 1 : min(len(lines), idx + 4)])
+                    if re.search(
+                        rf"\b(?:ЗначениеЗаполнено|ValueIsFilled)\s*\([^)]*\b{re.escape(var_name)}\b",
+                        lookahead,
+                        re.IGNORECASE,
+                    ) or re.search(
+                        rf"\b{re.escape(var_name)}\b\s*(?:=|<>)\s*(?:Неопределено|Undefined)",
+                        lookahead,
+                        re.IGNORECASE,
+                    ):
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=assign.start("expr"),
+                            end_line=idx + 1,
+                            end_character=assign.end("expr"),
+                            severity=Severity.WARNING,
+                            code="BSL260",
+                            message="Использование НайтиПоКоду() небезопасно без проверки результата",
+                        )
                     )
-                )
         return diags
 
     def _rule_bsl174_187_236_238_query_metadata_pool(
@@ -9789,6 +9789,9 @@ class DiagnosticEngine:
         query_blocks: list[QueryTextBlockInfo] | None = None,
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
+        enabled = tuple(code for code in enabled if self._rule_enabled(code))
+        if not enabled:
+            return []
         return run_bsl174_187_236_238_query_metadata_pool(
             path,
             lines,
@@ -9805,6 +9808,9 @@ class DiagnosticEngine:
         enabled: tuple[str, ...],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
+        enabled = tuple(code for code in enabled if self._rule_enabled(code))
+        if not enabled:
+            return []
         return run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
             path,
             lines,

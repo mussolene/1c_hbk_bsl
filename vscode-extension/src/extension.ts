@@ -82,6 +82,55 @@ let statusBarItem: vscode.StatusBarItem | undefined;
 /** Set after a successful `resolveBinaryPath` — used by commands when falling back to CLI (no PATH). */
 let resolvedBinaryPath: string | undefined;
 
+interface BslStatus {
+  ready: boolean;
+  indexing?: boolean;
+  reindex_running?: boolean;
+  reindex_pending?: boolean;
+  symbol_count: number;
+  file_count: number;
+  call_count?: number;
+  meta_object_count?: number;
+  index_size_bytes?: number;
+  db_size_bytes?: number;
+  wal_size_bytes?: number;
+  shm_size_bytes?: number;
+  last_commit?: string | null;
+  indexed_at?: number | null;
+  workspace_root?: string | null;
+  db_path?: string;
+}
+
+function formatBytes(bytes: number | undefined): string {
+  if (bytes === undefined || Number.isNaN(bytes)) {
+    return "unknown size";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = units[0];
+  for (let i = 1; i < units.length && value >= 1024; i += 1) {
+    value /= 1024;
+    unit = units[i];
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${unit}`;
+}
+
+function formatStatusSummary(status: BslStatus): string {
+  const parts = [
+    `${status.symbol_count} symbols in ${status.file_count} files`,
+  ];
+  if (typeof status.index_size_bytes === "number") {
+    parts.push(`${formatBytes(status.index_size_bytes)} on disk`);
+  }
+  if (status.indexing) {
+    parts.push("indexing in background");
+  }
+  return parts.join(" · ");
+}
+
 // ---------------------------------------------------------------------------
 // Activation
 // ---------------------------------------------------------------------------
@@ -501,9 +550,17 @@ async function reindexWorkspace(): Promise<void> {
         return;
       }
       try {
-        await client.sendRequest("bsl/reindexWorkspace", { root });
-        vscode.window.showInformationMessage(`${msgPrefix(ctx)} Workspace reindex complete.`);
-        updateStatusBar();
+        const result = await client.sendRequest<{ success?: boolean; started?: boolean; indexing?: boolean }>(
+          "bsl/reindexWorkspace",
+          { root },
+        );
+        const status = await updateStatusBar();
+        const active = result.indexing ?? status?.indexing ?? false;
+        vscode.window.showInformationMessage(
+          active
+            ? `${msgPrefix(ctx)} Workspace reindex started; indexing continues in the background.`
+            : `${msgPrefix(ctx)} Workspace reindex started.`
+        );
       } catch {
         await runCliIndex("LSP request failed");
       }
@@ -532,14 +589,13 @@ async function showStatus(): Promise<void> {
   if (!ctx) { return; }
   if (!client) { vscode.window.showWarningMessage(`${displayName(ctx)} is not running.`); return; }
   try {
-    const status = await client.sendRequest<{ ready: boolean; symbol_count: number; file_count: number }>(
-      "bsl/status", {}
-    );
-    vscode.window.showInformationMessage(
-      `BSL Index: ${status.symbol_count} symbols in ${status.file_count} files`
-    );
+    const status = await client.sendRequest<BslStatus>("bsl/status", {});
+    vscode.window.showInformationMessage(`BSL Index: ${formatStatusSummary(status)}`);
     if (statusBarItem) {
-      statusBarItem.text = `$(database) BSL: ${status.symbol_count}`;
+      statusBarItem.text = status.indexing
+        ? `$(sync~spin) BSL: ${status.symbol_count}`
+        : `$(database) BSL: ${status.symbol_count}`;
+      statusBarItem.tooltip = `${displayName(ctx)}: ${formatStatusSummary(status)}`;
     }
   } catch (err) {
     vscode.window.showErrorMessage(`${msgPrefix(ctx)} Status request failed: ${err}`);
@@ -550,18 +606,20 @@ async function showStatus(): Promise<void> {
 // Status bar
 // ---------------------------------------------------------------------------
 
-async function updateStatusBar(): Promise<void> {
+async function updateStatusBar(): Promise<BslStatus | undefined> {
   const ctx = extensionContext;
   if (!client || !statusBarItem || !ctx) { return; }
   try {
-    const status = await client.sendRequest<{ symbol_count: number; file_count: number }>(
-      "bsl/status", {}
-    );
-    statusBarItem.text = `$(database) BSL: ${status.symbol_count}`;
-    statusBarItem.tooltip = `${displayName(ctx)}: ${status.symbol_count} symbols in ${status.file_count} files`;
+    const status = await client.sendRequest<BslStatus>("bsl/status", {});
+    statusBarItem.text = status.indexing
+      ? `$(sync~spin) BSL: ${status.symbol_count}`
+      : `$(database) BSL: ${status.symbol_count}`;
+    statusBarItem.tooltip = `${displayName(ctx)}: ${formatStatusSummary(status)}`;
+    return status;
   } catch {
     statusBarItem.text = "$(warning) BSL";
     statusBarItem.tooltip = `${displayName(ctx)}: server not responding`;
+    return undefined;
   }
 }
 

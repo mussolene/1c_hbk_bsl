@@ -9,14 +9,36 @@ from __future__ import annotations
 
 from typing import Any
 
+_TREE_ERROR_CACHE_MAX = 200_000
+_tree_error_cache: dict[tuple[int, int, int], bool] = {}
+
+
+def _tree_error_cache_key(node: Any) -> tuple[int, int, int] | None:
+    node_id = getattr(node, "id", None)
+    start_byte = getattr(node, "start_byte", None)
+    end_byte = getattr(node, "end_byte", None)
+    if not all(isinstance(value, int) for value in (node_id, start_byte, end_byte)):
+        return None
+    return (node_id, start_byte, end_byte)
+
 
 def tree_has_errors(node: Any) -> bool:
+    key = _tree_error_cache_key(node)
+    if key is not None:
+        cached = _tree_error_cache.get(key)
+        if cached is not None:
+            return cached
+
     if node.type in ("ERROR", "error") or getattr(node, "is_missing", False):
-        return True
-    for c in node.children:
-        if tree_has_errors(c):
-            return True
-    return False
+        result = True
+    else:
+        result = any(tree_has_errors(c) for c in node.children)
+
+    if key is not None:
+        if len(_tree_error_cache) >= _TREE_ERROR_CACHE_MAX:
+            _tree_error_cache.clear()
+        _tree_error_cache[key] = result
+    return result
 
 
 def _mark_line_max(out: list[int], line: int, depth: int) -> None:

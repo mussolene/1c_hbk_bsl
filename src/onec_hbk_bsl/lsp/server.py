@@ -437,6 +437,32 @@ def _schedule_workspace_reindex(
     threading.Thread(target=_worker, daemon=True, name="bsl-workspace-reindex").start()
 
 
+def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
+    """Return status-bar payload with counts, size, and reindex state."""
+    stats = ls.symbol_index.get_stats()
+    with ls._reindex_lock:
+        reindex_running = ls._reindex_running
+        reindex_pending = ls._reindex_pending
+    indexing = reindex_running or reindex_pending
+    return {
+        "ready": stats.get("symbol_count", 0) > 0,
+        "indexing": indexing,
+        "reindex_running": reindex_running,
+        "reindex_pending": reindex_pending,
+        "symbol_count": stats.get("symbol_count", 0),
+        "file_count": stats.get("file_count", 0),
+        "call_count": stats.get("call_count", 0),
+        "meta_object_count": stats.get("meta_object_count", 0),
+        "index_size_bytes": stats.get("index_size_bytes", 0),
+        "db_size_bytes": stats.get("db_size_bytes", 0),
+        "wal_size_bytes": stats.get("wal_size_bytes", 0),
+        "shm_size_bytes": stats.get("shm_size_bytes", 0),
+        "last_commit": stats.get("last_commit"),
+        "indexed_at": stats.get("indexed_at"),
+        "workspace_root": stats.get("workspace_root"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -1341,6 +1367,21 @@ def _call_char_from_row(call_row: dict[str, Any]) -> int:
     return char if char >= 0 else 0
 
 
+def _cached_symbol_lookup(
+    ls: BslLanguageServer,
+    cache: dict[tuple[str, int], list[dict[str, Any]]],
+    name: str | None,
+    limit: int = 1,
+) -> list[dict[str, Any]]:
+    """Resolve a symbol once per request for repeated call-hierarchy rows."""
+    if not name:
+        return []
+    key = (name.casefold(), limit)
+    if key not in cache:
+        cache[key] = ls.symbol_index.find_symbol(name, limit=limit)
+    return cache[key]
+
+
 @server.feature(TEXT_DOCUMENT_PREPARE_CALL_HIERARCHY)
 def on_prepare_call_hierarchy(
     ls: BslLanguageServer, params: CallHierarchyPrepareParams
@@ -1371,6 +1412,7 @@ def on_call_hierarchy_incoming(
         return None
 
     result: list[CallHierarchyIncomingCall] = []
+    caller_cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for c in callers:
         caller_line = max(0, c["caller_line"] - 1)
         caller_char = _call_char_from_row(c)
@@ -1379,7 +1421,7 @@ def on_call_hierarchy_incoming(
             end=Position(line=caller_line, character=caller_char + len(item_name)),
         )
         # Build a minimal CallHierarchyItem for the caller function
-        caller_syms = ls.symbol_index.find_symbol(c["caller_name"], limit=1)
+        caller_syms = _cached_symbol_lookup(ls, caller_cache, c.get("caller_name"), limit=1)
         if caller_syms:
             from_item = _sym_to_call_hierarchy_item(caller_syms[0], ls)
         else:
@@ -1414,6 +1456,7 @@ def on_call_hierarchy_outgoing(
         return None
 
     result: list[CallHierarchyOutgoingCall] = []
+    callee_cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for c in callees:
         call_line = max(0, c["caller_line"] - 1)
         call_char = _call_char_from_row(c)
@@ -1422,7 +1465,7 @@ def on_call_hierarchy_outgoing(
             end=Position(line=call_line, character=call_char + len(c["callee_name"])),
         )
         # Resolve callee definition
-        callee_syms = ls.symbol_index.find_symbol(c["callee_name"], limit=1)
+        callee_syms = _cached_symbol_lookup(ls, callee_cache, c["callee_name"], limit=1)
         if callee_syms:
             to_item = _sym_to_call_hierarchy_item(callee_syms[0], ls)
         else:
@@ -3259,12 +3302,7 @@ def on_bsl_parse_tree(ls: BslLanguageServer, params: dict) -> dict:  # type: ign
 @server.feature("bsl/status")
 def on_bsl_status(ls: BslLanguageServer, params: object) -> dict:  # type: ignore[type-arg]
     """Return index statistics for the status bar."""
-    stats = ls.symbol_index.get_stats()
-    return {
-        "ready": True,
-        "symbol_count": stats.get("symbol_count", 0),
-        "file_count": stats.get("file_count", 0),
-    }
+    return _status_payload(ls)
 
 
 @server.feature("bsl/reindexWorkspace")
@@ -3284,7 +3322,7 @@ def on_bsl_reindex_workspace(ls: BslLanguageServer, params: dict) -> dict:  # ty
             logger.error("LSP: reindex failed: %s", exc)
 
     threading.Thread(target=_do, daemon=True).start()
-    return {"success": True}
+    return {"success": True, "started": True, "indexing": True}
 
 
 @server.feature("bsl/reindexFile")

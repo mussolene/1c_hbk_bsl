@@ -48,7 +48,7 @@ python scripts/dev_corpus_parity.py /Users/maxon/git/config --sample=100 --profi
 ```
 
 Скрипт:
-- сам находит `exec.jar` в `.nosync/bsl-language-server/build/libs` или берёт `BSLLS_JAR`
+- сам находит `exec.jar` через `BSLLS_JAR`, `~/.cache/onec-hbk-bsl/bslls` или `.nosync/bsl-language-server/build/libs`
 - сравнивает нормализованные diagnostics нашего движка и BSLLS
 - сравнивает итоговый текст full-document formatting
 - сохраняет JSON-отчёт для разбора несовпадений

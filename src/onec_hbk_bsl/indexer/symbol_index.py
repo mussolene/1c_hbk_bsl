@@ -18,6 +18,7 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
@@ -86,6 +87,8 @@ CREATE TABLE IF NOT EXISTS calls (
 
 CREATE INDEX IF NOT EXISTS idx_calls_caller      ON calls(caller_file, caller_line);
 CREATE INDEX IF NOT EXISTS idx_calls_caller_name ON calls(caller_name);
+CREATE INDEX IF NOT EXISTS idx_calls_callee_order ON calls(callee_name_lower, caller_file, caller_line);
+CREATE INDEX IF NOT EXISTS idx_calls_caller_name_line ON calls(caller_file, caller_name, caller_line);
 
 CREATE TABLE IF NOT EXISTS git_state (
     id             INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row
@@ -247,6 +250,12 @@ class SymbolIndex:
             # Create correct index on callee_name_lower
             conn.execute("CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee_name_lower)")
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_calls_callee_order ON calls(callee_name_lower, caller_file, caller_line)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_calls_caller_name_line ON calls(caller_file, caller_name, caller_line)"
+            )
+            conn.execute(
                 "UPDATE calls SET callee_name_lower = LOWER(callee_name) WHERE callee_name_lower = ''"
             )
 
@@ -315,6 +324,34 @@ class SymbolIndex:
             return False
         except sqlite3.ProgrammingError:
             return True
+
+    @staticmethod
+    def _path_size_bytes(path: Path) -> int:
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+
+    def _index_size_stats(self) -> dict[str, int]:
+        """Return file sizes for the main DB and sidecar WAL/SHM files."""
+        if self.db_path == ":memory:":
+            return {
+                "db_size_bytes": 0,
+                "wal_size_bytes": 0,
+                "shm_size_bytes": 0,
+                "index_size_bytes": 0,
+            }
+
+        db_path = Path(self.db_path)
+        db_size = self._path_size_bytes(db_path)
+        wal_size = self._path_size_bytes(Path(f"{self.db_path}-wal"))
+        shm_size = self._path_size_bytes(Path(f"{self.db_path}-shm"))
+        return {
+            "db_size_bytes": db_size,
+            "wal_size_bytes": wal_size,
+            "shm_size_bytes": shm_size,
+            "index_size_bytes": db_size + wal_size + shm_size,
+        }
 
     def close(self) -> None:
         """Close the connection for the current thread (or instance for :memory:)."""
@@ -883,7 +920,7 @@ class SymbolIndex:
         row = conn.execute(
             "SELECT indexed_at, workspace_root FROM git_state WHERE id = 1"
         ).fetchone()
-        return {
+        stats = {
             "symbol_count": symbol_count,
             "file_count": file_count,
             "call_count": call_count,
@@ -892,3 +929,5 @@ class SymbolIndex:
             "indexed_at": row["indexed_at"] if row else None,
             "workspace_root": row["workspace_root"] if row else None,
         }
+        stats.update(self._index_size_stats())
+        return stats

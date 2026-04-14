@@ -575,6 +575,161 @@ class TestTailParityBatches:
         ).check_file(str(path))
         assert {"BSL187", "BSL236", "BSL238", "BSL244", "BSL261"} <= set(_codes(diags))
 
+    def test_bsl238_skips_full_metadata_crawl(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "Catalogs").mkdir(exist_ok=True)
+        (tmp_path / "Catalogs" / "Тест.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>Тест</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос = Новый Запрос;
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |  Таблица.Ссылка.Код
+                    |ИЗ Справочник.Тест КАК Таблица";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._crawl_config_cached",
+            lambda *_args, **_kwargs: pytest.fail("full crawl is not expected for BSL238-only run"),
+        )
+        diags = DiagnosticEngine(select={"BSL238"}).check_file(str(path))
+        assert "BSL238" in _codes(diags)
+
+    def test_bsl246_uses_cached_role_index_without_full_crawl(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "Roles").mkdir()
+        (root / "Roles" / "ПлохаяРоль.xml").write_text(
+            "<Role><SetForNewObjects>true</SetForNewObjects></Role>",
+            encoding="utf-8",
+        )
+        app_module = root / "Ext" / "ManagedApplicationModule.bsl"
+        app_module.parent.mkdir(parents=True)
+        app_module.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._crawl_config_cached",
+            lambda *_args, **_kwargs: pytest.fail("full crawl is not expected for BSL246-only run"),
+        )
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._common_module_file_map",
+            lambda *_args, **_kwargs: pytest.fail("module map is not expected for BSL246-only run"),
+        )
+        diags = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
+        assert "BSL246" in _codes(diags)
+
+    def test_bsl231_skips_proc_name_index(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Обычный" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Привилегированный" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Обычный.xml").write_text(
+            "<CommonModule><Name>Обычный</Name></CommonModule>", encoding="utf-8"
+        )
+        (root / "CommonModules" / "Привилегированный.xml").write_text(
+            "<CommonModule><Name>Привилегированный</Name><Privileged>true</Privileged></CommonModule>",
+            encoding="utf-8",
+        )
+        ordinary_module = root / "CommonModules" / "Обычный" / "Ext" / "Module.bsl"
+        ordinary_module.write_text(
+            "Процедура НетЭкспорта()\n    Привилегированный.Метод();\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._common_module_proc_names_map_cached",
+            lambda *_args, **_kwargs: pytest.fail("proc-name index is not expected for BSL231-only run"),
+        )
+        diags = DiagnosticEngine(select={"BSL231"}).check_file(str(ordinary_module))
+        assert "BSL231" in _codes(diags)
+
+    def test_bsl213_skips_privileged_index(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Обычный" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Привилегированный" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Обычный.xml").write_text(
+            "<CommonModule><Name>Обычный</Name></CommonModule>", encoding="utf-8"
+        )
+        (root / "CommonModules" / "Привилегированный.xml").write_text(
+            "<CommonModule><Name>Привилегированный</Name><Privileged>true</Privileged></CommonModule>",
+            encoding="utf-8",
+        )
+        ordinary_module = root / "CommonModules" / "Обычный" / "Ext" / "Module.bsl"
+        ordinary_module.write_text(
+            "Процедура НетЭкспорта()\n    Привилегированный.Отсутствующий();\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "Привилегированный" / "Ext" / "Module.bsl").write_text(
+            "Процедура Метод() Экспорт\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._common_module_privileged_map_cached",
+            lambda *_args, **_kwargs: pytest.fail("privileged index is not expected for BSL213-only run"),
+        )
+        diags = DiagnosticEngine(select={"BSL213"}).check_file(str(ordinary_module))
+        assert "BSL213" in _codes(diags)
+
+    def test_bsl213_loads_only_called_common_modules(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        for module_name in ("Caller", "Target", "Unused"):
+            (root / "CommonModules" / module_name / "Ext").mkdir(parents=True)
+            (root / "CommonModules" / f"{module_name}.xml").write_text(
+                f"<CommonModule><Name>{module_name}</Name></CommonModule>", encoding="utf-8"
+            )
+        caller_module = root / "CommonModules" / "Caller" / "Ext" / "Module.bsl"
+        caller_module.write_text(
+            "Процедура Run()\n    Target.Absent();\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "Target" / "Ext" / "Module.bsl").write_text(
+            "Процедура Exists() Экспорт\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "Unused" / "Ext" / "Module.bsl").write_text(
+            "Процедура NeverUsed() Экспорт\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+
+        import onec_hbk_bsl.analysis.diagnostics as diagnostics_mod
+
+        original = diagnostics_mod._common_module_proc_names_for_module_cached
+        calls: set[str] = set()
+
+        def spy(config_root: str, module_name_cf: str) -> frozenset[str]:
+            calls.add(module_name_cf)
+            return original(config_root, module_name_cf)
+
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._common_module_proc_names_for_module_cached",
+            spy,
+        )
+        diags = DiagnosticEngine(select={"BSL213"}).check_file(str(caller_module))
+        assert "BSL213" in _codes(diags)
+        assert "target" in calls
+        assert "unused" not in calls
+
     def test_external_resource_timeout_tail_rule(self, tmp_path: Path) -> None:
         diags = _check(
             """\
@@ -962,7 +1117,7 @@ class TestBsl009SelfAssign:
         diags = _check(content, tmp_path)
         bsl009 = [d for d in diags if d.code == "BSL009"]
         assert len(bsl009) >= 1
-        assert "Переменная" in bsl009[0].message
+        assert bsl009[0].message == "Удалите бесполезное присваивание переменной самой себе"
 
     def test_normal_assign_no_warning(self, tmp_path: Path) -> None:
         content = "Процедура Тест()\n    А = Б;\nКонецПроцедуры\n"
@@ -2286,6 +2441,50 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         bsl256 = [d for d in diags if d.code == "BSL256"]
         assert len(bsl256) == 3
         assert {d.line for d in bsl256} == {2, 6, 9}
+
+    def test_bslls_typo_anchors_inside_string_fragment(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
+            lambda word: word == "Атмена",
+        )
+        content = (
+            "Процедура Тест()\n"
+            '    Сообщить("Ошибка Атмена");\n'
+            "КонецПроцедуры\n"
+        )
+        path = tmp_path / "TypoStringAnchor.bsl"
+        path.write_text(content, encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+        bsl256 = [d for d in diags if d.code == "BSL256"]
+        assert len(bsl256) == 1
+        line = content.splitlines()[1]
+        start = line.index('"')
+        assert bsl256[0].line == 2
+        assert bsl256[0].character == start
+        assert bsl256[0].end_character == line.rindex('"') + 1
+
+    def test_bslls_typo_anchors_camel_case_part(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
+            lambda word: word == "Варинаты",
+        )
+        content = (
+            "Функция ПрефиксВаринатыОплаты()\n"
+            "    Возврат 0;\n"
+            "КонецФункции\n"
+        )
+        path = tmp_path / "TypoIdentifierAnchor.bsl"
+        path.write_text(content, encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+        bsl256 = [d for d in diags if d.code == "BSL256"]
+        assert len(bsl256) == 1
+        line = content.splitlines()[0]
+        start = line.index("ПрефиксВаринатыОплаты")
+        assert bsl256[0].line == 1
+        assert bsl256[0].character == start
+        assert bsl256[0].end_character == start + len("ПрефиксВаринатыОплаты")
 
 
 # ---------------------------------------------------------------------------

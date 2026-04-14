@@ -24,6 +24,7 @@ indent relative to the block baseline (BSL-LS style).
 
 from __future__ import annotations
 
+import functools
 import re
 from collections.abc import Callable
 
@@ -373,7 +374,8 @@ def _precompute_multiline_doc_comment_stripped(lines: list[str]) -> dict[int, st
     return out
 
 
-def _tokenize(line: str) -> list[tuple[str, str]]:
+@functools.lru_cache(maxsize=16_384)
+def _tokenize(line: str) -> tuple[tuple[str, str], ...]:
     """Split a line into tokens of types: 'string', 'comment', 'code'.
 
     Returns list of (token_type, text) tuples whose concatenation == line.
@@ -408,7 +410,7 @@ def _tokenize(line: str) -> list[tuple[str, str]]:
                 j += 1
             tokens.append(("code", line[i:j]))
             i = j
-    return tokens
+    return tuple(tokens)
 
 
 # After comma, BSLLS FormatProvider inserts a space before the next token unless
@@ -830,6 +832,9 @@ class BslFormatter:
 
     def __init__(self, *, profile: str = "compat") -> None:
         self.profile = profile
+        self._cached_layout_text: str | None = None
+        self._cached_layout_snapshot = None
+        self._cached_layout_base_levels: list[int] | None = None
 
     @staticmethod
     def _default_insert_spaces(profile: str, explicit: bool | None) -> bool:
@@ -855,8 +860,7 @@ class BslFormatter:
             normalized = normalize_argument_list_spacing(text, snapshot.root_node)
             if normalized != text:
                 text = normalized
-                snapshot = build_document_snapshot(path="<format>", content=text)
-                lines = snapshot.lines
+                lines = text.splitlines()
         formatted, _ = self._format_lines(
             lines,
             indent_size=indent_size,
@@ -897,8 +901,11 @@ class BslFormatter:
         e = min(len(all_lines) - 1, end_line)
 
         selected = all_lines[s : e + 1]
-        snapshot = build_document_snapshot(path="<format-range>", content=content)
-        full_base = _compute_structural_indent_levels(all_lines, content, tree=snapshot.tree)
+        snapshot, full_base = self._layout_context(
+            path="<format-range>",
+            content=content,
+            lines=all_lines,
+        )
         slice_base = full_base[s : e + 1] if full_base else []
         formatted, _ = self._format_lines(
             selected,
@@ -929,20 +936,27 @@ class BslFormatter:
             return 0
         if target > len(full_lines):
             return 0
-        snapshot = build_document_snapshot(path="<indent>", content=full_text)
-        base_levels = _compute_structural_indent_levels(full_lines, full_text, tree=snapshot.tree)
+        # On-type indentation only depends on the prefix before target.
+        # Parsing the entire document on cache miss is unnecessary CPU work.
+        context_lines = full_lines[: target + 1] if target < len(full_lines) else full_lines
+        context_text = "\n".join(context_lines)
+        snapshot, base_levels = self._layout_context(
+            path="<indent>",
+            content=context_text,
+            lines=context_lines,
+        )
         next_struct = (
             base_levels[target]
             if target < len(base_levels)
             else (base_levels[-1] if base_levels else 0)
         )
         _, next_level = self._format_lines(
-            full_lines[:target],
+            context_lines[:target],
             indent_size=indent_size,
             initial_indent=0,
             output=False,
             insert_spaces=insert_spaces,
-            text_for_parse=full_text,
+            text_for_parse=context_text,
             base_levels=base_levels[:target],
             next_line_structural=next_struct,
             tree=snapshot.tree,
@@ -1114,6 +1128,26 @@ class BslFormatter:
 
         next_line_level = next_struct + initial_indent + (1 if continuation else 0)
         return "\n".join(result), next_line_level
+
+    def _layout_context(
+        self,
+        *,
+        path: str,
+        content: str,
+        lines: list[str],
+    ) -> tuple[object, list[int]]:
+        if self._cached_layout_text == content:
+            snapshot = self._cached_layout_snapshot
+            base_levels = self._cached_layout_base_levels
+            if snapshot is not None and base_levels is not None:
+                return snapshot, base_levels
+
+        snapshot = build_document_snapshot(path=path, content=content)
+        base_levels = _compute_structural_indent_levels(lines, content, tree=snapshot.tree)
+        self._cached_layout_text = content
+        self._cached_layout_snapshot = snapshot
+        self._cached_layout_base_levels = base_levels
+        return snapshot, base_levels
 
     @staticmethod
     def _indent(level: int, indent_size: int, insert_spaces: bool) -> str:

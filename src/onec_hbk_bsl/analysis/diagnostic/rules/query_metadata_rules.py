@@ -23,9 +23,8 @@ def run_bsl174_187_236_238_query_metadata_pool(
     diags: list[Any] = []
     root = _diag._config_root_for_file(path)
     meta_names: set[str] = set()
-    if root is not None:
-        crawl = _diag._crawl_config_cached(root)
-        meta_names = set(crawl["by_name"].keys())
+    if "BSL236" in enabled_set and root is not None:
+        meta_names = set(_diag._metadata_name_index_cached(root))
 
     object_xml = _diag._current_object_xml_path(path)
     if "BSL174" in enabled_set and object_xml is not None:
@@ -154,9 +153,24 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     root = _diag._config_root_for_file(path)
     line_text = lines[0] if lines else ""
     object_xml = _diag._current_object_xml_path(path)
-    crawl = _diag._crawl_config_cached(root) if root is not None else {"objects": [], "by_name": {}}
-    module_map = _diag._common_module_file_map(root) if root is not None else {}
     clean = cleaned_lines or lines
+    low_path = path.replace("\\", "/").lower()
+    current_ctx = _diag._current_module_xml_context(path) if object_xml is not None else {}
+    object_name = current_ctx.get("object_name", object_xml.stem) if object_xml is not None else ""
+    meta_obj: Any | None = None
+    if object_xml is not None and root is not None and ({"BSL189", "BSL241"} & enabled_set):
+        crawl = _diag._crawl_config_cached(root)
+        meta_obj = crawl["by_name"].get(object_name.casefold())
+    privileged_map = (
+        _diag._common_module_privileged_map_cached(root)
+        if root is not None and "BSL231" in enabled_set
+        else {}
+    )
+    common_module_index = (
+        _diag._common_module_index_cached(root)
+        if root is not None and "BSL213" in enabled_set
+        else {}
+    )
 
     forbidden_names = {
         "catalog",
@@ -176,9 +190,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     }
 
     if object_xml is not None:
-        ctx = _diag._current_module_xml_context(path)
-        object_name = ctx.get("object_name", object_xml.stem)
-        meta_obj = crawl["by_name"].get(object_name.casefold())
         if "BSL189" in enabled_set:
             if object_name.casefold() in forbidden_names:
                 diags.append(
@@ -278,44 +289,29 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
 
     if (
         "BSL246" in enabled_set
-        and path.replace("\\", "/").lower().endswith("/ext/managedapplicationmodule.bsl")
+        and low_path.endswith("/ext/managedapplicationmodule.bsl")
         and root is not None
     ):
-        roles_dir = Path(root) / "Roles"
-        for xml_file in roles_dir.glob("*.xml"):
-            role_name = xml_file.stem
-            if role_name in {"FullAccess", "ПолныеПрава"}:
-                continue
-            text = _diag._read_text_cached(str(xml_file))
-            match = _diag._RE_XML_SET_FOR_NEW_OBJECTS.search(text)
-            if match and match.group(1).lower() == "true":
-                diags.append(
-                    _diag.Diagnostic(
-                        file=path,
-                        line=1,
-                        character=0,
-                        end_line=1,
-                        end_character=max(len(line_text.rstrip()), 1),
-                        severity=_diag.Severity.ERROR,
-                        code="BSL246",
-                        message=f"Роль {role_name} задает права для новых объектов",
-                    )
+        for role_name in _diag._roles_with_new_objects_cached(root):
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=1,
+                    character=0,
+                    end_line=1,
+                    end_character=max(len(line_text.rstrip()), 1),
+                    severity=_diag.Severity.ERROR,
+                    code="BSL246",
+                    message=f"Роль {role_name} задает права для новых объектов",
                 )
+            )
 
     if (
         "BSL232" in enabled_set
-        and path.replace("\\", "/").lower().endswith("/ext/sessionmodule.bsl")
+        and low_path.endswith("/ext/sessionmodule.bsl")
         and root is not None
     ):
-        cfg_root = Path(root)
-        protected_found = False
-        for xml_file in cfg_root.rglob("*.xml"):
-            if xml_file.name in {"Configuration.xml", "ConfigDumpInfo.xml"}:
-                continue
-            if _diag._RE_XML_PROTECTED.search(_diag._read_text_cached(str(xml_file))):
-                protected_found = True
-                break
-        if protected_found:
+        if _diag._config_has_protected_modules_cached(root):
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -330,12 +326,11 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
             )
 
     if "BSL231" in enabled_set and root is not None:
-        low = path.replace("\\", "/").lower()
         current_common = ""
-        if "/commonmodules/" in low:
+        if "/commonmodules/" in low_path:
             current_common = Path(path).parent.parent.name.casefold()
         current_privileged = bool(
-            current_common and module_map.get(current_common, {}).get("privileged")
+            current_common and privileged_map.get(current_common, {}).get("privileged")
         )
         for idx, _raw_line in enumerate(lines):
             line = clean[idx]
@@ -343,7 +338,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                 mod_cf = match.group("mod").casefold()
                 if mod_cf == current_common:
                     continue
-                info = module_map.get(mod_cf)
+                info = privileged_map.get(mod_cf)
                 if info and info.get("privileged") and not current_privileged:
                     diags.append(
                         _diag.Diagnostic(
@@ -361,18 +356,23 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     if (
         ({"BSL213", "BSL214", "BSL242"} & enabled_set)
         and root is not None
-        and "/commonmodules/" in path.replace("\\", "/").lower()
+        and "/commonmodules/" in low_path
     ):
         module_name = Path(path).parent.parent.name
         proc_names = {proc.name.casefold(): proc for proc in procs}
-        root_path = Path(root)
         if "BSL213" in enabled_set:
+            proc_names_by_module: dict[str, frozenset[str]] = {}
             for idx, _raw_line in enumerate(lines):
                 line = clean[idx]
                 for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
                     mod_cf = match.group("mod").casefold()
-                    info = module_map.get(mod_cf)
-                    if info and match.group("meth").casefold() not in info.get("proc_names", set()):
+                    if mod_cf not in common_module_index:
+                        continue
+                    info = proc_names_by_module.get(mod_cf)
+                    if info is None:
+                        info = _diag._common_module_proc_names_for_module_cached(root, mod_cf)
+                        proc_names_by_module[mod_cf] = info
+                    if match.group("meth").casefold() not in info:
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
@@ -382,98 +382,90 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                                 end_character=match.end("meth"),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL213",
-                                message=(
-                                    f"Метод {match.group('meth')} отсутствует в общем модуле {info['name']}"
-                                ),
+                                message=f"Метод {match.group('meth')} отсутствует в общем модуле {match.group('mod')}",
                             )
                         )
         if "BSL214" in enabled_set:
-            for xml_file in (root_path / "EventSubscriptions").glob("*.xml"):
-                text = _diag._read_text_cached(str(xml_file))
-                for match in _diag._RE_XML_EVENT_HANDLER.finditer(text):
-                    handler = (match.group(1) or match.group(2) or "").strip()
-                    if not handler.startswith(f"{module_name}."):
-                        continue
-                    meth = handler.split(".", 1)[1]
-                    if meth.casefold() not in proc_names:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=1,
-                                character=0,
-                                end_line=1,
-                                end_character=max(len(line_text.rstrip()), 1),
-                                severity=_diag.Severity.ERROR,
-                                code="BSL214",
-                                message=f"Обработчик подписки на событие {handler} не существует",
-                            )
+            for handler in _diag._event_subscription_handlers_by_module_cached(root).get(
+                module_name.casefold(), ()
+            ):
+                meth = handler.split(".", 1)[1]
+                if meth.casefold() not in proc_names:
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=1,
+                            character=0,
+                            end_line=1,
+                            end_character=max(len(line_text.rstrip()), 1),
+                            severity=_diag.Severity.ERROR,
+                            code="BSL214",
+                            message=f"Обработчик подписки на событие {handler} не существует",
                         )
+                    )
         if "BSL242" in enabled_set:
             handlers_seen: dict[str, str] = {}
-            for xml_file in (root_path / "ScheduledJobs").glob("*.xml"):
-                text = _diag._read_text_cached(str(xml_file))
-                for match in _diag._RE_XML_METHOD_NAME.finditer(text):
-                    handler = match.group(1).strip()
-                    if not handler.startswith(f"CommonModule.{module_name}."):
-                        continue
-                    meth = handler.split(".")[-1]
-                    proc = proc_names.get(meth.casefold())
-                    if proc is None:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=1,
-                                character=0,
-                                end_line=1,
-                                end_character=max(len(line_text.rstrip()), 1),
-                                severity=_diag.Severity.ERROR,
-                                code="BSL242",
-                                message=f"Обработчик регламентного задания {handler} не найден",
-                            )
+            for handler, job_name in _diag._scheduled_job_handlers_by_module_cached(root).get(
+                module_name.casefold(), ()
+            ):
+                meth = handler.split(".")[-1]
+                proc = proc_names.get(meth.casefold())
+                if proc is None:
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=1,
+                            character=0,
+                            end_line=1,
+                            end_character=max(len(line_text.rstrip()), 1),
+                            severity=_diag.Severity.ERROR,
+                            code="BSL242",
+                            message=f"Обработчик регламентного задания {handler} не найден",
                         )
-                        continue
-                    if not proc.is_export:
-                        start_char, end_char = _diag._proc_name_span(lines, proc)
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=proc.start_idx + 1,
-                                character=start_char,
-                                end_line=proc.start_idx + 1,
-                                end_character=end_char,
-                                severity=_diag.Severity.ERROR,
-                                code="BSL242",
-                                message=f"Обработчик регламентного задания {handler} должен быть экспортным",
-                            )
+                    )
+                    continue
+                if not proc.is_export:
+                    start_char, end_char = _diag._proc_name_span(lines, proc)
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=start_char,
+                            end_line=proc.start_idx + 1,
+                            end_character=end_char,
+                            severity=_diag.Severity.ERROR,
+                            code="BSL242",
+                            message=f"Обработчик регламентного задания {handler} должен быть экспортным",
                         )
-                    if proc.optional_count > 0 or proc.params:
-                        start_char, end_char = _diag._proc_name_span(lines, proc)
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=proc.start_idx + 1,
-                                character=start_char,
-                                end_line=proc.start_idx + 1,
-                                end_character=end_char,
-                                severity=_diag.Severity.ERROR,
-                                code="BSL242",
-                                message=f"Обработчик регламентного задания {handler} не должен принимать параметры",
-                            )
+                    )
+                if proc.optional_count > 0 or proc.params:
+                    start_char, end_char = _diag._proc_name_span(lines, proc)
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=start_char,
+                            end_line=proc.start_idx + 1,
+                            end_character=end_char,
+                            severity=_diag.Severity.ERROR,
+                            code="BSL242",
+                            message=f"Обработчик регламентного задания {handler} не должен принимать параметры",
                         )
-                    if handler in handlers_seen and handlers_seen[handler] != xml_file.stem:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=1,
-                                character=0,
-                                end_line=1,
-                                end_character=max(len(line_text.rstrip()), 1),
-                                severity=_diag.Severity.ERROR,
-                                code="BSL242",
-                                message=f"Один и тот же обработчик {handler} используется несколькими заданиями",
-                            )
+                    )
+                if handler in handlers_seen and handlers_seen[handler] != job_name:
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=1,
+                            character=0,
+                            end_line=1,
+                            end_character=max(len(line_text.rstrip()), 1),
+                            severity=_diag.Severity.ERROR,
+                            code="BSL242",
+                            message=f"Один и тот же обработчик {handler} используется несколькими заданиями",
                         )
-                    handlers_seen[handler] = xml_file.stem
+                    )
+                handlers_seen[handler] = job_name
     return diags
 
 

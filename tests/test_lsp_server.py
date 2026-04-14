@@ -537,6 +537,109 @@ class TestHandlerFunctions:
         assert result[0].range.start.character == 10
         assert result[0].range.end.character == 18  # 10 + len("МойВызов")
 
+    def test_call_hierarchy_incoming_caches_repeated_caller_lookups(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_call_hierarchy_incoming
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.symbol_index.find_callers = lambda name, limit=200: [  # type: ignore[method-assign]
+            {
+                "caller_file": "/workspace/a.bsl",
+                "caller_line": 3,
+                "caller_character": 10,
+                "caller_name": "ОбработатьЗаказ",
+                "callee_name": "Цель",
+            },
+            {
+                "caller_file": "/workspace/a.bsl",
+                "caller_line": 7,
+                "caller_character": 12,
+                "caller_name": "ОбработатьЗаказ",
+                "callee_name": "Цель",
+            },
+        ]
+        calls = {"count": 0}
+
+        def _find_symbol(name, limit=20, file_filter=None, fuzzy=False):  # type: ignore[no-untyped-def]
+            calls["count"] += 1
+            if name == "ОбработатьЗаказ":
+                return [
+                    {
+                        "name": "ОбработатьЗаказ",
+                        "kind": "function",
+                        "file_path": "/workspace/a.bsl",
+                        "line": 1,
+                        "character": 0,
+                        "end_line": 5,
+                        "end_character": 0,
+                        "signature": "Function ОбработатьЗаказ()",
+                    }
+                ]
+            return []
+
+        ls.symbol_index.find_symbol = _find_symbol  # type: ignore[method-assign]
+
+        params = MagicMock()
+        params.item.name = "Цель"
+        result = on_call_hierarchy_incoming(ls, params)
+        assert result is not None
+        assert len(result) == 2
+        assert calls["count"] == 1
+
+    def test_call_hierarchy_outgoing_caches_repeated_callee_lookups(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_call_hierarchy_outgoing
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.symbol_index.find_callees = lambda caller_file, caller_name=None, caller_line=None: [  # type: ignore[method-assign]
+            {
+                "caller_file": "/workspace/a.bsl",
+                "caller_line": 3,
+                "caller_character": 10,
+                "callee_name": "ЗаписатьЛог",
+            },
+            {
+                "caller_file": "/workspace/a.bsl",
+                "caller_line": 7,
+                "caller_character": 12,
+                "callee_name": "ЗаписатьЛог",
+            },
+        ]
+        calls = {"count": 0}
+
+        def _find_symbol(name, limit=20, file_filter=None, fuzzy=False):  # type: ignore[no-untyped-def]
+            calls["count"] += 1
+            if name == "ЗаписатьЛог":
+                return [
+                    {
+                        "name": "ЗаписатьЛог",
+                        "kind": "procedure",
+                        "file_path": "/workspace/log.bsl",
+                        "line": 10,
+                        "character": 0,
+                        "end_line": 12,
+                        "end_character": 0,
+                        "signature": "Procedure ЗаписатьЛог()",
+                    }
+                ]
+            return []
+
+        ls.symbol_index.find_symbol = _find_symbol  # type: ignore[method-assign]
+
+        params = MagicMock()
+        params.item.name = "ОбработатьЗаказ"
+        params.item.uri = "file:///workspace/a.bsl"
+        result = on_call_hierarchy_outgoing(ls, params)
+        assert result is not None
+        assert len(result) == 2
+        assert calls["count"] == 1
+
     def test_on_completion_empty_content(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
@@ -1242,6 +1345,65 @@ class TestWorkspaceReindexSingleFlight:
         time.sleep(0.1)
         assert ls.indexer.calls == 1
         assert ls._reindex_running is False
+
+
+class TestStatusAndReindexContract:
+    def _make_status_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer
+
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        return ls
+
+    def test_on_bsl_status_includes_size_and_reindex_state(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.lsp.server import on_bsl_status
+
+        ls = self._make_status_server(tmp_path, monkeypatch)
+        ls.symbol_index.upsert_file(
+            "/workspace/demo.bsl",
+            [
+                {
+                    "name": "Функция1",
+                    "line": 1,
+                    "character": 0,
+                    "end_line": 3,
+                    "end_character": 0,
+                    "kind": "function",
+                    "is_export": True,
+                    "container": None,
+                    "signature": "Function Функция1()",
+                    "doc_comment": "",
+                }
+            ],
+            [],
+        )
+        ls._reindex_running = True
+        ls._reindex_pending = False
+
+        result = on_bsl_status(ls, {})
+        assert result["ready"] is True
+        assert result["indexing"] is True
+        assert result["reindex_running"] is True
+        assert result["reindex_pending"] is False
+        assert result["index_size_bytes"] == (
+            result["db_size_bytes"] + result["wal_size_bytes"] + result["shm_size_bytes"]
+        )
+        assert result["index_size_bytes"] > 0
+
+    def test_on_bsl_reindex_workspace_reports_started_not_complete(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.lsp.server import on_bsl_reindex_workspace
+
+        ls = self._make_status_server(tmp_path, monkeypatch)
+        ls.indexer.index_workspace = lambda root, force=True: None  # type: ignore[method-assign]
+        result = on_bsl_reindex_workspace(ls, {"root": str(tmp_path)})
+        assert result["success"] is True
+        assert result["started"] is True
+        assert result["indexing"] is True
 
 
 # ---------------------------------------------------------------------------

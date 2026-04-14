@@ -237,10 +237,23 @@ class TestGetStats:
         assert stats["file_count"] == 1
         assert stats["call_count"] == len(SAMPLE_CALLS)
 
+    def test_stats_include_index_size_bytes(self, tmp_path: Path) -> None:
+        db = tmp_path / "stats.sqlite"
+        idx = SymbolIndex(str(db))
+        idx.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
+
+        stats = idx.get_stats()
+        assert stats["index_size_bytes"] >= stats["db_size_bytes"] >= 0
+        assert stats["index_size_bytes"] == (
+            stats["db_size_bytes"] + stats["wal_size_bytes"] + stats["shm_size_bytes"]
+        )
+        assert stats["index_size_bytes"] > 0
+
     def test_stats_empty_index(self, symbol_index: SymbolIndex) -> None:
         stats = symbol_index.get_stats()
         assert stats["symbol_count"] == 0
         assert stats["file_count"] == 0
+        assert stats["index_size_bytes"] == 0
 
 
 # ---------------------------------------------------------------------------

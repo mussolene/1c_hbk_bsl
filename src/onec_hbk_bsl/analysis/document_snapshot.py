@@ -28,7 +28,7 @@ from onec_hbk_bsl.analysis.symbols import Symbol, extract_symbols
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 _RE_PROC_HEADER = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<kw>Процедура|Procedure|Функция|Function)\s+"
+    r"^(?P<indent>[ \t]*)(?:(?:Асинх|Async)\s+)?(?P<kw>Процедура|Procedure|Функция|Function)\s+"
     r"(?P<name>\w+)\s*\((?P<params>[^)]*)\)\s*(?P<export>Экспорт|Export)?",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -188,6 +188,20 @@ def _collect_procs_from_node(node: Any, result: list[ProcInfo]) -> None:
         _collect_procs_from_node(child, result)
 
 
+def _collect_proc_names_from_node(node: Any, result: set[str]) -> None:
+    node_type = getattr(node, "type", None)
+    if node_type in ("procedure_definition", "function_definition"):
+        for child in getattr(node, "children", []) or []:
+            if getattr(child, "type", None) == "identifier":
+                name = _ts_node_text(child)
+                if name:
+                    result.add(name.casefold())
+                break
+        return
+    for child in getattr(node, "children", []) or []:
+        _collect_proc_names_from_node(child, result)
+
+
 def _find_procedures_from_tree(tree: Any) -> list[ProcInfo]:
     root = getattr(tree, "root_node", None)
     if root is None or not isinstance(getattr(root, "text", None), (bytes, type(None))):
@@ -195,6 +209,19 @@ def _find_procedures_from_tree(tree: Any) -> list[ProcInfo]:
     result: list[ProcInfo] = []
     _collect_procs_from_node(root, result)
     return result
+
+
+def find_procedure_names_from_tree(tree: Any) -> frozenset[str]:
+    root = getattr(tree, "root_node", None)
+    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+        return frozenset()
+    result: set[str] = set()
+    _collect_proc_names_from_node(root, result)
+    return frozenset(result)
+
+
+def find_procedure_names_in_content(content: str) -> frozenset[str]:
+    return frozenset(proc.name.casefold() for proc in _find_procedures(content))
 
 
 def _find_procedures(content: str) -> list[ProcInfo]:
@@ -427,6 +454,7 @@ class DocumentSnapshot:
     _code_lines_wo_comments: list[str] | None = None
     _line_lengths: list[int] | None = None
     _blank_line_flags: list[bool] | None = None
+    _has_parse_errors: bool | None = None
 
     @property
     def root_node(self) -> Any | None:
@@ -445,10 +473,13 @@ class DocumentSnapshot:
 
     @property
     def has_parse_errors(self) -> bool:
-        root = self.root_node
-        if root is None or not self.is_tree_sitter:
-            return True
-        return tree_has_errors(root)
+        if self._has_parse_errors is None:
+            root = self.root_node
+            if root is None or not self.is_tree_sitter:
+                self._has_parse_errors = True
+            else:
+                self._has_parse_errors = tree_has_errors(root)
+        return self._has_parse_errors
 
     @property
     def tree_ok(self) -> bool:

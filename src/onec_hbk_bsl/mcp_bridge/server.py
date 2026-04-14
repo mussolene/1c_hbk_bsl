@@ -311,7 +311,7 @@ def create_mcp_app() -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Return current indexing status: files indexed, last commit, ready state."
+        description="Return current indexing status: counts, size, ready state, and indexing state."
     )
     def bsl_status(
         workspace_root: Annotated[
@@ -321,7 +321,7 @@ def create_mcp_app() -> FastMCP:
         """
         Check the health of the BSL symbol index.
 
-        Returns stats: symbol count, file count, last indexed git commit, workspace root.
+        Returns stats: symbol count, file count, index size, last indexed git commit, workspace root.
         Call this first to confirm the index is populated before searching.
         """
         ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
@@ -329,10 +329,17 @@ def create_mcp_app() -> FastMCP:
         stats = index.get_stats()
         return {
             "ready": stats["symbol_count"] > 0,
+            "indexing": False,
+            "reindex_running": False,
+            "reindex_pending": False,
             "symbol_count": stats["symbol_count"],
             "file_count": stats["file_count"],
             "call_count": stats["call_count"],
             "meta_object_count": stats.get("meta_object_count", 0),
+            "index_size_bytes": stats.get("index_size_bytes", 0),
+            "db_size_bytes": stats.get("db_size_bytes", 0),
+            "wal_size_bytes": stats.get("wal_size_bytes", 0),
+            "shm_size_bytes": stats.get("shm_size_bytes", 0),
             "last_commit": stats["last_commit"],
             "indexed_at": stats["indexed_at"],
             "workspace_root": stats["workspace_root"] or ws,
