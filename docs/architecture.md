@@ -107,7 +107,7 @@ Formatted response (dict / LSP Location)
   `Тогда`/`Цикл`, procedure signature tracking — line-based state in `formatter.py`.
 - **Token spacing in argument lists:** `formatter_ast_spacing.py` (comma spacing and related layout on valid CST).
 
-Связь с диагностиками стиля (BSL024, BSL055, BSL136, BSL216): [FORMATTER_DIAGNOSTICS.md](FORMATTER_DIAGNOSTICS.md).
+Связь с диагностиками стиля (BSL024, BSL055, BSL136, BSL216) поддерживается в текущем наборе тестов и правилах движка.
 
 Политика структурных правил и CST: [cst_policy.md](cst_policy.md).
 
@@ -186,7 +186,7 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 
 ## Отношение к справочнику правил BSL (совместимость имён)
 
-**onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). Сторонний **Java-анализатор** из экосистемы 1c-syntax **не** вызывается в рантайме. Имена правил и подавления `// BSLLS:…` согласованы с общепринятым справочником; см. [матрицу](bsl_rules_matrix.md). Офлайн-сверка — [BSLLS_BASELINE.md](BSLLS_BASELINE.md). Политика выравнивания кодов и приоритетов с BSLLS (JAR, workspace, `.bsl-language-server.json`) — [BSLLS_PARITY.md](BSLLS_PARITY.md). Внешний **MCP→LSP** в IDE не является частью `onec-hbk-bsl` и может использоваться только для ручного снятия эталонов.
+**onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). Внешние анализаторы не вызываются в рантайме сервера; интеграция с ними относится только к внутренним исследовательским процессам разработки.
 
 ## Further work
 

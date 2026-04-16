@@ -17,10 +17,6 @@
 
 Локально без тега на коммите после последнего тега setuptools-scm может выдать версию вида `X.Y.Z.devN+gHASH` — это нормально для разработки.
 
-## Паритет с BSLLS (форматтер и диагностики)
-
-Скрипт **`run_bslls_parity.sh`** теперь запускает встроенный parity-runner из репозитория. Для больших внешних корпусов используйте **`dev_corpus_parity.py`**. Отчёты пишутся в **`.nosync/reports/dev-corpus/`**. Подробности: [docs/FORMATTER_DIAGNOSTICS.md](../docs/FORMATTER_DIAGNOSTICS.md).
-
 ## Dev-only корпус
 
 Для большого внешнего корпуса, который не должен попадать в `tests/fixtures`, используйте **`dev_corpus_bench.py`**.
@@ -39,16 +35,3 @@ python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500 --profile str
 - throughput по файлам, строкам и мегабайтам
 
 Это именно исследовательский / development-only прогон, не тестовый fixture pipeline.
-
-Для parity-сверки с Java BSLLS:
-
-```bash
-python scripts/dev_corpus_parity.py /path/to/1c/config --limit=20
-python scripts/dev_corpus_parity.py /path/to/1c/config --sample=100 --profile strict-bslls
-```
-
-Скрипт:
-- сам находит `exec.jar` через `BSLLS_JAR`, `~/.cache/onec-hbk-bsl/bslls` или `.nosync/bsl-language-server/build/libs`
-- сравнивает нормализованные diagnostics нашего движка и BSLLS
-- сравнивает итоговый текст full-document formatting
-- сохраняет JSON-отчёт для разбора несовпадений

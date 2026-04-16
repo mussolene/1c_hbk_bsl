@@ -52,5 +52,4 @@ print(f"{bridge_prefix}/{segments}")
 
 ## См. также
 
-- [BSLLS_BASELINE.md](BSLLS_BASELINE.md) — офлайн-сверка с BSLLS.
 - [Production-Notes.md](Production-Notes.md) — `WORKSPACE_ROOT`, `INDEX_DB_PATH`.

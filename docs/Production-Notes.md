@@ -5,7 +5,7 @@ This runbook covers production usage of:
 - `onec-hbk-bsl` server (LSP + MCP + diagnostics/indexing)
 - `vscode-extension` activation and binary startup behavior
 
-**Note:** `onec-hbk-bsl` does **not** bundle or call a separate **Java BSL analyzer** at runtime. Rule-name compatibility with the common reference is documented, not a shared process; see [architecture.md](architecture.md) and [BSLLS_BASELINE.md](BSLLS_BASELINE.md).
+**Note:** `onec-hbk-bsl` does **not** bundle or call a separate Java analyzer at runtime.
 
 ## Startup And Activation
 - VSCode extension activates on:
