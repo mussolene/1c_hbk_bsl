@@ -81,6 +81,11 @@ class IncrementalIndexer:
         self._quiet = quiet
         # Parsing can be parallelized; SQLite writes stay serialized in SymbolIndex.
         self._parse_workers = _parse_workers_from_env()
+        # Single-flight guard for background metadata indexing.
+        self._metadata_lock = threading.Lock()
+        self._metadata_running = False
+        self._metadata_pending = False
+        self._metadata_pending_workspace: str | None = None
 
     def _get_parser(self) -> BslParser:
         """Return a thread-local :class:`BslParser` (required for parallel indexing)."""
@@ -175,11 +180,40 @@ class IncrementalIndexer:
             return {"objects": 0, "members": 0, "error": str(exc)}
 
     def _start_metadata_indexing(self, workspace: str) -> None:
-        """Start metadata indexing in a background thread."""
-        import threading  # noqa: PLC0415
+        """Start metadata indexing with single-flight + pending coalescing."""
+        workspace = str(Path(workspace).resolve())
+        with self._metadata_lock:
+            if self._metadata_running:
+                self._metadata_pending = True
+                self._metadata_pending_workspace = workspace
+                logger.debug("Metadata indexing already running; marked pending for %s", workspace)
+                return
+            self._metadata_running = True
+            self._metadata_pending = False
+            self._metadata_pending_workspace = None
+
+        def _worker(initial_workspace: str) -> None:
+            current_workspace = initial_workspace
+            try:
+                while True:
+                    self.index_metadata(current_workspace)
+                    with self._metadata_lock:
+                        if self._metadata_pending:
+                            self._metadata_pending = False
+                            current_workspace = (
+                                self._metadata_pending_workspace or current_workspace
+                            )
+                            self._metadata_pending_workspace = None
+                            continue
+                        self._metadata_running = False
+                        break
+            finally:
+                with self._metadata_lock:
+                    if self._metadata_running and not self._metadata_pending:
+                        self._metadata_running = False
 
         threading.Thread(
-            target=self.index_metadata,
+            target=_worker,
             args=(workspace,),
             daemon=True,
             name="bsl-metadata-index",

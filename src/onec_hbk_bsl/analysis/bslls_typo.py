@@ -365,6 +365,7 @@ def spellcheck_typo_diagnostics(
     source_bytes = getattr(root, "text", None)
     if not isinstance(source_bytes, (bytes, bytearray)):
         return []
+    line_starts = _compute_line_starts(source_bytes)
 
     stack: list[Any] = [root]
     diags: list[dict[str, Any]] = []
@@ -385,7 +386,17 @@ def spellcheck_typo_diagnostics(
             if FORMAT_STRING_PATTERN.search(text):
                 continue
             inner = _QUOTE_PATTERN.sub("", text).strip()
-            _emit_parts_for_source_text(node, text, inner, source_bytes, cfg, _checker, path, diags)
+            _emit_parts_for_source_text(
+                node,
+                text,
+                inner,
+                source_bytes,
+                line_starts,
+                cfg,
+                _checker,
+                path,
+                diags,
+            )
             continue
         if ntype == "identifier" and _identifier_typo_context_ok(node):
             raw_t = node.text
@@ -399,6 +410,7 @@ def spellcheck_typo_diagnostics(
                 text,
                 text.strip(),
                 source_bytes,
+                line_starts,
                 cfg,
                 _checker,
                 path,
@@ -419,6 +431,7 @@ def spellcheck_typo_diagnostics(
                 text,
                 text.strip(),
                 source_bytes,
+                line_starts,
                 cfg,
                 _checker,
                 path,
@@ -435,6 +448,7 @@ def _emit_parts_for_source_text(
     source_text: str,
     inner: str,
     source_bytes: bytes,
+    line_starts: list[int],
     cfg: BsllsTypoConfig,
     checker: SpellFn,
     path: str,
@@ -456,9 +470,18 @@ def _emit_parts_for_source_text(
         if m:
             anchor_start_byte += len(m.group(0).encode("utf-8"))
 
-    line, character = _line_char_from_node_point(node, source_bytes, anchor_start_byte)
+    line, character = _line_char_from_node_point(
+        node,
+        source_bytes,
+        anchor_start_byte,
+        line_starts=line_starts,
+    )
     end_line, end_character = _line_char_from_node_point(
-        node, source_bytes, node.end_byte, is_end=True
+        node,
+        source_bytes,
+        node.end_byte,
+        line_starts=line_starts,
+        is_end=True,
     )
     for part in split_by_character_type_camel_case(inner):
         # BSLLS exception list applies to concrete token fragments too, not only
@@ -510,6 +533,7 @@ def _line_char_from_node_point(
     source_bytes: bytes,
     offset: int,
     *,
+    line_starts: list[int] | None = None,
     is_end: bool = False,
 ) -> tuple[int, int]:
     point = getattr(node, "end_point" if is_end else "start_point", None)
@@ -517,23 +541,52 @@ def _line_char_from_node_point(
         row = int(getattr(point, "row", -1))
         col = int(getattr(point, "column", -1))
         if row >= 0 and col >= 0:
-            return row + 1, _char_from_row_byte_column(source_bytes, row, col)
+            return row + 1, _char_from_row_byte_column(
+                source_bytes,
+                row,
+                col,
+                line_starts=line_starts,
+            )
     return _line_char_from_byte_offset(source_bytes, offset)
 
 
-def _char_from_row_byte_column(source_bytes: bytes, row0: int, col_bytes: int) -> int:
+def _char_from_row_byte_column(
+    source_bytes: bytes,
+    row0: int,
+    col_bytes: int,
+    *,
+    line_starts: list[int] | None = None,
+) -> int:
     if row0 < 0 or col_bytes <= 0:
         return 0
-    line_start = 0
-    cur_row = 0
     total = len(source_bytes)
-    while cur_row < row0 and line_start < total:
-        nl = source_bytes.find(b"\n", line_start)
-        if nl < 0:
+    if line_starts is not None:
+        if row0 >= len(line_starts):
             return 0
-        line_start = nl + 1
-        cur_row += 1
+        line_start = line_starts[row0]
+    else:
+        line_start = 0
+        cur_row = 0
+        while cur_row < row0 and line_start < total:
+            nl = source_bytes.find(b"\n", line_start)
+            if nl < 0:
+                return 0
+            line_start = nl + 1
+            cur_row += 1
     prefix = source_bytes[line_start : min(line_start + col_bytes, total)]
     # Use `ignore` instead of `replace` to avoid artificial +1/+2 drifts when
     # parser byte columns point near multibyte boundaries.
     return len(prefix.decode("utf-8", errors="ignore"))
+
+
+def _compute_line_starts(source_bytes: bytes) -> list[int]:
+    starts = [0]
+    search_from = 0
+    total = len(source_bytes)
+    while search_from < total:
+        nl = source_bytes.find(b"\n", search_from)
+        if nl < 0:
+            break
+        starts.append(nl + 1)
+        search_from = nl + 1
+    return starts

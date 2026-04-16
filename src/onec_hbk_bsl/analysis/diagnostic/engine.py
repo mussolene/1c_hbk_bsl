@@ -9,7 +9,7 @@ rule bodies are migrated out of ``diagnostics.py``.
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
 from onec_hbk_bsl.analysis.diagnostic.execution import execute_diagnostic_rule_tasks
@@ -346,6 +346,14 @@ class DiagnosticEngine:
         self._declared_languages = {
             part.strip().casefold() for part in declared_languages.split(",") if part.strip()
         } or {"ru"}
+        try:
+            _cache_limit = int(os.environ.get("BSL_DIAG_CONTENT_CACHE_LIMIT", "64").strip())
+        except TypeError, ValueError:
+            _cache_limit = 64
+        self._content_diag_cache_limit = max(0, _cache_limit)
+        # Cache by path and validate content on reuse; avoids per-call hashing on one-shot files.
+        self._content_diag_cache: OrderedDict[str, tuple[str, list[Diagnostic]]] = OrderedDict()
+        self._content_diag_cache_lock = threading.RLock()
 
     def _get_parser(self) -> BslParser:
         """Return the parser for this thread (tree-sitter Parser is not thread-safe)."""
@@ -385,6 +393,15 @@ class DiagnosticEngine:
 
         *symbol_index* is optional; when set, enables metadata-aware rules (e.g. BSL280).
         """
+        cache_key: str | None = None
+        if symbol_index is None and self._content_diag_cache_limit > 0:
+            cache_key = path
+            with self._content_diag_cache_lock:
+                cached_entry = self._content_diag_cache.get(cache_key)
+                if cached_entry is not None and cached_entry[0] == content:
+                    self._content_diag_cache.move_to_end(cache_key)
+                    return list(cached_entry[1])
+
         try:
             tree = self._get_parser().parse_content(content, file_path=path)
         except Exception as exc:
@@ -400,7 +417,15 @@ class DiagnosticEngine:
                     message=f"Failed to parse content: {exc}",
                 )
             ]
-        return self._run_rules(path, content, tree, symbol_index=symbol_index)
+        diagnostics = self._run_rules(path, content, tree, symbol_index=symbol_index)
+
+        if cache_key is not None:
+            with self._content_diag_cache_lock:
+                self._content_diag_cache[cache_key] = (content, diagnostics)
+                self._content_diag_cache.move_to_end(cache_key)
+                while len(self._content_diag_cache) > self._content_diag_cache_limit:
+                    self._content_diag_cache.popitem(last=False)
+        return diagnostics
 
     def check_file(
         self,
@@ -419,9 +444,26 @@ class DiagnosticEngine:
 
         *symbol_index* is optional; when set, enables metadata-aware rules (e.g. BSL280).
         """
+        content: str
         if tree is None:
             try:
-                tree = self._get_parser().parse_file(path)
+                content = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+            except OSError as exc:
+                return [
+                    Diagnostic(
+                        file=path,
+                        line=1,
+                        character=0,
+                        end_line=1,
+                        end_character=0,
+                        severity=Severity.ERROR,
+                        code="BSL001",
+                        message=f"Cannot read file: {exc}",
+                    )
+                ]
+
+            try:
+                tree = self._get_parser().parse_content(content, file_path=path)
             except Exception as exc:
                 return [
                     Diagnostic(
@@ -435,22 +477,22 @@ class DiagnosticEngine:
                         message=f"Failed to parse file: {exc}",
                     )
                 ]
-
-        try:
-            content = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-        except OSError as exc:
-            return [
-                Diagnostic(
-                    file=path,
-                    line=1,
-                    character=0,
-                    end_line=1,
-                    end_character=0,
-                    severity=Severity.ERROR,
-                    code="BSL001",
-                    message=f"Cannot read file: {exc}",
-                )
-            ]
+        else:
+            try:
+                content = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+            except OSError as exc:
+                return [
+                    Diagnostic(
+                        file=path,
+                        line=1,
+                        character=0,
+                        end_line=1,
+                        end_character=0,
+                        severity=Severity.ERROR,
+                        code="BSL001",
+                        message=f"Cannot read file: {exc}",
+                    )
+                ]
         return self._run_rules(path, content, tree, symbol_index=symbol_index)
 
     def _run_rules(
@@ -499,14 +541,50 @@ class DiagnosticEngine:
         )
         self._metrics_tls.data = last_metrics
 
-        # Build proc→node lookup once (single O(T) tree walk).
-        # Rules BSL062 and BSL240 use this to avoid repeated O(P × T) walks.
+        # Build proc→node lookup only when rewrite-parameter rule is active.
         _proc_node_map: dict[tuple[str, int, str], Any] = (
-            snapshot.proc_node_map if tree_is_ts else {}
+            snapshot.proc_node_map if (tree_is_ts and self._rule_enabled("BSL240")) else {}
         )
-        _symbols = snapshot.symbols
-        _calls = snapshot.calls
-        _query_blocks = snapshot.query_text_blocks
+        # Build call/symbol pools only for rule families that actually consume them.
+        _need_security_symbols_calls = any(
+            self._rule_enabled(code)
+            for code in (
+                "BSL175",
+                "BSL176",
+                "BSL177",
+                "BSL179",
+                "BSL195",
+                "BSL202",
+                "BSL205",
+                "BSL223",
+                "BSL243",
+                "BSL249",
+            )
+        )
+        _need_method_calls = self._rule_enabled("BSL212")
+        _symbols = snapshot.symbols if _need_security_symbols_calls else []
+        _calls = snapshot.calls if (_need_security_symbols_calls or _need_method_calls) else []
+        # Query text blocks are expensive for non-query workloads; compute lazily.
+        _need_query_blocks = any(
+            self._rule_enabled(code)
+            for code in (
+                "BSL077",
+                "BSL191",
+                "BSL201",
+                "BSL206",
+                "BSL207",
+                "BSL209",
+                "BSL220",
+                "BSL235",
+                "BSL269",
+                "BSL273",
+                "BSL174",
+                "BSL187",
+                "BSL236",
+                "BSL238",
+            )
+        )
+        _query_blocks = snapshot.query_text_blocks if _need_query_blocks else []
 
         _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
 

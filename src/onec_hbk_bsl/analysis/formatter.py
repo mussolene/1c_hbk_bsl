@@ -415,6 +415,17 @@ def _tokenize(line: str) -> tuple[tuple[str, str], ...]:
     return tuple(tokens)
 
 
+@functools.lru_cache(maxsize=16_384)
+def _code_fragment(line: str) -> str:
+    """Code-only fragment for ``line`` (strings/comments removed)."""
+    return "".join(text for token_type, text in _tokenize(line) if token_type == "code")  # noqa: S105
+
+
+@functools.lru_cache(maxsize=16_384)
+def _code_fragment_without_inline_comment(line: str) -> str:
+    return _strip_inline_comment_from_code(_code_fragment(line))
+
+
 # After comma, BSLLS FormatProvider inserts a space before the next token unless
 # the next char is closing / semicolon (see needAddSpace in FormatProvider.java).
 _COMMA_SPACE_AFTER = re.compile(r",(?=[^\s)\]\};])")
@@ -488,8 +499,7 @@ def _get_last_keyword(line: str) -> str:
     """Return the last word of the stripped line (excluding trailing ;), lowercased."""
     stripped = _strip_indent(line).rstrip(";").rstrip()
     # Only look at the code part (ignore comment/strings at end)
-    tokens = _tokenize(stripped)
-    code_part = "".join(t[1] for t in tokens if t[0] == "code").rstrip(";").rstrip()
+    code_part = _code_fragment(stripped).rstrip(";").rstrip()
     m = re.search(r"([А-Яа-яA-Za-z_][А-Яа-яA-Za-z0-9_]*)$", code_part, re.UNICODE)
     if m:
         return m.group(1).lower()
@@ -505,8 +515,7 @@ def _is_proc_or_func_header(line: str) -> bool:
 def _indent_control(stripped: str) -> tuple[bool, bool]:
     """Return (dedent_before, indent_after) for a stripped (already keyword-normalised) line."""
     # Get first word
-    tokens = _tokenize(stripped)
-    code_part = "".join(t[1] for t in tokens if t[0] == "code")
+    code_part = _code_fragment(stripped)
     first_m = re.match(r"([А-Яа-яA-Za-z_][А-Яа-яA-Za-z0-9_]*)", code_part, re.UNICODE)
     first_word = first_m.group(1).lower() if first_m else ""
 
@@ -584,17 +593,13 @@ def _strip_inline_comment_from_code(code: str) -> str:
 
 def _line_ends_with_semicolon(stripped: str) -> bool:
     """True if the code part ends with ``;`` (after stripping // comment)."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code")
-    code = _strip_inline_comment_from_code(code).rstrip()
+    code = _code_fragment_without_inline_comment(stripped).rstrip()
     return code.endswith(";")
 
 
 def _line_has_unclosed_paren_expression(stripped: str) -> bool:
     """Code has unclosed ``(`` — next line continues the parenthesised expression."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code")
-    code = _strip_inline_comment_from_code(code).rstrip()
+    code = _code_fragment_without_inline_comment(stripped).rstrip()
     if not code or code.endswith(";"):
         return False
     return _paren_delta_in_code(code) > 0
@@ -602,9 +607,7 @@ def _line_has_unclosed_paren_expression(stripped: str) -> bool:
 
 def _line_is_multiline_if_header(stripped: str) -> bool:
     """``Если``/``ИначеЕсли``/``If``/``ElsIf`` line without closing ``Тогда``/``Then``."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code")
-    code = _strip_inline_comment_from_code(code).strip()
+    code = _code_fragment_without_inline_comment(stripped).strip()
     if not code:
         return False
     first = _get_stripped_keyword(code)
@@ -616,22 +619,19 @@ def _line_is_multiline_if_header(stripped: str) -> bool:
 
 def _line_starts_with_dot(stripped: str) -> bool:
     """Leading `.` on a code line (method chain continuation)."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code").lstrip()
+    code = _code_fragment(stripped).lstrip()
     return code.startswith(".")
 
 
 def _line_starts_question_call(stripped: str) -> bool:
     """True when code starts with ``?(`` (ternary call continuation)."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code").lstrip()
+    code = _code_fragment(stripped).lstrip()
     return code.startswith("?(")
 
 
 def _line_starts_with_arith_operator(stripped: str) -> bool:
     """True when code starts with leading binary arithmetic operator."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code").lstrip()
+    code = _code_fragment(stripped).lstrip()
     return code.startswith(("+", "-", "*", "/"))
 
 
@@ -643,9 +643,7 @@ def _line_starts_condition_connector(stripped: str) -> bool:
 
 def _line_is_string_literal_closer(stripped: str) -> bool:
     """True for standalone string-literal closure lines like `");` / `');`."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code")
-    code = _strip_inline_comment_from_code(code).strip()
+    code = _code_fragment_without_inline_comment(stripped).strip()
     return code in ('");', "');")
 
 
@@ -661,23 +659,18 @@ def _line_ends_operator(stripped: str) -> bool:
 def _paren_delta_in_code(stripped: str) -> int:
     """Net ``(`` − ``)`` count in code tokens only."""
     delta = 0
-    tokens = _tokenize(stripped)
-    for ttype, text in tokens:
-        if ttype != "code":
-            continue
-        for ch in text:
-            if ch == "(":
-                delta += 1
-            elif ch == ")":
-                delta -= 1
+    code = _code_fragment(stripped)
+    for ch in code:
+        if ch == "(":
+            delta += 1
+        elif ch == ")":
+            delta -= 1
     return delta
 
 
 def _line_has_assignment_without_semicolon(stripped: str) -> bool:
     """Assignment `=` on the line without a trailing ``;`` (code only)."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code")
-    code = _strip_inline_comment_from_code(code).rstrip()
+    code = _code_fragment_without_inline_comment(stripped).rstrip()
     if code.endswith(";"):
         return False
     return bool(_ASSIGN_EQ_RE.search(code))
@@ -685,9 +678,7 @@ def _line_has_assignment_without_semicolon(stripped: str) -> bool:
 
 def _line_ends_with_plus(stripped: str) -> bool:
     """True if code fragment ends with ``+`` (after stripping // comment)."""
-    tokens = _tokenize(stripped)
-    code = "".join(t[1] for t in tokens if t[0] == "code")
-    code = _strip_inline_comment_from_code(code).rstrip()
+    code = _code_fragment_without_inline_comment(stripped).rstrip()
     return code.endswith("+")
 
 

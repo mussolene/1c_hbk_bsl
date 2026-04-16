@@ -101,3 +101,21 @@ def test_regex_fallback_snapshot_collects_async_procedures(tmp_path: Path) -> No
     snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content, tree=object())
 
     assert [proc.name for proc in snapshot.procedures] == ["ВерсияАсинх"]
+
+
+def test_regex_fallback_regions_match_nested_blocks(tmp_path: Path) -> None:
+    content = """\
+#Область Outer
+Процедура Тест()
+#Область Inner
+Сообщить("x");
+#КонецОбласти
+КонецПроцедуры
+#КонецОбласти
+"""
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content, tree=object())
+
+    assert [(region.name, region.start_idx, region.end_idx) for region in snapshot.regions] == [
+        ("Outer", 0, 6),
+        ("Inner", 2, 4),
+    ]

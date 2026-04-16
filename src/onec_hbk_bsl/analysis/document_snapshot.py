@@ -9,6 +9,7 @@ derived snapshot object so those layers can share one parsed view of a file.
 from __future__ import annotations
 
 import re
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from typing import Any
 
@@ -224,15 +225,29 @@ def find_procedure_names_in_content(content: str) -> frozenset[str]:
     return frozenset(proc.name.casefold() for proc in _find_procedures(content))
 
 
+def _line_break_positions(content: str) -> list[int]:
+    breaks: list[int] = []
+    start = content.find("\n")
+    while start != -1:
+        breaks.append(start)
+        start = content.find("\n", start + 1)
+    return breaks
+
+
+def _line_index_for_offset(line_breaks: list[int], offset: int) -> int:
+    return bisect_left(line_breaks, offset)
+
+
 def _find_procedures(content: str) -> list[ProcInfo]:
-    ends: list[int] = []
-    for match in _RE_END_PROC.finditer(content):
-        ends.append(content[: match.start()].count("\n"))
-    ends.sort()
+    line_breaks = _line_break_positions(content)
+    ends = [
+        _line_index_for_offset(line_breaks, match.start())
+        for match in _RE_END_PROC.finditer(content)
+    ]
 
     result: list[ProcInfo] = []
     for match in _RE_PROC_HEADER.finditer(content):
-        start_idx = content[: match.start()].count("\n")
+        start_idx = _line_index_for_offset(line_breaks, match.start())
         kw = match.group("kw").lower()
         name = match.group("name")
         params_str = match.group("params") or ""
@@ -247,10 +262,9 @@ def _find_procedures(content: str) -> list[ProcInfo]:
         optional_params = frozenset(param[0] for param in parsed if param[2])
 
         end_idx = start_idx + 5
-        for candidate in ends:
-            if candidate > start_idx:
-                end_idx = candidate
-                break
+        end_pos = bisect_right(ends, start_idx)
+        if end_pos < len(ends):
+            end_idx = ends[end_pos]
 
         result.append(
             ProcInfo(
@@ -270,28 +284,41 @@ def _find_procedures(content: str) -> list[ProcInfo]:
 
 
 def _find_regions(content: str) -> list[RegionInfo]:
-    opens: list[tuple[int, str]] = []
-    closes: list[int] = []
-
-    for match in _RE_REGION_OPEN.finditer(content):
-        line_idx = content[: match.start()].count("\n")
-        opens.append((line_idx, match.group("name")))
-
-    for match in _RE_REGION_CLOSE.finditer(content):
-        line_idx = content[: match.start()].count("\n")
-        closes.append(line_idx)
-
-    closes_sorted = sorted(closes)
-    used_closes: set[int] = set()
+    line_breaks = _line_break_positions(content)
+    opens_iter = iter(_RE_REGION_OPEN.finditer(content))
+    closes_iter = iter(_RE_REGION_CLOSE.finditer(content))
+    next_open = next(opens_iter, None)
+    next_close = next(closes_iter, None)
+    stack: list[tuple[str, int]] = []
     result: list[RegionInfo] = []
-    for start_idx, name in sorted(opens, key=lambda item: item[0]):
-        end_idx = start_idx + 1
-        for candidate in closes_sorted:
-            if candidate > start_idx and candidate not in used_closes:
-                end_idx = candidate
-                used_closes.add(candidate)
-                break
-        result.append(RegionInfo(name=name, start_idx=start_idx, end_idx=end_idx))
+
+    while next_open is not None or next_close is not None:
+        open_pos = next_open.start() if next_open is not None else None
+        close_pos = next_close.start() if next_close is not None else None
+        use_open = close_pos is None or (open_pos is not None and open_pos <= close_pos)
+
+        if use_open and next_open is not None:
+            stack.append(
+                (
+                    next_open.group("name"),
+                    _line_index_for_offset(line_breaks, next_open.start()),
+                )
+            )
+            next_open = next(opens_iter, None)
+            continue
+
+        if next_close is not None:
+            end_idx = _line_index_for_offset(line_breaks, next_close.start())
+            if stack:
+                name, start_idx = stack.pop()
+                result.append(RegionInfo(name=name, start_idx=start_idx, end_idx=end_idx))
+            next_close = next(closes_iter, None)
+
+    # Unclosed regions are retained with a short synthetic span to preserve fallback behavior.
+    for name, start_idx in stack:
+        result.append(RegionInfo(name=name, start_idx=start_idx, end_idx=start_idx + 1))
+
+    result.sort(key=lambda region: region.start_idx)
     return result
 
 

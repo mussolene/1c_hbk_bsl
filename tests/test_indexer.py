@@ -256,6 +256,39 @@ class TestGetStats:
         assert stats["index_size_bytes"] == 0
 
 
+class TestSqliteProfile:
+    def test_symbol_index_uses_interactive_profile_by_default(self, tmp_path: Path) -> None:
+        db = tmp_path / "interactive.sqlite"
+        idx = SymbolIndex(str(db))
+        profile = idx._sqlite_profile
+        assert profile["mode"] == "interactive"
+        assert profile["cache_size"] == -32768
+        assert profile["mmap_size"] == 268435456
+        assert profile["busy_timeout_ms"] == 10000
+        assert profile["temp_store"] == "MEMORY"
+
+    def test_symbol_index_uses_batch_profile_when_requested(self, tmp_path: Path) -> None:
+        db = tmp_path / "batch.sqlite"
+        idx = SymbolIndex(str(db), mode="batch")
+        profile = idx._sqlite_profile
+        assert profile["mode"] == "batch"
+        assert profile["cache_size"] == -131072
+        assert profile["mmap_size"] == 1073741824
+
+    def test_symbol_index_profile_env_overrides(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("BSL_SQLITE_CACHE_SIZE", "-8192")
+        monkeypatch.setenv("BSL_SQLITE_MMAP_SIZE", "134217728")
+        monkeypatch.setenv("BSL_SQLITE_BUSY_TIMEOUT_MS", "3000")
+        monkeypatch.setenv("BSL_SQLITE_TEMP_STORE", "FILE")
+        db = tmp_path / "override.sqlite"
+        idx = SymbolIndex(str(db), mode="interactive")
+        profile = idx._sqlite_profile
+        assert profile["cache_size"] == -8192
+        assert profile["mmap_size"] == 134217728
+        assert profile["busy_timeout_ms"] == 3000
+        assert profile["temp_store"] == "FILE"
+
+
 # ---------------------------------------------------------------------------
 # IncrementalIndexer
 # ---------------------------------------------------------------------------
@@ -538,6 +571,94 @@ class TestIncrementalIndexerExtended:
         # Spot-check that symbols are queryable after bulk indexing.
         sym = symbol_index.find_symbol("Тест42", limit=1)
         assert len(sym) == 1
+
+    def test_metadata_indexing_single_flight_with_pending_workspace(
+        self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+        import time
+
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        ws1 = tmp_path / "ws1"
+        ws2 = tmp_path / "ws2"
+        ws1.mkdir()
+        ws2.mkdir()
+        indexer = IncrementalIndexer(index=symbol_index, quiet=True)
+
+        started = threading.Event()
+        release = threading.Event()
+        calls: list[str] = []
+
+        def fake_index_metadata(workspace: str) -> dict[str, int]:
+            calls.append(workspace)
+            if len(calls) == 1:
+                started.set()
+                release.wait(timeout=2.0)
+            return {"objects": 0, "members": 0}
+
+        monkeypatch.setattr(indexer, "index_metadata", fake_index_metadata)
+
+        indexer._start_metadata_indexing(str(ws1))
+        assert started.wait(timeout=2.0)
+        indexer._start_metadata_indexing(str(ws2))
+        with indexer._metadata_lock:
+            assert indexer._metadata_running is True
+            assert indexer._metadata_pending is True
+
+        release.set()
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            with indexer._metadata_lock:
+                if not indexer._metadata_running:
+                    break
+            time.sleep(0.01)
+
+        assert calls == [str(ws1.resolve()), str(ws2.resolve())]
+
+    def test_metadata_indexing_pending_requests_are_coalesced(
+        self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+        import time
+
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        ws1 = tmp_path / "ws1"
+        ws2 = tmp_path / "ws2"
+        ws3 = tmp_path / "ws3"
+        ws1.mkdir()
+        ws2.mkdir()
+        ws3.mkdir()
+        indexer = IncrementalIndexer(index=symbol_index, quiet=True)
+
+        started = threading.Event()
+        release = threading.Event()
+        calls: list[str] = []
+
+        def fake_index_metadata(workspace: str) -> dict[str, int]:
+            calls.append(workspace)
+            if len(calls) == 1:
+                started.set()
+                release.wait(timeout=2.0)
+            return {"objects": 0, "members": 0}
+
+        monkeypatch.setattr(indexer, "index_metadata", fake_index_metadata)
+
+        indexer._start_metadata_indexing(str(ws1))
+        assert started.wait(timeout=2.0)
+        indexer._start_metadata_indexing(str(ws2))
+        indexer._start_metadata_indexing(str(ws3))
+        release.set()
+
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            with indexer._metadata_lock:
+                if not indexer._metadata_running:
+                    break
+            time.sleep(0.01)
+
+        assert calls == [str(ws1.resolve()), str(ws3.resolve())]
 
 
 # ---------------------------------------------------------------------------

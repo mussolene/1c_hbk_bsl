@@ -29,7 +29,13 @@ DEFAULT_TOP = 20
 DEFAULT_RUNS = 3
 
 
-def profile_size(size: int, top_n: int, runs: int) -> None:
+def _path_for_run(path_str: str, run_idx: int, cache_mode: str) -> str:
+    if cache_mode == "hit":
+        return path_str
+    return f"{path_str}::bench-run-{run_idx}"
+
+
+def profile_size(size: int, top_n: int, runs: int, cache_mode: str) -> None:
     bsl_path = FIXTURE_DIR / f"bench_{size}.bsl"
     if not bsl_path.exists():
         print(f"\n[SKIP] bench_{size}.bsl not found — run bench_generate_fixtures.py first")
@@ -41,12 +47,12 @@ def profile_size(size: int, top_n: int, runs: int) -> None:
     engine = DiagnosticEngine()
 
     # warm-up: загрузка tree-sitter grammar
-    engine.check_content(path_str, content)
+    engine.check_content(_path_for_run(path_str, -1, cache_mode), content)
 
     pr = cProfile.Profile()
     pr.enable()
-    for _ in range(runs):
-        engine.check_content(path_str, content)
+    for run_idx in range(runs):
+        engine.check_content(_path_for_run(path_str, run_idx, cache_mode), content)
     pr.disable()
 
     buf = io.StringIO()
@@ -54,7 +60,10 @@ def profile_size(size: int, top_n: int, runs: int) -> None:
     ps.print_stats(top_n)
 
     print(f"\n{'=' * 72}")
-    print(f"PROFILE: bench_{size}.bsl ({n_lines} lines), {runs} runs, top-{top_n} by cumtime")
+    print(
+        f"PROFILE: bench_{size}.bsl ({n_lines} lines), "
+        f"{runs} runs, cache_mode={cache_mode}, top-{top_n} by cumtime"
+    )
     print("=" * 72)
     print(buf.getvalue())
 
@@ -63,6 +72,7 @@ def main() -> None:
     args = sys.argv[1:]
     top_n = DEFAULT_TOP
     runs = DEFAULT_RUNS
+    cache_mode = "miss"
     use_all = "--all" in args
     sizes = [int(a) for a in args if a.isdigit()]
 
@@ -71,12 +81,16 @@ def main() -> None:
             top_n = int(a.split("=")[1])
         elif a.startswith("--runs="):
             runs = int(a.split("=")[1])
+        elif a.startswith("--cache-mode="):
+            cache_mode = a.split("=")[1].strip().lower()
+    if cache_mode not in {"miss", "hit"}:
+        raise SystemExit("--cache-mode must be one of: miss, hit")
 
     if use_all or not sizes:
         sizes = SIZES
 
     for size in sizes:
-        profile_size(size, top_n=top_n, runs=runs)
+        profile_size(size, top_n=top_n, runs=runs, cache_mode=cache_mode)
 
 
 if __name__ == "__main__":

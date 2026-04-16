@@ -46,6 +46,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_DEFINITION,
     TEXT_DOCUMENT_DIAGNOSTIC,
     TEXT_DOCUMENT_DID_CHANGE,
+    TEXT_DOCUMENT_DID_CLOSE,
     TEXT_DOCUMENT_DID_OPEN,
     TEXT_DOCUMENT_DID_SAVE,
     TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT,
@@ -88,6 +89,7 @@ from lsprotocol.types import (
     DiagnosticSeverity,
     DiagnosticTag,
     DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
     DocumentDiagnosticParams,
@@ -183,6 +185,7 @@ from onec_hbk_bsl.indexer.metadata_registry import (
 )
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_title, translate_message
+from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -299,17 +302,14 @@ class BslLanguageServer(LanguageServer):
         # quiet=True: suppress Rich progress bar that would corrupt the JSON-RPC stdio pipe.
         self.indexer = IncrementalIndexer(index=self.symbol_index, quiet=True)
         self.platform_api: PlatformApi = get_platform_api()
-        # In-memory document cache: uri → content
-        self._docs: dict[str, str] = {}
-        # Debounce timers for diagnostics: uri → Timer
-        self._diag_timers: dict[str, threading.Timer] = {}
-        # Adaptive debounce: uri → last check duration (seconds)
-        self._diag_last_time: dict[str, float] = {}
-        # Diagnostic result cache: uri → (content_hash, lsp_diagnostics)
-        # Avoids re-parsing + re-running all rules when content is unchanged.
-        self._diag_result_cache: dict[str, tuple[int, list]] = {}
-        # Protect _docs / _diag_timers from concurrent LSP handlers and background threads.
-        self._doc_state_lock = threading.RLock()
+        # Document/diagnostics mutable state is isolated in a dedicated service.
+        self.doc_state = DocumentDiagnosticsState()
+        # Backward-compat aliases used across existing tests and handlers.
+        self._docs = self.doc_state.docs
+        self._diag_timers = self.doc_state.diag_timers
+        self._diag_last_time = self.doc_state.diag_last_time
+        self._diag_result_cache = self.doc_state.diag_result_cache
+        self._doc_state_lock = self.doc_state.lock
         # tree_sitter.Parser is not thread-safe — one BslParser per thread.
         self._parser_tls = threading.local()
         # Single-flight guard for workspace reindex.
@@ -337,10 +337,7 @@ class BslLanguageServer(LanguageServer):
 
     def _doc_get(self, uri: str, default: str | None = None) -> str | None:
         """Thread-safe read of cached document text."""
-        with self._doc_state_lock:
-            if default is None:
-                return self._docs.get(uri)
-            return self._docs.get(uri, default)
+        return self.doc_state.get_doc(uri, default)
 
 
 server = BslLanguageServer()
@@ -504,9 +501,8 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
 def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> None:
     """Cache document content on open; push diagnostics only if client has no pull support."""
     doc = params.text_document
-    with ls._doc_state_lock:
-        ls._docs[doc.uri] = doc.text
-    ls._diag_result_cache.pop(doc.uri, None)
+    ls.doc_state.set_doc(doc.uri, doc.text)
+    ls.doc_state.clear_cache_for_uri(doc.uri)
     logger.debug("LSP: opened %s", doc.uri)
     path = _uri_to_path(doc.uri)
     if not ls.client_pull_diagnostics:
@@ -526,7 +522,7 @@ def _adaptive_debounce(ls: BslLanguageServer, uri: str) -> float:
     the user is typing.  2× multiplier leaves time for a couple of edits before
     the next check fires.
     """
-    last = ls._diag_last_time.get(uri, 0.0)
+    last = ls.doc_state.get_last_diag_time(uri)
     if last == 0.0:
         return _DIAG_DEBOUNCE_SECS
     return min(max(last * 2.0, _DIAG_DEBOUNCE_MIN), _DIAG_DEBOUNCE_MAX)
@@ -536,10 +532,9 @@ def _adaptive_debounce(ls: BslLanguageServer, uri: str) -> float:
 def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) -> None:
     """Update cached content; debounced push diagnostics only without pull-diagnostic support."""
     uri = params.text_document.uri
-    with ls._doc_state_lock:
-        for change in params.content_changes:
-            ls._docs[uri] = change.text
-        old_timer = ls._diag_timers.pop(uri, None)
+    for change in params.content_changes:
+        ls.doc_state.set_doc(uri, change.text)
+    old_timer = ls.doc_state.pop_timer(uri)
     if old_timer is not None:
         old_timer.cancel()
     logger.debug("LSP: changed %s", uri)
@@ -550,13 +545,11 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
     path = _uri_to_path(uri)
 
     def _run() -> None:
-        with ls._doc_state_lock:
-            ls._diag_timers.pop(uri, None)
+        ls.doc_state.pop_timer(uri)
         _publish_diagnostics(ls, uri, path)
 
     timer = threading.Timer(_adaptive_debounce(ls, uri), _run)
-    with ls._doc_state_lock:
-        ls._diag_timers[uri] = timer
+    ls.doc_state.set_timer(uri, timer)
     timer.start()
 
 
@@ -566,10 +559,9 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
     uri = params.text_document.uri
     path = _uri_to_path(uri)
 
-    with ls._doc_state_lock:
-        if params.text is not None:
-            ls._docs[uri] = params.text
-        old_timer = ls._diag_timers.pop(uri, None)
+    if params.text is not None:
+        ls.doc_state.set_doc(uri, params.text)
+    old_timer = ls.doc_state.pop_timer(uri)
     if old_timer is not None:
         old_timer.cancel()
 
@@ -581,6 +573,17 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
             _publish_diagnostics(ls, uri, path)
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+@server.feature(TEXT_DOCUMENT_DID_CLOSE)
+def on_did_close(ls: BslLanguageServer, params: DidCloseTextDocumentParams) -> None:
+    """Drop per-document runtime state on close to avoid unbounded URI retention."""
+    uri = params.text_document.uri
+    old_timer = ls.doc_state.close_document(uri)
+    if old_timer is not None:
+        old_timer.cancel()
+    if not ls.client_pull_diagnostics:
+        ls.text_document_publish_diagnostics(PublishDiagnosticsParams(uri=uri, diagnostics=[]))
 
 
 def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
@@ -610,7 +613,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
     # Result cache: skip full parse+rules when content is identical to last run.
     if _content_for_hash is not None:
         _chash = hash(_content_for_hash)
-        _cached_entry = ls._diag_result_cache.get(uri)
+        _cached_entry = ls.doc_state.get_diag_cache(uri)
         if _cached_entry is not None and _cached_entry[0] == _chash:
             logger.debug("LSP: diag cache hit for %s", uri)
             return _cached_entry[1]
@@ -627,7 +630,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
     else:
         issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
     # Record elapsed time for adaptive debounce (no lock needed — float write is atomic).
-    ls._diag_last_time[uri] = _time.perf_counter() - _t0
+    ls.doc_state.set_last_diag_time(uri, _time.perf_counter() - _t0)
 
     # Group diagnostics by rule code to reduce Problems panel clutter.
     # Rules that fire many times in one file are collapsed into a single entry
@@ -713,7 +716,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
 
     # Store result in cache for next identical-content request.
     if _chash is not None:
-        ls._diag_result_cache[uri] = (_chash, lsp_diags)
+        ls.doc_state.set_diag_cache(uri, _chash, lsp_diags)
 
     return lsp_diags
 

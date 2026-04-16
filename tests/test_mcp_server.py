@@ -297,6 +297,142 @@ class TestBsl1cHelpTools:
         assert res2["cached"] is True
         assert res2["text"] == "HELLO_TOPIC"
 
+    def test_1c_help_keyword_cache_is_bounded(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+        monkeypatch.setattr(mcp_module, "_HELP_KEYWORD_CACHE_LIMIT", 2)
+        calls = {"count": 0}
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            calls["count"] += 1
+            assert tool_name == "search_1c_help_keyword"
+            q = str(arguments["query"])
+            return [{"path": f"docs/{q}", "text": q}]
+
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+
+        app = _make_app(tmp_path)
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        tools["bsl_1c_help_search_keyword"].fn(query="q1", limit=1)
+        tools["bsl_1c_help_search_keyword"].fn(query="q2", limit=1)
+        tools["bsl_1c_help_search_keyword"].fn(query="q3", limit=1)
+
+        assert len(mcp_module._help_keyword_cache) == 2
+        assert ("q1", 1) not in mcp_module._help_keyword_cache
+        assert ("q2", 1) in mcp_module._help_keyword_cache
+        assert ("q3", 1) in mcp_module._help_keyword_cache
+
+        tools["bsl_1c_help_search_keyword"].fn(query="q1", limit=1)
+        assert calls["count"] == 4
+
+    def test_1c_help_topic_cache_is_bounded(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+        monkeypatch.setattr(mcp_module, "_HELP_TOPIC_CACHE_LIMIT", 2)
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            assert tool_name == "get_1c_help_topic"
+            path = str(arguments["path"])
+            return [{"text": f"text:{path}"}]
+
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+
+        app = _make_app(tmp_path)
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        tools["bsl_1c_help_get_topic"].fn(path="a/topic")
+        tools["bsl_1c_help_get_topic"].fn(path="b/topic")
+        tools["bsl_1c_help_get_topic"].fn(path="c/topic")
+
+        assert len(mcp_module._help_topic_cache) == 2
+        assert "a/topic" not in mcp_module._help_topic_cache
+        assert "b/topic" in mcp_module._help_topic_cache
+        assert "c/topic" in mcp_module._help_topic_cache
+
+    def test_1c_help_keyword_cache_expires_by_ttl(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+        monkeypatch.setattr(mcp_module, "_HELP_KEYWORD_CACHE_TTL_SEC", 5)
+        calls = {"count": 0}
+        clock = {"t": 100.0}
+
+        def fake_monotonic() -> float:
+            return clock["t"]
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            calls["count"] += 1
+            assert tool_name == "search_1c_help_keyword"
+            return [{"path": "docs/ttl", "text": "ttl"}]
+
+        monkeypatch.setattr(mcp_module.time, "monotonic", fake_monotonic)
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+
+        app = _make_app(tmp_path)
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        first = tools["bsl_1c_help_search_keyword"].fn(query="ttl", limit=1)
+        assert first["cached"] is False
+        clock["t"] += 2.0
+        second = tools["bsl_1c_help_search_keyword"].fn(query="ttl", limit=1)
+        assert second["cached"] is True
+        clock["t"] += 10.0
+        third = tools["bsl_1c_help_search_keyword"].fn(query="ttl", limit=1)
+        assert third["cached"] is False
+        assert calls["count"] == 2
+
+    def test_1c_help_topic_cache_evicts_by_size(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+        monkeypatch.setattr(mcp_module, "_HELP_TOPIC_CACHE_LIMIT", 10)
+        monkeypatch.setattr(mcp_module, "_HELP_TOPIC_CACHE_BYTES_LIMIT", 70)
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            assert tool_name == "get_1c_help_topic"
+            path = str(arguments["path"])
+            return [{"text": f"{path}-payload-very-long"}]
+
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+
+        app = _make_app(tmp_path)
+        import asyncio
+
+        tools = {t.name: t for t in asyncio.run(app.list_tools())}
+        tools["bsl_1c_help_get_topic"].fn(path="topic/a")
+        tools["bsl_1c_help_get_topic"].fn(path="topic/b")
+
+        # Small bytes limit keeps only the freshest entry.
+        assert len(mcp_module._help_topic_cache) == 1
+        assert "topic/a" not in mcp_module._help_topic_cache
+        assert "topic/b" in mcp_module._help_topic_cache
+
 
 class TestBslReferences:
     def test_references_unknown(self, tmp_path) -> None:

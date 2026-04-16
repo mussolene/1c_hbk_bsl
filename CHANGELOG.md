@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.22] - 2026-04-16
+
+### Added
+
+- `scripts/lsp_soak_profile.py` и [docs/lsp-soak-runbook.md](docs/lsp-soak-runbook.md) для длительного soak-профилирования LSP (30–60 минут) с метриками drift по памяти, потокам и кэшам.
+- `tests/test_bench_scripts.py` для проверки режимов `--cache-mode` в `bench_timing.py` и `bench_profile.py`.
+- Новый сервис состояния документов LSP: `src/onec_hbk_bsl/lsp/document_state.py` для явной декомпозиции серверного состояния.
+
+### Changed
+
+- Производительность и потребление ресурсов:
+  - `DocumentSnapshot`: оптимизирован regex-fallback и расчёт строк/смещений.
+  - `DiagnosticEngine`: heavy-prep структуры строятся лениво по активным семействам правил.
+  - `formatter`: снижена повторная токенизация в hot-path.
+  - `SymbolIndex`: адаптивные SQLite-профили (`interactive`/`batch`) и env-overrides.
+  - MCP help-cache: TTL + eviction по лимиту элементов и байт.
+- Бенч-скрипты: `--cache-mode=miss|hit` для корректных и сопоставимых lane-метрик.
+
 ## [0.7.13] - 2026-04-09
 
 ### Added

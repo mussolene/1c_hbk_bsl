@@ -156,8 +156,9 @@ class SymbolIndex:
             ``~/.cache/onec-hbk-bsl/…``). Use ``":memory:"`` for in-memory (tests).
     """
 
-    def __init__(self, db_path: str | None = None) -> None:
+    def __init__(self, db_path: str | None = None, mode: str | None = None) -> None:
         self.db_path = db_path if db_path is not None else resolve_index_db_path(os.getcwd())
+        self._sqlite_profile = self._resolve_sqlite_profile(mode)
         # Per-thread flag: True only in the thread that opened bulk_write().
         # Using threading.local() avoids cross-thread reads of a shared bool that
         # caused upsert_file() to skip its transaction wrapper when called from the
@@ -187,6 +188,60 @@ class SymbolIndex:
         threading.Thread(
             target=self._migrate_background, daemon=True, name="bsl-db-migrate"
         ).start()
+
+    @staticmethod
+    def _read_env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            parsed = int(raw)
+        except ValueError:
+            return default
+        if minimum is not None and parsed < minimum:
+            return default
+        return parsed
+
+    @classmethod
+    def _resolve_sqlite_profile(cls, mode: str | None) -> dict[str, int | str]:
+        selected = (
+            (mode or "").strip().lower()
+            or os.environ.get("BSL_SYMBOL_INDEX_MODE", "").strip().lower()
+            or "interactive"
+        )
+        if selected not in {"interactive", "batch"}:
+            selected = "interactive"
+
+        # Lower memory pressure for long-lived interactive processes, higher throughput for batch.
+        defaults: dict[str, dict[str, int | str]] = {
+            "interactive": {
+                "cache_size": -32768,  # 32 MB page cache per connection
+                "mmap_size": 268435456,  # 256 MB mmap window
+                "busy_timeout_ms": 10000,
+                "temp_store": "MEMORY",
+            },
+            "batch": {
+                "cache_size": -131072,  # 128 MB page cache per connection
+                "mmap_size": 1073741824,  # 1 GB mmap window
+                "busy_timeout_ms": 10000,
+                "temp_store": "MEMORY",
+            },
+        }
+        base = defaults[selected].copy()
+        base["mode"] = selected
+
+        base["cache_size"] = cls._read_env_int("BSL_SQLITE_CACHE_SIZE", int(base["cache_size"]))
+        base["mmap_size"] = cls._read_env_int(
+            "BSL_SQLITE_MMAP_SIZE", int(base["mmap_size"]), minimum=0
+        )
+        base["busy_timeout_ms"] = cls._read_env_int(
+            "BSL_SQLITE_BUSY_TIMEOUT_MS", int(base["busy_timeout_ms"]), minimum=1
+        )
+
+        temp_store_raw = os.environ.get("BSL_SQLITE_TEMP_STORE", "").strip().upper()
+        if temp_store_raw in {"DEFAULT", "FILE", "MEMORY"}:
+            base["temp_store"] = temp_store_raw
+        return base
 
     def _migrate_sync(self, conn: sqlite3.Connection) -> None:
         """Fast, structural-only migrations that must complete before the server starts."""
@@ -292,10 +347,10 @@ class SymbolIndex:
         # Wait up to 10 s before raising "database is locked" — prevents spurious
         # failures when the LSP/MCP thread tries to write while the indexer thread
         # holds BEGIN IMMEDIATE (e.g. full workspace reindex on initialize).
-        _safe_pragma("PRAGMA busy_timeout=10000")
-        _safe_pragma("PRAGMA cache_size=-131072")  # 128 MB page cache per connection
-        _safe_pragma("PRAGMA mmap_size=1073741824")  # 1 GB memory-mapped I/O
-        _safe_pragma("PRAGMA temp_store=MEMORY")
+        _safe_pragma(f"PRAGMA busy_timeout={int(self._sqlite_profile['busy_timeout_ms'])}")
+        _safe_pragma(f"PRAGMA cache_size={int(self._sqlite_profile['cache_size'])}")
+        _safe_pragma(f"PRAGMA mmap_size={int(self._sqlite_profile['mmap_size'])}")
+        _safe_pragma(f"PRAGMA temp_store={str(self._sqlite_profile['temp_store'])}")
         # Override SQLite LOWER with Python's Unicode-aware casefold so that
         # Cyrillic (and other non-ASCII) characters are handled correctly.
         conn.create_function("LOWER", 1, lambda x: x.casefold() if isinstance(x, str) else x)

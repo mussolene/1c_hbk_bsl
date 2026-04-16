@@ -38,6 +38,7 @@ import logging
 import os
 import re
 import threading
+import time
 import urllib.request
 from collections import OrderedDict
 from pathlib import Path
@@ -103,8 +104,80 @@ _ONEC_HELP_HEADERS = {
     "Content-Type": "application/json",
 }
 
-_help_keyword_cache: dict[tuple[str, int], list[dict]] = {}
-_help_topic_cache: dict[str, str] = {}
+
+def _read_positive_env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r — using default %d", name, raw, default)
+        return default
+    if value < 1:
+        logger.warning("Invalid %s=%r (<1) — using default %d", name, raw, default)
+        return default
+    return value
+
+
+_HELP_KEYWORD_CACHE_LIMIT = _read_positive_env_int("MCP_HELP_KEYWORD_CACHE_LIMIT", 256)
+_HELP_TOPIC_CACHE_LIMIT = _read_positive_env_int("MCP_HELP_TOPIC_CACHE_LIMIT", 256)
+_HELP_KEYWORD_CACHE_TTL_SEC = _read_positive_env_int("MCP_HELP_KEYWORD_CACHE_TTL_SEC", 900)
+_HELP_TOPIC_CACHE_TTL_SEC = _read_positive_env_int("MCP_HELP_TOPIC_CACHE_TTL_SEC", 900)
+_HELP_KEYWORD_CACHE_BYTES_LIMIT = _read_positive_env_int(
+    "MCP_HELP_KEYWORD_CACHE_BYTES_LIMIT", 2 * 1024 * 1024
+)
+_HELP_TOPIC_CACHE_BYTES_LIMIT = _read_positive_env_int(
+    "MCP_HELP_TOPIC_CACHE_BYTES_LIMIT", 2 * 1024 * 1024
+)
+_help_cache_lock = threading.RLock()
+_help_keyword_cache: OrderedDict[tuple[str, int], tuple[float, int, list[dict]]] = OrderedDict()
+_help_topic_cache: OrderedDict[str, tuple[float, int, str]] = OrderedDict()
+
+
+def _cache_item_size(key: object, value: object) -> int:
+    try:
+        key_size = len(json.dumps(key, ensure_ascii=False).encode("utf-8"))
+        value_size = len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+        return key_size + value_size
+    except Exception:
+        return len(str(key)) + len(str(value))
+
+
+def _cache_total_size(cache: OrderedDict) -> int:
+    return sum(int(item[1]) for item in cache.values())
+
+
+def _lru_cache_get(cache: OrderedDict, key: object) -> object | None:
+    with _help_cache_lock:
+        item = cache.get(key)
+        if item is None:
+            return None
+        expires_at, _, value = item
+        if expires_at <= time.monotonic():
+            cache.pop(key, None)
+            return None
+        if value is not None:
+            cache.move_to_end(key)
+        return value
+
+
+def _lru_cache_put(
+    cache: OrderedDict,
+    key: object,
+    value: object,
+    limit: int,
+    ttl_sec: int,
+    bytes_limit: int,
+) -> None:
+    with _help_cache_lock:
+        item_size = _cache_item_size(key, value)
+        if bytes_limit > 0 and item_size > bytes_limit:
+            return
+        cache[key] = (time.monotonic() + ttl_sec, item_size, value)
+        cache.move_to_end(key)
+        while len(cache) > limit or _cache_total_size(cache) > bytes_limit:
+            cache.popitem(last=False)
 
 
 def _post_1c_help_tool(
@@ -816,7 +889,7 @@ def create_mcp_app() -> FastMCP:
         limit: Annotated[int, "Max number of results (default 3)"] = 3,
     ) -> dict:
         cache_key = (query, int(limit))
-        cached = _help_keyword_cache.get(cache_key)
+        cached = _lru_cache_get(_help_keyword_cache, cache_key)
         if cached is not None:
             return {"query": query, "limit": int(limit), "results": cached, "cached": True}
 
@@ -839,7 +912,14 @@ def create_mcp_app() -> FastMCP:
             raw_results,
             key=lambda r: (str(r.get("path", "")), str(r.get("text", ""))),
         )
-        _help_keyword_cache[cache_key] = results
+        _lru_cache_put(
+            _help_keyword_cache,
+            cache_key,
+            results,
+            _HELP_KEYWORD_CACHE_LIMIT,
+            _HELP_KEYWORD_CACHE_TTL_SEC,
+            _HELP_KEYWORD_CACHE_BYTES_LIMIT,
+        )
         return {"query": query, "limit": int(limit), "results": results, "cached": False}
 
     @mcp.tool(
@@ -849,7 +929,7 @@ def create_mcp_app() -> FastMCP:
         )
     )
     def bsl_1c_help_get_topic(path: Annotated[str, "Topic path (as used by 1c-help)"]) -> dict:
-        cached = _help_topic_cache.get(path)
+        cached = _lru_cache_get(_help_topic_cache, path)
         if cached is not None:
             return {"path": path, "text": cached, "cached": True}
 
@@ -863,7 +943,14 @@ def create_mcp_app() -> FastMCP:
             logger.warning("1c-help MCP get_topic failed: %s", exc)
             return {"path": path, "text": "", "error": str(exc), "cached": False}
 
-        _help_topic_cache[path] = text
+        _lru_cache_put(
+            _help_topic_cache,
+            path,
+            text,
+            _HELP_TOPIC_CACHE_LIMIT,
+            _HELP_TOPIC_CACHE_TTL_SEC,
+            _HELP_TOPIC_CACHE_BYTES_LIMIT,
+        )
         return {"path": path, "text": text, "cached": False}
 
     # ------------------------------------------------------------------

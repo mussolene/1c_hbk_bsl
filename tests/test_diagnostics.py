@@ -171,3 +171,184 @@ class TestCleanFile:
         # BSL002 can't fire (short), BSL004 won't fire (non-empty handler)
         blocking = [d for d in issues if d.code in ("BSL002", "BSL004")]
         assert blocking == []
+
+
+class TestCheckFileOptimization:
+    def test_check_file_reads_content_once_when_tree_not_provided(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        bsl_file = tmp_path / "single_read.bsl"
+        bsl_file.write_text("А = 1;\n", encoding="utf-8")
+        engine = DiagnosticEngine()
+        parser = engine._get_parser()
+        parse_file_called = {"value": False}
+        captured: dict[str, object] = {}
+
+        def fail_parse_file(_path: str) -> object:
+            parse_file_called["value"] = True
+            raise AssertionError("parse_file should not be used in optimized check_file path")
+
+        def fake_parse_content(content: str, file_path: str = "<string>") -> object:
+            captured["file_path"] = file_path
+            return object()
+
+        def fake_run_rules(
+            path: str,
+            content: str,
+            tree: object,
+            *,
+            symbol_index: object | None = None,
+        ) -> list[Diagnostic]:
+            captured["path"] = path
+            captured["content"] = content
+            captured["tree"] = tree
+            captured["symbol_index"] = symbol_index
+            return []
+
+        read_calls = 0
+        original_read_text = Path.read_text
+
+        def spy_read_text(self: Path, *args: object, **kwargs: object) -> str:
+            nonlocal read_calls
+            read_calls += 1
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(parser, "parse_file", fail_parse_file)
+        monkeypatch.setattr(parser, "parse_content", fake_parse_content)
+        monkeypatch.setattr(engine, "_get_parser", lambda: parser)
+        monkeypatch.setattr(engine, "_run_rules", fake_run_rules)
+        monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+        result = engine.check_file(str(bsl_file))
+
+        assert result == []
+        assert read_calls == 1
+        assert parse_file_called["value"] is False
+        assert captured["path"] == str(bsl_file)
+        assert captured["file_path"] == str(bsl_file)
+        assert captured["content"] == "А = 1;\n"
+
+    def test_check_content_uses_bounded_cache_for_same_path_and_content(self, monkeypatch) -> None:
+        engine = DiagnosticEngine()
+        parser = engine._get_parser()
+        parse_calls = {"count": 0}
+
+        class _FakeTree:
+            pass
+
+        def fake_parse_content(content: str, file_path: str = "<string>") -> object:
+            _ = content
+            _ = file_path
+            parse_calls["count"] += 1
+            return _FakeTree()
+
+        def fake_run_rules(
+            path: str,
+            content: str,
+            tree: object,
+            *,
+            symbol_index: object | None = None,
+        ) -> list[Diagnostic]:
+            _ = path
+            _ = content
+            _ = tree
+            _ = symbol_index
+            return []
+
+        monkeypatch.setattr(parser, "parse_content", fake_parse_content)
+        monkeypatch.setattr(engine, "_get_parser", lambda: parser)
+        monkeypatch.setattr(engine, "_run_rules", fake_run_rules)
+        engine._content_diag_cache_limit = 2
+
+        path = "/virtual/cache_test.bsl"
+        content = "Процедура Тест()\nКонецПроцедуры\n"
+
+        result1 = engine.check_content(path, content)
+        result2 = engine.check_content(path, content)
+
+        assert result1 == []
+        assert result2 == []
+        assert parse_calls["count"] == 1
+
+    def test_check_content_cache_invalidates_when_content_changes(self, monkeypatch) -> None:
+        engine = DiagnosticEngine()
+        parser = engine._get_parser()
+        parse_calls = {"count": 0}
+
+        class _FakeTree:
+            pass
+
+        def fake_parse_content(content: str, file_path: str = "<string>") -> object:
+            _ = content
+            _ = file_path
+            parse_calls["count"] += 1
+            return _FakeTree()
+
+        def fake_run_rules(
+            path: str,
+            content: str,
+            tree: object,
+            *,
+            symbol_index: object | None = None,
+        ) -> list[Diagnostic]:
+            _ = path
+            _ = content
+            _ = tree
+            _ = symbol_index
+            return []
+
+        monkeypatch.setattr(parser, "parse_content", fake_parse_content)
+        monkeypatch.setattr(engine, "_get_parser", lambda: parser)
+        monkeypatch.setattr(engine, "_run_rules", fake_run_rules)
+        engine._content_diag_cache_limit = 2
+
+        path = "/virtual/cache_invalidate_test.bsl"
+
+        result1 = engine.check_content(path, "Процедура Тест()\nКонецПроцедуры\n")
+        result2 = engine.check_content(path, "Процедура Тест2()\nКонецПроцедуры\n")
+
+        assert result1 == []
+        assert result2 == []
+        assert parse_calls["count"] == 2
+
+    def test_run_rules_skips_query_and_symbol_prep_when_families_disabled(
+        self, monkeypatch
+    ) -> None:
+        import onec_hbk_bsl.analysis.diagnostic.engine as engine_mod
+
+        engine = DiagnosticEngine(select={"BSL002"})
+
+        class _FakeSnapshot:
+            tree = object()
+            is_tree_sitter = False
+            procedures: list[object] = []
+            regions: list[object] = []
+            lines = ["Процедура Тест()\n", "КонецПроцедуры\n"]
+
+            @property
+            def proc_node_map(self):  # pragma: no cover - defensive
+                raise AssertionError("proc_node_map should not be touched for BSL002-only run")
+
+            @property
+            def symbols(self):
+                raise AssertionError("symbols should not be touched when security family disabled")
+
+            @property
+            def calls(self):
+                raise AssertionError("calls should not be touched when related families disabled")
+
+            @property
+            def query_text_blocks(self):
+                raise AssertionError(
+                    "query_text_blocks should not be touched when query family disabled"
+                )
+
+        monkeypatch.setattr(
+            engine_mod,
+            "build_document_snapshot",
+            lambda *args, **kwargs: _FakeSnapshot(),
+        )
+        monkeypatch.setattr(engine, "_rule_bsl002_method_size", lambda *args, **kwargs: [])
+
+        result = engine._run_rules("x.bsl", "Процедура Тест()\nКонецПроцедуры\n", object())
+        assert result == []

@@ -84,6 +84,46 @@ class TestBslLanguageServerInit:
 
 
 # ---------------------------------------------------------------------------
+# Document state service boundary
+# ---------------------------------------------------------------------------
+
+
+class TestDocumentDiagnosticsState:
+    def test_close_document_cleans_all_per_uri_state(self) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+
+        state = DocumentDiagnosticsState()
+        uri = "file:///module.bsl"
+        timer = MagicMock()
+        state.docs[uri] = "А = 1;"
+        state.diag_timers[uri] = timer
+        state.diag_last_time[uri] = 0.12
+        state.diag_result_cache[uri] = (123, [])
+
+        popped = state.close_document(uri)
+
+        assert popped is timer
+        assert uri not in state.docs
+        assert uri not in state.diag_timers
+        assert uri not in state.diag_last_time
+        assert uri not in state.diag_result_cache
+
+    def test_diag_cache_roundtrip(self) -> None:
+        from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+
+        state = DocumentDiagnosticsState()
+        uri = "file:///module.bsl"
+        payload: list[object] = []
+        state.set_diag_cache(uri, 99, payload)
+        cached = state.get_diag_cache(uri)
+        assert cached is not None
+        assert cached[0] == 99
+        assert cached[1] is payload
+
+
+# ---------------------------------------------------------------------------
 # Diagnostics publishing helper (internal)
 # ---------------------------------------------------------------------------
 
@@ -345,6 +385,35 @@ class TestHandlerFunctions:
         params.text = None
         on_did_save(ls, params)
         ls.text_document_publish_diagnostics.assert_called()
+
+    def test_on_did_close_cleans_document_state_and_cancels_timer(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_did_close
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = "file:///test.bsl"
+        timer = MagicMock()
+        ls._docs[uri] = "А = 1;\n"
+        ls._diag_timers[uri] = timer
+        ls._diag_last_time[uri] = 0.42
+        ls._diag_result_cache[uri] = (123, [])
+        params = MagicMock()
+        params.text_document.uri = uri
+
+        on_did_close(ls, params)
+
+        assert uri not in ls._docs
+        assert uri not in ls._diag_timers
+        assert uri not in ls._diag_last_time
+        assert uri not in ls._diag_result_cache
+        timer.cancel.assert_called_once()
+        ls.text_document_publish_diagnostics.assert_called_once()
+        published = ls.text_document_publish_diagnostics.call_args[0][0]
+        assert published.uri == uri
+        assert published.diagnostics == []
 
     def test_on_definition_no_word_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
