@@ -715,6 +715,7 @@ def _is_special_layout_line(raw_line: str) -> bool:
 
 def _heuristic_structural_indent_levels(lines: list[str]) -> list[int]:
     """Base indent level before each line (keyword state machine, no assign/dot extra)."""
+
     def _looks_like_statement_without_semicolon(line: str) -> bool:
         stripped_line = line.rstrip()
         if not stripped_line or stripped_line.endswith(";"):

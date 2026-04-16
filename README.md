@@ -113,7 +113,7 @@ onec-hbk-bsl --index /path/to/1c-project
 
 **Политика по умолчанию:** значительная часть кодов из реестра **выключена** (`DEFAULT_DISABLED` в `DiagnosticEngine` в коде): снижение шума, дубликаты имён BSLLS, спорные или тяжёлые проверки. Включён «базовый» набор для практичного линтинга; точный состав — в матрице (колонка «Выкл. по умолч.»). Настройки `onecHbkBsl.diagnostics.select` / `ignore` и переменные `BSL_SELECT` / `BSL_IGNORE` переопределяют набор.
 
-Для строгого канонического профиля BSLLS используйте `--profile strict-bslls` или `profile = "strict-bslls"` в `onec-hbk-bsl.toml`. Машинно-генерируемая матрица соответствия хранится в [docs/generated/bslls_parity_matrix.json](/Users/maxon/git/me/1c_hbk_bsl/docs/generated/bslls_parity_matrix.json).
+Для строгого канонического профиля BSLLS используйте `--profile strict-bslls` или `profile = "strict-bslls"` в `onec-hbk-bsl.toml`. Машинно-генерируемая матрица соответствия хранится в [docs/generated/bslls_parity_matrix.json](docs/generated/bslls_parity_matrix.json).
 
 Примеры (не исчерпывающий список):
 

@@ -633,7 +633,9 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags)
 
-    def test_bsl231_skips_proc_name_index(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_bsl231_skips_proc_name_index(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)
         (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
@@ -653,12 +655,16 @@ class TestTailParityBatches:
         )
         monkeypatch.setattr(
             "onec_hbk_bsl.analysis.diagnostics._common_module_proc_names_map_cached",
-            lambda *_args, **_kwargs: pytest.fail("proc-name index is not expected for BSL231-only run"),
+            lambda *_args, **_kwargs: pytest.fail(
+                "proc-name index is not expected for BSL231-only run"
+            ),
         )
         diags = DiagnosticEngine(select={"BSL231"}).check_file(str(ordinary_module))
         assert "BSL231" in _codes(diags)
 
-    def test_bsl213_skips_privileged_index(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_bsl213_skips_privileged_index(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)
         (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
@@ -682,7 +688,9 @@ class TestTailParityBatches:
         )
         monkeypatch.setattr(
             "onec_hbk_bsl.analysis.diagnostics._common_module_privileged_map_cached",
-            lambda *_args, **_kwargs: pytest.fail("privileged index is not expected for BSL213-only run"),
+            lambda *_args, **_kwargs: pytest.fail(
+                "privileged index is not expected for BSL213-only run"
+            ),
         )
         diags = DiagnosticEngine(select={"BSL213"}).check_file(str(ordinary_module))
         assert "BSL213" in _codes(diags)
@@ -2530,11 +2538,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
             lambda word: word == "Атмена",
         )
-        content = (
-            "Процедура Тест()\n"
-            '    Сообщить("Ошибка Атмена");\n'
-            "КонецПроцедуры\n"
-        )
+        content = 'Процедура Тест()\n    Сообщить("Ошибка Атмена");\nКонецПроцедуры\n'
         path = tmp_path / "TypoStringAnchor.bsl"
         path.write_text(content, encoding="utf-8")
 
@@ -2547,16 +2551,14 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         assert bsl256[0].character == start
         assert bsl256[0].end_character == line.rindex('"') + 1
 
-    def test_bslls_typo_does_not_scan_non_assignment_identifiers(self, tmp_path: Path, monkeypatch) -> None:
+    def test_bslls_typo_does_not_scan_non_assignment_identifiers(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         monkeypatch.setattr(
             "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
             lambda word: word == "Варинаты",
         )
-        content = (
-            "Функция ПрефиксВаринатыОплаты()\n"
-            "    Возврат 0;\n"
-            "КонецФункции\n"
-        )
+        content = "Функция ПрефиксВаринатыОплаты()\n    Возврат 0;\nКонецФункции\n"
         path = tmp_path / "TypoIdentifierAnchor.bsl"
         path.write_text(content, encoding="utf-8")
 
@@ -2571,15 +2573,15 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
             lambda word: word == "Поздниее",
         )
-        content = (
-            "Процедура Тест()\n"
-            "    НаиболееПоздниееПодтверждение = 1;\n"
-            "КонецПроцедуры\n"
-        )
+        content = "Процедура Тест()\n    НаиболееПоздниееПодтверждение = 1;\nКонецПроцедуры\n"
         path = tmp_path / "TypoIdentifierLhs.bsl"
         path.write_text(content, encoding="utf-8")
 
-        diags = [d for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path)) if d.code == "BSL256"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+            if d.code == "BSL256"
+        ]
         assert len(diags) == 1
         assert diags[0].line == 2
         assert diags[0].message == 'Возможная опечатка в "Поздниее"'
@@ -2591,33 +2593,35 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
             lambda word: word == "Поздниее",
         )
-        content = (
-            "Процедура Тест()\n"
-            "    Объект.ПоздниееПодтверждение = 1;\n"
-            "КонецПроцедуры\n"
-        )
+        content = "Процедура Тест()\n    Объект.ПоздниееПодтверждение = 1;\nКонецПроцедуры\n"
         path = tmp_path / "TypoPropertyLhs.bsl"
         path.write_text(content, encoding="utf-8")
 
-        diags = [d for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path)) if d.code == "BSL256"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+            if d.code == "BSL256"
+        ]
         assert len(diags) == 1
         assert diags[0].line == 2
         assert diags[0].message == 'Возможная опечатка в "Поздниее"'
 
-    def test_bslls_typo_skips_exception_fragment_and_reports_next(self, tmp_path: Path, monkeypatch) -> None:
+    def test_bslls_typo_skips_exception_fragment_and_reports_next(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         monkeypatch.setattr(
             "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
             lambda word: word in {"Сис", "Инфо"},
         )
-        content = (
-            "Процедура Тест()\n"
-            '    Сообщить("СисИнфо");\n'
-            "КонецПроцедуры\n"
-        )
+        content = 'Процедура Тест()\n    Сообщить("СисИнфо");\nКонецПроцедуры\n'
         path = tmp_path / "TypoFirstFragment.bsl"
         path.write_text(content, encoding="utf-8")
 
-        diags = [d for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path)) if d.code == "BSL256"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+            if d.code == "BSL256"
+        ]
         assert len(diags) == 1
         assert diags[0].message == 'Возможная опечатка в "Инфо"'
 
@@ -2628,15 +2632,15 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
             lambda word: word in {"Прил", "Валидна", "Атмена"},
         )
-        content = (
-            "Процедура Тест()\n"
-            '    Сообщить("ПрилВалиднаАтмена");\n'
-            "КонецПроцедуры\n"
-        )
+        content = 'Процедура Тест()\n    Сообщить("ПрилВалиднаАтмена");\nКонецПроцедуры\n'
         path = tmp_path / "TypoKnownCorpusNoise.bsl"
         path.write_text(content, encoding="utf-8")
 
-        diags = [d for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path)) if d.code == "BSL256"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+            if d.code == "BSL256"
+        ]
         assert len(diags) == 1
         assert diags[0].message == 'Возможная опечатка в "Атмена"'
 
@@ -2645,15 +2649,15 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
             lambda word: word == "Атмена",
         )
-        content = (
-            "Процедура Тест()\r\n"
-            '    Сообщить("Атмена");\r\n'
-            "КонецПроцедуры\r\n"
-        )
+        content = 'Процедура Тест()\r\n    Сообщить("Атмена");\r\nКонецПроцедуры\r\n'
         path = tmp_path / "TypoCrlfAnchor.bsl"
         path.write_text(content, encoding="utf-8", newline="")
 
-        diags = [d for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path)) if d.code == "BSL256"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+            if d.code == "BSL256"
+        ]
         assert len(diags) == 1
         assert diags[0].line == 2
         assert diags[0].character == content.splitlines()[1].index('"')
@@ -3585,7 +3589,9 @@ class TestBsl149AssignAliasFieldsInQuery:
         diags = _check(content, tmp_path, select={"BSL149"})
         assert "BSL149" not in _codes(diags)
 
-    def test_where_condition_connectors_are_not_treated_as_select_fields(self, tmp_path: Path) -> None:
+    def test_where_condition_connectors_are_not_treated_as_select_fields(
+        self, tmp_path: Path
+    ) -> None:
         content = """\
             ТекстЗапроса = "ВЫБРАТЬ
             |   Т.Ссылка КАК Ссылка
@@ -5043,9 +5049,7 @@ class TestBsl030SemicolonPresence:
         diags = _check(content, tmp_path, select={"BSL030"})
         assert "BSL030" not in _codes(diags)
 
-    def test_multiline_procedure_header_without_semicolon_not_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiline_procedure_header_without_semicolon_not_flagged(self, tmp_path: Path) -> None:
         content = """\
 Процедура Тест(
     Параметр1,

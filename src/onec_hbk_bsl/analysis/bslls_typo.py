@@ -457,7 +457,9 @@ def _emit_parts_for_source_text(
             anchor_start_byte += len(m.group(0).encode("utf-8"))
 
     line, character = _line_char_from_node_point(node, source_bytes, anchor_start_byte)
-    end_line, end_character = _line_char_from_node_point(node, source_bytes, node.end_byte, is_end=True)
+    end_line, end_character = _line_char_from_node_point(
+        node, source_bytes, node.end_byte, is_end=True
+    )
     for part in split_by_character_type_camel_case(inner):
         # BSLLS exception list applies to concrete token fragments too, not only
         # to the full literal/identifier text.

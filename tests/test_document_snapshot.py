@@ -89,9 +89,7 @@ def test_procedure_name_extractors_handle_async_declarations(tmp_path: Path) -> 
     assert find_procedure_names_from_tree(snapshot.tree) == frozenset(
         {"получитьасинх", "записатьасинх"}
     )
-    assert find_procedure_names_in_content(content) == frozenset(
-        {"получитьасинх", "записатьасинх"}
-    )
+    assert find_procedure_names_in_content(content) == frozenset({"получитьасинх", "записатьасинх"})
 
 
 def test_regex_fallback_snapshot_collects_async_procedures(tmp_path: Path) -> None:

@@ -4,9 +4,7 @@
 Документ фиксирует текущее состояние сервера `onec-hbk-bsl` по итогам parity-кампаний и задает практичный план: как использовать сервер в продукте уже сейчас и как добить ключевые gap-блоки без бесконечного trial-and-error.
 
 ## Что накопали по факту
-Свежие большие sequential-прогоны на корпусе `/Users/maxon/git/config` (две независимые выборки `sample=120`, разные seed):
-- `.nosync/reports/dev-corpus/parity-20260415-223523.json`
-- `.nosync/reports/dev-corpus/parity-20260415-224005.json`
+Свежие большие sequential-прогоны на внешнем dev-корпусе 1С (две независимые выборки `sample=120`, разные seed) показали устойчивые mismatch-блоки.
 
 Устойчивые (повторяемые между seed) проблемные зоны:
 - `only_bslls`: `CodeOutOfRegion`, `Typo`, `ServerSideExportFormMethod`, `CanonicalSpellingKeywords`, `LatinAndCyrillicSymbolInWord`, `MissingSpace`.

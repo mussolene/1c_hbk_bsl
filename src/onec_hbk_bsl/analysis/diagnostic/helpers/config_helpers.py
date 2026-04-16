@@ -193,7 +193,9 @@ def common_module_proc_names_for_file_cached(module_file: str) -> frozenset[str]
 
 
 @functools.lru_cache(maxsize=4096)
-def common_module_proc_names_for_module_cached(config_root: str, module_name_cf: str) -> frozenset[str]:
+def common_module_proc_names_for_module_cached(
+    config_root: str, module_name_cf: str
+) -> frozenset[str]:
     info = common_module_index_cached(config_root).get(module_name_cf)
     if info is None:
         return frozenset()

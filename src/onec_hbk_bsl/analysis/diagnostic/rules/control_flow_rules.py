@@ -301,7 +301,9 @@ def bsl148_function_name_spans(
                             # byte->LSP conversion of identifier anchor.
                             raw_fn_text = getattr(node, "text", b"")
                             if isinstance(raw_fn_text, bytes):
-                                fn_header = raw_fn_text.decode("utf-8", errors="replace").splitlines()
+                                fn_header = raw_fn_text.decode(
+                                    "utf-8", errors="replace"
+                                ).splitlines()
                                 line_text = fn_header[0] if fn_header else ""
                             else:
                                 fn_header = str(raw_fn_text or "").splitlines()

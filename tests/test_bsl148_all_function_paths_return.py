@@ -66,7 +66,9 @@ def test_bsl148_nested_if_with_total_returns_is_not_reported(tmp_path: Path) -> 
     )
     path = tmp_path / "nested_if_total_returns.bsl"
     path.write_text(content, encoding="utf-8")
-    diags = [d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"]
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
     assert diags == []
 
 
@@ -80,7 +82,9 @@ def test_bsl148_anchor_points_to_function_identifier(tmp_path: Path) -> None:
     )
     path = tmp_path / "anchor_identifier.bsl"
     path.write_text(content, encoding="utf-8")
-    diags = [d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"]
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
     assert len(diags) == 1
     assert diags[0].line == 1
     assert diags[0].character == 8
@@ -103,5 +107,7 @@ def test_bsl148_try_except_with_guaranteed_returns_is_not_reported(tmp_path: Pat
     )
     path = tmp_path / "try_except_returns.bsl"
     path.write_text(content, encoding="utf-8")
-    diags = [d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"]
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
     assert diags == []

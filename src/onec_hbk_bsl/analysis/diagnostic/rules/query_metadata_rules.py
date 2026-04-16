@@ -306,11 +306,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                 )
             )
 
-    if (
-        "BSL232" in enabled_set
-        and low_path.endswith("/ext/sessionmodule.bsl")
-        and root is not None
-    ):
+    if "BSL232" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl") and root is not None:
         if _diag._config_has_protected_modules_cached(root):
             diags.append(
                 _diag.Diagnostic(

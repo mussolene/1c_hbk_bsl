@@ -28,8 +28,8 @@
 Примеры:
 
 ```bash
-python scripts/dev_corpus_bench.py /Users/maxon/git/config --limit=200
-python scripts/dev_corpus_bench.py /Users/maxon/git/config --sample=500 --profile strict-bslls
+python scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
+python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500 --profile strict-bslls
 ```
 
 Скрипт считает:
@@ -43,8 +43,8 @@ python scripts/dev_corpus_bench.py /Users/maxon/git/config --sample=500 --profil
 Для parity-сверки с Java BSLLS:
 
 ```bash
-python scripts/dev_corpus_parity.py /Users/maxon/git/config --limit=20
-python scripts/dev_corpus_parity.py /Users/maxon/git/config --sample=100 --profile strict-bslls
+python scripts/dev_corpus_parity.py /path/to/1c/config --limit=20
+python scripts/dev_corpus_parity.py /path/to/1c/config --sample=100 --profile strict-bslls
 ```
 
 Скрипт:

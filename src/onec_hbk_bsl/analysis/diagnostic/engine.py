@@ -2299,7 +2299,12 @@ class DiagnosticEngine:
                     rpos = m.end()
                     while rpos < len(code_part) and code_part[rpos] in " \t":
                         rpos += 1
-                    if lpos >= 0 and rpos < len(code_part) and code_part[lpos] == "[" and code_part[rpos] == "]":
+                    if (
+                        lpos >= 0
+                        and rpos < len(code_part)
+                        and code_part[lpos] == "["
+                        and code_part[rpos] == "]"
+                    ):
                         continue
                     diags.append(
                         Diagnostic(
@@ -9063,9 +9068,7 @@ class DiagnosticEngine:
                 _comma_missing_space_after_cols_in_line(code_no_comments) if has_comma else []
             )
             if has_comma:
-                extra_comma_cols = {
-                    m.start() for m in re.finditer(r",(?=\))", code_no_comments)
-                }
+                extra_comma_cols = {m.start() for m in re.finditer(r",(?=\))", code_no_comments)}
                 if extra_comma_cols:
                     comma_cols = sorted(set(comma_cols) | extra_comma_cols)
             if comma_cols:

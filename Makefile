@@ -5,7 +5,7 @@
 # ── Python runtime ───────────────────────────────────────────────────────────
 
 PYTHON3 ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
-CONFIG_ROOT ?= /Users/maxon/git/config
+CONFIG_ROOT ?= /path/to/1c/config
 CORPUS_LARGEST_3 ?= $(CURDIR)/corpus-largest-3
 
 # ── Зависимости ──────────────────────────────────────────────────────────────
