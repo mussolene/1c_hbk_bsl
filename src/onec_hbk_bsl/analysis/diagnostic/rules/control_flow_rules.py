@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+
 
 @dataclass(frozen=True)
 class _Span:
@@ -105,6 +107,8 @@ def _stmt_list_always_returns(stmts: list[Any]) -> bool:
         t = getattr(st, "type", None)
         if t in ("return_statement", "rise_error_statement"):
             return True
+        if t == ";":
+            continue
         if t == "if_statement":
             if not _if_always_returns(st):
                 return False
@@ -120,7 +124,7 @@ def _stmt_list_always_returns(stmts: list[Any]) -> bool:
         if t == "preprocessor":
             continue
         return False
-    return False
+    return True
 
 
 def _loop_body_stmts(loop_node: Any) -> list[Any]:
@@ -230,7 +234,7 @@ def implicit_exit_reachable(
         if t == "try_statement":
             if not _try_always_returns(s):
                 return True
-            return walk(i + 1)
+            return False
         return walk(i + 1)
 
     return walk(0)
@@ -252,7 +256,11 @@ def _fn_has_return(fn_def: Any) -> bool:
 
     def walk(node: Any) -> None:
         nonlocal found
-        if getattr(node, "type", None) == "return_statement":
+        node_type = getattr(node, "type", None)
+        if node_type in {"function_definition", "procedure_definition"}:
+            # Nested routines do not contribute to outer function return paths.
+            return
+        if node_type == "return_statement":
             found = True
             return
         for child in getattr(node, "children", []) or []:
@@ -278,14 +286,33 @@ def bsl148_function_name_spans(
         if getattr(node, "type", None) == "function_definition":
             if not _fn_subtree_has_parse_error(node) and _fn_has_return(node):
                 body = _function_body_children(node)
-                if implicit_exit_reachable(
-                    body,
-                    loops_executed_at_least_once=loops_executed_at_least_once,
-                    at_top_level=True,
-                ):
-                    ident = _identifier_span(node)
-                    if ident is not None:
-                        out.append((ident.line0 + 1, ident.col0, ident.col1))
+                # BSLLS is conservative for complex try/catch control-flow in this
+                # diagnostic; skip top-level try bodies to avoid large FP drift.
+                if not any(getattr(ch, "type", None) == "try_statement" for ch in body):
+                    if implicit_exit_reachable(
+                        body,
+                        loops_executed_at_least_once=loops_executed_at_least_once,
+                        at_top_level=True,
+                    ):
+                        ident = _identifier_span(node)
+                        if ident is not None:
+                            # Tree root text can be degraded for very large files in some
+                            # parser states; use function-local header text for stable
+                            # byte->LSP conversion of identifier anchor.
+                            raw_fn_text = getattr(node, "text", b"")
+                            if isinstance(raw_fn_text, bytes):
+                                fn_header = raw_fn_text.decode("utf-8", errors="replace").splitlines()
+                                line_text = fn_header[0] if fn_header else ""
+                            else:
+                                fn_header = str(raw_fn_text or "").splitlines()
+                                line_text = fn_header[0] if fn_header else ""
+                            out.append(
+                                (
+                                    ident.line0 + 1,
+                                    utf8_byte_offset_to_lsp_character(line_text, ident.col0),
+                                    utf8_byte_offset_to_lsp_character(line_text, ident.col1),
+                                )
+                            )
         for child in getattr(node, "children", []) or []:
             scan(child)
 

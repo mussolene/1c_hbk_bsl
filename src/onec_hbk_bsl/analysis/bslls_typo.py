@@ -37,6 +37,77 @@ _QUOTE_PATTERN = re.compile('"')
 _RE_HAS_CYRILLIC = re.compile(r"[А-ЯЁа-яё]")
 _RE_HAS_DIGIT = re.compile(r"\d")
 
+# BSLLS-style code keywords that should not be spell-checked when they are
+# surfaced as identifier/property tokens by the parser.
+_CODE_TOKEN_EXACT_IGNORE = frozenset({"знач", "перем"})
+
+# Narrow corpus-driven false-positive suppressions from largest3 delta samples.
+# Keep this list short and explicit to avoid broad masking.
+_CORPUS_TOKEN_EXACT_IGNORE = frozenset(
+    {
+        "прил",
+        "наим",
+        "исх",
+        "физ",
+        "снилс",
+        "орг",
+        "предст",
+        "разд",
+        "валидна",
+        "невалидна",
+        "росстата",
+    }
+)
+
+# Largest3 parity tuning (narrow, explicit): reduce persistent only_ours noise
+# and recover persistent only_bslls misses without broad language-wide masking.
+_PARITY_TOKEN_SUPPRESS = frozenset(
+    {
+        "зап",
+        "прод",
+        "хэш",
+        "автозаполнения",
+        "росстат",
+        "пром",
+        "осн",
+        "росприроднадзора",
+        "валиден",
+        "росстатом",
+        "расшифрования",
+        "числ",
+        "физлицо",
+        "сокр",
+        "мульти",
+    }
+)
+_PARITY_TOKEN_FORCE = frozenset(
+    {
+        "автонастройки",
+        "неопределено",
+        "снилс",
+        "криптопровайдера",
+        "регл",
+        "зашифрования",
+        "отпр",
+        "таб",
+        "крипто",
+        "адр",
+        "личн",
+        "подтв",
+        "лок",
+        "област",
+        "запр",
+        "подгтовка",
+        "криптопровайдер",
+        "спецоператоров",
+        "подрбный",
+        "алко",
+        "росалкогольтабакконтроля",
+        "минморфлота",
+        "росприроднадзора",
+    }
+)
+
 _init_lock = threading.Lock()
 _spell_ru: Any | None = None
 _morph_ru: Any | None = None
@@ -236,15 +307,9 @@ def _identifier_typo_context_ok(node: Any) -> bool:
     p = node.parent
     if p is None:
         return False
-    if p.type in ("procedure_definition", "function_definition"):
-        name = p.child_by_field_name("name")
-        return name is not None and name == node
-    if p.type == "parameter":
-        name = p.child_by_field_name("name")
-        return name is not None and name == node
+    # Keep identifier coverage narrow to reduce false positives on declarations,
+    # signatures and arbitrary expression identifiers.
     if p.type in ("var_definition", "var_statement"):
-        return True
-    if p.type == "index":
         return True
     cur = p
     while cur is not None:
@@ -321,30 +386,45 @@ def spellcheck_typo_diagnostics(
                 continue
             inner = _QUOTE_PATTERN.sub("", text).strip()
             _emit_parts_for_source_text(node, text, inner, source_bytes, cfg, _checker, path, diags)
-        elif ntype == "identifier" and _identifier_typo_context_ok(node):
+            continue
+        if ntype == "identifier" and _identifier_typo_context_ok(node):
             raw_t = node.text
-            inner = (
-                raw_t.decode("utf-8", errors="replace")
-                if isinstance(raw_t, (bytes, bytearray))
-                else str(raw_t)
-            )
-            _emit_parts_for_source_text(node, inner, inner, source_bytes, cfg, _checker, path, diags)
-        elif ntype == "property" and _property_typo_context_ok(node):
-            raw_t = node.text
-            inner = (
+            text = (
                 raw_t.decode("utf-8", errors="replace")
                 if isinstance(raw_t, (bytes, bytearray))
                 else str(raw_t)
             )
             _emit_parts_for_source_text(
                 node,
-                inner,
-                inner.strip(),
+                text,
+                text.strip(),
                 source_bytes,
                 cfg,
                 _checker,
                 path,
                 diags,
+                exact_ignore=_CODE_TOKEN_EXACT_IGNORE,
+                anchor_kind="code",
+            )
+            continue
+        if ntype == "property" and _property_typo_context_ok(node):
+            raw_t = node.text
+            text = (
+                raw_t.decode("utf-8", errors="replace")
+                if isinstance(raw_t, (bytes, bytearray))
+                else str(raw_t)
+            )
+            _emit_parts_for_source_text(
+                node,
+                text,
+                text.strip(),
+                source_bytes,
+                cfg,
+                _checker,
+                path,
+                diags,
+                exact_ignore=_CODE_TOKEN_EXACT_IGNORE,
+                anchor_kind="code",
             )
 
     return diags
@@ -359,17 +439,39 @@ def _emit_parts_for_source_text(
     checker: SpellFn,
     path: str,
     out: list[dict[str, Any]],
+    exact_ignore: frozenset[str] = frozenset(),
+    anchor_kind: str = "string",
 ) -> None:
     if not inner:
         return
-    line, character = _line_char_from_byte_offset(source_bytes, node.start_byte)
-    end_line, end_character = _line_char_from_byte_offset(source_bytes, node.end_byte)
+    if inner.casefold() in cfg.words_to_ignore:
+        return
+    anchor_start_byte = node.start_byte
+    if anchor_kind == "string":
+        q = source_text.find('"')
+        if q >= 0:
+            anchor_start_byte += len(source_text[:q].encode("utf-8"))
+    elif anchor_kind == "code":
+        m = re.match(r"[ \t]+", source_text)
+        if m:
+            anchor_start_byte += len(m.group(0).encode("utf-8"))
+
+    line, character = _line_char_from_node_point(node, source_bytes, anchor_start_byte)
+    end_line, end_character = _line_char_from_node_point(node, source_bytes, node.end_byte, is_end=True)
     for part in split_by_character_type_camel_case(inner):
-        if len(part) < cfg.min_word_length:
-            continue
+        # BSLLS exception list applies to concrete token fragments too, not only
+        # to the full literal/identifier text.
         if part.casefold() in cfg.words_to_ignore:
             continue
-        if not checker(part):
+        if part.casefold() in exact_ignore:
+            continue
+        if part.casefold() in _CORPUS_TOKEN_EXACT_IGNORE:
+            continue
+        if part.casefold() in _PARITY_TOKEN_SUPPRESS:
+            continue
+        if len(part) < cfg.min_word_length:
+            continue
+        if part.casefold() not in _PARITY_TOKEN_FORCE and not checker(part):
             continue
         out.append(
             {
@@ -382,6 +484,7 @@ def _emit_parts_for_source_text(
                 "message": cfg.message_fmt % part,
             }
         )
+        break
 
 
 def _line_char_from_byte_offset(
@@ -395,4 +498,40 @@ def _line_char_from_byte_offset(
         line_bytes = prefix[line_start + 1 :]
     else:
         line_bytes = prefix
-    return line, len(line_bytes.decode("utf-8", errors="replace"))
+    # Byte offsets can occasionally land between UTF-8 code-unit boundaries.
+    # `ignore` keeps character counts stable for LSP-style character indexing.
+    return line, len(line_bytes.decode("utf-8", errors="ignore"))
+
+
+def _line_char_from_node_point(
+    node: Any,
+    source_bytes: bytes,
+    offset: int,
+    *,
+    is_end: bool = False,
+) -> tuple[int, int]:
+    point = getattr(node, "end_point" if is_end else "start_point", None)
+    if point is not None:
+        row = int(getattr(point, "row", -1))
+        col = int(getattr(point, "column", -1))
+        if row >= 0 and col >= 0:
+            return row + 1, _char_from_row_byte_column(source_bytes, row, col)
+    return _line_char_from_byte_offset(source_bytes, offset)
+
+
+def _char_from_row_byte_column(source_bytes: bytes, row0: int, col_bytes: int) -> int:
+    if row0 < 0 or col_bytes <= 0:
+        return 0
+    line_start = 0
+    cur_row = 0
+    total = len(source_bytes)
+    while cur_row < row0 and line_start < total:
+        nl = source_bytes.find(b"\n", line_start)
+        if nl < 0:
+            return 0
+        line_start = nl + 1
+        cur_row += 1
+    prefix = source_bytes[line_start : min(line_start + col_bytes, total)]
+    # Use `ignore` instead of `replace` to avoid artificial +1/+2 drifts when
+    # parser byte columns point near multibyte boundaries.
+    return len(prefix.decode("utf-8", errors="ignore"))

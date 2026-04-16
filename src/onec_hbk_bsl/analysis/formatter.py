@@ -246,6 +246,8 @@ def _normalize_line_comment_spaces(stripped: str) -> str:
     """Normalize a full-line // comment: ``//`` + one space + trimmed text (BSL LS style)."""
     if not stripped.startswith("//"):
         return stripped
+    if re.fullmatch(r"/{4,}", stripped):
+        return stripped
     # XML-doc / structured lines (/// …) — keep one space after ///, preserve rest of the line
     if stripped.startswith("///"):
         rest = stripped[3:]
@@ -570,6 +572,7 @@ _CONTINUATION_BREAK_FIRST: frozenset[str] = frozenset(
 
 # Single `=` used as assignment (not <=, >=, <>, !=).
 _ASSIGN_EQ_RE = re.compile(r"(?<![!<>=])(?<!=)=(?!=)")
+_EMPTY_FIRST_ARG_RE = re.compile(r"\(\s*,")
 
 
 def _strip_inline_comment_from_code(code: str) -> str:
@@ -587,12 +590,28 @@ def _line_ends_with_semicolon(stripped: str) -> bool:
     return code.endswith(";")
 
 
-def _line_expression_ends_with_open_paren(stripped: str) -> bool:
-    """Code ends with ``(`` — next line continues the parenthesised expression (BSLLS-style)."""
+def _line_has_unclosed_paren_expression(stripped: str) -> bool:
+    """Code has unclosed ``(`` — next line continues the parenthesised expression."""
     tokens = _tokenize(stripped)
     code = "".join(t[1] for t in tokens if t[0] == "code")
     code = _strip_inline_comment_from_code(code).rstrip()
-    return code.endswith("(")
+    if not code or code.endswith(";"):
+        return False
+    return _paren_delta_in_code(code) > 0
+
+
+def _line_is_multiline_if_header(stripped: str) -> bool:
+    """``Если``/``ИначеЕсли``/``If``/``ElsIf`` line without closing ``Тогда``/``Then``."""
+    tokens = _tokenize(stripped)
+    code = "".join(t[1] for t in tokens if t[0] == "code")
+    code = _strip_inline_comment_from_code(code).strip()
+    if not code:
+        return False
+    first = _get_stripped_keyword(code)
+    if first not in ("если", "if", "иначеесли", "elsif"):
+        return False
+    lower = code.lower()
+    return "тогда" not in lower and "then" not in lower
 
 
 def _line_starts_with_dot(stripped: str) -> bool:
@@ -600,6 +619,34 @@ def _line_starts_with_dot(stripped: str) -> bool:
     tokens = _tokenize(stripped)
     code = "".join(t[1] for t in tokens if t[0] == "code").lstrip()
     return code.startswith(".")
+
+
+def _line_starts_question_call(stripped: str) -> bool:
+    """True when code starts with ``?(`` (ternary call continuation)."""
+    tokens = _tokenize(stripped)
+    code = "".join(t[1] for t in tokens if t[0] == "code").lstrip()
+    return code.startswith("?(")
+
+
+def _line_starts_with_arith_operator(stripped: str) -> bool:
+    """True when code starts with leading binary arithmetic operator."""
+    tokens = _tokenize(stripped)
+    code = "".join(t[1] for t in tokens if t[0] == "code").lstrip()
+    return code.startswith(("+", "-", "*", "/"))
+
+
+def _line_starts_condition_connector(stripped: str) -> bool:
+    """True for logical continuation starters: И/ИЛИ/AND/OR."""
+    first = _get_stripped_keyword(stripped)
+    return first in ("и", "или", "and", "or")
+
+
+def _line_is_string_literal_closer(stripped: str) -> bool:
+    """True for standalone string-literal closure lines like `");` / `');`."""
+    tokens = _tokenize(stripped)
+    code = "".join(t[1] for t in tokens if t[0] == "code")
+    code = _strip_inline_comment_from_code(code).strip()
+    return code in ('");', "');")
 
 
 def _line_opens_operator(stripped: str) -> bool:
@@ -636,6 +683,25 @@ def _line_has_assignment_without_semicolon(stripped: str) -> bool:
     return bool(_ASSIGN_EQ_RE.search(code))
 
 
+def _line_ends_with_plus(stripped: str) -> bool:
+    """True if code fragment ends with ``+`` (after stripping // comment)."""
+    tokens = _tokenize(stripped)
+    code = "".join(t[1] for t in tokens if t[0] == "code")
+    code = _strip_inline_comment_from_code(code).rstrip()
+    return code.endswith("+")
+
+
+def _strict_bslls_empty_first_arg_spacing(stripped: str) -> str:
+    """Keep BSLLS spacing for empty first call arguments: ``( ,``."""
+    tokens = _tokenize(stripped)
+    result_parts: list[str] = []
+    for ttype, text in tokens:
+        if ttype == "code":
+            text = _EMPTY_FIRST_ARG_RE.sub("( ,", text)
+        result_parts.append(text)
+    return "".join(result_parts)
+
+
 def _is_special_layout_line(raw_line: str) -> bool:
     stripped = _strip_indent(raw_line.rstrip())
     if not stripped:
@@ -649,9 +715,41 @@ def _is_special_layout_line(raw_line: str) -> bool:
 
 def _heuristic_structural_indent_levels(lines: list[str]) -> list[int]:
     """Base indent level before each line (keyword state machine, no assign/dot extra)."""
+    def _looks_like_statement_without_semicolon(line: str) -> bool:
+        stripped_line = line.rstrip()
+        if not stripped_line or stripped_line.endswith(";"):
+            return False
+        keyword = _get_stripped_keyword(stripped_line)
+        if keyword in _DEDENT_BEFORE | _INDENT_AFTER_STARTS:
+            return False
+        if _get_last_keyword(stripped_line) in _INDENT_AFTER_ENDS:
+            return False
+        return True
+
+    def _previous_significant_code_line(idx: int) -> str:
+        j = idx - 1
+        while j >= 0:
+            candidate = lines[j].rstrip()
+            stripped_candidate = _strip_indent(candidate)
+            if not stripped_candidate or stripped_candidate.startswith("//"):
+                j -= 1
+                continue
+            if _PREPROCESSOR_PATTERN.match(stripped_candidate):
+                j -= 1
+                continue
+            return _process_code_line_static(
+                stripped_candidate,
+                in_proc_header=_is_proc_or_func_header(stripped_candidate),
+            )
+        return ""
+
     current_indent = 0
+    pending_dedent_after = False
     out: list[int] = []
-    for raw_line in lines:
+    for idx, raw_line in enumerate(lines):
+        if pending_dedent_after:
+            current_indent = max(0, current_indent - 1)
+            pending_dedent_after = False
         line = raw_line.rstrip()
         stripped = _strip_indent(line)
         if not stripped:
@@ -668,7 +766,13 @@ def _heuristic_structural_indent_levels(lines: list[str]) -> list[int]:
             stripped, in_proc_header=_is_proc_or_func_header(stripped)
         )
         proc_stripped = _strip_indent(processed)
+        first_keyword = _get_stripped_keyword(proc_stripped)
         dedent_before, indent_after = _indent_control(proc_stripped)
+        if dedent_before and first_keyword in ("конеццикла", "enddo"):
+            prev = _previous_significant_code_line(idx)
+            if prev and _looks_like_statement_without_semicolon(prev):
+                dedent_before = False
+                pending_dedent_after = True
         if dedent_before:
             current_indent = max(0, current_indent - 1)
         out.append(current_indent)
@@ -1006,6 +1110,9 @@ class BslFormatter:
         inside_operator = False
         in_method_sig = False
         balance = 0
+        previous_code_line = ""
+        previous_was_pipe = False
+        pipe_block_extra: int | None = None
 
         for i, raw_line in enumerate(lines):
             line = raw_line.rstrip()
@@ -1024,16 +1131,42 @@ class BslFormatter:
             # content — preserve content verbatim, only re-apply structural indentation.
             if stripped.startswith("|"):
                 if output:
-                    extra = 1 if (continuation or in_method_sig) else 0
-                    lvl = base_levels[i] + initial_indent + extra
-                    result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
+                    # In strict-bslls profile, query/text pipe lines keep BSLLS-like
+                    # continuation indentation, but avoid unconditional +2 shift for
+                    # standalone pipe blocks.
+                    if self.profile == "strict-bslls":
+                        if previous_was_pipe and pipe_block_extra is not None:
+                            extra = pipe_block_extra
+                        else:
+                            pipe_context = (
+                                continuation
+                                or in_method_sig
+                                or _line_ends_with_plus(previous_code_line)
+                            )
+                            extra = 2 if pipe_context else 1
+                            pipe_block_extra = extra
+                        lvl = base_levels[i] + initial_indent + extra
+                        result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
+                    else:
+                        extra = 1 if (continuation or in_method_sig) else 0
+                        lvl = base_levels[i] + initial_indent + extra
+                        result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
                 # Update continuation: if the line ends the statement (closing "; or ") we
                 # reset it; otherwise leave continuation unchanged so subsequent | lines are
                 # indented correctly.
                 raw_stripped = stripped.rstrip()
-                if raw_stripped.endswith('";') or raw_stripped.endswith("';"):
+                if (
+                    raw_stripped.endswith('";')
+                    or raw_stripped.endswith("';")
+                    or raw_stripped.endswith('");')
+                    or raw_stripped.endswith("');")
+                ):
                     continuation = False
+                previous_was_pipe = True
                 continue
+            previous_was_pipe_line = previous_was_pipe
+            previous_was_pipe = False
+            pipe_block_extra = None
 
             is_comment_line = stripped.startswith("//")
             pp_match = _PREPROCESSOR_PATTERN.match(stripped)
@@ -1062,9 +1195,44 @@ class BslFormatter:
             kw0 = _get_stripped_keyword(proc_stripped)
             if kw0 in _CONTINUATION_BREAK_FIRST:
                 continuation = False
+            if continuation and _line_is_string_literal_closer(proc_stripped):
+                continuation = False
+            if (
+                self.profile == "strict-bslls"
+                and previous_was_pipe_line
+                and not _line_starts_condition_connector(proc_stripped)
+                and not _line_starts_with_dot(proc_stripped)
+                and not _line_starts_question_call(proc_stripped)
+                and not _line_ends_with_plus(proc_stripped)
+            ):
+                # First code statement after a pipe block should not inherit stale
+                # continuation indentation unless this line explicitly continues.
+                continuation = False
             inside_op_for_assign = inside_operator or _line_opens_operator(proc_stripped)
 
             extra_level = 1 if (continuation or _line_starts_with_dot(proc_stripped)) else 0
+            if inside_operator and _line_starts_condition_connector(proc_stripped):
+                extra_level = max(extra_level, 1)
+            if (
+                self.profile == "strict-bslls"
+                and not inside_operator
+                and _line_starts_condition_connector(proc_stripped)
+                and (
+                    _line_has_unclosed_paren_expression(previous_code_line)
+                    or _line_starts_condition_connector(previous_code_line)
+                    or _line_is_multiline_if_header(previous_code_line)
+                )
+            ):
+                extra_level = max(extra_level, 1)
+            if (
+                self.profile == "strict-bslls"
+                and continuation
+                and (
+                    _line_starts_with_arith_operator(proc_stripped)
+                    or _line_starts_with_arith_operator(previous_code_line)
+                )
+            ):
+                extra_level = max(extra_level, 2)
             # Lines that continue a split Процедура/Функция parameter list (unclosed `(` from header).
             if in_method_sig:
                 extra_level += 1
@@ -1074,34 +1242,30 @@ class BslFormatter:
                 out_level = base + extra_level
                 result.append(self._indent(out_level, indent_size, insert_spaces) + proc_stripped)
 
+            next_continuation = continuation
             if _line_ends_with_semicolon(proc_stripped):
-                continuation = False
+                next_continuation = False
+            elif _line_ends_operator(proc_stripped):
+                # Multi-line logical conditions end at Тогда/Then/Цикл/Do.
+                next_continuation = False
             elif (
                 not in_method_sig
                 and not inside_op_for_assign
                 and _line_has_assignment_without_semicolon(proc_stripped)
                 and not _is_proc_or_func_header(proc_stripped)
             ):
-                continuation = True
+                next_continuation = True
+            elif not in_method_sig and _line_is_multiline_if_header(proc_stripped):
+                next_continuation = True
             elif (
                 not in_method_sig
                 and not _is_proc_or_func_header(proc_stripped)
-                and kw0 in ("если", "if", "иначеесли", "elsif")
-                and _line_has_assignment_without_semicolon(proc_stripped)
-                and ("тогда" not in proc_stripped.lower())
-                and ("then" not in proc_stripped.lower())
+                and _line_has_unclosed_paren_expression(proc_stripped)
             ):
-                # Multiline Если/ИначеЕсли condition: next line may be ИЛИ/…/Тогда even though
-                # this line opens operator context (inside_op_for_assign would block above).
-                continuation = True
-            elif (
-                not in_method_sig
-                and not _is_proc_or_func_header(proc_stripped)
-                and _line_expression_ends_with_open_paren(proc_stripped)
-            ):
-                continuation = True
+                next_continuation = True
             elif _line_starts_with_dot(proc_stripped):
-                continuation = True
+                next_continuation = True
+            continuation = next_continuation
 
             if _line_opens_operator(proc_stripped):
                 inside_operator = True
@@ -1116,6 +1280,7 @@ class BslFormatter:
                 if balance <= 0:
                     in_method_sig = False
                     balance = 0
+            previous_code_line = proc_stripped
 
         if next_line_structural is not None:
             next_struct = next_line_structural
@@ -1158,7 +1323,10 @@ class BslFormatter:
 
     def _process_code_line(self, stripped: str, in_proc_header: bool) -> str:
         """Apply keyword normalisation and operator spacing to a single stripped line."""
-        return _process_code_line_static(stripped, in_proc_header=in_proc_header)
+        processed = _process_code_line_static(stripped, in_proc_header=in_proc_header)
+        if self.profile == "strict-bslls":
+            processed = _strict_bslls_empty_first_arg_spacing(processed)
+        return processed
 
     def _collapse_spaces(self, line: str) -> str:
         """Collapse multiple consecutive spaces in code segments only."""

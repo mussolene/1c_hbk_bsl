@@ -3295,7 +3295,13 @@ _RE_VAR_LOCAL = re.compile(
     re.IGNORECASE,
 )
 
-# Module-level ``Перем Имя Экспорт;`` / ``Var Name Export;`` (BSLLS MissingVariablesDescription)
+# Module-level ``Перем Имя;`` / ``Var Name;`` (BSLLS MissingVariablesDescription)
+_RE_VAR_MODULE = re.compile(
+    r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s*(?:Экспорт|Export)?\s*;",
+    re.IGNORECASE,
+)
+
+# Module-level ``Перем Имя Экспорт;`` / ``Var Name Export;`` (BSLLS ExportVariables)
 _RE_VAR_MODULE_EXPORT = re.compile(
     r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s+(?:Экспорт|Export)\s*;",
     re.IGNORECASE,
@@ -3706,7 +3712,7 @@ _RE_SERVICE_TAG = re.compile(
 
 # BSL215 — MissingParameterDescription: comment section headers and param entry
 _RE_BSL215_PARAMS_SECTION = re.compile(r"^\s*//\s*(?:Параметры|Parameters)\s*:?\s*$", re.IGNORECASE)
-_RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*[-–]", re.UNICODE)
+_RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*-", re.UNICODE)
 _RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
 # BSLLS SpaceAtStartCommentDiagnostic — GOOD_COMMENT_PATTERN_STRICT (develop branch):
@@ -4102,6 +4108,10 @@ _RE_BSL149_CLAUSE_AFTER_FIELDS = re.compile(
 _RE_BSL149_UNION = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)
 # Field has explicit alias: КАК/AS followed by identifier (end of field text)
 _RE_BSL149_HAS_ALIAS = re.compile(r"\b(?:КАК|AS)\s+\w+\s*$", re.IGNORECASE)
+_RE_BSL149_CASE_PART = re.compile(
+    r"^\s*(?:ВЫБОР|CASE|КОГДА|WHEN|ТОГДА|THEN|ИНАЧЕ|ELSE|КОНЕЦ|END)\b",
+    re.IGNORECASE,
+)
 # Query continuation line
 _RE_BSL149_CONTINUATION = re.compile(r"^\s*\|")
 # Inline query comment
@@ -4263,9 +4273,20 @@ def _bsl149_append_missing_alias_diags(
         field = seg.strip().rstrip('";')
         if not field or field == "*":
             continue
+        # Multi-line CASE expressions are often split by query continuation lines.
+        # Skip intermediate CASE fragments; final line with alias is validated normally.
+        if _RE_BSL149_CASE_PART.match(field):
+            continue
+        # WHERE/JOIN condition fragments (`И ...` / `ИЛИ ...`) are not SELECT fields.
+        if re.match(r"^(?:И|ИЛИ|AND|OR)\b", field, re.IGNORECASE):
+            continue
+        # Incomplete expression continuation (opened parenthesis not closed yet).
+        if field.count("(") > field.count(")") and not _RE_BSL149_HAS_ALIAS.search(field):
+            continue
         if _RE_BSL149_SELECT.search(field):
             continue
         if not _RE_BSL149_HAS_ALIAS.search(field):
+            field_for_message = re.sub(r"\s+", "", field) if field and field[0].isdigit() else field
             field_start = 0
             field_end = len(line.rstrip())
             match = re.search(rf"\b{re.escape(field)}\b", line, re.IGNORECASE)
@@ -4279,10 +4300,10 @@ def _bsl149_append_missing_alias_diags(
                     character=field_start,
                     end_line=line_idx + 1,
                     end_character=field_end,
-                    severity=Severity.INFORMATION,
+                    severity=Severity.WARNING,
                     code="BSL149",
                     message=(
-                        f'Полю "{field}" не назначен псевдоним или пропущено ключевое слово КАК'
+                        f'Полю "{field_for_message}" не назначен псевдоним или пропущено ключевое слово КАК'
                     ),
                 )
             )
@@ -4696,6 +4717,13 @@ _BSL208_TECH_ACRONYMS: frozenset[str] = frozenset(
         "TO",
         # Misc abbreviations accepted in 1C names
         "ODATA",
+        # Embedded canonical BSL keyword fragments inside identifiers
+        "ELSIF",
+        "ELSE",
+        "TRY",
+        "EXCEPT",
+        "ENDTRY",
+        "ENDIF",
     }
 )
 
@@ -4725,10 +4753,21 @@ def _bsl208_word_is_standard_tech_name(word: str) -> bool:
         МойHTMLParserКласс  — "Parser" is not a tech acronym
         userIDПоле          — "user" is not a tech acronym
     """
-    latin_runs = _RE_LATIN_RUNS.findall(word)
+    latin_runs = list(_RE_LATIN_RUNS.finditer(word))
     if not latin_runs:
         return False
-    return all(run.upper() in _BSL208_TECH_ACRONYMS for run in latin_runs)
+    # Keep skip conservative: embedded mixed-case tech fragments are usually
+    # reported by BSLLS, but prefix/suffix fragments like Base64... and CNs...
+    # are treated as platform-style names.
+    for m in latin_runs:
+        run = m.group()
+        upper = run.upper()
+        if upper not in _BSL208_TECH_ACRONYMS:
+            return False
+        at_edge = m.start() == 0 or m.end() == len(word)
+        if run != upper and not at_edge:
+            return False
+    return True
 
 
 # Statements that MUST end with ;  — simplified: lines inside procs that look
@@ -4737,7 +4776,7 @@ def _bsl208_word_is_standard_tech_name(word: str) -> bool:
 _RE_STMT_NO_SEMI = re.compile(
     r"^\s*(?:"
     r"(?:\w+(?:\.\w+)*)\s*\([^)]*\)"  # method call
-    r"|(?:\w+(?:\.\w+)*)\s*="  # assignment
+    r"|(?:\w+(?:\.\w+)*)\s*=\s*\S.*"  # assignment with RHS
     r"|(?:Возврат|Return)\s+\S"  # return with value
     r")\s*$",
     re.IGNORECASE,
@@ -5531,6 +5570,8 @@ _RE_COMMENTED_CODE = re.compile(
     r"|For|While|EndDo|Try|Except|EndTry|Return|Var)\b"
     # OR a line that looks like a statement (ends with ; or contains :=)
     r"|\w.*(?:;|:=)"
+    # OR an explanatory comment that still embeds block keywords as code notation
+    r"|.*\b(?:Для|Пока|Если|КонецФункции|Function|For|While|If|EndFunction)\b.*(?:->|\.\.)"
     r")",
     re.IGNORECASE,
 )

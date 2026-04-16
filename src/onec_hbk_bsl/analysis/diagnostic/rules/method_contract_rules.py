@@ -267,6 +267,10 @@ def run_bsl215_missing_parameter_description(
                 break
 
         actual_params_cf = {p.casefold() for p in proc.params}
+        try:
+            header_col = lines[proc.start_idx].index(proc.name)
+        except ValueError:
+            header_col = 0
 
         if params_section_start is None:
             header_line = lines[proc.start_idx]
@@ -274,9 +278,9 @@ def run_bsl215_missing_parameter_description(
                 _diag.Diagnostic(
                     file=path,
                     line=proc.start_idx + 1,
-                    character=header_line.index(proc.name),
+                    character=header_col,
                     end_line=proc.start_idx + 1,
-                    end_character=header_line.index(proc.name) + len(proc.name),
+                    end_character=header_col + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
                     message="Необходимо добавить описание всех параметров метода",
@@ -319,13 +323,27 @@ def run_bsl215_missing_parameter_description(
                     param_lines[pcf] = scan_idx
             scan_idx += 1
 
-        for pname in proc.params:
-            pcf = pname.casefold()
-            if pcf not in documented_cf:
+        missing_params = [pname for pname in proc.params if pname.casefold() not in documented_cf]
+        if missing_params and not documented_cf:
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=proc.start_idx + 1,
+                    character=header_col,
+                    end_line=proc.start_idx + 1,
+                    end_character=header_col + len(proc.name),
+                    severity=_diag.Severity.WARNING,
+                    code="BSL215",
+                    message="Необходимо добавить описание всех параметров метода",
+                )
+            )
+        else:
+            for pname in missing_params:
+                pcf = pname.casefold()
                 param_line_idx = param_lines.get(pcf, proc.start_idx)
                 pl = lines[param_line_idx]
                 m = re.search(r"\b" + re.escape(pname) + r"\b", pl, re.IGNORECASE)
-                col = m.start() if m else 0
+                col = m.start() if m else header_col
                 diags.append(
                     _diag.Diagnostic(
                         file=path,

@@ -39,6 +39,7 @@ BSLLS_DEFAULT_DISABLED_NAMES = frozenset(
         "TooManyReturns",
         "UseSystemInformation",
         "UsingLikeInQuery",
+        "ServerSideExportFormMethod",
     }
 )
 

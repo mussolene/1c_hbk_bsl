@@ -12,6 +12,7 @@ from typing import Any
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 
 
 def ts_tree_ok_for_rules(tree: Any) -> bool:
@@ -40,10 +41,39 @@ def ts_walk_preorder(
         ts_walk_preorder(c, visit)
 
 
+def _root_source_lines(node: Any) -> list[str]:
+    root = getattr(node, "root_node", None)
+    if root is None:
+        cur = node
+        while getattr(cur, "parent", None) is not None:
+            cur = cur.parent
+        root = cur
+    text = getattr(root, "text", None)
+    if isinstance(text, (bytes, bytearray)):
+        return text.decode("utf-8", errors="replace").splitlines()
+    if isinstance(text, str):
+        return text.splitlines()
+    return []
+
+
+def _point_char(lines: list[str], point: Any) -> int:
+    line_idx = int(point[0])
+    byte_col = int(point[1])
+    if 0 <= line_idx < len(lines):
+        return utf8_byte_offset_to_lsp_character(lines[line_idx], byte_col)
+    return byte_col
+
+
 def _span_from(node: Any) -> tuple[int, int, int, int]:
+    lines = _root_source_lines(node)
     s = node.start_point
     e = node.end_point
-    return (s[0] + 1, s[1], e[0] + 1, e[1])
+    return (
+        int(s[0]) + 1,
+        _point_char(lines, s),
+        int(e[0]) + 1,
+        _point_char(lines, e),
+    )
 
 
 def _diag(
@@ -114,9 +144,15 @@ def _double_negation_span(node: Any) -> tuple[int, int, int, int] | None:
     )
     if outer_op is None or inner_op is None:
         return None
+    lines = _root_source_lines(node)
     s = outer_op.start_point
     e = inner_op.end_point
-    return (s[0] + 1, s[1], e[0] + 1, e[1])
+    return (
+        int(s[0]) + 1,
+        _point_char(lines, s),
+        int(e[0]) + 1,
+        _point_char(lines, e),
+    )
 
 
 def diagnostics_bsl060_from_tree(path: str, root: Any) -> list[Any]:
