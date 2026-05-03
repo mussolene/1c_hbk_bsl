@@ -907,7 +907,7 @@ class SymbolIndex:
         else:
             rows = conn.execute(
                 "SELECT name, kind, type_info, synonym_ru FROM meta_members "
-                "WHERE object_id = ? ORDER BY name_lower LIMIT",
+                "WHERE object_id = ? ORDER BY name_lower",
                 (obj_id,),
             ).fetchall()
 
