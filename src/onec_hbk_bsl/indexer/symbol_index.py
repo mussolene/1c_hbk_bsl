@@ -901,13 +901,13 @@ class SymbolIndex:
             prefix_lo = member_prefix.casefold()
             rows = conn.execute(
                 "SELECT name, kind, type_info, synonym_ru FROM meta_members "
-                "WHERE object_id = ? AND name_lower LIKE ? ORDER BY name_lower LIMIT 200",
+                "WHERE object_id = ? AND name_lower LIKE ? ORDER BY name_lower",
                 (obj_id, f"{prefix_lo}%"),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT name, kind, type_info, synonym_ru FROM meta_members "
-                "WHERE object_id = ? ORDER BY name_lower LIMIT 200",
+                "WHERE object_id = ? ORDER BY name_lower LIMIT",
                 (obj_id,),
             ).fetchall()
 
