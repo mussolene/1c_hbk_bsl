@@ -11,7 +11,6 @@ from onec_hbk_bsl.analysis.fix_engine import (
     FIXABLE_RULES,
     FixResult,
     _fix_bsl009_self_assign,
-    _fix_bsl010_useless_return,
     _fix_bsl055_consecutive_blank_lines,
     _fix_bsl060_double_negation,
     apply_fixes,
@@ -68,22 +67,6 @@ class TestFixBsl009SelfAssign:
         diag = _diag("f.bsl", 99, "BSL009")
         result = _fix_bsl009_self_assign(lines, diag)
         assert result is None
-
-
-class TestFixBsl010UselessReturn:
-    def test_deletes_empty_return(self) -> None:
-        lines = ["Процедура Тест()\n", "    А = 1;\n", "    Возврат;\n", "КонецПроцедуры\n"]
-        diag = _diag("f.bsl", 3, "BSL010")
-        result = _fix_bsl010_useless_return(lines, diag)
-        assert result is not None
-        assert len(result) == 3
-        assert not any("Возврат;" in line for line in result)
-
-    def test_does_not_delete_return_with_value(self) -> None:
-        lines = ["Функция Тест()\n", "    Возврат 42;\n", "КонецФункции\n"]
-        diag = _diag("f.bsl", 2, "BSL010")
-        result = _fix_bsl010_useless_return(lines, diag)
-        assert result is None  # safety re-check prevents deletion
 
 
 class TestFixBsl055BlankLines:
@@ -143,7 +126,6 @@ class TestFixBsl060DoubleNegation:
 class TestFixableRulesRegistry:
     def test_registry_contains_expected_rules(self) -> None:
         assert "BSL009" in FIXABLE_RULES
-        assert "BSL010" in FIXABLE_RULES
         assert "BSL055" in FIXABLE_RULES
         assert "BSL060" in FIXABLE_RULES
 

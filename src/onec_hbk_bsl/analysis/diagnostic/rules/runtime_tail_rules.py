@@ -153,11 +153,11 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
                         character=col,
                         end_line=line_no + 1,
                         end_character=end_col,
-                        severity=_diag.Severity.WARNING,
-                        code="BSL197",
-                        message="Есть повторяющийся блок кода в условном операторе",
+                            severity=_diag.Severity.INFORMATION,
+                            code="BSL197",
+                            message='Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода',
+                        )
                     )
-                )
                 reported.add(key)
             else:
                 seen[key] = span
@@ -287,7 +287,7 @@ def run_bsl255_try_number(path: str, lines: list[str]) -> list[Any]:
                         end_character=m.end(),
                         severity=_diag.Severity.WARNING,
                         code="BSL255",
-                        message="«Число()» внутри блока «Попытка» — используйте проверку перед конвертацией",
+                        message="Не следует использовать исключения для приведения значения к типу",
                     )
                 )
     return diags

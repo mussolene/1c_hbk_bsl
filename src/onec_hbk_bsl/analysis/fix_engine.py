@@ -6,7 +6,6 @@ Applies safe, mechanical fixes to BSL source files in-place.
 Supported rules
 ---------------
 BSL009  SelfAssign              — delete the self-assignment line
-BSL010  UselessReturn           — delete the redundant 'Возврат;' line
 BSL055  ConsecutiveBlankLines   — truncate blank-line runs to MAX_BLANK_LINES (1)
 BSL060  DoubleNegation          — replace 'НЕ НЕ expr' with 'expr'
 
@@ -67,9 +66,6 @@ class FixResult:
 
 _MAX_BLANK_LINES = 1
 
-# Regex for a plain empty return (matches the useless-return rule's target)
-_RE_EMPTY_RETURN = re.compile(r"^\s*(?:Возврат|Return)\s*;?\s*$", re.IGNORECASE)
-
 # Regex for double negation
 _RE_DOUBLE_NEG = re.compile(
     r"\b((?:НЕ|Not)\s+(?:НЕ|Not)\s+)",
@@ -84,16 +80,6 @@ def _fix_bsl009_self_assign(lines: list[str], diag: Diagnostic) -> list[str] | N
         return None
     new_lines = lines[:idx] + lines[idx + 1 :]
     return new_lines
-
-
-def _fix_bsl010_useless_return(lines: list[str], diag: Diagnostic) -> list[str] | None:
-    """Delete the redundant bare 'Возврат;' line."""
-    idx = diag.line - 1
-    if idx < 0 or idx >= len(lines):
-        return None
-    if not _RE_EMPTY_RETURN.match(lines[idx]):
-        return None  # safety re-check
-    return lines[:idx] + lines[idx + 1 :]
 
 
 def _fix_bsl055_consecutive_blank_lines(lines: list[str], diag: Diagnostic) -> list[str] | None:
@@ -135,7 +121,6 @@ def _fix_bsl060_double_negation(lines: list[str], diag: Diagnostic) -> list[str]
 
 FIXABLE_RULES: dict[str, FixFn] = {
     "BSL009": _fix_bsl009_self_assign,
-    "BSL010": _fix_bsl010_useless_return,
     "BSL055": _fix_bsl055_consecutive_blank_lines,
     "BSL060": _fix_bsl060_double_negation,
 }

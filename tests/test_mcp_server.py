@@ -576,7 +576,7 @@ class TestBslFix:
         assert result["fixes_applied"] == 0
 
     def test_fix_self_assign_dry(self, tmp_path) -> None:
-        # BSL009 = SelfAssign; bsl_fix only covers {BSL009,BSL010,BSL055,BSL060}
+        # BSL009 = SelfAssign; bsl_fix only covers {BSL009,BSL055,BSL060}
         # Just verify the tool doesn't crash and returns expected structure
         f = tmp_path / "mod.bsl"
         f.write_text("А = 1;\n", encoding="utf-8")

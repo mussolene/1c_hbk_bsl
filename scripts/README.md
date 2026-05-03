@@ -35,3 +35,19 @@ python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500 --profile str
 - throughput по файлам, строкам и мегабайтам
 
 Это именно исследовательский / development-only прогон, не тестовый fixture pipeline.
+
+## BSLLS oracle / parity
+
+Источник правды для сравнения с Java BSLLS — контейнер `1c-develop`, а не
+локальный Java/JAR на машине разработчика.
+
+```bash
+PYTHONPATH=src python scripts/bslls_oracle_parity.py tests/fixtures \
+  --output-dir .agent/reports/bslls-oracle/fixtures
+```
+
+Скрипт запускает `onec-agent bslls` в образе
+`ghcr.io/mussolene/1c-developer:8.5.1.1302`, читает `bsl-json.json`, запускает
+локальные диагностики и пишет `parity.json` с категориями:
+`only_ours`, `only_bslls`, `message_mismatch`, `severity_mismatch`,
+`anchor_mismatch`.

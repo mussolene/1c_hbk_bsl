@@ -3,7 +3,7 @@
 This module centralizes the mapping between the local diagnostics registry and
 the reference BSLLS rule names. It is the runtime source of truth for:
 
-- strict BSLLS-compatible rule profiles
+- strict BSLLS-compatible rule profile
 - machine-readable parity matrix generation for docs/tests
 - categorisation of local-only and duplicate rules
 """
@@ -16,8 +16,7 @@ from pathlib import Path
 from typing import Any
 
 STRICT_BSLLS_PROFILE = "strict-bslls"
-COMPAT_PROFILE = "compat"
-SUPPORTED_PROFILES = frozenset({STRICT_BSLLS_PROFILE, COMPAT_PROFILE})
+SUPPORTED_PROFILES = frozenset({STRICT_BSLLS_PROFILE})
 BSLLS_OS_ONLY_NAMES = frozenset(
     {
         "UnusedParameters",
@@ -49,7 +48,7 @@ def runtime_rule_codes_from_diagnostics_source(source: str) -> set[str]:
 
     Ruff may break ``append`` calls across lines or place the ``\"BSLnnn\"`` token on its
     own line inside a nested tuple; this must stay in sync with tests and
-    ``scripts/generate_bslls_parity_artifact.py``.
+    the current BSLLS oracle/parity tooling.
     """
     raw_keys = set(
         re.findall(r'(?:_rule_tasks|tasks)\.append\(\s*\(\s*["\']([^"\']+)["\']', source)
@@ -109,10 +108,8 @@ def normalize_rule_profile(profile: str | None) -> str | None:
     p = str(profile).strip().casefold()
     if not p:
         return None
-    if p in {"strict", "strict-bslls", "bslls", "bslls-core"}:
+    if p in {"strict", "strict-bslls", "bslls", "bslls-core", "compat", "compatibility", "local", "legacy"}:
         return STRICT_BSLLS_PROFILE
-    if p in {"compat", "compatibility", "local", "legacy"}:
-        return COMPAT_PROFILE
     return None
 
 
@@ -137,7 +134,7 @@ def select_codes_for_profile(
     *,
     default_disabled_codes: set[str] | frozenset[str] = frozenset(),
 ) -> set[str] | None:
-    """Return an implicit select-set for *profile*, or ``None`` for compat/all."""
+    """Return an implicit select-set for *profile*, or ``None`` for direct API/all-rules mode."""
     p = normalize_rule_profile(profile)
     if p == STRICT_BSLLS_PROFILE:
         return set(

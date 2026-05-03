@@ -98,6 +98,18 @@ class TestBslParserExtractErrors:
         tree = parser.parse_content(code)
         assert parser.extract_errors(tree) == []
 
+    @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-bsl required")
+    def test_no_false_positive_keyword_named_member_call(self) -> None:
+        """Member methods whose names are BSL keywords are valid platform API calls."""
+        parser = BslParser()
+        code = """\
+Процедура Тест()
+\tПотокЗаписи.Перейти(ПолученныйДиапазон.Начало, ПозицияВПотоке.Начало);
+КонецПроцедуры
+"""
+        tree = parser.parse_content(code)
+        assert parser.extract_errors(tree) == []
+
 
 class TestBslParserProcedureCount:
     def test_sample_bsl_has_procedures(self, sample_bsl_path: str) -> None:

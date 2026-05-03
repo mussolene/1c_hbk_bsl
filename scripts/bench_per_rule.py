@@ -8,7 +8,7 @@
 Вывод:
     rule      total_ms   mean_ms/run   calls   % total
    BSL007       312.1         104.0       3     79.6%
-   BSL021        18.3           6.1       3      4.7%
+   BSL014        18.3           6.1       3      4.7%
 
 Использование:
     python scripts/bench_per_rule.py                  # все размеры

@@ -46,14 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **BSL149 (AssignAliasFieldsInQuery):** проверка списка полей `ВЫБРАТЬ`/`SELECT` во встроенных запросах (продолжения `|…` и однострочные литералы до ключевого слова секции); по умолчанию включено; см. [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md).
+- **BSL149 (AssignAliasFieldsInQuery):** проверка списка полей `ВЫБРАТЬ`/`SELECT` во встроенных запросах (продолжения `|…` и однострочные литералы до ключевого слова секции); по умолчанию включено; список правил доступен через `onec-hbk-bsl --list-rules`.
 
 ### Fixed
 
 - **`__version__`:** в рабочей копии (`src/onec_hbk_bsl` + `.git`) сначала **setuptools-scm** по корню репозитория, чтобы `pytest` и локальный запуск с `PYTHONPATH=src` не подхватывали устаревшую версию из чужой установки в site-packages.
 
 ### Changed
-- Документация: объединены гайды CST в [docs/cst_policy.md](docs/cst_policy.md); сокращены [docs/BSLLS_PARITY.md](docs/BSLLS_PARITY.md) и [docs/BSLLS_BASELINE.md](docs/BSLLS_BASELINE.md); объединены дублирующие CST-документы в docs/cst_policy.md; убраны битые ссылки на локальные пути вне репозитория; CI без загрузки отчёта в Codecov.
+- Документация: объединены гайды CST в [docs/cst_policy.md](docs/cst_policy.md); parity/baseline notes перенесены в текущие task reports и CLI tooling; объединены дублирующие CST-документы в docs/cst_policy.md; убраны битые ссылки на локальные пути вне репозитория; CI без загрузки отчёта в Codecov.
 
 ### Changed
 - **LSP semantic tokens (подсветка):** логические операторы **И** / **ИЛИ** / **НЕ** учитываются в **любом регистре** (`и`, `ИЛИ`, `нЕ` и т.д.); исправлено написание **ИЛИ** (раньше в шаблоне ошибочно фигурировало «Или» без совпадения с ключевым словом в модуле).

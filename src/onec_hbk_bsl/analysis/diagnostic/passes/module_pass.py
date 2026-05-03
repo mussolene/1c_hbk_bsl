@@ -58,15 +58,6 @@ def extend_module_rule_tasks(
             ("BSL173", lambda: engine._rule_bsl173_deleting_collection_item(path, lines, procs))
         )
 
-    if engine._rule_enabled("BSL280") and idx is not None:
-
-        def task_bsl280() -> list[object]:
-            from onec_hbk_bsl.analysis.metadata_refs import diagnostics_unknown_metadata_objects
-
-            return diagnostics_unknown_metadata_objects(path, content, idx)
-
-        rule_tasks.append(("BSL280", task_bsl280))
-
     if engine._rule_enabled("BSL190"):
         rule_tasks.append(("BSL190", lambda: engine._rule_bsl190_form_data_to_value(path, lines)))
     if engine._rule_enabled("BSL245"):

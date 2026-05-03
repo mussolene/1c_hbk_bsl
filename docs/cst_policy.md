@@ -56,11 +56,11 @@
 
 ### Приоритет переноса на CST
 
-Повышенный приоритет у правил, где построчный regex даёт ложные срабатывания. Кандидаты: условия и циклы (`BSL046`, `BSL073`, вложенность `BSL020`), вызовы в циклах (`BSL033`, `BSL038`, …). Правила вроде **BSL014** или **BSL048** могут оставаться построчными.
+Повышенный приоритет у правил, где построчный regex даёт ложные срабатывания. Кандидаты: вложенность `BSL020`, вызовы в циклах (`BSL033`) и другие BSLLS-совместимые правила. Правило **BSL014** может оставаться построчным.
 
 ## Диагностики CST / regex / гибрид
 
-Реализация: `src/onec_hbk_bsl/analysis/diagnostics_cst.py` и `DiagnosticEngine` в `diagnostics.py`.
+Реализация: `src/onec_hbk_bsl/analysis/diagnostic/cst.py` и `DiagnosticEngine` в `diagnostics.py`.
 
 **Контракт:** CST-путь только если `ts_tree_ok_for_rules(tree)` (без узлов `ERROR` в смысле `tree_has_errors`). Иначе — regex-эвристика.
 
@@ -68,18 +68,9 @@
 |-----|------------------------|----------|------------|
 | BSL004 | да | regex | `try_statement` — пустой блок `Исключение` |
 | BSL009 | да | regex | |
-| BSL018 | да | regex | `rise_error_statement` + строковый литерал |
 | BSL033 | гибрид | regex | тела циклов из CST + `.Выполнить()` |
-| BSL038 | гибрид | regex | как BSL033 + конкатенации |
 | BSL052 | да | regex | |
-| BSL059 | да | regex | |
 | BSL060 | да | regex | двойное `НЕ` в `unary_expression` |
-| BSL061 | да | regex | последний оператор — `break_statement` |
-| BSL070 | да | regex | пустое тело `DO`…`ENDDO` |
-| BSL085 | да | regex | литерал в условии `Если`/`ИначеЕсли` |
-| BSL086 | нет | regex | только regex |
-| BSL091 | да | regex | `Возврат` и лишний `Иначе` |
-| BSL092 | да | regex | пустой `else_clause` |
 
 **Тесты:** `tests/test_diag_cst_bsl009_bsl059.py`, `tests/test_diag_cst_migration.py`.
 

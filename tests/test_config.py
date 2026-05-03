@@ -36,9 +36,9 @@ class TestBslConfigIgnore:
 
 
 class TestBslConfigProfile:
-    def test_profile_none_when_empty(self) -> None:
+    def test_profile_defaults_to_strict_bslls(self) -> None:
         cfg = BslConfig({})
-        assert cfg.profile is None
+        assert cfg.profile == "strict-bslls"
 
     def test_profile_normalized(self) -> None:
         cfg = BslConfig({"profile": "bslls-core"})

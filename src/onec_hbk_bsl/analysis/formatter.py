@@ -808,7 +808,6 @@ def _process_code_line_static(stripped: str, in_proc_header: bool) -> str:
             text = _add_operator_spaces(text, in_proc_header=in_proc_header)
             text = _ensure_comma_space_in_code(text)
         elif ttype == "comment" and text.startswith("//") and result_parts:
-            # BSL136 / BSLLS MissingSpaceBeforeComment: space before trailing //
             prev = result_parts[-1]
             if prev and not prev[-1].isspace():
                 result_parts.append(" ")
@@ -926,7 +925,7 @@ def _expand_block_headers_one_line(lines: list[str]) -> list[str]:
 class BslFormatter:
     """Formats BSL (1C:Enterprise) source code."""
 
-    def __init__(self, *, profile: str = "compat") -> None:
+    def __init__(self, *, profile: str = "strict-bslls") -> None:
         self.profile = profile
         self._cached_layout_text: str | None = None
         self._cached_layout_snapshot = None
@@ -934,7 +933,7 @@ class BslFormatter:
 
     @staticmethod
     def _default_insert_spaces(profile: str, explicit: bool | None) -> bool:
-        """BSLLS ``format`` CLI uses tabs (insertSpaces=false); compat keeps spaces."""
+        """BSLLS ``format`` CLI uses tabs (insertSpaces=false)."""
         if explicit is not None:
             return explicit
         return profile != "strict-bslls"
@@ -1351,6 +1350,5 @@ class BslFormatter:
 # Singleton for use in LSP
 # ---------------------------------------------------------------------------
 
-compat_formatter = BslFormatter(profile="compat")
 strict_bslls_formatter = BslFormatter(profile="strict-bslls")
 default_formatter = strict_bslls_formatter

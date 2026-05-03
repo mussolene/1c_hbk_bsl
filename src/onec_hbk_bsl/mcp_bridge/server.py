@@ -580,8 +580,8 @@ def create_mcp_app() -> FastMCP:
 
     @mcp.tool(
         description=(
-            "Run the full BSL DiagnosticEngine on a file (same rules as LSP: BSL001–BSL280 registry, "
-            "respects BSL_SELECT/BSL_IGNORE env, optional BSL280 with workspace metadata index). "
+            "Run the full BSL DiagnosticEngine on a file (BSLLS-compatible public registry, "
+            "respects BSL_SELECT/BSL_IGNORE env and workspace metadata-aware rules). "
             "Set include_unused=true to also emit BSL-DEAD (unused non-export procedures/functions) "
             "when the symbol index is populated."
         )
@@ -600,7 +600,7 @@ def create_mcp_app() -> FastMCP:
         Run the DiagnosticEngine on *file_path* and return all issues.
 
         Uses the same rule selection as LSP: environment ``BSL_SELECT`` /
-        ``BSL_IGNORE``, the workspace index for metadata-aware rules (e.g. BSL280),
+        ``BSL_IGNORE``, the workspace index for metadata-aware rules,
         and includes ``rule_name`` (BSLLS-style) next to internal ``code``.
 
         Returns:
@@ -745,7 +745,7 @@ def create_mcp_app() -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Return metadata for all built-in BSL lint rules (registry BSL001–BSL280).",
+        description="Return metadata for BSLLS-compatible public BSL lint rules.",
     )
     def bsl_list_rules(
         tag_filter: Annotated[
@@ -1306,14 +1306,13 @@ def create_mcp_app() -> FastMCP:
         """
         Run the FixEngine on *file_path* and return fixed content.
 
-        Fixable rules: BSL009 (trailing whitespace), BSL010 (missing EOF newline),
-        BSL055 (commented-out code removal), BSL060 (tab → spaces).
+        Fixable rules: BSL009, BSL055, BSL060.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
         if not Path(path).exists():
             return {"error": f"File not found: {path}", "file_path": path}
 
-        fixable_codes = {"BSL009", "BSL010", "BSL055", "BSL060"}
+        fixable_codes = {"BSL009", "BSL055", "BSL060"}
         select_set = normalize_rule_code_set(rules.split(",")) if rules else None
         run_codes = (select_set & fixable_codes) if select_set else fixable_codes
 

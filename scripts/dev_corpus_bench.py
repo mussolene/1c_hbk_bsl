@@ -60,7 +60,7 @@ def parse_args(argv: list[str]) -> tuple[Path, str, int | None, int | None, int,
     if not argv:
         raise SystemExit(
             "Usage: dev_corpus_bench.py <corpus_dir> "
-            "[--profile=strict-bslls|compat] [--limit=N] [--sample=N] [--seed=N] [--largest=N]"
+            "[--profile=strict-bslls] [--limit=N] [--sample=N] [--seed=N] [--largest=N]"
         )
 
     root = Path(argv[0]).expanduser().resolve()

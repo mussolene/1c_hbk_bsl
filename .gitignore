@@ -76,11 +76,9 @@ target/
 # Local work directories (not for public distribution)
 loadtest-results/
 reports/
-.codex/
-.claude/
 .agent/
-AGENTS.md
-scripts/
+.agent/oacs/
+.agent/reports/
 
 # Local parity corpus (development-only, regenerate via make corpus-largest-3-sync)
 corpus-largest-3/*

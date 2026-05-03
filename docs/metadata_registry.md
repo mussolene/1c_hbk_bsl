@@ -21,6 +21,6 @@ The single source of truth is [`src/onec_hbk_bsl/indexer/metadata_registry.py`](
 - **Designer «выгрузка в файлы»**: `Configuration.xml` at the config root — fully supported by `crawl_config`.
 - **EDT**: layout with `Configuration/Configuration.mdo` — detected by `find_edt_configuration_marker`; metadata crawl is skipped until a Designer XML export is available (`index_metadata` returns `reason: edt_layout_detected`).
 
-## Lint rule BSL280
+## Diagnostics
 
-When the SQLite index contains metadata (`has_metadata()`), chains like `Справочники.ИмяОбъекта` and `Метаданные.Справочники.ИмяОбъекта` are checked: if `ИмяОбъекта` is missing from the indexed configuration, **BSL280** is reported. Comment lines (`//`) are skipped.
+The metadata index is available to BSLLS-compatible diagnostics that need configuration context.

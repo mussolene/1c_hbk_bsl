@@ -44,12 +44,6 @@ def extend_style_spacing_rule_tasks(
     lines: list[str],
 ) -> None:
     """Append spacing-related style tasks in declaration order."""
-    if engine._rule_enabled("BSL136"):
-        tasks.append(
-            ("BSL136", lambda: engine._rule_bsl136_missing_space_before_comment(path, lines))
-        )
-
-
 def extend_style_token_rule_tasks(
     tasks: list[tuple[str, Callable[[], list[Diagnostic]]]],
     *,

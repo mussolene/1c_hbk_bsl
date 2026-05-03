@@ -12,7 +12,7 @@ Supported keys
 --------------
 select              list[str]   — run only these rule codes
 ignore              list[str]   — always-skip rule codes
-profile             str         — strict-bslls | compat
+profile             str         — strict-bslls
 exclude             list[str]   — glob patterns for excluded paths
 per-file-ignores    dict        — {"pattern": ["BSL001"]}
 format              str         — text | json | sonarqube | sarif
@@ -71,7 +71,7 @@ class BslConfig:
     def profile(self) -> str | None:
         from onec_hbk_bsl.analysis.bslls_parity import normalize_rule_profile
 
-        return normalize_rule_profile(self._data.get("profile"))
+        return normalize_rule_profile(self._data.get("profile") or "strict-bslls")
 
     # ------------------------------------------------------------------
     # File filtering
