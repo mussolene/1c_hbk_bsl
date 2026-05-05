@@ -7,6 +7,12 @@ This runbook covers production usage of:
 
 **Note:** `onec-hbk-bsl` does **not** bundle or call a separate Java analyzer at runtime.
 
+## Public Compatibility Contract
+- Default diagnostics use the BSLLS-compatible public profile. There are no user-facing strict/legacy/compat profile switches.
+- `BSL_SELECT` / `BSL_IGNORE` and `onecHbkBsl.diagnostics.select` / `ignore` only filter the default profile.
+- Formatting uses the BSLLS-oriented defaults exposed by the extension: tabs for `[bsl]`, logical indent width 4, safe on-type indentation on newline only.
+- Parser/line fallback paths are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.
+
 ## Startup And Activation
 - VSCode extension activates on:
   - `onLanguage:bsl`
@@ -65,4 +71,5 @@ When `useDocker` is true, the extension runs:
 - `ruff check` passes.
 - `PYTHONPATH=src pytest -q` passes with coverage threshold.
 - If extension changed, `npm run compile` passes.
+- BSLLS oracle parity checks for selected release corpora have no `only_ours`, `only_bslls`, message, severity, or anchor mismatches.
 - Bench output is collected and reviewed (cold/warm index, diagnostics timing).

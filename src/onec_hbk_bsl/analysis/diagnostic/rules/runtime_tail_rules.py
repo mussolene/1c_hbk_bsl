@@ -108,9 +108,11 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
 
         while j < len(lines) and depth > 0:
             bl = lines[j]
-            if _diag._RE_BSL197_IF.match(bl):
+            is_nested_if = bool(_diag._RE_BSL197_IF.match(bl))
+            is_endif = bool(_diag._RE_BSL197_ENDIF.match(bl))
+            if is_nested_if:
                 depth += 1
-            elif _diag._RE_BSL197_ENDIF.match(bl):
+            elif is_endif:
                 depth -= 1
                 if depth == 0:
                     branches.append(
@@ -133,7 +135,7 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
                 branch_start = j
                 branch_header = bl
             else:
-                if depth == 1:
+                if depth >= 1:
                     current_body.append(bl)
             j += 1
 

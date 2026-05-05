@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Диагностики и форматирование доведены до exact BSLLS oracle-parity на целевых больших корпусах: без `only_ours`, `only_bslls`, message, severity и anchor mismatch.
+- Счетчики `MethodSize`, `CognitiveComplexity` и `CyclomaticComplexity` выровнены по BSLLS-семантике для многострочных сигнатур, comment-only границ тела, вложенных boolean-expression и многострочных строк.
+- Пользовательская документация и README расширения описывают единый BSLLS-совместимый профиль без legacy/compat режимов.
+
 ## [0.7.23] - 2026-05-05
 
 ### Changed

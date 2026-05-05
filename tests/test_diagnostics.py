@@ -72,7 +72,7 @@ class TestBsl002LongProcedure:
 
     def test_long_procedure_triggers_bsl002(self, tmp_path: Path) -> None:
         # Build a procedure with 210 body lines
-        body = "\n".join(f"    // строка {i};" for i in range(210))
+        body = "\n".join(f"    Переменная{i} = {i};" for i in range(210))
         content = f"Процедура ДлиннаяПроцедура()\n{body}\nКонецПроцедуры\n"
         bsl_file = tmp_path / "long.bsl"
         bsl_file.write_text(content, encoding="utf-8")

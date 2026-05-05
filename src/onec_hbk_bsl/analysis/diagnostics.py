@@ -2094,6 +2094,64 @@ _RE_MCCABE_BOOL = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
 # McCabe: ternary operator ?(
 _RE_MCCABE_TERNARY = re.compile(r"\?\s*\(")
 
+
+def _count_mccabe_bool_ops(text: str, paren_depth: int = 0) -> tuple[int, int]:
+    count = 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "(":
+            paren_depth += 1
+            i += 1
+            continue
+        if ch == ")":
+            paren_depth = max(0, paren_depth - 1)
+            i += 1
+            continue
+        match = _RE_MCCABE_BOOL.match(text, i)
+        if match:
+            count += 1 + paren_depth
+            i = match.end()
+            continue
+        i += 1
+    return count, paren_depth
+
+
+def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool = False) -> str:
+    chars = list(line)
+    in_string = in_string_at_start
+    i = 0
+    while i < len(chars):
+        ch = chars[i]
+        if not in_string and ch == "/" and i + 1 < len(chars) and chars[i + 1] == "/":
+            for j in range(i, len(chars)):
+                chars[j] = " "
+            break
+        if ch == '"':
+            in_string = not in_string
+            i += 1
+            continue
+        if in_string:
+            chars[i] = " "
+        i += 1
+    return "".join(chars)
+
+
+def _count_cognitive_bool_ops(text: str, last_op: str | None = None) -> tuple[int, str | None]:
+    """BSLLS/Sonar cognitive complexity counts boolean operator runs, not every token."""
+    count = 0
+    current = last_op
+    for match in _RE_MCCABE_BOOL.finditer(text):
+        op = match.group(0).casefold()
+        if op in {"and", "и"}:
+            op = "and"
+        else:
+            op = "or"
+        if op != current:
+            count += 1
+            current = op
+    return count, current
+
 # Nesting open/close tokens (re-use _CC_OPEN/_CC_CLOSE shapes)
 _RE_NEST_OPEN = re.compile(
     # BSLLS NestedStatements counts only control-flow branches, NOT Try/Except
@@ -4270,7 +4328,7 @@ _RE_COMMENTED_CODE = re.compile(
     # are too noisy and BSLLS CodeRecognizer does not treat them as code.
     r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Перем"
     r"|Function|Procedure|EndProcedure|EndFunction|Var)\b"
-    r"|(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE)\b"
+    r"|(?:ВЫБРАТЬ|SELECT)\b"
     # OR a line that looks like a statement (ends with ; or contains :=)
     r"|\w.*(?:;|:=)"
     r")",
@@ -5031,15 +5089,41 @@ def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -
     """
     complexity = 0
     nesting = 0
+    bool_last_op: str | None = None
+    bool_expr_open = False
+    string_states = _build_line_string_states(lines)
     for i in range(start_idx + 1, min(end_idx, len(lines))):
         line = lines[i]
         stripped = line.strip()
         if stripped.startswith("//"):
             continue
         if line.lstrip().startswith("|"):
+            bool_last_op = None
+            bool_expr_open = False
             continue
-        line_no_strings = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
-        complexity += len(_RE_MCCABE_BOOL.findall(line_no_strings))
+        line_no_strings = _mask_strings_and_comments_for_counter(
+            line,
+            string_states[i] if i < len(string_states) else False,
+        )
+        starts_with_bool = bool(
+            re.match(r"^\s*(?:И|And|ИЛИ|Or)\b", line_no_strings, re.IGNORECASE)
+        )
+        line_bool_count, bool_last_op = _count_cognitive_bool_ops(
+            line_no_strings,
+            bool_last_op if (bool_expr_open or starts_with_bool) else None,
+        )
+        complexity += line_bool_count
+        opens_control_expr = bool(
+            re.search(r"\b(?:Если|If|ИначеЕсли|ElsIf|Пока|While)\b", line_no_strings, re.IGNORECASE)
+            and not re.search(r"\b(?:Тогда|Then|Цикл|Do)\b", line_no_strings, re.IGNORECASE)
+        )
+        opens_assignment_expr = bool(re.search(r"[=+\-*/]\s*$", line_no_strings))
+        bool_expr_open = opens_control_expr or opens_assignment_expr or bool(
+            (bool_expr_open or starts_with_bool)
+            and not re.search(r"(?:;|\b(?:Тогда|Then|Цикл|Do)\b)\s*$", line_no_strings, re.IGNORECASE)
+        )
+        if not bool_expr_open:
+            bool_last_op = None
         complexity += len(_RE_MCCABE_TERNARY.findall(line_no_strings)) * (1 + nesting)
         if _CC_OPEN.match(line):
             complexity += 1 + nesting
@@ -5060,18 +5144,25 @@ def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> i
     Пока/While, Исключение/Except, plus each И/And and ИЛИ/Or boolean operator.
     """
     cc = 1
+    paren_depth = 0
+    string_states = _build_line_string_states(lines)
     for i in range(start_idx + 1, min(end_idx, len(lines))):
         line = lines[i]
         stripped = line.strip()
         if stripped.startswith("//"):
             continue
         if line.lstrip().startswith("|"):
-            cc += len(re.findall(r"\b(?:ВЫБОР|CASE|КОГДА|WHEN)\b", line, re.IGNORECASE))
+            paren_depth = 0
             continue
-        if _RE_MCCABE_BRANCH.match(line):
+        line_no_strings = _mask_strings_and_comments_for_counter(
+            line,
+            string_states[i] if i < len(string_states) else False,
+        )
+        if _RE_MCCABE_BRANCH.match(line_no_strings):
             cc += 1
-        cc += len(_RE_MCCABE_BOOL.findall(line))
-        cc += len(_RE_MCCABE_TERNARY.findall(line))
+        bool_count, paren_depth = _count_mccabe_bool_ops(line_no_strings, paren_depth)
+        cc += bool_count
+        cc += len(_RE_MCCABE_TERNARY.findall(line_no_strings))
     return cc
 
 

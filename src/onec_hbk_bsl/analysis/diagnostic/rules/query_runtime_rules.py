@@ -63,7 +63,9 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
                 m = _diag._RE_BSL149_SELECT.search(content)
                 before_select = content[: m.start()]
                 paren_depth += before_select.count("(") - before_select.count(")")
-                if paren_depth > 0:
+                if skip_select:
+                    in_select = False
+                elif paren_depth > 0:
                     in_select = True
                 else:
                     in_select = not skip_select
@@ -166,7 +168,9 @@ def run_bsl149_assign_alias_fields_in_query(
             m = _diag._RE_BSL149_SELECT.search(content)
             before_select = content[: m.start()]
             paren_depth += before_select.count("(") - before_select.count(")")
-            if paren_depth > 0:
+            if skip_select:
+                in_select = False
+            elif paren_depth > 0:
                 in_select = True
             else:
                 in_select = not skip_select

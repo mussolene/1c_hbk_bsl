@@ -366,6 +366,7 @@ def run_bsl206_207_209_query_join_diagnostics(
             continue
 
         pending_datasource = False
+        pending_join_datasource = False
         join_on_active = False
         join_buffer = ""
 
@@ -374,6 +375,7 @@ def run_bsl206_207_209_query_join_diagnostics(
                 join_on_active = False
                 join_buffer = ""
                 pending_datasource = False
+                pending_join_datasource = False
 
             same_line_datasource = bool(
                 re.search(r"\b(?:ИЗ|FROM)\s*$", head, re.IGNORECASE)
@@ -386,9 +388,14 @@ def run_bsl206_207_209_query_join_diagnostics(
                     re.IGNORECASE,
                 )
             )
+            join_datasource = bool(
+                pending_join_datasource
+                or re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
+                or _diag._RE_QUERY_JOIN_KEYWORD.search(head)
+            )
 
             if pending_datasource or same_line_datasource:
-                if "BSL206" in enabled:
+                if "BSL206" in enabled and join_datasource:
                     subquery_match = _diag._RE_QUERY_DATASOURCE_SUBQUERY.search(head)
                     if subquery_match:
                         diags.append(
@@ -422,6 +429,10 @@ def run_bsl206_207_209_query_join_diagnostics(
             pending_datasource = bool(
                 re.search(r"\b(?:ИЗ|FROM)\s*$", head, re.IGNORECASE)
                 or re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
+                or _diag._RE_QUERY_JOIN_KEYWORD.search(head)
+            ) and not _diag._RE_QUERY_ON_KEYWORD.search(head)
+            pending_join_datasource = bool(
+                re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
                 or _diag._RE_QUERY_JOIN_KEYWORD.search(head)
             ) and not _diag._RE_QUERY_ON_KEYWORD.search(head)
 

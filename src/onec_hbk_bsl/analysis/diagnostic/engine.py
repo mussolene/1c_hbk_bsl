@@ -646,11 +646,22 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for proc in procs:
+            body_start_idx = proc.start_idx + 1
+            header_balance = 0
+            for idx in range(proc.start_idx, min(proc.end_idx, len(lines))):
+                header_part = _mask_strings_and_comments_for_counter(
+                    lines[idx],
+                    False,
+                )
+                header_balance += header_part.count("(") - header_part.count(")")
+                if header_balance <= 0 and ")" in header_part:
+                    body_start_idx = idx + 1
+                    break
             first_body = None
             last_body = None
-            for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+            for idx in range(body_start_idx, min(proc.end_idx, len(lines))):
                 stripped = lines[idx].strip()
-                if not stripped:
+                if not stripped or stripped.startswith("//"):
                     continue
                 if first_body is None:
                     first_body = idx
@@ -1192,12 +1203,26 @@ class DiagnosticEngine:
         reported_lengths: list[int] | None = None
         if snapshot is not None:
             reported_lengths = []
-            for raw in snapshot.content.splitlines(True):
+            raw_line_source: list[str]
+            if "\r" not in snapshot.content and Path(path).is_file():
+                try:
+                    raw_line_source = [
+                        raw.decode("utf-8", errors="ignore")
+                        for raw in Path(path).read_bytes().splitlines(True)
+                    ]
+                except OSError:
+                    raw_line_source = snapshot.content.splitlines(True)
+                if len(raw_line_source) != len(snapshot.content.splitlines()):
+                    raw_line_source = snapshot.content.splitlines(True)
+            else:
+                raw_line_source = snapshot.content.splitlines(True)
+            for raw in raw_line_source:
                 raw_no_lf = raw.rstrip("\n")
                 raw_no_eol = raw_no_lf.rstrip("\r")
-                visible_len = len(raw_no_eol.rstrip())
-                if raw_no_lf.endswith("\r") and raw_no_eol == raw_no_eol.rstrip():
-                    visible_len += 1
+                if raw_no_lf.endswith("\r"):
+                    visible_len = len(raw_no_eol.rstrip("\t"))
+                else:
+                    visible_len = len(raw_no_eol.rstrip())
                 reported_lengths.append(visible_len)
         for idx, line in enumerate(lines):
             if line.lstrip().startswith("|"):
