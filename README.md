@@ -35,6 +35,57 @@
 
 ---
 
+## Быстрый старт
+
+### VS Code / Cursor
+
+1. Установите расширение `mussolene.1c-hbk-bsl`.
+2. Откройте репозиторий с `.bsl` / `.os` файлами.
+3. Дождитесь запуска LSP: в панели **Problems** появятся диагностики `onec-hbk-bsl · BSL…`, а `Format Document` будет использовать BSLLS-ориентированный форматтер.
+
+Минимальные настройки для обычной работы:
+
+```json
+{
+  "[bsl]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": false
+  }
+}
+```
+
+### CLI / CI
+
+```bash
+uv tool install onec-hbk-bsl
+onec-hbk-bsl --check /path/to/1c-project
+onec-hbk-bsl --check /path/to/1c-project --format sarif > bsl-results.sarif
+```
+
+По умолчанию CLI использует тот же BSLLS-совместимый набор правил. Для узких прогонов задавайте фильтры:
+
+```bash
+BSL_SELECT=BSL001,BSL011 onec-hbk-bsl --check .
+BSL_IGNORE=BSL012 onec-hbk-bsl --check .
+```
+
+Конфигурация проекта читается из `onec-hbk-bsl.toml` или секции `[tool."onec-hbk-bsl"]` в `pyproject.toml`; явные CLI/env параметры имеют приоритет.
+
+### Docker LSP
+
+```json
+{
+  "onecHbkBsl.useDocker": true,
+  "onecHbkBsl.dockerContainer": "onec-hbk-bsl-default"
+}
+```
+
+Контейнер должен быть заранее запущен и видеть workspace по тому же пути, что открыт в редакторе.
+
+---
+
 ## Установка в VSCode
 
 Установите расширение из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl):
