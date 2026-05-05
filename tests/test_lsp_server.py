@@ -64,6 +64,22 @@ class TestBslLanguageServerInit:
         ls = BslLanguageServer()
         assert isinstance(ls.diagnostics_engine, DiagnosticEngine)
 
+    def test_server_defaults_diagnostics_to_strict_bslls(
+        self, tmp_path: Path, monkeypatch: object
+    ) -> None:
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        monkeypatch.delenv("BSL_PROFILE", raising=False)
+        from onec_hbk_bsl.analysis.bslls_parity import strict_bslls_rule_codes
+        from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE
+        from onec_hbk_bsl.lsp.server import BslLanguageServer
+
+        ls = BslLanguageServer()
+        expected = strict_bslls_rule_codes(
+            _BSLLS_NAME_TO_CODE,
+            default_disabled_codes=ls.diagnostics_engine.DEFAULT_DISABLED,
+        )
+        assert ls.diagnostics_engine._select == set(expected)
+
     def test_server_has_empty_docs_cache(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from onec_hbk_bsl.lsp.server import BslLanguageServer

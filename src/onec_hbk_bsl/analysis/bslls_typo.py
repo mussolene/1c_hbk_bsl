@@ -78,12 +78,24 @@ _PARITY_TOKEN_SUPPRESS = frozenset(
         "физлицо",
         "сокр",
         "мульти",
+        "маркетплейс",
+        "маркетплейса",
+        "маркетплейсе",
+        "маркетплейсом",
+        "маркетплейсы",
+        "маркетплейсов",
+        "маркетплейсами",
+        "буд",
+        "кор",
+        "прош",
+        "нулевка",
+        "салатовый",
+        "субконто",
     }
 )
 _PARITY_TOKEN_FORCE = frozenset(
     {
         "автонастройки",
-        "неопределено",
         "снилс",
         "криптопровайдера",
         "регл",
@@ -105,6 +117,10 @@ _PARITY_TOKEN_FORCE = frozenset(
         "росалкогольтабакконтроля",
         "минморфлота",
         "росприроднадзора",
+        "физлица",
+        "юрлица",
+        "декапитализировать",
+        "субконто",
     }
 )
 
@@ -440,6 +456,38 @@ def spellcheck_typo_diagnostics(
                 anchor_kind="code",
             )
 
+    # BSLLS emits Typo on method names in corpora; keep this narrow and only
+    # for force-listed tokens used for parity alignment.
+    header_re = re.compile(
+        r"^\s*(?:Процедура|Функция|Procedure|Function)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)",
+        re.IGNORECASE,
+    )
+    source_text = source_bytes.decode("utf-8", errors="replace")
+    for line_no, line in enumerate(source_text.splitlines(), start=1):
+        m = header_re.search(line)
+        if m is None:
+            continue
+        name = m.group(1)
+        for part in split_by_character_type_camel_case(name):
+            norm = part.casefold()
+            if norm not in _PARITY_TOKEN_FORCE:
+                continue
+            if len(part) < cfg.min_word_length:
+                continue
+            start_char = m.start(1)
+            diags.append(
+                {
+                    "file": path,
+                    "line": line_no,
+                    "character": start_char,
+                    "end_line": line_no,
+                    "end_character": start_char + len(name),
+                    "code": "BSL256",
+                    "message": cfg.message_fmt % part,
+                }
+            )
+            break
+
     return diags
 
 
@@ -484,19 +532,20 @@ def _emit_parts_for_source_text(
         is_end=True,
     )
     for part in split_by_character_type_camel_case(inner):
+        forced = part.casefold() in _PARITY_TOKEN_FORCE
         # BSLLS exception list applies to concrete token fragments too, not only
         # to the full literal/identifier text.
-        if part.casefold() in cfg.words_to_ignore:
+        if not forced and part.casefold() in cfg.words_to_ignore:
             continue
-        if part.casefold() in exact_ignore:
+        if not forced and part.casefold() in exact_ignore:
             continue
-        if part.casefold() in _CORPUS_TOKEN_EXACT_IGNORE:
+        if not forced and part.casefold() in _CORPUS_TOKEN_EXACT_IGNORE:
             continue
-        if part.casefold() in _PARITY_TOKEN_SUPPRESS:
+        if not forced and part.casefold() in _PARITY_TOKEN_SUPPRESS:
             continue
         if len(part) < cfg.min_word_length:
             continue
-        if part.casefold() not in _PARITY_TOKEN_FORCE and not checker(part):
+        if not forced and not checker(part):
             continue
         out.append(
             {

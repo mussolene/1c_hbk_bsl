@@ -329,11 +329,15 @@ def run_bsl258_union_without_all(path: str, lines: list[str]) -> list[Any]:
     in_query = False
     for idx, line in enumerate(lines):
         stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
         if '|"' in line or line.strip().startswith("|"):
             in_query = True
         if stripped.endswith('";') or (stripped.endswith('"') and "ВЫБРАТЬ" not in stripped):
             in_query = False
-        m = re_union.search(line if in_query else line)
+        if not in_query and "|" not in line and '"' not in line:
+            continue
+        m = re_union.search(line)
         if m:
             diags.append(
                 _diag.Diagnostic(
@@ -342,9 +346,9 @@ def run_bsl258_union_without_all(path: str, lines: list[str]) -> list[Any]:
                     character=m.start(),
                     end_line=idx + 1,
                     end_character=m.end(),
-                    severity=_diag.Severity.WARNING,
+                    severity=_diag.Severity.INFORMATION,
                     code="BSL258",
-                    message="«ОБЪЕДИНИТЬ» без «ВСЕ» выполняет дедупликацию — используйте «ОБЪЕДИНИТЬ ВСЕ» если дубли допустимы",
+                    message="Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ",
                 )
             )
     return diags
@@ -402,7 +406,37 @@ def run_bsl234_query_nested_fields_by_dot(path: str, lines: list[str]) -> list[A
     _diag = _diag_module()
     diags: list[Any] = []
     chain_re = re.compile(r"(?<![\w.])([A-Za-zА-Яа-я_]\w*(?:\.[A-Za-zА-Яа-я_]\w*){2,})")
+    cast_field_re = re.compile(
+        r"(?:ВЫРАЗИТЬ|CAST)\s*\(\s*([A-Za-zА-Яа-я_]\w*\.[A-Za-zА-Яа-я_]\w*)\s+"
+        r"(?:КАК|AS)\b[^)]*\)\s*\.[A-Za-zА-Яа-я_]\w*",
+        re.IGNORECASE,
+    )
+    cast_nested_field_re = re.compile(
+        r"(?:ВЫРАЗИТЬ|CAST)\s*\([^)]*\)\s*\.[A-Za-zА-Яа-я_]\w*\.[A-Za-zА-Яа-я_]\w*",
+        re.IGNORECASE,
+    )
+    one_dot_chain_re = re.compile(r"(?<![\w.])([A-Za-zА-Яа-я_]\w*\.[A-Za-zА-Яа-я_]\w*)(?![\w.])")
     value_re = re.compile(r"(?:ЗНАЧЕНИЕ|VALUE)\s*\(", re.IGNORECASE)
+    metadata_roots = {
+        "документ",
+        "document",
+        "справочник",
+        "catalog",
+        "перечисление",
+        "enum",
+        "регистрсведений",
+        "informationregister",
+        "регистрнакопления",
+        "accumulationregister",
+        "регистрбухгалтерии",
+        "accountingregister",
+        "плансчетов",
+        "chartofaccounts",
+        "планвидовхарактеристик",
+        "chartofcharacteristictypes",
+        "планрасчетавидов",
+        "chartofcalculationtypes",
+    }
 
     def mask_value_calls(text: str) -> str:
         chars = list(text)
@@ -428,29 +462,89 @@ def run_bsl234_query_nested_fields_by_dot(path: str, lines: list[str]) -> list[A
             pos = end
         return "".join(chars)
 
+    seen: set[tuple[int, int, str]] = set()
+    in_group_by = False
+    in_where = False
+
+    def add_diag(line_no: int, start: int, end: int) -> None:
+        key = (line_no, start, "BSL234")
+        if key in seen:
+            return
+        seen.add(key)
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=line_no,
+                character=start,
+                end_line=line_no,
+                end_character=end,
+                severity=_diag.Severity.WARNING,
+                code="BSL234",
+                message="Обнаружено разыменование ссылочного поля",
+            )
+        )
+
     for line_no, line in enumerate(lines, start=1):
         stripped = line.lstrip()
         if not stripped.startswith("|"):
+            in_group_by = False
+            in_where = False
             continue
         masked = mask_value_calls(line)
+        query_text = stripped[1:].strip()
+        if re.match(r"^(?:ВЫБРАТЬ|SELECT)\b", query_text, re.IGNORECASE):
+            in_group_by = False
+            in_where = False
+        if re.match(r"^(?:СГРУППИРОВАТЬ\s+ПО|GROUP\s+BY)\b", query_text, re.IGNORECASE):
+            in_group_by = True
+            in_where = False
+            continue
+        if re.match(r"^(?:ГДЕ|WHERE)\b", query_text, re.IGNORECASE):
+            in_where = True
+            in_group_by = False
+            continue
+        if re.match(
+            r"^(?:ИЗ|FROM|УПОРЯДОЧИТЬ\s+ПО|ORDER\s+BY|ИТОГИ|TOTALS|;)\b",
+            query_text,
+            re.IGNORECASE,
+        ):
+            in_group_by = False
+            in_where = False
+
+        if in_where:
+            for match in cast_field_re.finditer(masked):
+                add_diag(line_no, match.start(1), match.end(1))
+
+        for match in cast_nested_field_re.finditer(masked):
+            add_diag(line_no, match.start(0), match.end(0))
+
+        if re.search(r"\)\s+(?:В|IN)\b", masked, re.IGNORECASE):
+            for match in one_dot_chain_re.finditer(masked):
+                root = match.group(1).split(".", 1)[0].casefold()
+                if root in metadata_roots:
+                    continue
+                add_diag(line_no, match.start(1), match.end(1))
+
+        if in_group_by:
+            for match in one_dot_chain_re.finditer(masked):
+                root = match.group(1).split(".", 1)[0].casefold()
+                if not ("обороты" in root or "turnovers" in root):
+                    continue
+                trailing = masked[match.end(1) :]
+                if re.match(r"^\s+(?:КАК|AS)\b", trailing, re.IGNORECASE):
+                    continue
+                add_diag(line_no, match.start(1), match.end(1))
+
         for match in chain_re.finditer(masked):
+            chain = match.group(1)
             trailing = masked[match.end(1) :]
             if re.match(r"^\s+(?:КАК|AS)\b", trailing, re.IGNORECASE):
-                continue
+                first = chain.split(".", 1)[0].casefold()
+                if first in metadata_roots:
+                    continue
             if re.match(r"^\s*\(", trailing):
                 continue
-            diags.append(
-                _diag.Diagnostic(
-                    file=path,
-                    line=line_no,
-                    character=match.start(1),
-                    end_line=line_no,
-                    end_character=match.end(1),
-                    severity=_diag.Severity.WARNING,
-                    code="BSL234",
-                    message="Обнаружено разыменование ссылочного поля",
-                )
-            )
+            add_diag(line_no, match.start(1), match.end(1))
     return diags
 
 

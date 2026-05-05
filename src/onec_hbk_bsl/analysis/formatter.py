@@ -74,6 +74,13 @@ _KEYWORDS: dict[str, str] = {
     "неопределено": "Неопределено",
     "типзнч": "ТипЗнч",
     "тип": "Тип",
+    "асинх": "Асинх",
+    "знач": "Знач",
+    "вызватьисключение": "ВызватьИсключение",
+    "перейти": "Перейти",
+    "добавитьобработчик": "ДобавитьОбработчик",
+    "удалитьобработчик": "УдалитьОбработчик",
+    "ждать": "Ждать",
     # EN
     "procedure": "Procedure",
     "endprocedure": "EndProcedure",
@@ -108,11 +115,18 @@ _KEYWORDS: dict[str, str] = {
     "false": "False",
     "undefined": "Undefined",
     "null": "Null",
-    "and": "And",
-    "or": "Or",
-    "not": "Not",
+    "and": "AND",
+    "or": "OR",
+    "not": "NOT",
     "typeof": "TypeOf",
     "type": "Type",
+    "async": "Async",
+    "val": "Val",
+    "raise": "Raise",
+    "goto": "Goto",
+    "addhandler": "AddHandler",
+    "removehandler": "RemoveHandler",
+    "await": "Await",
     # Boolean-like RU (и/или/не are short words — handle them last to avoid collision)
     "и": "И",
     # BSLLS uses uppercase ИЛИ for the logical operator (matches typical 1C style).
@@ -218,6 +232,14 @@ _CMP_OP_RE = re.compile(r"\s*(<>|<=|>=|<|>)\s*")
 _EQ_OP_RE = re.compile(r"(?<![!<>=:])(\s*)(=)(\s*)(?![>])")
 # Arithmetic operators +, -, *, / — but not unary minus at line start or after ( , =
 _ARITH_OP_RE = re.compile(r"(?<=[\w\d\)])\s*([+\-*/])\s*(?=[\w\d\(\"А-ЯЁа-яё])", re.UNICODE)
+_STRICT_BINARY_PLUS_RE = re.compile(
+    r"(?<=[A-Za-zА-ЯЁа-яё0-9_\]\)\"])\s*\+\s*(?=[A-Za-zА-ЯЁа-яё0-9_\[\(\"])",
+    re.UNICODE,
+)
+_STRICT_CODE_TRAILING_PLUS_RE = re.compile(r"\s*\+\s*$")
+_STRICT_CODE_LEADING_PLUS_RE = re.compile(r"^\s*\+\s*")
+_STRICT_UNARY_MINUS_RE = re.compile(r"(?:(?<=[(,=])|^)\s*-\s+(?=[A-Za-zА-ЯЁа-яё0-9_(])")
+_STRICT_QUESTION_CALL_RE = re.compile(r"\?\s+\(")
 
 # Canonical case for preprocessor words
 _PP_CANONICAL: dict[str, str] = {
@@ -376,6 +398,18 @@ def _precompute_multiline_doc_comment_stripped(lines: list[str]) -> dict[int, st
     return out
 
 
+def _precompute_strict_comment_block_stripped(lines: list[str]) -> dict[int, str]:
+    """Preserve stripped full-line comment text inside BSLLS-style contiguous blocks."""
+    out: dict[int, str] = {}
+    for start, end in _find_contiguous_full_line_comment_runs(lines):
+        for idx in range(start, end + 1):
+            stripped = _strip_indent(lines[idx].rstrip())
+            if stripped.startswith("//") and not stripped[2:].strip():
+                stripped = "//"
+            out[idx] = stripped
+    return out
+
+
 @functools.lru_cache(maxsize=16_384)
 def _tokenize(line: str) -> tuple[tuple[str, str], ...]:
     """Split a line into tokens of types: 'string', 'comment', 'code'.
@@ -474,12 +508,49 @@ def _add_operator_spaces(code: str, in_proc_header: bool) -> str:
     # Comparison operators first (handles <>, <=, >= before < and >)
     result = _CMP_OP_RE.sub(lambda m: f" {m.group(1)} ", code)
 
-    # Skip = spacing inside proc headers (default param values like А = 0)
-    if not in_proc_header:
-        result = _EQ_OP_RE.sub(lambda m: f" {m.group(2)} ", result)
+    result = _EQ_OP_RE.sub(lambda m: f" {m.group(2)} ", result)
+    result = _ARITH_OP_RE.sub(r" \1 ", result)
 
     result = _squeeze_whitespace_runs(result)
     return result
+
+
+def _strict_bslls_operator_spacing(line: str) -> str:
+    """Strict BSLLS expression spacing that can span string/code token boundaries."""
+    tokens = list(_tokenize(line))
+    if not tokens:
+        return line
+    out: list[str] = []
+    for idx, (ttype, text) in enumerate(tokens):
+        if ttype == "code":
+            prev_sig = next(
+                (tokens[j][0] for j in range(idx - 1, -1, -1) if tokens[j][1]),
+                "",
+            )
+            next_sig = next(
+                (tokens[j][0] for j in range(idx + 1, len(tokens)) if tokens[j][1]),
+                "",
+            )
+            text = _STRICT_QUESTION_CALL_RE.sub("?(", text)
+            code_text = text
+
+            def _unary_minus_repl(match: re.Match[str], source: str = code_text) -> str:
+                return "-" if match.start() == 0 or source[match.start() - 1] == "(" else " -"
+
+            text = _STRICT_UNARY_MINUS_RE.sub(_unary_minus_repl, text)
+            text = _STRICT_BINARY_PLUS_RE.sub(" + ", text)
+            text = re.sub(
+                r"(?<=[A-Za-zА-ЯЁа-яё0-9_~])\s*:\s*(?=\S)",
+                " : ",
+                text,
+                flags=re.UNICODE,
+            )
+            if prev_sig in {"string", "code"}:
+                text = _STRICT_CODE_LEADING_PLUS_RE.sub(" + ", text)
+            if next_sig in {"string", "code"}:
+                text = _STRICT_CODE_TRAILING_PLUS_RE.sub(" + ", text)
+        out.append(text)
+    return "".join(out)
 
 
 def _strip_indent(line: str) -> str:
@@ -493,6 +564,19 @@ def _get_stripped_keyword(line: str) -> str:
     if m:
         return m.group(1).lower()
     return ""
+
+
+def _starts_with_async_proc_or_func(line: str) -> bool:
+    code = _code_fragment(line).strip()
+    if not code:
+        return False
+    return bool(
+        re.match(
+            r"^(асинх|async)\s+(процедура|function|функция|procedure)\b",
+            code,
+            re.IGNORECASE | re.UNICODE,
+        )
+    )
 
 
 def _get_last_keyword(line: str) -> str:
@@ -509,7 +593,9 @@ def _get_last_keyword(line: str) -> str:
 def _is_proc_or_func_header(line: str) -> bool:
     """True if line starts a procedure or function definition."""
     first = _get_stripped_keyword(line)
-    return first in ("процедура", "функция", "procedure", "function")
+    return first in ("процедура", "функция", "procedure", "function") or _starts_with_async_proc_or_func(
+        line
+    )
 
 
 def _indent_control(stripped: str) -> tuple[bool, bool]:
@@ -523,6 +609,8 @@ def _indent_control(stripped: str) -> tuple[bool, bool]:
 
     dedent_before = first_word in _DEDENT_BEFORE
     indent_after = first_word in _INDENT_AFTER_STARTS or last_word in _INDENT_AFTER_ENDS
+    if not indent_after and _starts_with_async_proc_or_func(stripped):
+        indent_after = True
 
     # Same-level openers are dedented first, then open a new nested block.
     # For ElseIf/When this must happen only when the condition is closed
@@ -689,6 +777,24 @@ def _strict_bslls_empty_first_arg_spacing(stripped: str) -> str:
     for ttype, text in tokens:
         if ttype == "code":
             text = _EMPTY_FIRST_ARG_RE.sub("( ,", text)
+        result_parts.append(text)
+    return "".join(result_parts)
+
+
+def _strict_bslls_empty_arg_comma_spacing(stripped: str) -> str:
+    """Keep one space before a non-empty argument after repeated empty arguments."""
+    tokens = _tokenize(stripped)
+    result_parts: list[str] = []
+    pattern = re.compile(r"((?:,\s*){2,},)(?=[^\s,)])")
+    for idx, (ttype, text) in enumerate(tokens):
+        if ttype == "code":
+            text = pattern.sub(lambda m: f"{m.group(1)} ", text)
+            next_sig = next(
+                (tokens[j][0] for j in range(idx + 1, len(tokens)) if tokens[j][1]),
+                "",
+            )
+            if next_sig in {"string", "code"} and re.search(r"(,\s*){2,},$", text):
+                text += " "
         result_parts.append(text)
     return "".join(result_parts)
 
@@ -926,6 +1032,8 @@ class BslFormatter:
     """Formats BSL (1C:Enterprise) source code."""
 
     def __init__(self, *, profile: str = "strict-bslls") -> None:
+        if profile != "strict-bslls":
+            raise ValueError("BslFormatter supports only BSLLS formatting")
         self.profile = profile
         self._cached_layout_text: str | None = None
         self._cached_layout_snapshot = None
@@ -936,7 +1044,7 @@ class BslFormatter:
         """BSLLS ``format`` CLI uses tabs (insertSpaces=false)."""
         if explicit is not None:
             return explicit
-        return profile != "strict-bslls"
+        return False
 
     def format(  # noqa: A003
         self,
@@ -948,6 +1056,7 @@ class BslFormatter:
         insert_spaces = self._default_insert_spaces(self.profile, insert_spaces)
         if content.startswith("\ufeff"):
             content = content[1:]
+        had_trailing_newline = content.endswith(("\n", "\r"))
         lines = _expand_block_headers_one_line(content.splitlines())
         text = "\n".join(lines)
         snapshot = build_document_snapshot(path="<format>", content=text)
@@ -963,12 +1072,12 @@ class BslFormatter:
             text_for_parse=text,
             tree=snapshot.tree,
         )
-        # Normalise blank runs: at most one empty line in a row (BSL055 / BSLLS ConsecutiveEmptyLines)
-        result = self._normalize_blank_lines(formatted)
+        result = formatted
         # Strip leading blank lines (BSLLS does not emit them even when source has BOM+newline)
         result = result.lstrip("\n")
-        # Ensure single trailing newline
-        result = result.rstrip("\n") + "\n"
+        result = result.rstrip("\n")
+        if had_trailing_newline:
+            result += "\n"
         return result
 
     def format_range(
@@ -1090,14 +1199,11 @@ class BslFormatter:
         if len(base_levels) != len(lines):
             base_levels = _compute_structural_indent_levels(lines, text, tree=tree)
 
-        comment_multiline = (
-            _precompute_multiline_doc_comment_stripped(lines)
-            if self.profile != "strict-bslls"
-            else {}
-        )
+        comment_multiline = _precompute_strict_comment_block_stripped(lines)
 
         result: list[str] = []
         continuation = False
+        continuation_extra_level = 0
         inside_operator = False
         in_method_sig = False
         balance = 0
@@ -1111,11 +1217,8 @@ class BslFormatter:
 
             if not stripped:
                 if output:
-                    if self.profile == "strict-bslls":
-                        lvl = base_levels[i] + initial_indent
-                        result.append(self._indent(lvl, indent_size, insert_spaces))
-                    else:
-                        result.append("")
+                    lvl = base_levels[i] + initial_indent
+                    result.append(self._indent(lvl, indent_size, insert_spaces))
                 continue
 
             # BSL multi-line string continuation: lines starting with | are string
@@ -1125,23 +1228,16 @@ class BslFormatter:
                     # In strict-bslls profile, query/text pipe lines keep BSLLS-like
                     # continuation indentation, but avoid unconditional +2 shift for
                     # standalone pipe blocks.
-                    if self.profile == "strict-bslls":
-                        if previous_was_pipe and pipe_block_extra is not None:
-                            extra = pipe_block_extra
-                        else:
-                            pipe_context = (
-                                continuation
-                                or in_method_sig
-                                or _line_ends_with_plus(previous_code_line)
-                            )
-                            extra = 2 if pipe_context else 1
-                            pipe_block_extra = extra
-                        lvl = base_levels[i] + initial_indent + extra
-                        result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
+                    if previous_was_pipe and pipe_block_extra is not None:
+                        extra = pipe_block_extra
                     else:
-                        extra = 1 if (continuation or in_method_sig) else 0
-                        lvl = base_levels[i] + initial_indent + extra
-                        result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
+                        pipe_context = (
+                            continuation or in_method_sig or _line_ends_with_plus(previous_code_line)
+                        )
+                        extra = 2 if pipe_context else 1
+                        pipe_block_extra = extra
+                    lvl = base_levels[i] + initial_indent + extra
+                    result.append(self._indent(lvl, indent_size, insert_spaces) + stripped)
                 # Update continuation: if the line ends the statement (closing "; or ") we
                 # reset it; otherwise leave continuation unchanged so subsequent | lines are
                 # indented correctly.
@@ -1174,6 +1270,8 @@ class BslFormatter:
                     tag = pp_match.group(2)
                     rest = pp_match.group(3)
                     canonical = _PP_CANONICAL.get(tag.lstrip("#").lower(), tag)
+                    if canonical.casefold() == "#use":
+                        rest = " " + rest.lstrip(" \t")
                     lvl = base_levels[i] + initial_indent
                     result.append(self._indent(lvl, indent_size, insert_spaces) + canonical + rest)
                 continue
@@ -1189,8 +1287,7 @@ class BslFormatter:
             if continuation and _line_is_string_literal_closer(proc_stripped):
                 continuation = False
             if (
-                self.profile == "strict-bslls"
-                and previous_was_pipe_line
+                previous_was_pipe_line
                 and not _line_starts_condition_connector(proc_stripped)
                 and not _line_starts_with_dot(proc_stripped)
                 and not _line_starts_question_call(proc_stripped)
@@ -1202,11 +1299,12 @@ class BslFormatter:
             inside_op_for_assign = inside_operator or _line_opens_operator(proc_stripped)
 
             extra_level = 1 if (continuation or _line_starts_with_dot(proc_stripped)) else 0
+            if continuation:
+                extra_level = max(extra_level, continuation_extra_level)
             if inside_operator and _line_starts_condition_connector(proc_stripped):
                 extra_level = max(extra_level, 1)
             if (
-                self.profile == "strict-bslls"
-                and not inside_operator
+                not inside_operator
                 and _line_starts_condition_connector(proc_stripped)
                 and (
                     _line_has_unclosed_paren_expression(previous_code_line)
@@ -1216,8 +1314,19 @@ class BslFormatter:
             ):
                 extra_level = max(extra_level, 1)
             if (
-                self.profile == "strict-bslls"
-                and continuation
+                continuation
+                and _line_has_unclosed_paren_expression(previous_code_line)
+                and _paren_delta_in_code(previous_code_line) > 1
+            ):
+                extra_level = max(extra_level, 2)
+            if (
+                continuation
+                and _line_has_unclosed_paren_expression(previous_code_line)
+                and _line_has_assignment_without_semicolon(previous_code_line)
+            ):
+                extra_level = max(extra_level, 2)
+            if (
+                continuation
                 and (
                     _line_starts_with_arith_operator(proc_stripped)
                     or _line_starts_with_arith_operator(previous_code_line)
@@ -1256,6 +1365,14 @@ class BslFormatter:
                 next_continuation = True
             elif _line_starts_with_dot(proc_stripped):
                 next_continuation = True
+            if next_continuation:
+                if _line_has_unclosed_paren_expression(proc_stripped):
+                    extra = 2 if _paren_delta_in_code(proc_stripped) > 1 else 1
+                    continuation_extra_level = max(continuation_extra_level, extra)
+                elif not continuation:
+                    continuation_extra_level = 1
+            else:
+                continuation_extra_level = 0
             continuation = next_continuation
 
             if _line_opens_operator(proc_stripped):
@@ -1315,8 +1432,9 @@ class BslFormatter:
     def _process_code_line(self, stripped: str, in_proc_header: bool) -> str:
         """Apply keyword normalisation and operator spacing to a single stripped line."""
         processed = _process_code_line_static(stripped, in_proc_header=in_proc_header)
-        if self.profile == "strict-bslls":
-            processed = _strict_bslls_empty_first_arg_spacing(processed)
+        processed = _strict_bslls_operator_spacing(processed)
+        processed = _strict_bslls_empty_first_arg_spacing(processed)
+        processed = _strict_bslls_empty_arg_comma_spacing(processed)
         return processed
 
     def _collapse_spaces(self, line: str) -> str:

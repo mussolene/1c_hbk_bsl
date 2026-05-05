@@ -34,6 +34,8 @@ def run_bsl220_235_269_273_query_text_diagnostics(
         tail = content.split('"', 1)[1].strip() if '"' in content else ""
         if tail not in {"", ";"}:
             return False
+        if re.search(r"(?:=|<>)\s*\"{4}", content):
+            return False
         return bool(
             _diag._RE_QUERY_PARSE_ERROR_TAIL_KEYWORD.search(head)
             or _diag._RE_QUERY_PARSE_ERROR_TAIL_OPERATOR.search(head)
@@ -49,7 +51,8 @@ def run_bsl220_235_269_273_query_text_diagnostics(
         if not content_lines:
             continue
 
-        if "BSL235" in enabled and (
+        last_content = content_lines[-1][2]
+        if "BSL235" in enabled and not re.search(r"(?:=|<>)\s*\"{4}", last_content) and (
             not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
             or _has_plain_tail_parse_error(content_lines)
         ):
@@ -71,6 +74,9 @@ def run_bsl220_235_269_273_query_text_diagnostics(
             if "BSL220" in enabled:
                 multi_match = re.search(r'"{4,}', content)
                 if multi_match:
+                    run = multi_match.group(0)
+                    if len(run) == 4 and re.search(r"(?:=|<>)\s*\"{4}", content):
+                        continue
                     diags.append(
                         _diag.Diagnostic(
                             file=path,
@@ -149,7 +155,8 @@ def run_bsl220_235_269_273_query_text_diagnostics(
             if not content_lines:
                 continue
 
-            if "BSL235" in enabled and (
+            last_content = content_lines[-1][2]
+            if "BSL235" in enabled and not re.search(r"(?:=|<>)\s*\"{4}", last_content) and (
                 not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
                 or _has_plain_tail_parse_error(content_lines)
             ):
@@ -171,6 +178,9 @@ def run_bsl220_235_269_273_query_text_diagnostics(
                 if "BSL220" in enabled:
                     multi_match = re.search(r'"{4,}', content)
                     if multi_match:
+                        run = multi_match.group(0)
+                        if len(run) == 4 and re.search(r"(?:=|<>)\s*\"{4}", content):
+                            continue
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
@@ -439,7 +449,7 @@ def run_bsl206_207_209_query_join_diagnostics(
                                 end_character=content_base + or_match.end(),
                                 severity=_diag.Severity.WARNING,
                                 code="BSL209",
-                                message="Логическое ИЛИ в секции соединения запроса",
+                                message="Обнаружен оператор 'ИЛИ' в условии соединения",
                             )
                         )
 

@@ -691,7 +691,7 @@ def create_mcp_app() -> FastMCP:
         select: Annotated[
             str | None,
             "Comma-separated rules (BSL### or BSLLS names). "
-            "If omitted, uses BSL_SELECT env (same as LSP); if env unset, all rules.",
+            "If omitted, uses BSL_SELECT env (same as LSP); if env unset, BSLLS profile.",
         ] = None,
         ignore: Annotated[
             str | None,

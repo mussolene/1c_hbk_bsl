@@ -347,6 +347,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL222",
         "BSL148",
         "BSL171",
+        "BSL204",
         "BSL179",
         "BSL253",
         "BSL260",
@@ -368,6 +369,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL273",
         "BSL234",
         "BSL235",
+        "BSL258",
     }
 )
 
@@ -2385,10 +2387,10 @@ def parse_env_rule_filters() -> tuple[set[str] | None, set[str] | None]:
 
 
 def parse_env_rule_profile() -> str | None:
-    """Read ``BSL_PROFILE`` from the environment."""
-    from onec_hbk_bsl.analysis.bslls_parity import normalize_rule_profile
+    """Return the only supported public rule profile."""
+    from onec_hbk_bsl.analysis.bslls_parity import STRICT_BSLLS_PROFILE
 
-    return normalize_rule_profile(os.environ.get("BSL_PROFILE", ""))
+    return STRICT_BSLLS_PROFILE
 
 
 # Deprecated dialog: Предупреждение(...) / Warning(...)
@@ -2405,7 +2407,7 @@ _BSL223_STRUCTURE_NAMES = frozenset(
     {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
 )
 _BSL249_STYLE_CONSTRUCTOR_NAMES = frozenset(
-    {"цвет", "color", "шрифт", "font", "граница", "border", "рамка", "frame", "кисть", "brush"}
+    {"рамка", "border", "цвет", "color", "шрифт", "font"}
 )
 _RE_BSL221_NSTR = re.compile(r"\b(?:НСтр|NStr)\s*\(\s*\"(?P<body>[^\"]*)\"\s*\)", re.IGNORECASE)
 _RE_BSL221_LANG = re.compile(r"(?:^|;)\s*(?P<lang>[A-Za-z]{2})\s*=", re.IGNORECASE)
@@ -2859,7 +2861,7 @@ _RE_BSL210_POST_WHERE_KEYWORD = re.compile(
     r"ОБЪЕДИНИТЬ|UNION)\b",
     re.IGNORECASE,
 )
-_BSL210_MESSAGE = "Логическое ИЛИ в секции ГДЕ запроса"
+_BSL210_MESSAGE = 'Не следует использовать логическое "ИЛИ" в секции "ГДЕ" запроса'
 _RE_QUERY_JOIN_KEYWORD = re.compile(
     r"\b(?:ЛЕВОЕ|LEFT|ПРАВОЕ|RIGHT|ВНУТРЕННЕЕ|INNER|ПОЛНОЕ|FULL)(?:\s+ВНЕШНЕЕ|\s+OUTER)?\s+"
     r"(?:СОЕДИНЕНИЕ|JOIN)\b",
@@ -2994,7 +2996,7 @@ def _bsl149_append_missing_alias_diags(
         return
     for seg in field_region.split(","):
         field = seg.strip().rstrip('";')
-        if not field or field == "*":
+        if not field or field == "*" or re.match(r"^\w+\.\*$", field, re.UNICODE):
             continue
         # Multi-line CASE expressions are often split by query continuation lines.
         # Skip intermediate CASE fragments; final line with alias is validated normally.
@@ -3012,10 +3014,17 @@ def _bsl149_append_missing_alias_diags(
             field_for_message = re.sub(r"\s+", "", field) if field and field[0].isdigit() else field
             field_start = 0
             field_end = len(line.rstrip())
-            match = re.search(rf"\b{re.escape(field)}\b", line, re.IGNORECASE)
+            match = re.search(re.escape(field), line, re.IGNORECASE)
             if match:
                 field_start = match.start()
                 field_end = match.end()
+            else:
+                pipe_pos = line.find("|")
+                if pipe_pos >= 0:
+                    after_pipe = line[pipe_pos + 1 :]
+                    leading_ws = len(after_pipe) - len(after_pipe.lstrip())
+                    field_start = pipe_pos + 1 + leading_ws
+                    field_end = min(len(line.rstrip()), field_start + len(field))
             diags.append(
                 Diagnostic(
                     file=path,
@@ -3488,6 +3497,11 @@ def _bsl208_word_is_standard_tech_name(word: str) -> bool:
         if upper not in _BSL208_TECH_ACRONYMS:
             return False
         at_edge = m.start() == 0 or m.end() == len(word)
+        if not at_edge and m.start() > 0 and m.end() < len(word):
+            before = word[m.start() - 1]
+            after = word[m.end()]
+            if _RE_BSL208_HAS_CYRILLIC.search(before) and _RE_BSL208_HAS_CYRILLIC.search(after):
+                return False
         if run != upper and not at_edge:
             return False
     return True
@@ -3500,7 +3514,7 @@ _RE_STMT_NO_SEMI = re.compile(
     r"^\s*(?:"
     r"(?:\w+(?:\.\w+)*)\s*\([^)]*\)"  # method call
     r"|(?:\w+(?:\.\w+)*)\s*=\s*\S.*"  # assignment with RHS
-    r"|(?:Возврат|Return)\s+\S"  # return with value
+    r"|(?:Возврат|Return)\s+\S.*"  # return with value
     r")\s*$",
     re.IGNORECASE,
 )
@@ -4073,6 +4087,7 @@ _BSL259_ALLOWED_PREPROC_SYMBOLS = frozenset(
         "тонкийклиент",
         "thinclient",
         "толстыйклиент",
+        "толстыйклиентобычноеприложение",
         "thickclient",
         "обычноеприложение",
         "ordinaryapplication",
@@ -4251,15 +4266,13 @@ _RE_CONTINUE = re.compile(r"^\s*(?:Продолжить|Continue)\s*;", re.IGNOR
 
 _RE_COMMENTED_CODE = re.compile(
     r"^\s*//\s*(?:"
-    # BSL keywords at start of comment = commented-out control-flow code
-    r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Если|ИначеЕсли|Иначе|КонецЕсли"
-    r"|Для|Пока|КонецЦикла|Попытка|Исключение|КонецПопытки|Возврат|Перем"
-    r"|Function|Procedure|EndProcedure|EndFunction|If|ElsIf|Else|EndIf"
-    r"|For|While|EndDo|Try|Except|EndTry|Return|Var)\b"
+    # Strong BSL declarations / terminators; prose comments with "Если/Для"
+    # are too noisy and BSLLS CodeRecognizer does not treat them as code.
+    r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Перем"
+    r"|Function|Procedure|EndProcedure|EndFunction|Var)\b"
+    r"|(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE)\b"
     # OR a line that looks like a statement (ends with ; or contains :=)
     r"|\w.*(?:;|:=)"
-    # OR an explanatory comment that still embeds block keywords as code notation
-    r"|.*\b(?:Для|Пока|Если|КонецФункции|Function|For|While|If|EndFunction)\b.*(?:->|\.\.)"
     r")",
     re.IGNORECASE,
 )
@@ -4802,7 +4815,7 @@ _RE_BSL029_SIMPLE_ASSIGN = re.compile(r"^\s*[\w\.]+\s*=\s*-?[0-9]+(?:\.[0-9]+)?\
 _RE_BSL029_FOR_HEADER = re.compile(r"^\s*(?:Для|For)\b", re.IGNORECASE)
 # BSL029: ternary operator ?(cond, N, M) — BSLLS does not flag numeric values in ternary
 # because they are TernaryOperatorContext, not CallParamContext
-_RE_BSL029_TERNARY = re.compile(r"\?\s*\([^)]*\)")
+_RE_BSL029_TERNARY = re.compile(r"\?\s*\((?P<condition>[^,]+),(?P<true>[^,]*),(?P<false>[^)]*)\)")
 # BSL029: Structure.Вставить("key", value) — BSLLS skips second param when first is a
 # string literal (confirmed Structure type). Heuristic: first param is string → structure value.
 _RE_BSL029_STRUCT_INSERT = re.compile(
@@ -5023,6 +5036,8 @@ def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -
         stripped = line.strip()
         if stripped.startswith("//"):
             continue
+        if line.lstrip().startswith("|"):
+            continue
         line_no_strings = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
         complexity += len(_RE_MCCABE_BOOL.findall(line_no_strings))
         complexity += len(_RE_MCCABE_TERNARY.findall(line_no_strings)) * (1 + nesting)
@@ -5049,6 +5064,9 @@ def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> i
         line = lines[i]
         stripped = line.strip()
         if stripped.startswith("//"):
+            continue
+        if line.lstrip().startswith("|"):
+            cc += len(re.findall(r"\b(?:ВЫБОР|CASE|КОГДА|WHEN)\b", line, re.IGNORECASE))
             continue
         if _RE_MCCABE_BRANCH.match(line):
             cc += 1

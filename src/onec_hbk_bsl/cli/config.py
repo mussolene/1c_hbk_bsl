@@ -69,9 +69,9 @@ class BslConfig:
 
     @property
     def profile(self) -> str | None:
-        from onec_hbk_bsl.analysis.bslls_parity import normalize_rule_profile
+        from onec_hbk_bsl.analysis.bslls_parity import STRICT_BSLLS_PROFILE
 
-        return normalize_rule_profile(self._data.get("profile") or "strict-bslls")
+        return STRICT_BSLLS_PROFILE
 
     # ------------------------------------------------------------------
     # File filtering

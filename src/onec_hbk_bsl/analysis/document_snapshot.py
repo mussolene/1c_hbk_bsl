@@ -358,17 +358,20 @@ def _find_regions_from_tree(tree: Any) -> list[RegionInfo]:
 
     visit(root)
 
-    closes_sorted = sorted(closes)
-    used_closes: set[int] = set()
+    events = [(idx, "open", name) for idx, name in opens]
+    events.extend((idx, "close", "") for idx in closes)
+    events.sort(key=lambda item: (item[0], 0 if item[1] == "open" else 1))
+    stack: list[tuple[str, int]] = []
     result: list[RegionInfo] = []
-    for start_idx, name in sorted(opens, key=lambda item: item[0]):
-        end_idx = start_idx + 1
-        for candidate in closes_sorted:
-            if candidate > start_idx and candidate not in used_closes:
-                end_idx = candidate
-                used_closes.add(candidate)
-                break
-        result.append(RegionInfo(name=name, start_idx=start_idx, end_idx=end_idx))
+    for idx, kind, name in events:
+        if kind == "open":
+            stack.append((name, idx))
+        elif stack:
+            open_name, start_idx = stack.pop()
+            result.append(RegionInfo(name=open_name, start_idx=start_idx, end_idx=idx))
+    for name, start_idx in stack:
+        result.append(RegionInfo(name=name, start_idx=start_idx, end_idx=start_idx + 1))
+    result.sort(key=lambda region: region.start_idx)
     return result
 
 

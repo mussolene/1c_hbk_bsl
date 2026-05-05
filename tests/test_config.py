@@ -40,8 +40,8 @@ class TestBslConfigProfile:
         cfg = BslConfig({})
         assert cfg.profile == "strict-bslls"
 
-    def test_profile_normalized(self) -> None:
-        cfg = BslConfig({"profile": "bslls-core"})
+    def test_profile_value_does_not_change_bslls_mode(self) -> None:
+        cfg = BslConfig({"profile": "other-profile"})
         assert cfg.profile == "strict-bslls"
 
 

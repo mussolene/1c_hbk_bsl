@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from onec_hbk_bsl.analysis.formatter import BslFormatter
@@ -37,6 +39,17 @@ class TestLineCommentNormalization:
         result = f.format("//    bar\n")
         line = result.splitlines()[0].lstrip()
         assert line == "// bar"
+
+    def test_strict_bslls_preserves_comment_block_spacing(self) -> None:
+        f = BslFormatter()
+        code = (
+            "// Параметры:\n"
+            "// \tМенеджерХранилища - ОбщийМодуль - менеджер хранилища.\n"
+            "//  Range - Строка - в формате \"bytes=<Число>-<Число>\"\n"
+        )
+        lines = f.format(code).splitlines()
+        assert lines[1] == "// \tМенеджерХранилища - ОбщийМодуль - менеджер хранилища."
+        assert lines[2] == '//  Range - Строка - в формате "bytes=<Число>-<Число>"'
 
     def test_empty_comment_line_stays_double_slash(self) -> None:
         f = BslFormatter()
@@ -117,7 +130,7 @@ class TestDocCommentBlocks:
         f = BslFormatter()
         code = "//  Параметры   :\n// Имя\n"
         lines = f.format(code).splitlines()
-        assert lines[0].strip() == "// Параметры   :"
+        assert lines[0].strip() == "//  Параметры   :"
         assert lines[1].strip() == "// Имя"
 
     def test_strict_bslls_profile_keeps_comment_block_without_hanging_indent(self) -> None:
@@ -127,6 +140,19 @@ class TestDocCommentBlocks:
         assert lines[0].strip() == "// Параметры:"
         assert lines[1].strip() == "// Имя - Строка - описание"
         assert lines[2].strip() == "// продолжение описания"
+
+    def test_strict_bslls_nested_call_argument_continuation_indent(self) -> None:
+        f = BslFormatter(profile="strict-bslls")
+        code = (
+            "Процедура Тест()\n"
+            "\tОтвет.УстановитьТелоИзСтроки(СтрШаблон(НСтр(\"ru = 'Ошибка %1 %2'\"),\n"
+            "\t\t\tПараметр1,\n"
+            "\t\t\tПараметр2));\n"
+            "КонецПроцедуры\n"
+        )
+        lines = f.format(code).splitlines()
+        assert lines[2].startswith("\t\t\tПараметр1")
+        assert lines[3].startswith("\t\t\tПараметр2")
 
 
 class TestKeywordNormalisation:
@@ -220,6 +246,15 @@ class TestIndentation:
         code = "Процедура Т()\nА = Метод( 1  ,2 , 3 );\nКонецПроцедуры\n"
         assert "Метод(1, 2, 3)" in f.format(code)
 
+    def test_strict_bslls_empty_argument_spacing_before_string(self) -> None:
+        f = BslFormatter()
+        code = (
+            "Процедура Т()\n"
+            'Строка = Новый ФорматированнаяСтрока(Текст, , , ,"Команда");\n'
+            "КонецПроцедуры\n"
+        )
+        assert 'ФорматированнаяСтрока(Текст, , , , "Команда")' in f.format(code)
+
     def test_if_then_same_line_splits_body_to_next_line(self) -> None:
         """One-line ``Если … Тогда <stmt>`` becomes two lines so body indents vertically."""
         f = BslFormatter()
@@ -291,17 +326,26 @@ class TestOperatorSpacing:
 
 
 class TestBlankLines:
-    def test_max_one_consecutive_blank(self) -> None:
+    def test_preserves_consecutive_blank_lines(self) -> None:
         f = BslFormatter()
         code = "А = 1;\n\n\n\n\nБ = 2;\n"
         result = f.format(code)
-        assert "\n\n\n" not in result
-        assert "А = 1;\n\nБ = 2;" in result
+        assert "А = 1;\n\n\n\n\nБ = 2;" in result
+
+    def test_strict_bslls_preserves_consecutive_blank_lines(self) -> None:
+        f = BslFormatter()
+        code = "А = 1;\n\n\nБ = 2;\n"
+        result = f.format(code)
+        assert "А = 1;\n\n\nБ = 2;" in result
 
     def test_trailing_newline(self) -> None:
         f = BslFormatter()
         result = f.format("А = 1;")
-        assert result.endswith("\n")
+        assert not result.endswith("\n")
+
+    def test_non_bslls_profile_is_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            BslFormatter(profile="other-profile")
 
     def test_single_trailing_newline(self) -> None:
         f = BslFormatter()
@@ -395,6 +439,36 @@ class TestBslContinuationIndent:
         # Continuation line after bare = should be one level deeper than body
         assert lines[2].startswith("\t\t"), lines[2]
 
+    def test_assignment_call_continuation_indents_like_bslls(self) -> None:
+        f = BslFormatter()
+        code = (
+            "Процедура Тест()\n"
+            "\tОрганизация = Справочники.Организации.НайтиОрганизацию(\n"
+            "\t\tИНН, КПП, Ложь);\n"
+            "КонецПроцедуры\n"
+        )
+        result = f.format(code)
+        lines = result.splitlines()
+        assert lines[2].startswith("\t\t\tИНН"), lines[2]
+
+    def test_strict_bslls_binary_plus_and_unary_minus_spacing(self) -> None:
+        f = BslFormatter()
+        code = (
+            "Процедура Т()\n"
+            'Элементы["Таблица"+Имя];\n'
+            'Часть = """"+Имя+"""";\n'
+            "Дата = ДобавитьМесяц(Дата, - 24);\n"
+            "Знач = ?(Значение < 0, - Значение, 0);\n"
+            "Результат = Результат + ? (Условие, А, Б);\n"
+            "КонецПроцедуры\n"
+        )
+        result = f.format(code)
+        assert 'Элементы["Таблица" + Имя]' in result
+        assert 'Часть = """" + Имя + """"' in result
+        assert "ДобавитьМесяц(Дата, -24)" in result
+        assert "?(Значение < 0, -Значение, 0)" in result
+        assert "Результат = Результат + ?(Условие, А, Б)" in result
+
     def test_dot_chain_line_gets_extra_indent(self) -> None:
         f = BslFormatter()
         code = "Процедура Тест()\nЧтоТо\n    .Метод();\nКонецПроцедуры\n"
@@ -415,3 +489,24 @@ class TestPreprocessor:
         f = BslFormatter()
         result = f.format("#область МояОбласть\nА = 1;\n#конецобласти\n")
         assert "#Область" in result or "#область" in result  # at least preserved
+
+
+class TestBsllsFixtureParity:
+    @pytest.mark.parametrize(
+        ("source_name", "expected_name", "indent_size"),
+        [
+            ("format.bsl", "format_formatted.bsl", 4),
+            ("formatKeywordsRu.bsl", "format_formattedKeywordsRu.bsl", 2),
+            ("formatKeywordsEng.bsl", "format_formattedKeywordsEng.bsl", 2),
+            ("formatFluent.bsl", "format_formattedFluent.bsl", 2),
+        ],
+    )
+    def test_matches_bslls_provider_fixture_pairs(
+        self, source_name: str, expected_name: str, indent_size: int
+    ) -> None:
+        root = Path(".agent/tmp/bslls-source/src/test/resources/providers")
+        source = (root / source_name).read_text(encoding="utf-8")
+        expected = (root / expected_name).read_text(encoding="utf-8")
+        f = BslFormatter(profile="strict-bslls")
+        actual = f.format(source, indent_size=indent_size, insert_spaces=True)
+        assert actual.rstrip("\n") == expected.rstrip("\n")

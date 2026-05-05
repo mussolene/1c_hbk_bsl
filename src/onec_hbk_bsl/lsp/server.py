@@ -292,7 +292,7 @@ class BslLanguageServer(LanguageServer):
         db_path = resolve_index_db_path(os.getcwd())
         self.symbol_index = SymbolIndex(db_path=db_path)
         _sel, _ign = parse_env_rule_filters()
-        _profile = parse_env_rule_profile()
+        _profile = parse_env_rule_profile() or "strict-bslls"
         self.diagnostics_engine = DiagnosticEngine(
             symbol_index=self.symbol_index,
             select=_sel,

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.23] - 2026-05-05
+
+### Changed
+
+- Выравнены диагностики и форматирование `strict-bslls` по BSLLS fixture/oracle-прогонам.
+- Синхронизирована версия VS Code extension с runtime package.
+
 ## [0.7.22] - 2026-04-16
 
 ### Added

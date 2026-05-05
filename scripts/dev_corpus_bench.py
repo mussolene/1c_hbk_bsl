@@ -11,7 +11,7 @@ configuration/workspace directory and measures:
 
 Example:
     python scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
-    python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500 --profile strict-bslls
+    python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def parse_args(argv: list[str]) -> tuple[Path, str, int | None, int | None, int,
     if not argv:
         raise SystemExit(
             "Usage: dev_corpus_bench.py <corpus_dir> "
-            "[--profile=strict-bslls] [--limit=N] [--sample=N] [--seed=N] [--largest=N]"
+            "[--limit=N] [--sample=N] [--seed=N] [--largest=N]"
         )
 
     root = Path(argv[0]).expanduser().resolve()
@@ -72,14 +72,7 @@ def parse_args(argv: list[str]) -> tuple[Path, str, int | None, int | None, int,
     i = 1
     while i < len(argv):
         arg = argv[i]
-        if arg == "--profile":
-            i += 1
-            if i >= len(argv):
-                raise SystemExit("--profile requires a value")
-            profile = argv[i].strip() or DEFAULT_PROFILE
-        elif arg.startswith("--profile="):
-            profile = arg.split("=", 1)[1].strip() or DEFAULT_PROFILE
-        elif arg == "--limit":
+        if arg == "--limit":
             i += 1
             if i >= len(argv):
                 raise SystemExit("--limit requires a value")

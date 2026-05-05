@@ -108,7 +108,7 @@ def normalize_rule_profile(profile: str | None) -> str | None:
     p = str(profile).strip().casefold()
     if not p:
         return None
-    if p in {"strict", "strict-bslls", "bslls", "bslls-core", "compat", "compatibility", "local", "legacy"}:
+    if p == STRICT_BSLLS_PROFILE:
         return STRICT_BSLLS_PROFILE
     return None
 
@@ -134,7 +134,7 @@ def select_codes_for_profile(
     *,
     default_disabled_codes: set[str] | frozenset[str] = frozenset(),
 ) -> set[str] | None:
-    """Return an implicit select-set for *profile*, or ``None`` for direct API/all-rules mode."""
+    """Return an implicit select-set for the BSLLS profile, or ``None`` for internal API mode."""
     p = normalize_rule_profile(profile)
     if p == STRICT_BSLLS_PROFILE:
         return set(

@@ -679,7 +679,6 @@ def run_bsl173_deleting_collection_item(path: str, lines: list[str], procs: list
     while i < len(lines):
         m = re_foreach.match(lines[i])
         if m:
-            iter_var = m.group(1).casefold()
             collection = m.group(2).casefold()
             depth = 1
             j = i + 1
@@ -695,12 +694,7 @@ def run_bsl173_deleting_collection_item(path: str, lines: list[str], procs: list
                     dm = re_delete.search(bl)
                     if dm:
                         obj = dm.group(1).casefold().split(".")[-1]
-                        arg_start = bl.find("(", dm.end() - 1) + 1
-                        arg_end = bl.find(")", arg_start) if arg_start > 0 else -1
-                        arg = (
-                            bl[arg_start:arg_end].strip().casefold() if arg_end > arg_start else ""
-                        )
-                        if obj == collection or arg == iter_var:
+                        if obj == collection:
                             diags.append(
                                 Diagnostic(
                                     file=path,

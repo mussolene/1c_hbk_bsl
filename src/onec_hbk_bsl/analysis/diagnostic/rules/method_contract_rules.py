@@ -230,9 +230,6 @@ def run_bsl215_missing_parameter_description(
     _diag = _diag_module()
     diags: list[Any] = []
     for proc in procs:
-        if not proc.params:
-            continue
-
         block_end = proc.start_idx - 1
         while block_end >= 0 and (
             lines[block_end].strip() == "" or _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end])
@@ -273,7 +270,8 @@ def run_bsl215_missing_parameter_description(
             header_col = 0
 
         if params_section_start is None:
-            header_line = lines[proc.start_idx]
+            if not proc.params:
+                continue
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -288,7 +286,27 @@ def run_bsl215_missing_parameter_description(
             )
             continue
 
-        documented_cf: dict[str, str] = {}
+        def _valid_param_entry(line: str) -> str | None:
+            m = re.match(r"^\s*//\s{1,4}(\w+)\s*-\s*(?P<tail>.+?)\s*$", line, re.UNICODE)
+            if not m:
+                return None
+            tail = m.group("tail")
+            type_part = tail.split("-", 1)[0].strip()
+            if "," in type_part or "(" in type_part or ")" in type_part:
+                return None
+            if " " in type_part and "-" not in tail:
+                return None
+            return m.group(1)
+
+        documented_entries: list[str] = []
+        documented_struct_entries: set[str] = set()
+        has_nested_param_fields = False
+        first_meaningful_is_params = False
+        for cl in comment_block:
+            if cl.strip() in {"//", ""}:
+                continue
+            first_meaningful_is_params = bool(_diag._RE_BSL215_PARAMS_SECTION.match(cl))
+            break
         for cl in comment_block[params_section_start + 1 :]:
             stripped = cl.strip()
             if stripped == "//" or (
@@ -296,10 +314,41 @@ def run_bsl215_missing_parameter_description(
                 and not _diag._RE_BSL215_PARAM_ENTRY.match(cl)
             ):
                 break
-            m = _diag._RE_BSL215_PARAM_ENTRY.match(cl)
-            if m:
-                pname = m.group(1)
-                documented_cf[pname.casefold()] = pname
+            if re.match(r"^\s*//\s+\*", cl):
+                has_nested_param_fields = True
+                continue
+            pname = _valid_param_entry(cl)
+            if pname:
+                tail = cl.split("-", 1)[1].split("-", 1)[0].strip() if "-" in cl else ""
+                if tail.casefold() == "структура":
+                    documented_struct_entries.add(pname.casefold())
+                documented_entries.append(pname)
+        if first_meaningful_is_params:
+            documented_entries = []
+        elif has_nested_param_fields and documented_struct_entries:
+            documented_entries = []
+        elif has_nested_param_fields:
+            documented_entries = [
+                p for p in documented_entries if p.casefold() not in documented_struct_entries
+            ]
+
+        documented_cf = {p.casefold(): p for p in documented_entries}
+
+        has_structured_return_fields = False
+        returns_section_start = None
+        for ci, cl in enumerate(comment_block):
+            if re.match(
+                r"^\s*//\s*(?:Возвращаемое\s+значение|Returns)\s*:?\s*$",
+                cl,
+                re.IGNORECASE,
+            ):
+                returns_section_start = ci
+                break
+        if returns_section_start is not None:
+            has_structured_return_fields = any(
+                re.match(r"^\s*//\s+\*\s+\S", cl)
+                for cl in comment_block[returns_section_start + 1 :]
+            )
 
         param_lines: dict[str, int] = {}
         scan_idx = proc.start_idx
@@ -324,6 +373,9 @@ def run_bsl215_missing_parameter_description(
             scan_idx += 1
 
         missing_params = [pname for pname in proc.params if pname.casefold() not in documented_cf]
+        if not missing_params and documented_entries and has_structured_return_fields:
+            documented_cf = {}
+            missing_params = list(proc.params)
         if missing_params and not documented_cf:
             diags.append(
                 _diag.Diagnostic(
@@ -357,28 +409,46 @@ def run_bsl215_missing_parameter_description(
                     )
                 )
 
-        extra = [v for k, v in documented_cf.items() if k not in actual_params_cf]
+        seen_actual_docs: set[str] = set()
+        extra: list[str] = []
+        for pname in documented_entries:
+            pcf = pname.casefold()
+            if pcf not in actual_params_cf or pcf in seen_actual_docs:
+                extra.append(pname)
+            else:
+                seen_actual_docs.add(pcf)
         if extra:
-            header_line = lines[proc.start_idx]
-            try:
-                col = header_line.index(proc.name)
-            except ValueError:
-                col = 0
             diags.append(
                 _diag.Diagnostic(
                     file=path,
                     line=proc.start_idx + 1,
-                    character=col,
+                    character=header_col,
                     end_line=proc.start_idx + 1,
-                    end_character=col + len(proc.name),
+                    end_character=header_col + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
                     message=(
-                        f"Параметры {', '.join(extra)!r} описаны в комментарии, "
-                        f"но отсутствуют в сигнатуре «{proc.name}»"
+                        f"Необходимо удалить описания параметров \"{', '.join(extra)}\", "
+                        "отсутствующих в сигнатуре метода"
                     ),
                 )
             )
+        elif not missing_params and documented_entries:
+            actual_order = [p.casefold() for p in proc.params]
+            documented_order = [p.casefold() for p in documented_entries if p.casefold() in actual_params_cf]
+            if documented_order != actual_order:
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=proc.start_idx + 1,
+                        character=header_col,
+                        end_line=proc.start_idx + 1,
+                        end_character=header_col + len(proc.name),
+                        severity=_diag.Severity.WARNING,
+                        code="BSL215",
+                        message="Необходимо исправить порядок описаний параметров",
+                    )
+                )
 
     return diags
 

@@ -29,9 +29,7 @@ def extend_style_comment_rule_tasks(
     if engine._rule_enabled("BSL030"):
 
         def _task_bsl030() -> list[Diagnostic]:
-            out = engine._rule_bsl030_header_semicolon(path, lines)
-            out.extend(engine._rule_bsl030_statement_missing_semicolon(path, lines, procs))
-            return out
+            return engine._rule_bsl030_statement_missing_semicolon(path, lines, procs)
 
         tasks.append(("BSL030", _task_bsl030))
 

@@ -140,6 +140,12 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
         seen: dict[str, tuple[int, int, int] | None] = {}
         reported: set[str] = set()
         for b_body, span in branches:
+            if len(b_body) == 1 and re.match(
+                r"^(?:Возврат|Return|Продолжить|Continue|Прервать|Break)\s*;?\s*$",
+                b_body[0],
+                re.IGNORECASE,
+            ):
+                continue
             key = "\n".join(b_body)
             if key and key in seen and key not in reported:
                 first_span = seen[key]
@@ -161,7 +167,7 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
                 reported.add(key)
             else:
                 seen[key] = span
-        i = j + 1
+        i += 1
     return diags
 
 

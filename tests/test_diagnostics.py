@@ -86,12 +86,12 @@ class TestBsl002LongProcedure:
 
 
 # ---------------------------------------------------------------------------
-# BSL004 — Empty exception handler
+# BSL004 — EmptyCodeBlock
 # ---------------------------------------------------------------------------
 
 
 class TestBsl004EmptyExceptHandler:
-    def test_empty_except_triggers_bsl004(self, tmp_path: Path) -> None:
+    def test_empty_except_does_not_trigger_bsl004_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Попытка
@@ -103,8 +103,7 @@ class TestBsl004EmptyExceptHandler:
         """
         issues = _check_content(content, tmp_path)
         bsl004 = [d for d in issues if d.code == "BSL004"]
-        assert len(bsl004) >= 1
-        assert bsl004[0].severity == Severity.WARNING
+        assert bsl004 == []
 
     def test_nonempty_except_no_bsl004(self, tmp_path: Path) -> None:
         content = """\
@@ -120,22 +119,17 @@ class TestBsl004EmptyExceptHandler:
         bsl004 = [d for d in issues if d.code == "BSL004"]
         assert bsl004 == []
 
-    def test_sample_bsl_has_bsl004(self, sample_bsl_path: str) -> None:
-        """sample.bsl intentionally contains an empty Except block → BSL004."""
+    def test_sample_bsl_empty_except_is_not_bsl004(self, sample_bsl_path: str) -> None:
         engine = DiagnosticEngine()
         issues = engine.check_file(sample_bsl_path)
         bsl004 = [d for d in issues if d.code == "BSL004"]
-        assert len(bsl004) >= 1, (
-            "sample.bsl has an intentionally empty Except block (СброситьСчётчик)"
-        )
+        assert bsl004 == []
 
-    def test_bsl004_reports_correct_line(self, tmp_path: Path) -> None:
+    def test_bsl004_reports_empty_if_line(self, tmp_path: Path) -> None:
         content = """\
 Процедура Тест()
-    Попытка
-        Х = 1;
-    Исключение
-    КонецПопытки;
+    Если Истина Тогда
+    КонецЕсли;
 КонецПроцедуры
 """
         bsl_file = tmp_path / "t.bsl"
@@ -145,8 +139,7 @@ class TestBsl004EmptyExceptHandler:
         issues = engine.check_file(str(bsl_file))
         bsl004 = [d for d in issues if d.code == "BSL004"]
         assert len(bsl004) >= 1
-        # "Исключение" is on line 4 (1-based)
-        assert bsl004[0].line == 4
+        assert bsl004[0].line == 2
 
 
 # ---------------------------------------------------------------------------
