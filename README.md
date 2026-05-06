@@ -140,7 +140,7 @@ onec-hbk-bsl --index /path/to/1c-project
 
 | Параметр | По умолчанию | Описание |
 |---|---|---|
-| `onecHbkBsl.serverPath` | `onec-hbk-bsl` | Путь к бинарнику сервера; значение по умолчанию не подставляет путь из системного `PATH` — укажите полный путь к своему `onec-hbk-bsl`, либо используйте бинарник из VSIX / скачанный расширением |
+| `onecHbkBsl.serverPath` | `onec-hbk-bsl` | Путь к бинарнику сервера; значение по умолчанию ищет установленный `onec-hbk-bsl` в системном `PATH`, затем использует бинарник из VSIX / кэша / скачивания |
 | `onecHbkBsl.indexDbPath` | *(пусто)* → `.git/onec-hbk-bsl_index.sqlite` или `~/.cache/onec-hbk-bsl/…` | Явный путь к SQLite-индексу (необязательно) |
 | `onecHbkBsl.logLevel` | `info` | Уровень логирования |
 | `onecHbkBsl.diagnostics.enabled` | `true` | Диагностики в реальном времени |

@@ -3,11 +3,12 @@
  *
  * Launch strategy (in order):
  *   1. Path explicitly set in onecHbkBsl.serverPath (if not a bare placeholder)
- *   2. Binary bundled in extension's bin/ directory
- *   3. Previously downloaded binary in global storage
- *   4. Prompt to download from GitHub Releases (first activation only)
+ *   2. Installed onec-hbk-bsl found on system PATH
+ *   3. Binary bundled in extension's bin/ directory
+ *   4. Previously downloaded binary in global storage
+ *   5. Prompt to download from GitHub Releases (first activation only)
  *
- * No Python runtime required at run time — only the compiled native binary.
+ * Bundled/downloaded runtime does not require Python; PATH-based installs are user-managed.
  */
 
 import * as fs from "fs";
@@ -30,6 +31,12 @@ import {
   msgPrefix,
   outputChannelName,
 } from "./brand";
+import {
+  SERVER_COMMAND,
+  SERVER_PATH_PLACEHOLDERS,
+  findExecutableOnPath,
+  isExecutable,
+} from "./binaryResolution";
 
 /** Shared log channel (also passed to LanguageClient for stderr/LSP trace). */
 let logChannel: vscode.OutputChannel | undefined;
@@ -40,7 +47,7 @@ let extensionContext: vscode.ExtensionContext | undefined;
 // Constants
 // ---------------------------------------------------------------------------
 
-const BINARY_NAME = process.platform === "win32" ? "onec-hbk-bsl.exe" : "onec-hbk-bsl";
+const BINARY_NAME = SERVER_COMMAND;
 
 /**
  * Release tag on GitHub (`v` + extension version from package.json next to this build).
@@ -225,18 +232,15 @@ export async function deactivate(): Promise<void> {
 
 /**
  * Resolve path to the onec-hbk-bsl binary using the priority chain:
- *   settings → bundled → cached download → prompt to download.
- *
- * System PATH is not searched — use an explicit `serverPath` to point at a
- * binary outside the extension (e.g. `pip install` / `uv tool` / local build).
+ *   settings → PATH → bundled → cached download → prompt to download.
  */
 async function resolveBinaryPath(ctx: vscode.ExtensionContext): Promise<string | null> {
   const releaseTag = readExtensionReleaseTag(ctx.extensionPath);
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
 
   // 1. Explicit settings override (highest priority)
-  const configured = config.get<string>("serverPath", "");
-  if (configured && configured !== "onec-hbk-bsl") {
+  const configured = (config.get<string>("serverPath", "") ?? "").trim();
+  if (!SERVER_PATH_PLACEHOLDERS.has(configured)) {
     if (fs.existsSync(configured) && isExecutable(configured)) {
       return configured;
     }
@@ -245,19 +249,25 @@ async function resolveBinaryPath(ctx: vscode.ExtensionContext): Promise<string |
     );
   }
 
-  // 2. Bundled binary alongside the extension
+  // 2. Installed executable on PATH (pipx/uv tool/brew/local install).
+  const fromPath = findExecutableOnPath(SERVER_COMMAND);
+  if (fromPath) {
+    return fromPath;
+  }
+
+  // 3. Bundled binary alongside the extension
   const bundled = path.join(ctx.extensionPath, "bin", BINARY_NAME);
   if (fs.existsSync(bundled) && isExecutable(bundled)) {
     return bundled;
   }
 
-  // 3. Previously downloaded into global storage
+  // 4. Previously downloaded into global storage
   const downloaded = path.join(ctx.globalStorageUri.fsPath, "bin", BINARY_NAME);
   if (fs.existsSync(downloaded) && isExecutable(downloaded)) {
     return downloaded;
   }
 
-  // 4. Offer to download
+  // 5. Offer to download
   const choice = await vscode.window.showInformationMessage(
     `${msgPrefix(ctx)} server binary not found. Download ${releaseTag} automatically?`,
     "Download",
@@ -281,23 +291,6 @@ async function resolveBinaryPath(ctx: vscode.ExtensionContext): Promise<string |
   }
 
   return null;
-}
-
-function isExecutable(filePath: string): boolean {
-  if (!fs.existsSync(filePath)) {
-    return false;
-  }
-  // Windows has no Unix execute bit; X_OK is unreliable for .exe (often fails and blocks LSP).
-  if (process.platform === "win32") {
-    const lower = filePath.toLowerCase();
-    return lower.endsWith(".exe") || lower.endsWith(".cmd") || lower.endsWith(".bat");
-  }
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function downloadBinary(destPath: string, releaseTag: string): Promise<string | null> {

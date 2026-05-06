@@ -21,10 +21,10 @@ This runbook covers production usage of:
   - `onCommand:onecHbkBsl.showStatus`
 - Server binary resolution order:
   1. `onecHbkBsl.serverPath` (explicit filesystem path; default placeholder does not override)
-  2. bundled extension binary
-  3. previously downloaded binary in extension global storage
-  4. release download fallback (if supported for platform)  
-  (System `PATH` is not searched — set `serverPath` to a `onec-hbk-bsl` from `pip`/`uv`/build output if needed.)
+  2. installed `onec-hbk-bsl` found on system `PATH`
+  3. bundled extension binary
+  4. previously downloaded binary in extension global storage
+  5. release download fallback (if supported for platform)
 
 ## Docker LSP (`onecHbkBsl.useDocker`)
 
