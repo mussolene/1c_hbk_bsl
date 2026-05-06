@@ -25,6 +25,7 @@ Commands used (no matches in this repo):
 ## CI secrets
 
 - **VS Marketplace:** `VSCE_PAT` is referenced only as `${{ secrets.VSCE_PAT }}` in [`.github/workflows/release.yml`](../.github/workflows/release.yml) — value is not in the tree.
+- **PyPI:** releases use GitHub OIDC Trusted Publishing from the `pypi` environment in [`.github/workflows/release.yml`](../.github/workflows/release.yml); no PyPI API token is expected in repository secrets.
 
 ## History rewrite / rotation
 
@@ -46,6 +47,7 @@ Coordinate `force-push`, notify fork owners, and re-clone local checkouts. Purgi
 ## Supply chain
 
 - **GitHub release download (VS Code):** The extension resolves the release tag as `v` + `version` from the installed `package.json`, so the fallback download matches the published VSIX ([`vscode-extension/src/extension.ts`](../vscode-extension/src/extension.ts)).
+- **PyPI release:** The release workflow publishes the same checked wheel/sdist that it attaches to the GitHub Release. Configure PyPI Trusted Publishing for `mussolene/1c_hbk_bsl`, `.github/workflows/release.yml`, environment `pypi` before pushing a release tag.
 - **Release asset integrity:** CI does not publish SHA256 sidecar files today. Optional hardening: attach `SHA256SUMS` (or GitHub’s built-in asset checksums) and verify in the client before executing a downloaded binary.
 - **Branch protection:** Restrict who can push `v*.*.*` tags and approve `environment: release` deploys in GitHub **Settings → Environments / Rules** (not expressible in-repo).
 

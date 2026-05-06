@@ -13,7 +13,11 @@
 
 1. Закоммитить изменения на `main`.
 2. `git tag -a vX.Y.Z -m "release"` и `git push origin vX.Y.Z`.
-3. GitHub Actions **Release** собирает артефакты; job VSIX перед сборкой вызывает `scripts/sync_version.py`, чтобы `package.json` совпадал с тегом.
+3. GitHub Actions **Release** собирает артефакты, публикует Python-пакет в PyPI через Trusted Publishing и публикует платформенные VSIX; job VSIX перед сборкой вызывает `scripts/sync_version.py`, чтобы `package.json` совпадал с тегом.
+
+Для PyPI в настройках проекта PyPI должен быть добавлен Trusted Publisher:
+репозиторий `mussolene/1c_hbk_bsl`, workflow `.github/workflows/release.yml`,
+environment `pypi`. API-токен в GitHub secrets для этого пути не нужен.
 
 Локально без тега на коммите после последнего тега setuptools-scm может выдать версию вида `X.Y.Z.devN+gHASH` — это нормально для разработки.
 
