@@ -265,7 +265,7 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 │   ├── analysis/     # символы, граф вызовов, диагностики
 │   ├── indexer/      # инкрементальный SQLite-индекс (FTS5)
 │   ├── lsp/          # pygls LSP-сервер
-│   ├── mcp_bridge/   # MCP-сервер (fastmcp)
+│   ├── mcp_bridge/   # MCP-сервер (Python MCP SDK)
 │   └── cli/          # CLI-интерфейс
 └── vscode-extension/
     ├── src/          # TypeScript LanguageClient
@@ -311,5 +311,5 @@ MIT © 2024 1C HBK BSL Contributors
 | [tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl) | MIT | Парсер / грамматика BSL для синтаксического анализа |
 | [pygls](https://github.com/openlawlibrary/pygls) | Apache 2.0 | LSP-сервер (Python Language Server Protocol framework) |
 | [lsprotocol](https://github.com/microsoft/lsprotocol) | MIT | LSP-типы (Python) |
-| [fastmcp](https://github.com/jlowin/fastmcp) | Apache 2.0 | MCP-сервер |
+| [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | MIT | MCP-сервер |
 | [bsl-language-server](https://github.com/1c-syntax/bsl-language-server) | LGPL v3 | Справочник диагностик BSL (коды BSL*) — код не используется |

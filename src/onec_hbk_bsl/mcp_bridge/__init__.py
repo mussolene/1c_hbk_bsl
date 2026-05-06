@@ -1,4 +1,4 @@
-"""BSL MCP server package (FastMCP-based)."""
+"""BSL MCP server package (Python MCP SDK / FastMCP-based)."""
 
 from __future__ import annotations
 

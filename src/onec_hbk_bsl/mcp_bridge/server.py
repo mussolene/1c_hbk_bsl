@@ -44,7 +44,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Annotated
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 
 from onec_hbk_bsl.analysis.call_graph import build_call_graph
 from onec_hbk_bsl.analysis.diagnostics import (
@@ -334,7 +334,7 @@ def _resolve_mcp_check_file_select_ignore(
 # ---------------------------------------------------------------------------
 
 
-def create_mcp_app() -> FastMCP:
+def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     """Create and return the FastMCP application with all BSL tools registered."""
     mcp = FastMCP(
         name="onec-hbk-bsl",
@@ -344,6 +344,8 @@ def create_mcp_app() -> FastMCP:
             "Then use bsl_find_symbol, bsl_callers, bsl_callees, etc. "
             "to explore the codebase."
         ),
+        host=host,
+        port=port,
     )
 
     # ------------------------------------------------------------------

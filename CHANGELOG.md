@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.26] - 2026-05-06
+
 ### Changed
 
+- Убрана прямая зависимость от внешнего `fastmcp`: MCP bridge использует `mcp.server.fastmcp.FastMCP` из официального Python MCP SDK.
+- Полная установка остается одним пакетом без extras-разделения; CLI-режимы по-прежнему выбираются ключами `--mcp`, `--stdio`, `--port`, `--workspace`.
+- MCP HTTP запуск перенес `host`/`port` в создание приложения, как требует официальный SDK.
 - Диагностики и форматирование доведены до exact BSLLS oracle-parity на целевых больших корпусах: без `only_ours`, `only_bslls`, message, severity и anchor mismatch.
 - Счетчики `MethodSize`, `CognitiveComplexity` и `CyclomaticComplexity` выровнены по BSLLS-семантике для многострочных сигнатур, comment-only границ тела, вложенных boolean-expression и многострочных строк.
 - Пользовательская документация и README расширения описывают единый BSLLS-совместимый профиль без legacy/compat режимов.

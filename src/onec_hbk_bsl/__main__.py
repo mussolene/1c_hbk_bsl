@@ -137,13 +137,14 @@ def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
 
     _autoindex_if_empty(workspace, db_path)
 
-    app = create_mcp_app()
     if stdio:
+        app = create_mcp_app()
         logging.getLogger(__name__).info("Starting BSL MCP server on stdio")
         app.run(transport="stdio")
     else:
+        app = create_mcp_app(host="0.0.0.0", port=port)
         logging.getLogger(__name__).info("Starting BSL MCP server on port %d", port)
-        app.run(transport="streamable-http", host="0.0.0.0", port=port)
+        app.run(transport="streamable-http")
 
 
 def _run_check(

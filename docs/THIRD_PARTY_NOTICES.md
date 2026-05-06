@@ -28,7 +28,7 @@ npx license-checker --production --csv
 | tree-sitter | MIT | Parser runtime |
 | tree-sitter-bsl | MIT | BSL grammar ([alkoleft/tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl)) |
 | watchfiles | MIT | File watching |
-| fastmcp | Apache-2.0 | MCP server framework |
+| MCP Python SDK | MIT | MCP server framework |
 | pygls | Apache-2.0 | LSP framework ([pygls](https://github.com/openlawlibrary/pygls), per `LICENSE.txt` in wheel) |
 | rich | MIT | Terminal UI |
 
