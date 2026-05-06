@@ -784,8 +784,6 @@ class TestTailParityBatches:
 # ---------------------------------------------------------------------------
 
 
-
-
 # ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------
@@ -2450,11 +2448,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         assert diags[0].message == 'Возможная опечатка в "Атмена"'
 
     def test_bslls_typo_skips_marketplace_terms(self, tmp_path: Path) -> None:
-        content = (
-            'Процедура Тест()\n'
-            '    Сообщить("Маркетплейсы и маркетплейсы");\n'
-            'КонецПроцедуры\n'
-        )
+        content = 'Процедура Тест()\n    Сообщить("Маркетплейсы и маркетплейсы");\nКонецПроцедуры\n'
         path = tmp_path / "TypoMarketplace.bsl"
         path.write_text(content, encoding="utf-8")
 
@@ -2467,10 +2461,10 @@ class TestBsl208Bsl256MixedScriptVsTypo:
 
     def test_bslls_typo_tax_monitor_token_parity(self, tmp_path: Path) -> None:
         content = (
-            'Процедура Тест()\n'
+            "Процедура Тест()\n"
             '    Сообщить("Нулевка Буд Кор Салатовый");\n'
             '    Сообщить("Физлица Юрлица Декапитализировать Субконто");\n'
-            'КонецПроцедуры\n'
+            "КонецПроцедуры\n"
         )
         path = tmp_path / "TypoTaxTokens.bsl"
         path.write_text(content, encoding="utf-8")
@@ -2597,11 +2591,6 @@ class TestBsl047CurrentDate:
         content = "// Дата = ТекущаяДата();\n"
         diags = _check(content, tmp_path, select={"BSL047"})
         assert "BSL047" not in _codes(diags)
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2752,8 +2741,6 @@ class TestBsl052UselessCondition:
 # ---------------------------------------------------------------------------
 
 
-
-
 # ---------------------------------------------------------------------------
 # BSL054 — ModuleLevelVariable
 # ---------------------------------------------------------------------------
@@ -2887,9 +2874,7 @@ class TestBsl219MissingVariablesDescription:
         diags = _check(content, tmp_path, select={"BSL219"})
         assert "BSL219" not in _codes(diags)
 
-    def test_non_export_module_var_without_description_reports_bsl219(
-        self, tmp_path: Path
-    ) -> None:
+    def test_non_export_module_var_without_description_reports_bsl219(self, tmp_path: Path) -> None:
         content = """\
             Перем МояПеременная;
             Процедура Тест()
@@ -3826,12 +3811,8 @@ class TestBsl066DeprecatedFind:
 # ---------------------------------------------------------------------------
 
 
-
-
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -3992,12 +3973,8 @@ class TestAdditionalParityBatch:
 # ---------------------------------------------------------------------------
 
 
-
-
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -4045,7 +4022,9 @@ class TestBsl255TryNumber:
         diags = _check(content, tmp_path, select={"BSL255"})
         bsl255 = [d for d in diags if d.code == "BSL255"]
         assert len(bsl255) == 1
-        assert bsl255[0].message == "Не следует использовать исключения для приведения значения к типу"
+        assert (
+            bsl255[0].message == "Не следует использовать исключения для приведения значения к типу"
+        )
 
 
 class TestRuleMetadataCompleteness:

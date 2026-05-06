@@ -533,7 +533,12 @@ def _emit_parts_for_source_text(
     )
     for part in split_by_character_type_camel_case(inner):
         forced = part.casefold() in _PARITY_TOKEN_FORCE
-        if forced and anchor_kind == "string" and part.casefold() == "субконто" and "\n" in source_text:
+        if (
+            forced
+            and anchor_kind == "string"
+            and part.casefold() == "субконто"
+            and "\n" in source_text
+        ):
             continue
         # BSLLS exception list applies to concrete token fragments too, not only
         # to the full literal/identifier text.

@@ -428,14 +428,16 @@ def run_bsl215_missing_parameter_description(
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
                     message=(
-                        f"Необходимо удалить описания параметров \"{', '.join(extra)}\", "
+                        f'Необходимо удалить описания параметров "{", ".join(extra)}", '
                         "отсутствующих в сигнатуре метода"
                     ),
                 )
             )
         elif not missing_params and documented_entries:
             actual_order = [p.casefold() for p in proc.params]
-            documented_order = [p.casefold() for p in documented_entries if p.casefold() in actual_params_cf]
+            documented_order = [
+                p.casefold() for p in documented_entries if p.casefold() in actual_params_cf
+            ]
             if documented_order != actual_order:
                 diags.append(
                     _diag.Diagnostic(

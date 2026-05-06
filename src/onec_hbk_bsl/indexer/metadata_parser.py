@@ -64,6 +64,7 @@ def _iter_discovery_dirs(path: Path) -> list[Path]:
     except PermissionError:
         return []
 
+
 # Backward-compatible names (used by symbol_index / tests)
 _FOLDER_TO_KIND = FOLDER_TO_KIND
 _KIND_TO_COLLECTION = KIND_TO_COLLECTION

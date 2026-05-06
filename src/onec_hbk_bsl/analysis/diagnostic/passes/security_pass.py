@@ -28,9 +28,7 @@ def extend_security_rule_tasks(
         "BSL267",
         "BSL272",
     )
-    if any(
-        engine._rule_enabled(code) for code in bsl180_184_185_188_203_226_247_250_264_267_272
-    ):
+    if any(engine._rule_enabled(code) for code in bsl180_184_185_188_203_226_247_250_264_267_272):
         rule_tasks.append(
             (
                 "BSL180_184_185_188_203_226_247_250_264_267_272",

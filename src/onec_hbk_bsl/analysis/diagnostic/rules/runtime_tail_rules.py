@@ -161,11 +161,11 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
                         character=col,
                         end_line=line_no + 1,
                         end_character=end_col,
-                            severity=_diag.Severity.INFORMATION,
-                            code="BSL197",
-                            message='Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода',
-                        )
+                        severity=_diag.Severity.INFORMATION,
+                        code="BSL197",
+                        message='Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода',
                     )
+                )
                 reported.add(key)
             else:
                 seen[key] = span

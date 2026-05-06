@@ -42,6 +42,8 @@ def extend_style_spacing_rule_tasks(
     lines: list[str],
 ) -> None:
     """Append spacing-related style tasks in declaration order."""
+
+
 def extend_style_token_rule_tasks(
     tasks: list[tuple[str, Callable[[], list[Diagnostic]]]],
     *,

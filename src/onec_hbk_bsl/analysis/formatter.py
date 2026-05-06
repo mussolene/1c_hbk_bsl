@@ -593,9 +593,12 @@ def _get_last_keyword(line: str) -> str:
 def _is_proc_or_func_header(line: str) -> bool:
     """True if line starts a procedure or function definition."""
     first = _get_stripped_keyword(line)
-    return first in ("процедура", "функция", "procedure", "function") or _starts_with_async_proc_or_func(
-        line
-    )
+    return first in (
+        "процедура",
+        "функция",
+        "procedure",
+        "function",
+    ) or _starts_with_async_proc_or_func(line)
 
 
 def _indent_control(stripped: str) -> tuple[bool, bool]:
@@ -1232,7 +1235,9 @@ class BslFormatter:
                         extra = pipe_block_extra
                     else:
                         pipe_context = (
-                            continuation or in_method_sig or _line_ends_with_plus(previous_code_line)
+                            continuation
+                            or in_method_sig
+                            or _line_ends_with_plus(previous_code_line)
                         )
                         extra = 2 if pipe_context else 1
                         pipe_block_extra = extra
@@ -1325,12 +1330,9 @@ class BslFormatter:
                 and _line_has_assignment_without_semicolon(previous_code_line)
             ):
                 extra_level = max(extra_level, 2)
-            if (
-                continuation
-                and (
-                    _line_starts_with_arith_operator(proc_stripped)
-                    or _line_starts_with_arith_operator(previous_code_line)
-                )
+            if continuation and (
+                _line_starts_with_arith_operator(proc_stripped)
+                or _line_starts_with_arith_operator(previous_code_line)
             ):
                 extra_level = max(extra_level, 2)
             # Lines that continue a split Процедура/Функция parameter list (unclosed `(` from header).

@@ -45,39 +45,43 @@ class DiagnosticEngine:
     """
 
     # BSLLS-compatible rules disabled by default.
-    DEFAULT_DISABLED: frozenset[str] = frozenset({'BSL008',
- 'BSL016',
- 'BSL042',
- 'BSL150',
- 'BSL154',
- 'BSL169',
- 'BSL170',
- 'BSL174',
- 'BSL181',
- 'BSL182',
- 'BSL187',
- 'BSL188',
- 'BSL189',
- 'BSL196',
- 'BSL203',
- 'BSL211',
- 'BSL213',
- 'BSL214',
- 'BSL217',
- 'BSL231',
- 'BSL232',
- 'BSL236',
- 'BSL238',
- 'BSL241',
- 'BSL242',
- 'BSL244',
- 'BSL246',
- 'BSL251',
- 'BSL253',
- 'BSL260',
- 'BSL261',
- 'BSL264',
- 'BSL274'})
+    DEFAULT_DISABLED: frozenset[str] = frozenset(
+        {
+            "BSL008",
+            "BSL016",
+            "BSL042",
+            "BSL150",
+            "BSL154",
+            "BSL169",
+            "BSL170",
+            "BSL174",
+            "BSL181",
+            "BSL182",
+            "BSL187",
+            "BSL188",
+            "BSL189",
+            "BSL196",
+            "BSL203",
+            "BSL211",
+            "BSL213",
+            "BSL214",
+            "BSL217",
+            "BSL231",
+            "BSL232",
+            "BSL236",
+            "BSL238",
+            "BSL241",
+            "BSL242",
+            "BSL244",
+            "BSL246",
+            "BSL251",
+            "BSL253",
+            "BSL260",
+            "BSL261",
+            "BSL264",
+            "BSL274",
+        }
+    )
 
     # Default thresholds (class-level — can override in __init__)
     MAX_PROC_LINES: int = 200
@@ -748,9 +752,7 @@ class DiagnosticEngine:
             if not opener_re.match(line):
                 continue
             j = idx + 1
-            while j < len(lines) and (
-                not lines[j].strip() or lines[j].lstrip().startswith("//")
-            ):
+            while j < len(lines) and (not lines[j].strip() or lines[j].lstrip().startswith("//")):
                 j += 1
             if j >= len(lines) or not terminator_re.match(lines[j]):
                 continue
@@ -1149,7 +1151,9 @@ class DiagnosticEngine:
                     re.IGNORECASE,
                 )
             )
-            if _RE_COMMENTED_CODE.match(line) or (in_query_comment and line.lstrip().startswith("//")):
+            if _RE_COMMENTED_CODE.match(line) or (
+                in_query_comment and line.lstrip().startswith("//")
+            ):
                 if consecutive == 0:
                     start_line = idx
                 consecutive += 1
@@ -1414,6 +1418,7 @@ class DiagnosticEngine:
             re.IGNORECASE,
         )
         diags: list[Diagnostic] = []
+
         def scan_range(start_idx: int, end_idx: int) -> None:
             nesting = 0
             pending: tuple[int, int, int, int] | None = None
@@ -1453,6 +1458,7 @@ class DiagnosticEngine:
                         if pending is None or nesting >= pending[3]:
                             pending = (i + 1, start_col, start_col + keyword_len, nesting)
             flush_pending()
+
         for proc in procs:
             scan_range(proc.start_idx + 1, proc.end_idx)
         covered: list[tuple[int, int]] = sorted((p.start_idx, p.end_idx) for p in procs)
@@ -3212,7 +3218,9 @@ class DiagnosticEngine:
             while block_start > 0 and _RE_BSL215_COMMENT_LINE.match(lines[block_start - 1]):
                 block_start -= 1
             comment_block = lines[block_start : block_end + 1]
-            if any(re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block):
+            if any(
+                re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block
+            ):
                 continue
             returns_section_start = None
             for ci, cl in enumerate(comment_block):
@@ -4097,7 +4105,11 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         for line_idx, line in enumerate(lines, start=1):
             hit = next(
-                ((pos, _BSL204_ILLEGAL_CHARS[ch]) for pos, ch in enumerate(line) if ch in _BSL204_ILLEGAL_CHARS),
+                (
+                    (pos, _BSL204_ILLEGAL_CHARS[ch])
+                    for pos, ch in enumerate(line)
+                    if ch in _BSL204_ILLEGAL_CHARS
+                ),
                 None,
             )
             if hit is None:
@@ -4337,7 +4349,10 @@ class DiagnosticEngine:
                     if getattr(child, "type", None) != "identifier":
                         continue
                     name = _ts_node_text(child)
-                    if name.casefold() in _BSL259_ALLOWED_PREPROC_SYMBOLS | _BSL259_PREPROC_KEYWORDS:
+                    if (
+                        name.casefold()
+                        in _BSL259_ALLOWED_PREPROC_SYMBOLS | _BSL259_PREPROC_KEYWORDS
+                    ):
                         continue
                     line_idx = child.start_point[0]
                     line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
@@ -5620,7 +5635,9 @@ class DiagnosticEngine:
                 is_self_update = (
                     assign_pos >= 0
                     and m.end() <= assign_pos
-                    and re.search(r"\b" + re.escape(word) + r"\b", clean[assign_pos + 1 :], re.IGNORECASE)
+                    and re.search(
+                        r"\b" + re.escape(word) + r"\b", clean[assign_pos + 1 :], re.IGNORECASE
+                    )
                 )
                 seen_key = f"{word}@{idx}" if is_self_update else word
                 if self._rule_enabled("BSL208") and seen_key not in seen_bsl208:

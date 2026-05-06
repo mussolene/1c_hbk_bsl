@@ -210,11 +210,15 @@ class BslParser:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
-            if node.type in ("ERROR", "error") and self._is_cascade_after_keyword_property_error(node):
+            if node.type in ("ERROR", "error") and self._is_cascade_after_keyword_property_error(
+                node
+            ):
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
-            if node.type in ("ERROR", "error") and self._is_keyword_property_call_wrapper_error(node):
+            if node.type in ("ERROR", "error") and self._is_keyword_property_call_wrapper_error(
+                node
+            ):
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
@@ -357,7 +361,11 @@ class BslParser:
         ERROR is already suppressed; this catches the directly related cascade.
         """
         parent = getattr(node, "parent", None)
-        if parent is None or parent.type not in ("assignment_statement", "call_statement", "property_access"):
+        if parent is None or parent.type not in (
+            "assignment_statement",
+            "call_statement",
+            "property_access",
+        ):
             return False
         text = node.text if isinstance(node.text, bytes) else b""
         stripped = text.strip()
@@ -379,7 +387,9 @@ class BslParser:
 
     @classmethod
     def _node_contains_keyword_property_error(cls, node: Any) -> bool:
-        if getattr(node, "type", None) in ("ERROR", "error") and cls._is_keyword_as_property_error(node):
+        if getattr(node, "type", None) in ("ERROR", "error") and cls._is_keyword_as_property_error(
+            node
+        ):
             return True
         return any(cls._node_contains_keyword_property_error(child) for child in node.children)
 

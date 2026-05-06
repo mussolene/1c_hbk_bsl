@@ -52,9 +52,13 @@ def run_bsl220_235_269_273_query_text_diagnostics(
             continue
 
         last_content = content_lines[-1][2]
-        if "BSL235" in enabled and not re.search(r"(?:=|<>)\s*\"{4}", last_content) and (
-            not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
-            or _has_plain_tail_parse_error(content_lines)
+        if (
+            "BSL235" in enabled
+            and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
+            and (
+                not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
+                or _has_plain_tail_parse_error(content_lines)
+            )
         ):
             line_no, content_base, _content, head, _ = content_lines[-1]
             diags.append(
@@ -156,9 +160,15 @@ def run_bsl220_235_269_273_query_text_diagnostics(
                 continue
 
             last_content = content_lines[-1][2]
-            if "BSL235" in enabled and not re.search(r"(?:=|<>)\s*\"{4}", last_content) and (
-                not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
-                or _has_plain_tail_parse_error(content_lines)
+            if (
+                "BSL235" in enabled
+                and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
+                and (
+                    not _diag._query_has_balanced_parens(
+                        [head for _, _, _, head, _ in content_lines]
+                    )
+                    or _has_plain_tail_parse_error(content_lines)
+                )
             ):
                 line_no, content_base, _content, head, _ = content_lines[-1]
                 diags.append(
