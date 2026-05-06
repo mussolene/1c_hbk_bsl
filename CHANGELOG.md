@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.27] - 2026-05-06
+
+### Changed
+
+- Сокращен PyInstaller onefile: bundle теперь использует metadata `mcp` вместо legacy `fastmcp` и исключает неиспользуемые в наших режимах `cryptography` и `pygments`.
+- Проверены onefile smoke-сценарии для CLI diagnostics, formatter, LSP и MCP после сокращения графа.
+
 ## [0.7.26] - 2026-05-06
 
 ### Changed

@@ -1,3 +1,3 @@
 """Generated version metadata for runtime use."""
 
-__version__ = "0.7.26"
+__version__ = "0.7.27"
