@@ -316,12 +316,19 @@ class BslLanguageServer(LanguageServer):
         self._reindex_lock = threading.Lock()
         self._reindex_running = False
         self._reindex_pending = False
+        self._shutdown_event = threading.Event()
         # Set in initialize from ClientCapabilities.text_document.diagnostic (LSP 3.17 pull).
         self.client_pull_diagnostics: bool = False
         atexit.register(self.close)
 
     def close(self) -> None:
         """Best-effort cleanup for interpreter shutdown and client disconnects."""
+        self._shutdown_event.set()
+        for timer in list(self._diag_timers.values()):
+            try:
+                timer.cancel()
+            except Exception:
+                logger.debug("LSP: diagnostic timer cancel failed", exc_info=True)
         try:
             self.symbol_index.close()
         except Exception:
@@ -365,7 +372,9 @@ def _start_branch_watcher(ls: BslLanguageServer, workspace_root: str) -> None:
             from watchfiles import watch  # already in requirements
 
             logger.info("LSP: watching %s for branch changes", git_head)
-            for _ in watch(str(git_head), stop_event=None):
+            for _ in watch(str(git_head), stop_event=ls._shutdown_event):
+                if ls._shutdown_event.is_set():
+                    break
                 branch = _current_branch(git_head)
                 logger.warning(
                     "LSP: branch changed → %s — scheduling re-index %s", branch, workspace_root

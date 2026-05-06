@@ -29,6 +29,41 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+_DISCOVERY_EXCLUDED_DIRS = {
+    ".agent",
+    ".agents",
+    ".cache",
+    ".codex",
+    ".cursor",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "out",
+    "target",
+    "vendor",
+}
+
+
+def _iter_discovery_dirs(path: Path) -> list[Path]:
+    try:
+        return [
+            child
+            for child in path.iterdir()
+            if child.is_dir()
+            and child.name not in _DISCOVERY_EXCLUDED_DIRS
+            and not child.name.endswith(".egg-info")
+        ]
+    except PermissionError:
+        return []
+
 # Backward-compatible names (used by symbol_index / tests)
 _FOLDER_TO_KIND = FOLDER_TO_KIND
 _KIND_TO_COLLECTION = KIND_TO_COLLECTION
@@ -360,14 +395,10 @@ def find_config_root(workspace: str | Path, *, max_depth: int = 12) -> Path | No
         current, depth = queue.pop(0)
         if depth > max_depth:
             continue
-        try:
-            for child in current.iterdir():
-                if child.is_dir():
-                    if (child / "Configuration.xml").exists():
-                        return child
-                    queue.append((child, depth + 1))
-        except PermissionError:
-            continue
+        for child in _iter_discovery_dirs(current):
+            if (child / "Configuration.xml").exists():
+                return child
+            queue.append((child, depth + 1))
     return None
 
 
@@ -387,12 +418,8 @@ def find_edt_configuration_marker(workspace: str | Path, *, max_depth: int = 14)
         mdo = current / "Configuration" / "Configuration.mdo"
         if mdo.is_file():
             return mdo
-        try:
-            for child in current.iterdir():
-                if child.is_dir():
-                    queue.append((child, depth + 1))
-        except PermissionError:
-            continue
+        for child in _iter_discovery_dirs(current):
+            queue.append((child, depth + 1))
     return None
 
 

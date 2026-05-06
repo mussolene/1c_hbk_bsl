@@ -346,6 +346,39 @@ class TestIncrementalIndexerExtended:
         files = IncrementalIndexer._find_all_bsl_files(str(tmp_path))
         assert any("script.os" in f for f in files)
 
+    def test_find_all_bsl_files_skips_tooling_dirs(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "real.bsl").write_text("Процедура П()\nКонецПроцедуры\n", encoding="utf-8")
+
+        for dirname in (".agent", ".venv", "build", "dist", "node_modules"):
+            ignored = tmp_path / dirname
+            ignored.mkdir()
+            (ignored / "ignored.bsl").write_text(
+                "Процедура Служебная()\nКонецПроцедуры\n",
+                encoding="utf-8",
+            )
+
+        files = IncrementalIndexer._find_all_bsl_files(str(tmp_path))
+
+        assert any("real.bsl" in f for f in files)
+        assert not any("ignored.bsl" in f for f in files)
+
+    def test_metadata_discovery_skips_tooling_dirs(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.indexer.metadata_parser import find_config_root
+
+        ignored = tmp_path / ".agent" / "tmp" / "export"
+        ignored.mkdir(parents=True)
+        (ignored / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        real = tmp_path / "config"
+        real.mkdir()
+        (real / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        assert find_config_root(tmp_path) == real
+
     def test_get_current_commit_non_git_dir(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 

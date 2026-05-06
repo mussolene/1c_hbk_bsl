@@ -32,6 +32,27 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 logger = logging.getLogger(__name__)
 
 BSL_EXTENSIONS = {".bsl", ".os"}
+_DEFAULT_EXCLUDED_DIRS = {
+    ".agent",
+    ".agents",
+    ".cache",
+    ".codex",
+    ".cursor",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "out",
+    "target",
+    "vendor",
+}
 
 # Upper bound for BSL_INDEX_PARSE_WORKERS — each worker holds a Tree-sitter parser
 # and parsed AST payloads; unbounded queues previously allowed RAM to grow to 100+ GB
@@ -423,7 +444,12 @@ class IncrementalIndexer:
         """
         root = os.path.abspath(workspace)
         result: list[str] = []
-        for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = [
+                name
+                for name in dirnames
+                if name not in _DEFAULT_EXCLUDED_DIRS and not name.endswith(".egg-info")
+            ]
             for name in filenames:
                 suf = Path(name).suffix.lower()
                 if suf in BSL_EXTENSIONS:
