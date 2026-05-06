@@ -505,8 +505,12 @@ class TestBsllsFixtureParity:
         self, source_name: str, expected_name: str, indent_size: int
     ) -> None:
         root = Path(".agent/tmp/bslls-source/src/test/resources/providers")
-        source = (root / source_name).read_text(encoding="utf-8")
-        expected = (root / expected_name).read_text(encoding="utf-8")
+        source_path = root / source_name
+        expected_path = root / expected_name
+        if not source_path.exists() or not expected_path.exists():
+            pytest.skip("BSLLS upstream provider fixtures are not available")
+        source = source_path.read_text(encoding="utf-8")
+        expected = expected_path.read_text(encoding="utf-8")
         f = BslFormatter(profile="strict-bslls")
         actual = f.format(source, indent_size=indent_size, insert_spaces=True)
         assert actual.rstrip("\n") == expected.rstrip("\n")
