@@ -8,6 +8,8 @@ skipped so ``"`` inside a comment does not start a string.
 
 from __future__ import annotations
 
+from bisect import bisect_left
+
 
 def double_quoted_string_ranges(content: str) -> list[tuple[int, int]]:
     """
@@ -84,13 +86,12 @@ def line_col_to_offset(
     if line >= len(starts):
         return len(content)
     base = starts[line]
-    line_end = content.find("\n", base)
-    if line_end < 0:
-        line_text = content[base:]
+    if line + 1 < len(starts):
+        line_end = starts[line + 1] - 1
     else:
-        line_text = content[base:line_end]
+        line_end = len(content)
     # Clamp column to line length
-    col = max(0, min(col, len(line_text)))
+    col = max(0, min(col, line_end - base))
     return base + col
 
 
@@ -108,6 +109,7 @@ def diagnostic_overlaps_string_literal(
     end_character: int,
     ranges: list[tuple[int, int]] | None = None,
     line_starts: list[int] | None = None,
+    range_starts: list[int] | None = None,
 ) -> bool:
     """True if the diagnostic span overlaps any double-quoted string range."""
     if not ranges:
@@ -119,7 +121,6 @@ def diagnostic_overlaps_string_literal(
     de = line_col_to_offset(content, end_line - 1, end_character, line_starts=ls)
     if de < ds:
         de = ds
-    for a, b in ranges:
-        if ds < b and de > a:
-            return True
-    return False
+    starts = range_starts if range_starts is not None else [a for a, _ in ranges]
+    idx = bisect_left(starts, de)
+    return idx > 0 and ranges[idx - 1][1] > ds

@@ -706,10 +706,10 @@ def run_bsl240_rewrite_method_parameter(
 ) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
+    if _diag.path_is_likely_form_module_bsl(path):
+        return []
+    tree_ok = _diag._ts_tree_ok_for_rules(tree)
     for proc in procs:
-        if _diag.path_is_likely_form_module_bsl(path):
-            return []
-        tree_ok = _diag._ts_tree_ok_for_rules(tree)
         header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
         param_names: set[str] = set()
         proc_params = getattr(proc, "params", None)

@@ -153,19 +153,22 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     parameter_name_from_declaration_fragment,
     split_commas_outside_double_quotes,
 )
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    build_line_string_states as _build_line_string_states,
+)
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
     RULE_METADATA,
     DiagnosticEngine,
     Severity,
-    _calc_cognitive_complexity,
-    _calc_mccabe_complexity,
+    _calc_complexity_metrics,
     _find_procedures_from_tree,
     display_name_for_rule_code,
     lsp_compat_severity,
     parse_env_rule_filters,
     parse_env_rule_profile,
 )
+from onec_hbk_bsl.analysis.document_snapshot import DocumentSnapshot, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter import (
     _DEDENT_BEFORE,
     _get_stripped_keyword,
@@ -312,6 +315,9 @@ class BslLanguageServer(LanguageServer):
         self._doc_state_lock = self.doc_state.lock
         # tree_sitter.Parser is not thread-safe — one BslParser per thread.
         self._parser_tls = threading.local()
+        self._parsed_doc_cache_lock = threading.RLock()
+        self._parsed_doc_cache: dict[str, Any] = {}
+        self._parsed_doc_cache_versions: dict[str, int] = {}
         # Single-flight guard for workspace reindex.
         self._reindex_lock = threading.Lock()
         self._reindex_running = False
@@ -512,6 +518,7 @@ def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> Non
     doc = params.text_document
     ls.doc_state.set_doc(doc.uri, doc.text)
     ls.doc_state.clear_cache_for_uri(doc.uri)
+    _schedule_local_scope_cache(ls, doc.uri, doc.text)
     logger.debug("LSP: opened %s", doc.uri)
     path = _uri_to_path(doc.uri)
     if not ls.client_pull_diagnostics:
@@ -521,6 +528,12 @@ def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> Non
 _DIAG_DEBOUNCE_SECS = 0.6  # fallback default; adaptive debounce used when timing is known
 _DIAG_DEBOUNCE_MIN = 0.3
 _DIAG_DEBOUNCE_MAX = 3.0
+_SYNC_LOCAL_SCOPE_PARSE_MAX_BYTES = 1_000_000
+
+
+def _allow_sync_local_scope_parse(content: str) -> bool:
+    """Avoid blocking navigation/hover by parsing very large documents synchronously."""
+    return len(content.encode("utf-8", errors="ignore")) <= _SYNC_LOCAL_SCOPE_PARSE_MAX_BYTES
 
 
 def _adaptive_debounce(ls: BslLanguageServer, uri: str) -> float:
@@ -543,6 +556,7 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
     uri = params.text_document.uri
     for change in params.content_changes:
         ls.doc_state.set_doc(uri, change.text)
+        _schedule_local_scope_cache(ls, uri, change.text)
     old_timer = ls.doc_state.pop_timer(uri)
     if old_timer is not None:
         old_timer.cancel()
@@ -570,6 +584,7 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
 
     if params.text is not None:
         ls.doc_state.set_doc(uri, params.text)
+        _schedule_local_scope_cache(ls, uri, params.text)
     old_timer = ls.doc_state.pop_timer(uri)
     if old_timer is not None:
         old_timer.cancel()
@@ -589,6 +604,7 @@ def on_did_close(ls: BslLanguageServer, params: DidCloseTextDocumentParams) -> N
     """Drop per-document runtime state on close to avoid unbounded URI retention."""
     uri = params.text_document.uri
     old_timer = ls.doc_state.close_document(uri)
+    _clear_local_scope_cache(ls, uri)
     if old_timer is not None:
         old_timer.cancel()
     if not ls.client_pull_diagnostics:
@@ -631,11 +647,34 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
 
     _t0 = _time.perf_counter()
     if cached is not None:
-        issues = ls.diagnostics_engine.check_content(path, cached, symbol_index=ls.symbol_index)
+        context = _get_lsp_document_context(ls, uri, cached, source_path=path)
+        if context is not None:
+            issues = ls.diagnostics_engine.check_snapshot(
+                context.snapshot,
+                symbol_index=ls.symbol_index,
+            )
+        else:
+            issues = ls.diagnostics_engine.check_content(
+                path,
+                cached,
+                symbol_index=ls.symbol_index,
+            )
     elif _content_for_hash is not None:
-        issues = ls.diagnostics_engine.check_content(
-            path, _content_for_hash, symbol_index=ls.symbol_index
+        context = _get_lsp_document_context(
+            ls,
+            uri,
+            _content_for_hash,
+            source_path=path,
         )
+        if context is not None:
+            issues = ls.diagnostics_engine.check_snapshot(
+                context.snapshot,
+                symbol_index=ls.symbol_index,
+            )
+        else:
+            issues = ls.diagnostics_engine.check_content(
+                path, _content_for_hash, symbol_index=ls.symbol_index
+            )
     else:
         issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
     # Record elapsed time for adaptive debounce (no lock needed — float write is atomic).
@@ -793,8 +832,7 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
     _is_call = _after.startswith("(")
     if not _is_call:
         try:
-            _tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
-            local_vars = _extract_scope_vars(_tree, pos.line)
+            local_vars = _cached_scope_vars(ls, uri, content, pos.line) or []
             for lv in local_vars:
                 if lv.name.casefold() == word.casefold():
                     decl_line = lv.line - 1  # 0-based
@@ -965,9 +1003,8 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     #    and skip when we are in `Новый TypeName` context.
     if not left_word and not _after_new:
         try:
-            _tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
-            _engine = BslTypeEngine(_tree)
-            _local_vars = _extract_scope_vars(_tree, pos.line)
+            _engine = _cached_type_engine(ls, uri, content)
+            _local_vars = _cached_scope_vars(ls, uri, content, pos.line) or []
             for _lv in _local_vars:
                 if _lv.name.casefold() == word.casefold():
                     _kind_map = {
@@ -980,7 +1017,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
                     _lv_kind = _kind_map.get(_lv.kind, "переменная")
                     _parts: list[str] = [f"```bsl\n{_lv.name}\n```"]
                     _parts.append(f"*{_lv_kind}*, объявлена на строке {_lv.line}")
-                    _type = _engine.infer(_lv.name, pos.line)
+                    _type = _engine.infer(_lv.name, pos.line) if _engine is not None else _lv.type_hint
                     if _type:
                         _parts.append(f"**Тип:** `{_type}`")
                     return _hover_markdown(_parts)
@@ -1603,9 +1640,12 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
         # ---- type inference: Зап = Новый Запрос() → Зап. → методы Запрос ---
         if not items:
             try:
-                _inf_tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
-                _inf_engine = BslTypeEngine(_inf_tree)
-                inferred = _inf_engine.scope_at_line(pos.line).get(obj_name)
+                _inf_engine = _cached_type_engine(ls, uri, content)
+                inferred = (
+                    _inf_engine.scope_at_line(pos.line).get(obj_name)
+                    if _inf_engine is not None
+                    else None
+                )
             except Exception:
                 inferred = None
             if inferred:
@@ -1896,6 +1936,40 @@ class _LocalVar:
     type_hint: str = ""  # e.g. "Массив" from «МойМассив = Новый Массив»
 
 
+@dataclass
+class _LocalScopeProc:
+    """Cached local scope declarations for one procedure/function."""
+
+    start_line0: int
+    end_line0: int
+    vars: list[_LocalVar]
+
+
+@dataclass
+class _CodeLensMetric:
+    """Precomputed code lens values for one procedure/function."""
+
+    line0: int
+    cognitive: int
+    mccabe: int
+
+
+@dataclass
+class _LspDocumentContext:
+    """Lazy semantic context for one open LSP document version."""
+
+    content_hash: int
+    snapshot: DocumentSnapshot
+    local_scopes: list[_LocalScopeProc]
+    type_engine: BslTypeEngine | None = None
+    code_lens_metrics: list[_CodeLensMetric] | None = None
+    folding_ranges: list[FoldingRange] | None = None
+
+    @property
+    def tree(self) -> Any:
+        return self.snapshot.tree
+
+
 def _ast_node_text(node: Any) -> str:
     t = getattr(node, "text", None)
     if t is None:
@@ -2030,28 +2104,8 @@ def _collect_local_vars(node: Any, up_to_line0: int, result: list[_LocalVar]) ->
             _collect_local_vars(child, up_to_line0, result)
 
 
-def _extract_scope_vars(tree: Any, cursor_line0: int) -> list[_LocalVar]:
-    """Extract local variables visible at cursor_line0 (0-based row).
-
-    Finds the enclosing procedure/function, then collects:
-    - parameters (with Знач/Val distinction)
-    - Перем declarations
-    - loop iterators (Для Каждого/Для)
-    - assignment targets (А = ...)
-    Only returns declarations at or before cursor_line0.
-    Results are deduplicated by name (first occurrence wins for navigation).
-    """
-    root = getattr(tree, "root_node", None)
-    if root is None:
-        return []
-    # Only works with real tree-sitter trees (bytes text)
-    if not isinstance(getattr(root, "text", None), (bytes, type(None))):
-        return []
-
-    proc_node = _find_proc_at_line(root, cursor_line0)
-    if proc_node is None:
-        return []
-
+def _extract_scope_vars_from_proc(proc_node: Any, cursor_line0: int) -> list[_LocalVar]:
+    """Extract visible local variables from an already selected procedure/function node."""
     vars: list[_LocalVar] = []
 
     # 1. Parameters from the procedure/function signature
@@ -2092,10 +2146,290 @@ def _extract_scope_vars(tree: Any, cursor_line0: int) -> list[_LocalVar]:
     # Deduplicate: first declaration wins (for Go-to-Definition)
     seen: dict[str, _LocalVar] = {}
     for v in vars:
+        if v.line - 1 > cursor_line0:
+            continue
         key = v.name.casefold()
         if key not in seen:
             seen[key] = v
     return list(seen.values())
+
+
+def _extract_scope_vars(tree: Any, cursor_line0: int) -> list[_LocalVar]:
+    """Extract local variables visible at cursor_line0 (0-based row).
+
+    Finds the enclosing procedure/function, then collects:
+    - parameters (with Знач/Val distinction)
+    - Перем declarations
+    - loop iterators (Для Каждого/Для)
+    - assignment targets (А = ...)
+    Only returns declarations at or before cursor_line0.
+    Results are deduplicated by name (first occurrence wins for navigation).
+    """
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+    # Only works with real tree-sitter trees (bytes text)
+    if not isinstance(getattr(root, "text", None), (bytes, type(None))):
+        return []
+
+    proc_node = _find_proc_at_line(root, cursor_line0)
+    if proc_node is None:
+        return []
+    return _extract_scope_vars_from_proc(proc_node, cursor_line0)
+
+def _iter_proc_nodes(node: Any) -> list[Any]:
+    """Return all procedure/function nodes under *node* without descending into nested routines."""
+    out: list[Any] = []
+    node_type = getattr(node, "type", None)
+    if node_type in ("procedure_definition", "function_definition"):
+        out.append(node)
+        return out
+    for child in getattr(node, "children", []) or []:
+        out.extend(_iter_proc_nodes(child))
+    return out
+
+
+def _content_cache_key(content: str) -> int:
+    """Return the in-process cache key for an open document snapshot."""
+    return hash(content)
+
+
+def _build_lsp_document_context(
+    content: str,
+    uri: str,
+    *,
+    parser: BslParser | None = None,
+    source_path: str | None = None,
+) -> _LspDocumentContext:
+    """Parse a document once and materialise reusable LSP semantic state."""
+    snapshot = build_document_snapshot(
+        path=source_path or uri,
+        content=content,
+        parser=parser or BslParser(),
+    )
+    root = snapshot.root_node
+    scopes: list[_LocalScopeProc] = []
+    if root is not None:
+        for proc_node in _iter_proc_nodes(root):
+            end_line0 = proc_node.end_point[0]
+            scopes.append(
+                _LocalScopeProc(
+                    start_line0=proc_node.start_point[0],
+                    end_line0=end_line0,
+                    vars=_extract_scope_vars_from_proc(proc_node, end_line0),
+                )
+            )
+    return _LspDocumentContext(
+        content_hash=_content_cache_key(content),
+        snapshot=snapshot,
+        local_scopes=scopes,
+    )
+
+
+def _get_lsp_document_context(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+    *,
+    allow_sync_build: bool = True,
+    source_path: str | None = None,
+) -> _LspDocumentContext | None:
+    """Return cached or freshly built semantic context for an LSP document."""
+    content_hash = _content_cache_key(content)
+    with ls._parsed_doc_cache_lock:
+        cached = ls._parsed_doc_cache.get(uri)
+        if isinstance(cached, _LspDocumentContext) and cached.content_hash == content_hash:
+            if source_path is not None:
+                cached.snapshot.path = source_path
+            return cached
+        if not allow_sync_build:
+            return None
+
+    context = _build_lsp_document_context(
+        content,
+        uri,
+        parser=ls._thread_bsl_parser(),
+        source_path=source_path,
+    )
+    with ls._parsed_doc_cache_lock:
+        latest = ls._parsed_doc_cache.get(uri)
+        if isinstance(latest, _LspDocumentContext) and latest.content_hash == content_hash:
+            return latest
+        if ls._doc_get(uri) == content:
+            ls._parsed_doc_cache[uri] = context
+            return context
+    return context
+
+
+def _clear_local_scope_cache(ls: BslLanguageServer, uri: str) -> None:
+    """Drop cached local scopes for a closed or small document."""
+    with ls._parsed_doc_cache_lock:
+        ls._parsed_doc_cache.pop(uri, None)
+        ls._parsed_doc_cache_versions.pop(uri, None)
+
+
+def _schedule_local_scope_cache(ls: BslLanguageServer, uri: str, content: str) -> None:
+    """Build local scope data in the background for large documents only."""
+    if _allow_sync_local_scope_parse(content):
+        _clear_local_scope_cache(ls, uri)
+        return
+
+    with ls._parsed_doc_cache_lock:
+        version = ls._parsed_doc_cache_versions.get(uri, 0) + 1
+        ls._parsed_doc_cache_versions[uri] = version
+        ls._parsed_doc_cache.pop(uri, None)
+
+    def _worker() -> None:
+        try:
+            cache = _build_lsp_document_context(content, uri)
+        except Exception:
+            logger.debug("LSP: parsed document cache build failed for %s", uri, exc_info=True)
+            return
+        with ls._parsed_doc_cache_lock:
+            if ls._parsed_doc_cache_versions.get(uri) == version and ls._doc_get(uri) == content:
+                ls._parsed_doc_cache[uri] = cache
+            else:
+                return
+        _compute_cached_code_lens_metrics(ls, uri, content, version)
+
+    threading.Thread(target=_worker, daemon=True, name="bsl-parsed-document-cache").start()
+
+
+def _cached_scope_vars(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+    cursor_line0: int,
+) -> list[_LocalVar] | None:
+    """Return cached visible locals for a large document, or None while cache is not ready."""
+    cache = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+    )
+    if cache is None or cache.content_hash != _content_cache_key(content):
+        return None
+    for scope in cache.local_scopes:
+        if scope.start_line0 <= cursor_line0 <= scope.end_line0:
+            seen: dict[str, _LocalVar] = {}
+            for var in scope.vars:
+                if var.line - 1 > cursor_line0:
+                    continue
+                key = var.name.casefold()
+                if key not in seen:
+                    seen[key] = var
+            return list(seen.values())
+    return []
+
+
+def _cached_parse_tree(ls: BslLanguageServer, uri: str, content: str) -> Any | None:
+    """Return a cached parse tree for a document when available."""
+    cache = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+    )
+    if cache is None or cache.content_hash != _content_cache_key(content):
+        return None
+    return cache.tree
+
+
+def _cached_type_engine(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+) -> BslTypeEngine | None:
+    """Return a cached type engine for the current document context."""
+    cache = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+    )
+    if cache is None:
+        return None
+    if cache.type_engine is not None:
+        return cache.type_engine
+    engine = BslTypeEngine(cache.tree)
+    with ls._parsed_doc_cache_lock:
+        latest = ls._parsed_doc_cache.get(uri)
+        if isinstance(latest, _LspDocumentContext) and latest.content_hash == cache.content_hash:
+            latest.type_engine = engine
+            return engine
+    return engine
+
+
+def _compute_cached_code_lens_metrics(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+    version: int | None = None,
+) -> list[_CodeLensMetric] | None:
+    """Compute and store code-lens complexity metrics for a cached large document."""
+    with ls._parsed_doc_cache_lock:
+        cache = ls._parsed_doc_cache.get(uri)
+        current_version = ls._parsed_doc_cache_versions.get(uri)
+    if not isinstance(cache, _LspDocumentContext) or cache.content_hash != _content_cache_key(content):
+        return None
+    if version is not None and current_version != version:
+        return None
+    if cache.code_lens_metrics is not None:
+        return cache.code_lens_metrics
+
+    lines = content.splitlines()
+    procs = _find_procedures_from_tree(cache.tree)
+    string_states = _build_line_string_states(lines)
+    metrics = [
+        _CodeLensMetric(line0=proc.start_idx, cognitive=cognitive, mccabe=mccabe)
+        for proc in procs
+        for cognitive, mccabe in [
+            _calc_complexity_metrics(
+                lines, proc.start_idx, proc.end_idx, string_states=string_states
+            )
+        ]
+    ]
+
+    with ls._parsed_doc_cache_lock:
+        latest = ls._parsed_doc_cache.get(uri)
+        if (
+            isinstance(latest, _LspDocumentContext)
+            and latest.content_hash == _content_cache_key(content)
+            and (version is None or ls._parsed_doc_cache_versions.get(uri) == version)
+        ):
+            latest.code_lens_metrics = metrics
+            return metrics
+    return None
+
+
+def _cached_folding_ranges(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+) -> list[FoldingRange] | None:
+    """Return AST folding ranges cached on the shared document context."""
+    cache = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+    )
+    if cache is None:
+        return None
+    if cache.folding_ranges is not None:
+        return list(cache.folding_ranges)
+
+    ranges: list[FoldingRange] = []
+    try:
+        _collect_ast_fold_ranges(cache.snapshot.root_node, ranges)
+    except Exception:
+        return None
+    with ls._parsed_doc_cache_lock:
+        latest = ls._parsed_doc_cache.get(uri)
+        if isinstance(latest, _LspDocumentContext) and latest.content_hash == cache.content_hash:
+            latest.folding_ranges = ranges
+    return list(ranges)
 
 
 def _make_snippet(label: str, signature: str | None) -> tuple[str, InsertTextFormat]:
@@ -2204,17 +2538,43 @@ def on_code_lens(ls: BslLanguageServer, params: CodeLensParams) -> list[CodeLens
     content = ls._doc_get(uri, "")
     if not content:
         return None
+    cached_metrics = _compute_cached_code_lens_metrics(ls, uri, content)
+    if cached_metrics is not None:
+        result: list[CodeLens] = []
+        for metric in cached_metrics:
+            r = Range(
+                start=Position(line=metric.line0, character=0),
+                end=Position(line=metric.line0, character=0),
+            )
+            result.append(
+                CodeLens(
+                    range=r,
+                    command=Command(title=f"Когнитивная сложность: {metric.cognitive}", command=""),
+                )
+            )
+            result.append(
+                CodeLens(
+                    range=r,
+                    command=Command(title=f"Цикломатическая сложность: {metric.mccabe}", command=""),
+                )
+            )
+        return result or None
+
     try:
-        tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
+        tree = _cached_parse_tree(ls, uri, content)
+        if tree is None:
+            return None
         procs = _find_procedures_from_tree(tree)
         lines = content.splitlines()
+        string_states = _build_line_string_states(lines)
     except Exception:
         return None
 
     result: list[CodeLens] = []
     for proc in procs:
-        cc = _calc_cognitive_complexity(lines, proc.start_idx, proc.end_idx)
-        mc = _calc_mccabe_complexity(lines, proc.start_idx, proc.end_idx)
+        cc, mc = _calc_complexity_metrics(
+            lines, proc.start_idx, proc.end_idx, string_states=string_states
+        )
         line = proc.start_idx  # 0-based header line
         r = Range(start=Position(line=line, character=0), end=Position(line=line, character=0))
         # Cognitive complexity lens
@@ -2492,14 +2852,8 @@ def on_folding_range(
     if not content:
         return None
 
-    ranges: list[FoldingRange] = []
-
     # 1. AST-based ranges (handles multi-line conditions correctly)
-    try:
-        tree = ls._thread_bsl_parser().parse_content(content, file_path=uri)
-        _collect_ast_fold_ranges(tree.root_node, ranges)
-    except Exception:
-        pass  # fall through to regex pass for regions
+    ranges = _cached_folding_ranges(ls, uri, content) or []
 
     # 2. #Область / #КонецОбласти — preprocessor nodes are siblings in AST,
     #    so match them with a line-by-line stack pass (faster than AST walk).
@@ -3303,9 +3657,8 @@ def on_bsl_parse_tree(ls: BslLanguageServer, params: dict) -> dict:  # type: ign
         except Exception as exc:
             return {"uri": uri, "tree": None, "error": str(exc)}
     try:
-        parser = ls._thread_bsl_parser()
-        tree = parser.parse_content(content, file_path=uri)
-        root = parser.get_root_node(tree)
+        context = _get_lsp_document_context(ls, uri, content)
+        root = context.snapshot.root_node if context is not None else None
         return {"uri": uri, "tree": _node_to_dict(root), "error": None}
     except Exception as exc:
         return {"uri": uri, "tree": None, "error": str(exc)}

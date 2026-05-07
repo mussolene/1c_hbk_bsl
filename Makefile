@@ -1,5 +1,5 @@
-.PHONY: install install-build dev test lint fmt check-all sync-version reset-extension-placeholder \
-	build build-fast build-nuitka build-check bench-30 bslls-oracle-fixtures corpus-largest-3-sync parity-largest-3 \
+.PHONY: install install-build dev test lint fmt check-all sync-version \
+	build build-fast build-check bench-30 bslls-oracle-fixtures corpus-largest-3-sync parity-largest-3 \
 	extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
 
 # ── Python runtime ───────────────────────────────────────────────────────────
@@ -24,10 +24,6 @@ dev: install
 # Версия из git-тега (setuptools-scm); синхронизировать vscode-extension/package.json + lock
 sync-version:
 	$(PYTHON3) scripts/sync_version.py
-
-# Вернуть package.json / lock к плейсхолдеру 0.0.0 (после vsix вызывается само)
-reset-extension-placeholder:
-	$(PYTHON3) scripts/reset_extension_placeholder.py
 
 # ── Тесты и линтинг ──────────────────────────────────────────────────────────
 SPELLCHECKER_RES := $(shell $(PYTHON3) -c "from pathlib import Path; import spellchecker; print(Path(spellchecker.__file__).resolve().parent / 'resources')")
@@ -64,10 +60,6 @@ else
 endif
 
 BUILD_OUT = $(DIST_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
-NUITKA_OUT_DIR = $(DIST_DIR)/nuitka
-NUITKA_APP_DIR = $(NUITKA_OUT_DIR)/__main__.dist
-NUITKA_BIN = $(NUITKA_APP_DIR)/__main__.bin
-
 # Бинарник для локальной упаковки VSIX (совпадает с путём в extension.ts → bin/)
 EXTENSION_BIN_DIR = vscode-extension/bin
 EXTENSION_BIN = $(EXTENSION_BIN_DIR)/$(BIN_NAME)$(BIN_SUFFIX)
@@ -97,7 +89,7 @@ build-fast:
 		--add-data "$(SPELLCHECKER_RES):spellchecker/resources" \
 		--collect-data onec_hbk_bsl.bslls_typo_data \
 		--hidden-import spellchecker \
-		--copy-metadata fastmcp \
+		--copy-metadata mcp \
 		--copy-metadata onec-hbk-bsl \
 		--hidden-import uvicorn.loops \
 		--hidden-import uvicorn.loops.auto \
@@ -108,26 +100,6 @@ build-fast:
 		$(ENTRY)
 	@echo "✓ Готово: $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)"
 	@ls -lh $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)
-
-# Experimental fast-runtime native build. Better candidate than PyInstaller for startup-sensitive CLI.
-build-nuitka:
-	@echo "→ Nuitka standalone ($(PLATFORM))..."
-	@rm -rf $(NUITKA_OUT_DIR)
-	@mkdir -p $(NUITKA_OUT_DIR)
-	$(PYTHON3) -m nuitka \
-		--standalone \
-		--assume-yes-for-downloads \
-		--output-dir=$(NUITKA_OUT_DIR) \
-		--nofollow-import-to=pytest,_pytest,tkinter,matplotlib,numpy,pandas,IPython \
-		--include-package-data=onec_hbk_bsl.bslls_typo_data \
-		--include-data-dir="$(SPELLCHECKER_RES)=spellchecker/resources" \
-		--include-module=spellchecker \
-		--include-distribution-metadata=fastmcp \
-		--include-distribution-metadata=onec-hbk-bsl \
-		src/onec_hbk_bsl/__main__.py
-	@test -f $(NUITKA_BIN) || (echo "Нет $(NUITKA_BIN)" >&2 && exit 1)
-	@echo "✓ Готово: $(NUITKA_BIN)"
-	@ls -lh $(NUITKA_BIN)
 
 # Скопировать свежий бинарник в vscode-extension/bin/ (для vsce package / отладки расширения)
 sync-extension-bin:
@@ -141,14 +113,13 @@ sync-extension-bin:
 # Сборка PyInstaller + копирование в расширение одной командой
 extension-bin: build sync-extension-bin
 
-# Собрать webpack и упаковать VSIX с бинарником из extension-bin (sync → сборка → сброс плейсхолдера)
+# Собрать webpack и упаковать VSIX с бинарником из extension-bin.
 vsix: sync-version extension-bin
 	cd vscode-extension && npm run compile && \
 		VERSION=$$(node -p "require('./package.json').version") && \
 		npx @vscode/vsce package --no-dependencies \
 			-o onec-hbk-bsl-$$VERSION-local.vsix && \
 		echo "✓ VSIX: vscode-extension/onec-hbk-bsl-$$VERSION-local.vsix"
-	$(PYTHON3) scripts/reset_extension_placeholder.py
 
 # Проверить что бинарь работает
 build-check: build
@@ -156,7 +127,7 @@ build-check: build
 	$(BUILD_OUT) --version
 
 bench-30:
-	$(PYTHON3) scripts/dev_corpus_bench.py $(CONFIG_ROOT) --limit 30 --profile strict-bslls
+	$(PYTHON3) scripts/dev_corpus_bench.py $(CONFIG_ROOT) --limit 30
 
 bslls-oracle-fixtures:
 	PYTHONPATH=src $(PYTHON3) scripts/bslls_oracle_parity.py tests/fixtures --output-dir .agent/reports/bslls-oracle/fixtures
@@ -172,11 +143,11 @@ corpus-largest-3-sync:
 	find "$(CORPUS_LARGEST_3)" -type f | sort
 
 parity-largest-3:
-	PYTHONPATH=src $(PYTHON3) scripts/bslls_oracle_parity.py "$(CORPUS_LARGEST_3)" --profile strict-bslls --output-dir .agent/reports/bslls-oracle/largest-3
+	PYTHONPATH=src $(PYTHON3) scripts/bslls_oracle_parity.py "$(CORPUS_LARGEST_3)" --output-dir .agent/reports/bslls-oracle/largest-3
 
 # Пакет для дистрибуции с версией из установленного пакета (setuptools-scm / git)
 dist: build
-	@VERSION=$$(python -c "import importlib.metadata; print(importlib.metadata.version('onec-hbk-bsl'))"); \
+	@VERSION=$$($(PYTHON3) -c "import importlib.metadata; print(importlib.metadata.version('onec-hbk-bsl'))"); \
 	ARCHIVE=$(DIST_DIR)/onec-hbk-bsl-$$VERSION-$(PLATFORM).tar.gz; \
 	tar -czf $$ARCHIVE -C $(DIST_DIR) $(BIN_NAME)$(BIN_SUFFIX); \
 	echo "✓ Архив: $$ARCHIVE"; \

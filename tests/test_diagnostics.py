@@ -167,6 +167,35 @@ class TestCleanFile:
 
 
 class TestCheckFileOptimization:
+    def test_complexity_rules_reuse_string_state_per_file(self, tmp_path: Path, monkeypatch) -> None:
+        import onec_hbk_bsl.analysis.document_snapshot as snapshot_mod
+
+        body = "\n".join(
+            [
+                "    Если Истина Тогда",
+                '        Сообщение("ok");',
+                "    КонецЕсли;",
+            ]
+        )
+        content = "\n".join(
+            f"Процедура Тест{i}()\n{body}\nКонецПроцедуры" for i in range(12)
+        )
+        bsl_file = tmp_path / "many_procs.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+        calls = {"value": 0}
+        original = snapshot_mod.build_line_string_states
+
+        def counted(lines: list[str]) -> list[bool]:
+            calls["value"] += 1
+            return original(lines)
+
+        monkeypatch.setattr(snapshot_mod, "build_line_string_states", counted)
+
+        engine = DiagnosticEngine(select={"BSL011", "BSL019"})
+        engine.check_file(str(bsl_file))
+
+        assert calls["value"] == 1
+
     def test_check_file_reads_content_once_when_tree_not_provided(
         self, tmp_path: Path, monkeypatch
     ) -> None:

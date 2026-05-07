@@ -10,8 +10,8 @@ configuration/workspace directory and measures:
 - changed-file ratio after formatting
 
 Example:
-    python scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
-    python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
+    python3 scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
+    python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 """
 
 from __future__ import annotations

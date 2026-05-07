@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_left, bisect_right
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,15 +18,16 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     split_commas_outside_double_quotes,
     strip_leading_val_keywords,
 )
-from onec_hbk_bsl.analysis.call_graph import Call, extract_calls
+from onec_hbk_bsl.analysis.call_graph import Call
 from onec_hbk_bsl.analysis.diagnostic.string_state import (
     build_line_string_states,
     comment_start_outside_double_quotes,
     mask_double_quoted_strings_preserve_len,
     strip_inline_comment_preserve_strings,
 )
-from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
-from onec_hbk_bsl.analysis.symbols import Symbol, extract_symbols
+from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
+from onec_hbk_bsl.analysis.semantic import SemanticModel, extract_semantic_model
+from onec_hbk_bsl.analysis.symbols import Symbol
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 _RE_PROC_HEADER = re.compile(
@@ -477,6 +479,7 @@ class DocumentSnapshot:
     _proc_node_map: dict[tuple[str, int, str], Any] | None = None
     _symbols: list[Symbol] | None = None
     _calls: list[Call] | None = None
+    _semantic_model: SemanticModel | None = None
     _query_blocks: list[QueryTextBlockInfo] | None = None
     _line_string_states: list[bool] | None = None
     _comment_starts: list[int | None] | None = None
@@ -485,6 +488,9 @@ class DocumentSnapshot:
     _line_lengths: list[int] | None = None
     _blank_line_flags: list[bool] | None = None
     _has_parse_errors: bool | None = None
+    _ts_node_groups: dict[str, list[Any]] | None = None
+    _complexity_metrics_cache: dict[tuple[tuple[int, int], ...], list[tuple[int, int]]] | None = None
+    _runtime_call_context_cache: Any | None = None
 
     @property
     def root_node(self) -> Any | None:
@@ -546,14 +552,20 @@ class DocumentSnapshot:
     @property
     def symbols(self) -> list[Symbol]:
         if self._symbols is None:
-            self._symbols = extract_symbols(self.tree, file_path=self.path)
+            self._symbols = self.semantic_model.symbols
         return self._symbols
 
     @property
     def calls(self) -> list[Call]:
         if self._calls is None:
-            self._calls = extract_calls(self.tree, file_path=self.path)
+            self._calls = self.semantic_model.calls
         return self._calls
+
+    @property
+    def semantic_model(self) -> SemanticModel:
+        if self._semantic_model is None:
+            self._semantic_model = extract_semantic_model(self.tree, file_path=self.path)
+        return self._semantic_model
 
     @property
     def query_text_blocks(self) -> list[QueryTextBlockInfo]:
@@ -606,6 +618,70 @@ class DocumentSnapshot:
         if self._blank_line_flags is None:
             self._blank_line_flags = [line.strip() == "" for line in self.lines]
         return self._blank_line_flags
+
+    def ts_nodes_for_types(
+        self,
+        node_types: set[str],
+        *,
+        hot_node_types: Iterable[str] = (),
+        walker: Callable[[Any], Iterable[Any]],
+    ) -> dict[str, list[Any]]:
+        """Return CST nodes grouped by type, materialised once per snapshot."""
+        root = self.root_node
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            return {node_type: [] for node_type in node_types}
+        if self._ts_node_groups is None:
+            collected_types = set(node_types) | set(hot_node_types)
+            grouped = {node_type: [] for node_type in collected_types}
+            for node in walker(root):
+                node_type = getattr(node, "type", None)
+                if node_type in grouped:
+                    grouped[node_type].append(node)
+            self._ts_node_groups = grouped
+        else:
+            missing = (set(node_types) | set(hot_node_types)) - set(self._ts_node_groups)
+            if missing:
+                for node_type in missing:
+                    self._ts_node_groups[node_type] = []
+                for node in walker(root):
+                    node_type = getattr(node, "type", None)
+                    if node_type in missing:
+                        self._ts_node_groups[node_type].append(node)
+        return {node_type: self._ts_node_groups.get(node_type, []) for node_type in node_types}
+
+    def complexity_metrics_for_procs(
+        self,
+        procs: list[ProcInfo],
+        *,
+        calculator: Callable[..., tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        """Return cached ``(cognitive, mccabe)`` metrics for procedures."""
+        key = tuple((proc.start_idx, proc.end_idx) for proc in procs)
+        if self._complexity_metrics_cache is None:
+            self._complexity_metrics_cache = {}
+        cached = self._complexity_metrics_cache.get(key)
+        if cached is not None:
+            return cached
+        string_states = self.line_string_states
+        metrics = [
+            calculator(
+                self.lines,
+                proc.start_idx,
+                proc.end_idx,
+                string_states=string_states,
+            )
+            for proc in procs
+        ]
+        self._complexity_metrics_cache[key] = metrics
+        return metrics
+
+    def get_runtime_call_context(self) -> Any | None:
+        """Return cached runtime call context if it has been built."""
+        return self._runtime_call_context_cache
+
+    def set_runtime_call_context(self, context: Any) -> None:
+        """Store shared runtime call context for this snapshot."""
+        self._runtime_call_context_cache = context
 
 
 def build_document_snapshot(

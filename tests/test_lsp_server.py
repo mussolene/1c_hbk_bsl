@@ -182,7 +182,7 @@ class TestPublishDiagnostics:
     def test_publish_diagnostics_engine_failure_returns_failure_diagnostic(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """When check_content raises, publish a single DiagnosticsFailure instead of an empty list."""
+        """When engine diagnostics raises, publish a single DiagnosticsFailure."""
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         bsl = tmp_path / "mod.bsl"
         bsl.write_text("А = 1;\n", encoding="utf-8")
@@ -199,6 +199,7 @@ class TestPublishDiagnostics:
         def _boom(*_a: object, **_k: object) -> None:
             raise RuntimeError("boom")
 
+        ls.diagnostics_engine.check_snapshot = _boom  # type: ignore[method-assign]
         ls.diagnostics_engine.check_content = _boom  # type: ignore[method-assign]
 
         uri = _path_to_uri(str(bsl))
@@ -338,6 +339,174 @@ class TestLastIdentifier:
 
 class TestHandlerFunctions:
     """Call the LSP handler functions directly with mock params."""
+
+    def test_large_documents_skip_sync_local_scope_parse(self) -> None:
+        from onec_hbk_bsl.lsp.server import _allow_sync_local_scope_parse
+
+        assert _allow_sync_local_scope_parse("А = 1;\n")
+        assert not _allow_sync_local_scope_parse("А" * 1_000_001)
+
+    def test_large_document_uses_background_local_scope_cache(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_definition, on_did_open, on_hover
+
+        class _SyncThread:
+            def __init__(self, target, args=(), kwargs=None, daemon=None, name=None):
+                self._target = target
+                self._args = args
+                self._kwargs = kwargs or {}
+
+            def start(self):
+                self._target(*self._args, **self._kwargs)
+
+        monkeypatch.setattr(threading, "Thread", _SyncThread)
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        uri = "file:///large.bsl"
+        content = (
+            "Процедура Большая(Параметр)\n"
+            + ("// длинный комментарий\n" * 60_000)
+            + "    Параметр = Параметр;\n"
+            + "КонецПроцедуры\n"
+        )
+        open_params = MagicMock()
+        open_params.text_document.uri = uri
+        open_params.text_document.text = content
+
+        on_did_open(ls, open_params)
+
+        hover_params = MagicMock()
+        hover_params.text_document.uri = uri
+        hover_params.position.line = 0
+        hover_params.position.character = content.splitlines()[0].index("Параметр") + 2
+        hover = on_hover(ls, hover_params)
+        assert hover is not None
+        assert "Параметр" in str(hover.contents)
+
+        definition = on_definition(ls, hover_params)
+        assert definition
+        assert definition[0].target_selection_range.start.line == 0
+
+    def test_large_document_code_lens_reuses_parsed_document_cache(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_code_lens, on_did_open
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        class _SyncThread:
+            def __init__(self, target, args=(), kwargs=None, daemon=None, name=None):
+                self._target = target
+                self._args = args
+                self._kwargs = kwargs or {}
+
+            def start(self):
+                self._target(*self._args, **self._kwargs)
+
+        monkeypatch.setattr(threading, "Thread", _SyncThread)
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        uri = "file:///large.bsl"
+        content = (
+            "Процедура Большая(Параметр)\n"
+            + ("// длинный комментарий\n" * 60_000)
+            + "КонецПроцедуры\n"
+        )
+        open_params = MagicMock()
+        open_params.text_document.uri = uri
+        open_params.text_document.text = content
+        on_did_open(ls, open_params)
+
+        def fail_parse_content(self, content: str, file_path: str = "<string>") -> object:
+            raise AssertionError("code lens should reuse cached parse tree")
+
+        monkeypatch.setattr(BslParser, "parse_content", fail_parse_content)
+
+        lens_params = MagicMock()
+        lens_params.text_document.uri = uri
+        result = on_code_lens(ls, lens_params)
+        assert result
+
+    def test_small_document_reuses_shared_lsp_context_for_hover_and_definition(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_definition, on_did_open, on_hover
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        uri = "file:///small.bsl"
+        content = "Процедура Тест(Параметр)\n    Параметр = 1;\nКонецПроцедуры\n"
+        open_params = MagicMock()
+        open_params.text_document.uri = uri
+        open_params.text_document.text = content
+        on_did_open(ls, open_params)
+
+        original_parse_content = BslParser.parse_content
+        parse_calls = 0
+
+        def counted_parse_content(self, content: str, file_path: str = "<string>") -> object:
+            nonlocal parse_calls
+            parse_calls += 1
+            return original_parse_content(self, content, file_path=file_path)
+
+        monkeypatch.setattr(BslParser, "parse_content", counted_parse_content)
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 1
+        params.position.character = content.splitlines()[1].index("Параметр") + 2
+
+        definition = on_definition(ls, params)
+        hover = on_hover(ls, params)
+
+        assert definition
+        assert hover is not None
+        assert parse_calls == 1
+
+    def test_lsp_diagnostics_reuse_shared_context_after_hover(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import _build_lsp_diagnostics_inner, on_did_open, on_hover
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        path = tmp_path / "small.bsl"
+        content = "Процедура Тест(Параметр)\n    Параметр = 1;\nКонецПроцедуры\n"
+        path.write_text(content, encoding="utf-8")
+        uri = path.as_uri()
+
+        open_params = MagicMock()
+        open_params.text_document.uri = uri
+        open_params.text_document.text = content
+        on_did_open(ls, open_params)
+
+        hover_params = MagicMock()
+        hover_params.text_document.uri = uri
+        hover_params.position.line = 1
+        hover_params.position.character = content.splitlines()[1].index("Параметр") + 2
+        assert on_hover(ls, hover_params) is not None
+
+        def fail_parse_content(self, content: str, file_path: str = "<string>") -> object:
+            raise AssertionError("diagnostics should reuse the shared LSP snapshot")
+
+        monkeypatch.setattr(BslParser, "parse_content", fail_parse_content)
+
+        diagnostics = _build_lsp_diagnostics_inner(ls, uri, str(path))
+        assert isinstance(diagnostics, list)
 
     def _make_server(self, tmp_path, monkeypatch):
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
@@ -855,7 +1024,7 @@ class TestFormatting:
         from onec_hbk_bsl.lsp.server import on_formatting
 
         ls = self._make_server(tmp_path, monkeypatch)
-        code = "Процедура Тест()\nКонецПроцедуры\n"
+        code = "Процедура Тест()\nКонецПроцедуры"
         ls._docs["file:///test.bsl"] = code
         params = MagicMock()
         params.text_document.uri = "file:///test.bsl"

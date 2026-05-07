@@ -11,7 +11,8 @@ This runbook covers production usage of:
 - Default diagnostics use the BSLLS-compatible public profile. There are no user-facing strict/legacy/compat profile switches.
 - `BSL_SELECT` / `BSL_IGNORE` and `onecHbkBsl.diagnostics.select` / `ignore` only filter the default profile.
 - Formatting uses the BSLLS-oriented defaults exposed by the extension: tabs for `[bsl]`, logical indent width 4, safe on-type indentation on newline only.
-- Parser/line fallback paths are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.
+- Diagnostics/indexing parser fallbacks are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.
+- The formatter has no parser/line/CST fallback mode: it formats from the BSLLS-compatible token stream.
 
 ## Startup And Activation
 - VSCode extension activates on:
@@ -64,7 +65,7 @@ When `useDocker` is true, the extension runs:
 ## Operational Commands
 - Lint: `ruff check`
 - Tests + coverage gate: `PYTHONPATH=src pytest -q`
-- Benchmarks: `PYTHONPATH=src python -m onec_hbk_bsl --bench <workspace>`
+- Benchmarks: `PYTHONPATH=src python3 -m onec_hbk_bsl --bench <workspace>`
 - VSCode extension compile: `npm run compile` (in `vscode-extension`)
 
 ## Release Go/No-Go

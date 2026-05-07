@@ -253,7 +253,7 @@ class TestMainFormat:
 
     def test_format_subcommand_check_clean_exits_zero(self, tmp_path: Path) -> None:
         path = tmp_path / "clean.bsl"
-        path.write_text("Процедура Тест()\n\tА = 1;\nКонецПроцедуры\n", encoding="utf-8")
+        path.write_text("Процедура Тест()\n\tА = 1;\nКонецПроцедуры", encoding="utf-8")
         with patch("sys.argv", ["onec-hbk-bsl", "format", str(tmp_path), "--check"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()

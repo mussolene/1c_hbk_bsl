@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -19,7 +20,9 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BSLLS_ROOT = REPO_ROOT / ".agent" / "tmp" / "bslls-source"
+BSLLS_ROOT = Path(
+    os.environ.get("BSLLS_SOURCE_ROOT", str(REPO_ROOT / ".nosync" / "bsl-language-server"))
+)
 BSLLS_DIAG_DIR = BSLLS_ROOT / "src/main/java/com/github/_1c_syntax/bsl/languageserver/diagnostics"
 BSLLS_RES_DIR = (
     BSLLS_ROOT / "src/main/resources/com/github/_1c_syntax/bsl/languageserver/diagnostics"
@@ -127,7 +130,7 @@ def parse_bslls_diagnostics() -> list[BsllsDiagnostic]:
     if not BSLLS_DIAG_DIR.exists():
         raise SystemExit(
             f"BSLLS source tree is missing: {BSLLS_DIAG_DIR}. "
-            "Clone upstream into .agent/tmp/bslls-source first."
+            "Clone upstream bsl-language-server source into the configured source directory first."
         )
 
     diagnostics: list[BsllsDiagnostic] = []
@@ -318,7 +321,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
     lines = [
         "# BSLLS diagnostics static matrix",
         "",
-        "Источник BSLLS: `.agent/tmp/bslls-source` (upstream develop, статическое чтение Java/properties).",
+        "Источник BSLLS: upstream `bsl-language-server` develop, статическое чтение Java/properties.",
         "Локальный источник: `src/onec_hbk_bsl/analysis/diagnostics.py` и `src/onec_hbk_bsl/analysis/diagnostic/**`.",
         "",
         "## Summary",

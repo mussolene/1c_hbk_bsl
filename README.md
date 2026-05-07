@@ -94,7 +94,7 @@ BSL_IGNORE=BSL012 onec-hbk-bsl --check .
 ext install mussolene.1c-hbk-bsl
 ```
 
-При первом открытии `.bsl` файла расширение автоматически скачает серверный бинарник.
+При первом открытии `.bsl` файла расширение найдёт установленный или вложенный серверный бинарник; если подходящего бинарника нет, предложит скачать его из GitHub Releases.
 
 Для ручной настройки добавьте в `.vscode/settings.json`:
 
@@ -123,6 +123,10 @@ uv tool install onec-hbk-bsl
 
 # Линтинг проекта
 onec-hbk-bsl --check /path/to/1c-project
+
+# Форматирование проекта
+onec-hbk-bsl format /path/to/1c-project
+onec-hbk-bsl format /path/to/1c-project --check
 
 # MCP-сервер для Claude
 onec-hbk-bsl --mcp --port 8051

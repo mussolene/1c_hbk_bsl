@@ -40,7 +40,12 @@ def run_bsl183_execute_external_code(path: str, lines: list[str]) -> list[Any]:
     return diags
 
 
-def run_bsl218_missing_temporary_file_deletion(path: str, lines: list[str], tree: Any) -> list[Any]:
+def run_bsl218_missing_temporary_file_deletion(
+    path: str,
+    lines: list[str],
+    tree: Any,
+    global_calls: list[dict[str, Any]] | None = None,
+) -> list[Any]:
     _diag = _diag_module()
     root = getattr(tree, "root_node", None)
     if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
@@ -49,7 +54,8 @@ def run_bsl218_missing_temporary_file_deletion(path: str, lines: list[str], tree
     line_texts = lines
     diags: list[Any] = []
 
-    for call in _diag._ts_global_method_calls(root, line_texts):
+    calls = global_calls if global_calls is not None else _diag._ts_global_method_calls(root, line_texts)
+    for call in calls:
         if str(call["name"]).casefold() not in _diag._BSL218_GET_TEMP_NAMES:
             continue
         method_node = call["node"]

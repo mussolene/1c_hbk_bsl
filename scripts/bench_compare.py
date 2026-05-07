@@ -3,10 +3,10 @@
 Сравнение результатов bench_timing.py до и после оптимизации.
 
 Использование:
-    python scripts/bench_timing.py > before.txt
+    python3 scripts/bench_timing.py > before.txt
     # ... применить оптимизацию ...
-    python scripts/bench_timing.py > after.txt
-    python scripts/bench_compare.py before.txt after.txt
+    python3 scripts/bench_timing.py > after.txt
+    python3 scripts/bench_compare.py before.txt after.txt
 
 Вывод:
    lines   before_ms    after_ms    delta%

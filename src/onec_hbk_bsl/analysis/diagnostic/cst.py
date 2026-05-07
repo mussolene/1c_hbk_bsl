@@ -11,8 +11,8 @@ from collections.abc import Callable
 from typing import Any
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
-from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
 
 
 def ts_tree_ok_for_rules(tree: Any) -> bool:

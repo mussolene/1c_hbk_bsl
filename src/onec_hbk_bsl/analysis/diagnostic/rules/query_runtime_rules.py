@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from typing import Any
 
 
@@ -359,7 +360,10 @@ def run_bsl258_union_without_all(path: str, lines: list[str]) -> list[Any]:
 
 
 def run_bsl225_number_of_values_in_structure_constructor(
-    path: str, lines: list[str], tree: Any
+    path: str,
+    lines: list[str],
+    tree: Any,
+    new_expression_nodes: list[Any] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     root = getattr(tree, "root_node", None)
@@ -367,9 +371,16 @@ def run_bsl225_number_of_values_in_structure_constructor(
         return []
     type_names = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
     diags: list[Any] = []
-    for node in _diag._ts_walk(root):
-        if getattr(node, "type", None) != "new_expression":
-            continue
+    nodes = (
+        new_expression_nodes
+        if new_expression_nodes is not None
+        else [
+            node
+            for node in _diag._ts_walk(root)
+            if getattr(node, "type", None) == "new_expression"
+        ]
+    )
+    for node in nodes:
         type_node = _diag._ts_child_of_type(node, "identifier")
         if type_node is None:
             continue
@@ -619,12 +630,47 @@ def run_bsl245_server_side_export_form_method(
     return diags
 
 
-def run_bsl230_pairing_broken_transaction(path: str, tree: Any) -> list[Any]:
+def _node_contains(parent: Any, child: Any) -> bool:
+    start = getattr(parent, "start_byte", None)
+    end = getattr(parent, "end_byte", None)
+    child_start = getattr(child, "start_byte", None)
+    if start is None or end is None or child_start is None:
+        return False
+    return start <= child_start < end
+
+
+def _calls_in_node(
+    parent: Any,
+    calls: list[dict[str, Any]],
+    starts: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    start = getattr(parent, "start_byte", None)
+    end = getattr(parent, "end_byte", None)
+    if start is None or end is None:
+        return [call for call in calls if _node_contains(parent, call["node"])]
+    effective_starts = (
+        starts
+        if starts is not None
+        else [getattr(call["node"], "start_byte", -1) for call in calls]
+    )
+    left = bisect_left(effective_starts, start)
+    right = bisect_left(effective_starts, end)
+    return calls[left:right]
+
+
+def run_bsl230_pairing_broken_transaction(
+    path: str,
+    tree: Any,
+    global_calls: list[dict[str, Any]] | None = None,
+    global_call_starts: list[int] | None = None,
+    proc_nodes: list[Any] | None = None,
+    line_texts: list[str] | None = None,
+) -> list[Any]:
     _diag = _diag_module()
     root = getattr(tree, "root_node", None)
     if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
         return []
-    line_texts = _diag._ts_node_text(root).splitlines()
+    line_texts = line_texts if line_texts is not None else _diag._ts_node_text(root).splitlines()
     diags: list[Any] = []
     begin_names = {"начатьтранзакцию", "begintransaction"}
     pair_specs = (
@@ -652,13 +698,21 @@ def run_bsl230_pairing_broken_transaction(path: str, tree: Any) -> list[Any]:
             },
         ),
     )
-    proc_nodes = [
-        node
-        for node in _diag._ts_walk(root)
-        if getattr(node, "type", None) in {"procedure_definition", "function_definition"}
-    ]
-    for proc_node in proc_nodes:
-        calls = _diag._ts_global_method_calls(proc_node, line_texts)
+    effective_proc_nodes = (
+        proc_nodes
+        if proc_nodes is not None
+        else [
+            node
+            for node in _diag._ts_walk(root)
+            if getattr(node, "type", None) in {"procedure_definition", "function_definition"}
+        ]
+    )
+    for proc_node in effective_proc_nodes:
+        calls = (
+            _calls_in_node(proc_node, global_calls, global_call_starts)
+            if global_calls is not None
+            else _diag._ts_global_method_calls(proc_node, line_texts)
+        )
         if not calls:
             continue
         for allowed_names, pair_names in pair_specs:
@@ -701,18 +755,28 @@ def run_bsl230_pairing_broken_transaction(path: str, tree: Any) -> list[Any]:
     return diags
 
 
-def run_bsl277_wrong_use_of_rollback_transaction(path: str, tree: Any) -> list[Any]:
+def run_bsl277_wrong_use_of_rollback_transaction(
+    path: str,
+    tree: Any,
+    global_calls: list[dict[str, Any]] | None = None,
+    global_call_starts: list[int] | None = None,
+    try_nodes: list[Any] | None = None,
+    line_texts: list[str] | None = None,
+) -> list[Any]:
     _diag = _diag_module()
     root = getattr(tree, "root_node", None)
     if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
         return []
-    line_texts = _diag._ts_node_text(root).splitlines()
+    line_texts = line_texts if line_texts is not None else _diag._ts_node_text(root).splitlines()
     rollback_names = {"отменитьтранзакцию", "rollbacktransaction"}
     diags: list[Any] = []
     rollback_in_except_ids: set[int] = set()
-    for node in _diag._ts_walk(root):
-        if getattr(node, "type", None) != "try_statement":
-            continue
+    effective_try_nodes = (
+        try_nodes
+        if try_nodes is not None
+        else [node for node in _diag._ts_walk(root) if getattr(node, "type", None) == "try_statement"]
+    )
+    for node in effective_try_nodes:
         children = list(getattr(node, "children", []) or [])
         except_idx = next(
             (
@@ -736,7 +800,12 @@ def run_bsl277_wrong_use_of_rollback_transaction(path: str, tree: Any) -> list[A
             endtry_idx = len(children)
         except_calls: list[dict[str, Any]] = []
         for child in children[except_idx + 1 : endtry_idx]:
-            except_calls.extend(_diag._ts_global_method_calls(child, line_texts))
+            if global_calls is not None:
+                except_calls.extend(
+                    _calls_in_node(child, global_calls, global_call_starts)
+                )
+            else:
+                except_calls.extend(_diag._ts_global_method_calls(child, line_texts))
         if not except_calls:
             continue
         rollback_is_first = str(except_calls[0]["name"]).casefold() in rollback_names
@@ -759,7 +828,8 @@ def run_bsl277_wrong_use_of_rollback_transaction(path: str, tree: Any) -> list[A
                     message="Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения",
                 )
             )
-    for call in _diag._ts_global_method_calls(root, line_texts):
+    calls = global_calls if global_calls is not None else _diag._ts_global_method_calls(root, line_texts)
+    for call in calls:
         name_cf = str(call["name"]).casefold()
         if name_cf not in rollback_names:
             continue
@@ -780,12 +850,19 @@ def run_bsl277_wrong_use_of_rollback_transaction(path: str, tree: Any) -> list[A
     return diags
 
 
-def run_bsl262_usage_write_log_event(path: str, tree: Any) -> list[Any]:
+def run_bsl262_usage_write_log_event(
+    path: str,
+    tree: Any,
+    global_calls: list[dict[str, Any]] | None = None,
+    global_call_starts: list[int] | None = None,
+    try_nodes: list[Any] | None = None,
+    line_texts: list[str] | None = None,
+) -> list[Any]:
     _diag = _diag_module()
     root = getattr(tree, "root_node", None)
     if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
         return []
-    line_texts = _diag._ts_node_text(root).splitlines()
+    line_texts = line_texts if line_texts is not None else _diag._ts_node_text(root).splitlines()
     diags: list[Any] = []
     target_names = {"записьжурналарегистрации", "writelogevent"}
     level_root_names = {"уровеньжурналарегистрации", "eventloglevel"}
@@ -823,11 +900,19 @@ def run_bsl262_usage_write_log_event(path: str, tree: Any) -> list[Any]:
             for level in error_level_names
         )
 
-    for node in _diag._ts_walk(root):
-        if getattr(node, "type", None) != "try_statement":
-            continue
+    effective_try_nodes = (
+        try_nodes
+        if try_nodes is not None
+        else [node for node in _diag._ts_walk(root) if getattr(node, "type", None) == "try_statement"]
+    )
+    for node in effective_try_nodes:
         for child in except_children(node):
-            for call in _diag._ts_global_method_calls(child, line_texts):
+            calls = (
+                _calls_in_node(child, global_calls, global_call_starts)
+                if global_calls is not None
+                else _diag._ts_global_method_calls(child, line_texts)
+            )
+            for call in calls:
                 if str(call["name"]).casefold() not in target_names:
                     continue
                 args = _diag._ts_method_call_arg_exprs(call["node"])

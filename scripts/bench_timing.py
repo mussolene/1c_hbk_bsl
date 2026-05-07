@@ -6,9 +6,9 @@
    lines    time_ms   ms/kline    diags  file
 
 Использование:
-    python scripts/bench_timing.py
-    python scripts/bench_timing.py --runs=10
-    python scripts/bench_timing.py 1000 3000   # только эти размеры
+    python3 scripts/bench_timing.py
+    python3 scripts/bench_timing.py --runs=10
+    python3 scripts/bench_timing.py 1000 3000   # только эти размеры
 """
 
 from __future__ import annotations

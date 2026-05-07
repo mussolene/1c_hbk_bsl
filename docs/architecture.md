@@ -6,7 +6,7 @@
 
 BSL Analyzer (`onec-hbk-bsl`) — статический анализ для языка 1C Enterprise BSL. Три интерфейса над общим SQLite-индексом символов и вызовов:
 
-1. **MCP server** (Python MCP SDK / FastMCP) — инструменты для ассистентов (поиск символов, диагностики, метаданные, и др.)
+1. **MCP server** (Python MCP SDK) — инструменты для ассистентов (поиск символов, диагностики, метаданные, и др.)
 2. **LSP server** (pygls) — VS Code / Cursor: определение, ссылки, переименование, дополнение, подсказки сигнатур, форматирование, диагностики
 3. **CLI** — `onec-hbk-bsl --check`, `--index`, и т.д.
 
@@ -18,7 +18,7 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │                                                              │
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────────┐ │
 │  │  --mcp   │   │  --lsp   │   │  --check / --index       │ │
-│  │ FastMCP  │   │  pygls   │   │  CLI (rich output)       │ │
+│  │   MCP    │   │  pygls   │   │  CLI (rich output)       │ │
 │  │ HTTP/SSE │   │  stdio   │   │                          │ │
 │  └────┬─────┘   └────┬─────┘   └────────────┬─────────────┘ │
 │       │              │                       │               │
@@ -99,13 +99,15 @@ Formatted response (dict / LSP Location)
 `textDocument/formatting` and `textDocument/rangeFormatting` use `BslFormatter`
 (`src/onec_hbk_bsl/analysis/formatter.py`).
 
-- **Structural block indent:** tree-sitter walk (`formatter_structural.py`),
-  merged with a keyword heuristic for blank/comment/`#` lines and when the parse
-  tree is a regex stub or contains ERROR nodes.
-- **Multi-line expression indent (BSL LS style):** extra level after a bare `=`
-  until `;`, leading `.` chains, operator context for `Если`/`Пока`/`Для` until
-  `Тогда`/`Цикл`, procedure signature tracking — line-based state in `formatter.py`.
-- **Token spacing in argument lists:** `formatter_ast_spacing.py` (comma spacing and related layout on valid CST).
+- **BSLLS-compatible token stream:** `formatter_tokens.py` provides the lexer used
+  by the formatter. It recognizes preprocessor lines, comments, annotations,
+  strings/query pipes, datetime literals, keywords, operators, and punctuation.
+- **Formatting state:** `formatter.py` applies BSLLS-like indentation and spacing
+  from the token stream. Range formatting formats the full document first and
+  then returns the requested lines, so the selected range keeps surrounding
+  token context.
+- **Parse-tree helpers:** diagnostics and snapshots use `parse_tree.py` for CST
+  parse-error checks. Formatting no longer depends on CST indentation fallbacks.
 
 Связь с диагностиками стиля BSLLS поддерживается в текущем наборе тестов и правилах движка.
 

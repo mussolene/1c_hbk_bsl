@@ -8,7 +8,7 @@
 - Циклы, условия, вложенность
 
 Использование:
-    python scripts/bench_generate_fixtures.py
+    python3 scripts/bench_generate_fixtures.py
     # Создаёт tests/fixtures/bench_100.bsl, bench_500.bsl, и т.д.
 """
 

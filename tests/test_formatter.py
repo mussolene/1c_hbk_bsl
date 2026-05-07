@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -29,16 +30,16 @@ class TestBomAndEncoding:
 
 
 class TestLineCommentNormalization:
-    def test_spaces_after_double_slash(self) -> None:
+    def test_preserves_double_slash_comment_text(self) -> None:
         f = BslFormatter()
         result = f.format("//foo\n")
-        assert "// foo\n" in result or result.strip() == "// foo"
+        assert result.strip() == "//foo"
 
-    def test_collapses_multiple_spaces_before_text(self) -> None:
+    def test_preserves_spaces_after_double_slash(self) -> None:
         f = BslFormatter()
         result = f.format("//    bar\n")
         line = result.splitlines()[0].lstrip()
-        assert line == "// bar"
+        assert line == "//    bar"
 
     def test_strict_bslls_preserves_comment_block_spacing(self) -> None:
         f = BslFormatter()
@@ -189,12 +190,12 @@ class TestKeywordNormalisation:
         assert "Исключение" in result
         assert "КонецПопытки" in result
 
-    def test_literals_normalised(self) -> None:
+    def test_literals_preserved_like_bslls(self) -> None:
         f = BslFormatter()
         result = f.format("А = истина;\nБ = ложь;\nВ = неопределено;\n")
-        assert "Истина" in result
-        assert "Ложь" in result
-        assert "Неопределено" in result
+        assert "истина" in result
+        assert "ложь" in result
+        assert "неопределено" in result
 
     def test_english_keywords_normalised(self) -> None:
         f = BslFormatter()
@@ -238,7 +239,7 @@ class TestIndentation:
         lines = f.format(code).splitlines()
         cond = [ln for ln in lines if "Результат" in ln][0]
         kw = [ln for ln in lines if ln.strip() == "Если"][0]
-        assert cond.startswith("\t\t\t"), cond
+        assert cond.startswith("\t\t"), cond
         assert kw.startswith("\t"), kw
 
     def test_call_argument_comma_spacing_ast(self) -> None:
@@ -255,15 +256,13 @@ class TestIndentation:
         )
         assert 'ФорматированнаяСтрока(Текст, , , , "Команда")' in f.format(code)
 
-    def test_if_then_same_line_splits_body_to_next_line(self) -> None:
-        """One-line ``Если … Тогда <stmt>`` becomes two lines so body indents vertically."""
+    def test_if_then_same_line_preserved_like_bslls(self) -> None:
+        """BSLLS token formatting does not split a one-line ``Если … Тогда <stmt>``."""
         f = BslFormatter()
         result = f.format("Если А > 0 Тогда Б = 1;\nКонецЕсли;\n")
         lines = result.splitlines()
-        assert "Тогда" in lines[0] and "Б = 1" not in lines[0]
-        assert lines[1].strip().startswith("Б = 1")
-        assert lines[1].startswith("\t")
-        assert "КонецЕсли" in lines[2]
+        assert lines[0] == "Если А > 0 Тогда Б = 1;"
+        assert "КонецЕсли" in lines[1]
 
     def test_nested_indent(self) -> None:
         f = BslFormatter()
@@ -350,8 +349,7 @@ class TestBlankLines:
     def test_single_trailing_newline(self) -> None:
         f = BslFormatter()
         result = f.format("А = 1;\n\n\n")
-        assert result.endswith("\n")
-        assert not result.endswith("\n\n\n")
+        assert not result.endswith("\n")
 
 
 class TestFormatRange:
@@ -389,7 +387,7 @@ class TestFormatRange:
         assert "\n\t&НаКлиенте\n" not in result
         assert "\n&НаКлиенте\n" in result
 
-    def test_indent_at_uses_prefix_context(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_indent_at_uses_token_formatter_context(self) -> None:
         f = BslFormatter()
         code = (
             "Процедура Тест()\n"
@@ -402,17 +400,8 @@ class TestFormatRange:
         )
         lines = code.splitlines()
         target = 2
-        captured: dict[str, int] = {}
-        original = f._layout_context
-
-        def spy(*, path: str, content: str, lines: list[str]):
-            captured["lines"] = len(lines)
-            return original(path=path, content=content, lines=lines)
-
-        monkeypatch.setattr(f, "_layout_context", spy)
         level = f._indent_at(lines, target, 4, insert_spaces=True, full_text=code)
-        assert level >= 0
-        assert captured["lines"] == target + 1
+        assert level == 2
 
 
 class TestComments:
@@ -504,7 +493,8 @@ class TestBsllsFixtureParity:
     def test_matches_bslls_provider_fixture_pairs(
         self, source_name: str, expected_name: str, indent_size: int
     ) -> None:
-        root = Path(".agent/tmp/bslls-source/src/test/resources/providers")
+        root = Path(os.environ.get("BSLLS_SOURCE_ROOT", ".nosync/bsl-language-server"))
+        root = root / "src/test/resources/providers"
         source_path = root / source_name
         expected_path = root / expected_name
         if not source_path.exists() or not expected_path.exists():

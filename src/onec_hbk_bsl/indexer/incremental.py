@@ -19,8 +19,7 @@ from typing import Any
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
-from onec_hbk_bsl.analysis.call_graph import extract_calls
-from onec_hbk_bsl.analysis.symbols import extract_symbols
+from onec_hbk_bsl.analysis.semantic import extract_semantic_model
 from onec_hbk_bsl.indexer.metadata_parser import (
     crawl_config,
     find_config_root,
@@ -425,11 +424,10 @@ class IncrementalIndexer:
         """Parse one file and return prepared symbol/call dict lists."""
         try:
             tree = self._get_parser().parse_file(path)
-            symbols = extract_symbols(tree, file_path=path)
-            calls = extract_calls(tree, file_path=path)
+            semantic = extract_semantic_model(tree, file_path=path)
             return {
-                "symbols": [_symbol_to_dict(s) for s in symbols],
-                "calls": [_call_to_dict(c) for c in calls],
+                "symbols": [_symbol_to_dict(s) for s in semantic.symbols],
+                "calls": [_call_to_dict(c) for c in semantic.calls],
             }
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}

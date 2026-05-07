@@ -78,7 +78,7 @@ Use `acs run` when ACS should execute and record a command:
 ```bash
 acs run --label "ruff" -- ruff check src tests
 acs run --label "pytest" -- env PYTHONPATH=src ./.venv/bin/python -m pytest -q
-acs run --label "bslls parity" -- python scripts/bslls_oracle_parity.py tests/fixtures
+acs run --label "bslls parity" -- python3 scripts/bslls_oracle_parity.py tests/fixtures
 ```
 
 Use `acs tool ingest-result` when a tool has already run and you need to record
@@ -126,7 +126,7 @@ Before claiming completion, record current verification:
 ```bash
 acs run --label "lint" -- ruff check src tests
 acs run --label "tests" -- env PYTHONPATH=src ./.venv/bin/python -m pytest -q
-acs run --label "oracle smoke" -- python scripts/bslls_oracle_parity.py tests/fixtures --reuse-oracle
+acs run --label "oracle smoke" -- python3 scripts/bslls_oracle_parity.py tests/fixtures --reuse-oracle
 ```
 
 If a check fails, apply the smallest safe fix and rerun the failing check.

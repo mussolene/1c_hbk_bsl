@@ -116,7 +116,7 @@ def main() -> int:
         top_only_bslls.update(_top_codes(d["only_bslls"]))
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    out_dir = repo_root / ".agent" / "tasks" / "python-bslls-full-parity" / "raw"
+    out_dir = repo_root / ".agent" / "reports" / "python-bslls-full-parity" / "raw"
     out_dir.mkdir(parents=True, exist_ok=True)
     out = {
         "mode": "largest3_sharded",

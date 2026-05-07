@@ -521,7 +521,7 @@ class TestBslFormat:
 
     def test_format_already_formatted(self, tmp_path) -> None:
         f = tmp_path / "mod.bsl"
-        f.write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
+        f.write_text("Процедура Тест()\nКонецПроцедуры", encoding="utf-8")
         app = _make_app(tmp_path)
         tools = _tool_fns(app)
         result = tools["bsl_format"].fn(file_path=str(f), write=False)

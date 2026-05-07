@@ -136,7 +136,7 @@ from onec_hbk_bsl.analysis.diagnostic.suppression import (
     parse_suppressions as _parse_suppressions,
 )
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
-from onec_hbk_bsl.analysis.formatter_structural import tree_has_errors
+from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
 from onec_hbk_bsl.analysis.diagnostic.helpers import proc_helpers as _proc_helpers
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     _RE_BSL275_HANDLER,
@@ -2445,6 +2445,15 @@ _RE_MCCABE_TERNARY = re.compile(r"\?\s*\(")
 
 
 def _count_mccabe_bool_ops(text: str, paren_depth: int = 0) -> tuple[int, int]:
+    if _RE_MCCABE_BOOL.search(text) is None:
+        if "(" not in text and ")" not in text:
+            return 0, paren_depth
+        for ch in text:
+            if ch == "(":
+                paren_depth += 1
+            elif ch == ")":
+                paren_depth = max(0, paren_depth - 1)
+        return 0, paren_depth
     count = 0
     i = 0
     while i < len(text):
@@ -2467,6 +2476,8 @@ def _count_mccabe_bool_ops(text: str, paren_depth: int = 0) -> tuple[int, int]:
 
 
 def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool = False) -> str:
+    if not in_string_at_start and '"' not in line and "//" not in line:
+        return line
     chars = list(line)
     in_string = in_string_at_start
     i = 0
@@ -5183,7 +5194,7 @@ def _ts_bsl218_block_has_deletion(
 
 
 # BSL051 — tree-sitter nodes that close or branch control flow (not executable body).
-# Matches keyword roles in formatter_structural (if/while/for/try).
+# Matches keyword roles in tree-sitter block statements (if/while/for/try).
 _BSL051_BLOCK_DELIMITER_TYPES = frozenset(
     {
         "ENDIF_KEYWORD",
@@ -5426,7 +5437,13 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
     return diags
 
 
-def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -> int:
+def _calc_cognitive_complexity(
+    lines: list[str],
+    start_idx: int,
+    end_idx: int,
+    *,
+    string_states: list[bool] | None = None,
+) -> int:
     """
     Calculate simplified Cognitive Complexity for a procedure body.
 
@@ -5441,7 +5458,8 @@ def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -
     nesting = 0
     bool_last_op: str | None = None
     bool_expr_open = False
-    string_states = _build_line_string_states(lines)
+    if string_states is None:
+        string_states = _build_line_string_states(lines)
     for i in range(start_idx + 1, min(end_idx, len(lines))):
         line = lines[i]
         stripped = line.strip()
@@ -5489,7 +5507,13 @@ def _calc_cognitive_complexity(lines: list[str], start_idx: int, end_idx: int) -
     return complexity
 
 
-def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> int:
+def _calc_mccabe_complexity(
+    lines: list[str],
+    start_idx: int,
+    end_idx: int,
+    *,
+    string_states: list[bool] | None = None,
+) -> int:
     """
     Calculate McCabe cyclomatic complexity for a procedure body.
 
@@ -5499,7 +5523,8 @@ def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> i
     """
     cc = 1
     paren_depth = 0
-    string_states = _build_line_string_states(lines)
+    if string_states is None:
+        string_states = _build_line_string_states(lines)
     for i in range(start_idx + 1, min(end_idx, len(lines))):
         line = lines[i]
         stripped = line.strip()
@@ -5518,6 +5543,78 @@ def _calc_mccabe_complexity(lines: list[str], start_idx: int, end_idx: int) -> i
         cc += bool_count
         cc += len(_RE_MCCABE_TERNARY.findall(line_no_strings))
     return cc
+
+
+def _calc_complexity_metrics(
+    lines: list[str],
+    start_idx: int,
+    end_idx: int,
+    *,
+    string_states: list[bool] | None = None,
+) -> tuple[int, int]:
+    """Calculate cognitive and McCabe complexity in a single pass over a procedure body."""
+    cognitive = 0
+    nesting = 0
+    bool_last_op: str | None = None
+    bool_expr_open = False
+    mccabe = 1
+    paren_depth = 0
+    if string_states is None:
+        string_states = _build_line_string_states(lines)
+    for i in range(start_idx + 1, min(end_idx, len(lines))):
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        if line.lstrip().startswith("|"):
+            bool_last_op = None
+            bool_expr_open = False
+            paren_depth = 0
+            continue
+        line_no_strings = _mask_strings_and_comments_for_counter(
+            line,
+            string_states[i] if i < len(string_states) else False,
+        )
+
+        starts_with_bool = bool(re.match(r"^\s*(?:И|And|ИЛИ|Or)\b", line_no_strings, re.IGNORECASE))
+        line_bool_count, bool_last_op = _count_cognitive_bool_ops(
+            line_no_strings,
+            bool_last_op if (bool_expr_open or starts_with_bool) else None,
+        )
+        cognitive += line_bool_count
+        opens_control_expr = bool(
+            re.search(r"\b(?:Если|If|ИначеЕсли|ElsIf|Пока|While)\b", line_no_strings, re.IGNORECASE)
+            and not re.search(r"\b(?:Тогда|Then|Цикл|Do)\b", line_no_strings, re.IGNORECASE)
+        )
+        opens_assignment_expr = bool(re.search(r"[=+\-*/]\s*$", line_no_strings))
+        bool_expr_open = (
+            opens_control_expr
+            or opens_assignment_expr
+            or bool(
+                (bool_expr_open or starts_with_bool)
+                and not re.search(
+                    r"(?:;|\b(?:Тогда|Then|Цикл|Do)\b)\s*$", line_no_strings, re.IGNORECASE
+                )
+            )
+        )
+        if not bool_expr_open:
+            bool_last_op = None
+        ternary_count = len(_RE_MCCABE_TERNARY.findall(line_no_strings))
+        cognitive += ternary_count * (1 + nesting)
+        if _CC_OPEN.match(line):
+            cognitive += 1 + nesting
+            nesting += 1
+        elif _CC_CLOSE.match(line):
+            nesting = max(0, nesting - 1)
+        elif _CC_ELSE.match(line):
+            cognitive += 1
+
+        if _RE_MCCABE_BRANCH.match(line_no_strings):
+            mccabe += 1
+        bool_count, paren_depth = _count_mccabe_bool_ops(line_no_strings, paren_depth)
+        mccabe += bool_count
+        mccabe += ternary_count
+    return cognitive, mccabe
 
 
 DiagnosticEngine = import_module("onec_hbk_bsl.analysis.diagnostic.engine").DiagnosticEngine

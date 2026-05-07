@@ -7,7 +7,7 @@ Run from the repo root after tagging, or in CI on a tag checkout.
 
 Usage::
 
-    python scripts/sync_version.py
+    python3 scripts/sync_version.py
 """
 
 from __future__ import annotations

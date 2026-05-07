@@ -34,10 +34,6 @@ build = [
 
 [project.scripts]
 onec-hbk-bsl = "onec_hbk_bsl.__main__:main"
-onec-hbk-bsl-lsp = "onec_hbk_bsl.lsp_main:main"
-onec-hbk-bsl-mcp = "onec_hbk_bsl.mcp_main:main"
-onec-hbk-bsl-cli = "onec_hbk_bsl.cli_main:main"
-onec-hbk-bsl-format = "onec_hbk_bsl.format_main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

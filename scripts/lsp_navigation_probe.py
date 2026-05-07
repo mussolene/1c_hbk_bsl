@@ -200,7 +200,7 @@ def run_probe() -> dict[str, object]:
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
-    out_dir = repo_root / ".agent" / "tasks" / "python-bslls-full-parity" / "raw"
+    out_dir = repo_root / ".agent" / "reports" / "python-bslls-full-parity" / "raw"
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%d-%H%M%S")
     out_path = out_dir / f"lsp-nav-probe-{ts}.json"

@@ -7,7 +7,7 @@ Usage:
     onec-hbk-bsl --mcp --stdio                     Start MCP server over stdio (Claude Desktop)
     onec-hbk-bsl --mcp --workspace /path/to/proj   Serve specific workspace (auto-indexes if empty)
     onec-hbk-bsl --check [PATH ...]                 Run linter (ruff-style output)
-    onec-hbk-bsl --format-code [PATH ...]           Format BSL files in-place
+    onec-hbk-bsl format [PATH ...]                  Format BSL files in-place
     onec-hbk-bsl --check [PATH] --diff              Check only git-changed BSL files
     onec-hbk-bsl --index [PATH]                     Force full reindex of workspace
     onec-hbk-bsl --list-rules                       Show all available rules
@@ -17,7 +17,6 @@ Usage:
 Check mode flags:
     --select BSL001,BSL002         Run only these rules
     --ignore BSL002                Skip these rules
-    --profile strict-bslls         Use canonical BSLLS core profile
     --format text|json|sonarqube|sarif  Output format (default: text)
     --jobs N                       Parallel workers (0 = auto, 1 = serial)
     --sonar-root PATH              Project root for SonarQube/SARIF relative paths
@@ -152,7 +151,6 @@ def _run_check(
     fmt: str,
     select: set[str] | None,
     ignore: set[str] | None,
-    profile: str | None,
     jobs: int,
     sonar_root: str | None,
     exit_zero: bool,
@@ -170,8 +168,6 @@ def _run_check(
     # Load config from the first checked path (or cwd)
     search_from = paths[0] if paths else os.getcwd()
     cfg = load_config(search_from)
-    if profile:
-        cfg._data["profile"] = profile
 
     # --diff: resolve paths to git-changed BSL files
     if diff:
@@ -270,7 +266,6 @@ def _run_watch(
     fmt: str,
     select: set[str] | None,
     ignore: set[str] | None,
-    profile: str | None,
     jobs: int,
     sonar_root: str | None,
     exit_zero: bool,
@@ -292,8 +287,6 @@ def _run_watch(
     _console = Console(stderr=True)
     search_from = paths[0] if paths else os.getcwd()
     cfg = load_config(search_from)
-    if profile:
-        cfg._data["profile"] = profile
     workspace = (
         paths[0]
         if len(paths) == 1 and os.path.isdir(paths[0])
@@ -344,8 +337,7 @@ def _run_init(target_dir: str) -> None:
 # Rules to run (empty = all rules)
 # select = ["BSL001", "BSL002"]
 
-# Rule profile: "strict-bslls"
-# profile = "strict-bslls"
+# Diagnostics always use the BSLLS-compatible default profile.
 
 # Rules to always skip
 ignore = []
@@ -533,8 +525,6 @@ Examples:
   onec-hbk-bsl --check . --exit-zero                  Never fail CI
   onec-hbk-bsl --check . --update-baseline baseline.json  Save known issues
   onec-hbk-bsl --check . --baseline baseline.json     Only report new issues
-  onec-hbk-bsl --format-code .                        Format BSL files in-place
-  onec-hbk-bsl --format-code . --format-check         Check formatting without writing
   onec-hbk-bsl --list-rules                           Show all available rules
   onec-hbk-bsl --mcp --port 8051                     Start MCP server for Claude
         """,
@@ -561,12 +551,6 @@ Examples:
         metavar="PATH",
         nargs="*",
         help="Run linter on PATH(s) (current dir if omitted)",
-    )
-    mode_group.add_argument(
-        "--format-code",
-        metavar="PATH",
-        nargs="*",
-        help="Format BSL files in-place (current dir if omitted)",
     )
     mode_group.add_argument(
         "--index",
@@ -637,12 +621,6 @@ Examples:
             "Inline suppression: add  // noqa: BSL002  or  // bsl-disable: BSL002  "
             "at the end of any source line."
         ),
-    )
-    parser.add_argument(
-        "--profile",
-        choices=["strict-bslls"],
-        default=None,
-        help="Rule profile: canonical BSLLS core",
     )
     parser.add_argument(
         "--jobs",
@@ -716,26 +694,6 @@ Examples:
             "Remaining unfixable issues are still reported."
         ),
     )
-    parser.add_argument(
-        "--format-check",
-        action="store_true",
-        default=False,
-        help="With --format-code, only check whether files are already formatted",
-    )
-    parser.add_argument(
-        "--indent-size",
-        type=int,
-        default=4,
-        metavar="N",
-        help="Indent width for formatting when spaces are requested (default: 4)",
-    )
-    parser.add_argument(
-        "--insert-spaces",
-        action="store_true",
-        default=None,
-        help="With --format-code, indent with spaces instead of BSLLS-default tabs",
-    )
-
     # Index options
     parser.add_argument(
         "--force",
@@ -787,7 +745,6 @@ Examples:
                 fmt=args.format,
                 select=_parse_codes(args.select),
                 ignore=_parse_codes(args.ignore),
-                profile=args.profile,
                 jobs=args.jobs,
                 sonar_root=args.sonar_root,
                 exit_zero=args.exit_zero,
@@ -801,18 +758,6 @@ Examples:
             )
         )
 
-    elif args.format_code is not None:
-        _setup_logging(args.log_level, use_rich=True)
-        paths = args.format_code if args.format_code else [os.getcwd()]
-        sys.exit(
-            _run_format(
-                paths,
-                check=args.format_check,
-                indent_size=args.indent_size,
-                insert_spaces=args.insert_spaces,
-            )
-        )
-
     elif args.watch is not None:
         _setup_logging(args.log_level, use_rich=True)
         watch_paths = args.watch if args.watch else [os.getcwd()]
@@ -821,7 +766,6 @@ Examples:
             fmt=args.format,
             select=_parse_codes(args.select),
             ignore=_parse_codes(args.ignore),
-            profile=args.profile,
             jobs=args.jobs,
             sonar_root=args.sonar_root,
             exit_zero=args.exit_zero,

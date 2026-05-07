@@ -275,6 +275,7 @@ def _java_letter_bucket(ch: str) -> str:
     return "X"
 
 
+@lru_cache(maxsize=100_000)
 def split_by_character_type_camel_case(text: str) -> list[str]:
     """
     Python port of ``StringUtils.splitByCharacterTypeCamelCase`` (Apache Commons Lang).
@@ -370,10 +371,16 @@ def spellcheck_typo_diagnostics(
     *tree* must be a tree-sitter tree (not regex fallback).
     """
     cfg = cfg or load_typo_config_ru()
+    local_spell_cache: dict[str, bool] = {}
 
     def _checker(w: str) -> bool:
+        cached = local_spell_cache.get(w)
+        if cached is not None:
+            return cached
         fn = spell_fn or default_spell_fn
-        return fn(w)
+        result = fn(w)
+        local_spell_cache[w] = result
+        return result
 
     root = getattr(tree, "root_node", None)
     if root is None:
@@ -414,13 +421,15 @@ def spellcheck_typo_diagnostics(
                 diags,
             )
             continue
-        if ntype == "identifier" and _identifier_typo_context_ok(node):
+        if ntype == "identifier":
             raw_t = node.text
             text = (
                 raw_t.decode("utf-8", errors="replace")
                 if isinstance(raw_t, (bytes, bytearray))
                 else str(raw_t)
             )
+            if not _RE_HAS_CYRILLIC.search(text) or not _identifier_typo_context_ok(node):
+                continue
             _emit_parts_for_source_text(
                 node,
                 text,
@@ -435,13 +444,15 @@ def spellcheck_typo_diagnostics(
                 anchor_kind="code",
             )
             continue
-        if ntype == "property" and _property_typo_context_ok(node):
+        if ntype == "property":
             raw_t = node.text
             text = (
                 raw_t.decode("utf-8", errors="replace")
                 if isinstance(raw_t, (bytes, bytearray))
                 else str(raw_t)
             )
+            if not _RE_HAS_CYRILLIC.search(text) or not _property_typo_context_ok(node):
+                continue
             _emit_parts_for_source_text(
                 node,
                 text,

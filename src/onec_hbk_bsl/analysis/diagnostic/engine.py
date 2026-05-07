@@ -19,6 +19,20 @@ from onec_hbk_bsl.analysis.diagnostic.suppression import (
 )
 from onec_hbk_bsl.analysis.diagnostics import *  # noqa: F401,F403
 
+_HOT_TS_NODE_TYPES: frozenset[str] = frozenset(
+    {
+        "ERROR",
+        "assignment_statement",
+        "function_definition",
+        "method_call",
+        "new_expression",
+        "preprocessor",
+        "procedure_definition",
+        "ternary_expression",
+        "try_statement",
+    }
+)
+
 globals().update(
     {
         name: getattr(_diag, name)
@@ -135,6 +149,7 @@ class DiagnosticEngine:
         )
         # Instrumentation for benchmarks/debug: per-thread (free-threading safe).
         self._metrics_tls = threading.local()
+        self._current_snapshot: Any | None = None
         # Merge user ignores with DEFAULT_DISABLED; select= overrides DEFAULT_DISABLED
         _user_ignore: set[str] = normalize_rule_code_set(ignore) if ignore else set()
         _effective_defaults = self.DEFAULT_DISABLED - (self._select or set())
@@ -251,6 +266,21 @@ class DiagnosticEngine:
                     self._content_diag_cache.popitem(last=False)
         return diagnostics
 
+    def check_snapshot(
+        self,
+        snapshot: Any,
+        *,
+        symbol_index: Any | None = None,
+    ) -> list[Diagnostic]:
+        """Run diagnostics on an already parsed :class:`DocumentSnapshot`."""
+        return self._run_rules(
+            snapshot.path,
+            snapshot.content,
+            snapshot.tree,
+            symbol_index=symbol_index,
+            snapshot=snapshot,
+        )
+
     def check_file(
         self,
         path: str,
@@ -326,15 +356,17 @@ class DiagnosticEngine:
         tree: Any,
         *,
         symbol_index: Any | None = None,
+        snapshot: Any | None = None,
     ) -> list[Diagnostic]:
         """Execute all enabled rules and return filtered, sorted diagnostics."""
         idx = symbol_index if symbol_index is not None else self._symbol_index
-        snapshot = build_document_snapshot(
-            path,
-            content=content,
-            tree=tree,
-            parser=self._get_parser(),
-        )
+        if snapshot is None:
+            snapshot = build_document_snapshot(
+                path,
+                content=content,
+                tree=tree,
+                parser=self._get_parser(),
+            )
         tree = snapshot.tree
         lines = snapshot.lines
         self._current_lines = lines
@@ -365,6 +397,7 @@ class DiagnosticEngine:
             }
         )
         self._metrics_tls.data = last_metrics
+        self._current_snapshot = snapshot
 
         # Build proc→node lookup only when rewrite-parameter rule is active.
         _proc_node_map: dict[tuple[str, int, str], Any] = (
@@ -590,6 +623,7 @@ class DiagnosticEngine:
         _str_ranges = double_quoted_string_ranges(content)
         if _str_ranges:
             _line_starts = line_start_offsets(content)
+            _str_range_starts = [start for start, _ in _str_ranges]
             diagnostics = [
                 d
                 for d in diagnostics
@@ -602,9 +636,94 @@ class DiagnosticEngine:
                     end_character=d.end_character,
                     ranges=_str_ranges,
                     line_starts=_line_starts,
+                    range_starts=_str_range_starts,
                 )
             ]
         return sorted(diagnostics, key=lambda d: (d.line, d.character))
+
+    def _complexity_metrics_for_procs(
+        self, lines: list[str], procs: list[_ProcInfo]
+    ) -> list[tuple[int, int]]:
+        """Return cached ``(cognitive, mccabe)`` metrics for current file procedures."""
+        snapshot = self._current_snapshot
+        if snapshot is not None and getattr(snapshot, "lines", None) is lines:
+            return snapshot.complexity_metrics_for_procs(
+                procs,
+                calculator=_calc_complexity_metrics,
+            )
+        string_states = _build_line_string_states(lines)
+        return [
+            _calc_complexity_metrics(
+                lines, proc.start_idx, proc.end_idx, string_states=string_states
+            )
+            for proc in procs
+        ]
+
+    def _global_method_calls_from_nodes(
+        self, method_call_nodes: list[Any], line_texts: list[str]
+    ) -> list[dict[str, Any]]:
+        """Collect global method calls from an already materialised ``method_call`` node list."""
+        out: list[dict[str, Any]] = []
+        for node in method_call_nodes:
+            if getattr(getattr(node, "parent", None), "type", None) == "call_expression":
+                continue
+            span = _ts_method_identifier_span(node, line_texts)
+            if span is None:
+                continue
+            ident = _ts_child_of_type(node, "identifier")
+            out.append(
+                {
+                    "node": node,
+                    "name": _ts_node_text(ident),
+                    "line": span[0],
+                    "character": span[1],
+                    "end_character": span[2],
+                }
+            )
+        return out
+
+    def _ts_nodes_for_types(self, tree: Any, node_types: set[str]) -> dict[str, list[Any]]:
+        """Return materialised CST nodes grouped by type for current file."""
+        snapshot = self._current_snapshot
+        if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+            return snapshot.ts_nodes_for_types(
+                node_types,
+                hot_node_types=_HOT_TS_NODE_TYPES,
+                walker=_ts_walk,
+            )
+        root = getattr(tree, "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            return {node_type: [] for node_type in node_types}
+        collected_types = set(node_types) | set(_HOT_TS_NODE_TYPES)
+        grouped = {node_type: [] for node_type in collected_types}
+        for node in _ts_walk(root):
+            node_type = getattr(node, "type", None)
+            if node_type in grouped:
+                grouped[node_type].append(node)
+        return {node_type: grouped.get(node_type, []) for node_type in node_types}
+
+    def _runtime_call_context(
+        self, tree: Any, lines: list[str]
+    ) -> tuple[list[dict[str, Any]], list[int], list[Any], list[Any]]:
+        """Shared CST context for runtime rules that scan global method calls."""
+        snapshot = self._current_snapshot
+        if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+            cached = snapshot.get_runtime_call_context()
+            if cached is not None:
+                return cached
+        nodes = self._ts_nodes_for_types(
+            tree,
+            {"method_call", "procedure_definition", "function_definition", "try_statement"},
+        )
+        global_calls = self._global_method_calls_from_nodes(nodes["method_call"], lines)
+        global_call_starts = [
+            getattr(call["node"], "start_byte", -1) for call in global_calls
+        ]
+        proc_nodes = nodes["procedure_definition"] + nodes["function_definition"]
+        context = (global_calls, global_call_starts, proc_nodes, nodes["try_statement"])
+        if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+            snapshot.set_runtime_call_context(context)
+        return context
 
     # ------------------------------------------------------------------
     # BSL001 — Parse errors
@@ -1084,8 +1203,8 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
-        for proc in procs:
-            cc = _calc_cognitive_complexity(lines, proc.start_idx, proc.end_idx)
+        metrics = self._complexity_metrics_for_procs(lines, procs)
+        for proc, (cc, _mc) in zip(procs, metrics, strict=False):
             if cc > self.max_cognitive_complexity:
                 start_col, end_col = _proc_name_span(lines, proc)
                 diags.append(
@@ -1380,8 +1499,8 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
-        for proc in procs:
-            cc = _calc_mccabe_complexity(lines, proc.start_idx, proc.end_idx)
+        metrics = self._complexity_metrics_for_procs(lines, procs)
+        for proc, (_cog, cc) in zip(procs, metrics, strict=False):
             if cc > self.max_mccabe_complexity:
                 start_col, end_col = _proc_name_span(lines, proc)
                 diags.append(
@@ -3990,17 +4109,29 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         root = getattr(tree, "root_node", None)
         tree_ok = root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
+        typed_nodes: dict[str, list[Any]] = {}
+        if tree_ok:
+            wanted = {
+                "ERROR",
+                "ternary_expression",
+                "assignment_statement",
+                "preprocessor",
+                "method_call",
+            }
+            typed_nodes = self._ts_nodes_for_types(tree, wanted)
 
         if "BSL171" in enabled:
             diags.extend(
-                self._rule_bsl171_crazy_multiline_string(path, lines, tree if tree_ok else None)
+                self._rule_bsl171_crazy_multiline_string(
+                    path, lines, tree if tree_ok else None, typed_nodes.get("ERROR")
+                )
             )
         if "BSL204" in enabled:
             diags.extend(self._rule_bsl204_invalid_character_in_file(path, content, lines))
         if "BSL217" in enabled:
             diags.extend(
                 self._rule_bsl217_missing_temp_storage_deletion(
-                    path, lines, tree if tree_ok else None
+                    path, lines, tree if tree_ok else None, typed_nodes.get("method_call")
                 )
             )
         if "BSL248" in enabled:
@@ -4011,32 +4142,36 @@ class DiagnosticEngine:
             )
         if "BSL251" in enabled:
             diags.extend(
-                self._rule_bsl251_ternary_operator_usage(path, lines, tree if tree_ok else None)
+                self._rule_bsl251_ternary_operator_usage(
+                    path, lines, tree if tree_ok else None, typed_nodes.get("ternary_expression")
+                )
             )
         if "BSL252" in enabled:
             diags.extend(
-                self._rule_bsl252_this_object_assign(path, lines, tree if tree_ok else None)
+                self._rule_bsl252_this_object_assign(
+                    path, lines, tree if tree_ok else None, typed_nodes.get("assignment_statement")
+                )
             )
         if "BSL259" in enabled:
             diags.extend(
                 self._rule_bsl259_unknown_preprocessor_symbol(
-                    path, lines, tree if tree_ok else None
+                    path, lines, tree if tree_ok else None, typed_nodes.get("preprocessor")
                 )
             )
         if "BSL268" in enabled:
             diags.extend(
                 self._rule_bsl268_using_find_element_by_string(
-                    path, lines, tree if tree_ok else None
+                    path, lines, tree if tree_ok else None, typed_nodes.get("method_call")
                 )
             )
         return diags
 
     def _rule_bsl171_crazy_multiline_string(
-        self, path: str, lines: list[str], tree: Any | None
+        self, path: str, lines: list[str], tree: Any | None, error_nodes: list[Any] | None = None
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         if tree is not None:
-            for node in _ts_walk(tree.root_node):
+            for node in error_nodes if error_nodes is not None else _ts_walk(tree.root_node):
                 if getattr(node, "type", None) != "ERROR":
                     continue
                 text = _ts_node_text(node).strip()
@@ -4136,14 +4271,23 @@ class DiagnosticEngine:
         return diags
 
     def _rule_bsl217_missing_temp_storage_deletion(
-        self, path: str, lines: list[str], tree: Any | None
+        self,
+        path: str,
+        lines: list[str],
+        tree: Any | None,
+        method_call_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
         if tree is None:
             return []
         line_texts = lines
         diags: list[Diagnostic] = []
 
-        for call in _ts_global_method_calls(tree.root_node, line_texts):
+        calls = (
+            self._global_method_calls_from_nodes(method_call_nodes, line_texts)
+            if method_call_nodes is not None
+            else _ts_global_method_calls(tree.root_node, line_texts)
+        )
+        for call in calls:
             if str(call["name"]).casefold() not in _BSL217_GET_FROM_TEMP_STORAGE_NAMES:
                 continue
             method_node = call["node"]
@@ -4277,12 +4421,16 @@ class DiagnosticEngine:
         return diags
 
     def _rule_bsl251_ternary_operator_usage(
-        self, path: str, lines: list[str], tree: Any | None
+        self,
+        path: str,
+        lines: list[str],
+        tree: Any | None,
+        ternary_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
         if tree is None:
             return []
         diags: list[Diagnostic] = []
-        for node in _ts_walk(tree.root_node):
+        for node in ternary_nodes if ternary_nodes is not None else _ts_walk(tree.root_node):
             if getattr(node, "type", None) != "ternary_expression":
                 continue
             line_idx = node.start_point[0]
@@ -4302,7 +4450,11 @@ class DiagnosticEngine:
         return diags
 
     def _rule_bsl252_this_object_assign(
-        self, path: str, lines: list[str], tree: Any | None
+        self,
+        path: str,
+        lines: list[str],
+        tree: Any | None,
+        assignment_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
         low = path.replace("\\", "/").lower()
         if not (path_is_likely_form_module_bsl(path) or _RE_COMMON_MODULE_PATH.search(low)):
@@ -4310,7 +4462,7 @@ class DiagnosticEngine:
         if tree is None:
             return []
         diags: list[Diagnostic] = []
-        for node in _ts_walk(tree.root_node):
+        for node in assignment_nodes if assignment_nodes is not None else _ts_walk(tree.root_node):
             if getattr(node, "type", None) != "assignment_statement":
                 continue
             ident = _ts_child_of_type(node, "identifier")
@@ -4335,11 +4487,17 @@ class DiagnosticEngine:
         return diags
 
     def _rule_bsl259_unknown_preprocessor_symbol(
-        self, path: str, lines: list[str], tree: Any | None
+        self,
+        path: str,
+        lines: list[str],
+        tree: Any | None,
+        preprocessor_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         if tree is not None:
-            for node in _ts_walk(tree.root_node):
+            for node in (
+                preprocessor_nodes if preprocessor_nodes is not None else _ts_walk(tree.root_node)
+            ):
                 if getattr(node, "type", None) != "preprocessor":
                     continue
                 expr = _ts_child_of_type(node, "expression")
@@ -4398,7 +4556,11 @@ class DiagnosticEngine:
         return diags
 
     def _rule_bsl268_using_find_element_by_string(
-        self, path: str, lines: list[str], tree: Any | None
+        self,
+        path: str,
+        lines: list[str],
+        tree: Any | None,
+        method_call_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         target_names = {
@@ -4410,7 +4572,7 @@ class DiagnosticEngine:
             "findbynumber",
         }
         if tree is not None:
-            for node in _ts_walk(tree.root_node):
+            for node in method_call_nodes if method_call_nodes is not None else _ts_walk(tree.root_node):
                 if getattr(node, "type", None) != "method_call":
                     continue
                 ident = _ts_child_of_type(node, "identifier")
@@ -5696,7 +5858,12 @@ class DiagnosticEngine:
     def _rule_bsl218_missing_temporary_file_deletion(
         self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
-        return run_bsl218_missing_temporary_file_deletion(path, lines, tree)
+        global_calls, _call_starts, _proc_nodes, _try_nodes = self._runtime_call_context(
+            tree, lines
+        )
+        return run_bsl218_missing_temporary_file_deletion(
+            path, lines, tree, global_calls=global_calls
+        )
 
     # ------------------------------------------------------------------
     # BSL202 / BSL205 / BSL223 / BSL243 / BSL249 — lightweight call pool
@@ -5756,10 +5923,10 @@ class DiagnosticEngine:
 
         if {"BSL202", "BSL205", "BSL223"} & enabled_set:
             line_texts = lines
-            for node in _ts_walk(root):
-                node_type = getattr(node, "type", None)
+            nodes = self._ts_nodes_for_types(tree, {"method_call", "new_expression"})
 
-                if "BSL223" in enabled_set and node_type == "new_expression":
+            if "BSL223" in enabled_set:
+                for node in nodes["new_expression"]:
                     type_node = _ts_child_of_type(node, "identifier")
                     if (
                         type_node is not None
@@ -5804,8 +5971,7 @@ class DiagnosticEngine:
                                     )
                                 )
 
-                if node_type != "method_call":
-                    continue
+            for node in nodes["method_call"]:
                 ident = _ts_child_of_type(node, "identifier")
                 if ident is None:
                     continue
@@ -6456,7 +6622,10 @@ class DiagnosticEngine:
     def _rule_bsl225_number_of_values_in_structure_constructor(
         self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
-        return run_bsl225_number_of_values_in_structure_constructor(path, lines, tree)
+        nodes = self._ts_nodes_for_types(tree, {"new_expression"})
+        return run_bsl225_number_of_values_in_structure_constructor(
+            path, lines, tree, new_expression_nodes=nodes["new_expression"]
+        )
 
     # ------------------------------------------------------------------
     # BSL234 — QueryNestedFieldsByDot
@@ -6490,7 +6659,16 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl230_pairing_broken_transaction(self, path: str, tree: Any) -> list[Diagnostic]:
-        return run_bsl230_pairing_broken_transaction(path, tree)
+        lines = self._current_lines or _ts_node_text(tree.root_node).splitlines()
+        global_calls, call_starts, proc_nodes, _try_nodes = self._runtime_call_context(tree, lines)
+        return run_bsl230_pairing_broken_transaction(
+            path,
+            tree,
+            global_calls=global_calls,
+            global_call_starts=call_starts,
+            proc_nodes=proc_nodes,
+            line_texts=lines,
+        )
 
     # ------------------------------------------------------------------
     # BSL277 — WrongUseOfRollbackTransactionMethod
@@ -6499,14 +6677,32 @@ class DiagnosticEngine:
     def _rule_bsl277_wrong_use_of_rollback_transaction(
         self, path: str, tree: Any
     ) -> list[Diagnostic]:
-        return run_bsl277_wrong_use_of_rollback_transaction(path, tree)
+        lines = self._current_lines or _ts_node_text(tree.root_node).splitlines()
+        global_calls, call_starts, _proc_nodes, try_nodes = self._runtime_call_context(tree, lines)
+        return run_bsl277_wrong_use_of_rollback_transaction(
+            path,
+            tree,
+            global_calls=global_calls,
+            global_call_starts=call_starts,
+            try_nodes=try_nodes,
+            line_texts=lines,
+        )
 
     # ------------------------------------------------------------------
     # BSL262 — UsageWriteLogEvent
     # ------------------------------------------------------------------
 
     def _rule_bsl262_usage_write_log_event(self, path: str, tree: Any) -> list[Diagnostic]:
-        return run_bsl262_usage_write_log_event(path, tree)
+        lines = self._current_lines or _ts_node_text(tree.root_node).splitlines()
+        global_calls, call_starts, _proc_nodes, try_nodes = self._runtime_call_context(tree, lines)
+        return run_bsl262_usage_write_log_event(
+            path,
+            tree,
+            global_calls=global_calls,
+            global_call_starts=call_starts,
+            try_nodes=try_nodes,
+            line_texts=lines,
+        )
 
     # ------------------------------------------------------------------
     # BSL240 — RewriteMethodParameter

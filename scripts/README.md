@@ -5,9 +5,9 @@
 **Источник правды — аннотированный тег** вида `vMAJOR.MINOR.PATCH` (например `v0.7.2`).
 
 - **Python-пакет:** версия берётся через **setuptools-scm** при сборке и попадает в wheel/sdist и в `importlib.metadata` после `pip install`.
-- **Расширение VS Code:** в репозитории в **`package.json`** зафиксирован плейсхолдер **`0.0.0`** (не номер релиза). Реальная версия подставляется скриптом **`scripts/sync_version.py`** (или **`make sync-version`**) в `package.json` и в корень **`package-lock.json`** по той же строке, что даёт setuptools-scm или `git describe`.
-- **Локальная сборка VSIX:** цель **`make vsix`** вызывает **`sync-version`** перед сборкой, затем после успешной упаковки **`reset_extension_placeholder.py`** — в git снова остаются **`0.0.0`** в `package.json` и в корне `package-lock.json`, без ручного отката. Вручную плейсхолдер: **`make reset-extension-placeholder`**.
-- Если собираете VSIX **не** через Makefile, после **`vsce package`** выполните **`make reset-extension-placeholder`** (или сначала **`make sync-version`**, если не подставляли версию).
+- **Расширение VS Code:** версия хранится в **`vscode-extension/package.json`** и корне **`vscode-extension/package-lock.json`**. Перед релизной или локальной VSIX-сборкой обновляйте их скриптом **`scripts/sync_version.py`** (или **`make sync-version`**) по той же строке, что даёт setuptools-scm или `git describe`.
+- **Локальная сборка VSIX:** цель **`make vsix`** вызывает **`sync-version`** перед сборкой, затем собирает бинарник, копирует его в `vscode-extension/bin/`, запускает webpack и `vsce package`.
+- Если собираете VSIX **не** через Makefile, сначала выполните **`make sync-version`** и **`make sync-extension-bin`** (или **`make extension-bin`**), чтобы manifests и вложенный бинарник соответствовали собираемой версии.
 
 Типичный релиз:
 
@@ -28,8 +28,8 @@ environment `pypi`. API-токен в GitHub secrets для этого пути 
 Примеры:
 
 ```bash
-python scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
-python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500 --profile strict-bslls
+python3 scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
+python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 ```
 
 Скрипт считает:
@@ -46,7 +46,7 @@ python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500 --profile str
 локальный Java/JAR на машине разработчика.
 
 ```bash
-PYTHONPATH=src python scripts/bslls_oracle_parity.py tests/fixtures \
+PYTHONPATH=src python3 scripts/bslls_oracle_parity.py tests/fixtures \
   --output-dir .agent/reports/bslls-oracle/fixtures
 ```
 
