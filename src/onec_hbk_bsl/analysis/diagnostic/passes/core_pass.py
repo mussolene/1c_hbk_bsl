@@ -77,8 +77,6 @@ def extend_core_rule_tasks(
         rule_tasks.append(
             ("BSL022", lambda: engine._rule_bsl022_deprecated_message(path, lines, procs))
         )
-    if engine._rule_enabled("BSL025"):
-        rule_tasks.append(("BSL025", lambda: engine._rule_bsl025_empty_statement(path, lines)))
     if engine._rule_enabled("BSL026"):
         rule_tasks.append(
             ("BSL026", lambda: engine._rule_bsl026_empty_region(path, lines, regions))
@@ -168,8 +166,4 @@ def extend_core_rule_tasks(
     if engine._rule_enabled("BSL065"):
         rule_tasks.append(
             ("BSL065", lambda: engine._rule_bsl065_missing_export_comment(path, lines, procs))
-        )
-    if engine._rule_enabled("BSL066"):
-        rule_tasks.append(
-            ("BSL066", lambda: engine._rule_bsl066_deprecated_platform_method(path, lines, procs))
         )

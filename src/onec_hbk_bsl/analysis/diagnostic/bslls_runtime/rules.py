@@ -122,6 +122,7 @@ _BSL024_COMMENTED_CODE_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_BSL066_DEPRECATED_FIND_RE = re.compile(r"(?<!\.)(?<!\w)\b(найти|find)\s*\(", re.IGNORECASE)
 
 
 def bsl024_find_report_comment_col(line: str) -> int | None:
@@ -590,6 +591,48 @@ class SpaceAtStartCommentRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
+class EmptyStatementRule(BsllsDiagnosticRule):
+    code = "BSL025"
+    _compound_semicolon_re = re.compile(
+        r"^\s*(?:Если|If|ИначеЕсли|ElsIf|ElseIf|Для(?:\s+Каждого)?|For(?:\s+Each)?|Пока|While)\b.*(?:Тогда|Then|Цикл|Do)\s*;\s*$",
+        re.IGNORECASE,
+    )
+    _header_semicolon_re = re.compile(
+        r"^\s*(?:Процедура|Функция|Procedure|Function)\b.*;\s*$",
+        re.IGNORECASE,
+    )
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            comment_start = _comment_start_outside_string(line)
+            code_part = line if comment_start < 0 else line[:comment_start]
+            stripped = code_part.rstrip()
+            if not stripped:
+                continue
+            semi = -1
+            if self._header_semicolon_re.match(stripped) or self._compound_semicolon_re.match(
+                stripped
+            ):
+                semi = stripped.rfind(";")
+            elif ";;" in stripped:
+                semi = stripped.find(";;") + 1
+            if semi < 0:
+                continue
+            storage.add_range(
+                code=self.code,
+                line=idx,
+                character=semi,
+                end_line=idx,
+                end_character=semi + 1,
+                severity=Severity.HINT,
+                message='Удалите ";"',
+            )
+        return storage.diagnostics
+
+
 class ConsecutiveEmptyLinesRule(BsllsDiagnosticRule):
     code = "BSL055"
 
@@ -785,6 +828,28 @@ class UselessTernaryOperatorRule(BsllsDiagnosticRule):
                     end_character=span.end_col,
                     severity=Severity.INFORMATION,
                     message="Бесполезный тернарный оператор",
+                )
+        return storage.diagnostics
+
+
+class DeprecatedFindRule(BsllsDiagnosticRule):
+    code = "BSL066"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL066_DEPRECATED_FIND_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.INFORMATION,
+                    message='Используйте "СтрНайти" вместо устаревшего "Найти"',
                 )
         return storage.diagnostics
 

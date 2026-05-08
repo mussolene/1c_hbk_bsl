@@ -4398,23 +4398,6 @@ _RE_BSL259_IDENTIFIER = re.compile(r"\b[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Z
 # Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
 _RE_FORM_COMPILER_DIRECTIVE_LINE = re.compile(r"^\s*&\S+")
 
-# BSL066 — DeprecatedFind: only Найти() → СтрНайти() (BSLLS parity).
-# Врег/НРег/СокрЛ/СокрП/СокрЛП/Символ/КодСимвола — current platform functions, NOT deprecated.
-# Предупреждение/Вопрос/Сообщить — covered by UsingModalWindows / DeprecatedMessage rules.
-_DEPRECATED_METHODS = frozenset(
-    {
-        "найти",  # Найти() for strings → СтрНайти()
-        "find",  # English alias
-    }
-)
-# Negative lookbehind for '.' excludes object method calls like Массив.Найти()
-_RE_DEPRECATED_METHOD = re.compile(
-    r"(?<!\.)(?<!\w)\b(?:"
-    + "|".join(re.escape(m) for m in sorted(_DEPRECATED_METHODS))
-    + r")\s*\(",
-    re.IGNORECASE,
-)
-
 _RE_WHILE_TRUE = re.compile(
     r"^\s*(?:Пока|While)\s+(?:Истина|True)\s+(?:Цикл|Do)\b",
     re.IGNORECASE,

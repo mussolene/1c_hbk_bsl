@@ -1583,39 +1583,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL025 — EmptyStatement (BSLLS; отдельно от SemicolonPresence / BSL030)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl025_empty_statement(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """BSLLS EmptyStatement: extra semicolon after compound headers/declarations."""
-        diags: list[Diagnostic] = []
-        header_semicolon_re = re.compile(
-            r"^\s*(?:Процедура|Функция|Procedure|Function)\b.*;\s*$",
-            re.IGNORECASE,
-        )
-        compound_semicolon_re = re.compile(
-            r"^\s*(?:Если|If|ИначеЕсли|ElsIf|ElseIf|Для(?:\s+Каждого)?|For(?:\s+Each)?|Пока|While)\b.*(?:Тогда|Then|Цикл|Do)\s*;\s*$",
-            re.IGNORECASE,
-        )
-        for idx, line in enumerate(lines):
-            if not (header_semicolon_re.match(line) or compound_semicolon_re.match(line)):
-                continue
-            semi = line.rfind(";")
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=max(0, semi),
-                    end_line=idx + 1,
-                    end_character=max(0, semi) + 1,
-                    severity=Severity.HINT,
-                    code="BSL025",
-                    message='Удалите ";"',
-                )
-            )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL030 — SemicolonPresence: «;» в конце выражения (BSLLS) + лишняя «;» в заголовке
     # ------------------------------------------------------------------
 
@@ -3124,37 +3091,6 @@ class DiagnosticEngine:
                         severity=Severity.WARNING,
                         code="BSL065",
                         message="Добавьте описание возвращаемого значения функции",
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL066 — Deprecated platform method call
-    # ------------------------------------------------------------------
-
-    def _rule_bsl066_deprecated_platform_method(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """Flag calls to deprecated Найти() — use СтрНайти() instead (BSLLS DeprecatedFind)."""
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if _RE_COMMENT_LINE.match(line):
-                continue
-            m = _RE_DEPRECATED_METHOD.search(line)
-            if m:
-                method_name = m.group(0).rstrip("(").strip()
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.WARNING,
-                        code="BSL066",
-                        message=(
-                            f"'{method_name}' is deprecated — use СтрНайти() / StrFind() instead."
-                        ),
                     )
                 )
         return diags
