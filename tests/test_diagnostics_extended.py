@@ -3322,6 +3322,26 @@ class TestBsl258UnionAll:
         diags = _check(content, tmp_path, select={"BSL258"})
         assert "BSL258" not in _codes(diags)
 
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = Path(".agent/tmp/bslls-source/src/test/resources/diagnostics") / "UnionAllDiagnostic.bsl"
+        if not fixture.exists():
+            pytest.skip("BSLLS sources are not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL258"}).check_file(str(fixture))
+            if diag.code == "BSL258"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (22, 5, 22, 15),
+            (57, 5, 57, 15),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.INFORMATION}
+        assert {diag.message for diag in diags} == {
+            "Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ"
+        }
+
 
 # ---------------------------------------------------------------------------
 # BSL055 — ConsecutiveBlankLines

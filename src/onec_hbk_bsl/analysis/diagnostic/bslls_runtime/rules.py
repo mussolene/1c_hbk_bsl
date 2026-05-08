@@ -390,6 +390,7 @@ _BSL205_IF_RE = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(.*?)(?:\bТогда\b|\bThen\b)",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL258_UNION_RE = re.compile(r"\b(?:ОБЪЕДИНИТЬ|UNION)\b(?!\s+(?:ВСЕ|ALL)\b)", re.IGNORECASE)
 _BSL183_EXECUTE_EXTERNAL_CODE_RE = re.compile(
     r"(?<![.\w])(Выполнить|Execute|Вычислить|Eval)\s*\(",
     re.IGNORECASE | re.UNICODE,
@@ -2431,6 +2432,38 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
             end_line=int(call["line"]) - 1,
             end_character=int(call["end_character"]),
         )
+
+
+class UnionAllRule(BsllsDiagnosticRule):
+    code = "BSL258"
+    message = "Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        in_query = False
+        for idx, line in enumerate(context.lines):
+            stripped = line.strip()
+            if stripped.startswith("//"):
+                continue
+            if '|"' in line or stripped.startswith("|"):
+                in_query = True
+            if stripped.endswith('";') or (stripped.endswith('"') and "ВЫБРАТЬ" not in stripped):
+                in_query = False
+            if not in_query and "|" not in line and '"' not in line:
+                continue
+            match = _BSL258_UNION_RE.search(line)
+            if match is None:
+                continue
+            storage.add_range(
+                code=self.code,
+                message=self.message,
+                severity=Severity.INFORMATION,
+                line=idx,
+                character=match.start(),
+                end_line=idx,
+                end_character=match.end(),
+            )
+        return storage.diagnostics
 
 
 class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):

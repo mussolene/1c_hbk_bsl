@@ -295,7 +295,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
     run_bsl234_query_nested_fields_by_dot,
     run_bsl237_redundant_access_to_object,
     run_bsl245_server_side_export_form_method,
-    run_bsl258_union_without_all,
     run_bsl262_usage_write_log_event,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (

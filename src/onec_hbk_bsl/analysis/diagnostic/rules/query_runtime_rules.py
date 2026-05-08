@@ -327,38 +327,6 @@ def run_bsl210_scan_line_literal_queries(path: str, idx: int, line: str) -> list
     return diags
 
 
-def run_bsl258_union_without_all(path: str, lines: list[str]) -> list[Any]:
-    _diag = _diag_module()
-    diags: list[Any] = []
-    re_union = re.compile(r"\b(?:ОБЪЕДИНИТЬ|UNION)\b(?!\s+(?:ВСЕ|ALL)\b)", re.IGNORECASE)
-    in_query = False
-    for idx, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("//"):
-            continue
-        if '|"' in line or line.strip().startswith("|"):
-            in_query = True
-        if stripped.endswith('";') or (stripped.endswith('"') and "ВЫБРАТЬ" not in stripped):
-            in_query = False
-        if not in_query and "|" not in line and '"' not in line:
-            continue
-        m = re_union.search(line)
-        if m:
-            diags.append(
-                _diag.Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=m.start(),
-                    end_line=idx + 1,
-                    end_character=m.end(),
-                    severity=_diag.Severity.INFORMATION,
-                    code="BSL258",
-                    message="Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ",
-                )
-            )
-    return diags
-
-
 def run_bsl234_query_nested_fields_by_dot(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []

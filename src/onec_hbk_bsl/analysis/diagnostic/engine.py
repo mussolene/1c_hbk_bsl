@@ -4474,13 +4474,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL258 — UnionAll
-    # ------------------------------------------------------------------
-
-    def _rule_bsl258_union_without_all(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        return run_bsl258_union_without_all(path, lines)
-
-    # ------------------------------------------------------------------
     # BSL215 — MissingParameterDescription
     # ------------------------------------------------------------------
 

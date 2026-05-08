@@ -32,7 +32,5 @@ def extend_runtime_tail_rule_tasks(
 
         rule_tasks.append(("BSL208_BSL256", task_bsl208_bsl256))
 
-    if engine._rule_enabled("BSL258"):
-        rule_tasks.append(("BSL258", lambda: engine._rule_bsl258_union_without_all(path, lines)))
     if engine._rule_enabled("BSL262"):
         rule_tasks.append(("BSL262", lambda: engine._rule_bsl262_usage_write_log_event(path, tree)))
