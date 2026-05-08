@@ -559,44 +559,15 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for proc in procs:
-            body_start_idx = proc.start_idx + 1
-            header_balance = 0
-            for idx in range(proc.start_idx, min(proc.end_idx, len(lines))):
-                header_part = _mask_strings_and_comments_for_counter(
-                    lines[idx],
-                    False,
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_method_size(
+                    lines,
+                    max_proc_lines=self.max_proc_lines,
+                    mask_strings_and_comments_for_counter=_mask_strings_and_comments_for_counter,
+                    proc_name_span=_proc_name_span,
                 )
-                header_balance += header_part.count("(") - header_part.count(")")
-                if header_balance <= 0 and ")" in header_part:
-                    body_start_idx = idx + 1
-                    break
-            first_body = None
-            last_body = None
-            for idx in range(body_start_idx, min(proc.end_idx, len(lines))):
-                stripped = lines[idx].strip()
-                if not stripped or stripped.startswith("//"):
-                    continue
-                if first_body is None:
-                    first_body = idx
-                last_body = idx
-            length = 0 if first_body is None or last_body is None else last_body - first_body
-            if length > self.max_proc_lines:
-                start_col, end_col = _proc_name_span(lines, proc)
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=start_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=end_col,
-                        severity=Severity.WARNING,
-                        code="BSL002",
-                        message=(
-                            f'Длина метода "{proc.name}" равна {length}, '
-                            f"что больше установленного лимита в {self.max_proc_lines} строк"
-                        ),
-                    )
-                )
+            )
         return diags
 
     # ------------------------------------------------------------------

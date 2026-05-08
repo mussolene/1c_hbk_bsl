@@ -49,6 +49,51 @@ class ProcedureModel:
             )
         ]
 
+    def validate_method_size(
+        self,
+        lines: list[str],
+        *,
+        max_proc_lines: int,
+        mask_strings_and_comments_for_counter,
+        proc_name_span,
+    ) -> list[Diagnostic]:
+        body_start_idx = self.start_idx + 1
+        header_balance = 0
+        for idx in range(self.start_idx, min(self.end_idx, len(lines))):
+            header_part = mask_strings_and_comments_for_counter(lines[idx], False)
+            header_balance += header_part.count("(") - header_part.count(")")
+            if header_balance <= 0 and ")" in header_part:
+                body_start_idx = idx + 1
+                break
+        first_body: int | None = None
+        last_body: int | None = None
+        for idx in range(body_start_idx, min(self.end_idx, len(lines))):
+            stripped = lines[idx].strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if first_body is None:
+                first_body = idx
+            last_body = idx
+        length = 0 if first_body is None or last_body is None else last_body - first_body
+        if length <= max_proc_lines:
+            return []
+        start_col, end_col = proc_name_span(lines, self._to_proc_info())
+        return [
+            Diagnostic(
+                file=self.path,
+                line=self.start_idx + 1,
+                character=start_col,
+                end_line=self.start_idx + 1,
+                end_character=end_col,
+                severity=Severity.WARNING,
+                code="BSL002",
+                message=(
+                    f'Длина метода "{self.name}" равна {length}, '
+                    f"что больше установленного лимита в {max_proc_lines} строк"
+                ),
+            )
+        ]
+
     def validate_procedure_return_value(
         self,
         lines: list[str],
@@ -88,3 +133,16 @@ class ProcedureModel:
                 ]
         return []
 
+    def _to_proc_info(self) -> ProcInfo:
+        return ProcInfo(
+            name=self.name,
+            kind=self.kind,
+            start_idx=self.start_idx,
+            end_idx=self.end_idx,
+            is_export=False,
+            params=list(self.params),
+            val_params=[],
+            optional_count=0,
+            header_col=self.header_col,
+            optional_params=frozenset(),
+        )
