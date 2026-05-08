@@ -300,6 +300,22 @@ _BSL188_FILESYSTEM_NEW_RE = re.compile(
     r")\b",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL203_INTERNET_NEW_RE = re.compile(
+    r"\b(?:Новый|New)\s*(?:\(\s*)?("
+    r"FTPСоединение|FTPConnection|HTTPСоединение|HTTPConnection|WSОпределения|WSDefinitions|"
+    r"WSПрокси|WSProxy|ИнтернетПочтовыйПрофиль|InternetMailProfile|ИнтернетПочта|"
+    r"InternetMail|Почта|Mail|HTTPЗапрос|HTTPRequest|ИнтернетПрокси|InternetProxy"
+    r")\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL203_INTERNET_STRING_NEW_RE = re.compile(
+    r'\b(?:Новый|New)\s*\(\s*"('
+    r"FTPСоединение|FTPConnection|HTTPСоединение|HTTPConnection|WSОпределения|WSDefinitions|"
+    r"WSПрокси|WSProxy|ИнтернетПочтовыйПрофиль|InternetMailProfile|ИнтернетПочта|"
+    r"InternetMail|Почта|Mail|HTTPЗапрос|HTTPRequest|ИнтернетПрокси|InternetProxy"
+    r')"',
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1349,6 +1365,42 @@ class FileSystemAccessRule(BsllsDiagnosticRule):
                     end_character=self._new_end(clean, match.end(1)),
                     severity=Severity.WARNING,
                     message="Проверьте обращение к файловой системе",
+                )
+        return storage.diagnostics
+
+
+class InternetAccessRule(BsllsDiagnosticRule):
+    code = "BSL203"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL203_INTERNET_NEW_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(),
+                    end_line=idx,
+                    end_character=FileSystemAccessRule._new_end(clean, match.end(1)),
+                    severity=Severity.WARNING,
+                    message="Проверьте обращение к Интернет-ресурсам",
+                )
+            code_part = line[: _comment_start_outside_string(line)]
+            if not code_part:
+                code_part = line
+            for match in _BSL203_INTERNET_STRING_NEW_RE.finditer(code_part):
+                open_paren = code_part.find("(", match.start())
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(),
+                    end_line=idx,
+                    end_character=_single_line_call_end(code_part, open_paren),
+                    severity=Severity.WARNING,
+                    message="Проверьте обращение к Интернет-ресурсам",
                 )
         return storage.diagnostics
 

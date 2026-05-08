@@ -343,6 +343,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL060",
         "BSL077",
         "BSL188",
+        "BSL203",
         "BSL221",
         "BSL222",
         "BSL148",
@@ -4142,14 +4143,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
 _RE_BSL184_EXECUTE_EXTERNAL_CODE = re.compile(
     r"\b(?P<name>Выполнить|Execute|Вычислить|Eval)\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
-_RE_BSL203_INTERNET_NEW = re.compile(
-    r"\b(?:Новый|New)\s*(?:\(\s*)?(?P<type>"
-    r"FTPСоединение|FTPConnection|HTTPСоединение|HTTPConnection|WSОпределения|WSDefinitions|"
-    r"WSПрокси|WSProxy|ИнтернетПочтовыйПрофиль|InternetMailProfile|ИнтернетПочта|"
-    r"InternetMail|Почта|Mail|HTTPЗапрос|HTTPRequest|ИнтернетПрокси|InternetProxy"
-    r")\b",
     re.IGNORECASE | re.UNICODE,
 )
 _RE_BSL226_OS_USERS = re.compile(

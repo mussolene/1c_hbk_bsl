@@ -4495,7 +4495,7 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL184 / BSL203 / BSL226 / BSL247 /
+    # BSL184 / BSL226 / BSL247 /
     # BSL250 / BSL264 / BSL267 / BSL272 — security/context API pool
     # ------------------------------------------------------------------
 
@@ -4537,21 +4537,6 @@ class DiagnosticEngine:
                                 "Выполнение произвольного кода в общем модуле на сервере "
                                 "является потенциальной уязвимостью"
                             ),
-                        )
-                    )
-
-            if "BSL203" in enabled:
-                for match in _RE_BSL203_INTERNET_NEW.finditer(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=max(0, match.start("type") - len("Новый ")),
-                            end_line=idx + 1,
-                            end_character=match.start("type"),
-                            severity=Severity.WARNING,
-                            code="BSL203",
-                            message="Проверьте обращение к Интернет-ресурсам",
                         )
                     )
 

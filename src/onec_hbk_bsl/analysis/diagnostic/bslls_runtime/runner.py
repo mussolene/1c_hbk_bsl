@@ -21,6 +21,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     ExtraCommasRule,
     FileSystemAccessRule,
     GetFormMethodRule,
+    InternetAccessRule,
     MagicDateRule,
     NestedTernaryOperatorRule,
     SpaceAtStartCommentRule,
@@ -54,6 +55,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     DisableSafeModeRule(),
     ExternalAppStartingRule(),
     FileSystemAccessRule(),
+    InternetAccessRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )
