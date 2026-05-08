@@ -28,6 +28,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     MagicDateRule,
     NestedTernaryOperatorRule,
     OSUsersMethodRule,
+    SetPrivilegedModeRule,
     SpaceAtStartCommentRule,
     UselessTernaryOperatorRule,
     UseSystemInformationRule,
@@ -66,6 +67,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     IsInRoleMethodRule(),
     UseSystemInformationRule(),
     OSUsersMethodRule(),
+    SetPrivilegedModeRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )

@@ -356,6 +356,10 @@ _BSL226_OS_USERS_RE = re.compile(
     r"(?<![.\w])(ПользователиОС|OSUsers)\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL247_SET_PRIVILEGED_RE = re.compile(
+    r"(?<![.\w])(УстановитьПривилегированныйРежим|SetPrivilegedMode)\s*\(([^)]*)\)",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1681,6 +1685,29 @@ class OSUsersMethodRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.WARNING,
                     message="Проверить потенциально вредоносное использование метода ПользователиОС",
+                )
+        return storage.diagnostics
+
+
+class SetPrivilegedModeRule(BsllsDiagnosticRule):
+    code = "BSL247"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL247_SET_PRIVILEGED_RE.finditer(clean):
+                arg = match.group(2).strip().casefold()
+                if arg in {"ложь", "false"}:
+                    continue
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.WARNING,
+                    message="Проверьте установку привилегированного режима",
                 )
         return storage.diagnostics
 

@@ -4495,10 +4495,10 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL247 / BSL250 / BSL267 / BSL272 — security/context API pool
+    # BSL250 / BSL267 / BSL272 — security/context API pool
     # ------------------------------------------------------------------
 
-    def _rule_bsl247_250_267_272_api_pool(
+    def _rule_bsl250_267_272_api_pool(
         self,
         path: str,
         lines: list[str],
@@ -4519,24 +4519,6 @@ class DiagnosticEngine:
             line = clean_lines[idx]
             if not line.strip():
                 continue
-
-            if "BSL247" in enabled:
-                for match in _RE_BSL247_SET_PRIVILEGED.finditer(line):
-                    arg = match.group("arg").strip()
-                    if arg.casefold() in {"ложь", "false"}:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.WARNING,
-                            code="BSL247",
-                            message="Проверьте установку привилегированного режима",
-                        )
-                    )
 
             if "BSL250" in enabled:
                 for match in _RE_BSL250_TEMPFILES.finditer(line):

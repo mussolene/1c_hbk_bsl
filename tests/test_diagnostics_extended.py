@@ -429,6 +429,24 @@ class TestSecurityApiParityBatch:
             "Проверить потенциально вредоносное использование метода ПользователиОС"
         }
 
+    def test_bsl247_set_privileged_mode_matches_bslls_fixture(self, tmp_path: Path) -> None:
+        content = """\
+            &НаСервере
+            Процедура Метод()
+                УстановитьПривилегированныйРежим(Истина); // есть замечание
+                Значение = Истина;
+                УстановитьПривилегированныйРежим(Значение); // есть замечание
+
+                УстановитьПривилегированныйРежим(Ложь); // нет замечания
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL247"}) if d.code == "BSL247"]
+        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+            (3, 4, 3, 36, "WARNING"),
+            (5, 4, 5, 36, "WARNING"),
+        ]
+        assert {d.message for d in diags} == {"Проверьте установку привилегированного режима"}
+
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()

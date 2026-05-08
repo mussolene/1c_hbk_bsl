@@ -4142,10 +4142,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 )
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
-_RE_BSL247_SET_PRIVILEGED = re.compile(
-    r"\b(?P<name>УстановитьПривилегированныйРежим|SetPrivilegedMode)\s*\(\s*(?P<arg>[^)]*)\)",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL250_TEMPFILES = re.compile(
     r"\b(?P<name>КаталогВременныхФайлов|TempFilesDir)\s*\(",
     re.IGNORECASE | re.UNICODE,
