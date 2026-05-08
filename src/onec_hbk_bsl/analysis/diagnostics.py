@@ -308,7 +308,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
     run_bsl197_if_else_duplicated_code_block,
-    run_bsl198_if_else_duplicated_condition,
 )
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -323,6 +322,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL014",
         # Duplicated-branch diagnostics may span statements containing string literals.
         "BSL197",
+        "BSL198",
         # Method-signature rules span the whole signature line which may contain default-value strings.
         "BSL015",
         "BSL031",
@@ -1250,7 +1250,7 @@ RULE_METADATA: dict[str, dict] = {
         "name": "IfElseDuplicatedCondition",
         "description": "Duplicate condition in If/ElseIf chain — branch is unreachable",
         "severity": "WARNING",
-        "sonar_type": "BUG",
+        "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["suspicious", "correctness"],
         "implemented": True,
@@ -3470,13 +3470,6 @@ _RE_BSL197_IF = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE)
 _RE_BSL197_ELSEIF = re.compile(r"^\s*(?:ИначеЕсли|ElseIf)\b", re.IGNORECASE)
 _RE_BSL197_ELSE = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
 _RE_BSL197_ENDIF = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
-# BSL198 — duplicate if/elseif condition (captures condition group)
-_RE_BSL198_IF_COND = re.compile(
-    r"^\s*(?:Если|If)\s+(.+?)\s+(?:Тогда|Then)\b", re.IGNORECASE | re.UNICODE
-)
-_RE_BSL198_ELSEIF_COND = re.compile(
-    r"^\s*(?:ИначеЕсли|ElseIf)\s+(.+?)\s+(?:Тогда|Then)\b", re.IGNORECASE | re.UNICODE
-)
 # BSL-x module-level Перем / preprocessor lines
 _RE_PERЕМ_LINE = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
 _RE_REGION_LINE = re.compile(r"^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b", re.IGNORECASE)

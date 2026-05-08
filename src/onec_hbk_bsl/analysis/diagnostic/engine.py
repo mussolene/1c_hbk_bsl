@@ -4261,15 +4261,6 @@ class DiagnosticEngine:
         return run_bsl197_if_else_duplicated_code_block(path, lines)
 
     # ------------------------------------------------------------------
-    # BSL198 — IfElseDuplicatedCondition
-    # ------------------------------------------------------------------
-
-    def _rule_bsl198_if_else_duplicated_condition(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        return run_bsl198_if_else_duplicated_condition(path, lines)
-
-    # ------------------------------------------------------------------
     # BSL227 — OneStatementPerLine
     # ------------------------------------------------------------------
 

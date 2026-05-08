@@ -2419,6 +2419,98 @@ class IfElseIfEndsWithElseRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
+class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
+    code = "BSL198"
+    message = 'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся условия'
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        storage = DiagnosticStorage(context.path)
+        for node in context.ts_nodes_for_types(context.tree, {"if_statement"})["if_statement"]:
+            expressions = self._branch_expressions_with_ranges(node)
+            reported: set[tuple[Any, ...]] = set()
+            for index, (expression, start_node, end_node) in enumerate(expressions[:-1]):
+                key = self._expression_key(expression)
+                if key in reported:
+                    continue
+                if any(
+                    self._expression_key(candidate) == key
+                    for candidate, _, _ in expressions[index + 1 :]
+                ):
+                    _add_node_range(
+                        storage,
+                        code=self.code,
+                        message=self.message,
+                        severity=Severity.WARNING,
+                        lines=context.lines,
+                        start_node=start_node,
+                        end_node=end_node,
+                    )
+                    reported.add(key)
+        return storage.diagnostics
+
+    @staticmethod
+    def _branch_expressions_with_ranges(if_statement: Any) -> list[tuple[Any, Any, Any]]:
+        expressions: list[tuple[Any, Any, Any]] = []
+        for child in _ts_children(if_statement):
+            child_type = getattr(child, "type", None)
+            if child_type == "expression":
+                expressions.append((child, *IfElseDuplicatedConditionRule._diagnostic_nodes(if_statement, child)))
+            elif child_type == "elseif_clause":
+                expression = next(
+                    (
+                        clause_child
+                        for clause_child in _ts_children(child)
+                        if getattr(clause_child, "type", None) == "expression"
+                    ),
+                    None,
+                )
+                if expression is not None:
+                    expressions.append(
+                        (expression, *IfElseDuplicatedConditionRule._diagnostic_nodes(child, expression))
+                    )
+        return expressions
+
+    @staticmethod
+    def _diagnostic_nodes(parent: Any, expression: Any) -> tuple[Any, Any]:
+        children = _ts_children(parent)
+        try:
+            index = children.index(expression)
+        except ValueError:
+            return expression, expression
+        start_node = expression
+        end_node = expression
+        if index > 0:
+            previous = children[index - 1]
+            if getattr(previous, "type", None) == "ERROR" and _ts_node_text(previous) == "(":
+                start_node = previous
+        if index + 1 < len(children):
+            following = children[index + 1]
+            if getattr(following, "type", None) == "ERROR" and _ts_node_text(following) == ")":
+                end_node = following
+        return start_node, end_node
+
+    @classmethod
+    def _expression_key(cls, node: Any) -> tuple[Any, ...]:
+        children = _ts_children(node)
+        if not children:
+            return (getattr(node, "type", ""), cls._leaf_text(node))
+        return (
+            getattr(node, "type", ""),
+            tuple(cls._expression_key(child) for child in children),
+        )
+
+    @staticmethod
+    def _leaf_text(node: Any) -> str:
+        text = _ts_node_text(node)
+        node_type = getattr(node, "type", None)
+        if node_type in {"identifier", "operator"}:
+            return text.casefold()
+        return text
+
+
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
     code = "BSL097"
 

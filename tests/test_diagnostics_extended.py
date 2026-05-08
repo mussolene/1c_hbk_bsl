@@ -4548,6 +4548,34 @@ class TestBsl199IfElseIfEndsWithElse:
         }
 
 
+class TestBsl198IfElseDuplicatedCondition:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "IfElseDuplicatedConditionDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL198"}).check_file(str(fixture))
+            if d.code == "BSL198"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 10, 4, 15),
+            (18, 10, 18, 15),
+            (21, 13, 21, 18),
+            (42, 5, 42, 17),
+        ]
+        assert {d.severity for d in diags} == {Severity.WARNING}
+        assert {d.message for d in diags} == {
+            'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." '
+            "содержит повторяющиеся условия"
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA
