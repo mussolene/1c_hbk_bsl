@@ -4660,6 +4660,51 @@ class TestBsl225NumberOfValuesInStructureConstructorBslls:
         }
 
 
+class TestBsl230PairingBrokenTransaction:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "PairingBrokenTransactionDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS sources are not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL230"}).check_file(str(fixture))
+            if diag.code == "BSL230"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (28, 4, 28, 27),
+            (32, 4, 32, 20),
+            (32, 4, 32, 20),
+            (41, 4, 41, 27),
+            (45, 4, 45, 20),
+            (45, 4, 45, 20),
+            (46, 4, 46, 20),
+            (53, 4, 53, 20),
+            (54, 4, 54, 20),
+            (57, 4, 57, 20),
+            (84, 4, 84, 27),
+            (88, 4, 88, 27),
+            (89, 4, 89, 22),
+            (93, 4, 93, 20),
+            (94, 8, 94, 24),
+            (96, 8, 96, 24),
+            (102, 4, 102, 27),
+            (106, 4, 106, 20),
+            (107, 8, 107, 24),
+            (109, 8, 109, 24),
+            (114, 4, 114, 27),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.ERROR}
+        assert any("CommitTransaction" in diag.message for diag in diags)
+        assert any("RollbackTransaction" in diag.message for diag in diags)
+        assert any("ЗафиксироватьТранзакцию" in diag.message for diag in diags)
+        assert any("ОтменитьТранзакцию" in diag.message for diag in diags)
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

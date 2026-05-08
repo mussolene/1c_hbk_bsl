@@ -2346,6 +2346,93 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
         )
 
 
+class PairingBrokenTransactionRule(BsllsDiagnosticRule):
+    code = "BSL230"
+    _begin_names = frozenset({"начатьтранзакцию", "begintransaction"})
+    _pair_specs = (
+        (
+            frozenset(
+                {
+                    "начатьтранзакцию",
+                    "begintransaction",
+                    "зафиксироватьтранзакцию",
+                    "committransaction",
+                }
+            ),
+            {
+                "начатьтранзакцию": "ЗафиксироватьТранзакцию",
+                "begintransaction": "CommitTransaction",
+                "зафиксироватьтранзакцию": "НачатьТранзакцию",
+                "committransaction": "BeginTransaction",
+            },
+        ),
+        (
+            frozenset(
+                {
+                    "начатьтранзакцию",
+                    "begintransaction",
+                    "отменитьтранзакцию",
+                    "rollbacktransaction",
+                }
+            ),
+            {
+                "начатьтранзакцию": "ОтменитьТранзакцию",
+                "begintransaction": "RollbackTransaction",
+                "отменитьтранзакцию": "НачатьТранзакцию",
+                "rollbacktransaction": "BeginTransaction",
+            },
+        ),
+    )
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        global_calls, call_starts, proc_nodes, _try_nodes = WrongUseOfRollbackTransactionMethodRule._runtime_context(
+            context
+        )
+        storage = DiagnosticStorage(context.path)
+        for proc_node in proc_nodes:
+            calls = _calls_in_node(proc_node, global_calls, call_starts)
+            if calls:
+                self._check_calls(storage, calls)
+        return storage.diagnostics
+
+    def _check_calls(self, storage: DiagnosticStorage, calls: list[dict[str, Any]]) -> None:
+        for allowed_names, pair_names in self._pair_specs:
+            begin_stack: list[dict[str, Any]] = []
+            for call in calls:
+                name_cf = str(call["name"]).casefold()
+                if name_cf not in allowed_names:
+                    continue
+                if name_cf in self._begin_names:
+                    begin_stack.append(call)
+                elif begin_stack:
+                    begin_stack.pop()
+                else:
+                    self._add_call(storage, call, pair_names[name_cf])
+            for call in begin_stack:
+                name_cf = str(call["name"]).casefold()
+                self._add_call(storage, call, pair_names[name_cf])
+
+    def _add_call(
+        self,
+        storage: DiagnosticStorage,
+        call: dict[str, Any],
+        pair_name: str,
+    ) -> None:
+        method_name = str(call["name"])
+        storage.add_range(
+            code=self.code,
+            message=f'Отсутствует парный вызов "{pair_name}" для метода "{method_name}"',
+            severity=Severity.ERROR,
+            line=int(call["line"]) - 1,
+            character=int(call["character"]),
+            end_line=int(call["line"]) - 1,
+            end_character=int(call["end_character"]),
+        )
+
+
 class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
     code = "BSL277"
     message = "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"
@@ -2398,8 +2485,13 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
         root = context.tree.root_node
         global_calls = _diag._ts_global_method_calls(root, context.lines)
         call_starts = [getattr(call["node"], "start_byte", -1) for call in global_calls]
+        proc_nodes = [
+            node
+            for node in _diag._ts_walk(root)
+            if getattr(node, "type", None) in {"procedure_definition", "function_definition"}
+        ]
         try_nodes = [node for node in _diag._ts_walk(root) if getattr(node, "type", None) == "try_statement"]
-        return global_calls, call_starts, [], try_nodes
+        return global_calls, call_starts, proc_nodes, try_nodes
 
     @staticmethod
     def _except_calls(

@@ -5698,22 +5698,6 @@ class DiagnosticEngine:
         return run_bsl245_server_side_export_form_method(path, lines, procs)
 
     # ------------------------------------------------------------------
-    # BSL230 — PairingBrokenTransaction
-    # ------------------------------------------------------------------
-
-    def _rule_bsl230_pairing_broken_transaction(self, path: str, tree: Any) -> list[Diagnostic]:
-        lines = self._current_lines or _ts_node_text(tree.root_node).splitlines()
-        global_calls, call_starts, proc_nodes, _try_nodes = self._runtime_call_context(tree, lines)
-        return run_bsl230_pairing_broken_transaction(
-            path,
-            tree,
-            global_calls=global_calls,
-            global_call_starts=call_starts,
-            proc_nodes=proc_nodes,
-            line_texts=lines,
-        )
-
-    # ------------------------------------------------------------------
     # BSL262 — UsageWriteLogEvent
     # ------------------------------------------------------------------
 
