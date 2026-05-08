@@ -4849,15 +4849,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL178 — DeprecatedMethods8317
-    # ------------------------------------------------------------------
-
-    def _rule_bsl178_deprecated_methods_8317(
-        self, path: str, lines: list[str], tree: Any
-    ) -> list[Diagnostic]:
-        return run_bsl178_deprecated_methods_8317(path, lines, tree)
-
-    # ------------------------------------------------------------------
     # BSL258 — UnionAll
     # ------------------------------------------------------------------
 

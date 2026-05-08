@@ -22,10 +22,6 @@ def extend_runtime_tail_rule_tasks(
         )
     if engine._rule_enabled("BSL150"):
         rule_tasks.append(("BSL150", lambda: engine._rule_bsl150_bad_words(path, lines)))
-    if engine._rule_enabled("BSL178"):
-        rule_tasks.append(
-            ("BSL178", lambda: engine._rule_bsl178_deprecated_methods_8317(path, lines, tree))
-        )
     if engine._rule_enabled("BSL183"):
         rule_tasks.append(
             ("BSL183", lambda: engine._rule_bsl183_execute_external_code(path, lines))

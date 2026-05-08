@@ -10,6 +10,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     ConsecutiveEmptyLinesRule,
     DeprecatedFindRule,
     DeprecatedMessageRule,
+    DeprecatedMethods8317Rule,
     EmptyStatementRule,
     ExtraCommasRule,
     MagicDateRule,
@@ -36,6 +37,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     MagicDateRule(),
     ConsecutiveEmptyLinesRule(),
     DeprecatedFindRule(),
+    DeprecatedMethods8317Rule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )

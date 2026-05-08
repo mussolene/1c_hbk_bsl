@@ -310,7 +310,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
     run_bsl220_235_269_273_query_text_diagnostics,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
-    run_bsl178_deprecated_methods_8317,
     run_bsl197_if_else_duplicated_code_block,
     run_bsl198_if_else_duplicated_condition,
     run_bsl199_if_else_if_ends_with_else,

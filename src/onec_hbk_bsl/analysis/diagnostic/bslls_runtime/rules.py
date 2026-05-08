@@ -123,6 +123,14 @@ _BSL024_COMMENTED_CODE_RE = re.compile(
     re.IGNORECASE,
 )
 _BSL066_DEPRECATED_FIND_RE = re.compile(r"(?<!\.)(?<!\w)\b(найти|find)\s*\(", re.IGNORECASE)
+_BSL178_DEPRECATED_METHOD_RE = re.compile(
+    r"(?<!\.)(?<!\w)\b("
+    r"КраткоеПредставлениеОшибки|BriefErrorDescription|"
+    r"ПодробноеПредставлениеОшибки|DetailErrorDescription|"
+    r"ПоказатьИнформациюОбОшибке|ShowErrorInfo"
+    r")\s*\(",
+    re.IGNORECASE,
+)
 
 
 def bsl024_find_report_comment_col(line: str) -> int | None:
@@ -850,6 +858,32 @@ class DeprecatedFindRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.INFORMATION,
                     message='Используйте "СтрНайти" вместо устаревшего "Найти"',
+                )
+        return storage.diagnostics
+
+
+class DeprecatedMethods8317Rule(BsllsDiagnosticRule):
+    code = "BSL178"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL178_DEPRECATED_METHOD_RE.finditer(clean):
+                method_name = match.group(1)
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.INFORMATION,
+                    message=(
+                        f'Метод "{method_name}" устарел. Следует использовать одноименный '
+                        "метод объекта типа МенеджерОбработкиОшибок"
+                    ),
                 )
         return storage.diagnostics
 

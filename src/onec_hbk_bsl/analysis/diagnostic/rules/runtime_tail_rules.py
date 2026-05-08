@@ -10,44 +10,6 @@ def _diag_module() -> Any:
     return _diag
 
 
-def run_bsl178_deprecated_methods_8317(path: str, lines: list[str], tree: Any) -> list[Any]:
-    _diag = _diag_module()
-    root = getattr(tree, "root_node", None)
-    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-        return []
-    deprecated = {
-        "краткоепредставлениеошибки",
-        "brieferrordescription",
-        "подробноепредставлениеошибки",
-        "detailerrordescription",
-        "показатьинформациюобошибке",
-        "showerrorinfo",
-    }
-    diags: list[Any] = []
-    for call in _diag._ts_global_method_calls(root, lines):
-        name_cf = str(call["name"]).casefold()
-        if name_cf not in deprecated:
-            continue
-        line_text = lines[call["line"] - 1] if 0 < call["line"] <= len(lines) else ""
-        exact_start = line_text.find(str(call["name"]))
-        start_char = exact_start if exact_start >= 0 else call["character"]
-        diags.append(
-            _diag.Diagnostic(
-                file=path,
-                line=call["line"],
-                character=start_char,
-                end_line=call["line"],
-                end_character=start_char + len(str(call["name"])),
-                severity=_diag.Severity.INFORMATION,
-                code="BSL178",
-                message=(
-                    f'Метод "{call["name"]}" устарел. Следует использовать одноименный '
-                    "метод объекта типа МенеджерОбработкиОшибок"
-                ),
-            )
-        )
-    return diags
-
 def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
