@@ -2466,6 +2466,235 @@ class UnionAllRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
+class UsageWriteLogEventRule(BsllsDiagnosticRule):
+    code = "BSL262"
+    _target_names = frozenset({"записьжурналарегистрации", "writelogevent"})
+    _level_root_names = frozenset({"уровеньжурналарегистрации", "eventloglevel"})
+    _error_level_names = frozenset({"ошибка", "error"})
+    _detail_error_names = frozenset({"подробноепредставлениеошибки", "detailerrordescription"})
+    _brief_error_names = frozenset({"краткоепредставлениеошибки", "brieferrordescription"})
+    _simple_error_names = frozenset({"описаниеошибки", "errordescription"})
+    _error_info_names = frozenset({"информацияобошибке", "errorinfo"})
+    _raise_names = frozenset({"ВЫЗВАТЬИСКЛЮЧЕНИЕ_KEYWORD", "RAISE_KEYWORD"})
+    _message_wrong_number = "Неверное число параметров метода"
+    _message_no_second = 'Не указан 2й параметр с типом "УровеньЖурналаРегистрации"'
+    _message_no_comment = 'Не указан 5й параметр "Комментарий"'
+    _message_no_error_level = (
+        'Нужно указывать уровень "Ошибка" при записи в журнал регистрации внутри блока Исключение-КонецПопытки'
+    )
+    _message_no_detail = 'В тексте комментария нет вызова "ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())"'
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        global_calls, call_starts, _proc_nodes, try_nodes = WrongUseOfRollbackTransactionMethodRule._runtime_context(
+            context
+        )
+        except_blocks = self._except_blocks(try_nodes, global_calls, call_starts)
+        storage = DiagnosticStorage(context.path)
+        for call in global_calls:
+            if str(call["name"]).casefold() not in self._target_names:
+                continue
+            call_node = call["node"]
+            args = self._call_params(call_node)
+            if len(args) < 5:
+                self._add_call(storage, context.lines, call_node, self._message_wrong_number)
+                continue
+            if args[1] is None:
+                self._add_call(storage, context.lines, call_node, self._message_no_second)
+                continue
+            if args[4] is None:
+                self._add_call(storage, context.lines, call_node, self._message_no_comment)
+                continue
+            except_roots = except_blocks.get(id(call_node))
+            if except_roots is None:
+                continue
+            if not self._has_error_log_level(args[1]):
+                self._add_call(storage, context.lines, call_node, self._message_no_error_level)
+                continue
+            if not self._is_comment_correct(except_roots, args[4]):
+                self._add_call(storage, context.lines, call_node, self._message_no_detail)
+        return storage.diagnostics
+
+    @staticmethod
+    def _call_params(call_node: Any) -> list[Any | None]:
+        args_node = next(
+            (child for child in _ts_children(call_node) if getattr(child, "type", None) == "arguments"),
+            None,
+        )
+        if args_node is None:
+            return []
+        params: list[Any | None] = []
+        current: Any | None = None
+        for child in _ts_children(args_node):
+            child_type = getattr(child, "type", None)
+            if child_type in {"(", ")", "line_comment", "comment"}:
+                continue
+            if child_type == ",":
+                params.append(current)
+                current = None
+                continue
+            if child_type == "expression":
+                current = child
+        params.append(current)
+        return params
+
+    @staticmethod
+    def _except_blocks(
+        try_nodes: list[Any],
+        global_calls: list[dict[str, Any]],
+        call_starts: list[int],
+    ) -> dict[int, list[Any]]:
+        blocks: dict[int, list[Any]] = {}
+        for try_node in try_nodes:
+            children = _ts_children(try_node)
+            except_idx = next(
+                (
+                    idx
+                    for idx, child in enumerate(children)
+                    if getattr(child, "type", None) == "EXCEPT_KEYWORD"
+                ),
+                None,
+            )
+            if except_idx is None:
+                continue
+            end_idx = next(
+                (
+                    idx
+                    for idx, child in enumerate(children)
+                    if getattr(child, "type", None) == "ENDTRY_KEYWORD"
+                ),
+                len(children),
+            )
+            roots = children[except_idx + 1 : end_idx]
+            for root in roots:
+                for call in _calls_in_node(root, global_calls, call_starts):
+                    blocks[id(call["node"])] = roots
+        return blocks
+
+    @classmethod
+    def _has_error_log_level(cls, expr: Any) -> bool:
+        text = _ts_node_text(expr).casefold()
+        if not any(root_name in text for root_name in cls._level_root_names):
+            return True
+        if "." not in text:
+            return True
+        return any(error_name in text for error_name in cls._error_level_names)
+
+    @classmethod
+    def _is_comment_correct(cls, block_roots: list[Any], expr: Any | None) -> bool:
+        if expr is None:
+            return True
+        if cls._block_has_raise(block_roots):
+            return True
+        return cls._is_valid_comment_expression(block_roots, expr, check_assignment=True)
+
+    @classmethod
+    def _is_valid_comment_expression(
+        cls,
+        block_roots: list[Any],
+        expr: Any,
+        *,
+        check_assignment: bool,
+    ) -> bool:
+        call_names = [cls._method_name(call) for call in cls._method_calls(expr)]
+        call_names_cf = [name.casefold() for name in call_names if name]
+        if any(name in cls._detail_error_names for name in call_names_cf) and any(
+            name in cls._error_info_names for name in call_names_cf
+        ):
+            return True
+        if any(name in cls._simple_error_names or name in cls._brief_error_names for name in call_names_cf):
+            return False
+        if cls._expression_is_const(expr):
+            return False
+        if check_assignment:
+            identifier = cls._single_identifier(expr)
+            if identifier is not None:
+                assignment_expr = cls._first_assignment_expr(block_roots, identifier)
+                if assignment_expr is None:
+                    return True
+                return cls._is_valid_comment_expression(
+                    block_roots,
+                    assignment_expr,
+                    check_assignment=False,
+                )
+        return False
+
+    @staticmethod
+    def _method_calls(node: Any) -> list[Any]:
+        return [child for child in _ts_walk(node) if getattr(child, "type", None) == "method_call"]
+
+    @staticmethod
+    def _method_name(node: Any) -> str:
+        ident = next(
+            (child for child in _ts_children(node) if getattr(child, "type", None) == "identifier"),
+            None,
+        )
+        return _ts_node_text(ident) if ident is not None else ""
+
+    @staticmethod
+    def _expression_is_const(expr: Any) -> bool:
+        return any(getattr(child, "type", None) == "const_value" for child in _ts_walk(expr))
+
+    @staticmethod
+    def _single_identifier(expr: Any) -> str | None:
+        children = _ts_children(expr)
+        if len(children) != 1:
+            return None
+        member = children[0]
+        if getattr(member, "type", None) == "identifier":
+            text = _ts_node_text(member).strip()
+            return text if text else None
+        if getattr(member, "type", None) != "member":
+            return None
+        text = _ts_node_text(member).strip()
+        return text if text and re.fullmatch(r"[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*", text) else None
+
+    @staticmethod
+    def _first_assignment_expr(block_roots: list[Any], var_name: str) -> Any | None:
+        assignment = next(
+            (
+                root
+                for root in block_roots
+                if getattr(root, "type", None) == "assignment_statement"
+            ),
+            None,
+        )
+        if assignment is None:
+            return None
+        children = _ts_children(assignment)
+        eq_idx = next(
+            (idx for idx, child in enumerate(children) if getattr(child, "type", None) == "="),
+            None,
+        )
+        if eq_idx is None:
+            return None
+        lvalue = "".join(_ts_node_text(child) for child in children[:eq_idx]).strip()
+        if lvalue.casefold() != var_name.casefold():
+            return None
+        return next(
+            (child for child in children[eq_idx + 1 :] if getattr(child, "type", None) == "expression"),
+            None,
+        )
+
+    @classmethod
+    def _block_has_raise(cls, block_roots: list[Any]) -> bool:
+        return any(getattr(node, "type", None) in cls._raise_names for root in block_roots for node in _ts_walk(root))
+
+    @staticmethod
+    def _add_call(storage: DiagnosticStorage, lines: list[str], call_node: Any, message: str) -> None:
+        _add_node_range(
+            storage,
+            code=UsageWriteLogEventRule.code,
+            message=message,
+            severity=Severity.INFORMATION,
+            lines=lines,
+            start_node=call_node,
+            end_node=call_node,
+        )
+
+
 class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
     code = "BSL277"
     message = "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"

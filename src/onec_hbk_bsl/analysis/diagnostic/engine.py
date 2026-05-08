@@ -5691,22 +5691,6 @@ class DiagnosticEngine:
         return run_bsl245_server_side_export_form_method(path, lines, procs)
 
     # ------------------------------------------------------------------
-    # BSL262 — UsageWriteLogEvent
-    # ------------------------------------------------------------------
-
-    def _rule_bsl262_usage_write_log_event(self, path: str, tree: Any) -> list[Diagnostic]:
-        lines = self._current_lines or _ts_node_text(tree.root_node).splitlines()
-        global_calls, call_starts, _proc_nodes, try_nodes = self._runtime_call_context(tree, lines)
-        return run_bsl262_usage_write_log_event(
-            path,
-            tree,
-            global_calls=global_calls,
-            global_call_starts=call_starts,
-            try_nodes=try_nodes,
-            line_texts=lines,
-        )
-
-    # ------------------------------------------------------------------
     # BSL240 — RewriteMethodParameter
     # ------------------------------------------------------------------
 

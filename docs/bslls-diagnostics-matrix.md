@@ -177,7 +177,7 @@
 | `UnusedLocalMethod` | `BSL042` | `implemented` | upstream:diagnostics/UnusedLocalMethodDiagnostic.java:59 | CODE_SMELL | MAJOR | attachableMethodPrefixes, checkObjectModule | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2386 |
 | `UnusedLocalVariable` | `BSL007` | `implemented` | upstream:diagnostics/UnusedLocalVariableDiagnostic.java:56 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:826 |
 | `UnusedParameters` | `BSL062` | `implemented` | upstream:diagnostics/UnusedParametersDiagnostic.java:49 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2797 |
-| `UsageWriteLogEvent` | `BSL262` | `implemented` | upstream:diagnostics/UsageWriteLogEventDiagnostic.java:50 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6174 |
+| `UsageWriteLogEvent` | `BSL262` | `implemented` | upstream:diagnostics/UsageWriteLogEventDiagnostic.java:50 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2470 |
 | `UseLessForEach` | `BSL263` | `implemented` | upstream:diagnostics/UseLessForEachDiagnostic.java:47 | ERROR | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6195 |
 | `UseSystemInformation` | `BSL264` | `implemented` | upstream:diagnostics/UseSystemInformationDiagnostic.java:45 | SECURITY_HOTSPOT | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4511 |
 | `UselessTernaryOperator` | `BSL265` | `implemented` | upstream:diagnostics/UselessTernaryOperatorDiagnostic.java:52 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6204 |

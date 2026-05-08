@@ -39,6 +39,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     TempFilesDirRule,
     TryNumberRule,
     UnionAllRule,
+    UsageWriteLogEventRule,
     UseLessForEachRule,
     UselessTernaryOperatorRule,
     UseSystemInformationRule,
@@ -97,6 +98,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     PairingBrokenTransactionRule(),
     TryNumberRule(),
     UnionAllRule(),
+    UsageWriteLogEventRule(),
     WrongUseFunctionProceedWithCallRule(),
     WrongUseOfRollbackTransactionMethodRule(),
     ExtraCommasRule(),
@@ -129,6 +131,7 @@ def append_bslls_runtime_rule_tasks(
             if engine._rule_enabled("BSL255")
             or engine._rule_enabled("BSL276")
             or engine._rule_enabled("BSL277")
+            or engine._rule_enabled("BSL262")
             else None
         ),
         ts_nodes_for_types=engine._ts_nodes_for_types,

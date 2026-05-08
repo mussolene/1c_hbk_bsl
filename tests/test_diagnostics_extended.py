@@ -4680,6 +4680,51 @@ class TestBsl225NumberOfValuesInStructureConstructorBslls:
         }
 
 
+class TestBsl262UsageWriteLogEvent:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "UsageWriteLogEventDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL262"}).check_file(str(fixture))
+            if diag.code == "BSL262"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 4, 4, 39),
+            (5, 4, 5, 73),
+            (6, 4, 6, 77),
+            (8, 4, 10, 61),
+            (12, 4, 12, 79),
+            (17, 6, 18, 25),
+            (24, 6, 25, 24),
+            (32, 6, 33, 45),
+            (39, 6, 40, 37),
+            (46, 6, 47, 21),
+            (191, 6, 193, 56),
+            (205, 6, 207, 22),
+            (220, 6, 222, 22),
+            (287, 12, 292, 39),
+            (355, 6, 357, 73),
+            (369, 6, 371, 22),
+            (384, 6, 386, 22),
+            (440, 12, 445, 39),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.INFORMATION}
+        assert {diag.message for diag in diags} == {
+            "Неверное число параметров метода",
+            'Не указан 2й параметр с типом "УровеньЖурналаРегистрации"',
+            'Не указан 5й параметр "Комментарий"',
+            'Нужно указывать уровень "Ошибка" при записи в журнал регистрации внутри блока Исключение-КонецПопытки',
+            'В тексте комментария нет вызова "ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())"',
+        }
+
+
 class TestBsl230PairingBrokenTransaction:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
