@@ -4007,66 +4007,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL227 — OneStatementPerLine
-    # ------------------------------------------------------------------
-
-    def _rule_bsl227_one_statement_per_line(
-        self, path: str, lines: list[str], procs: list[Any]
-    ) -> list[Diagnostic]:
-        """Detect multiple statements (semicolons) on one line inside procedures."""
-        diags: list[Diagnostic] = []
-        _re_comment = re.compile(r"^\s*//")
-        _re_header = re.compile(
-            r"^\s*(?:Процедура|Функция|Procedure|Function|"
-            r"КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b",
-            re.IGNORECASE,
-        )
-
-        # Build set of lines that are inside procedure bodies
-        proc_lines: set[int] = set()
-        for proc in procs:
-            for li in range(proc.start_idx + 1, proc.end_idx):
-                proc_lines.add(li)
-
-        for idx, line in enumerate(lines):
-            if idx not in proc_lines:
-                continue
-            if _re_comment.match(line) or _re_header.match(line):
-                continue
-            # Remove string literals and count semicolons
-            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
-                clean = clean[:comment_pos]
-            # Count semicolons not inside parentheses
-            depth = 0
-            semi_count = 0
-            for ch in clean:
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                elif ch == ";" and depth == 0:
-                    semi_count += 1
-            if semi_count >= 2:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=0,
-                        end_line=idx + 1,
-                        end_character=len(line),
-                        severity=Severity.INFORMATION,
-                        code="BSL227",
-                        message=(
-                            "Несколько операторов на одной строке "
-                            "— разместите каждый на отдельной строке"
-                        ),
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL175 / BSL176 — deprecated API pool
     # ------------------------------------------------------------------
 

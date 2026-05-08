@@ -2938,6 +2938,104 @@ class IncorrectLineBreakRule(BsllsDiagnosticRule):
         return query_prev_lines
 
 
+class OneStatementPerLineRule(BsllsDiagnosticRule):
+    code = "BSL227"
+    message = "Несколько операторов на одной строке — разместите каждый на отдельной строке"
+    _then_re = re.compile(r"\b(?:тогда|then)\b", re.IGNORECASE)
+    _end_if_re = re.compile(r"^(?:конецесли|endif)\s*;?\s*$", re.IGNORECASE)
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        string_states = (
+            context.snapshot.line_string_states
+            if context.snapshot is not None
+            else build_line_string_states(context.lines)
+        )
+        comment_starts = (
+            context.snapshot.comment_starts
+            if context.snapshot is not None
+            else [
+                comment_start_outside_double_quotes(line, string_states[idx])
+                for idx, line in enumerate(context.lines)
+            ]
+        )
+
+        for idx, line in enumerate(context.lines):
+            stripped = line.lstrip()
+            if not stripped or stripped.startswith("//") or stripped.startswith("#"):
+                continue
+
+            clean = line
+            comment_start = comment_starts[idx]
+            if comment_start is not None:
+                clean = clean[:comment_start]
+            spans = self._statement_spans(clean, line, in_str_at_start=string_states[idx])
+            if len(spans) <= 1:
+                continue
+            for start, end in spans[1:]:
+                storage.add_range(
+                    code=self.code,
+                    message=self.message,
+                    severity=Severity.INFORMATION,
+                    line=idx,
+                    character=start,
+                    end_line=idx,
+                    end_character=end,
+                )
+        return storage.diagnostics
+
+    @staticmethod
+    def _statement_spans(clean: str, line: str, *, in_str_at_start: bool) -> list[tuple[int, int]]:
+        spans: list[tuple[int, int]] = []
+        stmt_start = 0
+        depth = 0
+        for idx, ch in enumerate(clean):
+            if span_is_inside_double_quoted_string(
+                line,
+                idx,
+                idx + 1,
+                in_str_at_start=in_str_at_start,
+            ):
+                continue
+            if ch == "(":
+                depth += 1
+                continue
+            if ch == ")" and depth > 0:
+                depth -= 1
+                continue
+            if ch != ";" or depth != 0:
+                continue
+            segment = clean[stmt_start : idx + 1]
+            text = segment.strip()
+            if text and text != ";":
+                start = stmt_start + len(segment) - len(segment.lstrip())
+                end = idx + 1
+                spans.append((start, end))
+            stmt_start = idx + 1
+        expanded: list[tuple[int, int]] = []
+        for start, end in spans:
+            segment = clean[start:end]
+            expanded.append((start, end))
+            then_match = OneStatementPerLineRule._then_re.search(segment)
+            if then_match is None:
+                continue
+            tail = segment[then_match.end() :]
+            if ";" not in tail:
+                continue
+            sub = tail[: tail.rfind(";")].strip()
+            if not sub:
+                continue
+            sub_start = start + then_match.end() + len(tail[: tail.rfind(";")]) - len(tail[: tail.rfind(";")].lstrip())
+            expanded.append((sub_start, end))
+        spans = expanded
+        spans = [
+            (start, end)
+            for start, end in spans
+            if not OneStatementPerLineRule._end_if_re.match(clean[start:end].strip())
+        ]
+        return spans
+
+
 class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
     code = "BSL257"
     message = "Унарный плюс в конкатенации строк потенциально приводит к ошибке времени выполнения"

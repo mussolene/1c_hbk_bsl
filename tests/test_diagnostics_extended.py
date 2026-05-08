@@ -4921,6 +4921,49 @@ class TestBsl230PairingBrokenTransaction:
         assert any("ОтменитьТранзакцию" in diag.message for diag in diags)
 
 
+class TestBsl227OneStatementPerLine:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "OneStatementPerLineDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL227"}).check_file(str(fixture))
+            if diag.code == "BSL227"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 8, 4, 14),
+            (9, 18, 9, 32),
+            (9, 33, 9, 37),
+            (13, 5, 13, 9),
+            (13, 10, 13, 14),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.INFORMATION}
+
+    def test_matches_bslls_end_file_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "OneStatementPerLineDiagnosticEndFile.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL227"}).check_file(str(fixture))
+            if diag.code == "BSL227"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 5, 2, 9),
+            (2, 10, 2, 14),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.INFORMATION}
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

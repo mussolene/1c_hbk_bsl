@@ -60,9 +60,5 @@ def extend_style_tail_rule_tasks(
     snapshot: DocumentSnapshot,
 ) -> None:
     """Append late style tasks in declaration order."""
-    if engine._rule_enabled("BSL227"):
-        tasks.append(
-            ("BSL227", lambda: engine._rule_bsl227_one_statement_per_line(path, lines, procs))
-        )
     if engine._rule_enabled("BSL216"):
         tasks.append(("BSL216", lambda: engine._rule_bsl216_missing_space(path, lines, snapshot)))

@@ -131,7 +131,7 @@
 | `NumberOfParams` | `BSL031` | `implemented` | upstream:diagnostics/NumberOfParamsDiagnostic.java:41 | CODE_SMELL | MINOR | maxParamsCount | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1921 |
 | `NumberOfValuesInStructureConstructor` | `BSL225` | `implemented` | upstream:diagnostics/NumberOfValuesInStructureConstructorDiagnostic.java:47 | CODE_SMELL | MINOR | maxValuesCount | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2105 |
 | `OSUsersMethod` | `BSL226` | `implemented` | upstream:diagnostics/OSUsersMethodDiagnostic.java:44 | SECURITY_HOTSPOT | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4511 |
-| `OneStatementPerLine` | `BSL227` | `implemented` | upstream:diagnostics/OneStatementPerLineDiagnostic.java:57 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4236 |
+| `OneStatementPerLine` | `BSL227` | `implemented` | upstream:diagnostics/OneStatementPerLineDiagnostic.java:57 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
 | `OrderOfParams` | `BSL228` | `implemented` | upstream:diagnostics/OrderOfParamsDiagnostic.java:43 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3657 |
 | `OrdinaryAppSupport` | `BSL229` | `implemented` | upstream:diagnostics/OrdinaryAppSupportDiagnostic.java:50 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5736 |
 | `PairingBrokenTransaction` | `BSL230` | `implemented` | upstream:diagnostics/PairingBrokenTransactionDiagnostic.java:48 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6158 |
