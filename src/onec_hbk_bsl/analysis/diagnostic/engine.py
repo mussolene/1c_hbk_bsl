@@ -436,7 +436,6 @@ class DiagnosticEngine:
                 "BSL220",
                 "BSL235",
                 "BSL269",
-                "BSL273",
                 "BSL174",
                 "BSL187",
                 "BSL236",
@@ -3608,17 +3607,17 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL220 / BSL235 / BSL269 / BSL273 — query text diagnostics
+    # BSL220 / BSL235 / BSL269 — query text diagnostics
     # ------------------------------------------------------------------
 
-    def _rule_bsl220_235_269_273_query_text_diagnostics(
+    def _rule_bsl220_235_269_query_text_diagnostics(
         self,
         path: str,
         lines: list[str],
         codes: tuple[str, ...],
         query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl220_235_269_273_query_text_diagnostics(
+        return run_bsl220_235_269_query_text_diagnostics(
             path, lines, codes, self._rule_enabled, query_blocks
         )
 

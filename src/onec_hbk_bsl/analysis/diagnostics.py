@@ -305,7 +305,7 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
 from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
     run_bsl191_201_query_text_diagnostics,
     run_bsl206_207_209_query_join_diagnostics,
-    run_bsl220_235_269_273_query_text_diagnostics,
+    run_bsl220_235_269_query_text_diagnostics,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
     run_bsl197_if_else_duplicated_code_block,
@@ -3180,15 +3180,6 @@ _RE_QUERY_LIKE_TAIL_STOP = re.compile(
     r"\b(?:КАК|AS|И|AND|ИЛИ|OR|ПО|ON|ГДЕ|WHERE|"
     r"СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|"
     r"ИМЕЮЩИЕ|HAVING|ИТОГИ|TOTALS|ОБЪЕДИНИТЬ|UNION)\b|,",
-    re.IGNORECASE,
-)
-_QUERY_VIRTUAL_TABLE_NAME_PATTERN = (
-    r"(?:Регистр(?:Сведений|Накопления|Бухгалтерии|Расчета)|"
-    r"InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister)"
-    r"\.\w+(?:\.\w+)+"
-)
-_RE_QUERY_VIRTUAL_TABLE_CALL = re.compile(
-    rf"\b(?P<name>{_QUERY_VIRTUAL_TABLE_NAME_PATTERN})\s*(?P<open>\()?",
     re.IGNORECASE,
 )
 _RE_QUERY_PARSE_ERROR_TAIL_KEYWORD = re.compile(

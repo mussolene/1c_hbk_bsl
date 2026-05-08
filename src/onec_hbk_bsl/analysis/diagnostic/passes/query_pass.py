@@ -44,13 +44,13 @@ def extend_query_text_rule_tasks(
     query_blocks: list[QueryTextBlockInfo],
 ) -> None:
     """Append query-text tasks in declaration order."""
-    bsl220_235_269_273 = ("BSL220", "BSL235", "BSL269", "BSL273")
-    if any(engine._rule_enabled(code) for code in bsl220_235_269_273):
+    bsl220_235_269 = ("BSL220", "BSL235", "BSL269")
+    if any(engine._rule_enabled(code) for code in bsl220_235_269):
         tasks.append(
             (
-                "BSL220_235_269_273",
-                lambda: engine._rule_bsl220_235_269_273_query_text_diagnostics(
-                    path, lines, bsl220_235_269_273, query_blocks
+                "BSL220_235_269",
+                lambda: engine._rule_bsl220_235_269_query_text_diagnostics(
+                    path, lines, bsl220_235_269, query_blocks
                 ),
             )
         )

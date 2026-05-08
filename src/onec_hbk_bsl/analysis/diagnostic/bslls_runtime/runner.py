@@ -39,6 +39,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     UsingHardcodePathRule,
     UsingServiceTagRule,
     UsingSynchronousCallsRule,
+    VirtualTableCallWithoutParametersRule,
 )
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
 
@@ -74,6 +75,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     TempFilesDirRule(),
     UsingExternalCodeToolsRule(),
     UsingSynchronousCallsRule(),
+    VirtualTableCallWithoutParametersRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )

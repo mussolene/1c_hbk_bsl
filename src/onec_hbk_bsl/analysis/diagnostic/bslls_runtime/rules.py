@@ -462,6 +462,15 @@ _BSL272_SYNC_RE = re.compile(
     + r")\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_QUERY_VIRTUAL_TABLE_NAME_PATTERN = (
+    r"(?:Регистр(?:Сведений|Накопления|Бухгалтерии|Расчета)|"
+    r"InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister)"
+    r"\.\w+(?:\.\w+)+"
+)
+_BSL273_VIRTUAL_TABLE_RE = re.compile(
+    rf"\b(?P<name>{_QUERY_VIRTUAL_TABLE_NAME_PATTERN})\s*(?P<open>\()?",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -567,6 +576,28 @@ def _matching_paren(text: str, open_pos: int) -> int:
                 return pos + 1
         pos += 1
     return len(text)
+
+
+def _split_top_level_args(text: str) -> list[str]:
+    args: list[str] = []
+    start = 0
+    depth = 0
+    pos = 0
+    while pos < len(text):
+        char = text[pos]
+        if char in ('"', "'"):
+            pos = _skip_string(text, pos)
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            args.append(text[start:pos])
+            start = pos + 1
+        pos += 1
+    args.append(text[start:])
+    return args
 
 
 def _ternary_spans(context: BsllsDocumentContext) -> list[_TernarySpan]:
@@ -1949,6 +1980,69 @@ class UsingSynchronousCallsRule(BsllsDiagnosticRule):
                     ),
                 )
         return storage.diagnostics
+
+
+class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
+    code = "BSL273"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for line_no, content_base, _content, head, _ended_query in self._content_lines(context):
+            for match in _BSL273_VIRTUAL_TABLE_RE.finditer(head):
+                open_match = match.group("open")
+                if open_match is None:
+                    storage.add_range(
+                        code=self.code,
+                        message="Обращение к виртуальной таблице без параметров",
+                        severity=Severity.WARNING,
+                        line=line_no - 1,
+                        character=content_base + match.start("name"),
+                        end_line=line_no - 1,
+                        end_character=content_base + match.end("name"),
+                    )
+                    continue
+
+                open_idx = match.end("open") - 1
+                close_idx = _matching_paren(head, open_idx) - 1
+                if close_idx < open_idx:
+                    continue
+                args = head[open_idx + 1 : close_idx]
+                parts = [part.strip() for part in _split_top_level_args(args)]
+                if not parts or all(not part for part in parts):
+                    violation = True
+                elif len(parts) == 1:
+                    violation = False
+                else:
+                    violation = all(not part for part in parts[1:])
+                if violation:
+                    storage.add_range(
+                        code=self.code,
+                        message="Обращение к виртуальной таблице без параметров",
+                        severity=Severity.WARNING,
+                        line=line_no - 1,
+                        character=content_base + match.start("name"),
+                        end_line=line_no - 1,
+                        end_character=content_base + close_idx + 1,
+                    )
+        return storage.diagnostics
+
+    @staticmethod
+    def _content_lines(context: BsllsDocumentContext) -> list[tuple[int, int, str, str, bool]]:
+        snapshot = context.snapshot
+        if snapshot is not None:
+            return [
+                (line.line_no, line.content_base, line.content, line.head, line.ended_query)
+                for block in snapshot.query_text_blocks
+                for line in block.content_lines
+            ]
+
+        from onec_hbk_bsl.analysis import diagnostics as _diag
+
+        return [
+            content_line
+            for start_idx, block_lines in _diag._iter_query_text_blocks(context.lines)
+            for content_line in _diag._iter_query_text_content_lines(start_idx, block_lines)
+        ]
 
 
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):

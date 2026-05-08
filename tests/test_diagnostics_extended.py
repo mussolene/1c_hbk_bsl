@@ -4383,6 +4383,33 @@ class TestBsl255TryNumber:
         )
 
 
+class TestBsl273VirtualTableCallWithoutParameters:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "VirtualTableCallWithoutParametersDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL273"}).check_file(str(fixture))
+            if d.code == "BSL273"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (6, 8, 6, 43),
+            (49, 8, 49, 42),
+            (59, 8, 59, 44),
+            (79, 8, 79, 51),
+        ]
+        assert {d.severity for d in diags} == {Severity.WARNING}
+        assert {d.message for d in diags} == {
+            "Обращение к виртуальной таблице без параметров"
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

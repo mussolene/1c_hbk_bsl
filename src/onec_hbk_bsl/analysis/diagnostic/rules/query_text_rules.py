@@ -10,7 +10,7 @@ def _diag_module() -> Any:
     return _diag
 
 
-def run_bsl220_235_269_273_query_text_diagnostics(
+def run_bsl220_235_269_query_text_diagnostics(
     path: str,
     lines: list[str],
     codes: tuple[str, ...],
@@ -109,50 +109,6 @@ def run_bsl220_235_269_273_query_text_diagnostics(
                         )
                     )
 
-            if "BSL273" in enabled:
-                for match in _diag._RE_QUERY_VIRTUAL_TABLE_CALL.finditer(head):
-                    open_match = match.group("open")
-                    if open_match is None:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=content_base + match.start("name"),
-                                end_line=line_no,
-                                end_character=content_base + match.end("name"),
-                                severity=_diag.Severity.WARNING,
-                                code="BSL273",
-                                message="Обращение к виртуальной таблице без параметров",
-                            )
-                        )
-                        continue
-
-                    open_idx = match.end("open") - 1
-                    close_idx = _diag._find_matching_paren(head, open_idx)
-                    if close_idx < 0:
-                        continue
-                    args = head[open_idx + 1 : close_idx]
-                    parts = [part.strip() for part in _diag._split_top_level_args(args)]
-                    if not parts or all(not part for part in parts):
-                        is_violation = True
-                    elif len(parts) == 1:
-                        is_violation = False
-                    else:
-                        is_violation = all(not part for part in parts[1:])
-                    if is_violation:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=content_base + match.start("name"),
-                                end_line=line_no,
-                                end_character=content_base + close_idx + 1,
-                                severity=_diag.Severity.WARNING,
-                                code="BSL273",
-                                message="Обращение к виртуальной таблице без параметров",
-                            )
-                        )
-
     if query_blocks is None:
         for start_idx, block_lines in _diag._iter_query_text_blocks(lines):
             content_lines = list(_diag._iter_query_text_content_lines(start_idx, block_lines))
@@ -219,49 +175,6 @@ def run_bsl220_235_269_273_query_text_diagnostics(
                             )
                         )
 
-                if "BSL273" in enabled:
-                    for match in _diag._RE_QUERY_VIRTUAL_TABLE_CALL.finditer(head):
-                        open_match = match.group("open")
-                        if open_match is None:
-                            diags.append(
-                                _diag.Diagnostic(
-                                    file=path,
-                                    line=line_no,
-                                    character=content_base + match.start("name"),
-                                    end_line=line_no,
-                                    end_character=content_base + match.end("name"),
-                                    severity=_diag.Severity.WARNING,
-                                    code="BSL273",
-                                    message="Обращение к виртуальной таблице без параметров",
-                                )
-                            )
-                            continue
-
-                        open_idx = match.end("open") - 1
-                        close_idx = _diag._find_matching_paren(head, open_idx)
-                        if close_idx < 0:
-                            continue
-                        args = head[open_idx + 1 : close_idx]
-                        parts = [part.strip() for part in _diag._split_top_level_args(args)]
-                        if not parts or all(not part for part in parts):
-                            is_violation = True
-                        elif len(parts) == 1:
-                            is_violation = False
-                        else:
-                            is_violation = all(not part for part in parts[1:])
-                        if is_violation:
-                            diags.append(
-                                _diag.Diagnostic(
-                                    file=path,
-                                    line=line_no,
-                                    character=content_base + match.start("name"),
-                                    end_line=line_no,
-                                    end_character=content_base + close_idx + 1,
-                                    severity=_diag.Severity.WARNING,
-                                    code="BSL273",
-                                    message="Обращение к виртуальной таблице без параметров",
-                                )
-                            )
     return diags
 
 
