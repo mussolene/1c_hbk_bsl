@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
-from onec_hbk_bsl.analysis.document_snapshot import ProcInfo
+from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +16,7 @@ class ProcedureModel:
     is_export: bool
     header_col: int
     params: tuple[str, ...]
+    optional_count: int
 
     @classmethod
     def from_proc_info(cls, path: str, proc: ProcInfo) -> ProcedureModel:
@@ -28,6 +29,7 @@ class ProcedureModel:
             is_export=proc.is_export,
             header_col=proc.header_col,
             params=tuple(proc.params),
+            optional_count=proc.optional_count,
         )
 
     def validate_param_limit(self, lines: list[str], *, max_params: int) -> list[Diagnostic]:
@@ -47,6 +49,29 @@ class ProcedureModel:
                 message=(
                     f"{self.kind.capitalize()} '{self.name}' has {total} parameters "
                     f"(maximum {max_params})"
+                ),
+            )
+        ]
+
+    def validate_optional_param_limit(
+        self, lines: list[str], *, max_optional_params: int
+    ) -> list[Diagnostic]:
+        if self.optional_count <= max_optional_params:
+            return []
+        line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        return [
+            Diagnostic(
+                file=self.path,
+                line=self.start_idx + 1,
+                character=self.header_col,
+                end_line=self.start_idx + 1,
+                end_character=len(line_text),
+                severity=Severity.WARNING,
+                code="BSL015",
+                message=(
+                    f"{self.kind.capitalize()} '{self.name}' has "
+                    f"{self.optional_count} optional parameters "
+                    f"(maximum {max_optional_params})"
                 ),
             )
         ]
@@ -192,6 +217,40 @@ class ProcedureModel:
             )
         ]
 
+    def validate_non_export_in_api_regions(
+        self,
+        lines: list[str],
+        *,
+        regions: list[RegionInfo],
+        api_region_names: set[str],
+        proc_name_span,
+    ) -> list[Diagnostic]:
+        if self.is_export:
+            return []
+        for region in regions:
+            if region.name.lower() not in api_region_names:
+                continue
+            if not (region.start_idx < self.start_idx < region.end_idx):
+                continue
+            line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+            start_char, end_char = proc_name_span(lines, self._to_proc_info())
+            return [
+                Diagnostic(
+                    file=self.path,
+                    line=self.start_idx + 1,
+                    character=start_char,
+                    end_line=self.start_idx + 1,
+                    end_character=end_char or len(line_text),
+                    severity=Severity.WARNING,
+                    code="BSL003",
+                    message=(
+                        f'Переместите неэкспортный метод "{self.name}" '
+                        f'из области "{region.name}"'
+                    ),
+                )
+            ]
+        return []
+
     def _to_proc_info(self) -> ProcInfo:
         return ProcInfo(
             name=self.name,
@@ -201,7 +260,7 @@ class ProcedureModel:
             is_export=self.is_export,
             params=list(self.params),
             val_params=[],
-            optional_count=0,
+            optional_count=self.optional_count,
             header_col=self.header_col,
             optional_params=frozenset(),
         )

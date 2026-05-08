@@ -582,32 +582,18 @@ class DiagnosticEngine:
         regions: list[_RegionInfo],
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
-        api_regions = [r for r in regions if r.name.lower() in _API_REGION_NAMES]
-        if not api_regions:
+        if not any(region.name.lower() in _API_REGION_NAMES for region in regions):
             return diags
         for proc in procs:
-            if proc.is_export:
-                continue
-            for region in api_regions:
-                if region.start_idx < proc.start_idx < region.end_idx:
-                    line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-                    start_char, end_char = _proc_name_span(lines, proc)
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=proc.start_idx + 1,
-                            character=start_char,
-                            end_line=proc.start_idx + 1,
-                            end_character=end_char or len(line_text),
-                            severity=Severity.WARNING,
-                            code="BSL003",
-                            message=(
-                                f'Переместите неэкспортный метод "{proc.name}" '
-                                f'из области "{region.name}"'
-                            ),
-                        )
-                    )
-                    break
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_non_export_in_api_regions(
+                    lines,
+                    regions=regions,
+                    api_region_names=_API_REGION_NAMES,
+                    proc_name_span=_proc_name_span,
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -1096,24 +1082,13 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for proc in procs:
-            if proc.optional_count > self.max_optional_params:
-                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=proc.header_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=len(line_text),
-                        severity=Severity.WARNING,
-                        code="BSL015",
-                        message=(
-                            f"{proc.kind.capitalize()} '{proc.name}' has "
-                            f"{proc.optional_count} optional parameters "
-                            f"(maximum {self.max_optional_params})"
-                        ),
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_optional_param_limit(
+                    lines,
+                    max_optional_params=self.max_optional_params,
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
