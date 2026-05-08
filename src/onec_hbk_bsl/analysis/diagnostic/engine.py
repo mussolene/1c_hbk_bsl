@@ -4971,20 +4971,6 @@ class DiagnosticEngine:
         return run_bsl224_nested_function_in_parameters(path, lines, tree)
 
     # ------------------------------------------------------------------
-    # BSL218 — MissingTemporaryFileDeletion
-    # ------------------------------------------------------------------
-
-    def _rule_bsl218_missing_temporary_file_deletion(
-        self, path: str, lines: list[str], tree: Any
-    ) -> list[Diagnostic]:
-        global_calls, _call_starts, _proc_nodes, _try_nodes = self._runtime_call_context(
-            tree, lines
-        )
-        return run_bsl218_missing_temporary_file_deletion(
-            path, lines, tree, global_calls=global_calls
-        )
-
-    # ------------------------------------------------------------------
     # BSL202 / BSL223 / BSL243 / BSL249 — lightweight call pool
     # ------------------------------------------------------------------
 

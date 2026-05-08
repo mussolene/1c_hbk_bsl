@@ -3847,6 +3847,34 @@ class TestBsl218MissingTemporaryFileDeletion:
         diags = _check(content, tmp_path, select={"BSL218"})
         assert _codes(diags) == ["BSL218"]
 
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "MissingTemporaryFileDeletionDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS sources are not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL218"}).check_file(str(fixture))
+            if diag.code == "BSL218"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (7, 29, 7, 62),
+            (20, 30, 20, 63),
+            (26, 30, 26, 63),
+            (46, 29, 46, 62),
+            (50, 30, 50, 63),
+            (65, 30, 65, 58),
+            (72, 26, 72, 54),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.ERROR}
+        assert {diag.message for diag in diags} == {
+            "Нужно добавить удаление временного файла после использования"
+        }
+
 
 # ---------------------------------------------------------------------------
 # BSL225 — NumberOfValuesInStructureConstructor

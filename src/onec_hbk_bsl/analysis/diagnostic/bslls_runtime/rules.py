@@ -2135,6 +2135,217 @@ class NumberOfValuesInStructureConstructorRule(BsllsDiagnosticRule):
         return comma_count + 1
 
 
+class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
+    code = "BSL218"
+    message = "Нужно добавить удаление временного файла после использования"
+    _get_temp_names = frozenset({"получитьимявременногофайла", "gettempfilename"})
+    _delete_names = frozenset(
+        {
+            "удалитьфайлы",
+            "deletefiles",
+            "начатьудалениефайлов",
+            "begindeletingfiles",
+            "переместитьфайл",
+            "movefile",
+        }
+    )
+    _skip_routine_child_types = frozenset(
+        {
+            "PROCEDURE_KEYWORD",
+            "FUNCTION_KEYWORD",
+            "EXPORT_KEYWORD",
+            "identifier",
+            "parameters",
+            "ENDPROCEDURE_KEYWORD",
+            "ENDFUNCTION_KEYWORD",
+        }
+    )
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        storage = DiagnosticStorage(context.path)
+        global_calls = self._global_calls(context)
+        for call in global_calls:
+            if str(call["name"]).casefold() not in self._get_temp_names:
+                continue
+            call_node = call["node"]
+            assignment = self._assignment_ancestor(call_node)
+            if assignment is None:
+                self._add_call(storage, context.lines, call_node)
+                continue
+            var_name = self._assignment_lvalue_text(assignment)
+            block_parent = self._skip_error_ancestor(getattr(assignment, "parent", None))
+            roots = self._code_block_roots(block_parent) if block_parent is not None else None
+            if not var_name or not roots:
+                self._add_call(storage, context.lines, call_node)
+                continue
+            if not self._has_deletion_after(roots, context.lines, int(call["line"]), var_name):
+                self._add_call(storage, context.lines, call_node)
+        return storage.diagnostics
+
+    def _global_calls(self, context: BsllsDocumentContext) -> list[dict[str, Any]]:
+        if context.ts_nodes_for_types and context.global_method_calls_from_nodes:
+            nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
+            return context.global_method_calls_from_nodes(nodes["method_call"], context.lines)
+
+        from onec_hbk_bsl.analysis import diagnostics as _diag
+
+        return _diag._ts_global_method_calls(context.tree.root_node, context.lines)
+
+    @staticmethod
+    def _assignment_ancestor(node: Any) -> Any | None:
+        current = node
+        while current is not None:
+            if getattr(current, "type", None) == "assignment_statement":
+                return current
+            current = getattr(current, "parent", None)
+        return None
+
+    @staticmethod
+    def _skip_error_ancestor(node: Any) -> Any | None:
+        current = node
+        while current is not None and getattr(current, "type", None) == "ERROR":
+            current = getattr(current, "parent", None)
+        return current
+
+    @staticmethod
+    def _assignment_lvalue_text(assign: Any) -> str | None:
+        parts: list[str] = []
+        for child in _ts_children(assign):
+            if getattr(child, "type", None) == "=":
+                break
+            parts.append(_ts_node_text(child))
+        text = "".join(parts).strip()
+        return text or None
+
+    @classmethod
+    def _code_block_roots(cls, node: Any) -> list[Any] | None:
+        node_type = getattr(node, "type", None)
+        children = _ts_children(node)
+        if node_type in {"procedure_definition", "function_definition"}:
+            return [
+                child
+                for child in children
+                if getattr(child, "type", None) not in cls._skip_routine_child_types
+            ]
+        if node_type == "source_file":
+            return [child for child in children if getattr(child, "type", None) != "preprocessor"]
+        if node_type == "if_statement":
+            return cls._roots_between(children, "THEN_KEYWORD", {"elseif_clause", "else_clause", "ENDIF_KEYWORD"})
+        if node_type == "elseif_clause":
+            return cls._roots_after(children, "THEN_KEYWORD")
+        if node_type == "else_clause":
+            return cls._roots_after(children, "ELSE_KEYWORD")
+        if node_type in {"while_statement", "for_statement", "for_each_statement"}:
+            return cls._roots_between(children, "DO_KEYWORD", {"ENDDO_KEYWORD"})
+        if node_type == "try_statement":
+            return cls._roots_between(children, "TRY_KEYWORD", {"EXCEPT_KEYWORD", "ENDTRY_KEYWORD"})
+        return None
+
+    @staticmethod
+    def _roots_between(
+        children: list[Any],
+        start_type: str,
+        end_types: set[str],
+    ) -> list[Any]:
+        start_idx = next(
+            (idx for idx, child in enumerate(children) if getattr(child, "type", None) == start_type),
+            None,
+        )
+        if start_idx is None:
+            return []
+        end_idx = next(
+            (
+                idx
+                for idx in range(start_idx + 1, len(children))
+                if getattr(children[idx], "type", None) in end_types
+            ),
+            len(children),
+        )
+        return children[start_idx + 1 : end_idx]
+
+    @staticmethod
+    def _roots_after(children: list[Any], keyword_type: str) -> list[Any]:
+        keyword_idx = next(
+            (idx for idx, child in enumerate(children) if getattr(child, "type", None) == keyword_type),
+            None,
+        )
+        if keyword_idx is None:
+            return []
+        return children[keyword_idx + 1 :]
+
+    @classmethod
+    def _has_deletion_after(
+        cls,
+        roots: list[Any],
+        lines: list[str],
+        after_line: int,
+        var_name: str,
+    ) -> bool:
+        var_cf = var_name.casefold()
+        for root in roots:
+            for call in cls._global_calls_in_subtree(root, lines):
+                if int(call["line"]) <= after_line:
+                    continue
+                if str(call["name"]).casefold() not in cls._delete_names:
+                    continue
+                for expr in cls._method_call_arg_exprs(call["node"]):
+                    if _ts_node_text(expr).strip().casefold() == var_cf:
+                        return True
+        return False
+
+    @staticmethod
+    def _global_calls_in_subtree(node: Any, lines: list[str]) -> list[dict[str, Any]]:
+        calls: list[dict[str, Any]] = []
+        for child in _ts_walk(node):
+            if getattr(child, "type", None) != "method_call":
+                continue
+            if getattr(getattr(child, "parent", None), "type", None) == "call_expression":
+                continue
+            ident = next(
+                (
+                    call_child
+                    for call_child in _ts_children(child)
+                    if getattr(call_child, "type", None) == "identifier"
+                ),
+                None,
+            )
+            if ident is None:
+                continue
+            calls.append(
+                {
+                    "node": child,
+                    "name": _ts_node_text(ident),
+                    "line": int(ident.start_point[0]) + 1,
+                }
+            )
+        return calls
+
+    @staticmethod
+    def _method_call_arg_exprs(node: Any) -> list[Any]:
+        args = next(
+            (child for child in _ts_children(node) if getattr(child, "type", None) == "arguments"),
+            None,
+        )
+        if args is None:
+            return []
+        return [child for child in _ts_children(args) if getattr(child, "type", None) == "expression"]
+
+    @staticmethod
+    def _add_call(storage: DiagnosticStorage, lines: list[str], call_node: Any) -> None:
+        _add_node_range(
+            storage,
+            code=MissingTemporaryFileDeletionRule.code,
+            message=MissingTemporaryFileDeletionRule.message,
+            severity=Severity.ERROR,
+            lines=lines,
+            start_node=call_node,
+            end_node=call_node,
+        )
+
+
 class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
     code = "BSL277"
     message = "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"

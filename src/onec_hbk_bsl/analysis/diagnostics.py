@@ -282,7 +282,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.method_contract_rules import (
     run_bsl254_transferring_parameters,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.misc_runtime_rules import (
-    run_bsl218_missing_temporary_file_deletion,
     run_bsl257_unary_plus_in_concatenation,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
@@ -336,6 +335,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL188",
         "BSL203",
         "BSL205",
+        "BSL218",
         "BSL264",
         "BSL225",
         "BSL221",
