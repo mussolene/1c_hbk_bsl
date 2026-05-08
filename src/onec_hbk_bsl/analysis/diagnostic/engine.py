@@ -4333,7 +4333,7 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL175 / BSL176 / BSL179 / BSL195 — deprecated API pool
+    # BSL175 / BSL176 / BSL179 — deprecated API pool
     # ------------------------------------------------------------------
 
     def _rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
@@ -4479,22 +4479,6 @@ class DiagnosticEngine:
                             severity=Severity.INFORMATION,
                             code="BSL179",
                             message='Замените устаревшее использование типа "УправляемаяФорма"',
-                        )
-                    )
-
-            if "BSL195" in enabled:
-                for match in _RE_BSL195_GET_FORM.finditer(clean):
-                    name = match.group("name")
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.WARNING,
-                            code="BSL195",
-                            message="Не рекомендуемое использование метода ПолучитьФорму",
                         )
                     )
 

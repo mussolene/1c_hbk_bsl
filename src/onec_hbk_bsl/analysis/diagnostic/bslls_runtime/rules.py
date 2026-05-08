@@ -243,6 +243,7 @@ _BSL177_DEPRECATED_METHOD_RE = re.compile(
     r")\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL195_GET_FORM_RE = re.compile(r"\b(ПолучитьФорму|GetForm)\s*\(", re.IGNORECASE | re.UNICODE)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1155,6 +1156,28 @@ class DeprecatedMethods8310Rule(BsllsDiagnosticRule):
                     end_character=_single_line_call_end(clean, match.end() - 1),
                     severity=Severity.INFORMATION,
                     message=f'Метод "{method_name}" устарел. Следует использовать "{replacement}".',
+                )
+        return storage.diagnostics
+
+
+class GetFormMethodRule(BsllsDiagnosticRule):
+    code = "BSL195"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL195_GET_FORM_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.ERROR,
+                    message="Не рекомендуемое использование метода ПолучитьФорму",
                 )
         return storage.diagnostics
 

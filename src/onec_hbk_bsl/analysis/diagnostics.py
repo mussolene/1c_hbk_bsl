@@ -389,8 +389,8 @@ RULE_METADATA: dict[str, dict] = {
     "BSL002": {
         "name": "MethodSize",
         "description": "Procedure or function exceeds maximum allowed length",
-        "severity": "WARNING",
-        "sonar_type": "CODE_SMELL",
+        "severity": "ERROR",
+        "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["size", "brain-overload"],
     },
@@ -4135,10 +4135,6 @@ _RE_BSL175_ENUM_NAME = re.compile(r"\b(?P<name>ОриентацияМетокД�
 
 _RE_BSL179_MANAGED_FORM = re.compile(
     r"\b(?:Тип|Type)\s*\(\s*\"(?P<name>УправляемаяФорма|ManagedForm)\"\s*\)",
-    re.IGNORECASE | re.UNICODE,
-)
-_RE_BSL195_GET_FORM = re.compile(
-    r"(?P<name>ПолучитьФорму|GetForm)\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
 _RE_BSL176_DEPRECATED_DOC = re.compile(
