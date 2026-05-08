@@ -447,6 +447,27 @@ class TestSecurityApiParityBatch:
         ]
         assert {d.message for d in diags} == {"Проверьте установку привилегированного режима"}
 
+    def test_bsl250_temp_files_dir_matches_bslls_fixture(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Каталог = КаталогВременныхФайлов();  // Срабатывание здесь
+                ИмяФайла = Строка(Новый УникальныйИдентификатор) + ".xml";
+                ИмяПромежуточногоФайла = Каталог + ИмяФайла;
+                Данные.Записать(ИмяПромежуточногоФайла);
+            КонецФункции
+
+            Function Test()
+                Catalog = TempFilesDir(); // Срабатывание здесь
+                FileName = Str(New UUID);
+            EndFunction
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL250"}) if d.code == "BSL250"]
+        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+            (2, 14, 2, 36, "WARNING"),
+            (9, 14, 9, 26, "WARNING"),
+        ]
+        assert {d.message for d in diags} == {"Не рекомендуемый вызов функции КаталогВременныхФайлов()"}
+
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()

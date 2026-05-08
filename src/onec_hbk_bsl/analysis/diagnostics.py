@@ -1729,12 +1729,12 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL250": {
         "name": "TempFilesDir",
-        "description": "КаталогВременныхФайлов()/TempFilesDir() used — may cause issues in web "
-        "context",
+        "description": "КаталогВременныхФайлов()/TempFilesDir() used instead of safer temporary "
+        "file APIs",
         "severity": "WARNING",
-        "sonar_type": "SECURITY_HOTSPOT",
+        "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
-        "tags": ["security", "compatibility"],
+        "tags": ["standard", "badpractice"],
         "implemented": True,
     },
     "BSL251": {
@@ -4142,10 +4142,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 )
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
-_RE_BSL250_TEMPFILES = re.compile(
-    r"\b(?P<name>КаталогВременныхФайлов|TempFilesDir)\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL267_EXTERNAL_CODE_TOOLS = re.compile(
     r"\b(?:ВнешниеОбработки|ExternalDataProcessors|ВнешниеОтчеты|ExternalReports|"
     r"РасширенияКонфигурации|ConfigurationExtensions)\.(?P<name>Создать|Create|Подключить|Connect)\s*\(",

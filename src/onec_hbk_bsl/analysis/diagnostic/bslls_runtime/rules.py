@@ -360,6 +360,10 @@ _BSL247_SET_PRIVILEGED_RE = re.compile(
     r"(?<![.\w])(УстановитьПривилегированныйРежим|SetPrivilegedMode)\s*\(([^)]*)\)",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL250_TEMPFILES_RE = re.compile(
+    r"(?<![.\w])(КаталогВременныхФайлов|TempFilesDir)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1708,6 +1712,26 @@ class SetPrivilegedModeRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.WARNING,
                     message="Проверьте установку привилегированного режима",
+                )
+        return storage.diagnostics
+
+
+class TempFilesDirRule(BsllsDiagnosticRule):
+    code = "BSL250"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL250_TEMPFILES_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.WARNING,
+                    message="Не рекомендуемый вызов функции КаталогВременныхФайлов()",
                 )
         return storage.diagnostics
 
