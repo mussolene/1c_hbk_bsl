@@ -2803,24 +2803,6 @@ _RE_BSL215_PARAMS_SECTION = re.compile(r"^\s*//\s*(?:Параметры|Paramete
 _RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*-", re.UNICODE)
 _RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
-_BSL200_INCORRECT_START = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
-_BSL200_INCORRECT_END = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
-
-
-def _bsl200_query_first_prev_lines(lines: list[str]) -> set[int]:
-    """
-    Lines whose next line starts a query-text block.
-
-    Mirrors BSLLS ``queryStartsAtNextLine`` skip for:
-    ``Запрос.Текст =`` followed by the first query literal line.
-    """
-    query_prev_lines: set[int] = set()
-    for start_idx, _block_lines in _iter_query_text_blocks(lines):
-        if start_idx > 0:
-            query_prev_lines.add(start_idx - 1)
-    return query_prev_lines
-
-
 def path_is_likely_form_module_bsl(path: str) -> bool:
     """
     True for EDT-style ``.../Forms/.../Ext/Module.bsl`` or file stems containing

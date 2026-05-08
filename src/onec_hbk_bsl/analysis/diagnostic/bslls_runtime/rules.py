@@ -13,6 +13,11 @@ from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     common_module_execute_external_code_applicable,
     common_module_xml_for_module_bsl,
 )
+from onec_hbk_bsl.analysis.diagnostic.string_state import (
+    build_line_string_states,
+    comment_start_outside_double_quotes,
+    span_is_inside_double_quoted_string,
+)
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 
 
@@ -2844,6 +2849,93 @@ class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
             end_line=line,
             end_character=end_character,
         )
+
+
+class IncorrectLineBreakRule(BsllsDiagnosticRule):
+    code = "BSL200"
+    message = "Проверьте правильность переноса операндов, операторов и параметров"
+    _incorrect_start_re = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
+    _incorrect_end_re = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
+    _query_text_start_re = re.compile(r'"\s*(?:ВЫБРАТЬ|SELECT)\b', re.IGNORECASE)
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        string_states = (
+            context.snapshot.line_string_states
+            if context.snapshot is not None
+            else build_line_string_states(context.lines)
+        )
+        comment_starts = (
+            context.snapshot.comment_starts
+            if context.snapshot is not None
+            else [
+                comment_start_outside_double_quotes(line, string_states[idx])
+                for idx, line in enumerate(context.lines)
+            ]
+        )
+        query_prev_lines = self._query_first_prev_lines(context)
+
+        for idx, line in enumerate(context.lines):
+            if idx in query_prev_lines:
+                continue
+            self._check_match(
+                storage,
+                idx,
+                line,
+                self._incorrect_start_re.search(line),
+                string_states[idx],
+                comment_starts[idx],
+            )
+            self._check_match(
+                storage,
+                idx,
+                line,
+                self._incorrect_end_re.search(line),
+                string_states[idx],
+                comment_starts[idx],
+            )
+        return storage.diagnostics
+
+    def _check_match(
+        self,
+        storage: DiagnosticStorage,
+        line_idx: int,
+        line: str,
+        match: re.Match[str] | None,
+        in_string_at_start: bool,
+        comment_start: int | None,
+    ) -> None:
+        if match is None:
+            return
+        start = match.start(1)
+        end = match.end(1)
+        in_comment = comment_start is not None and end >= comment_start
+        in_string = span_is_inside_double_quoted_string(
+            line,
+            start,
+            end,
+            in_str_at_start=in_string_at_start,
+        )
+        if in_comment or in_string:
+            return
+        storage.add_range(
+            code=self.code,
+            message=self.message,
+            severity=Severity.INFORMATION,
+            line=line_idx,
+            character=start,
+            end_line=line_idx,
+            end_character=end,
+        )
+
+    def _query_first_prev_lines(self, context: BsllsDocumentContext) -> set[int]:
+        if context.snapshot is not None:
+            return {block.start_idx - 1 for block in context.snapshot.query_text_blocks if block.start_idx > 0}
+        query_prev_lines: set[int] = set()
+        for idx, line in enumerate(context.lines):
+            if idx > 0 and self._query_text_start_re.search(line):
+                query_prev_lines.add(idx - 1)
+        return query_prev_lines
 
 
 class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):

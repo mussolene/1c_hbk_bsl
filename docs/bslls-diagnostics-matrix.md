@@ -92,7 +92,7 @@
 | `IfElseDuplicatedCodeBlock` | `BSL197` | `implemented` | upstream:diagnostics/IfElseDuplicatedCodeBlockDiagnostic.java:53 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4218 |
 | `IfElseDuplicatedCondition` | `BSL198` | `implemented` | upstream:diagnostics/IfElseDuplicatedConditionDiagnostic.java:53 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4227 |
 | `IfElseIfEndsWithElse` | `BSL199` | `implemented` | upstream:diagnostics/IfElseIfEndsWithElseDiagnostic.java:39 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4883 |
-| `IncorrectLineBreak` | `BSL200` | `implemented` | upstream:diagnostics/IncorrectLineBreakDiagnostic.java:47 | CODE_SMELL | INFO | checkFirstSymbol, listOfIncorrectFirstSymbol, checkLastSymbol, listOfIncorrectLastSymbol | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4892 |
+| `IncorrectLineBreak` | `BSL200` | `implemented` | upstream:diagnostics/IncorrectLineBreakDiagnostic.java:47 | CODE_SMELL | INFO | checkFirstSymbol, listOfIncorrectFirstSymbol, checkLastSymbol, listOfIncorrectLastSymbol | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
 | `IncorrectUseLikeInQuery` | `BSL201` | `implemented` | upstream:diagnostics/IncorrectUseLikeInQueryDiagnostic.java:49 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3642 |
 | `IncorrectUseOfStrTemplate` | `BSL202` | `implemented` | upstream:diagnostics/IncorrectUseOfStrTemplateDiagnostic.java:53 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5375 |
 | `InternetAccess` | `BSL203` | `implemented` | upstream:diagnostics/InternetAccessDiagnostic.java:45 | VULNERABILITY | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4511 |

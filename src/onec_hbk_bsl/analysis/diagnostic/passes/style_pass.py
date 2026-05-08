@@ -48,10 +48,6 @@ def extend_style_token_rule_tasks(
     snapshot: DocumentSnapshot,
 ) -> None:
     """Append keyword/line-break style tasks in declaration order."""
-    if engine._rule_enabled("BSL200"):
-        tasks.append(
-            ("BSL200", lambda: engine._rule_bsl200_incorrect_line_break(path, lines, snapshot))
-        )
 
 
 def extend_style_tail_rule_tasks(

@@ -2078,6 +2078,30 @@ class TestBsl200IncorrectLineBreak:
         diags = _check(content, tmp_path, select={"BSL200"})
         assert "BSL200" not in _codes(diags)
 
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = Path(".agent/tmp/bslls-source/src/test/resources/diagnostics/IncorrectLineBreakDiagnostic.bsl")
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL200"}).check_file(str(fixture))
+            if diag.code == "BSL200"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (7, 32, 7, 33),
+            (8, 35, 8, 36),
+            (16, 32, 16, 33),
+            (17, 22, 17, 23),
+            (21, 49, 21, 50),
+            (45, 25, 45, 76),
+            (47, 25, 47, 79),
+            (59, 4, 59, 55),
+            (61, 4, 61, 58),
+            (70, 80, 70, 83),
+            (83, 89, 83, 92),
+            (102, 2, 102, 3),
+            (106, 2, 106, 3),
+            (110, 2, 110, 3),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL026 — EmptyRegion
