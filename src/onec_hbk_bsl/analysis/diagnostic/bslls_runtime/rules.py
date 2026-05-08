@@ -4046,8 +4046,14 @@ class EngineBridgeRule(BsllsDiagnosticRule):
             return engine._rule_bsl022_deprecated_message(context.path, context.lines, procs)
         if code == "BSL026":
             return engine._rule_bsl026_empty_region(context.path, context.lines, regions)
+        if code == "BSL028":
+            return engine._rule_bsl028_missing_try_catch(context.path, context.lines, procs)
         if code == "BSL029":
             return engine._rule_bsl029_magic_number(context.path, context.lines, procs, snapshot)
+        if code == "BSL030":
+            return engine._rule_bsl030_statement_missing_semicolon(
+                context.path, context.lines, procs
+            )
         if code == "BSL031":
             return engine._rule_bsl031_number_of_params(context.path, context.lines, procs)
         if code == "BSL032":
@@ -4082,8 +4088,47 @@ class EngineBridgeRule(BsllsDiagnosticRule):
             return engine._rule_bsl064_procedure_returns_value(context.path, context.lines, procs)
         if code == "BSL065":
             return engine._rule_bsl065_missing_export_comment(context.path, context.lines, procs)
+        if code == "BSL077":
+            return engine._rule_bsl077_select_top_without_order_by(
+                context.path, context.lines, _query_blocks()
+            )
         if code == "BSL131":
             return engine._rule_bsl131_duplicate_region(context.path, context.lines, regions)
+        if code == "BSL148":
+            return engine._rule_bsl148_all_function_paths_return(context.path, context.tree)
+        if code == "BSL152":
+            return engine._rule_bsl152_cached_public(context.path, context.lines, regions, procs)
+        if code == "BSL154":
+            return engine._rule_bsl154_code_after_async(context.path, context.lines, procs)
+        if code == "BSL156":
+            return engine._rule_bsl156_code_out_of_region(context.path, context.lines, procs)
+        if code == "BSL158":
+            return engine._rule_bsl158_common_module_assign(
+                context.path, context.lines, getattr(engine, "_symbol_index", None)
+            )
+        if code == "BSL159":
+            return engine._rule_bsl159_common_module_invalid_type(context.path, context.lines)
+        if code == "BSL160":
+            return engine._rule_bsl160_common_module_missing_api(
+                context.path, context.lines, regions, procs
+            )
+        if code in {
+            "BSL161",
+            "BSL162",
+            "BSL163",
+            "BSL164",
+            "BSL165",
+            "BSL166",
+            "BSL167",
+            "BSL168",
+        }:
+            return [
+                d
+                for d in engine._rule_bsl161_168_common_module_names(
+                    context.path, context.lines, (code,)
+                )
+                if d.code == code
+            ]
         if code == "BSL172":
             return engine._rule_bsl172_data_exchange_loading(context.path, context.lines, procs)
         if code in {"BSL175", "BSL176", "BSL177", "BSL179", "BSL195"}:
@@ -4105,6 +4150,14 @@ class EngineBridgeRule(BsllsDiagnosticRule):
                     context.tree,
                     (code,),
                     snapshot,
+                )
+                if d.code == code
+            ]
+        if code in {"BSL206", "BSL207", "BSL209"}:
+            return [
+                d
+                for d in engine._rule_bsl206_207_209_query_join_diagnostics(
+                    context.path, context.lines, (code,), _query_blocks()
                 )
                 if d.code == code
             ]
@@ -4147,6 +4200,27 @@ class EngineBridgeRule(BsllsDiagnosticRule):
                 d
                 for d in engine._rule_bsl169_170_181_182_196_260_light_pool(
                     context.path, context.lines, procs, (code,), snapshot
+                )
+                if d.code == code
+            ]
+        if code in {"BSL192", "BSL193", "BSL194", "BSL228", "BSL266"}:
+            return [
+                d
+                for d in engine._rule_bsl192_193_194_228_266_method_contract_diagnostics(
+                    context.path, context.lines, procs, (code,)
+                )
+                if d.code == code
+            ]
+        if code in {"BSL171", "BSL204", "BSL217", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
+            return [
+                d
+                for d in engine._rule_bsl171_204_217_248_251_252_259_268_light_pool(
+                    context.path,
+                    context.content,
+                    context.lines,
+                    context.tree,
+                    procs,
+                    (code,),
                 )
                 if d.code == code
             ]
