@@ -7,20 +7,32 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocument
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     BsllsDiagnosticRule,
     CanonicalSpellingKeywordsRule,
+    ConsecutiveEmptyLinesRule,
     DeprecatedMessageRule,
+    ExtraCommasRule,
     MagicDateRule,
     NestedTernaryOperatorRule,
+    SpaceAtStartCommentRule,
     UselessTernaryOperatorRule,
     UsingGotoRule,
+    UsingHardcodeNetworkAddressRule,
+    UsingHardcodePathRule,
+    UsingServiceTagRule,
 )
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
 
 _RULES: tuple[BsllsDiagnosticRule, ...] = (
+    UsingHardcodeNetworkAddressRule(),
+    UsingHardcodePathRule(),
+    UsingServiceTagRule(),
+    SpaceAtStartCommentRule(),
     UsingGotoRule(),
     CanonicalSpellingKeywordsRule(),
     DeprecatedMessageRule(),
     NestedTernaryOperatorRule(),
     MagicDateRule(),
+    ConsecutiveEmptyLinesRule(),
+    ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )
 BSL_RUNTIME_RULE_CODES: frozenset[str] = frozenset(rule.code for rule in _RULES)

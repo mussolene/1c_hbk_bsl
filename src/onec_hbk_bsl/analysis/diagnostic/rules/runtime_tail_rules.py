@@ -48,33 +48,6 @@ def run_bsl178_deprecated_methods_8317(path: str, lines: list[str], tree: Any) -
         )
     return diags
 
-def run_bsl186_extra_commas(path: str, lines: list[str]) -> list[Any]:
-    _diag = _diag_module()
-    diags: list[Any] = []
-    for idx, line in enumerate(lines):
-        if _diag._RE_LINE_COMMENT.match(line):
-            continue
-        clean = _diag._RE_DOUBLE_QUOTED_STRING.sub('""', line)
-        comment_pos = clean.find("//")
-        if comment_pos >= 0:
-            clean = clean[:comment_pos]
-        m = _diag._RE_BSL186_TRAILING_COMMA.search(clean)
-        if m:
-            diags.append(
-                _diag.Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=m.start(),
-                    end_line=idx + 1,
-                    end_character=m.start() + 1,
-                    severity=_diag.Severity.WARNING,
-                    code="BSL186",
-                    message="Лишняя запятая перед закрывающей скобкой или точкой с запятой",
-                )
-            )
-    return diags
-
-
 def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []

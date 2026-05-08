@@ -311,7 +311,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
     run_bsl178_deprecated_methods_8317,
-    run_bsl186_extra_commas,
     run_bsl197_if_else_duplicated_code_block,
     run_bsl198_if_else_duplicated_condition,
     run_bsl199_if_else_if_ends_with_else,
@@ -1139,8 +1138,8 @@ RULE_METADATA: dict[str, dict] = {
         "name": "ExtraCommas",
         "description": "Trailing or extra comma in method call or declaration",
         "severity": "WARNING",
-        "sonar_type": "BUG",
-        "sonar_severity": "MINOR",
+        "sonar_type": "CODE_SMELL",
+        "sonar_severity": "MAJOR",
         "tags": ["syntax", "style"],
         "implemented": True,
     },
@@ -2351,32 +2350,6 @@ _RE_REGION_CLOSE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Hardcoded network addresses
-_RE_HARDCODE_NET = re.compile(
-    r'"(?:'
-    r"(?:\d{1,3}\.){3}\d{1,3}"  # bare IPv4
-    r"|\\\\[\w\-.]{2,}\\[\w\-.]+"  # UNC path
-    r')"',
-    re.IGNORECASE,
-)
-# BSLLS: URLs (https?/ftp) are NOT flagged by BSL005 — only bare IPv4 and UNC paths.
-# Popular version prefixes to skip (BSLLS searchPopularVersionExclusion).
-_RE_BSL005_POPULAR_VERSION = re.compile(r"^(?:1|2|3|8\.3|11)\.")
-# Context keywords that indicate a version string context (BSLLS searchWordsExclusion).
-_RE_BSL005_VERSION_CONTEXT = re.compile(
-    r"Верси|Version|ЗапуститьПриложение|RunApp|Пространств|Namespace|Драйвер|Driver",
-    re.IGNORECASE,
-)
-
-# Hardcoded file-system paths
-_RE_HARDCODE_PATH = re.compile(
-    r'"(?:'
-    r'[A-Za-z]:\\[^"]{2,}'  # Windows C:\...
-    r'|/(?:home|usr|var|tmp|etc|opt|mnt|srv|app)/[^"]{2,}'  # Linux absolute
-    r')"',
-    re.IGNORECASE,
-)
-
 # Local Перем declarations
 _RE_VAR_LOCAL = re.compile(
     r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+)\s*;",
@@ -2839,114 +2812,13 @@ _RE_BSL276_PROCEED_WITH_CALL = re.compile(
 _RE_BSL276_AROUND_ANNOTATION = re.compile(r"^\s*&(?:Вместо|Instead|Around)\b", re.IGNORECASE)
 
 
-# Service tags in comments
-# Matches BSLLS UsingServiceTagDiagnostic default pattern:
-# todo|fixme|!!|mrg|@|отладка|debug|для отладки|{{КОНСТРУКТОР_|}}КОНСТРУКТОР_|{{MRG|}}MRG|...
-# Pattern: //\s*(tag), so tag must follow // with optional whitespace.
-_RE_SERVICE_TAG = re.compile(
-    r"//\s*("
-    r"todo|fixme|!!|mrg|@|отладка|debug|для\s*отладки"
-    r"|(?:\{\{|\}\})КОНСТРУКТОР_|(?:\{\{|\}\})MRG"
-    r"|Вставить\s*содержимое\s*обработчика"
-    r"|Paste\s*handler\s*content|Insert\s*handler\s*code"
-    r"|Insert\s*handler\s*content|Insert\s*handler\s*contents"
-    r")",
-    re.IGNORECASE,
-)
-
 # BSL215 — MissingParameterDescription: comment section headers and param entry
 _RE_BSL215_PARAMS_SECTION = re.compile(r"^\s*//\s*(?:Параметры|Parameters)\s*:?\s*$", re.IGNORECASE)
 _RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*-", re.UNICODE)
 _RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
-# BSLLS SpaceAtStartCommentDiagnostic — GOOD_COMMENT_PATTERN_STRICT (develop branch):
-# either "//[ \\t].*" or "//{2,}[ \\t]*" end-of-line only (///, ////, bare //).
-_BSL024_BSLLS_GOOD_STRICT = re.compile(
-    r"(?:(?://[ \t].*)|(?:/{2,}[ \t]*))$",
-    re.IGNORECASE,
-)
 _BSL200_INCORRECT_START = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
 _BSL200_INCORRECT_END = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
-
-
-def _bsl024_matches_bslls_good_strict(line: str, comment_col: int) -> bool:
-    """True if the comment suffix from ``//`` matches BSLLS strict «good» pattern."""
-    if comment_col < 0 or comment_col >= len(line):
-        return False
-    return bool(_BSL024_BSLLS_GOOD_STRICT.match(line[comment_col:]))
-
-
-def _bsl024_is_bslls_annotation_comment(line: str, comment_col: int) -> bool:
-    """BSLLS ``commentsAnnotation`` default: //@, //(c), //© (case-insensitive)."""
-    if comment_col + 2 > len(line):
-        return False
-    rest = line[comment_col + 2 :]
-    s = rest.lstrip()
-    if not s:
-        return False
-    if s.startswith("@"):
-        return True
-    if s.lower().startswith("(c)"):
-        return True
-    if s.startswith("©"):
-        return True
-    return False
-
-
-def _bsl024_skip_line_bslls_alignment(line: str) -> bool:
-    """Extra skips aligned with editor-specific service comments: ``/// ``, ``//|``, ``//!``, noqa, bsl-disable."""
-    st = line.lstrip()
-    if st.startswith("/// ") or st.startswith("///\t"):
-        return True
-    if st.startswith("//|"):
-        return True
-    if st.startswith("//!"):
-        return True
-    if re.match(r"//\s*noqa\b", st, re.IGNORECASE):
-        return True
-    if re.match(r"//\s*bsl-disable\b", st, re.IGNORECASE):
-        return True
-    return False
-
-
-def _bsl024_is_compiler_directive_comment(line: str) -> bool:
-    """``//&НаКлиенте``-style lines — BSLLS SpaceAtStartComment does not flag these."""
-    st = line.lstrip()
-    if not st.startswith("//"):
-        return False
-    rest = st[2:].lstrip()
-    return rest.startswith("&")
-
-
-def bsl024_find_report_comment_col(line: str) -> int | None:
-    """
-    Return the ``//`` column when ``SpaceAtStartComment`` / BSL024 should flag the comment token.
-
-    Kept in sync with :meth:`DiagnosticEngine._rule_bsl024_space_at_start_comment`
-    and LSP quick-fix for BSL024.
-    """
-    col = _comment_start_outside_double_quotes(line)
-    if col is None:
-        return None
-    comment_text = line[col:]
-    if _bsl024_matches_bslls_good_strict(line, col):
-        return None
-    if _bsl024_is_bslls_annotation_comment(line, col):
-        return None
-    if _bsl024_skip_line_bslls_alignment(comment_text):
-        return None
-    if _RE_COMMENTED_CODE.match(comment_text):
-        return None
-    if col == len(line) - len(line.lstrip()) and _bsl024_is_compiler_directive_comment(
-        comment_text
-    ):
-        return None
-    return col
-
-
-def bsl024_should_report_line(line: str) -> bool:
-    """Backward-compatible boolean wrapper over :func:`bsl024_find_report_comment_col`."""
-    return bsl024_find_report_comment_col(line) is not None
 
 
 def _bsl200_query_first_prev_lines(lines: list[str]) -> set[int]:
@@ -3221,8 +3093,6 @@ _RE_MODULE_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_ASSIGN_LHS = re.compile(r"^\s*(?P<name>\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_BSL192_GET = re.compile(r"^(?:Получить|Get)\w*$", re.IGNORECASE)
 _RE_BSL266_CANCEL = re.compile(r"^(?:Отказ|Cancel)$", re.IGNORECASE)
-# BSL186 — trailing comma before ) or ;
-_RE_BSL186_TRAILING_COMMA = re.compile(r",\s*[)\];]")
 # BSL149 — AssignAliasFieldsInQuery
 _RE_BSL149_SELECT = re.compile(r"\bВЫБРАТЬ\b|\bSELECT\b", re.IGNORECASE)
 # Modifiers after SELECT that are not field names

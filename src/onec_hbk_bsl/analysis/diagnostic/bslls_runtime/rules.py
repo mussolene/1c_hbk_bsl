@@ -55,6 +55,103 @@ def _line_comment(line: str) -> bool:
     return line.lstrip().startswith("//")
 
 
+def _comment_start_outside_string(line: str) -> int:
+    pos = 0
+    in_string = False
+    while pos < len(line):
+        char = line[pos]
+        if in_string:
+            if char == '"':
+                if pos + 1 < len(line) and line[pos + 1] == '"':
+                    pos += 2
+                    continue
+                in_string = False
+            pos += 1
+            continue
+        if char == '"':
+            in_string = True
+            pos += 1
+            continue
+        if char == "/" and pos + 1 < len(line) and line[pos + 1] == "/":
+            return pos
+        pos += 1
+    return -1
+
+
+_DOUBLE_QUOTED_STRING_RE = re.compile(r'"(?:[^"]|"")*"')
+_BSL005_NETWORK_ADDRESS_RE = re.compile(
+    r"(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:"
+    r"|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}"
+    r"(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}"
+    r"|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}"
+    r"(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})"
+    r"|(?<![g-zа-яА-ЯёЁ]):((:[0-9a-fA-F]{1,4}){1,7}|\s:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}"
+    r"|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}"
+    r"(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:"
+    r"((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}"
+    r"(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))"
+    r"|((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}"
+    r"(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])",
+    re.IGNORECASE,
+)
+_BSL005_URL_RE = re.compile(r"^(ftp|http|https)://[^ \"].*", re.IGNORECASE)
+_BSL005_ALPHABET_RE = re.compile(r"[A-zА-я]", re.IGNORECASE)
+_BSL005_POPULAR_VERSION_RE = re.compile(r"^(?:1|2|3|8\.3|11)\.")
+_BSL005_LINE_EXCLUSION_RE = re.compile(
+    r"ЗапуститьПриложение|RunApp|Пространств|Namespace|Драйвер|Driver",
+    re.IGNORECASE,
+)
+_BSL005_PARAM_VERSION_RE = re.compile(r"Верси|Version", re.IGNORECASE)
+
+_BSL006_UNIX_STD_ROOT_RE = re.compile(
+    r"^/(bin|boot|dev|etc|home|lib|lost\+found|misc|mnt|media|opt|proc|root|run|sbin|tmp|usr|var)(?:/|$)",
+    re.IGNORECASE,
+)
+_BSL006_URL_RE = re.compile(r"^(ftp|http|https)://[^ \"].*", re.IGNORECASE)
+
+_BSL024_GOOD_STRICT_RE = re.compile(
+    r"(?:(?://[ \t].*)|(?:/{2,}[ \t]*))$",
+    re.IGNORECASE,
+)
+_BSL024_COMMENTED_CODE_RE = re.compile(
+    r"^\s*//\s*(?:"
+    r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Перем"
+    r"|Function|Procedure|EndProcedure|EndFunction|Var)\b"
+    r"|(?:ВЫБРАТЬ|SELECT)\b"
+    r"|\w.*(?:;|:=)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def bsl024_find_report_comment_col(line: str) -> int | None:
+    col = _comment_start_outside_string(line)
+    if col < 0:
+        return None
+    comment_text = line[col:]
+    if _BSL024_GOOD_STRICT_RE.match(comment_text):
+        return None
+    rest = comment_text[2:].lstrip()
+    if rest.startswith("@") or rest.lower().startswith("(c)") or rest.startswith("©"):
+        return None
+    if (
+        comment_text.startswith("//|")
+        or comment_text.startswith("//!")
+        or re.match(r"//\s*noqa\b", comment_text, re.IGNORECASE)
+        or re.match(r"//\s*bsl-disable\b", comment_text, re.IGNORECASE)
+    ):
+        return None
+    if _BSL024_COMMENTED_CODE_RE.match(comment_text):
+        return None
+    if col == len(line) - len(line.lstrip()) and rest.startswith("&"):
+        return None
+    return col
+
+
+def bsl024_should_report_line(line: str) -> bool:
+    return bsl024_find_report_comment_col(line) is not None
+
+
 @dataclass(frozen=True)
 class _TernarySpan:
     start: int
@@ -352,6 +449,187 @@ class DeprecatedMessageRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
+class UsingHardcodeNetworkAddressRule(BsllsDiagnosticRule):
+    code = "BSL005"
+
+    @staticmethod
+    def _string_context(line: str, start: int, end: int) -> str:
+        left = max(line.rfind(",", 0, start), line.rfind("(", 0, start))
+        right_candidates = [pos for pos in (line.find(",", end), line.find(")", end)) if pos >= 0]
+        right = min(right_candidates) if right_candidates else len(line)
+        return line[left + 1 : right]
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line) or _BSL005_LINE_EXCLUSION_RE.search(line):
+                continue
+            for string_match in _DOUBLE_QUOTED_STRING_RE.finditer(line):
+                if _BSL005_PARAM_VERSION_RE.search(
+                    self._string_context(line, string_match.start(), string_match.end())
+                ):
+                    continue
+                content = string_match.group()[1:-1]
+                if len(content) <= 2 or _BSL005_URL_RE.match(content):
+                    continue
+                network_match = _BSL005_NETWORK_ADDRESS_RE.search(content)
+                if network_match is None:
+                    continue
+                first_value = network_match.group(0)
+                dot_count = first_value.count(".")
+                if dot_count > 0 and (
+                    content.count(".") > 3 or _BSL005_ALPHABET_RE.search(first_value)
+                ):
+                    continue
+                if _BSL005_POPULAR_VERSION_RE.search(content):
+                    continue
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=string_match.start(),
+                    end_line=idx,
+                    end_character=string_match.end(),
+                    severity=Severity.ERROR,
+                    message="Используется хранение в коде ip-адреса",
+                )
+        return storage.diagnostics
+
+
+class UsingHardcodePathRule(BsllsDiagnosticRule):
+    code = "BSL006"
+
+    @staticmethod
+    def _is_path(content: str) -> bool:
+        if len(content) <= 2 or _BSL006_URL_RE.match(content):
+            return False
+        if content.startswith("\\\\"):
+            return True
+        if re.match(r"^[A-Za-z]:(?:[\\/]|//|$)", content):
+            return True
+        if content.startswith("~/") or content.startswith("~\\"):
+            return True
+        if re.match(r"^%[^%]+%(?:[\\/]|//)", content):
+            return True
+        return bool(_BSL006_UNIX_STD_ROOT_RE.match(content))
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            for match in _DOUBLE_QUOTED_STRING_RE.finditer(line):
+                if not self._is_path(match.group()[1:-1]):
+                    continue
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(),
+                    end_line=idx,
+                    end_character=match.end(),
+                    severity=Severity.ERROR,
+                    message="Используется хранение в коде пути к файлу",
+                )
+        return storage.diagnostics
+
+
+class UsingServiceTagRule(BsllsDiagnosticRule):
+    code = "BSL023"
+    _service_tag_re = re.compile(
+        r"//\s*("
+        r"todo|fixme|!!|mrg|@|отладка|debug|для\s*отладки"
+        r"|(?:\{\{|\}\})КОНСТРУКТОР_|(?:\{\{|\}\})MRG"
+        r"|Вставить\s*содержимое\s*обработчика"
+        r"|Paste\s*handler\s*content|Insert\s*handler\s*code"
+        r"|Insert\s*handler\s*content|Insert\s*handler\s*contents"
+        r")",
+        re.IGNORECASE,
+    )
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            comment_start = _comment_start_outside_string(line)
+            if comment_start < 0:
+                continue
+            match = self._service_tag_re.search(line, comment_start)
+            if match is None:
+                continue
+            storage.add_range(
+                code=self.code,
+                line=idx,
+                character=match.start(),
+                end_line=idx,
+                end_character=len(line),
+                severity=Severity.INFORMATION,
+                message=f'Найден служебный тег "{match.group(0)}"',
+            )
+        return storage.diagnostics
+
+
+class SpaceAtStartCommentRule(BsllsDiagnosticRule):
+    code = "BSL024"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            col = bsl024_find_report_comment_col(line)
+            if col is None:
+                continue
+            storage.add_range(
+                code=self.code,
+                line=idx,
+                character=col,
+                end_line=idx,
+                end_character=len(line),
+                severity=Severity.INFORMATION,
+                message=(
+                    "Между символами комментария '//' и самим текстом комментария "
+                    "должен быть пробел."
+                ),
+            )
+        return storage.diagnostics
+
+
+class ConsecutiveEmptyLinesRule(BsllsDiagnosticRule):
+    code = "BSL055"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        blank_flags = (
+            context.snapshot.blank_line_flags
+            if context.snapshot is not None and hasattr(context.snapshot, "blank_line_flags")
+            else [line.strip() == "" for line in context.lines]
+        )
+        storage = DiagnosticStorage(context.path)
+        blank_run = 0
+        run_start = 0
+        for idx, is_blank in enumerate(blank_flags):
+            if is_blank:
+                if blank_run == 0:
+                    run_start = idx
+                blank_run += 1
+                continue
+            if blank_run > 1:
+                self._add_issue(storage, run_start, run_start + blank_run - 1)
+            blank_run = 0
+        if blank_run > 1:
+            self._add_issue(storage, run_start, run_start + blank_run - 1)
+        if len(context.lines) >= 2 and blank_flags[-1] and not blank_flags[-2]:
+            self._add_issue(storage, len(context.lines) - 1, len(context.lines))
+        return storage.diagnostics
+
+    @classmethod
+    def _add_issue(cls, storage: DiagnosticStorage, start_line: int, end_line: int) -> None:
+        storage.add_range(
+            code=cls.code,
+            line=start_line,
+            character=0,
+            end_line=end_line,
+            end_character=0,
+            severity=Severity.INFORMATION,
+            message="Удалите лишние последовательные пустые строки",
+        )
+
+
 class NestedTernaryOperatorRule(BsllsDiagnosticRule):
     code = "BSL039"
 
@@ -508,4 +786,29 @@ class UselessTernaryOperatorRule(BsllsDiagnosticRule):
                     severity=Severity.INFORMATION,
                     message="Бесполезный тернарный оператор",
                 )
+        return storage.diagnostics
+
+
+class ExtraCommasRule(BsllsDiagnosticRule):
+    code = "BSL186"
+    _trailing_comma_re = re.compile(r",\s*[)\];]")
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            match = self._trailing_comma_re.search(clean)
+            if match is None:
+                continue
+            storage.add_range(
+                code=self.code,
+                line=idx,
+                character=match.start(),
+                end_line=idx,
+                end_character=match.start() + 1,
+                severity=Severity.WARNING,
+                message="Не используйте запятые для параметров по умолчанию в конце вызова метода.",
+            )
         return storage.diagnostics

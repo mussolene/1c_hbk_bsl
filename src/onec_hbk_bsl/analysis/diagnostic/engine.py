@@ -900,63 +900,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL005 — Hardcoded network address
-    # ------------------------------------------------------------------
-
-    def _rule_bsl005_hardcode_network_address(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            # Skip lines whose context mentions version-related keywords (BSLLS skipStatement)
-            if _RE_BSL005_VERSION_CONTEXT.search(line):
-                continue
-            for m in _RE_HARDCODE_NET.finditer(line):
-                matched = m.group().strip('"')
-                # Skip popular version-like prefixes (BSLLS searchPopularVersionExclusion)
-                if _RE_BSL005_POPULAR_VERSION.match(matched):
-                    continue
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.ERROR,
-                        code="BSL005",
-                        message=f"Hardcoded network address: {m.group()!r}",
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL006 — Hardcoded file path
-    # ------------------------------------------------------------------
-
-    def _rule_bsl006_hardcode_path(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            for m in _RE_HARDCODE_PATH.finditer(line):
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.WARNING,
-                        code="BSL006",
-                        message=f"Hardcoded file-system path: {m.group()!r}",
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL007 — Unused local variable
     # ------------------------------------------------------------------
 
@@ -1637,69 +1580,6 @@ class DiagnosticEngine:
                         ),
                     )
                 )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL023 — Service tags (TODO/FIXME/HACK)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl023_service_tag(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """
-        Flag TODO, FIXME, HACK, КЕЙС, WORKAROUND, UNDONE, XXX in comments.
-
-        These should be resolved or linked to a ticket before merging.
-        """
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            m = _RE_SERVICE_TAG.search(line)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=len(line),
-                        severity=Severity.INFORMATION,
-                        code="BSL023",
-                        message=f'Найден служебный тег "{m.group(0)}"',
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL024 — No space after // in comment
-    # ------------------------------------------------------------------
-
-    def _rule_bsl024_space_at_start_comment(
-        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
-    ) -> list[Diagnostic]:
-        """
-        Require a space after ``//`` in single-line comments (BSLLS ``SpaceAtStartComment``).
-
-        Mirrors BSLLS strict-good pattern, ``//@`` / ``//(c)`` / ``//©`` annotations,
-        skips commented-code lines (BSLLS ``CodeRecognizer``), ``//!``, ``//|``, noqa.
-        """
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(snapshot.lines if snapshot is not None else lines):
-            col = bsl024_find_report_comment_col(line)
-            if col is None:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=col,
-                    end_line=idx + 1,
-                    end_character=len(line),
-                    severity=Severity.INFORMATION,
-                    code="BSL024",
-                    message=(
-                        "Между символами комментария '//' и самим текстом комментария "
-                        "должен быть пробел."
-                    ),
-                )
-            )
         return diags
 
     # ------------------------------------------------------------------
@@ -2960,74 +2840,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL055 — Consecutive blank lines (> MAX_BLANK_LINES)
-    # ------------------------------------------------------------------
-
-    # BSLLS ConsecutiveEmptyLines: flag when more than one blank line in a row.
-    MAX_BLANK_LINES: int = 1
-
-    def _rule_bsl055_consecutive_blank_lines(
-        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
-    ) -> list[Diagnostic]:
-        """Flag runs of more than ``MAX_BLANK_LINES`` consecutive blank lines."""
-        diags: list[Diagnostic] = []
-        blank_run = 0
-        run_start = 0
-        blank_flags = (
-            snapshot.blank_line_flags
-            if snapshot is not None
-            else [line.strip() == "" for line in lines]
-        )
-        for idx, is_blank in enumerate(blank_flags):
-            if is_blank:
-                if blank_run == 0:
-                    run_start = idx
-                blank_run += 1
-            else:
-                if blank_run > self.MAX_BLANK_LINES:
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=run_start + 1,
-                            character=0,
-                            end_line=run_start + blank_run,
-                            end_character=0,
-                            severity=Severity.INFORMATION,
-                            code="BSL055",
-                            message="Удалите лишние последовательные пустые строки",
-                        )
-                    )
-                blank_run = 0
-        if blank_run > self.MAX_BLANK_LINES:
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=run_start + 1,
-                    character=0,
-                    end_line=run_start + blank_run,
-                    end_character=0,
-                    severity=Severity.INFORMATION,
-                    code="BSL055",
-                    message="Удалите лишние последовательные пустые строки",
-                )
-            )
-        # BSLLS: лишняя пустая строка в самом конце модуля (после КонецПроцедуры / #КонецОбласти и т.п.).
-        if len(lines) >= 2 and blank_flags[-1] and not blank_flags[-2]:
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=len(lines),
-                    character=0,
-                    end_line=len(lines),
-                    end_character=0,
-                    severity=Severity.INFORMATION,
-                    code="BSL055",
-                    message="Удалите лишние последовательные пустые строки",
-                )
-            )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL060 — Double negation
     # ------------------------------------------------------------------
 
@@ -3884,13 +3696,6 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[Any]
     ) -> list[Diagnostic]:
         return run_bsl172_data_exchange_loading(path, lines, procs)
-
-    # ------------------------------------------------------------------
-    # BSL186 — ExtraCommas
-    # ------------------------------------------------------------------
-
-    def _rule_bsl186_extra_commas(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        return run_bsl186_extra_commas(path, lines)
 
     # ------------------------------------------------------------------
     # BSL149 — AssignAliasFieldsInQuery

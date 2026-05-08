@@ -1819,7 +1819,9 @@ class TestGenerateDocComment:
 
     def test_generated_comment_passes_bsl024(self) -> None:
         """Every generated comment line must pass BSL024 (space after //)."""
-        from onec_hbk_bsl.analysis.diagnostics import bsl024_should_report_line
+        from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
+            bsl024_should_report_line,
+        )
         from onec_hbk_bsl.lsp.server import _generate_doc_comment
 
         lines = ["Функция Тест(П1, П2)\n", "КонецФункции\n"]

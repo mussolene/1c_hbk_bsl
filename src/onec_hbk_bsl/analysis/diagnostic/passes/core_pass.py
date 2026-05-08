@@ -28,12 +28,6 @@ def extend_core_rule_tasks(
         )
     if engine._rule_enabled("BSL004"):
         rule_tasks.append(("BSL004", lambda: engine._rule_bsl004_empty_except(path, lines, tree)))
-    if engine._rule_enabled("BSL005"):
-        rule_tasks.append(
-            ("BSL005", lambda: engine._rule_bsl005_hardcode_network_address(path, lines))
-        )
-    if engine._rule_enabled("BSL006"):
-        rule_tasks.append(("BSL006", lambda: engine._rule_bsl006_hardcode_path(path, lines)))
     if engine._rule_enabled("BSL007"):
         rule_tasks.append(
             (
@@ -83,8 +77,6 @@ def extend_core_rule_tasks(
         rule_tasks.append(
             ("BSL022", lambda: engine._rule_bsl022_deprecated_message(path, lines, procs))
         )
-    if engine._rule_enabled("BSL023"):
-        rule_tasks.append(("BSL023", lambda: engine._rule_bsl023_service_tag(path, lines)))
     if engine._rule_enabled("BSL025"):
         rule_tasks.append(("BSL025", lambda: engine._rule_bsl025_empty_statement(path, lines)))
     if engine._rule_enabled("BSL026"):
@@ -155,10 +147,6 @@ def extend_core_rule_tasks(
                     path, lines, procs, snapshot
                 ),
             )
-        )
-    if engine._rule_enabled("BSL055"):
-        rule_tasks.append(
-            ("BSL055", lambda: engine._rule_bsl055_consecutive_blank_lines(path, lines, snapshot))
         )
     if engine._rule_enabled("BSL060"):
         rule_tasks.append(

@@ -1671,6 +1671,11 @@ class TestBsl023UsingServiceTag:
         diags = _check(content, tmp_path)
         assert "BSL023" not in _codes(diags)
 
+    def test_tag_inside_string_literal_no_warning(self, tmp_path: Path) -> None:
+        content = 'Сообщение = "строка // TODO: не комментарий";\n'
+        diags = _check(content, tmp_path, select={"BSL023"})
+        assert "BSL023" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL024 — SpaceAtStartComment
@@ -1688,11 +1693,11 @@ class TestBsl024SpaceAtStartComment:
         diags = _check(content, tmp_path)
         assert "BSL024" not in _codes(diags)
 
-    def test_doc_comment_slash3_no_warning(self, tmp_path: Path) -> None:
-        """/// doc-comments are exempted."""
+    def test_doc_comment_slash3_with_text_warns(self, tmp_path: Path) -> None:
+        """BSLLS strict flags triple-slash comments when text follows without a space after ``//``."""
         content = "/// Документация функции\nА = 1;\n"
         diags = _check(content, tmp_path)
-        assert "BSL024" not in _codes(diags)
+        assert "BSL024" in _codes(diags)
 
     def test_empty_comment_no_warning(self, tmp_path: Path) -> None:
         """An empty // comment (nothing after) is OK."""

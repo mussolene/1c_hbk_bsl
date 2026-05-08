@@ -21,11 +21,6 @@ def extend_style_comment_rule_tasks(
     snapshot: DocumentSnapshot,
 ) -> None:
     """Append early style/comment tasks in declaration order."""
-    if engine._rule_enabled("BSL024"):
-        tasks.append(
-            ("BSL024", lambda: engine._rule_bsl024_space_at_start_comment(path, lines, snapshot))
-        )
-
     if engine._rule_enabled("BSL030"):
 
         def _task_bsl030() -> list[Diagnostic]:
