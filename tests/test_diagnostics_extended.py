@@ -330,16 +330,76 @@ class TestSecurityApiParityBatch:
         assert {d.message for d in diags} == {"Запрещено выполнение произвольного кода на сервере"}
 
     def test_bsl184_execute_external_code_in_common_module(self, tmp_path: Path) -> None:
-        content = """\
+        content = """
             Процедура ВыполнитьПроизвольныйКод(Строка)
                 Выполнить(Строка);
             КонецПроцедуры
+
+            Функция РассчитатьЧтоТоИзСтроки(Строка)
+                Возврат Вычислить(Строка);
+            КонецФункции
+
+            Функция БезОшибок(Строка)
+                Возврат ВычислитьЧтоТо(Строка);
+            КонецФункции
         """
-        path = tmp_path / "CommonModules" / "Тест" / "Ext" / "Module.bsl"
+        common_modules = tmp_path / "Config" / "CommonModules"
+        common_modules.mkdir(parents=True)
+        (common_modules / "Тест.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                  <CommonModule>
+                    <Properties>
+                      <Name>Тест</Name>
+                      <ClientManagedApplication>false</ClientManagedApplication>
+                      <Server>true</Server>
+                      <ExternalConnection>false</ExternalConnection>
+                      <ClientOrdinaryApplication>false</ClientOrdinaryApplication>
+                      <ServerCall>false</ServerCall>
+                    </Properties>
+                  </CommonModule>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        path = common_modules / "Тест" / "Ext" / "Module.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = [d for d in DiagnosticEngine(select={"BSL184"}).check_file(str(path)) if d.code == "BSL184"]
+        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+            (3, 4, 3, 21, "WARNING"),
+            (7, 12, 7, 29, "WARNING"),
+        ]
+
+    def test_bsl184_skips_non_server_common_module(self, tmp_path: Path) -> None:
+        common_modules = tmp_path / "Config" / "CommonModules"
+        common_modules.mkdir(parents=True)
+        (common_modules / "Тест.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                  <CommonModule>
+                    <Properties>
+                      <Name>Тест</Name>
+                      <ClientManagedApplication>true</ClientManagedApplication>
+                      <Server>false</Server>
+                      <ExternalConnection>false</ExternalConnection>
+                      <ClientOrdinaryApplication>false</ClientOrdinaryApplication>
+                      <ServerCall>false</ServerCall>
+                    </Properties>
+                  </CommonModule>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        path = common_modules / "Тест" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text("Процедура П()\n    Выполнить(Строка);\nКонецПроцедуры\n", encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL184"}).check_file(str(path))
-        assert "BSL184" in _codes(diags)
+        assert "BSL184" not in _codes(diags)
 
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\

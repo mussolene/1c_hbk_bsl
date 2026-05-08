@@ -15,22 +15,21 @@ def extend_security_rule_tasks(
     procs: list[object],
     snapshot: object,
 ) -> None:
-    bsl180_184_185_188_203_226_247_250_264_267_272 = (
-        "BSL184",
+    bsl226_247_250_267_272 = (
         "BSL226",
         "BSL247",
         "BSL250",
         "BSL267",
         "BSL272",
     )
-    if any(engine._rule_enabled(code) for code in bsl180_184_185_188_203_226_247_250_264_267_272):
+    if any(engine._rule_enabled(code) for code in bsl226_247_250_267_272):
         rule_tasks.append(
             (
-                "BSL184_226_247_250_267_272",
-                lambda: engine._rule_bsl180_184_185_188_203_226_247_250_264_267_272_api_pool(
+                "BSL226_247_250_267_272",
+                lambda: engine._rule_bsl226_247_250_267_272_api_pool(
                     path,
                     lines,
-                    bsl180_184_185_188_203_226_247_250_264_267_272,
+                    bsl226_247_250_267_272,
                     snapshot,
                 ),
             )

@@ -7,6 +7,9 @@ from typing import Any
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.storage import DiagnosticStorage
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
+from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
+    common_module_execute_external_code_applicable,
+)
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 
 
@@ -1628,6 +1631,33 @@ class ExecuteExternalCodeRule(BsllsDiagnosticRule):
                         severity=Severity.ERROR,
                         message="Запрещено выполнение произвольного кода на сервере",
                     )
+        return storage.diagnostics
+
+
+class ExecuteExternalCodeInCommonModuleRule(BsllsDiagnosticRule):
+    code = "BSL184"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        if not common_module_execute_external_code_applicable(context.path):
+            return []
+
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
+                open_paren = clean.find("(", match.start())
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=_single_line_call_end(clean, open_paren),
+                    severity=Severity.WARNING,
+                    message=(
+                        "Выполнение произвольного кода в общем модуле на сервере "
+                        "является потенциальной уязвимостью"
+                    ),
+                )
         return storage.diagnostics
 
 

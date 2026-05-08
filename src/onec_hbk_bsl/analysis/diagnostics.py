@@ -4142,10 +4142,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 )
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
-_RE_BSL184_EXECUTE_EXTERNAL_CODE = re.compile(
-    r"\b(?P<name>Выполнить|Execute|Вычислить|Eval)\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL226_OS_USERS = re.compile(
     r"\b(?P<name>ПользователиОС|OSUsers)\s*\(",
     re.IGNORECASE | re.UNICODE,

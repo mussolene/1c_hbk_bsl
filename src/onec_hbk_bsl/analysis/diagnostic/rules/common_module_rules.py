@@ -137,6 +137,23 @@ def common_module_xml_flags_invalid(module_bsl_path: str) -> bool | None:
     )
 
 
+def common_module_execute_external_code_applicable(module_bsl_path: str) -> bool:
+    xp = common_module_xml_for_module_bsl(module_bsl_path)
+    if xp is None:
+        return False
+    try:
+        raw = xp.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    if "<commonmodule" not in raw.casefold():
+        return False
+    return (
+        _xml_bool_tag(raw, "Server")
+        or _xml_bool_tag(raw, "ClientOrdinaryApplication")
+        or _xml_bool_tag(raw, "ExternalConnection")
+    )
+
+
 @dataclass(frozen=True)
 class _CommonModuleXmlSnapshot:
     module_name: str
@@ -328,8 +345,11 @@ def common_module_xml_for_module_bsl(module_bsl_path: str) -> Path | None:
     if p.parent.name.lower() != "ext":
         return None
     mod_dir = p.parent.parent
-    xml = mod_dir / f"{mod_dir.name}.xml"
-    return xml if xml.is_file() else None
+    sibling_xml = mod_dir.parent / f"{mod_dir.name}.xml"
+    if sibling_xml.is_file():
+        return sibling_xml
+    nested_xml = mod_dir / f"{mod_dir.name}.xml"
+    return nested_xml if nested_xml.is_file() else None
 
 
 def return_values_reuse_cached_from_xml_text(raw: str) -> bool:

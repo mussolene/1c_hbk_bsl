@@ -4495,20 +4495,18 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL184 / BSL226 / BSL247 /
-    # BSL250 / BSL267 / BSL272 — security/context API pool
+    # BSL226 / BSL247 / BSL250 / BSL267 / BSL272 — security/context API pool
     # ------------------------------------------------------------------
 
-    def _rule_bsl180_184_185_188_203_226_247_250_264_267_272_api_pool(
+    def _rule_bsl226_247_250_267_272_api_pool(
         self,
         path: str,
         lines: list[str],
         enabled_codes: tuple[str, ...],
         snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
+        ) -> list[Diagnostic]:
         enabled = set(enabled_codes)
         diags: list[Diagnostic] = []
-        is_common_module = bool(_RE_COMMON_MODULE_PATH.search(path))
         clean_lines = (
             snapshot.code_lines_without_comments
             if snapshot is not None
@@ -4521,24 +4519,6 @@ class DiagnosticEngine:
             line = clean_lines[idx]
             if not line.strip():
                 continue
-
-            if "BSL184" in enabled and is_common_module:
-                for match in _RE_BSL184_EXECUTE_EXTERNAL_CODE.finditer(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.WARNING,
-                            code="BSL184",
-                            message=(
-                                "Выполнение произвольного кода в общем модуле на сервере "
-                                "является потенциальной уязвимостью"
-                            ),
-                        )
-                    )
 
             if "BSL226" in enabled:
                 for match in _RE_BSL226_OS_USERS.finditer(line):
