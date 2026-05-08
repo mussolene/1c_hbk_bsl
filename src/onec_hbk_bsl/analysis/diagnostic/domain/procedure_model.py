@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
@@ -247,6 +248,102 @@ class ProcedureModel:
                         f'Переместите неэкспортный метод "{self.name}" '
                         f'из области "{region.name}"'
                     ),
+                )
+            ]
+        return []
+
+    def validate_missing_export_comment(
+        self,
+        lines: list[str],
+        *,
+        compiler_directive_re,
+        bsl215_comment_line_re,
+    ) -> list[Diagnostic]:
+        block_end = self.start_idx - 1
+        while block_end >= 0 and compiler_directive_re.match(lines[block_end]):
+            block_end -= 1
+        if block_end < 0 or not bsl215_comment_line_re.match(lines[block_end]):
+            return []
+        block_start = block_end
+        while block_start > 0 and bsl215_comment_line_re.match(lines[block_start - 1]):
+            block_start -= 1
+        comment_block = lines[block_start : block_end + 1]
+        if any(re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block):
+            return []
+
+        returns_section_start = None
+        for ci, cl in enumerate(comment_block):
+            if re.match(
+                r"^\s*//\s*(?:Возвращаемое\s+значение|Returns)\s*:?\s*$",
+                cl,
+                re.IGNORECASE,
+            ):
+                returns_section_start = ci
+                break
+
+        has_valid_return_entry = False
+        if returns_section_start is not None:
+            return_section_lines = comment_block[returns_section_start + 1 :]
+            has_struct_fields = any(
+                re.match(r"^\s*//\s+\*\s+\S", rcl) for rcl in return_section_lines
+            )
+            for cl in return_section_lines:
+                stripped = cl.strip()
+                if stripped == "//":
+                    break
+                if re.match(r"^\s*//\s*(?:Параметры|Parameters)\s*:?\s*$", cl, re.IGNORECASE):
+                    break
+                if re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE):
+                    has_valid_return_entry = True
+                    break
+                entry = re.match(r"^\s*//\s{1,4}(?P<text>\S.*)$", cl)
+                if not entry:
+                    continue
+                text = entry.group("text").strip()
+                if text.startswith("*"):
+                    if has_struct_fields:
+                        continue
+                    has_valid_return_entry = True
+                    break
+                first_part = text.split("-", 1)[0].strip()
+                if text.startswith("-") and text.rstrip().endswith("."):
+                    continue
+                if has_struct_fields and ":" not in first_part and "-" in text:
+                    continue
+                has_valid_return_entry = True
+                break
+
+        header_line = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        try:
+            col = header_line.index(self.name)
+        except ValueError:
+            col = 0
+        if self.kind == "procedure" and returns_section_start is not None:
+            return [
+                Diagnostic(
+                    file=self.path,
+                    line=self.start_idx + 1,
+                    character=col,
+                    end_line=self.start_idx + 1,
+                    end_character=col + len(self.name),
+                    severity=Severity.WARNING,
+                    code="BSL065",
+                    message="Удалите описание возвращаемого значения для процедуры",
+                )
+            ]
+        if self.kind == "function" and (
+            returns_section_start is None or not has_valid_return_entry
+        ):
+            return [
+                Diagnostic(
+                    file=self.path,
+                    line=self.start_idx + 1,
+                    character=col,
+                    end_line=self.start_idx + 1,
+                    end_character=col + len(self.name),
+                    severity=Severity.WARNING,
+                    code="BSL065",
+                    message="Добавьте описание возвращаемого значения функции",
                 )
             ]
         return []

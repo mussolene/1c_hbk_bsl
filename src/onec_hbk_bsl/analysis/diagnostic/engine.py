@@ -2596,98 +2596,14 @@ class DiagnosticEngine:
         """
         diags: list[Diagnostic] = []
         for proc in procs:
-            block_end = proc.start_idx - 1
-            while block_end >= 0 and _RE_COMPILER_DIRECTIVE.match(lines[block_end]):
-                block_end -= 1
-            if block_end < 0 or not _RE_BSL215_COMMENT_LINE.match(lines[block_end]):
-                continue
-            block_start = block_end
-            while block_start > 0 and _RE_BSL215_COMMENT_LINE.match(lines[block_start - 1]):
-                block_start -= 1
-            comment_block = lines[block_start : block_end + 1]
-            if any(
-                re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block
-            ):
-                continue
-            returns_section_start = None
-            for ci, cl in enumerate(comment_block):
-                if re.match(
-                    r"^\s*//\s*(?:Возвращаемое\s+значение|Returns)\s*:?\s*$",
-                    cl,
-                    re.IGNORECASE,
-                ):
-                    returns_section_start = ci
-                    break
-            has_valid_return_entry = False
-            if returns_section_start is not None:
-                return_section_lines = comment_block[returns_section_start + 1 :]
-                has_struct_fields = any(
-                    re.match(r"^\s*//\s+\*\s+\S", rcl) for rcl in return_section_lines
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_missing_export_comment(
+                    lines,
+                    compiler_directive_re=_RE_COMPILER_DIRECTIVE,
+                    bsl215_comment_line_re=_RE_BSL215_COMMENT_LINE,
                 )
-                for cl in return_section_lines:
-                    stripped = cl.strip()
-                    if stripped == "//":
-                        break
-                    if re.match(r"^\s*//\s*(?:Параметры|Parameters)\s*:?\s*$", cl, re.IGNORECASE):
-                        break
-                    if re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE):
-                        has_valid_return_entry = True
-                        break
-                    entry = re.match(r"^\s*//\s{1,4}(?P<text>\S.*)$", cl)
-                    if not entry:
-                        continue
-                    text = entry.group("text").strip()
-                    if text.startswith("*"):
-                        if has_struct_fields:
-                            continue
-                        has_valid_return_entry = True
-                        break
-                    first_part = text.split("-", 1)[0].strip()
-                    if text.startswith("-") and text.rstrip().endswith("."):
-                        continue
-                    if has_struct_fields and ":" not in first_part and "-" in text:
-                        continue
-                    has_valid_return_entry = True
-                    break
-            if proc.kind == "procedure" and returns_section_start is not None:
-                header_line = lines[proc.start_idx]
-                try:
-                    col = header_line.index(proc.name)
-                except ValueError:
-                    col = 0
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=col,
-                        end_line=proc.start_idx + 1,
-                        end_character=col + len(proc.name),
-                        severity=Severity.WARNING,
-                        code="BSL065",
-                        message="Удалите описание возвращаемого значения для процедуры",
-                    )
-                )
-                continue
-            if proc.kind == "function" and (
-                returns_section_start is None or not has_valid_return_entry
-            ):
-                header_line = lines[proc.start_idx]
-                try:
-                    col = header_line.index(proc.name)
-                except ValueError:
-                    col = 0
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=col,
-                        end_line=proc.start_idx + 1,
-                        end_character=col + len(proc.name),
-                        severity=Severity.WARNING,
-                        code="BSL065",
-                        message="Добавьте описание возвращаемого значения функции",
-                    )
-                )
+            )
         return diags
 
     # ------------------------------------------------------------------
