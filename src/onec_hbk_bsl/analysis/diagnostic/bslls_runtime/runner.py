@@ -26,6 +26,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     NestedTernaryOperatorRule,
     SpaceAtStartCommentRule,
     UselessTernaryOperatorRule,
+    UseSystemInformationRule,
     UsingGotoRule,
     UsingHardcodeNetworkAddressRule,
     UsingHardcodePathRule,
@@ -56,6 +57,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     ExternalAppStartingRule(),
     FileSystemAccessRule(),
     InternetAccessRule(),
+    UseSystemInformationRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )

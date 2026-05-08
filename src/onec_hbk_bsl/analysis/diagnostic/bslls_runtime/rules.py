@@ -316,6 +316,14 @@ _BSL203_INTERNET_STRING_NEW_RE = re.compile(
     r')"',
     re.IGNORECASE | re.UNICODE,
 )
+_BSL264_SYSTEM_INFO_NEW_RE = re.compile(
+    r"\b(?:Новый|New)\s*(?:\(\s*)?(СистемнаяИнформация|SystemInfo)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL264_SYSTEM_INFO_STRING_NEW_RE = re.compile(
+    r'\b(?:Новый|New)\s*\(\s*"(СистемнаяИнформация|SystemInfo)"',
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1401,6 +1409,42 @@ class InternetAccessRule(BsllsDiagnosticRule):
                     end_character=_single_line_call_end(code_part, open_paren),
                     severity=Severity.WARNING,
                     message="Проверьте обращение к Интернет-ресурсам",
+                )
+        return storage.diagnostics
+
+
+class UseSystemInformationRule(BsllsDiagnosticRule):
+    code = "BSL264"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL264_SYSTEM_INFO_NEW_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(),
+                    end_line=idx,
+                    end_character=FileSystemAccessRule._new_end(clean, match.end(1)),
+                    severity=Severity.ERROR,
+                    message="Избавьтесь от использования объекта `СистемнаяИнформация`",
+                )
+            code_part = line[: _comment_start_outside_string(line)]
+            if not code_part:
+                code_part = line
+            for match in _BSL264_SYSTEM_INFO_STRING_NEW_RE.finditer(code_part):
+                open_paren = code_part.find("(", match.start())
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(),
+                    end_line=idx,
+                    end_character=_single_line_call_end(code_part, open_paren),
+                    severity=Severity.ERROR,
+                    message="Избавьтесь от использования объекта `СистемнаяИнформация`",
                 )
         return storage.diagnostics
 

@@ -344,6 +344,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL077",
         "BSL188",
         "BSL203",
+        "BSL264",
         "BSL221",
         "BSL222",
         "BSL148",
@@ -4155,10 +4156,6 @@ _RE_BSL247_SET_PRIVILEGED = re.compile(
 )
 _RE_BSL250_TEMPFILES = re.compile(
     r"\b(?P<name>КаталогВременныхФайлов|TempFilesDir)\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
-_RE_BSL264_SYSTEM_INFO = re.compile(
-    r"\b(?:Новый|New)\s*(?:\(\s*)?(?P<type>\"СистемнаяИнформация\"|\"SystemInfo\"|СистемнаяИнформация|SystemInfo)",
     re.IGNORECASE | re.UNICODE,
 )
 _RE_BSL267_EXTERNAL_CODE_TOOLS = re.compile(

@@ -4496,7 +4496,7 @@ class DiagnosticEngine:
 
     # ------------------------------------------------------------------
     # BSL184 / BSL226 / BSL247 /
-    # BSL250 / BSL264 / BSL267 / BSL272 — security/context API pool
+    # BSL250 / BSL267 / BSL272 — security/context API pool
     # ------------------------------------------------------------------
 
     def _rule_bsl180_184_185_188_203_226_247_250_264_267_272_api_pool(
@@ -4585,23 +4585,6 @@ class DiagnosticEngine:
                             severity=Severity.WARNING,
                             code="BSL250",
                             message="Не рекомендуемый вызов функции КаталогВременныхФайлов()",
-                        )
-                    )
-
-            if "BSL264" in enabled:
-                for match in _RE_BSL264_SYSTEM_INFO.finditer(line):
-                    anchor_start = max(0, line.rfind("Новый", 0, match.start("type") + 1))
-                    anchor_end = anchor_start + len("Новый")
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=anchor_start,
-                            end_line=idx + 1,
-                            end_character=anchor_end,
-                            severity=Severity.WARNING,
-                            code="BSL264",
-                            message="Избавьтесь от использования объекта `СистемнаяИнформация`",
                         )
                     )
 
