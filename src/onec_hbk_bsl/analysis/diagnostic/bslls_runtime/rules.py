@@ -345,6 +345,10 @@ _BSL205_IF_RE = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(.*?)(?:\bТогда\b|\bThen\b)",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL183_EXECUTE_EXTERNAL_CODE_RE = re.compile(
+    r"(?<![.\w])(Выполнить|Execute|Вычислить|Eval)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1538,6 +1542,91 @@ class IsInRoleMethodRule(BsllsDiagnosticRule):
                         end_character=expression_start + match.end(),
                         severity=Severity.WARNING,
                         message="Для проверки прав доступа в коде следует использовать метод ПравоДоступа",
+                    )
+        return storage.diagnostics
+
+
+class ExecuteExternalCodeRule(BsllsDiagnosticRule):
+    code = "BSL183"
+
+    @staticmethod
+    def _client_only_method(lines: list[str], start_idx: int) -> bool:
+        idx = start_idx - 1
+        while idx >= 0:
+            stripped = lines[idx].strip()
+            if not stripped or stripped.startswith("//"):
+                idx -= 1
+                continue
+            if not stripped.startswith("&"):
+                return False
+            directive = stripped[1:].split()[0].casefold()
+            if directive in {"наклиенте", "atclient"}:
+                return True
+            idx -= 1
+        return False
+
+    @staticmethod
+    def _fallback_procs(lines: list[str]) -> list[Any]:
+        proc_re = re.compile(
+            r"^\s*(?:Процедура|Procedure|Функция|Function)\s+"
+            r"([А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*)",
+            re.IGNORECASE | re.UNICODE,
+        )
+        end_re = re.compile(r"^\s*(?:КонецПроцедуры|EndProcedure|КонецФункции|EndFunction)\b", re.IGNORECASE)
+        out: list[Any] = []
+        idx = 0
+        while idx < len(lines):
+            match = proc_re.match(lines[idx])
+            if match is None:
+                idx += 1
+                continue
+            end_idx = idx
+            scan = idx + 1
+            while scan < len(lines):
+                if end_re.match(lines[scan]):
+                    end_idx = scan
+                    break
+                scan += 1
+            out.append(
+                type(
+                    "ProcLike",
+                    (),
+                    {
+                        "name": match.group(1),
+                        "start_idx": idx,
+                        "end_idx": end_idx,
+                        "header_col": match.start(1),
+                    },
+                )()
+            )
+            idx = max(scan, idx + 1)
+        return out
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        procs = (
+            list(getattr(context.snapshot, "procs", []) or [])
+            if context.snapshot is not None
+            else self._fallback_procs(context.lines)
+        )
+        if not procs:
+            procs = self._fallback_procs(context.lines)
+
+        for proc in procs:
+            if self._client_only_method(context.lines, int(proc.start_idx)):
+                continue
+            for idx in range(int(proc.start_idx) + 1, min(int(proc.end_idx) + 1, len(context.lines))):
+                clean = _code_mask_without_strings_and_comments(context.lines[idx])
+                for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
+                    open_paren = clean.find("(", match.start())
+                    storage.add_range(
+                        code=self.code,
+                        line=idx,
+                        character=match.start(1),
+                        end_line=idx,
+                        end_character=_single_line_call_end(clean, open_paren),
+                        severity=Severity.ERROR,
+                        message="Запрещено выполнение произвольного кода на сервере",
                     )
         return storage.diagnostics
 

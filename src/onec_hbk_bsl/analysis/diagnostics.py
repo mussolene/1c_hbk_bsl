@@ -282,7 +282,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.method_contract_rules import (
     run_bsl254_transferring_parameters,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.misc_runtime_rules import (
-    run_bsl183_execute_external_code,
     run_bsl218_missing_temporary_file_deletion,
     run_bsl257_unary_plus_in_concatenation,
 )

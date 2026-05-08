@@ -5018,14 +5018,6 @@ class DiagnosticEngine:
     def _rule_bsl255_try_number(self, path: str, lines: list[str]) -> list[Diagnostic]:
         return run_bsl255_try_number(path, lines)
 
-    # ------------------------------------------------------------------
-    # BSL183 — ExecuteExternalCode
-    # ------------------------------------------------------------------
-
-    def _rule_bsl183_execute_external_code(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        return run_bsl183_execute_external_code(path, lines)
-
-    # ------------------------------------------------------------------
     # BSL208 — LatinAndCyrillicSymbolInWord
     # BSL256 — Typo (BSLLS-style: pyspellchecker + pymorphy3, bundled BSLLS exceptions)
     # ------------------------------------------------------------------

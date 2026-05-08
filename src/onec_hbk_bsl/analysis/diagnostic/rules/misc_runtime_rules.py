@@ -10,36 +10,6 @@ def _diag_module() -> Any:
     return _diag
 
 
-def run_bsl183_execute_external_code(path: str, lines: list[str]) -> list[Any]:
-    _diag = _diag_module()
-    diags: list[Any] = []
-    re_exec = re.compile(
-        r"(?<![.\w])(?:Выполнить|Execute)\s*\((.{0,80})\)", re.IGNORECASE | re.UNICODE
-    )
-    re_literal = re.compile(r'^\s*"[^"]*"\s*$')
-    re_comment = re.compile(r"^\s*//")
-
-    for idx, line in enumerate(lines):
-        if re_comment.match(line):
-            continue
-        for match in re_exec.finditer(line):
-            arg = match.group(1).strip()
-            if not re_literal.match(arg):
-                diags.append(
-                    _diag.Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=match.start(),
-                        end_line=idx + 1,
-                        end_character=match.end(),
-                        severity=_diag.Severity.WARNING,
-                        code="BSL183",
-                        message="«Выполнить()» с динамическим аргументом — потенциальная угроза безопасности",
-                    )
-                )
-    return diags
-
-
 def run_bsl218_missing_temporary_file_deletion(
     path: str,
     lines: list[str],
