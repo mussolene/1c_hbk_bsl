@@ -14,6 +14,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     DeprecatedMethods8310Rule,
     DeprecatedMethods8317Rule,
     DeprecatedTypeManagedFormRule,
+    DisableSafeModeRule,
     DoubleNegativesRule,
     EmptyStatementRule,
     ExtraCommasRule,
@@ -48,6 +49,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     DeprecatedMethods8317Rule(),
     GetFormMethodRule(),
     DeprecatedTypeManagedFormRule(),
+    DisableSafeModeRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )

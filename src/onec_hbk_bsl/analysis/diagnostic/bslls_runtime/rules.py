@@ -248,6 +248,13 @@ _BSL179_MANAGED_FORM_RE = re.compile(
     r"\b(?:Тип|Type)\s*\(\s*(\"(?:УправляемаяФорма|ManagedForm)\")\s*\)",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL180_DISABLE_SAFE_MODE_RE = re.compile(
+    r"(?<!\.)(?<!\w)\b("
+    r"УстановитьБезопасныйРежим|SetSafeMode|"
+    r"УстановитьОтключениеБезопасногоРежима|SetSafeModeDisabled"
+    r")\s*\(\s*([^)]*)\)",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1205,6 +1212,35 @@ class DeprecatedTypeManagedFormRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.INFORMATION,
                     message='Замените устаревшее использование типа "УправляемаяФорма"',
+                )
+        return storage.diagnostics
+
+
+class DisableSafeModeRule(BsllsDiagnosticRule):
+    code = "BSL180"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL180_DISABLE_SAFE_MODE_RE.finditer(clean):
+                method_name = match.group(1)
+                arg = match.group(2).strip().casefold()
+                if method_name.casefold() in {"установитьбезопасныйрежим", "setsafemode"}:
+                    if arg in {"истина", "true"}:
+                        continue
+                elif arg in {"ложь", "false"}:
+                    continue
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.ERROR,
+                    message="Проверьте отключение безопасного режима",
                 )
         return storage.diagnostics
 

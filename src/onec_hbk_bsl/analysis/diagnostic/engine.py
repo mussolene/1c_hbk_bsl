@@ -4495,7 +4495,7 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL180 / BSL184 / BSL185 / BSL188 / BSL203 / BSL226 / BSL247 /
+    # BSL184 / BSL185 / BSL188 / BSL203 / BSL226 / BSL247 /
     # BSL250 / BSL264 / BSL267 / BSL272 — security/context API pool
     # ------------------------------------------------------------------
 
@@ -4521,30 +4521,6 @@ class DiagnosticEngine:
             line = clean_lines[idx]
             if not line.strip():
                 continue
-
-            if "BSL180" in enabled:
-                for match in _RE_BSL180_DISABLE_SAFE_MODE.finditer(line):
-                    name = match.group("name")
-                    arg = match.group("arg").strip()
-                    name_cf = name.casefold()
-                    if name_cf in {"установитьбезопасныйрежим", "setsafemode"}:
-                        if arg.casefold() in {"истина", "true"}:
-                            continue
-                    else:
-                        if arg.casefold() in {"ложь", "false"}:
-                            continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.WARNING,
-                            code="BSL180",
-                            message="Проверьте отключение безопасного режима",
-                        )
-                    )
 
             if "BSL184" in enabled and is_common_module:
                 for match in _RE_BSL184_EXECUTE_EXTERNAL_CODE.finditer(line):

@@ -405,7 +405,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL004": {
         "name": "EmptyCodeBlock",
         "description": "Empty code block (exception handler, empty «Тогда» branch, …)",
-        "severity": "WARNING",
+        "severity": "ERROR",
         "sonar_type": "BUG",
         "sonar_severity": "MAJOR",
         "tags": ["error-handling"],
@@ -4139,13 +4139,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 )
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
-_RE_BSL180_DISABLE_SAFE_MODE = re.compile(
-    r"\b(?P<name>"
-    r"УстановитьБезопасныйРежим|SetSafeMode|"
-    r"УстановитьОтключениеБезопасногоРежима|SetSafeModeDisabled"
-    r")\s*\(\s*(?P<arg>[^)]*)\)",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL184_EXECUTE_EXTERNAL_CODE = re.compile(
     r"\b(?P<name>Выполнить|Execute|Вычислить|Eval)\s*\(",
     re.IGNORECASE | re.UNICODE,
