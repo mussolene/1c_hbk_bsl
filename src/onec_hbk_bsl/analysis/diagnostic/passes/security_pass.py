@@ -47,7 +47,7 @@ def extend_security_rule_tasks(
             )
         )
 
-    bsl202_205_223_243_249 = ("BSL202", "BSL205", "BSL223", "BSL243", "BSL249")
+    bsl202_205_223_243_249 = ("BSL202", "BSL223", "BSL243", "BSL249")
     if any(engine._rule_enabled(code) for code in bsl202_205_223_243_249):
         rule_tasks.append(
             (

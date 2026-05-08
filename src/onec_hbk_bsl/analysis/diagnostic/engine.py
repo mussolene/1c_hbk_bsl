@@ -5161,7 +5161,7 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL202 / BSL205 / BSL223 / BSL243 / BSL249 — lightweight call pool
+    # BSL202 / BSL223 / BSL243 / BSL249 — lightweight call pool
     # ------------------------------------------------------------------
 
     def _rule_bsl202_205_223_243_249_light_call_pool(
@@ -5216,7 +5216,7 @@ class DiagnosticEngine:
                 i += 1
             return out
 
-        if {"BSL202", "BSL205", "BSL223"} & enabled_set:
+        if {"BSL202", "BSL223"} & enabled_set:
             line_texts = lines
             nodes = self._ts_nodes_for_types(tree, {"method_call", "new_expression"})
 
@@ -5301,23 +5301,6 @@ class DiagnosticEngine:
                                         ),
                                     )
                                 )
-
-                if "BSL205" in enabled_set and name_cf in {"рольдоступна", "isinrole"}:
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=line_1,
-                            character=char_1,
-                            end_line=line_1,
-                            end_character=end_char,
-                            severity=Severity.WARNING,
-                            code="BSL205",
-                            message=(
-                                "Избегайте использования РольДоступна()/IsInRole(), "
-                                "проверяйте права через разрешения"
-                            ),
-                        )
-                    )
 
         if {"BSL243", "BSL249"} & enabled_set:
             for idx, line in enumerate(clean_lines):

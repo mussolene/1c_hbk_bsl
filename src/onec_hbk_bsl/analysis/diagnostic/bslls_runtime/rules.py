@@ -156,6 +156,11 @@ def _comment_start_outside_string(line: str) -> int:
     return -1
 
 
+def _code_before_comment(line: str) -> str:
+    comment_start = _comment_start_outside_string(line)
+    return line if comment_start < 0 else line[:comment_start]
+
+
 _DOUBLE_QUOTED_STRING_RE = re.compile(r'"(?:[^"]|"")*"')
 _BSL005_NETWORK_ADDRESS_RE = re.compile(
     r"(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:"
@@ -322,6 +327,22 @@ _BSL264_SYSTEM_INFO_NEW_RE = re.compile(
 )
 _BSL264_SYSTEM_INFO_STRING_NEW_RE = re.compile(
     r'\b(?:Новый|New)\s*\(\s*"(СистемнаяИнформация|SystemInfo)"',
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL205_ROLE_AVAILABLE_RE = re.compile(
+    r"(?<!\.)(?<!\w)\b(РольДоступна|IsInRole)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL205_PRIVILEGED_MODE_RE = re.compile(
+    r"(?<!\.)(?<!\w)\b(ПривилегированныйРежим|PrivilegedMode)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL205_ASSIGNMENT_RE = re.compile(
+    r"^\s*([А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*)\s*=",
+    re.UNICODE,
+)
+_BSL205_IF_RE = re.compile(
+    r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(.*?)(?:\bТогда\b|\bThen\b)",
     re.IGNORECASE | re.UNICODE,
 )
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
@@ -1396,9 +1417,7 @@ class InternetAccessRule(BsllsDiagnosticRule):
                     severity=Severity.WARNING,
                     message="Проверьте обращение к Интернет-ресурсам",
                 )
-            code_part = line[: _comment_start_outside_string(line)]
-            if not code_part:
-                code_part = line
+            code_part = _code_before_comment(line)
             for match in _BSL203_INTERNET_STRING_NEW_RE.finditer(code_part):
                 open_paren = code_part.find("(", match.start())
                 storage.add_range(
@@ -1432,9 +1451,7 @@ class UseSystemInformationRule(BsllsDiagnosticRule):
                     severity=Severity.ERROR,
                     message="Избавьтесь от использования объекта `СистемнаяИнформация`",
                 )
-            code_part = line[: _comment_start_outside_string(line)]
-            if not code_part:
-                code_part = line
+            code_part = _code_before_comment(line)
             for match in _BSL264_SYSTEM_INFO_STRING_NEW_RE.finditer(code_part):
                 open_paren = code_part.find("(", match.start())
                 storage.add_range(
@@ -1446,6 +1463,82 @@ class UseSystemInformationRule(BsllsDiagnosticRule):
                     severity=Severity.ERROR,
                     message="Избавьтесь от использования объекта `СистемнаяИнформация`",
                 )
+        return storage.diagnostics
+
+
+class IsInRoleMethodRule(BsllsDiagnosticRule):
+    code = "BSL205"
+
+    @staticmethod
+    def _has_privileged_var(expression: str, privileged_vars: set[str]) -> bool:
+        return any(re.search(rf"(?<!\w){re.escape(var)}(?!\w)", expression) for var in privileged_vars)
+
+    @staticmethod
+    def _next_privileged_call_start(expression: str, start: int) -> int | None:
+        match = _BSL205_PRIVILEGED_MODE_RE.search(expression, start)
+        return None if match is None else match.start()
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        is_in_role_vars: set[str] = set()
+        privileged_mode_vars: set[str] = set()
+
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            code_part = _code_before_comment(line)
+            clean = _code_mask_without_strings_and_comments(line)
+
+            assignment = _BSL205_ASSIGNMENT_RE.match(clean)
+            if assignment is not None:
+                assigned_name = assignment.group(1)
+                is_in_role_vars.discard(assigned_name)
+                privileged_mode_vars.discard(assigned_name)
+                if _BSL205_ROLE_AVAILABLE_RE.search(clean) is not None:
+                    is_in_role_vars.add(assigned_name)
+                elif _BSL205_PRIVILEGED_MODE_RE.search(clean) is not None:
+                    privileged_mode_vars.add(assigned_name)
+
+            if_match = _BSL205_IF_RE.match(clean)
+            if if_match is None:
+                continue
+
+            expression_start = if_match.start(1)
+            expression = code_part[expression_start : if_match.end(1)]
+            clean_expression = clean[expression_start : if_match.end(1)]
+            has_privileged_var = self._has_privileged_var(clean_expression, privileged_mode_vars)
+
+            for match in _BSL205_ROLE_AVAILABLE_RE.finditer(clean_expression):
+                if has_privileged_var:
+                    continue
+                if self._next_privileged_call_start(clean_expression, match.end()) is not None:
+                    continue
+                open_paren = expression.find("(", match.start())
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=expression_start + match.start(1),
+                    end_line=idx,
+                    end_character=expression_start + _single_line_call_end(expression, open_paren),
+                    severity=Severity.WARNING,
+                    message="Для проверки прав доступа в коде следует использовать метод ПравоДоступа",
+                )
+
+            if has_privileged_var:
+                continue
+            for var in is_in_role_vars:
+                for match in re.finditer(rf"(?<!\w){re.escape(var)}(?!\w)", clean_expression):
+                    if self._next_privileged_call_start(clean_expression, match.end()) is not None:
+                        continue
+                    storage.add_range(
+                        code=self.code,
+                        line=idx,
+                        character=expression_start + match.start(),
+                        end_line=idx,
+                        end_character=expression_start + match.end(),
+                        severity=Severity.WARNING,
+                        message="Для проверки прав доступа в коде следует использовать метод ПравоДоступа",
+                    )
         return storage.diagnostics
 
 
