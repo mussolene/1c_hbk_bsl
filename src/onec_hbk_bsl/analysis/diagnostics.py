@@ -373,6 +373,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL234",
         "BSL235",
         "BSL258",
+        "BSL267",
     }
 )
 
@@ -1889,11 +1890,11 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL267": {
         "name": "UsingExternalCodeTools",
-        "description": "External code execution tools (AddIn, COM, WSProxy) are used",
-        "severity": "WARNING",
+        "description": "External data processor, report, or extension execution tools are used",
+        "severity": "ERROR",
         "sonar_type": "SECURITY_HOTSPOT",
-        "sonar_severity": "MAJOR",
-        "tags": ["security"],
+        "sonar_severity": "CRITICAL",
+        "tags": ["standard", "design"],
         "implemented": True,
     },
     "BSL268": {
@@ -4142,11 +4143,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 )
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
-_RE_BSL267_EXTERNAL_CODE_TOOLS = re.compile(
-    r"\b(?:ВнешниеОбработки|ExternalDataProcessors|ВнешниеОтчеты|ExternalReports|"
-    r"РасширенияКонфигурации|ConfigurationExtensions)\.(?P<name>Создать|Create|Подключить|Connect)\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
 _MODAL_SYNC_REPLACEMENTS: dict[str, str] = {
     "ВОПРОС": "ПоказатьВопрос",
     "DOQUERYBOX": "ShowQueryBox",

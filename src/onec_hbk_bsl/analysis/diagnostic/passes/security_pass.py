@@ -15,18 +15,15 @@ def extend_security_rule_tasks(
     procs: list[object],
     snapshot: object,
 ) -> None:
-    bsl267_272 = (
-        "BSL267",
-        "BSL272",
-    )
-    if any(engine._rule_enabled(code) for code in bsl267_272):
+    bsl272 = ("BSL272",)
+    if any(engine._rule_enabled(code) for code in bsl272):
         rule_tasks.append(
             (
-                "BSL267_272",
-                lambda: engine._rule_bsl267_272_api_pool(
+                "BSL272",
+                lambda: engine._rule_bsl272_api_pool(
                     path,
                     lines,
-                    bsl267_272,
+                    bsl272,
                     snapshot,
                 ),
             )

@@ -4495,10 +4495,10 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL267 / BSL272 — security/context API pool
+    # BSL272 — security/context API pool
     # ------------------------------------------------------------------
 
-    def _rule_bsl267_272_api_pool(
+    def _rule_bsl272_api_pool(
         self,
         path: str,
         lines: list[str],
@@ -4519,21 +4519,6 @@ class DiagnosticEngine:
             line = clean_lines[idx]
             if not line.strip():
                 continue
-
-            if "BSL267" in enabled:
-                for match in _RE_BSL267_EXTERNAL_CODE_TOOLS.finditer(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start(),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.WARNING,
-                            code="BSL267",
-                            message="Запрещено использование возможности выполнения внешнего кода",
-                        )
-                    )
 
             if "BSL272" in enabled:
                 for match in _RE_BSL272_SYNC.finditer(line):

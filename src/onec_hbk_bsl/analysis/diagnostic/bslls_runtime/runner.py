@@ -33,6 +33,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     TempFilesDirRule,
     UselessTernaryOperatorRule,
     UseSystemInformationRule,
+    UsingExternalCodeToolsRule,
     UsingGotoRule,
     UsingHardcodeNetworkAddressRule,
     UsingHardcodePathRule,
@@ -70,6 +71,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     OSUsersMethodRule(),
     SetPrivilegedModeRule(),
     TempFilesDirRule(),
+    UsingExternalCodeToolsRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )

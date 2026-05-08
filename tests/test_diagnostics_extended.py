@@ -468,6 +468,40 @@ class TestSecurityApiParityBatch:
         ]
         assert {d.message for d in diags} == {"Не рекомендуемый вызов функции КаталогВременныхФайлов()"}
 
+    def test_bsl267_external_code_tools_matches_bslls_fixture(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ИмяОбработки = ВнешниеОбработки.Подключить("ПутьКОбработке", ЛОЖЬ); // <-- Ошибка
+                Обработка = ВнешниеОбработки.Создать(ИмяОбработки); // <-- Ошибка
+
+                ИмяОтчета = ExternalReports.Connect("Path", true); // <-- Ошибка
+                Отчет = ExternalReports.Create(ИмяОтчета); // <-- Ошибка
+
+                Расширение = РасширенияКонфигурации.Создать("ИмяРасширения"); // <-- Ошибка
+                СписокРасширений = Новый СписокЗначений;
+                СписокРасширений.Добавить(РасширенияКонфигурации.Создать("ИмяРасширения2")); // <-- Ошибка
+            КонецПроцедуры
+
+            Процедура Тест2()
+                Справочники.ВнешниеОбработки.Подключить("ПутьКОбработке", ЛОЖЬ); // <-- Не ошибка
+                Обработка.ExternalReports.Connect("Path", true); // <-- не ошибка
+                ExternalReports.Connect("Path", true).Create("name"); // <-- Ошибка
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL267"}) if d.code == "BSL267"]
+        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+            (2, 19, 2, 70, "ERROR"),
+            (3, 16, 3, 54, "ERROR"),
+            (5, 16, 5, 53, "ERROR"),
+            (6, 12, 6, 45, "ERROR"),
+            (8, 17, 8, 64, "ERROR"),
+            (10, 30, 10, 78, "ERROR"),
+            (16, 4, 16, 56, "ERROR"),
+        ]
+        assert {d.message for d in diags} == {
+            "Запрещено использование возможности выполнения внешнего кода"
+        }
+
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()

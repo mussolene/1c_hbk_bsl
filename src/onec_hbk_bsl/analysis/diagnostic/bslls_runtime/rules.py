@@ -364,6 +364,14 @@ _BSL250_TEMPFILES_RE = re.compile(
     r"(?<![.\w])(КаталогВременныхФайлов|TempFilesDir)\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL267_EXTERNAL_CODE_TOOLS_RE = re.compile(
+    r"(?<![.\w])"
+    r"(ВнешниеОбработки|ExternalDataProcessors|ВнешниеОтчеты|ExternalReports|"
+    r"РасширенияКонфигурации|ConfigurationExtensions)"
+    r"\s*\.\s*(Создать|Create|Подключить|Connect)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_METHOD_CHAIN_RE = re.compile(r"\s*\.\s*[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*\s*\(", re.UNICODE)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -389,6 +397,15 @@ def bsl024_find_report_comment_col(line: str) -> int | None:
     if col == len(line) - len(line.lstrip()) and rest.startswith("&"):
         return None
     return col
+
+
+def _call_chain_end(line: str, open_paren: int) -> int:
+    end = _single_line_call_end(line, open_paren)
+    while True:
+        match = _METHOD_CHAIN_RE.match(line, end)
+        if match is None:
+            return end
+        end = _single_line_call_end(line, match.end() - 1)
 
 
 def bsl024_should_report_line(line: str) -> bool:
@@ -1370,7 +1387,7 @@ class ExternalAppStartingRule(BsllsDiagnosticRule):
                     character=match.start(1),
                     end_line=idx,
                     end_character=match.end(1),
-                    severity=Severity.WARNING,
+                    severity=Severity.ERROR,
                     message="Проверьте запуск внешнего приложения",
                 )
         return storage.diagnostics
@@ -1401,7 +1418,7 @@ class FileSystemAccessRule(BsllsDiagnosticRule):
                     character=match.start(1),
                     end_line=idx,
                     end_character=match.end(1),
-                    severity=Severity.WARNING,
+                    severity=Severity.ERROR,
                     message="Проверьте обращение к файловой системе",
                 )
             for match in _BSL188_FILESYSTEM_NEW_RE.finditer(clean):
@@ -1732,6 +1749,28 @@ class TempFilesDirRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.WARNING,
                     message="Не рекомендуемый вызов функции КаталогВременныхФайлов()",
+                )
+        return storage.diagnostics
+
+
+class UsingExternalCodeToolsRule(BsllsDiagnosticRule):
+    code = "BSL267"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            code_part = _code_before_comment(line)
+            clean = _code_mask_without_strings_and_comments(code_part)
+            for match in _BSL267_EXTERNAL_CODE_TOOLS_RE.finditer(clean):
+                open_paren = clean.find("(", match.start())
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=_call_chain_end(clean, open_paren),
+                    severity=Severity.ERROR,
+                    message="Запрещено использование возможности выполнения внешнего кода",
                 )
         return storage.diagnostics
 
