@@ -2501,6 +2501,73 @@ class BeginTransactionBeforeTryCatchRule(BsllsDiagnosticRule):
         return None
 
 
+class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
+    code = "BSL155"
+    message = "Необходимо разместить тело модуля после определения методов"
+    _sub_types = {"procedure_definition", "function_definition"}
+    _ignored_before_body_types = {"comment", "line_comment", "var_definition"}
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
+
+        children = _ts_children(root)
+        first_sub_index = self._first_sub_index(children)
+        if first_sub_index is None:
+            return []
+
+        before_sub = children[:first_sub_index]
+        executable_nodes = [node for node in before_sub if self._is_executable_body_node(node)]
+        if not executable_nodes:
+            return []
+
+        start_node = executable_nodes[0]
+        end_node = self._end_node(before_sub, start_node)
+        storage = DiagnosticStorage(context.path)
+        _add_node_range(
+            storage,
+            code=self.code,
+            message=self.message,
+            severity=Severity.ERROR,
+            lines=context.lines,
+            start_node=start_node,
+            end_node=end_node,
+        )
+        return storage.diagnostics
+
+    @classmethod
+    def _first_sub_index(cls, children: list[Any]) -> int | None:
+        for index, child in enumerate(children):
+            if getattr(child, "type", None) in cls._sub_types:
+                return index
+        return None
+
+    @classmethod
+    def _is_executable_body_node(cls, node: Any) -> bool:
+        node_type = getattr(node, "type", None)
+        if node_type in cls._ignored_before_body_types:
+            return False
+        if node_type != "preprocessor":
+            return True
+        return False
+
+    @classmethod
+    def _end_node(cls, before_sub: list[Any], start_node: Any) -> Any:
+        try:
+            start_index = before_sub.index(start_node)
+        except ValueError:
+            return start_node
+
+        end_node = start_node
+        for node in before_sub[start_index + 1 :]:
+            node_type = getattr(node, "type", None)
+            if node_type in cls._ignored_before_body_types:
+                continue
+            end_node = node
+        return end_node
+
+
 class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
     code = "BSL157"
     message = (

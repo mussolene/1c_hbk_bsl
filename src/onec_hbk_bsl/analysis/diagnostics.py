@@ -263,7 +263,6 @@ from onec_hbk_bsl.analysis.diagnostic.models import (
 from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     run_bsl152_cached_public,
     run_bsl154_code_after_async,
-    run_bsl155_code_block_before_sub,
     run_bsl156_code_out_of_region,
     run_bsl158_common_module_assign,
     run_bsl159_common_module_invalid_type,
@@ -309,6 +308,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
     {
         # Line-length spans the whole line; overlap with trailing string literals must not drop the rule.
         "BSL014",
+        # CodeBlockBeforeSub spans the whole module-body block, including string literals.
+        "BSL155",
         # Duplicated-branch diagnostics may span statements containing string literals.
         "BSL197",
         "BSL198",
@@ -845,10 +846,10 @@ RULE_METADATA: dict[str, dict] = {
         "name": "CodeBlockBeforeSub",
         "description": "Executable code appears before procedure/function definitions (module "
         "body)",
-        "severity": "WARNING",
-        "sonar_type": "CODE_SMELL",
-        "sonar_severity": "MINOR",
-        "tags": ["convention", "design"],
+        "severity": "ERROR",
+        "sonar_type": "ERROR",
+        "sonar_severity": "BLOCKER",
+        "tags": ["error"],
         "implemented": True,
     },
     "BSL156": {

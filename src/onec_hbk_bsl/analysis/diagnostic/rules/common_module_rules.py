@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
     bsl154_code_after_async_spans,
-    bsl155_code_block_before_sub,
     bsl156_diagnostics,
 )
 
@@ -452,28 +451,6 @@ def run_bsl154_code_after_async(path: str, lines: list[str], procs: list[_ProcIn
                     f"После асинхронного вызова «{method}» следует исполняемый код "
                     f"(BSLLS CodeAfterAsyncCall)."
                 ),
-            )
-        )
-    return diags
-
-
-def run_bsl155_code_block_before_sub(
-    path: str, lines: list[str], procs: list[_ProcInfo]
-) -> list[Any]:
-    Diagnostic, Severity = _diag_types()
-    proc_tuples = [(p.start_idx, p.end_idx) for p in procs]
-    diags: list[Any] = []
-    for line_1, c0, c1, msg in bsl155_code_block_before_sub(lines, proc_tuples):
-        diags.append(
-            Diagnostic(
-                file=path,
-                line=line_1,
-                character=c0,
-                end_line=line_1,
-                end_character=c1,
-                severity=Severity.WARNING,
-                code="BSL155",
-                message=msg,
             )
         )
     return diags

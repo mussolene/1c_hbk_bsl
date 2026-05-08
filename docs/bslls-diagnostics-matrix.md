@@ -28,7 +28,7 @@
 | `CachedPublic` | `BSL152` | `implemented` | upstream:diagnostics/CachedPublicDiagnostic.java:52 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3374 |
 | `CanonicalSpellingKeywords` | `BSL153` | `implemented` | upstream:diagnostics/CanonicalSpellingKeywordsDiagnostic.java:53 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4800 |
 | `CodeAfterAsyncCall` | `BSL154` | `implemented` | upstream:diagnostics/CodeAfterAsyncCallDiagnostic.java:59 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3387 |
-| `CodeBlockBeforeSub` | `BSL155` | `implemented` | upstream:diagnostics/CodeBlockBeforeSubDiagnostic.java:39 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3396 |
+| `CodeBlockBeforeSub` | `BSL155` | `implemented` | upstream:diagnostics/CodeBlockBeforeSubDiagnostic.java:39 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
 | `CodeOutOfRegion` | `BSL156` | `implemented` | upstream:diagnostics/CodeOutOfRegionDiagnostic.java:61 | CODE_SMELL | INFO | checkUnknownModuleType | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3405 |
 | `CognitiveComplexity` | `BSL011` | `implemented` | upstream:diagnostics/CognitiveComplexityDiagnostic.java:52 | CODE_SMELL | CRITICAL | complexityThreshold, checkModuleBody | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1063 |
 | `CommandModuleExportMethods` | `BSL017` | `implemented` | upstream:diagnostics/CommandModuleExportMethodsDiagnostic.java:45 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1254 |

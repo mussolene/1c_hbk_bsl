@@ -490,10 +490,6 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL154", lambda: self._rule_bsl154_code_after_async(path, lines, procs))
             )
-        if self._rule_enabled("BSL155"):
-            _rule_tasks.append(
-                ("BSL155", lambda: self._rule_bsl155_code_block_before_sub(path, lines, procs))
-            )
         if self._rule_enabled("BSL156"):
             _rule_tasks.append(
                 ("BSL156", lambda: self._rule_bsl156_code_out_of_region(path, lines, procs))
@@ -3287,15 +3283,6 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         return run_bsl154_code_after_async(path, lines, procs)
-
-    # ------------------------------------------------------------------
-    # BSL155 — CodeBlockBeforeSub
-    # ------------------------------------------------------------------
-
-    def _rule_bsl155_code_block_before_sub(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        return run_bsl155_code_block_before_sub(path, lines, procs)
 
     # ------------------------------------------------------------------
     # BSL156 — CodeOutOfRegion
