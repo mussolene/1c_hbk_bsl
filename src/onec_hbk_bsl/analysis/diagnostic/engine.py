@@ -1825,25 +1825,14 @@ class DiagnosticEngine:
         """
         diags: list[Diagnostic] = []
         for proc in procs:
-            if proc.kind != "function":
-                continue
-            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
-            has_return = any(_RE_RETURN.match(ln) for ln in body_lines)
-            if not has_return:
-                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-                start_col, end_col = _proc_name_span(lines, proc)
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=start_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=end_col or len(line_text),
-                        severity=Severity.ERROR,
-                        code="BSL032",
-                        message='Функция не содержит "Возврат"',
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_function_has_return(
+                    lines,
+                    return_re=_RE_RETURN,
+                    proc_name_span=_proc_name_span,
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -2165,29 +2154,13 @@ class DiagnosticEngine:
         """Flag exported methods that have no meaningful body (only comments/blanks)."""
         diags: list[Diagnostic] = []
         for proc in procs:
-            if not proc.is_export:
-                continue
-            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
-            has_code = any(
-                line.strip() and not _RE_BLANK_OR_COMMENT.match(line) for line in body_lines
-            )
-            if not has_code:
-                header = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=proc.header_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=len(header),
-                        severity=Severity.WARNING,
-                        code="BSL042",
-                        message=(
-                            f"Exported {proc.kind} '{proc.name}' has no body. "
-                            "Either implement it or remove the Export keyword."
-                        ),
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_empty_export_method(
+                    lines,
+                    blank_or_comment_re=_RE_BLANK_OR_COMMENT,
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------

@@ -13,6 +13,7 @@ class ProcedureModel:
     kind: str
     start_idx: int
     end_idx: int
+    is_export: bool
     header_col: int
     params: tuple[str, ...]
 
@@ -24,6 +25,7 @@ class ProcedureModel:
             kind=proc.kind,
             start_idx=proc.start_idx,
             end_idx=proc.end_idx,
+            is_export=proc.is_export,
             header_col=proc.header_col,
             params=tuple(proc.params),
         )
@@ -133,13 +135,70 @@ class ProcedureModel:
                 ]
         return []
 
+    def validate_function_has_return(
+        self,
+        lines: list[str],
+        *,
+        return_re,
+        proc_name_span,
+    ) -> list[Diagnostic]:
+        if self.kind != "function":
+            return []
+        body_lines = lines[self.start_idx + 1 : self.end_idx]
+        has_return = any(return_re.match(line) for line in body_lines)
+        if has_return:
+            return []
+        line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        start_col, end_col = proc_name_span(lines, self._to_proc_info())
+        return [
+            Diagnostic(
+                file=self.path,
+                line=self.start_idx + 1,
+                character=start_col,
+                end_line=self.start_idx + 1,
+                end_character=end_col or len(line_text),
+                severity=Severity.ERROR,
+                code="BSL032",
+                message='Функция не содержит "Возврат"',
+            )
+        ]
+
+    def validate_empty_export_method(
+        self,
+        lines: list[str],
+        *,
+        blank_or_comment_re,
+    ) -> list[Diagnostic]:
+        if not self.is_export:
+            return []
+        body_lines = lines[self.start_idx + 1 : self.end_idx]
+        has_code = any(line.strip() and not blank_or_comment_re.match(line) for line in body_lines)
+        if has_code:
+            return []
+        header = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        return [
+            Diagnostic(
+                file=self.path,
+                line=self.start_idx + 1,
+                character=self.header_col,
+                end_line=self.start_idx + 1,
+                end_character=len(header),
+                severity=Severity.WARNING,
+                code="BSL042",
+                message=(
+                    f"Exported {self.kind} '{self.name}' has no body. "
+                    "Either implement it or remove the Export keyword."
+                ),
+            )
+        ]
+
     def _to_proc_info(self) -> ProcInfo:
         return ProcInfo(
             name=self.name,
             kind=self.kind,
             start_idx=self.start_idx,
             end_idx=self.end_idx,
-            is_export=False,
+            is_export=self.is_export,
             params=list(self.params),
             val_params=[],
             optional_count=0,
