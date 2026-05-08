@@ -108,6 +108,17 @@ def _ts_children(node: Any) -> list[Any]:
     return list(getattr(node, "children", []) or [])
 
 
+def _structural_node_key(node: Any) -> tuple[Any, ...]:
+    children = _ts_children(node)
+    node_type = getattr(node, "type", "")
+    if not children:
+        text = _ts_node_text(node)
+        if node_type == "identifier" or node_type.endswith("_KEYWORD") or node_type == "operator":
+            text = text.casefold()
+        return (node_type, text)
+    return (node_type, tuple(_structural_node_key(child) for child in children))
+
+
 def _point_char(lines: list[str], point: Any) -> int:
     line_idx = int(point[0])
     byte_col = int(point[1])
@@ -2432,11 +2443,11 @@ class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
             expressions = self._branch_expressions_with_ranges(node)
             reported: set[tuple[Any, ...]] = set()
             for index, (expression, start_node, end_node) in enumerate(expressions[:-1]):
-                key = self._expression_key(expression)
+                key = _structural_node_key(expression)
                 if key in reported:
                     continue
                 if any(
-                    self._expression_key(candidate) == key
+                    _structural_node_key(candidate) == key
                     for candidate, _, _ in expressions[index + 1 :]
                 ):
                     _add_node_range(
@@ -2492,23 +2503,86 @@ class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
                 end_node = following
         return start_node, end_node
 
+
+class IfElseDuplicatedCodeBlockRule(BsllsDiagnosticRule):
+    code = "BSL197"
+    message = 'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода'
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        storage = DiagnosticStorage(context.path)
+        for node in context.ts_nodes_for_types(context.tree, {"if_statement"})["if_statement"]:
+            blocks = self._branch_blocks(node)
+            reported: set[tuple[Any, ...]] = set()
+            for index, block in enumerate(blocks[:-1]):
+                key = self._block_key(block)
+                if not key or key in reported:
+                    continue
+                if any(self._block_key(candidate) == key for candidate in blocks[index + 1 :]):
+                    _add_node_range(
+                        storage,
+                        code=self.code,
+                        message=self.message,
+                        severity=Severity.INFORMATION,
+                        lines=context.lines,
+                        start_node=block[0],
+                        end_node=block[-1],
+                    )
+                    reported.add(key)
+        return storage.diagnostics
+
     @classmethod
-    def _expression_key(cls, node: Any) -> tuple[Any, ...]:
-        children = _ts_children(node)
-        if not children:
-            return (getattr(node, "type", ""), cls._leaf_text(node))
-        return (
-            getattr(node, "type", ""),
-            tuple(cls._expression_key(child) for child in children),
-        )
+    def _branch_blocks(cls, if_statement: Any) -> list[tuple[Any, ...]]:
+        blocks: list[tuple[Any, ...]] = []
+        children = _ts_children(if_statement)
+        blocks.append(cls._body_after_then(children))
+        for child in children:
+            child_type = getattr(child, "type", None)
+            if child_type == "elseif_clause":
+                blocks.append(cls._body_after_then(_ts_children(child)))
+            elif child_type == "else_clause":
+                blocks.append(cls._body_after_else(_ts_children(child)))
+        return blocks
+
+    @classmethod
+    def _body_after_then(cls, children: list[Any]) -> tuple[Any, ...]:
+        body: list[Any] = []
+        in_body = False
+        for child in children:
+            child_type = getattr(child, "type", None)
+            if child_type == "THEN_KEYWORD":
+                in_body = True
+                continue
+            if not in_body:
+                continue
+            if child_type in {"elseif_clause", "else_clause", "ENDIF_KEYWORD"}:
+                break
+            if cls._is_code_node(child):
+                body.append(child)
+        return tuple(body)
+
+    @classmethod
+    def _body_after_else(cls, children: list[Any]) -> tuple[Any, ...]:
+        body: list[Any] = []
+        in_body = False
+        for child in children:
+            child_type = getattr(child, "type", None)
+            if child_type == "ELSE_KEYWORD":
+                in_body = True
+                continue
+            if in_body and cls._is_code_node(child):
+                body.append(child)
+        return tuple(body)
 
     @staticmethod
-    def _leaf_text(node: Any) -> str:
-        text = _ts_node_text(node)
-        node_type = getattr(node, "type", None)
-        if node_type in {"identifier", "operator"}:
-            return text.casefold()
-        return text
+    def _is_code_node(node: Any) -> bool:
+        return getattr(node, "type", None) not in {"line_comment", "comment"}
+
+    @staticmethod
+    def _block_key(block: tuple[Any, ...]) -> tuple[Any, ...]:
+        return tuple(_structural_node_key(node) for node in block)
 
 
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):

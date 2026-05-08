@@ -4576,6 +4576,35 @@ class TestBsl198IfElseDuplicatedCondition:
         }
 
 
+class TestBsl197IfElseDuplicatedCodeBlock:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "IfElseDuplicatedCodeBlockDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL197"}).check_file(str(fixture))
+            if d.code == "BSL197"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (10, 1, 11, 9),
+            (27, 1, 28, 9),
+            (40, 1, 48, 11),
+            (41, 2, 42, 10),
+            (54, 2, 55, 10),
+        ]
+        assert {d.severity for d in diags} == {Severity.INFORMATION}
+        assert {d.message for d in diags} == {
+            'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." '
+            "содержит повторяющиеся блоки кода"
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

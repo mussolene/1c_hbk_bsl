@@ -4252,15 +4252,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL197 — IfElseDuplicatedCodeBlock
-    # ------------------------------------------------------------------
-
-    def _rule_bsl197_if_else_duplicated_code_block(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        return run_bsl197_if_else_duplicated_code_block(path, lines)
-
-    # ------------------------------------------------------------------
     # BSL227 — OneStatementPerLine
     # ------------------------------------------------------------------
 

@@ -306,9 +306,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
     run_bsl206_207_209_query_join_diagnostics,
     run_bsl220_235_269_query_text_diagnostics,
 )
-from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
-    run_bsl197_if_else_duplicated_code_block,
-)
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 _proc_param_name_span = _proc_helpers.proc_param_name_span
@@ -3465,11 +3462,6 @@ def _extract_call_argument_presence(
 
 # BSL190 — FormDataToValue / ДанныеФормыВЗначение
 _RE_BSL190_FORM_DATA = re.compile(r"\b(?:ДанныеФормыВЗначение|FormDataToValue)\s*\(", re.IGNORECASE)
-# BSL197 — duplicate if/elseif branch detection
-_RE_BSL197_IF = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE)
-_RE_BSL197_ELSEIF = re.compile(r"^\s*(?:ИначеЕсли|ElseIf)\b", re.IGNORECASE)
-_RE_BSL197_ELSE = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
-_RE_BSL197_ENDIF = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
 # BSL-x module-level Перем / preprocessor lines
 _RE_PERЕМ_LINE = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
 _RE_REGION_LINE = re.compile(r"^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b", re.IGNORECASE)
