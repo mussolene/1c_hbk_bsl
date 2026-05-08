@@ -105,6 +105,34 @@ def _add_node_range(
     )
 
 
+def _single_line_call_end(line: str, open_paren: int) -> int:
+    depth = 0
+    pos = open_paren
+    in_string = False
+    while pos < len(line):
+        char = line[pos]
+        if in_string:
+            if char == '"':
+                if pos + 1 < len(line) and line[pos + 1] == '"':
+                    pos += 2
+                    continue
+                in_string = False
+            pos += 1
+            continue
+        if char == '"':
+            in_string = True
+            pos += 1
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return pos + 1
+        pos += 1
+    return open_paren + 1
+
+
 def _comment_start_outside_string(line: str) -> int:
     pos = 0
     in_string = False
@@ -184,6 +212,36 @@ _BSL178_DEPRECATED_METHOD_RE = re.compile(
 _BSL097_DEPRECATED_CURRENT_DATE_RE = re.compile(
     r"(?<!\.)(?<!\w)\b(ТекущаяДата|CurrentDate)\s*\(",
     re.IGNORECASE,
+)
+_BSL177_METHOD_REPLACEMENTS: dict[str, str] = {
+    "установитькраткийзаголовокприложения": "КлиентскоеПриложение.УстановитьКраткийЗаголовок",
+    "получитькраткийзаголовокприложения": "КлиентскоеПриложение.ПолучитьКраткийЗаголовок",
+    "установитьзаголовокклиентскогоприложения": "КлиентскоеПриложение.УстановитьЗаголовок",
+    "получитьзаголовокклиентскогоприложения": "КлиентскоеПриложение.ПолучитьЗаголовок",
+    "текущийвариантосновногошрифтаклиентскогоприложения": (
+        "КлиентскоеПриложение.ТекущийВариантОсновногоШрифта"
+    ),
+    "текущийвариантинтерфейсаклиентскогоприложения": (
+        "КлиентскоеПриложение.ТекущийВариантИнтерфейса"
+    ),
+    "setshortapplicationcaption": "ClientApplication.SetShortCaption",
+    "getshortapplicationcaption": "ClientApplication.GetShortCaption",
+    "setclientapplicationcaption": "ClientApplication.SetCaption",
+    "getclientapplicationcaption": "ClientApplication.GetCaption",
+    "clientapplicationbasefontcurrentvariant": "ClientApplication.CurrentBaseFontVariant",
+    "clientapplicationinterfacecurrentvariant": "ClientApplication.CurrentInterfaceVariant",
+}
+_BSL177_DEPRECATED_METHOD_RE = re.compile(
+    r"(?<!\.)(?<!\w)\b("
+    r"УстановитьКраткийЗаголовокПриложения|ПолучитьКраткийЗаголовокПриложения|"
+    r"УстановитьЗаголовокКлиентскогоПриложения|ПолучитьЗаголовокКлиентскогоПриложения|"
+    r"ТекущийВариантОсновногоШрифтаКлиентскогоПриложения|"
+    r"ТекущийВариантИнтерфейсаКлиентскогоПриложения|"
+    r"SetShortApplicationCaption|GetShortApplicationCaption|"
+    r"SetClientApplicationCaption|GetClientApplicationCaption|"
+    r"ClientApplicationBaseFontCurrentVariant|ClientApplicationInterfaceCurrentVariant"
+    r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
 )
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
@@ -1073,6 +1131,30 @@ class DeprecatedMethods8317Rule(BsllsDiagnosticRule):
                         f'Метод "{method_name}" устарел. Следует использовать одноименный '
                         "метод объекта типа МенеджерОбработкиОшибок"
                     ),
+                )
+        return storage.diagnostics
+
+
+class DeprecatedMethods8310Rule(BsllsDiagnosticRule):
+    code = "BSL177"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL177_DEPRECATED_METHOD_RE.finditer(clean):
+                method_name = match.group(1)
+                replacement = _BSL177_METHOD_REPLACEMENTS.get(method_name.casefold(), "")
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=_single_line_call_end(clean, match.end() - 1),
+                    severity=Severity.INFORMATION,
+                    message=f'Метод "{method_name}" устарел. Следует использовать "{replacement}".',
                 )
         return storage.diagnostics
 

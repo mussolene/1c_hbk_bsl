@@ -4133,36 +4133,6 @@ _RE_BSL175_GLOBAL_METHOD = re.compile(
 )
 _RE_BSL175_ENUM_NAME = re.compile(r"\b(?P<name>ОриентацияМетокДиаграммы)\b", re.IGNORECASE)
 
-_BSL177_METHOD_REPLACEMENTS: dict[str, str] = {
-    "установитькраткийзаголовокприложения": "КлиентскоеПриложение.УстановитьКраткийЗаголовок",
-    "получитькраткийзаголовокприложения": "КлиентскоеПриложение.ПолучитьКраткийЗаголовок",
-    "установитьзаголовокклиентскогоприложения": "КлиентскоеПриложение.УстановитьЗаголовок",
-    "получитьзаголовокклиентскогоприложения": "КлиентскоеПриложение.ПолучитьЗаголовок",
-    "текущийвариантосновногошрифтаклиентскогоприложения": (
-        "КлиентскоеПриложение.ТекущийВариантОсновногоШрифта"
-    ),
-    "текущийвариантинтерфейсаклиентскогоприложения": (
-        "КлиентскоеПриложение.ТекущийВариантИнтерфейса"
-    ),
-    "setshortapplicationcaption": "ClientApplication.SetShortCaption",
-    "getshortapplicationcaption": "ClientApplication.GetShortCaption",
-    "setclientapplicationcaption": "ClientApplication.SetCaption",
-    "getclientapplicationcaption": "ClientApplication.GetCaption",
-    "clientapplicationbasefontcurrentvariant": "ClientApplication.CurrentBaseFontVariant",
-    "clientapplicationinterfacecurrentvariant": "ClientApplication.CurrentInterfaceVariant",
-}
-_RE_BSL177_GLOBAL_METHOD = re.compile(
-    r"\b(?P<name>"
-    r"УстановитьКраткийЗаголовокПриложения|ПолучитьКраткийЗаголовокПриложения|"
-    r"УстановитьЗаголовокКлиентскогоПриложения|ПолучитьЗаголовокКлиентскогоПриложения|"
-    r"ТекущийВариантОсновногоШрифтаКлиентскогоПриложения|"
-    r"ТекущийВариантИнтерфейсаКлиентскогоПриложения|"
-    r"SetShortApplicationCaption|GetShortApplicationCaption|"
-    r"SetClientApplicationCaption|GetClientApplicationCaption|"
-    r"ClientApplicationBaseFontCurrentVariant|ClientApplicationInterfaceCurrentVariant"
-    r")\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL179_MANAGED_FORM = re.compile(
     r"\b(?:Тип|Type)\s*\(\s*\"(?P<name>УправляемаяФорма|ManagedForm)\"\s*\)",
     re.IGNORECASE | re.UNICODE,

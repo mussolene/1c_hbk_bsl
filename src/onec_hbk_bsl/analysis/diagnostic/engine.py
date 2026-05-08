@@ -4333,7 +4333,7 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL175 / BSL176 / BSL177 / BSL179 / BSL195 — deprecated API pool
+    # BSL175 / BSL176 / BSL179 / BSL195 — deprecated API pool
     # ------------------------------------------------------------------
 
     def _rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
@@ -4464,27 +4464,6 @@ class DiagnosticEngine:
                             severity=Severity.INFORMATION,
                             code="BSL175",
                             message=f'Метод "{name}" устарел и больше не используется',
-                        )
-                    )
-
-            if "BSL177" in enabled:
-                for match in _RE_BSL177_GLOBAL_METHOD.finditer(clean):
-                    name = match.group("name")
-                    replacement = _BSL177_METHOD_REPLACEMENTS.get(name.casefold())
-                    if not replacement:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.INFORMATION,
-                            code="BSL177",
-                            message=(
-                                f'Метод "{name}" устарел. Следует использовать "{replacement}".'
-                            ),
                         )
                     )
 
