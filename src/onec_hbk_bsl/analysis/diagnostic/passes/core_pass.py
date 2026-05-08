@@ -146,10 +146,6 @@ def extend_core_rule_tasks(
                 ),
             )
         )
-    if engine._rule_enabled("BSL060"):
-        rule_tasks.append(
-            ("BSL060", lambda: engine._rule_bsl060_double_negation(path, lines, tree))
-        )
     if engine._rule_enabled("BSL062"):
         rule_tasks.append(
             (

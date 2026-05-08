@@ -2802,42 +2802,6 @@ class DiagnosticEngine:
             )
         return diags
 
-    # ------------------------------------------------------------------
-    # BSL060 — Double negation
-    # ------------------------------------------------------------------
-
-    def _rule_bsl060_double_negation(
-        self, path: str, lines: list[str], tree: Any
-    ) -> list[Diagnostic]:
-        """Flag НЕ НЕ / Not Not — double negation always cancels out."""
-        if _ts_tree_ok_for_rules(tree):
-            return diagnostics_bsl060_from_tree(path, tree.root_node)
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.lstrip().startswith("//"):
-                continue
-            m = _RE_DOUBLE_NEGATION.search(line)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL060",
-                        message=(
-                            "Double negation 'НЕ НЕ ...' — "
-                            "the two negations cancel out; use the expression directly."
-                        ),
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
     MIN_METHOD_NAME_LEN: int = 3
 
     # ------------------------------------------------------------------

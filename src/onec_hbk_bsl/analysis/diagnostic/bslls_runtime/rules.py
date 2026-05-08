@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.storage import DiagnosticStorage
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 
 
 class BsllsDiagnosticRule:
@@ -53,6 +55,54 @@ def _code_mask_without_strings_and_comments(line: str) -> str:
 
 def _line_comment(line: str) -> bool:
     return line.lstrip().startswith("//")
+
+
+def _ts_node_text(node: Any) -> str:
+    text = getattr(node, "text", None)
+    if text is None:
+        return ""
+    return text.decode("utf-8", errors="replace") if isinstance(text, bytes) else str(text)
+
+
+def _ts_walk(node: Any):
+    yield node
+    for child in getattr(node, "children", []) or []:
+        yield from _ts_walk(child)
+
+
+def _ts_children(node: Any) -> list[Any]:
+    return list(getattr(node, "children", []) or [])
+
+
+def _point_char(lines: list[str], point: Any) -> int:
+    line_idx = int(point[0])
+    byte_col = int(point[1])
+    if 0 <= line_idx < len(lines):
+        return utf8_byte_offset_to_lsp_character(lines[line_idx], byte_col)
+    return byte_col
+
+
+def _add_node_range(
+    storage: DiagnosticStorage,
+    *,
+    code: str,
+    message: str,
+    severity: Severity,
+    lines: list[str],
+    start_node: Any,
+    end_node: Any,
+) -> None:
+    start = start_node.start_point
+    end = end_node.end_point
+    storage.add_range(
+        code=code,
+        message=message,
+        severity=severity,
+        line=int(start[0]),
+        character=_point_char(lines, start),
+        end_line=int(end[0]),
+        end_character=_point_char(lines, end),
+    )
 
 
 def _comment_start_outside_string(line: str) -> int:
@@ -135,6 +185,7 @@ _BSL097_DEPRECATED_CURRENT_DATE_RE = re.compile(
     r"(?<!\.)(?<!\w)\b(ТекущаяДата|CurrentDate)\s*\(",
     re.IGNORECASE,
 )
+_BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
 def bsl024_find_report_comment_col(line: str) -> int | None:
@@ -433,6 +484,140 @@ class UsingGotoRule(BsllsDiagnosticRule):
                 severity=Severity.WARNING,
                 message='Оператор "Перейти" не должен использоваться',
             )
+        return storage.diagnostics
+
+
+class DoubleNegativesRule(BsllsDiagnosticRule):
+    code = "BSL060"
+
+    @staticmethod
+    def _operator(node: Any) -> Any | None:
+        return next((child for child in _ts_children(node) if child.type == "operator"), None)
+
+    @classmethod
+    def _operator_text(cls, node: Any) -> str:
+        operator = cls._operator(node)
+        return _ts_node_text(operator).casefold().strip() if operator is not None else ""
+
+    @classmethod
+    def _is_not_unary(cls, node: Any) -> bool:
+        return getattr(node, "type", None) == "unary_expression" and cls._operator_text(node) in {
+            "не",
+            "not",
+        }
+
+    @classmethod
+    def _expression_child(cls, node: Any) -> Any | None:
+        return next((child for child in _ts_children(node) if child.type == "expression"), None)
+
+    @classmethod
+    def _single_expression_term(cls, expr: Any) -> Any | None:
+        if getattr(expr, "type", None) != "expression":
+            return None
+        terms = [child for child in _ts_children(expr) if child.type != ";"]
+        return terms[0] if len(terms) == 1 else None
+
+    @classmethod
+    def _text_starts_with_not_paren(cls, node: Any) -> bool:
+        text = _ts_node_text(node).casefold().lstrip()
+        return text.startswith("не (") or text.startswith("not (")
+
+    @classmethod
+    def _parent_binary_operator(cls, node: Any) -> str:
+        current = node
+        while getattr(current, "parent", None) is not None:
+            current = current.parent
+            if getattr(current, "type", None) == "binary_expression":
+                return cls._operator_text(current)
+            if getattr(current, "type", None) != "expression":
+                return ""
+        return ""
+
+    @classmethod
+    def _is_nested_in_logical_expression(cls, node: Any) -> bool:
+        return cls._parent_binary_operator(node) in {"и", "and", "или", "or"}
+
+    @classmethod
+    def _binary_parts(cls, node: Any) -> tuple[Any, Any, Any] | None:
+        children = _ts_children(node)
+        for idx, child in enumerate(children):
+            if getattr(child, "type", None) != "operator":
+                continue
+            if _ts_node_text(child).strip() != "<>":
+                return None
+            if idx == 0 or idx + 1 >= len(children):
+                return None
+            return children[idx - 1], child, children[idx + 1]
+        return None
+
+    @classmethod
+    def _binary_diagnostic_nodes(cls, node: Any) -> tuple[Any, Any] | None:
+        parts = cls._binary_parts(node)
+        if parts is None:
+            return None
+        left, _operator, right = parts
+        left_unary = cls._single_expression_term(left)
+        if not cls._is_not_unary(left_unary):
+            return None
+        if cls._is_nested_in_logical_expression(node) and cls._text_starts_with_not_paren(node):
+            return None
+        start = cls._operator(left_unary)
+        if start is None:
+            return None
+        return start, right
+
+    @classmethod
+    def _nested_unary_diagnostic_nodes(cls, node: Any) -> tuple[Any, Any] | None:
+        if not cls._is_not_unary(node):
+            return None
+        if cls._parent_binary_operator(node):
+            return None
+        expr = cls._expression_child(node)
+        inner = cls._single_expression_term(expr)
+        if not cls._is_not_unary(inner):
+            return None
+        start = cls._operator(node)
+        operand = cls._expression_child(inner)
+        if start is None or operand is None:
+            return None
+        return start, operand
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context, "tree", None), "root_node", None)
+        if root is None:
+            return []
+        storage = DiagnosticStorage(context.path)
+        seen: set[tuple[int, int, int, int]] = set()
+
+        def add(start: Any, end: Any) -> None:
+            key = (
+                int(start.start_point[0]),
+                _point_char(context.lines, start.start_point),
+                int(end.end_point[0]),
+                _point_char(context.lines, end.end_point),
+            )
+            if key in seen:
+                return
+            seen.add(key)
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=_BSL060_MESSAGE,
+                severity=Severity.WARNING,
+                lines=context.lines,
+                start_node=start,
+                end_node=end,
+            )
+
+        for node in _ts_walk(root):
+            if getattr(node, "type", None) == "binary_expression":
+                nodes = self._binary_diagnostic_nodes(node)
+                if nodes is not None:
+                    add(*nodes)
+            elif getattr(node, "type", None) == "unary_expression":
+                nodes = self._nested_unary_diagnostic_nodes(node)
+                if nodes is not None:
+                    add(*nodes)
         return storage.diagnostics
 
 

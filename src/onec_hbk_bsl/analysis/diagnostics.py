@@ -84,7 +84,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.control_flow_rules import (
 )
 from onec_hbk_bsl.analysis.diagnostic.cst import (
     diagnostics_bsl004_from_tree,
-    diagnostics_bsl060_from_tree,
     loop_body_line_indices_0,
     ts_elseif_then_branch_empty,
     ts_if_main_then_branch_empty,
@@ -341,6 +340,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL039",
         "BSL047",
         "BSL051",
+        "BSL060",
         "BSL077",
         "BSL221",
         "BSL222",
@@ -719,10 +719,10 @@ RULE_METADATA: dict[str, dict] = {
         "name": "DoubleNegatives",
         "description": "НЕ НЕ expression — double negation cancels out, use the expression "
         "directly",
-        "severity": "INFORMATION",
+        "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
-        "sonar_severity": "MINOR",
-        "tags": ["style", "readability", "suspicious"],
+        "sonar_severity": "MAJOR",
+        "tags": ["brainoverload", "badpractice"],
     },
     "BSL062": {
         "name": "UnusedParameters",
@@ -3996,12 +3996,6 @@ _RE_BOOL_LITERAL_CMP = re.compile(
     re.IGNORECASE,
 )
 
-# Double negation НЕ НЕ / Not Not
-_RE_DOUBLE_NEGATION = re.compile(
-    r"\b(?:НЕ|Not)\s+(?:НЕ|Not)\b",
-    re.IGNORECASE,
-)
-
 # Прервать/Break as last statement before КонецЦикла
 _RE_BREAK = re.compile(r"^\s*(?:Прервать|Break)\s*;?\s*$", re.IGNORECASE)
 
@@ -4493,11 +4487,6 @@ _RE_MIXED_IDENT = re.compile(
 
 # Assignment is a statement-level construct only — there are no assignment
 # expressions, so "assignment in condition" is impossible in BSL by design.
-
-_RE_DOUBLE_NEGATION = re.compile(
-    r"\b(?:НЕ|Not)\s+(?:НЕ|Not)\b",
-    re.IGNORECASE,
-)
 
 _RE_BREAK = re.compile(r"^\s*(?:Прервать|Break)\s*;", re.IGNORECASE)
 
