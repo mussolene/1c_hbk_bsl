@@ -1334,133 +1334,18 @@ class DiagnosticEngine:
         - Lines that look like constant declarations (Перем Х = N)
         - Comment lines and strings
         """
-        re_magic = re.compile(
-            r"(?<![\"'\w.])"
-            r"(?:-?(?:[2-9]\d*|\d{2,})(?:\.\d+)?|-?0\.(?:0*[1-9]\d*))"
-            r"(?![\w.\"])",
-        )
         diags: list[Diagnostic] = []
-        masked_lines = snapshot.masked_lines if snapshot is not None else None
-        code_lines_wo_comments = (
-            snapshot.code_lines_without_comments if snapshot is not None else None
-        )
         for proc in procs:
-            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
-                line = lines[i]
-                stripped = line.strip()
-                if not stripped or stripped.startswith("//"):
-                    continue
-                # Skip multi-line string continuation lines (start with |)
-                if stripped.startswith("|"):
-                    continue
-                # Skip constant-like declarations
-                if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
-                    continue
-                if not _RE_BSL029_ANY_DIGIT.search(line):
-                    continue
-                # Mask string contents before scanning while preserving original
-                # character offsets for resulting diagnostics.
-                code_part = (
-                    code_lines_wo_comments[i]
-                    if code_lines_wo_comments is not None
-                    else line.split("//")[0]
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_magic_numbers(
+                    lines,
+                    snapshot=snapshot,
+                    any_digit_re=_RE_BSL029_ANY_DIGIT,
+                    simple_assign_re=_RE_BSL029_SIMPLE_ASSIGN,
+                    ternary_re=_RE_BSL029_TERNARY,
                 )
-                code_part = (
-                    masked_lines[i]
-                    if masked_lines is not None
-                    else _RE_DOUBLE_QUOTED_STRING.sub(
-                        lambda m: '"' + (" " * max(0, len(m.group(0)) - 2)) + '"',
-                        code_part,
-                    )
-                )
-                code_part = _RE_SINGLE_QUOTED_STRING.sub(
-                    lambda m: "'" + (" " * max(0, len(m.group(0)) - 2)) + "'",
-                    code_part,
-                )
-                comment_pos = code_part.find("//")
-                if comment_pos >= 0:
-                    code_part = code_part[:comment_pos]
-                # Skip simple direct assignments Var = N — BSLLS skips these
-                if _RE_BSL029_SIMPLE_ASSIGN.match(code_part):
-                    continue
-                insert_match = re.search(r"\.\s*(?:Вставить|Insert)\s*\(", code_part, re.IGNORECASE)
-                if insert_match:
-                    insert_tail = code_part[insert_match.end() :]
-                    if re.search(
-                        r"\b(?:Новый|New|ДобавитьМесяц|Новый\s+Цвет|Новый\s+Шрифт)\b",
-                        insert_tail,
-                        re.IGNORECASE,
-                    ):
-                        pass
-                # BSLLS flags magic numbers in the ternary condition, but not
-                # simple numeric true/false arguments.
-                code_part = _RE_BSL029_TERNARY.sub(
-                    lambda m: f"?({m.group('condition')},0,0)",
-                    code_part,
-                )
-                # BSLLS treats map/structure insertion values as data payload,
-                # not executable magic numbers.
-                code_part = re.sub(
-                    r"\b(?:Новый|New)\s+(?:Структура|Structure|Соответствие|Map)\s*\([^)]*\)",
-                    "Новый Структура()",
-                    code_part,
-                    flags=re.IGNORECASE,
-                )
-                code_part = re.sub(
-                    r"\b(?:Новый|New)\s+(?:ФиксированнаяСтруктура|FixedStructure)\s*\([^)]*\)",
-                    "Новый ФиксированнаяСтруктура()",
-                    code_part,
-                    flags=re.IGNORECASE,
-                )
-                for m in re_magic.finditer(code_part):
-                    sign_pos = m.start() - 1
-                    while sign_pos >= 0 and code_part[sign_pos] in " \t":
-                        sign_pos -= 1
-                    if m.group().startswith("-"):
-                        continue
-                    if sign_pos >= 0 and code_part[sign_pos] == "-":
-                        before_sign = sign_pos - 1
-                        while before_sign >= 0 and code_part[before_sign] in " \t":
-                            before_sign -= 1
-                        if before_sign < 0 or code_part[before_sign] in "(,=":
-                            continue
-                    prefix = code_part[: m.start()]
-                    if re.search(r"\b(?:По|To)\s*$", prefix, re.IGNORECASE):
-                        continue
-                    if re.search(r"\b(?:Для|For)\s+\w+\s*=\s*$", prefix, re.IGNORECASE):
-                        suffix = code_part[m.end() :]
-                        if re.match(r"\s*(?:По|To)\b", suffix, re.IGNORECASE):
-                            continue
-                    # BSLLS skips plain numeric array indices: arr[2]
-                    lpos = m.start() - 1
-                    while lpos >= 0 and code_part[lpos] in " \t":
-                        lpos -= 1
-                    rpos = m.end()
-                    while rpos < len(code_part) and code_part[rpos] in " \t":
-                        rpos += 1
-                    if (
-                        lpos >= 0
-                        and rpos < len(code_part)
-                        and code_part[lpos] == "["
-                        and code_part[rpos] == "]"
-                    ):
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=i + 1,
-                            character=m.start(),
-                            end_line=i + 1,
-                            end_character=m.end(),
-                            severity=Severity.INFORMATION,
-                            code="BSL029",
-                            message=(
-                                "Создайте константу с понятным названием, "
-                                f'присвойте ей значение "{m.group()}" и используйте '
-                                "эту константу вместо магического числа."
-                            ),
-                        )
-                    )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -2183,7 +2068,6 @@ class DiagnosticEngine:
         query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
         """Flag query text with TOP/ПЕРВЫЕ used without ORDER BY/УПОРЯДОЧИТЬ."""
-        diags: list[Diagnostic] = []
         if query_blocks is None:
             blocks_iter = [
                 QueryTextBlockInfo(
@@ -2195,61 +2079,14 @@ class DiagnosticEngine:
             ]
         else:
             blocks_iter = query_blocks
-        for block in blocks_iter:
-            start_idx = block.start_idx
-            block_lines = list(block.block_lines)
-            query_text = block.query_text
-            top_matches = list(_RE_QUERY_TOP.finditer(query_text))
-            if not top_matches:
-                continue
-            has_union = bool(_RE_QUERY_UNION.search(query_text))
-            has_where = bool(_RE_QUERY_WHERE.search(query_text))
-            if not has_union and _RE_QUERY_ORDER_BY.search(query_text):
-                continue
-
-            for top_match in top_matches:
-                top_limit = top_match.group(1)
-                if not has_union:
-                    next_union = _RE_QUERY_UNION.search(query_text, top_match.end())
-                    segment_end = next_union.start() if next_union else len(query_text)
-                    segment_text = query_text[top_match.start() : segment_end]
-                    if _RE_QUERY_ORDER_BY.search(segment_text):
-                        continue
-                if not has_union and top_limit in {"0", "1"} and has_where:
-                    continue
-
-                rel_pos = top_match.start()
-                passed = 0
-                line_idx = start_idx
-                col = 0
-                end_col = 0
-                for offset, raw_line in enumerate(block_lines):
-                    line_len = len(raw_line)
-                    if rel_pos <= passed + line_len:
-                        line_idx = start_idx + offset
-                        col = max(0, rel_pos - passed)
-                        local_match = _RE_QUERY_TOP.search(raw_line[col:])
-                        if local_match:
-                            col += local_match.start()
-                            end_col = col + (local_match.end() - local_match.start())
-                        else:
-                            end_col = min(len(raw_line), col + len(top_match.group(0)))
-                        break
-                    passed += line_len + 1
-
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=line_idx + 1,
-                        character=col,
-                        end_line=line_idx + 1,
-                        end_character=end_col,
-                        severity=Severity.WARNING,
-                        code="BSL077",
-                        message="Использование ПЕРВЫЕ/TOP без УПОРЯДОЧИТЬ/ORDER BY в запросе",
-                    )
-                )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_select_top_without_order_by(
+            query_blocks=blocks_iter,
+            query_top_re=_RE_QUERY_TOP,
+            query_union_re=_RE_QUERY_UNION,
+            query_where_re=_RE_QUERY_WHERE,
+            query_order_by_re=_RE_QUERY_ORDER_BY,
+        )
 
     # ------------------------------------------------------------------
     # ------------------------------------------------------------------

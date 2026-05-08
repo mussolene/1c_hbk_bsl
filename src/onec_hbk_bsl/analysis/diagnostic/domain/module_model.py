@@ -564,3 +564,69 @@ class ModuleModel:
             )
             seen[key] = region
         return diags
+
+    def validate_select_top_without_order_by(
+        self,
+        *,
+        query_blocks,
+        query_top_re,
+        query_union_re,
+        query_where_re,
+        query_order_by_re,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for block in query_blocks:
+            start_idx = block.start_idx
+            block_lines = list(block.block_lines)
+            query_text = block.query_text
+            top_matches = list(query_top_re.finditer(query_text))
+            if not top_matches:
+                continue
+            has_union = bool(query_union_re.search(query_text))
+            has_where = bool(query_where_re.search(query_text))
+            if not has_union and query_order_by_re.search(query_text):
+                continue
+
+            for top_match in top_matches:
+                top_limit = top_match.group(1)
+                if not has_union:
+                    next_union = query_union_re.search(query_text, top_match.end())
+                    segment_end = next_union.start() if next_union else len(query_text)
+                    segment_text = query_text[top_match.start() : segment_end]
+                    if query_order_by_re.search(segment_text):
+                        continue
+                if not has_union and top_limit in {"0", "1"} and has_where:
+                    continue
+
+                rel_pos = top_match.start()
+                passed = 0
+                line_idx = start_idx
+                col = 0
+                end_col = 0
+                for offset, raw_line in enumerate(block_lines):
+                    line_len = len(raw_line)
+                    if rel_pos <= passed + line_len:
+                        line_idx = start_idx + offset
+                        col = max(0, rel_pos - passed)
+                        local_match = query_top_re.search(raw_line[col:])
+                        if local_match:
+                            col += local_match.start()
+                            end_col = col + (local_match.end() - local_match.start())
+                        else:
+                            end_col = min(len(raw_line), col + len(top_match.group(0)))
+                        break
+                    passed += line_len + 1
+
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_idx + 1,
+                        character=col,
+                        end_line=line_idx + 1,
+                        end_character=end_col,
+                        severity=Severity.WARNING,
+                        code="BSL077",
+                        message="Использование ПЕРВЫЕ/TOP без УПОРЯДОЧИТЬ/ORDER BY в запросе",
+                    )
+                )
+        return diags

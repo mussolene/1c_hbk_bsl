@@ -579,6 +579,120 @@ class ProcedureModel:
                     )
         return diags
 
+    def validate_magic_numbers(
+        self,
+        lines: list[str],
+        *,
+        snapshot,
+        any_digit_re,
+        simple_assign_re,
+        ternary_re,
+    ) -> list[Diagnostic]:
+        re_magic = re.compile(
+            r"(?<![\"'\w.])"
+            r"(?:-?(?:[2-9]\d*|\d{2,})(?:\.\d+)?|-?0\.(?:0*[1-9]\d*))"
+            r"(?![\w.\"])",
+        )
+        diags: list[Diagnostic] = []
+        masked_lines = snapshot.masked_lines if snapshot is not None else None
+        code_lines_wo_comments = snapshot.code_lines_without_comments if snapshot is not None else None
+
+        for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
+            line = lines[i]
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if stripped.startswith("|"):
+                continue
+            if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
+                continue
+            if not any_digit_re.search(line):
+                continue
+            code_part = (
+                code_lines_wo_comments[i] if code_lines_wo_comments is not None else line.split("//")[0]
+            )
+            code_part = (
+                masked_lines[i]
+                if masked_lines is not None
+                else re.sub(
+                    r'"[^"\n]*(?:""[^"\n]*)*"',
+                    lambda m: '"' + (" " * max(0, len(m.group(0)) - 2)) + '"',
+                    code_part,
+                )
+            )
+            code_part = re.sub(
+                r"'[^'\n]*(?:''[^'\n]*)*'",
+                lambda m: "'" + (" " * max(0, len(m.group(0)) - 2)) + "'",
+                code_part,
+            )
+            comment_pos = code_part.find("//")
+            if comment_pos >= 0:
+                code_part = code_part[:comment_pos]
+            if simple_assign_re.match(code_part):
+                continue
+            code_part = ternary_re.sub(lambda m: f"?({m.group('condition')},0,0)", code_part)
+            code_part = re.sub(
+                r"\b(?:Новый|New)\s+(?:Структура|Structure|Соответствие|Map)\s*\([^)]*\)",
+                "Новый Структура()",
+                code_part,
+                flags=re.IGNORECASE,
+            )
+            code_part = re.sub(
+                r"\b(?:Новый|New)\s+(?:ФиксированнаяСтруктура|FixedStructure)\s*\([^)]*\)",
+                "Новый ФиксированнаяСтруктура()",
+                code_part,
+                flags=re.IGNORECASE,
+            )
+            for m in re_magic.finditer(code_part):
+                sign_pos = m.start() - 1
+                while sign_pos >= 0 and code_part[sign_pos] in " \t":
+                    sign_pos -= 1
+                if m.group().startswith("-"):
+                    continue
+                if sign_pos >= 0 and code_part[sign_pos] == "-":
+                    before_sign = sign_pos - 1
+                    while before_sign >= 0 and code_part[before_sign] in " \t":
+                        before_sign -= 1
+                    if before_sign < 0 or code_part[before_sign] in "(,=":
+                        continue
+                prefix = code_part[: m.start()]
+                if re.search(r"\b(?:По|To)\s*$", prefix, re.IGNORECASE):
+                    continue
+                if re.search(r"\b(?:Для|For)\s+\w+\s*=\s*$", prefix, re.IGNORECASE):
+                    suffix = code_part[m.end() :]
+                    if re.match(r"\s*(?:По|To)\b", suffix, re.IGNORECASE):
+                        continue
+                lpos = m.start() - 1
+                while lpos >= 0 and code_part[lpos] in " \t":
+                    lpos -= 1
+                rpos = m.end()
+                while rpos < len(code_part) and code_part[rpos] in " \t":
+                    rpos += 1
+                if (
+                    lpos >= 0
+                    and rpos < len(code_part)
+                    and code_part[lpos] == "["
+                    and code_part[rpos] == "]"
+                ):
+                    continue
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=i + 1,
+                        character=m.start(),
+                        end_line=i + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL029",
+                        message=(
+                            "Создайте константу с понятным названием, "
+                            f'присвойте ей значение "{m.group()}" и используйте '
+                            "эту константу вместо магического числа."
+                        ),
+                    )
+                )
+        return diags
+
     def _to_proc_info(self) -> ProcInfo:
         return ProcInfo(
             name=self.name,
