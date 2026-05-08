@@ -3964,3 +3964,249 @@ class YoLetterUsageRule(BsllsDiagnosticRule):
                     end_character=match.end(),
                 )
         return storage.diagnostics
+
+
+class EngineBridgeRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        engine = context.diagnostics_engine
+        snapshot = context.snapshot
+        procs = list(getattr(snapshot, "procedures", []) or [])
+        regions = list(getattr(snapshot, "regions", []) or [])
+        symbols: list[Any] | None = None
+        calls: list[Any] | None = None
+        proc_node_map: dict[Any, Any] | None = None
+        query_blocks: list[Any] | None = None
+
+        def _symbols() -> list[Any]:
+            nonlocal symbols
+            if symbols is None:
+                symbols = list(getattr(snapshot, "symbols", []) or [])
+            return symbols
+
+        def _calls() -> list[Any]:
+            nonlocal calls
+            if calls is None:
+                calls = list(getattr(snapshot, "calls", []) or [])
+            return calls
+
+        def _proc_node_map() -> dict[Any, Any]:
+            nonlocal proc_node_map
+            if proc_node_map is None:
+                proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
+            return proc_node_map
+
+        def _query_blocks() -> list[Any]:
+            nonlocal query_blocks
+            if query_blocks is None:
+                query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
+            return query_blocks
+
+        code = self.code
+        if code == "BSL001":
+            return engine._rule_bsl001_syntax_errors(context.path, context.tree)
+        if code == "BSL002":
+            return engine._rule_bsl002_method_size(context.path, context.lines, procs)
+        if code == "BSL003":
+            return engine._rule_bsl003_non_export_in_api_region(context.path, context.lines, procs, regions)
+        if code == "BSL004":
+            return engine._rule_bsl004_empty_except(context.path, context.lines, context.tree)
+        if code == "BSL007":
+            return engine._rule_bsl007_unused_local_variable(
+                context.path,
+                context.lines,
+                procs,
+                snapshot,
+            )
+        if code == "BSL008":
+            return engine._rule_bsl008_too_many_returns(context.path, context.lines, procs)
+        if code == "BSL009":
+            return engine._rule_bsl009_self_assign(context.path, context.lines, context.tree)
+        if code == "BSL011":
+            return engine._rule_bsl011_cognitive_complexity(context.path, context.lines, procs)
+        if code == "BSL012":
+            return engine._rule_bsl012_hardcode_credentials(context.path, context.lines)
+        if code == "BSL013":
+            return engine._rule_bsl013_commented_code(context.path, context.lines)
+        if code == "BSL014":
+            return engine._rule_bsl014_line_too_long(context.path, context.lines, snapshot)
+        if code == "BSL015":
+            return engine._rule_bsl015_optional_params_count(context.path, context.lines, procs)
+        if code == "BSL016":
+            return engine._rule_bsl016_non_standard_region(context.path, context.lines, regions)
+        if code == "BSL017":
+            return engine._rule_bsl017_export_in_command_module(context.path, context.lines, procs)
+        if code == "BSL019":
+            return engine._rule_bsl019_cyclomatic_complexity(context.path, context.lines, procs)
+        if code == "BSL020":
+            return engine._rule_bsl020_excessive_nesting(context.path, context.lines, procs)
+        if code == "BSL022":
+            return engine._rule_bsl022_deprecated_message(context.path, context.lines, procs)
+        if code == "BSL026":
+            return engine._rule_bsl026_empty_region(context.path, context.lines, regions)
+        if code == "BSL029":
+            return engine._rule_bsl029_magic_number(context.path, context.lines, procs, snapshot)
+        if code == "BSL031":
+            return engine._rule_bsl031_number_of_params(context.path, context.lines, procs)
+        if code == "BSL032":
+            return engine._rule_bsl032_function_return_value(context.path, context.lines, procs)
+        if code == "BSL033":
+            return engine._rule_bsl033_query_in_loop(context.path, context.lines, procs, context.tree)
+        if code == "BSL035":
+            return engine._rule_bsl035_duplicate_string_literal(
+                context.path, context.lines, procs, snapshot
+            )
+        if code == "BSL036":
+            return engine._rule_bsl036_complex_condition(context.path, context.lines)
+        if code == "BSL040":
+            return engine._rule_bsl040_using_this_form(context.path, context.lines, procs)
+        if code == "BSL042":
+            return engine._rule_bsl042_empty_export_method(context.path, context.lines, procs)
+        if code == "BSL051":
+            return engine._rule_bsl051_unreachable_code(
+                context.path, context.lines, procs, context.tree
+            )
+        if code == "BSL052":
+            return engine._rule_bsl052_useless_condition(context.path, context.lines, context.tree)
+        if code == "BSL054":
+            return engine._rule_bsl054_module_level_variable(
+                context.path, context.lines, procs, snapshot
+            )
+        if code == "BSL062":
+            return engine._rule_bsl062_unused_parameter(
+                context.path, context.lines, procs, context.tree, _proc_node_map()
+            )
+        if code == "BSL064":
+            return engine._rule_bsl064_procedure_returns_value(context.path, context.lines, procs)
+        if code == "BSL065":
+            return engine._rule_bsl065_missing_export_comment(context.path, context.lines, procs)
+        if code == "BSL131":
+            return engine._rule_bsl131_duplicate_region(context.path, context.lines, regions)
+        if code == "BSL172":
+            return engine._rule_bsl172_data_exchange_loading(context.path, context.lines, procs)
+        if code in {"BSL175", "BSL176", "BSL177", "BSL179", "BSL195"}:
+            return [
+                d
+                for d in engine._rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
+                    context.path, context.lines, _symbols(), _calls(), (code,)
+                )
+                if d.code == code
+            ]
+        if code == "BSL190":
+            return engine._rule_bsl190_form_data_to_value(context.path, context.lines)
+        if code in {"BSL202", "BSL205", "BSL223", "BSL243", "BSL249"}:
+            return [
+                d
+                for d in engine._rule_bsl202_205_223_243_249_light_call_pool(
+                    context.path,
+                    context.lines,
+                    context.tree,
+                    (code,),
+                    snapshot,
+                )
+                if d.code == code
+            ]
+        if code == "BSL208":
+            return [d for d in engine._rule_bsl208_bsl256_latin_cyrillic_and_typo(context.path, context.lines, procs, snapshot) if d.code == code]
+        if code == "BSL212":
+            return engine._rule_bsl212_missed_required_parameter(
+                context.path, context.content, context.lines, procs, _calls()
+            )
+        if code == "BSL215":
+            return engine._rule_bsl215_missing_parameter_description(context.path, context.lines, procs)
+        if code == "BSL216":
+            return engine._rule_bsl216_missing_space(context.path, context.lines, snapshot)
+        if code == "BSL219":
+            return engine._rule_bsl219_missing_variables_description(
+                context.path, context.lines, procs, snapshot
+            )
+        if code in {"BSL220", "BSL235", "BSL269"}:
+            return [
+                d
+                for d in engine._rule_bsl220_235_269_query_text_diagnostics(
+                    context.path, context.lines, (code,), _query_blocks()
+                )
+                if d.code == code
+            ]
+        if code in {"BSL174", "BSL187", "BSL236", "BSL238"}:
+            return [
+                d
+                for d in engine._rule_bsl174_187_236_238_query_metadata_pool(
+                    context.path,
+                    context.lines,
+                    (code,),
+                    _query_blocks(),
+                    snapshot,
+                )
+                if d.code == code
+            ]
+        if code in {"BSL169", "BSL170", "BSL181", "BSL182", "BSL196", "BSL260"}:
+            return [
+                d
+                for d in engine._rule_bsl169_170_181_182_196_260_light_pool(
+                    context.path, context.lines, procs, (code,), snapshot
+                )
+                if d.code == code
+            ]
+        if code in {"BSL189", "BSL211", "BSL213", "BSL214", "BSL231", "BSL232", "BSL241", "BSL242", "BSL246", "BSL274"}:
+            return [
+                d
+                for d in engine._rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
+                    context.path,
+                    context.lines,
+                    procs,
+                    (code,),
+                    snapshot,
+                )
+                if d.code == code
+            ]
+        if code in {"BSL244", "BSL253", "BSL261"}:
+            return [
+                d
+                for d in engine._rule_bsl244_253_261_runtime_pool(
+                    context.path,
+                    context.lines,
+                    procs,
+                    (code,),
+                    snapshot,
+                )
+                if d.code == code
+            ]
+        if code in {"BSL221", "BSL222", "BSL239", "BSL271"}:
+            return [
+                d
+                for d in engine._rule_bsl221_222_239_271_light_pool(
+                    context.path,
+                    context.lines,
+                    context.tree,
+                    procs,
+                    ("BSL221", "BSL222", "BSL239", "BSL271"),
+                    snapshot,
+                )
+                if d.code == code
+            ]
+        if code == "BSL224":
+            return engine._rule_bsl224_nested_function_in_parameters(
+                context.path, context.lines, context.tree
+            )
+        if code in {"BSL229", "BSL275", "BSL278"}:
+            return [d for d in engine._rule_bsl229_275_278_local_xml_pool(context.path, context.lines, procs, ("BSL229", "BSL275", "BSL278")) if d.code == code]
+        if code == "BSL233":
+            return engine._rule_bsl233_public_methods_description(context.path, context.lines, procs)
+        if code == "BSL234":
+            return engine._rule_bsl234_query_nested_fields_by_dot(context.path, context.lines)
+        if code == "BSL237":
+            return engine._rule_bsl237_redundant_access_to_object(context.path, context.lines)
+        if code == "BSL240":
+            return engine._rule_bsl240_rewrite_method_parameter(
+                context.path, context.lines, procs, context.tree, _proc_node_map()
+            )
+        if code == "BSL245":
+            return engine._rule_bsl245_server_side_export_form_method(context.path, context.lines, procs)
+        if code == "BSL254":
+            return engine._rule_bsl254_transferring_parameters(context.path, context.lines, procs)
+        if code == "BSL256":
+            return engine._rule_bsl256_bslls_typo_spellcheck(context.path, context.tree)
+        return []
