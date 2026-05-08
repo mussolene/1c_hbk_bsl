@@ -40,6 +40,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     UsingServiceTagRule,
     UsingSynchronousCallsRule,
     VirtualTableCallWithoutParametersRule,
+    YoLetterUsageRule,
 )
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
 
@@ -78,6 +79,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     VirtualTableCallWithoutParametersRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
+    YoLetterUsageRule(),
 )
 BSL_RUNTIME_RULE_CODES: frozenset[str] = frozenset(rule.code for rule in _RULES)
 

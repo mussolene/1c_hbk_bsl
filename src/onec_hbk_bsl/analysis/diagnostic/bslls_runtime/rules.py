@@ -471,6 +471,7 @@ _BSL273_VIRTUAL_TABLE_RE = re.compile(
     rf"\b(?P<name>{_QUERY_VIRTUAL_TABLE_NAME_PATTERN})\s*(?P<open>\()?",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL279_IDENTIFIER_RE = re.compile(r"\b\w*[ёЁ]\w*\b", re.UNICODE)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -2089,4 +2090,26 @@ class ExtraCommasRule(BsllsDiagnosticRule):
                 severity=Severity.WARNING,
                 message="Не используйте запятые для параметров по умолчанию в конце вызова метода.",
             )
+        return storage.diagnostics
+
+
+class YoLetterUsageRule(BsllsDiagnosticRule):
+    code = "BSL279"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL279_IDENTIFIER_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    message='В текстах модулях не допускается использовать букву "Ё".',
+                    severity=Severity.INFORMATION,
+                    line=idx,
+                    character=match.start(),
+                    end_line=idx,
+                    end_character=match.end(),
+                )
         return storage.diagnostics

@@ -524,8 +524,6 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL257", lambda: self._rule_bsl257_unary_plus_in_concatenation(path, lines))
             )
-        if self._rule_enabled("BSL279"):
-            _rule_tasks.append(("BSL279", lambda: self._rule_bsl279_yo_letter_usage(path, lines)))
         if self._rule_enabled("BSL210"):
             _rule_tasks.append(
                 ("BSL210", lambda: self._rule_bsl210_logical_or_in_where(path, lines))
@@ -5873,39 +5871,3 @@ class DiagnosticEngine:
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
         return run_bsl257_unary_plus_in_concatenation(path, lines)
-
-    # ------------------------------------------------------------------
-    # BSL279 — YoLetterUsage
-    # ------------------------------------------------------------------
-
-    def _rule_bsl279_yo_letter_usage(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Detect use of letter «ё» in identifiers (BSL convention: use «е»)."""
-        diags: list[Diagnostic] = []
-        _re_yo = re.compile(r"[ёЁ]", re.UNICODE)
-        _re_comment = re.compile(r"^\s*//")
-        # Pattern to match identifiers (words) containing ё
-        _re_id_yo = re.compile(r"\b\w*[ёЁ]\w*\b", re.UNICODE)
-
-        for idx, line in enumerate(lines):
-            if _re_comment.match(line):
-                continue
-            # Remove string literals
-            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
-            # Remove inline comments
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
-                clean = clean[:comment_pos]
-            for m in _re_id_yo.finditer(clean):
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL279",
-                        message='В текстах модулях не допускается использовать букву "Ё".',
-                    )
-                )
-        return diags

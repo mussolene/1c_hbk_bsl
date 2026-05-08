@@ -4410,6 +4410,34 @@ class TestBsl273VirtualTableCallWithoutParameters:
         }
 
 
+class TestBsl279YoLetterUsage:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "YoLetterUsageDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL279"}).check_file(str(fixture))
+            if d.code == "BSL279"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 6, 1, 11),
+            (3, 10, 3, 20),
+            (3, 21, 3, 25),
+            (4, 13, 4, 17),
+            (6, 39, 6, 43),
+        ]
+        assert {d.severity for d in diags} == {Severity.INFORMATION}
+        assert {d.message for d in diags} == {
+            'В текстах модулях не допускается использовать букву "Ё".'
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA
