@@ -41,13 +41,13 @@ def extend_security_rule_tasks(
             )
         )
 
-    bsl175_176_179 = ("BSL175", "BSL176", "BSL179")
-    if any(engine._rule_enabled(code) for code in bsl175_176_179):
+    bsl175_176 = ("BSL175", "BSL176")
+    if any(engine._rule_enabled(code) for code in bsl175_176):
         rule_tasks.append(
             (
-                "BSL175_176_179",
+                "BSL175_176",
                 lambda: engine._rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
-                    path, lines, symbols, calls, bsl175_176_179
+                    path, lines, symbols, calls, bsl175_176
                 ),
             )
         )

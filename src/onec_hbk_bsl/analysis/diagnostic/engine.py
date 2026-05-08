@@ -4333,7 +4333,7 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL175 / BSL176 / BSL179 — deprecated API pool
+    # BSL175 / BSL176 — deprecated API pool
     # ------------------------------------------------------------------
 
     def _rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
@@ -4464,21 +4464,6 @@ class DiagnosticEngine:
                             severity=Severity.INFORMATION,
                             code="BSL175",
                             message=f'Метод "{name}" устарел и больше не используется',
-                        )
-                    )
-
-            if "BSL179" in enabled:
-                for match in _RE_BSL179_MANAGED_FORM.finditer(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start(),
-                            end_line=idx + 1,
-                            end_character=match.end(),
-                            severity=Severity.INFORMATION,
-                            code="BSL179",
-                            message='Замените устаревшее использование типа "УправляемаяФорма"',
                         )
                     )
 

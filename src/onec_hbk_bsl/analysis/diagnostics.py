@@ -397,7 +397,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL003": {
         "name": "NonExportMethodsInApiRegion",
         "description": "Method in public API region is not marked as Export",
-        "severity": "WARNING",
+        "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MAJOR",
         "tags": ["design", "api"],
@@ -4133,10 +4133,6 @@ _RE_BSL175_GLOBAL_METHOD = re.compile(
 )
 _RE_BSL175_ENUM_NAME = re.compile(r"\b(?P<name>ОриентацияМетокДиаграммы)\b", re.IGNORECASE)
 
-_RE_BSL179_MANAGED_FORM = re.compile(
-    r"\b(?:Тип|Type)\s*\(\s*\"(?P<name>УправляемаяФорма|ManagedForm)\"\s*\)",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL176_DEPRECATED_DOC = re.compile(
     r"(?:@deprecated\b|\bdeprecated\b|\bobsolete\b|\bустар(?:ел|ела|ело|евш\w*)\b)",
     re.IGNORECASE | re.UNICODE,

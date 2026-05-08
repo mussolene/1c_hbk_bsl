@@ -244,6 +244,10 @@ _BSL177_DEPRECATED_METHOD_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _BSL195_GET_FORM_RE = re.compile(r"\b(ПолучитьФорму|GetForm)\s*\(", re.IGNORECASE | re.UNICODE)
+_BSL179_MANAGED_FORM_RE = re.compile(
+    r"\b(?:Тип|Type)\s*\(\s*(\"(?:УправляемаяФорма|ManagedForm)\")\s*\)",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1178,6 +1182,29 @@ class GetFormMethodRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.ERROR,
                     message="Не рекомендуемое использование метода ПолучитьФорму",
+                )
+        return storage.diagnostics
+
+
+class DeprecatedTypeManagedFormRule(BsllsDiagnosticRule):
+    code = "BSL179"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            comment_pos = _comment_start_outside_string(line)
+            clean = line if comment_pos < 0 else line[:comment_pos]
+            for match in _BSL179_MANAGED_FORM_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.INFORMATION,
+                    message='Замените устаревшее использование типа "УправляемаяФорма"',
                 )
         return storage.diagnostics
 
