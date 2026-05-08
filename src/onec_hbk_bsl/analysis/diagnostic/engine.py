@@ -837,25 +837,14 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for proc in procs:
-            proc_body = "\n".join(lines[proc.start_idx : proc.end_idx + 1])
-            returns = list(_RE_RETURN.finditer(proc_body))
-            if len(returns) > self.max_returns:
-                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=proc.header_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=len(line_text),
-                        severity=Severity.WARNING,
-                        code="BSL008",
-                        message=(
-                            f"{proc.kind.capitalize()} '{proc.name}' has {len(returns)} "
-                            f"return statements (maximum {self.max_returns})"
-                        ),
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_max_returns(
+                    lines,
+                    max_returns=self.max_returns,
+                    return_re=_RE_RETURN,
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -895,23 +884,15 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         metrics = self._complexity_metrics_for_procs(lines, procs)
         for proc, (cc, _mc) in zip(procs, metrics, strict=False):
-            if cc > self.max_cognitive_complexity:
-                start_col, end_col = _proc_name_span(lines, proc)
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=start_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=end_col,
-                        severity=Severity.WARNING,
-                        code="BSL011",
-                        message=(
-                            f'Уменьшите когнитивную сложность "{proc.name}" '
-                            f"с {cc} до {self.max_cognitive_complexity}"
-                        ),
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_cognitive_complexity(
+                    cognitive_complexity=cc,
+                    max_cognitive_complexity=self.max_cognitive_complexity,
+                    proc_name_span=_proc_name_span,
+                    lines=lines,
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -1180,23 +1161,15 @@ class DiagnosticEngine:
         diags: list[Diagnostic] = []
         metrics = self._complexity_metrics_for_procs(lines, procs)
         for proc, (_cog, cc) in zip(procs, metrics, strict=False):
-            if cc > self.max_mccabe_complexity:
-                start_col, end_col = _proc_name_span(lines, proc)
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=start_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=end_col,
-                        severity=Severity.WARNING,
-                        code="BSL019",
-                        message=(
-                            f'Уменьшите цикломатическую сложность "{proc.name}" '
-                            f"с {cc} до {self.max_mccabe_complexity}"
-                        ),
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_mccabe_complexity(
+                    mccabe_complexity=cc,
+                    max_mccabe_complexity=self.max_mccabe_complexity,
+                    proc_name_span=_proc_name_span,
+                    lines=lines,
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -2496,17 +2469,6 @@ class DiagnosticEngine:
         )
 
         for proc in procs:
-            if not proc.params:
-                continue
-            # BSLLS skips exported procedures: their signature is public API and
-            # callers may pass arguments that the current implementation ignores.
-            if proc.is_export:
-                continue
-            header_line = lines[proc.start_idx]
-            body_lines = lines[proc.start_idx + 1 : proc.end_idx]
-            body_text = "\n".join(body_lines)
-            header_lineno = proc.start_idx + 1  # 1-based
-
             used_casefold: set[str] | None = None
             if tree_is_ts:
                 key = (proc.name, proc.start_idx, proc.kind)
@@ -2517,49 +2479,18 @@ class DiagnosticEngine:
                 )
                 if proc_node is not None:
                     used_casefold = _collect_identifier_casefolds_in_proc_body(proc_node)
-
-            for param_name in proc.params:
-                if not param_name:
-                    continue
-                if param_name.startswith("_"):
-                    continue
-                if not param_name.isidentifier():
-                    continue
-                if param_name.casefold() in _BSL062_SKIP_STANDARD_COMMAND_PARAMS:
-                    continue
-                # BSLLS does not flag optional parameters (have default values) as unused:
-                # they are part of the public API signature even when not used in the body.
-                if param_name in proc.optional_params:
-                    continue
-                if param_name.casefold() in ("параметры", "parameters") and (
-                    _is_typical_client_command_handler(proc, lines)
-                    or _is_client_notify_completion_export_handler(proc, lines)
-                ):
-                    continue
-                if used_casefold is not None:
-                    is_used = param_name.casefold() in used_casefold
-                else:
-                    is_used = bool(
-                        re.search(
-                            r"\b" + re.escape(param_name) + r"\b",
-                            body_text,
-                            re.IGNORECASE,
-                        )
-                    )
-                if is_used:
-                    continue
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=header_lineno,
-                        character=proc.header_col,
-                        end_line=header_lineno,
-                        end_character=len(header_line.rstrip()),
-                        severity=Severity.WARNING,
-                        code="BSL062",
-                        message=(f"Parameter '{param_name}' is never used in the method body."),
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_unused_parameters(
+                    lines,
+                    used_casefold=used_casefold,
+                    skip_standard_params=_BSL062_SKIP_STANDARD_COMMAND_PARAMS,
+                    is_typical_client_command_handler=_is_typical_client_command_handler,
+                    is_client_notify_completion_export_handler=(
+                        _is_client_notify_completion_export_handler
+                    ),
                 )
+            )
         return diags
 
     # ------------------------------------------------------------------

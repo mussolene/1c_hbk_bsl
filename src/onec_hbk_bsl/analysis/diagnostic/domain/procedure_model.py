@@ -18,6 +18,7 @@ class ProcedureModel:
     header_col: int
     params: tuple[str, ...]
     optional_count: int
+    optional_params: frozenset[str]
 
     @classmethod
     def from_proc_info(cls, path: str, proc: ProcInfo) -> ProcedureModel:
@@ -31,6 +32,7 @@ class ProcedureModel:
             header_col=proc.header_col,
             params=tuple(proc.params),
             optional_count=proc.optional_count,
+            optional_params=proc.optional_params,
         )
 
     def validate_param_limit(self, lines: list[str], *, max_params: int) -> list[Diagnostic]:
@@ -160,6 +162,28 @@ class ProcedureModel:
                     )
                 ]
         return []
+
+    def validate_max_returns(self, lines: list[str], *, max_returns: int, return_re) -> list[Diagnostic]:
+        proc_body = "\n".join(lines[self.start_idx : self.end_idx + 1])
+        returns = list(return_re.finditer(proc_body))
+        if len(returns) <= max_returns:
+            return []
+        line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        return [
+            Diagnostic(
+                file=self.path,
+                line=self.start_idx + 1,
+                character=self.header_col,
+                end_line=self.start_idx + 1,
+                end_character=len(line_text),
+                severity=Severity.WARNING,
+                code="BSL008",
+                message=(
+                    f"{self.kind.capitalize()} '{self.name}' has {len(returns)} "
+                    f"return statements (maximum {max_returns})"
+                ),
+            )
+        ]
 
     def validate_function_has_return(
         self,
@@ -348,6 +372,120 @@ class ProcedureModel:
             ]
         return []
 
+    def validate_unused_parameters(
+        self,
+        lines: list[str],
+        *,
+        used_casefold: set[str] | None,
+        skip_standard_params: set[str] | frozenset[str],
+        is_typical_client_command_handler,
+        is_client_notify_completion_export_handler,
+    ) -> list[Diagnostic]:
+        if not self.params or self.is_export:
+            return []
+        header_line = lines[self.start_idx]
+        body_lines = lines[self.start_idx + 1 : self.end_idx]
+        body_text = "\n".join(body_lines)
+        header_lineno = self.start_idx + 1
+        diags: list[Diagnostic] = []
+
+        for param_name in self.params:
+            if not param_name:
+                continue
+            if param_name.startswith("_"):
+                continue
+            if not param_name.isidentifier():
+                continue
+            if param_name.casefold() in skip_standard_params:
+                continue
+            if param_name in self.optional_params:
+                continue
+            proc_info = self._to_proc_info()
+            if param_name.casefold() in ("параметры", "parameters") and (
+                is_typical_client_command_handler(proc_info, lines)
+                or is_client_notify_completion_export_handler(proc_info, lines)
+            ):
+                continue
+            if used_casefold is not None:
+                is_used = param_name.casefold() in used_casefold
+            else:
+                is_used = bool(
+                    re.search(
+                        r"\b" + re.escape(param_name) + r"\b",
+                        body_text,
+                        re.IGNORECASE,
+                    )
+                )
+            if is_used:
+                continue
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=header_lineno,
+                    character=self.header_col,
+                    end_line=header_lineno,
+                    end_character=len(header_line.rstrip()),
+                    severity=Severity.WARNING,
+                    code="BSL062",
+                    message=(f"Parameter '{param_name}' is never used in the method body."),
+                )
+            )
+        return diags
+
+    def validate_cognitive_complexity(
+        self,
+        *,
+        cognitive_complexity: int,
+        max_cognitive_complexity: int,
+        proc_name_span,
+        lines: list[str],
+    ) -> list[Diagnostic]:
+        if cognitive_complexity <= max_cognitive_complexity:
+            return []
+        start_col, end_col = proc_name_span(lines, self._to_proc_info())
+        return [
+            Diagnostic(
+                file=self.path,
+                line=self.start_idx + 1,
+                character=start_col,
+                end_line=self.start_idx + 1,
+                end_character=end_col,
+                severity=Severity.WARNING,
+                code="BSL011",
+                message=(
+                    f'Уменьшите когнитивную сложность "{self.name}" '
+                    f"с {cognitive_complexity} до {max_cognitive_complexity}"
+                ),
+            )
+        ]
+
+    def validate_mccabe_complexity(
+        self,
+        *,
+        mccabe_complexity: int,
+        max_mccabe_complexity: int,
+        proc_name_span,
+        lines: list[str],
+    ) -> list[Diagnostic]:
+        if mccabe_complexity <= max_mccabe_complexity:
+            return []
+        start_col, end_col = proc_name_span(lines, self._to_proc_info())
+        return [
+            Diagnostic(
+                file=self.path,
+                line=self.start_idx + 1,
+                character=start_col,
+                end_line=self.start_idx + 1,
+                end_character=end_col,
+                severity=Severity.WARNING,
+                code="BSL019",
+                message=(
+                    f'Уменьшите цикломатическую сложность "{self.name}" '
+                    f"с {mccabe_complexity} до {max_mccabe_complexity}"
+                ),
+            )
+        ]
+
     def _to_proc_info(self) -> ProcInfo:
         return ProcInfo(
             name=self.name,
@@ -359,5 +497,5 @@ class ProcedureModel:
             val_params=[],
             optional_count=self.optional_count,
             header_col=self.header_col,
-            optional_params=frozenset(),
+            optional_params=self.optional_params,
         )
