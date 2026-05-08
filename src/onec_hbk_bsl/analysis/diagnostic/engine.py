@@ -1330,34 +1330,12 @@ class DiagnosticEngine:
         A condition like ``А И Б ИЛИ В И Г`` is hard to read and should
         be refactored into named boolean variables or helper functions.
         """
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if not self._line_triggers_bsl036(lines, idx):
-                continue
-            _ = self._bsl036_if_condition_chunk(lines, idx) or line
-            char = len(line) - len(line.lstrip())
-            kw = line.lstrip()
-            if kw.lower().startswith("если "):
-                char += len("Если ")
-            elif kw.lower().startswith("if "):
-                char += len("If ")
-            elif kw.lower().startswith("иначеесли "):
-                char += len("ИначеЕсли ")
-            elif kw.lower().startswith("elsif "):
-                char += len("ElsIf ")
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=char,
-                    end_line=idx + 1,
-                    end_character=char + 1,
-                    severity=Severity.INFORMATION,
-                    code="BSL036",
-                    message="Выделите условие оператора Если в отдельный метод или переменную",
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_complex_condition(
+            lines=lines,
+            max_bool_ops=self.max_bool_ops,
+            bool_op_re=_RE_BOOL_OP,
+        )
 
     # ------------------------------------------------------------------
     # BSL040 — ЭтаФорма / ThisForm outside event handler context
@@ -2298,27 +2276,15 @@ class DiagnosticEngine:
         tree: Any | None,
         ternary_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
-        if tree is None:
-            return []
-        diags: list[Diagnostic] = []
-        for node in ternary_nodes if ternary_nodes is not None else _ts_walk(tree.root_node):
-            if getattr(node, "type", None) != "ternary_expression":
-                continue
-            line_idx = node.start_point[0]
-            line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=line_idx + 1,
-                    character=utf8_byte_offset_to_lsp_character(line_text, node.start_point[1]),
-                    end_line=line_idx + 1,
-                    end_character=utf8_byte_offset_to_lsp_character(line_text, node.end_point[1]),
-                    severity=Severity.INFORMATION,
-                    code="BSL251",
-                    message=RULE_DESCRIPTIONS_RU["BSL251"],
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_ternary_operator_usage(
+            lines=lines,
+            tree=tree,
+            ternary_nodes=ternary_nodes,
+            ts_walk_fn=_ts_walk,
+            utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+            rule_descriptions_ru=RULE_DESCRIPTIONS_RU,
+        )
 
     def _rule_bsl252_this_object_assign(
         self,
@@ -2327,35 +2293,20 @@ class DiagnosticEngine:
         tree: Any | None,
         assignment_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
-        low = path.replace("\\", "/").lower()
-        if not (path_is_likely_form_module_bsl(path) or _RE_COMMON_MODULE_PATH.search(low)):
-            return []
-        if tree is None:
-            return []
-        diags: list[Diagnostic] = []
-        for node in assignment_nodes if assignment_nodes is not None else _ts_walk(tree.root_node):
-            if getattr(node, "type", None) != "assignment_statement":
-                continue
-            ident = _ts_child_of_type(node, "identifier")
-            if ident is None:
-                continue
-            if _ts_node_text(ident).casefold() not in {"этотобъект", "thisobject"}:
-                continue
-            line_idx = ident.start_point[0]
-            line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=line_idx + 1,
-                    character=utf8_byte_offset_to_lsp_character(line_text, ident.start_point[1]),
-                    end_line=line_idx + 1,
-                    end_character=utf8_byte_offset_to_lsp_character(line_text, ident.end_point[1]),
-                    severity=Severity.ERROR,
-                    code="BSL252",
-                    message=RULE_DESCRIPTIONS_RU["BSL252"],
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_this_object_assign(
+            path=path,
+            lines=lines,
+            tree=tree,
+            assignment_nodes=assignment_nodes,
+            path_is_likely_form_module_bsl=path_is_likely_form_module_bsl,
+            common_module_path_re=_RE_COMMON_MODULE_PATH,
+            ts_walk_fn=_ts_walk,
+            ts_child_of_type_fn=_ts_child_of_type,
+            ts_node_text_fn=_ts_node_text,
+            utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+            rule_descriptions_ru=RULE_DESCRIPTIONS_RU,
+        )
 
     def _rule_bsl259_unknown_preprocessor_symbol(
         self,
@@ -2364,67 +2315,20 @@ class DiagnosticEngine:
         tree: Any | None,
         preprocessor_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        if tree is not None:
-            for node in (
-                preprocessor_nodes if preprocessor_nodes is not None else _ts_walk(tree.root_node)
-            ):
-                if getattr(node, "type", None) != "preprocessor":
-                    continue
-                expr = _ts_child_of_type(node, "expression")
-                if expr is None:
-                    continue
-                for child in _ts_walk(expr):
-                    if getattr(child, "type", None) != "identifier":
-                        continue
-                    name = _ts_node_text(child)
-                    if (
-                        name.casefold()
-                        in _BSL259_ALLOWED_PREPROC_SYMBOLS | _BSL259_PREPROC_KEYWORDS
-                    ):
-                        continue
-                    line_idx = child.start_point[0]
-                    line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=line_idx + 1,
-                            character=utf8_byte_offset_to_lsp_character(
-                                line_text, child.start_point[1]
-                            ),
-                            end_line=line_idx + 1,
-                            end_character=utf8_byte_offset_to_lsp_character(
-                                line_text, child.end_point[1]
-                            ),
-                            severity=Severity.WARNING,
-                            code="BSL259",
-                            message=f'Неизвестный символ препроцессора "{name}"',
-                        )
-                    )
-            return diags
-
-        for idx, line in enumerate(lines):
-            match = _RE_BSL259_PREPROC_IF.match(line)
-            if match is None:
-                continue
-            expr_text = match.group("expr")
-            for ident in _RE_BSL259_IDENTIFIER.finditer(expr_text):
-                name = ident.group(0)
-                if name.casefold() in _BSL259_ALLOWED_PREPROC_SYMBOLS | _BSL259_PREPROC_KEYWORDS:
-                    continue
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=ident.start(),
-                        end_line=idx + 1,
-                        end_character=ident.end(),
-                        severity=Severity.WARNING,
-                        code="BSL259",
-                        message=f'Неизвестный символ препроцессора "{name}"',
-                    )
-                )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_unknown_preprocessor_symbol(
+            lines=lines,
+            tree=tree,
+            preprocessor_nodes=preprocessor_nodes,
+            ts_walk_fn=_ts_walk,
+            ts_child_of_type_fn=_ts_child_of_type,
+            ts_node_text_fn=_ts_node_text,
+            utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+            allowed_preproc_symbols=_BSL259_ALLOWED_PREPROC_SYMBOLS,
+            preproc_keywords=_BSL259_PREPROC_KEYWORDS,
+            preproc_if_re=_RE_BSL259_PREPROC_IF,
+            preproc_identifier_re=_RE_BSL259_IDENTIFIER,
+        )
 
     def _rule_bsl268_using_find_element_by_string(
         self,
@@ -2433,72 +2337,20 @@ class DiagnosticEngine:
         tree: Any | None,
         method_call_nodes: list[Any] | None = None,
     ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        target_names = {
-            "найтипонаименованию",
-            "findbydescription",
-            "найтипокоду",
-            "findbycode",
-            "найтипономеру",
-            "findbynumber",
-        }
-        if tree is not None:
-            for node in method_call_nodes if method_call_nodes is not None else _ts_walk(tree.root_node):
-                if getattr(node, "type", None) != "method_call":
-                    continue
-                ident = _ts_child_of_type(node, "identifier")
-                if ident is None:
-                    continue
-                name = _ts_node_text(ident)
-                if name.casefold() not in target_names:
-                    continue
-                args = _ts_method_call_arg_exprs(node)
-                if len(args) > 1:
-                    continue
-                if args:
-                    arg_text = _ts_node_text(args[0]).strip()
-                    if arg_text and not (
-                        (arg_text.startswith('"') and arg_text.endswith('"'))
-                        or re.fullmatch(r"\d+(?:\.\d+)?", arg_text)
-                    ):
-                        continue
-                line_idx = ident.start_point[0]
-                line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=line_idx + 1,
-                        character=utf8_byte_offset_to_lsp_character(
-                            line_text, ident.start_point[1]
-                        ),
-                        end_line=line_idx + 1,
-                        end_character=utf8_byte_offset_to_lsp_character(
-                            line_text, ident.end_point[1]
-                        ),
-                        severity=Severity.WARNING,
-                        code="BSL268",
-                        message=f'Использование метода "{name}" снижает производительность поиска',
-                    )
-                )
-            return diags
-
-        for idx, line in enumerate(lines):
-            match = _RE_BSL268_FIND_BY_STRING.search(line)
-            if match is None:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=match.start("name"),
-                    end_line=idx + 1,
-                    end_character=match.end("name"),
-                    severity=Severity.WARNING,
-                    code="BSL268",
-                    message=f'Использование метода "{match.group("name")}" снижает производительность поиска',
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_using_find_element_by_string(
+            lines=lines,
+            tree=tree,
+            method_call_nodes=method_call_nodes,
+            ts_walk_fn=_ts_walk,
+            ts_child_of_type_fn=_ts_child_of_type,
+            ts_node_text_fn=_ts_node_text,
+            ts_method_call_arg_exprs_fn=_ts_method_call_arg_exprs,
+            utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+            method_name_re=_RE_BSL268_FIND_BY_STRING,
+            line_comment_re=_RE_LINE_COMMENT,
+            mask_double_quoted_strings_preserve_len_fn=_mask_double_quoted_strings_preserve_len,
+        )
 
     # ------------------------------------------------------------------
     # BSL206 / BSL207 / BSL209 — join-related query diagnostics
@@ -2535,32 +2387,13 @@ class DiagnosticEngine:
         BSLLS: prefer working with server objects directly instead of converting
         form data to value, which involves full serialization/deserialization.
         """
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if _RE_LINE_COMMENT.match(line):
-                continue
-            clean = _RE_DOUBLE_QUOTED_STRING.sub('""', line)
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
-                clean = clean[:comment_pos]
-            m = _RE_BSL190_FORM_DATA.search(clean)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.WARNING,
-                        code="BSL190",
-                        message=(
-                            "ДанныеФормыВЗначение()/FormDataToValue() — медленная операция; "
-                            "работайте с серверными объектами напрямую"
-                        ),
-                    )
-                )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_form_data_to_value(
+            lines=lines,
+            line_comment_re=_RE_LINE_COMMENT,
+            double_quoted_string_re=_RE_DOUBLE_QUOTED_STRING,
+            bsl190_form_data_re=_RE_BSL190_FORM_DATA,
+        )
 
     # ------------------------------------------------------------------
     # BSL175 / BSL176 — deprecated API pool
@@ -2752,244 +2585,24 @@ class DiagnosticEngine:
         lines: list[str],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        """Detect missing spaces around assignment and comparison operators."""
-        comparison_ops = ("<=", ">=", "<>", "=", "<", ">")
-        diags: list[Diagnostic] = []
-        str_states = (
-            snapshot.line_string_states
-            if snapshot is not None
-            else _build_line_string_states(lines)
+        model = ModuleModel(path=path)
+        return model.validate_missing_space(
+            lines=lines,
+            snapshot=snapshot,
+            line_comment_re=_RE_LINE_COMMENT,
+            build_line_string_states_fn=_build_line_string_states,
+            mask_double_quoted_strings_preserve_len_fn=_mask_double_quoted_strings_preserve_len,
+            comment_start_outside_double_quotes_fn=_comment_start_outside_double_quotes,
+            strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
+            proc_header_re=_RE_BSL216_PROC_HEADER,
+            any_keyword_re=_RE_BSL216_ANY_KEYWORD,
+            arithmetic_missing_space_cols_in_line_fn=_arithmetic_missing_space_cols_in_line,
+            comma_missing_space_after_cols_in_line_fn=_comma_missing_space_after_cols_in_line,
+            semicolon_nospace_re=_RE_BSL216_SEMICOLON_NOSPACE,
+            left_right_keywords_re=_RE_BSL216_LEFT_RIGHT_KEYWORDS,
+            left_keywords_re=_RE_BSL216_LEFT_KEYWORDS,
+            right_keywords_re=_RE_BSL216_RIGHT_KEYWORDS,
         )
-        masked_lines = (
-            snapshot.masked_lines
-            if snapshot is not None
-            else [
-                line if str_states[idx] else _mask_double_quoted_strings_preserve_len(line)
-                for idx, line in enumerate(lines)
-            ]
-        )
-        comment_starts = (
-            snapshot.comment_starts
-            if snapshot is not None
-            else [
-                _comment_start_outside_double_quotes(line, str_states[idx])
-                for idx, line in enumerate(lines)
-            ]
-        )
-        code_lines_wo_comments = (
-            snapshot.code_lines_without_comments
-            if snapshot is not None
-            else [_strip_inline_comment_preserve_strings(line) for line in lines]
-        )
-
-        for idx, line in enumerate(lines):
-            if _RE_LINE_COMMENT.match(line):
-                continue
-            in_str_start = str_states[idx]
-            clean_full = masked_lines[idx]
-            clean = clean_full
-            comment_pos = comment_starts[idx]
-            if comment_pos is not None:
-                clean = clean[:comment_pos]
-            has_equals = "=" in clean
-            has_arithmetic_ops = any(op in line for op in "+-*/%")
-            code_no_comments = code_lines_wo_comments[idx]
-            has_comma = "," in code_no_comments
-            has_semicolon = ";" in clean
-            has_keyword_candidate = bool(_RE_BSL216_ANY_KEYWORD.search(clean))
-            if has_equals and not _RE_BSL216_PROC_HEADER.match(clean):
-                pos = 0
-                seen_ops: set[tuple[int, str]] = set()
-                while pos < len(clean):
-                    op = None
-                    for candidate in comparison_ops:
-                        if clean.startswith(candidate, pos):
-                            op = candidate
-                            break
-                    if op is None:
-                        pos += 1
-                        continue
-                    start = pos
-                    end = pos + len(op)
-                    if op == "=" and (
-                        (start > 0 and clean[start - 1] in "<>!")
-                        or (end < len(clean) and clean[end] == "=")
-                    ):
-                        pos += 1
-                        continue
-                    left_missing = start > 0 and clean[start - 1] not in " \t"
-                    right_missing = end < len(clean) and clean[end] not in " \t"
-                    if left_missing or right_missing:
-                        key = (start, op)
-                        if key not in seen_ops:
-                            seen_ops.add(key)
-                            if left_missing and right_missing:
-                                msg = f"Слева и справа от '{op}' не хватает пробела"
-                            elif left_missing:
-                                msg = f"Слева от '{op}' не хватает пробела"
-                            else:
-                                msg = f"Справа от '{op}' не хватает пробела"
-                            diags.append(
-                                Diagnostic(
-                                    file=path,
-                                    line=idx + 1,
-                                    character=start,
-                                    end_line=idx + 1,
-                                    end_character=end,
-                                    severity=Severity.INFORMATION,
-                                    code="BSL216",
-                                    message=msg,
-                                )
-                            )
-                    pos = end
-            # Arithmetic operators: +, -, *, /
-            if has_arithmetic_ops:
-                for col in _arithmetic_missing_space_cols_in_line(line, in_str_start):
-                    op = line[col]
-                    left_missing = col > 0 and line[col - 1] not in " \t"
-                    right_missing = col + 1 < len(line) and line[col + 1] not in " \t"
-                    if left_missing and right_missing:
-                        msg = f"Слева и справа от '{op}' не хватает пробела"
-                    elif left_missing:
-                        msg = f"Слева от '{op}' не хватает пробела"
-                    else:
-                        msg = f"Справа от '{op}' не хватает пробела"
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=col,
-                            end_line=idx + 1,
-                            end_character=col + 1,
-                            severity=Severity.INFORMATION,
-                            code="BSL216",
-                            message=msg,
-                        )
-                    )
-                    continue
-            comma_cols = (
-                _comma_missing_space_after_cols_in_line(code_no_comments) if has_comma else []
-            )
-            if has_comma:
-                extra_comma_cols = {m.start() for m in re.finditer(r",(?=\))", code_no_comments)}
-                if extra_comma_cols:
-                    comma_cols = sorted(set(comma_cols) | extra_comma_cols)
-            if comma_cols:
-                for comma_col in comma_cols:
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=comma_col,
-                            end_line=idx + 1,
-                            end_character=comma_col + 1,
-                            severity=Severity.INFORMATION,
-                            code="BSL216",
-                            message=("Справа от ',' не хватает пробела"),
-                        )
-                    )
-                continue
-            m_semicolon = _RE_BSL216_SEMICOLON_NOSPACE.search(clean) if has_semicolon else None
-            if (
-                m_semicolon is None
-                and has_semicolon
-                and comment_pos is not None
-                and comment_pos > 0
-                and clean_full[comment_pos - 1] == ";"
-                and clean_full[comment_pos : comment_pos + 2] == "//"
-            ):
-                semicolon_col = comment_pos - 1
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=semicolon_col,
-                        end_line=idx + 1,
-                        end_character=semicolon_col + 1,
-                        severity=Severity.INFORMATION,
-                        code="BSL216",
-                        message=("Справа от ';' не хватает пробела"),
-                    )
-                )
-                continue
-            if m_semicolon:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m_semicolon.start(),
-                        end_line=idx + 1,
-                        end_character=m_semicolon.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL216",
-                        message=("Справа от ';' не хватает пробела"),
-                    )
-                )
-                continue
-            if has_keyword_candidate:
-                for m_kw in _RE_BSL216_LEFT_RIGHT_KEYWORDS.finditer(clean):
-                    start = m_kw.start(1)
-                    end = m_kw.end(1)
-                    left_missing = start > 0 and clean[start - 1] not in " \t"
-                    right_missing = end < len(clean) and clean[end] not in " \t"
-                    if not left_missing and not right_missing:
-                        continue
-                    kw = line[start:end]
-                    if left_missing and right_missing:
-                        msg = f"Слева и справа от '{kw}' не хватает пробела"
-                    elif left_missing:
-                        msg = f"Слева от '{kw}' не хватает пробела"
-                    else:
-                        msg = f"Справа от '{kw}' не хватает пробела"
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=start,
-                            end_line=idx + 1,
-                            end_character=end,
-                            severity=Severity.INFORMATION,
-                            code="BSL216",
-                            message=msg,
-                        )
-                    )
-                for m_kw in _RE_BSL216_LEFT_KEYWORDS.finditer(clean):
-                    start = m_kw.start(1)
-                    end = m_kw.end(1)
-                    if start <= 0 or clean[start - 1] in " \t":
-                        continue
-                    kw = line[start:end]
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=start,
-                            end_line=idx + 1,
-                            end_character=end,
-                            severity=Severity.INFORMATION,
-                            code="BSL216",
-                            message=(f"Слева от '{kw}' не хватает пробела"),
-                        )
-                    )
-                for m_kw in _RE_BSL216_RIGHT_KEYWORDS.finditer(clean):
-                    start = m_kw.start(1)
-                    end = m_kw.end(1)
-                    if end >= len(clean) or clean[end] in " \t":
-                        continue
-                    kw = line[start:end]
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=start,
-                            end_line=idx + 1,
-                            end_character=end,
-                            severity=Severity.INFORMATION,
-                            code="BSL216",
-                            message=(f"Справа от '{kw}' не хватает пробела"),
-                        )
-                    )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL254 — TransferringParametersBetweenClientAndServer
