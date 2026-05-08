@@ -142,6 +142,36 @@ def _top_codes(rows: list[dict[str, Any]]) -> list[tuple[str, int]]:
     return Counter(str(row.get("code")) for row in rows).most_common(20)
 
 
+def _rule_filter_tokens(rules: list[str]) -> list[str]:
+    return [token for raw in rules for token in str(raw).replace(",", " ").split()]
+
+
+def _rule_filter_codes(rules: list[str]) -> set[str]:
+    from onec_hbk_bsl.analysis.diagnostics import resolve_rule_token_to_code
+
+    return {
+        code
+        for token in _rule_filter_tokens(rules)
+        if (code := resolve_rule_token_to_code(token))
+    }
+
+
+def _row_rule_code(row: Any) -> str | None:
+    from onec_hbk_bsl.analysis.diagnostics import resolve_rule_token_to_code
+
+    source = str(row.code_source)
+    if source.upper().startswith("BSL"):
+        return source.upper()
+    return resolve_rule_token_to_code(str(row.code))
+
+
+def _filter_normalized_by_rule(rows: list[Any], rules: list[str]) -> list[Any]:
+    if not rules:
+        return rows
+    codes = _rule_filter_codes(rules)
+    return [row for row in rows if _row_rule_code(row) in codes]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Compare onec-hbk-bsl diagnostics with container BSLLS",
@@ -160,8 +190,18 @@ def main() -> int:
         action="store_true",
         help="Reuse output-dir/bsl-json.json instead of running Docker",
     )
+    parser.add_argument(
+        "--rule",
+        action="append",
+        default=[],
+        help="Compare only this rule code or BSLLS diagnostic name; repeatable",
+    )
     parser.add_argument("--json", action="store_true", help="Print full JSON report")
     args = parser.parse_args()
+    if args.rule:
+        unknown_rules = sorted(set(_rule_filter_tokens(args.rule)) - _rule_filter_codes(args.rule))
+        if unknown_rules:
+            parser.error(f"unknown --rule value(s): {', '.join(unknown_rules)}")
 
     repo_root = REPO_ROOT
     target = (repo_root / args.target).resolve()
@@ -198,11 +238,17 @@ def main() -> int:
             Path("/workspace/project"),
         ),
     )
+    ours = _filter_normalized_by_rule(ours, args.rule)
+    bslls = _filter_normalized_by_rule(bslls, args.rule)
     diff = diff_diagnostics(ours, bslls)
     payload = {
         "target": _rel(effective_target, repo_root),
         "original_target": original_target,
         "profile": args.profile,
+        "rule_filter": {
+            "input": args.rule,
+            "codes": sorted(_rule_filter_codes(args.rule)),
+        },
         "oracle": {
             "image": args.image,
             "report": _rel(report_path, repo_root),

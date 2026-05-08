@@ -15,6 +15,8 @@ class BsllsDocumentContext:
     lines: list[str]
     tree: Any
     snapshot: Any | None = None
+    max_bool_ops: int = 3
+    bsl036_enabled: bool = False
 
     @cached_property
     def line_offsets(self) -> list[int]:

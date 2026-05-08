@@ -2820,10 +2820,6 @@ _RE_DEPRECATED_MSG = re.compile(
     r"^\s*(?:Предупреждение|Warning)\s*\(",
     re.IGNORECASE,
 )
-_RE_DEPRECATED_MESSAGE = re.compile(
-    r"\b(?:Сообщить|Message)\s*\(",
-    re.IGNORECASE,
-)
 _RE_BSL202_STRTEMPLATE = re.compile(r"\b(?:СтрШаблон|StrTemplate)\s*\(", re.IGNORECASE)
 _BSL223_STRUCTURE_NAMES = frozenset(
     {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
@@ -3949,12 +3945,6 @@ _RE_REGION_CLOSE_BARE = re.compile(
     re.IGNORECASE,
 )
 
-# Goto / Перейти operator
-_RE_GOTO = re.compile(
-    r"^\s*(?:Перейти|Goto)\s+~",
-    re.IGNORECASE,
-)
-
 # Magic number: numeric literal not 0/1/-1, not in a comment or string
 # A simplified heuristic: standalone number after =, (, or operator
 _RE_MAGIC_NUMBER = re.compile(
@@ -4631,11 +4621,6 @@ _RE_SELECT_STAR = re.compile(
 
 _RE_RAISE_BARE = re.compile(
     r"^\s*(?:ВызватьИсключение|Raise)\s*;",
-    re.IGNORECASE,
-)
-
-_RE_GOTO = re.compile(
-    r"^\s*(?:Перейти|Goto)\b",
     re.IGNORECASE,
 )
 

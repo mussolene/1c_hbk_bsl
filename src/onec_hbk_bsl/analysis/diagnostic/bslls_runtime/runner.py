@@ -6,13 +6,19 @@ from typing import Any
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     BsllsDiagnosticRule,
+    CanonicalSpellingKeywordsRule,
+    DeprecatedMessageRule,
     MagicDateRule,
     NestedTernaryOperatorRule,
     UselessTernaryOperatorRule,
+    UsingGotoRule,
 )
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
 
 _RULES: tuple[BsllsDiagnosticRule, ...] = (
+    UsingGotoRule(),
+    CanonicalSpellingKeywordsRule(),
+    DeprecatedMessageRule(),
     NestedTernaryOperatorRule(),
     MagicDateRule(),
     UselessTernaryOperatorRule(),
@@ -36,6 +42,8 @@ def append_bslls_runtime_rule_tasks(
         lines=lines,
         tree=tree,
         snapshot=snapshot,
+        max_bool_ops=int(getattr(engine, "max_bool_ops", 3)),
+        bsl036_enabled=bool(engine._rule_enabled("BSL036")),
     )
     for rule in _RULES:
         if engine._rule_enabled(rule.code):

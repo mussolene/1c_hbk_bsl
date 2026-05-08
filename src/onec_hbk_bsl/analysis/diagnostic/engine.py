@@ -1964,34 +1964,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL027 — UseGotoOperator
-    # ------------------------------------------------------------------
-
-    def _rule_bsl027_use_goto(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Flag Перейти/Goto — unconditional jumps damage readability."""
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            if _RE_GOTO.match(line):
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=len(line) - len(line.lstrip()),
-                        end_line=idx + 1,
-                        end_character=len(line),
-                        severity=Severity.ERROR,
-                        code="BSL027",
-                        message=(
-                            "Перейти/Goto makes control flow unpredictable. "
-                            "Refactor using structured loops or functions."
-                        ),
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL028 — MissingCodeTryCatch (risky calls without error handling)
     # ------------------------------------------------------------------
 
@@ -2625,36 +2597,6 @@ class DiagnosticEngine:
                         message=(
                             "Избегайте использования ЭтаФорма/ThisForm, передавайте форму в параметрах метода"
                         ),
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL041 — DeprecatedMessage
-    # ------------------------------------------------------------------
-
-    def _rule_bsl041_deprecated_message(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Detect direct Сообщить()/Message() calls."""
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if _RE_LINE_COMMENT.match(line):
-                continue
-            clean = _strip_inline_comment_preserve_strings(line)
-            m = _RE_DEPRECATED_MESSAGE.search(clean)
-            if m:
-                prev_non_space = clean[: m.start()].rstrip()
-                if prev_non_space.endswith("."):
-                    continue
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL041",
-                        message='Не следует использовать устаревший метод "Сообщить"',
                     )
                 )
         return diags
@@ -5180,114 +5122,6 @@ class DiagnosticEngine:
 
     def _rule_bsl258_union_without_all(self, path: str, lines: list[str]) -> list[Diagnostic]:
         return run_bsl258_union_without_all(path, lines)
-
-    # ------------------------------------------------------------------
-    # BSL153 — CanonicalSpellingKeywords
-    # ------------------------------------------------------------------
-
-    # BSL canonical keyword forms (title case)
-    _CANONICAL_KEYWORDS: dict[str, str] = {
-        "если": "Если",
-        "иначеесли": "ИначеЕсли",
-        "иначе": "Иначе",
-        "конецесли": "КонецЕсли",
-        "для": "Для",
-        # "каждого" omitted — BSLLS accepts both "Каждого" and "каждого" (EACH_LO variant)
-        "из": "Из",
-        "цикл": "Цикл",
-        "конеццикла": "КонецЦикла",
-        "пока": "Пока",
-        "прервать": "Прервать",
-        "продолжить": "Продолжить",
-        "попытка": "Попытка",
-        "исключение": "Исключение",
-        "конецпопытки": "КонецПопытки",
-        "вызватьисключение": "ВызватьИсключение",
-        "возврат": "Возврат",
-        "перейти": "Перейти",
-        "процедура": "Процедура",
-        "функция": "Функция",
-        "конецпроцедуры": "КонецПроцедуры",
-        "конецфункции": "КонецФункции",
-        "перем": "Перем",
-        "тогда": "Тогда",
-        "по": "По",
-        "новый": "Новый",
-        "экспорт": "Экспорт",
-        "знач": "Знач",
-        "не": "Не",
-        "и": "И",
-        "или": "Или",
-        "истина": "Истина",
-        "ложь": "Ложь",
-        "неопределено": "Неопределено",
-        "null": "Null",
-    }
-    # Only flag words that differ in case from their canonical form
-    _CANONICAL_RE = re.compile(
-        r"\b(?:" + "|".join(re.escape(k) for k in _CANONICAL_KEYWORDS) + r")\b",
-        re.IGNORECASE | re.UNICODE,
-    )
-
-    def _rule_bsl153_canonical_spelling_keywords(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        """Detect BSL keywords not written in canonical title-case form."""
-        if path_is_likely_form_module_bsl(path):
-            return []
-        diags: list[Diagnostic] = []
-        _bsl036 = self._rule_enabled("BSL036")
-
-        # Pre-compute BSL036-suppressed line indices once (O(n)) instead of
-        # calling _line_in_triggered_bsl036_condition per line (O(n × 48²)).
-        bsl036_skip: set[int] = set()
-        if _bsl036:
-            for start in range(len(lines)):
-                chunk = self._bsl036_if_condition_chunk(lines, start)
-                if chunk is None:
-                    continue
-                if len(_RE_BOOL_OP.findall(chunk)) <= self.max_bool_ops:
-                    continue
-                # Mark every line in this condition block (start … Тогда)
-                j = start
-                while j < len(lines):
-                    bsl036_skip.add(j)
-                    if self._RE_THEN_WORD.search(lines[j]):
-                        break
-                    j += 1
-
-        for idx, line in enumerate(lines):
-            if _RE_LINE_COMMENT.match(line):
-                continue
-            if idx in bsl036_skip:
-                continue
-            # Remove string literals and inline comment
-            clean = _mask_double_quoted_strings_preserve_len(line)
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
-                clean = clean[:comment_pos]
-
-            for m in self._CANONICAL_RE.finditer(clean):
-                word = m.group()
-                canonical = self._CANONICAL_KEYWORDS.get(word.lower())
-                if canonical and word != canonical:
-                    # BSLLS accepts some boolean operator casings, but lowercase "и" is
-                    # reported as non-canonical in strict mode.
-                    if word.lower() in {"или", "не"}:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=m.start(),
-                            end_line=idx + 1,
-                            end_character=m.end(),
-                            severity=Severity.INFORMATION,
-                            code="BSL153",
-                            message=(f'Ключевое слово "{word}" написано не канонически'),
-                        )
-                    )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL215 — MissingParameterDescription

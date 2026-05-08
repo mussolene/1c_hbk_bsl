@@ -91,8 +91,6 @@ def extend_core_rule_tasks(
         rule_tasks.append(
             ("BSL026", lambda: engine._rule_bsl026_empty_region(path, lines, regions))
         )
-    if engine._rule_enabled("BSL027"):
-        rule_tasks.append(("BSL027", lambda: engine._rule_bsl027_use_goto(path, lines)))
     if engine._rule_enabled("BSL028"):
         rule_tasks.append(
             ("BSL028", lambda: engine._rule_bsl028_missing_try_catch(path, lines, procs))
@@ -130,8 +128,6 @@ def extend_core_rule_tasks(
         rule_tasks.append(
             ("BSL040", lambda: engine._rule_bsl040_using_this_form(path, lines, procs))
         )
-    if engine._rule_enabled("BSL041"):
-        rule_tasks.append(("BSL041", lambda: engine._rule_bsl041_deprecated_message(path, lines)))
     if engine._rule_enabled("BSL042"):
         rule_tasks.append(
             ("BSL042", lambda: engine._rule_bsl042_empty_export_method(path, lines, procs))
