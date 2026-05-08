@@ -401,6 +401,34 @@ class TestSecurityApiParityBatch:
         diags = DiagnosticEngine(select={"BSL184"}).check_file(str(path))
         assert "BSL184" not in _codes(diags)
 
+    def test_bsl226_os_users_method_matches_bslls_fixture(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест1()
+            Сообщить("Здесь не должно сработать");
+            КонецФункции
+
+            Функция Тест2()
+            Пользователи = ПользователиОС(); // сработает здесь
+            КонецФункции
+
+            Функция Тест3()
+            Users = OSUsers(); // сработает здесь
+            КонецФункции
+
+            Функция Тест4()
+            Users = osUsers(); // сработает здесь
+            КонецФункции
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL226"}) if d.code == "BSL226"]
+        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+            (6, 15, 6, 29, "WARNING"),
+            (10, 8, 10, 15, "WARNING"),
+            (14, 8, 14, 15, "WARNING"),
+        ]
+        assert {d.message for d in diags} == {
+            "Проверить потенциально вредоносное использование метода ПользователиОС"
+        }
+
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()

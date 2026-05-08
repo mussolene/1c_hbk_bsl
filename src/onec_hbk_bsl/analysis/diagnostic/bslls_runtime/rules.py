@@ -352,6 +352,10 @@ _BSL183_EXECUTE_EXTERNAL_CODE_RE = re.compile(
     r"(?<![.\w])(Выполнить|Execute|Вычислить|Eval)\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL226_OS_USERS_RE = re.compile(
+    r"(?<![.\w])(ПользователиОС|OSUsers)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1657,6 +1661,26 @@ class ExecuteExternalCodeInCommonModuleRule(BsllsDiagnosticRule):
                         "Выполнение произвольного кода в общем модуле на сервере "
                         "является потенциальной уязвимостью"
                     ),
+                )
+        return storage.diagnostics
+
+
+class OSUsersMethodRule(BsllsDiagnosticRule):
+    code = "BSL226"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL226_OS_USERS_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.WARNING,
+                    message="Проверить потенциально вредоносное использование метода ПользователиОС",
                 )
         return storage.diagnostics
 

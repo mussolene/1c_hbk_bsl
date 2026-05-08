@@ -27,6 +27,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     IsInRoleMethodRule,
     MagicDateRule,
     NestedTernaryOperatorRule,
+    OSUsersMethodRule,
     SpaceAtStartCommentRule,
     UselessTernaryOperatorRule,
     UseSystemInformationRule,
@@ -64,6 +65,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     InternetAccessRule(),
     IsInRoleMethodRule(),
     UseSystemInformationRule(),
+    OSUsersMethodRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )
