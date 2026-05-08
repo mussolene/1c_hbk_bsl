@@ -8,7 +8,9 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocument
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.storage import DiagnosticStorage
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
+    _xml_bool_tag,
     common_module_execute_external_code_applicable,
+    common_module_xml_for_module_bsl,
 )
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 
@@ -24,6 +26,34 @@ def _path_is_form_module_bsl(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     return normalized.endswith("/forms/") or "/forms/" in normalized and normalized.endswith(
         "/ext/module.bsl"
+    )
+
+
+def _path_is_bsl272_server_only_module(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    if "/forms/" in normalized or "/commands/" in normalized:
+        return False
+    if "/commonmodules/" in normalized:
+        xml_path = common_module_xml_for_module_bsl(path)
+        if xml_path is None:
+            return False
+        try:
+            raw = xml_path.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            return False
+        if "<commonmodule" not in raw.casefold():
+            return False
+        return not (
+            _xml_bool_tag(raw, "ClientManagedApplication")
+            or _xml_bool_tag(raw, "ClientOrdinaryApplication")
+        )
+    return normalized.endswith(
+        (
+            "/ext/objectmodule.bsl",
+            "/ext/managermodule.bsl",
+            "/ext/recordsetmodule.bsl",
+            "/ext/valuemanagermodule.bsl",
+        )
     )
 
 
@@ -372,6 +402,66 @@ _BSL267_EXTERNAL_CODE_TOOLS_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _METHOD_CHAIN_RE = re.compile(r"\s*\.\s*[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*\s*\(", re.UNICODE)
+_BSL272_SYNC_REPLACEMENTS: dict[str, str] = {
+    "ВОПРОС": "ПоказатьВопрос",
+    "DOQUERYBOX": "ShowQueryBox",
+    "ОТКРЫТЬФОРМУМОДАЛЬНО": "ОткрытьФорму",
+    "OPENFORMMODAL": "OpenForm",
+    "ОТКРЫТЬЗНАЧЕНИЕ": "ПоказатьЗначение",
+    "OPENVALUE": "ShowValue",
+    "ПРЕДУПРЕЖДЕНИЕ": "ПоказатьПредупреждение",
+    "DOMESSAGEBOX": "ShowMessageBox",
+    "ВВЕСТИДАТУ": "ПоказатьВводДаты",
+    "INPUTDATE": "ShowInputDate",
+    "ВВЕСТИЗНАЧЕНИЕ": "ПоказатьВводЗначения",
+    "INPUTVALUE": "ShowInputValue",
+    "ВВЕСТИСТРОКУ": "ПоказатьВводСтроки",
+    "INPUTSTRING": "ShowInputString",
+    "ВВЕСТИЧИСЛО": "ПоказатьВводЧисла",
+    "INPUTNUMBER": "ShowInputNumber",
+    "УСТАНОВИТЬВНЕШНЮЮКОМПОНЕНТУ": "НачатьУстановкуВнешнейКомпоненты",
+    "INSTALLADDIN": "BeginInstallAddIn",
+    "УСТАНОВИТЬРАСШИРЕНИЕРАБОТЫСФАЙЛАМИ": "НачатьУстановкуРасширенияРаботыСФайлами",
+    "INSTALLFILESYSTEMEXTENSION": "BeginInstallFileSystemExtension",
+    "УСТАНОВИТЬРАСШИРЕНИЕРАБОТЫСКРИПТОГРАФИЕЙ": "НачатьУстановкуРасширенияРаботыСКриптографией",
+    "INSTALLCRYPTOEXTENSION": "BeginInstallCryptoExtension",
+    "ПОДКЛЮЧИТЬРАСШИРЕНИЕРАБОТЫСКРИПТОГРАФИЕЙ": "НачатьПодключениеРасширенияРаботыСКриптографией",
+    "ATTACHCRYPTOEXTENSION": "BeginAttachingCryptoExtension",
+    "ПОДКЛЮЧИТЬРАСШИРЕНИЕРАБОТЫСФАЙЛАМИ": "НачатьПодключениеРасширенияРаботыСФайлами",
+    "ATTACHFILESYSTEMEXTENSION": "BeginAttachingFileSystemExtension",
+    "ПОМЕСТИТЬФАЙЛ": "НачатьПомещениеФайла",
+    "PUTFILE": "BeginPutFile",
+    "КОПИРОВАТЬФАЙЛ": "НачатьКопированиеФайла",
+    "FILECOPY": "BeginCopyingFile",
+    "ПЕРЕМЕСТИТЬФАЙЛ": "НачатьПеремещениеФайла",
+    "MOVEFILE": "BeginMovingFile",
+    "НАЙТИФАЙЛЫ": "НачатьПоискФайлов",
+    "FINDFILES": "BeginFindingFiles",
+    "УДАЛИТЬФАЙЛЫ": "НачатьУдалениеФайлов",
+    "DELETEFILES": "BeginDeletingFiles",
+    "СОЗДАТЬКАТАЛОГ": "НачатьСозданиеКаталога",
+    "CREATEDIRECTORY": "BeginCreatingDirectory",
+    "КАТАЛОГВРЕМЕННЫХФАЙЛОВ": "НачатьПолучениеКаталогаВременныхФайлов",
+    "TEMPFILESDIR": "BeginGettingTempFilesDir",
+    "КАТАЛОГДОКУМЕНТОВ": "НачатьПолучениеКаталогаДокументов",
+    "DOCUMENTSDIR": "BeginGettingDocumentsDir",
+    "РАБОЧИЙКАТАЛОГДАННЫХПОЛЬЗОВАТЕЛЯ": "НачатьПолучениеРабочегоКаталогаДанныхПользователя",
+    "USERDATAWORKDIR": "BeginGettingUserDataWorkDir",
+    "ПОЛУЧИТЬФАЙЛЫ": "НачатьПолучениеФайлов",
+    "GETFILES": "BeginGettingFiles",
+    "ПОМЕСТИТЬФАЙЛЫ": "НачатьПомещениеФайлов",
+    "PUTFILES": "BeginPuttingFiles",
+    "ЗАПРОСИТЬРАЗРЕШЕНИЕПОЛЬЗОВАТЕЛЯ": "НачатьЗапросРазрешенияПользователя",
+    "REQUESTUSERPERMISSION": "BeginRequestingUserPermission",
+    "ЗАПУСТИТЬПРИЛОЖЕНИЕ": "НачатьЗапускПриложения",
+    "RUNAPP": "BeginRunningApplication",
+}
+_BSL272_SYNC_RE = re.compile(
+    r"(?<![.\w])(?P<name>"
+    + "|".join(re.escape(key) for key in sorted(_BSL272_SYNC_REPLACEMENTS, key=len, reverse=True))
+    + r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -406,6 +496,26 @@ def _call_chain_end(line: str, open_paren: int) -> int:
         if match is None:
             return end
         end = _single_line_call_end(line, match.end() - 1)
+
+
+def _multi_line_call_end(lines: list[str], start_line: int, open_paren: int) -> tuple[int, int]:
+    depth = 0
+    line_idx = start_line
+    pos = open_paren
+    while line_idx < len(lines):
+        line = lines[line_idx]
+        while pos < len(line):
+            char = line[pos]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return line_idx, pos + 1
+            pos += 1
+        line_idx += 1
+        pos = 0
+    return start_line, open_paren + 1
 
 
 def bsl024_should_report_line(line: str) -> bool:
@@ -1771,6 +1881,72 @@ class UsingExternalCodeToolsRule(BsllsDiagnosticRule):
                     end_character=_call_chain_end(clean, open_paren),
                     severity=Severity.ERROR,
                     message="Запрещено использование возможности выполнения внешнего кода",
+                )
+        return storage.diagnostics
+
+
+class UsingSynchronousCallsRule(BsllsDiagnosticRule):
+    code = "BSL272"
+
+    @staticmethod
+    def _server_only_method(lines: list[str], start_idx: int) -> bool:
+        idx = start_idx - 1
+        while idx >= 0:
+            stripped = lines[idx].strip()
+            if not stripped or stripped.startswith("//"):
+                idx -= 1
+                continue
+            if not stripped.startswith("&"):
+                return False
+            directive = stripped[1:].split()[0].casefold()
+            return directive in {
+                "насервере",
+                "atserver",
+                "насерверебезконтекста",
+                "atservernocontext",
+            }
+        return False
+
+    @staticmethod
+    def _server_only_lines(context: BsllsDocumentContext) -> set[int]:
+        procs = (
+            list(getattr(context.snapshot, "procs", []) or [])
+            if context.snapshot is not None
+            else ExecuteExternalCodeRule._fallback_procs(context.lines)
+        )
+        if not procs:
+            procs = ExecuteExternalCodeRule._fallback_procs(context.lines)
+        skipped: set[int] = set()
+        for proc in procs:
+            if UsingSynchronousCallsRule._server_only_method(context.lines, int(proc.start_idx)):
+                skipped.update(range(int(proc.start_idx), min(int(proc.end_idx) + 1, len(context.lines))))
+        return skipped
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        if _path_is_bsl272_server_only_module(context.path):
+            return []
+        storage = DiagnosticStorage(context.path)
+        skipped_lines = self._server_only_lines(context)
+        clean_lines = [_code_mask_without_strings_and_comments(_code_before_comment(line)) for line in context.lines]
+        for idx, clean in enumerate(clean_lines):
+            if idx in skipped_lines:
+                continue
+            for match in _BSL272_SYNC_RE.finditer(clean):
+                method_name = context.lines[idx][match.start("name") : match.end("name")]
+                replacement = _BSL272_SYNC_REPLACEMENTS.get(method_name.upper(), "")
+                open_paren = clean.find("(", match.start("name"))
+                end_line, end_character = _multi_line_call_end(clean_lines, idx, open_paren)
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start("name"),
+                    end_line=end_line,
+                    end_character=end_character,
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Вместо синхронного метода `{method_name}` необходимо "
+                        f"использовать `{replacement}`"
+                    ),
                 )
         return storage.diagnostics
 

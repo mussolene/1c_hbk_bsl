@@ -502,6 +502,74 @@ class TestSecurityApiParityBatch:
             "Запрещено использование возможности выполнения внешнего кода"
         }
 
+    def test_bsl272_synchronous_calls_matches_bslls_fixture(self, tmp_path: Path) -> None:
+        fixture = (
+            Path(__file__).resolve().parents[1]
+            / ".agent/tmp/bslls-source/src/test/resources/diagnostics/UsingSynchronousCallsDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS upstream fixture is not available")
+        content = fixture.read_text(encoding="utf-8")
+        bsl_file = tmp_path / "UsingSynchronousCallsDiagnostic.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL272"}).check_file(str(bsl_file))
+            if d.code == "BSL272"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (3, 12, 4, 57),
+            (22, 4, 22, 84),
+            (30, 4, 30, 26),
+            (44, 9, 44, 58),
+            (73, 9, 73, 67),
+            (104, 9, 104, 50),
+            (123, 9, 123, 61),
+            (139, 4, 139, 50),
+            (149, 4, 149, 33),
+            (160, 20, 160, 56),
+            (173, 20, 173, 62),
+            (185, 12, 185, 54),
+            (186, 8, 186, 129),
+            (199, 12, 199, 48),
+            (200, 8, 200, 109),
+            (215, 4, 215, 88),
+            (226, 4, 226, 68),
+            (237, 4, 237, 69),
+            (248, 21, 248, 51),
+            (261, 8, 261, 37),
+            (275, 4, 275, 29),
+            (286, 16, 286, 40),
+            (297, 16, 297, 35),
+            (308, 16, 308, 50),
+            (319, 16, 319, 89),
+            (345, 16, 345, 64),
+            (369, 12, 369, 59),
+            (392, 4, 392, 38),
+        ]
+        assert len(diags) == 28
+        assert all(d.severity is Severity.WARNING for d in diags)
+        assert any(
+            d.message
+            == "Вместо синхронного метода `Вопрос` необходимо использовать `ПоказатьВопрос`"
+            for d in diags
+        )
+        assert any(
+            d.message
+            == "Вместо синхронного метода `ЗапуститьПриложение` необходимо использовать `НачатьЗапускПриложения`"
+            for d in diags
+        )
+
+    def test_bsl272_skips_server_object_module(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "Процедура П()\n    ЗапуститьПриложение(\"Таблица.xls\");\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
+        assert "BSL272" not in _codes(diags)
+
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()

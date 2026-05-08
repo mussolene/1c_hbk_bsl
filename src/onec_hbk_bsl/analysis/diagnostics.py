@@ -374,6 +374,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL235",
         "BSL258",
         "BSL267",
+        "BSL272",
     }
 )
 
@@ -4143,65 +4144,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 )
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
-_MODAL_SYNC_REPLACEMENTS: dict[str, str] = {
-    "ВОПРОС": "ПоказатьВопрос",
-    "DOQUERYBOX": "ShowQueryBox",
-    "ОТКРЫТЬФОРМУМОДАЛЬНО": "ОткрытьФорму",
-    "OPENFORMMODAL": "OpenForm",
-    "ОТКРЫТЬЗНАЧЕНИЕ": "ПоказатьЗначение",
-    "OPENVALUE": "ShowValue",
-    "ПРЕДУПРЕЖДЕНИЕ": "ПоказатьПредупреждение",
-    "DOMESSAGEBOX": "ShowMessageBox",
-    "ВВЕСТИДАТУ": "ПоказатьВводДаты",
-    "INPUTDATE": "ShowInputDate",
-    "ВВЕСТИЗНАЧЕНИЕ": "ПоказатьВводЗначения",
-    "INPUTVALUE": "ShowInputValue",
-    "ВВЕСТИСТРОКУ": "ПоказатьВводСтроки",
-    "INPUTSTRING": "ShowInputString",
-    "ВВЕСТИЧИСЛО": "ПоказатьВводЧисла",
-    "INPUTNUMBER": "ShowInputNumber",
-    "УСТАНОВИТЬВНЕШНЮЮКОМПОНЕНТУ": "НачатьУстановкуВнешнейКомпоненты",
-    "INSTALLADDIN": "BeginInstallAddIn",
-    "УСТАНОВИТЬРАСШИРЕНИЕРАБОТЫСФАЙЛАМИ": "НачатьУстановкуРасширенияРаботыСФайлами",
-    "INSTALLFILESYSTEMEXTENSION": "BeginInstallFileSystemExtension",
-    "УСТАНОВИТЬРАСШИРЕНИЕРАБОТЫСКРИПТОГРАФИЕЙ": "НачатьУстановкуРасширенияРаботыСКриптографией",
-    "INSTALLCRYPTOEXTENSION": "BeginInstallCryptoExtension",
-    "ПОМЕСТИТЬФАЙЛ": "НачатьПомещениеФайла",
-    "PUTFILE": "BeginPutFile",
-}
-_BSL272_SYNC_REPLACEMENTS: dict[str, str] = {
-    **_MODAL_SYNC_REPLACEMENTS,
-    "ПОДКЛЮЧИТЬРАСШИРЕНИЕРАБОТЫСКРИПТОГРАФИЕЙ": "НачатьПодключениеРасширенияРаботыСКриптографией",
-    "ATTACHCRYPTOEXTENSION": "BeginAttachingCryptoExtension",
-    "ПОДКЛЮЧИТЬРАСШИРЕНИЕРАБОТЫСФАЙЛАМИ": "НачатьПодключениеРасширенияРаботыСФайлами",
-    "ATTACHFILESYSTEMEXTENSION": "BeginAttachingFileSystemExtension",
-    "КОПИРОВАТЬФАЙЛ": "НачатьКопированиеФайла",
-    "FILECOPY": "BeginCopyingFile",
-    "ПЕРЕМЕСТИТЬФАЙЛ": "НачатьПеремещениеФайла",
-    "MOVEFILE": "BeginMovingFile",
-    "НАЙТИФАЙЛЫ": "НачатьПоискФайлов",
-    "FINDFILES": "BeginFindingFiles",
-    "СОЗДАТЬКАТАЛОГ": "НачатьСозданиеКаталога",
-    "CREATEDIRECTORY": "BeginCreatingDirectory",
-    "КАТАЛОГВРЕМЕННЫХФАЙЛОВ": "НачатьПолучениеКаталогаВременныхФайлов",
-    "TEMPFILESDIR": "BeginGettingTempFilesDir",
-    "КАТАЛОГДОКУМЕНТОВ": "НачатьПолучениеКаталогаДокументов",
-    "DOCUMENTSDIR": "BeginGettingDocumentsDir",
-    "РАБОЧИЙКАТАЛОГДАННЫХПОЛЬЗОВАТЕЛЯ": "НачатьПолучениеРабочегоКаталогаДанныхПользователя",
-    "USERDATAWORKDIR": "BeginGettingUserDataWorkDir",
-    "ПОЛУЧИТЬФАЙЛЫ": "НачатьПолучениеФайлов",
-    "GETFILES": "BeginGettingFiles",
-    "ПОМЕСТИТЬФАЙЛЫ": "НачатьПомещениеФайлов",
-    "PUTFILES": "BeginPuttingFiles",
-    "ЗАПРОСИТЬРАЗРЕШЕНИЕПОЛЬЗОВАТЕЛЯ": "НачатьЗапросРазрешенияПользователя",
-    "REQUESTUSERPERMISSION": "BeginRequestingUserPermission",
-    "ЗАПУСТИТЬПРИЛОЖЕНИЕ": "НачатьЗапускПриложения",
-    "RUNAPP": "BeginRunningApplication",
-}
-_RE_BSL272_SYNC = re.compile(
-    r"\b(?P<name>" + "|".join(re.escape(k) for k in _BSL272_SYNC_REPLACEMENTS) + r")\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL171_ADJACENT_LITERALS = re.compile(r'"[^"]*"\s+"[^"]*"', re.UNICODE)
 _RE_BSL251_TERNARY = re.compile(r"\?\s*\(", re.UNICODE)
 _RE_BSL252_THIS_OBJECT_ASSIGN = re.compile(

@@ -4495,54 +4495,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL272 — security/context API pool
-    # ------------------------------------------------------------------
-
-    def _rule_bsl272_api_pool(
-        self,
-        path: str,
-        lines: list[str],
-        enabled_codes: tuple[str, ...],
-        snapshot: DocumentSnapshot | None = None,
-        ) -> list[Diagnostic]:
-        enabled = set(enabled_codes)
-        diags: list[Diagnostic] = []
-        clean_lines = (
-            snapshot.code_lines_without_comments
-            if snapshot is not None
-            else [_strip_inline_comment_preserve_strings(line) for line in lines]
-        )
-
-        for idx, raw_line in enumerate(lines):
-            if _RE_LINE_COMMENT.match(raw_line):
-                continue
-            line = clean_lines[idx]
-            if not line.strip():
-                continue
-
-            if "BSL272" in enabled:
-                for match in _RE_BSL272_SYNC.finditer(line):
-                    method_name = match.group("name")
-                    replacement = _BSL272_SYNC_REPLACEMENTS.get(method_name.upper(), "")
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.WARNING,
-                            code="BSL272",
-                            message=(
-                                f"Вместо синхронного метода `{method_name}` необходимо "
-                                f"использовать `{replacement}`"
-                            ),
-                        )
-                    )
-
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL258 — UnionAll
     # ------------------------------------------------------------------
 
