@@ -12,8 +12,7 @@ from __future__ import annotations
 from collections import Counter, OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
-from onec_hbk_bsl.analysis.diagnostic.bslls_runtime import append_bslls_runtime_rule_tasks
-from onec_hbk_bsl.analysis.diagnostic.execution import execute_diagnostic_rule_tasks
+from onec_hbk_bsl.analysis.diagnostic.pipeline import AnalysisFrame, PipelineExecutor
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
     parse_suppressions,
@@ -399,17 +398,15 @@ class DiagnosticEngine:
         self._metrics_tls.data = last_metrics
         self._current_snapshot = snapshot
 
-        _rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]] = []
-        append_bslls_runtime_rule_tasks(
-            _rule_tasks,
-            engine=self,
+        frame = AnalysisFrame(
             path=path,
             content=content,
-            lines=lines,
             tree=tree,
             snapshot=snapshot,
+            lines=lines,
+            symbol_index=symbol_index,
         )
-        diagnostics = execute_diagnostic_rule_tasks(_rule_tasks)
+        diagnostics = PipelineExecutor().execute(self, frame)
         # Apply inline suppressions
         diagnostics = [d for d in diagnostics if not is_suppressed(d, suppressions)]
         _str_ranges = double_quoted_string_ranges(content)
