@@ -342,6 +342,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL051",
         "BSL060",
         "BSL077",
+        "BSL188",
         "BSL221",
         "BSL222",
         "BSL148",
@@ -4141,43 +4142,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
 _RE_BSL184_EXECUTE_EXTERNAL_CODE = re.compile(
     r"\b(?P<name>Выполнить|Execute|Вычислить|Eval)\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
-_RE_BSL188_FILESYSTEM_METHOD = re.compile(
-    r"\b(?P<name>"
-    r"ЗначениеВФайл|ValueToFile|КопироватьФайл|FileCopy|ОбъединитьФайлы|MergeFiles|"
-    r"ПереместитьФайл|MoveFile|РазделитьФайл|SplitFile|СоздатьКаталог|CreateDirectory|"
-    r"УдалитьФайлы|DeleteFiles|КаталогПрограммы|BinDir|КаталогВременныхФайлов|TempFilesDir|"
-    r"КаталогДокументов|DocumentsDir|РабочийКаталогДанныхПользователя|UserDataWorkDir|"
-    r"НачатьПодключениеРасширенияРаботыСФайлами|BeginAttachingFileSystemExtension|"
-    r"НачатьУстановкуРасширенияРаботыСФайлами|BeginInstallFileSystemExtension|"
-    r"УстановитьРасширениеРаботыСФайлами|InstallFileSystemExtension|"
-    r"УстановитьРасширениеРаботыСФайламиАсинх|InstallFileSystemExtensionAsync|"
-    r"ПодключитьРасширениеРаботыСФайламиАсинх|AttachFileSystemExtensionAsync|"
-    r"КаталогВременныхФайловАсинх|TempFilesDirAsync|КаталогДокументовАсинх|DocumentsDirAsync|"
-    r"НачатьПолучениеКаталогаВременныхФайлов|BeginGettingTempFilesDir|"
-    r"НачатьПолучениеКаталогаДокументов|BeginGettingDocumentsDir|"
-    r"НачатьПолучениеРабочегоКаталогаДанныхПользователя|BeginGettingUserDataWorkDir|"
-    r"РабочийКаталогДанныхПользователяАсинх|UserDataWorkDirAsync|"
-    r"КопироватьФайлАсинх|CopyFileAsync|НайтиФайлыАсинх|FindFilesAsync|"
-    r"НачатьКопированиеФайла|BeginCopyingFile|НачатьПеремещениеФайла|BeginMovingFile|"
-    r"НачатьПоискФайлов|BeginFindingFiles|НачатьСозданиеДвоичныхДанныхИзФайла|"
-    r"BeginCreateBinaryDataFromFile|НачатьСозданиеКаталога|BeginCreatingDirectory|"
-    r"НачатьУдалениеФайлов|BeginDeletingFiles|ПереместитьФайлАсинх|MoveFileAsync|"
-    r"СоздатьДвоичныеДанныеИзФайлаАсинх|CreateBinaryDataFromFileAsync|"
-    r"СоздатьКаталогАсинх|CreateDirectoryAsync|УдалитьФайлыАсинх|DeleteFilesAsync"
-    r")\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
-_RE_BSL188_FILESYSTEM_NEW = re.compile(
-    r"\b(?:Новый|New)\s*(?:\(\s*)?(?P<type>"
-    r"File|Файл|xBase|HTMLWriter|ЗаписьHTML|HTMLReader|ЧтениеHTML|"
-    r"FastInfosetReader|ЧтениеFastInfoset|FastInfosetWriter|ЗаписьFastInfoset|"
-    r"XSLTransform|ПреобразованиеXSL|ZipFileWriter|ЗаписьZipФайла|ZipFileReader|"
-    r"ЧтениеZipФайла|TextReader|ЧтениеТекста|TextWriter|ЗаписьТекста|TextExtraction|"
-    r"ИзвлечениеТекста|BinaryData|ДвоичныеДанные|FileStream|ФайловыйПоток|"
-    r"FileStreamsManager|МенеджерФайловыхПотоков|DataWriter|ЗаписьДанных|DataReader|ЧтениеДанных"
-    r")\b",
     re.IGNORECASE | re.UNICODE,
 )
 _RE_BSL203_INTERNET_NEW = re.compile(

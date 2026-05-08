@@ -263,6 +263,43 @@ _BSL185_EXTERNAL_APP_RE = re.compile(
     r")\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL188_FILESYSTEM_METHOD_RE = re.compile(
+    r"\b("
+    r"ЗначениеВФайл|ValueToFile|КопироватьФайл|FileCopy|ОбъединитьФайлы|MergeFiles|"
+    r"ПереместитьФайл|MoveFile|РазделитьФайл|SplitFile|СоздатьКаталог|CreateDirectory|"
+    r"УдалитьФайлы|DeleteFiles|КаталогПрограммы|BinDir|КаталогВременныхФайлов|TempFilesDir|"
+    r"КаталогДокументов|DocumentsDir|РабочийКаталогДанныхПользователя|UserDataWorkDir|"
+    r"НачатьПодключениеРасширенияРаботыСФайлами|BeginAttachingFileSystemExtension|"
+    r"НачатьУстановкуРасширенияРаботыСФайлами|BeginInstallFileSystemExtension|"
+    r"УстановитьРасширениеРаботыСФайлами|InstallFileSystemExtension|"
+    r"УстановитьРасширениеРаботыСФайламиАсинх|InstallFileSystemExtensionAsync|"
+    r"ПодключитьРасширениеРаботыСФайламиАсинх|AttachFileSystemExtensionAsync|"
+    r"КаталогВременныхФайловАсинх|TempFilesDirAsync|КаталогДокументовАсинх|DocumentsDirAsync|"
+    r"НачатьПолучениеКаталогаВременныхФайлов|BeginGettingTempFilesDir|"
+    r"НачатьПолучениеКаталогаДокументов|BeginGettingDocumentsDir|"
+    r"НачатьПолучениеРабочегоКаталогаДанныхПользователя|BeginGettingUserDataWorkDir|"
+    r"РабочийКаталогДанныхПользователяАсинх|UserDataWorkDirAsync|"
+    r"КопироватьФайлАсинх|CopyFileAsync|НайтиФайлыАсинх|FindFilesAsync|"
+    r"НачатьКопированиеФайла|BeginCopyingFile|НачатьПеремещениеФайла|BeginMovingFile|"
+    r"НачатьПоискФайлов|BeginFindingFiles|НачатьСозданиеДвоичныхДанныхИзФайла|"
+    r"BeginCreateBinaryDataFromFile|НачатьСозданиеКаталога|BeginCreatingDirectory|"
+    r"НачатьУдалениеФайлов|BeginDeletingFiles|ПереместитьФайлАсинх|MoveFileAsync|"
+    r"СоздатьДвоичныеДанныеИзФайлаАсинх|CreateBinaryDataFromFileAsync|"
+    r"СоздатьКаталогАсинх|CreateDirectoryAsync|УдалитьФайлыАсинх|DeleteFilesAsync"
+    r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL188_FILESYSTEM_NEW_RE = re.compile(
+    r"\b(?:Новый|New)\s*(?:\(\s*)?("
+    r"File|Файл|xBase|HTMLWriter|ЗаписьHTML|HTMLReader|ЧтениеHTML|"
+    r"FastInfosetReader|ЧтениеFastInfoset|FastInfosetWriter|ЗаписьFastInfoset|"
+    r"XSLTransform|ПреобразованиеXSL|ZipFileWriter|ЗаписьZipФайла|ZipFileReader|"
+    r"ЧтениеZipФайла|TextReader|ЧтениеТекста|TextWriter|ЗаписьТекста|TextExtraction|"
+    r"ИзвлечениеТекста|BinaryData|ДвоичныеДанные|FileStream|ФайловыйПоток|"
+    r"FileStreamsManager|МенеджерФайловыхПотоков|DataWriter|ЗаписьДанных|DataReader|ЧтениеДанных"
+    r")\b",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1271,6 +1308,47 @@ class ExternalAppStartingRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.WARNING,
                     message="Проверьте запуск внешнего приложения",
+                )
+        return storage.diagnostics
+
+
+class FileSystemAccessRule(BsllsDiagnosticRule):
+    code = "BSL188"
+
+    @staticmethod
+    def _new_end(clean: str, type_end: int) -> int:
+        pos = type_end
+        while pos < len(clean) and clean[pos].isspace():
+            pos += 1
+        if pos < len(clean) and clean[pos] == "(":
+            return _single_line_call_end(clean, pos)
+        return type_end
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL188_FILESYSTEM_METHOD_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.WARNING,
+                    message="Проверьте обращение к файловой системе",
+                )
+            for match in _BSL188_FILESYSTEM_NEW_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(),
+                    end_line=idx,
+                    end_character=self._new_end(clean, match.end(1)),
+                    severity=Severity.WARNING,
+                    message="Проверьте обращение к файловой системе",
                 )
         return storage.diagnostics
 

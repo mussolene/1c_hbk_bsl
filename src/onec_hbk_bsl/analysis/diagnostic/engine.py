@@ -4495,7 +4495,7 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL184 / BSL188 / BSL203 / BSL226 / BSL247 /
+    # BSL184 / BSL203 / BSL226 / BSL247 /
     # BSL250 / BSL264 / BSL267 / BSL272 — security/context API pool
     # ------------------------------------------------------------------
 
@@ -4537,34 +4537,6 @@ class DiagnosticEngine:
                                 "Выполнение произвольного кода в общем модуле на сервере "
                                 "является потенциальной уязвимостью"
                             ),
-                        )
-                    )
-
-            if "BSL188" in enabled:
-                for match in _RE_BSL188_FILESYSTEM_METHOD.finditer(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.WARNING,
-                            code="BSL188",
-                            message="Проверьте обращение к файловой системе",
-                        )
-                    )
-                for match in _RE_BSL188_FILESYSTEM_NEW.finditer(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=max(0, match.start("type") - len("Новый ")),
-                            end_line=idx + 1,
-                            end_character=match.start("type"),
-                            severity=Severity.WARNING,
-                            code="BSL188",
-                            message="Проверьте обращение к файловой системе",
                         )
                     )
 
