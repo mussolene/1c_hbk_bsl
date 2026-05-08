@@ -486,6 +486,99 @@ class ProcedureModel:
             )
         ]
 
+    def validate_missing_try_catch(
+        self,
+        lines: list[str],
+        *,
+        try_block_re,
+        try_close_re,
+        risky_call_re,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        in_try = False
+        for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
+            line = lines[i]
+            if try_block_re.match(line):
+                in_try = True
+            elif try_close_re.match(line) and in_try:
+                in_try = False
+            if in_try or not risky_call_re.match(line):
+                continue
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=i + 1,
+                    character=len(line) - len(line.lstrip()),
+                    end_line=i + 1,
+                    end_character=len(line),
+                    severity=Severity.INFORMATION,
+                    code="BSL028",
+                    message=(
+                        "Potentially risky call outside Try/Except — "
+                        "consider wrapping in error handling."
+                    ),
+                )
+            )
+        return diags
+
+    def validate_query_in_loop(
+        self,
+        lines: list[str],
+        *,
+        loop_lines: set[int] | None,
+        query_execute_re,
+        loop_open_re,
+        loop_close_re,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        loop_depth = 0
+        for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
+            line = lines[i]
+            if loop_lines is not None:
+                if i not in loop_lines:
+                    continue
+                m = query_execute_re.search(line)
+                if m and not line.strip().startswith("//"):
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=i + 1,
+                            character=m.start(),
+                            end_line=i + 1,
+                            end_character=m.end(),
+                            severity=Severity.WARNING,
+                            code="BSL033",
+                            message=(
+                                "Query.Выполнить() inside a loop causes N database "
+                                "round-trips. Move the query outside the loop."
+                            ),
+                        )
+                    )
+                continue
+            if loop_open_re.match(line):
+                loop_depth += 1
+            elif loop_close_re.match(line):
+                loop_depth = max(0, loop_depth - 1)
+            elif loop_depth > 0:
+                m = query_execute_re.search(line)
+                if m and not line.strip().startswith("//"):
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=i + 1,
+                            character=m.start(),
+                            end_line=i + 1,
+                            end_character=m.end(),
+                            severity=Severity.WARNING,
+                            code="BSL033",
+                            message=(
+                                "Query.Выполнить() inside a loop causes N database "
+                                "round-trips. Move the query outside the loop."
+                            ),
+                        )
+                    )
+        return diags
+
     def _to_proc_info(self) -> ProcInfo:
         return ProcInfo(
             name=self.name,

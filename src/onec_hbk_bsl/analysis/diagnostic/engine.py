@@ -1304,29 +1304,15 @@ class DiagnosticEngine:
         """
         diags: list[Diagnostic] = []
         for proc in procs:
-            in_try = False
-            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
-                line = lines[i]
-                if self._RE_TRY_BLOCK.match(line):
-                    in_try = True
-                elif self._RE_TRY_CLOSE.match(line) and in_try:
-                    in_try = False
-                if not in_try and self._RE_RISKY_CALL.match(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=i + 1,
-                            character=len(line) - len(line.lstrip()),
-                            end_line=i + 1,
-                            end_character=len(line),
-                            severity=Severity.INFORMATION,
-                            code="BSL028",
-                            message=(
-                                "Potentially risky call outside Try/Except — "
-                                "consider wrapping in error handling."
-                            ),
-                        )
-                    )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_missing_try_catch(
+                    lines,
+                    try_block_re=self._RE_TRY_BLOCK,
+                    try_close_re=self._RE_TRY_CLOSE,
+                    risky_call_re=self._RE_RISKY_CALL,
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
@@ -1579,57 +1565,21 @@ class DiagnosticEngine:
         Executing queries inside loops is a critical performance anti-pattern
         in 1C Enterprise — it causes N database round-trips per iteration.
         """
-        diags: list[Diagnostic] = []
         loop_lines: set[int] | None = None
         if _ts_tree_ok_for_rules(tree):
             loop_lines = loop_body_line_indices_0(tree.root_node)
+        diags: list[Diagnostic] = []
         for proc in procs:
-            loop_depth = 0
-            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
-                line = lines[i]
-                if loop_lines is not None:
-                    if i not in loop_lines:
-                        continue
-                    m = _RE_QUERY_EXECUTE.search(line)
-                    if m and not line.strip().startswith("//"):
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=i + 1,
-                                character=m.start(),
-                                end_line=i + 1,
-                                end_character=m.end(),
-                                severity=Severity.WARNING,
-                                code="BSL033",
-                                message=(
-                                    "Query.Выполнить() inside a loop causes N database "
-                                    "round-trips. Move the query outside the loop."
-                                ),
-                            )
-                        )
-                    continue
-                if _RE_LOOP_OPEN.match(line):
-                    loop_depth += 1
-                elif _RE_LOOP_CLOSE.match(line):
-                    loop_depth = max(0, loop_depth - 1)
-                elif loop_depth > 0:
-                    m = _RE_QUERY_EXECUTE.search(line)
-                    if m and not line.strip().startswith("//"):
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=i + 1,
-                                character=m.start(),
-                                end_line=i + 1,
-                                end_character=m.end(),
-                                severity=Severity.WARNING,
-                                code="BSL033",
-                                message=(
-                                    "Query.Выполнить() inside a loop causes N database "
-                                    "round-trips. Move the query outside the loop."
-                                ),
-                            )
-                        )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_query_in_loop(
+                    lines,
+                    loop_lines=loop_lines,
+                    query_execute_re=_RE_QUERY_EXECUTE,
+                    loop_open_re=_RE_LOOP_OPEN,
+                    loop_close_re=_RE_LOOP_CLOSE,
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
