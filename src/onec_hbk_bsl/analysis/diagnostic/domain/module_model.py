@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
-from onec_hbk_bsl.analysis.document_snapshot import ProcInfo
+from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,4 +328,239 @@ class ModuleModel:
                     message="Удалите бесполезное присваивание переменной самой себе",
                 )
             )
+        return diags
+
+    def validate_non_standard_regions(
+        self,
+        lines: list[str],
+        *,
+        regions: list[RegionInfo],
+        standard_regions_for_path,
+        is_standard_region_name_for_path,
+    ) -> list[Diagnostic]:
+        allowed = standard_regions_for_path(self.path)
+        if not allowed or not regions:
+            return []
+        diags: list[Diagnostic] = []
+        for region in regions:
+            if is_standard_region_name_for_path(self.path, region.name):
+                continue
+            line_idx = region.start_idx
+            line_text = lines[line_idx] if line_idx < len(lines) else ""
+            start_char = 1 if line_text.startswith("#") else 0
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line_idx + 1,
+                    character=start_char,
+                    end_line=line_idx + 1,
+                    end_character=len(line_text),
+                    severity=Severity.INFORMATION,
+                    code="BSL016",
+                    message=f'Нужно удалить нестандартный раздел "{region.name}"',
+                )
+            )
+        return diags
+
+    def validate_export_in_command_or_form_module(
+        self,
+        lines: list[str],
+        *,
+        procs: list[ProcInfo],
+    ) -> list[Diagnostic]:
+        stem_lower = Path(self.path).stem.lower()
+        is_command_or_form = (
+            stem_lower.endswith("command")
+            or stem_lower.endswith("команды")
+            or "форма" in stem_lower
+            or "form" in stem_lower
+        )
+        if not is_command_or_form:
+            return []
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            if not proc.is_export:
+                continue
+            line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=proc.start_idx + 1,
+                    character=proc.header_col,
+                    end_line=proc.start_idx + 1,
+                    end_character=len(line_text),
+                    severity=Severity.WARNING,
+                    code="BSL017",
+                    message=(
+                        f"Export modifier is not allowed in command/form modules "
+                        f"({proc.kind} '{proc.name}')"
+                    ),
+                )
+            )
+        return diags
+
+    def validate_empty_regions(
+        self,
+        lines: list[str],
+        *,
+        regions: list[RegionInfo],
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        code_re = re.compile(
+            r"^\s*(?!//|#(?:Область|Region|КонецОбласти|EndRegion))\S",
+            re.IGNORECASE,
+        )
+        for region in regions:
+            has_code = False
+            for i in range(region.start_idx + 1, min(region.end_idx, len(lines))):
+                if code_re.match(lines[i]):
+                    has_code = True
+                    break
+            if has_code:
+                continue
+            line_idx = region.start_idx
+            line_text = lines[line_idx] if line_idx < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line_idx + 1,
+                    character=0,
+                    end_line=line_idx + 1,
+                    end_character=len(line_text),
+                    severity=Severity.INFORMATION,
+                    code="BSL026",
+                    message=f'Область "{region.name}" не содержит функций или процедур',
+                )
+            )
+        return diags
+
+    def validate_header_semicolon(self, lines: list[str], *, header_semicolon_re) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if not header_semicolon_re.match(line):
+                continue
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=idx + 1,
+                    character=len(line.rstrip()) - 1,
+                    end_line=idx + 1,
+                    end_character=len(line.rstrip()),
+                    severity=Severity.INFORMATION,
+                    code="BSL030",
+                    message="Procedure/function header should not end with a semicolon",
+                )
+            )
+        return diags
+
+    def validate_this_form_usage(
+        self,
+        lines: list[str],
+        *,
+        procs: list[ProcInfo],
+        path_is_likely_form_module_bsl,
+        proc_containing_line,
+        mask_double_quoted_strings_preserve_len,
+        this_form_re,
+    ) -> list[Diagnostic]:
+        if not path_is_likely_form_module_bsl(self.path):
+            return []
+        diags: list[Diagnostic] = []
+        for idx, line in enumerate(lines):
+            proc = proc_containing_line(procs, idx)
+            if proc is not None and any(
+                re.fullmatch(r"(?:ЭтаФорма|ThisForm)", param, re.IGNORECASE) for param in proc.params
+            ):
+                continue
+            clean = mask_double_quoted_strings_preserve_len(line)
+            comment_col = clean.find("//")
+            if comment_col >= 0:
+                clean = clean[:comment_col]
+            for m in this_form_re.finditer(clean):
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=idx + 1,
+                        character=m.start(),
+                        end_line=idx + 1,
+                        end_character=m.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL040",
+                        message=(
+                            "Избегайте использования ЭтаФорма/ThisForm, передавайте форму в параметрах метода"
+                        ),
+                    )
+                )
+        return diags
+
+    def validate_duplicate_regions(
+        self,
+        lines: list[str],
+        *,
+        regions: list[RegionInfo],
+    ) -> list[Diagnostic]:
+        def normalize(name: str) -> str:
+            raw = re.sub(r"\s+", "", name).casefold()
+            aliases = {
+                "программныйинтерфейс": "public",
+                "публичный": "public",
+                "public": "public",
+                "служебныйпрограммныйинтерфейс": "internal",
+                "служебный": "internal",
+                "internal": "internal",
+                "служебныепроцедурыифункции": "private",
+                "приватный": "private",
+                "private": "private",
+                "обработчикисобытий": "eventhandlers",
+                "eventhandlers": "eventhandlers",
+                "обработчикисобытийформы": "formeventhandlers",
+                "formeventhandlers": "formeventhandlers",
+            }
+            return aliases.get(raw, raw)
+
+        standard_aliases = {
+            "public",
+            "internal",
+            "private",
+            "eventhandlers",
+            "formeventhandlers",
+        }
+
+        def region_is_effectively_empty(region: RegionInfo) -> bool:
+            for line_idx in range(region.start_idx + 1, min(region.end_idx, len(lines))):
+                stripped = lines[line_idx].strip()
+                if not stripped or stripped.startswith("//") or stripped.startswith("#"):
+                    continue
+                return False
+            return True
+
+        diags: list[Diagnostic] = []
+        seen: dict[str, RegionInfo] = {}
+        for region in regions:
+            key = normalize(region.name)
+            if not key:
+                continue
+            if key not in seen:
+                seen[key] = region
+                continue
+            prev = seen[key]
+            if key not in standard_aliases and not region_is_effectively_empty(prev):
+                seen[key] = region
+                continue
+            line = lines[region.start_idx] if 0 <= region.start_idx < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=region.start_idx + 1,
+                    character=len(line) - len(line.lstrip()),
+                    end_line=region.start_idx + 1,
+                    end_character=len(line.rstrip()),
+                    severity=Severity.INFORMATION,
+                    code="BSL131",
+                    message=f'Нужно удалить дубли раздела "{region.name}"',
+                )
+            )
+            seen[key] = region
         return diags
