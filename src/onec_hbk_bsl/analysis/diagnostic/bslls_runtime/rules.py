@@ -131,6 +131,10 @@ _BSL178_DEPRECATED_METHOD_RE = re.compile(
     r")\s*\(",
     re.IGNORECASE,
 )
+_BSL097_DEPRECATED_CURRENT_DATE_RE = re.compile(
+    r"(?<!\.)(?<!\w)\b(ТекущаяДата|CurrentDate)\s*\(",
+    re.IGNORECASE,
+)
 
 
 def bsl024_find_report_comment_col(line: str) -> int | None:
@@ -884,6 +888,28 @@ class DeprecatedMethods8317Rule(BsllsDiagnosticRule):
                         f'Метод "{method_name}" устарел. Следует использовать одноименный '
                         "метод объекта типа МенеджерОбработкиОшибок"
                     ),
+                )
+        return storage.diagnostics
+
+
+class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
+    code = "BSL097"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL097_DEPRECATED_CURRENT_DATE_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.ERROR,
+                    message='Используйте "ТекущаяДатаСеанса" вместо устаревшего "ТекущаяДата"',
                 )
         return storage.diagnostics
 

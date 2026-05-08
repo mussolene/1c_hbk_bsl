@@ -473,10 +473,6 @@ class DiagnosticEngine:
             lines=lines,
             query_blocks=_query_blocks,
         )
-        if self._rule_enabled("BSL097"):
-            _rule_tasks.append(
-                ("BSL097", lambda: self._rule_bsl097_use_of_current_date(path, lines))
-            )
         if self._rule_enabled("BSL131"):
             _rule_tasks.append(
                 ("BSL131", lambda: self._rule_bsl131_duplicate_region(path, lines, regions))
@@ -3225,38 +3221,6 @@ class DiagnosticEngine:
         r"^\s*(?:Для|For|ДляКаждого|ForEach|Пока|While|#)",
         re.IGNORECASE,
     )
-
-    # ------------------------------------------------------------------
-    # BSL097 — Use of ТекущаяДата() / CurrentDate()
-    # ------------------------------------------------------------------
-
-    def _rule_bsl097_use_of_current_date(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Flag ТекущаяДата()/CurrentDate() — recommend ТекущаяДатаСеанса()."""
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            m = _RE_CURRENT_DATE.search(line)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL097",
-                        message=(
-                            f"'{m.group().rstrip('(')}' returns server time — "
-                            "use ТекущаяДатаСеанса() for consistent session-based time."
-                        ),
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
 
     _MAX_PARAMS = 7
 

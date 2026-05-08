@@ -769,10 +769,10 @@ RULE_METADATA: dict[str, dict] = {
         "name": "DeprecatedCurrentDate",
         "description": "ТекущаяДата()/CurrentDate() returns server time — use "
         "ТекущаяДатаСеанса() for session time",
-        "severity": "INFORMATION",
+        "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
-        "sonar_severity": "MINOR",
-        "tags": ["correctness", "suspicious"],
+        "sonar_severity": "MAJOR",
+        "tags": ["standard", "deprecated", "unpredictable"],
     },
     "BSL131": {
         "name": "DuplicateRegion",
@@ -4035,12 +4035,6 @@ _RE_UNCONDITIONAL_EXIT = re.compile(
 # String continuation line in BSL (| at the start for multiline literals)
 _RE_STR_CONTINUATION = re.compile(r"^\s*\|", re.MULTILINE)
 
-# ТекущаяДата / CurrentDate (non-UTC)
-_RE_CURRENT_DATE = re.compile(
-    r"\b(?:ТекущаяДата|CurrentDate)\s*\(",
-    re.IGNORECASE,
-)
-
 # НачатьТранзакцию / BeginTransaction
 _RE_BEGIN_TRANSACTION = re.compile(
     r"\b(?:НачатьТранзакцию|BeginTransaction)\s*\(",
@@ -4412,12 +4406,6 @@ _RE_EXECUTABLE_LINE = re.compile(
 # Simplified: a non-empty statement before ; and another after on the same line
 _RE_MULTI_STMT = re.compile(
     r";\s*\w",  # ; followed by word char on same line
-)
-
-# ТекущаяДата() (BSL097)
-_RE_CURRENT_DATE = re.compile(
-    r"\b(?:ТекущаяДата|CurrentDate)\s*\(",
-    re.IGNORECASE,
 )
 
 _RE_NULL_COMPARISON = re.compile(
