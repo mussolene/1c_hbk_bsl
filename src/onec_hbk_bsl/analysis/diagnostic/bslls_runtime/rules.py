@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from dataclasses import dataclass
 from typing import Any
 
@@ -472,6 +473,7 @@ _BSL273_VIRTUAL_TABLE_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _BSL279_IDENTIFIER_RE = re.compile(r"\b\w*[ёЁ]\w*\b", re.UNICODE)
+_BSL277_ROLLBACK_NAMES = frozenset({"отменитьтранзакцию", "rollbacktransaction"})
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -599,6 +601,21 @@ def _split_top_level_args(text: str) -> list[str]:
         pos += 1
     args.append(text[start:])
     return args
+
+
+def _calls_in_node(
+    parent: Any,
+    calls: list[dict[str, Any]],
+    starts: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    start = getattr(parent, "start_byte", None)
+    end = getattr(parent, "end_byte", None)
+    if start is None or end is None:
+        return []
+    effective_starts = starts or [getattr(call["node"], "start_byte", -1) for call in calls]
+    left = bisect_left(effective_starts, start)
+    right = bisect_left(effective_starts, end)
+    return calls[left:right]
 
 
 def _ternary_spans(context: BsllsDocumentContext) -> list[_TernarySpan]:
@@ -2044,6 +2061,103 @@ class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
             for start_idx, block_lines in _diag._iter_query_text_blocks(context.lines)
             for content_line in _diag._iter_query_text_content_lines(start_idx, block_lines)
         ]
+
+
+class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
+    code = "BSL277"
+    message = "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        global_calls, call_starts, _proc_nodes, try_nodes = self._runtime_context(context)
+        storage = DiagnosticStorage(context.path)
+        rollback_in_except_ids: set[int] = set()
+
+        for try_node in try_nodes:
+            except_calls = self._except_calls(try_node, global_calls, call_starts)
+            if not except_calls:
+                continue
+            rollback_is_first = str(except_calls[0]["name"]).casefold() in _BSL277_ROLLBACK_NAMES
+            for call in except_calls:
+                if str(call["name"]).casefold() not in _BSL277_ROLLBACK_NAMES:
+                    continue
+                rollback_in_except_ids.add(id(call["node"]))
+                if not rollback_is_first:
+                    self._add_call(storage, call)
+
+        for call in global_calls:
+            if str(call["name"]).casefold() not in _BSL277_ROLLBACK_NAMES:
+                continue
+            if id(call["node"]) in rollback_in_except_ids:
+                continue
+            self._add_call(storage, call)
+        return storage.diagnostics
+
+    @staticmethod
+    def _runtime_context(context: BsllsDocumentContext) -> tuple[list[Any], list[int], list[Any], list[Any]]:
+        cached = context.runtime_call_context
+        if cached is not None:
+            return cached
+        if context.ts_nodes_for_types and context.global_method_calls_from_nodes:
+            nodes = context.ts_nodes_for_types(
+                context.tree,
+                {"method_call", "procedure_definition", "function_definition", "try_statement"},
+            )
+            global_calls = context.global_method_calls_from_nodes(nodes["method_call"], context.lines)
+            call_starts = [getattr(call["node"], "start_byte", -1) for call in global_calls]
+            proc_nodes = nodes["procedure_definition"] + nodes["function_definition"]
+            return global_calls, call_starts, proc_nodes, nodes["try_statement"]
+
+        from onec_hbk_bsl.analysis import diagnostics as _diag
+
+        root = context.tree.root_node
+        global_calls = _diag._ts_global_method_calls(root, context.lines)
+        call_starts = [getattr(call["node"], "start_byte", -1) for call in global_calls]
+        try_nodes = [node for node in _diag._ts_walk(root) if getattr(node, "type", None) == "try_statement"]
+        return global_calls, call_starts, [], try_nodes
+
+    @staticmethod
+    def _except_calls(
+        try_node: Any,
+        global_calls: list[dict[str, Any]],
+        call_starts: list[int],
+    ) -> list[dict[str, Any]]:
+        children = list(getattr(try_node, "children", []) or [])
+        except_idx = next(
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == "EXCEPT_KEYWORD"
+            ),
+            None,
+        )
+        if except_idx is None:
+            return []
+        endtry_idx = next(
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == "ENDTRY_KEYWORD"
+            ),
+            len(children),
+        )
+        calls: list[dict[str, Any]] = []
+        for child in children[except_idx + 1 : endtry_idx]:
+            calls.extend(_calls_in_node(child, global_calls, call_starts))
+        return calls
+
+    def _add_call(self, storage: DiagnosticStorage, call: dict[str, Any]) -> None:
+        storage.add_range(
+            code=self.code,
+            message=self.message,
+            severity=Severity.ERROR,
+            line=int(call["line"]) - 1,
+            character=int(call["character"]),
+            end_line=int(call["line"]) - 1,
+            end_character=int(call["end_character"]),
+        )
 
 
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):

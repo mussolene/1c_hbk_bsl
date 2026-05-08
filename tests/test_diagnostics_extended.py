@@ -4438,6 +4438,32 @@ class TestBsl279YoLetterUsage:
         }
 
 
+class TestBsl277WrongUseOfRollbackTransaction:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "WrongUseOfRollbackTransactionMethodDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL277"}).check_file(str(fixture))
+            if d.code == "BSL277"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (8, 8, 8, 26),
+            (12, 4, 12, 22),
+            (30, 4, 30, 23),
+        ]
+        assert {d.severity for d in diags} == {Severity.ERROR}
+        assert {d.message for d in diags} == {
+            "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

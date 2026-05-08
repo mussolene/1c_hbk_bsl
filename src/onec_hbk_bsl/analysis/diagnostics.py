@@ -300,7 +300,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
     run_bsl245_server_side_export_form_method,
     run_bsl258_union_without_all,
     run_bsl262_usage_write_log_event,
-    run_bsl277_wrong_use_of_rollback_transaction,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
     run_bsl191_201_query_text_diagnostics,

@@ -40,6 +40,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     UsingServiceTagRule,
     UsingSynchronousCallsRule,
     VirtualTableCallWithoutParametersRule,
+    WrongUseOfRollbackTransactionMethodRule,
     YoLetterUsageRule,
 )
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
@@ -77,6 +78,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     UsingExternalCodeToolsRule(),
     UsingSynchronousCallsRule(),
     VirtualTableCallWithoutParametersRule(),
+    WrongUseOfRollbackTransactionMethodRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
     YoLetterUsageRule(),
@@ -102,6 +104,14 @@ def append_bslls_runtime_rule_tasks(
         snapshot=snapshot,
         max_bool_ops=int(getattr(engine, "max_bool_ops", 3)),
         bsl036_enabled=bool(engine._rule_enabled("BSL036")),
+        runtime_call_context=(
+            engine._runtime_call_context(tree, lines)
+            if engine._rule_enabled("BSL277")
+            else None
+        ),
+        ts_nodes_for_types=engine._ts_nodes_for_types,
+        global_method_calls_from_nodes=engine._global_method_calls_from_nodes,
+        diagnostics_engine=engine,
     )
     for rule in _RULES:
         if engine._rule_enabled(rule.code):

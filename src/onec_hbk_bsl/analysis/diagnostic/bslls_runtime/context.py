@@ -17,6 +17,10 @@ class BsllsDocumentContext:
     snapshot: Any | None = None
     max_bool_ops: int = 3
     bsl036_enabled: bool = False
+    runtime_call_context: Any | None = None
+    ts_nodes_for_types: Any | None = None
+    global_method_calls_from_nodes: Any | None = None
+    diagnostics_engine: Any | None = None
 
     @cached_property
     def line_offsets(self) -> list[int]:
