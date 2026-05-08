@@ -482,10 +482,6 @@ class DiagnosticEngine:
             path=path,
             lines=lines,
         )
-        if self._rule_enabled("BSL151"):
-            _rule_tasks.append(
-                ("BSL151", lambda: self._rule_bsl151_begin_transaction_before_try(path, lines))
-            )
         if self._rule_enabled("BSL152"):
             _rule_tasks.append(
                 ("BSL152", lambda: self._rule_bsl152_cached_public(path, lines, regions, procs))
@@ -3273,55 +3269,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     _MAX_DEFAULT_VALUE_LEN: int = 50
-
-    # ------------------------------------------------------------------
-    # BSL151 — BeginTransactionBeforeTryCatch
-    # ------------------------------------------------------------------
-
-    def _rule_bsl151_begin_transaction_before_try(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        """НачатьТранзакцию()/BeginTransaction() must be immediately before Попытка/Try."""
-        diags: list[Diagnostic] = []
-        _re_begin = re.compile(
-            r"^\s*(?:НачатьТранзакцию|BeginTransaction)\s*\(",
-            re.IGNORECASE,
-        )
-        _re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-        _re_comment = re.compile(r"^\s*//")
-
-        for idx, line in enumerate(lines):
-            if _re_begin.search(line):
-                # Look for Try as the next non-blank, non-comment line
-                found_try = False
-                for j in range(idx + 1, min(idx + 5, len(lines))):
-                    nl = lines[j]
-                    if _re_comment.match(nl) or not nl.strip():
-                        continue
-                    found_try = _re_try.match(nl) is not None
-                    break
-                if not found_try:
-                    col = len(line) - len(line.lstrip())
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=col,
-                            end_line=idx + 1,
-                            end_character=col + len("НачатьТранзакцию"),
-                            severity=Severity.ERROR,
-                            code="BSL151",
-                            message=(
-                                "НачатьТранзакцию() должна находиться непосредственно "
-                                "перед блоком Попытка"
-                            ),
-                        )
-                    )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL152 — CachedPublic (common module + ReturnValuesReuse + Public region)
-    # ------------------------------------------------------------------
 
     def _rule_bsl152_cached_public(
         self,

@@ -809,9 +809,9 @@ RULE_METADATA: dict[str, dict] = {
         "description": "НачатьТранзакцию/BeginTransaction must be placed immediately before a "
         "Try/Except block",
         "severity": "ERROR",
-        "sonar_type": "BUG",
-        "sonar_severity": "CRITICAL",
-        "tags": ["transaction", "error-handling"],
+        "sonar_type": "ERROR",
+        "sonar_severity": "MAJOR",
+        "tags": ["standard"],
         "implemented": True,
     },
     "BSL152": {

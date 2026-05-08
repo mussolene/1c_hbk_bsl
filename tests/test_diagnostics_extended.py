@@ -4751,6 +4751,37 @@ class TestBsl262UsageWriteLogEvent:
         }
 
 
+class TestBsl151BeginTransactionBeforeTryCatch:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "BeginTransactionBeforeTryCatchDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL151"}).check_file(str(fixture))
+            if diag.code == "BSL151"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (30, 4, 30, 23),
+            (43, 8, 43, 27),
+            (56, 4, 56, 23),
+            (69, 8, 69, 27),
+            (78, 4, 78, 23),
+            (91, 4, 91, 23),
+            (103, 0, 103, 19),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.ERROR}
+        assert {diag.message for diag in diags} == {
+            "Метод 'НачатьТранзакцию' должен быть за пределами блока "
+            "'Попытка-Исключение' непосредственно перед оператором 'Попытка'"
+        }
+
+
 class TestBsl157CommitTransactionOutsideTryCatch:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (

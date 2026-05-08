@@ -2458,6 +2458,49 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
         )
 
 
+class BeginTransactionBeforeTryCatchRule(BsllsDiagnosticRule):
+    code = "BSL151"
+    message = (
+        "Метод 'НачатьТранзакцию' должен быть за пределами блока "
+        "'Попытка-Исключение' непосредственно перед оператором 'Попытка'"
+    )
+    _begin_re = re.compile(r"^\s*(?:НачатьТранзакцию|BeginTransaction)\s*\(", re.IGNORECASE)
+    _try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        clean_lines = (
+            context.snapshot.code_lines_without_comments if context.snapshot is not None else context.lines
+        )
+        storage = DiagnosticStorage(context.path)
+
+        for idx, line in enumerate(clean_lines):
+            if self._begin_re.match(line) is None:
+                continue
+            next_line = self._next_code_line(clean_lines, idx + 1)
+            if next_line is not None and self._try_re.match(next_line) is not None:
+                continue
+            character = len(line) - len(line.lstrip())
+            storage.add_range(
+                code=self.code,
+                message=self.message,
+                severity=Severity.ERROR,
+                line=idx,
+                character=character,
+                end_line=idx,
+                end_character=len(_code_before_comment(line).rstrip()),
+            )
+        return storage.diagnostics
+
+    @staticmethod
+    def _next_code_line(lines: list[str], start_idx: int) -> str | None:
+        for line in lines[start_idx:]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            return line
+        return None
+
+
 class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
     code = "BSL157"
     message = (
