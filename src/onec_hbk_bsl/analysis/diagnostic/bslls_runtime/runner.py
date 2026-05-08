@@ -17,6 +17,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     DisableSafeModeRule,
     DoubleNegativesRule,
     EmptyStatementRule,
+    ExternalAppStartingRule,
     ExtraCommasRule,
     GetFormMethodRule,
     MagicDateRule,
@@ -50,6 +51,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     GetFormMethodRule(),
     DeprecatedTypeManagedFormRule(),
     DisableSafeModeRule(),
+    ExternalAppStartingRule(),
     ExtraCommasRule(),
     UselessTernaryOperatorRule(),
 )

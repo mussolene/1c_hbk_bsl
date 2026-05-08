@@ -17,7 +17,6 @@ def extend_security_rule_tasks(
 ) -> None:
     bsl180_184_185_188_203_226_247_250_264_267_272 = (
         "BSL184",
-        "BSL185",
         "BSL188",
         "BSL203",
         "BSL226",

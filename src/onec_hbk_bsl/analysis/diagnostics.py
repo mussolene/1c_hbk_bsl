@@ -4143,15 +4143,6 @@ _RE_BSL184_EXECUTE_EXTERNAL_CODE = re.compile(
     r"\b(?P<name>Выполнить|Execute|Вычислить|Eval)\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
-_RE_BSL185_EXTERNAL_APP = re.compile(
-    r"\b(?P<name>"
-    r"КомандаСистемы|System|ЗапуститьСистему|RunSystem|ЗапуститьПриложение|RunApp|"
-    r"НачатьЗапускПриложения|BeginRunningApplication|ЗапуститьПриложениеАсинх|RunAppAsync|"
-    r"ЗапуститьПрограмму|ОткрытьПроводник|ОткрытьФайл|ПерейтиПоНавигационнойСсылке|"
-    r"GotoURL|ОткрытьНавигационнуюСсылку"
-    r")\s*\(",
-    re.IGNORECASE | re.UNICODE,
-)
 _RE_BSL188_FILESYSTEM_METHOD = re.compile(
     r"\b(?P<name>"
     r"ЗначениеВФайл|ValueToFile|КопироватьФайл|FileCopy|ОбъединитьФайлы|MergeFiles|"

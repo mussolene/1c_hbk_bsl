@@ -255,6 +255,14 @@ _BSL180_DISABLE_SAFE_MODE_RE = re.compile(
     r")\s*\(\s*([^)]*)\)",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL185_EXTERNAL_APP_RE = re.compile(
+    r"\b("
+    r"КомандаСистемы|System|ЗапуститьСистему|RunSystem|ЗапуститьПриложение|RunApp|"
+    r"НачатьЗапускПриложения|BeginRunningApplication|"
+    r"ЗапуститьПриложениеАсинх|RunAppAsync|ЗапуститьПрограмму|ОткрытьПроводник|ОткрытьФайл"
+    r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -1241,6 +1249,28 @@ class DisableSafeModeRule(BsllsDiagnosticRule):
                     end_character=match.end(1),
                     severity=Severity.ERROR,
                     message="Проверьте отключение безопасного режима",
+                )
+        return storage.diagnostics
+
+
+class ExternalAppStartingRule(BsllsDiagnosticRule):
+    code = "BSL185"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        for idx, line in enumerate(context.lines):
+            if _line_comment(line):
+                continue
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL185_EXTERNAL_APP_RE.finditer(clean):
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=idx,
+                    end_character=match.end(1),
+                    severity=Severity.WARNING,
+                    message="Проверьте запуск внешнего приложения",
                 )
         return storage.diagnostics
 
