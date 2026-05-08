@@ -4517,15 +4517,6 @@ class DiagnosticEngine:
         return run_bsl233_public_methods_description(path, lines, procs)
 
     # ------------------------------------------------------------------
-    # BSL199 — IfElseIfEndsWithElse
-    # ------------------------------------------------------------------
-
-    def _rule_bsl199_if_else_if_ends_with_else(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        return run_bsl199_if_else_if_ends_with_else(path, lines)
-
-    # ------------------------------------------------------------------
     # BSL200 — IncorrectLineBreak
     # ------------------------------------------------------------------
 

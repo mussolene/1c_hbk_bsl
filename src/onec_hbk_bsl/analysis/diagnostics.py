@@ -309,7 +309,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
 from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
     run_bsl197_if_else_duplicated_code_block,
     run_bsl198_if_else_duplicated_condition,
-    run_bsl199_if_else_if_ends_with_else,
 )
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 

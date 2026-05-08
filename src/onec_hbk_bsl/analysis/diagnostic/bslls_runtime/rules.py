@@ -2379,6 +2379,46 @@ class UseLessForEachRule(BsllsDiagnosticRule):
         return False
 
 
+class IfElseIfEndsWithElseRule(BsllsDiagnosticRule):
+    code = "BSL199"
+    message = (
+        'Синтаксическая конструкция вида "Если...Тогда...ИначеЕсли..." '
+        'должна содержать ветвь "Иначе".'
+    )
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        storage = DiagnosticStorage(context.path)
+        for node in context.ts_nodes_for_types(context.tree, {"if_statement"})["if_statement"]:
+            children = _ts_children(node)
+            has_elseif = any(getattr(child, "type", None) == "elseif_clause" for child in children)
+            has_else = any(getattr(child, "type", None) == "else_clause" for child in children)
+            if not has_elseif or has_else:
+                continue
+            endif_node = next(
+                (
+                    child
+                    for child in reversed(children)
+                    if getattr(child, "type", None) == "ENDIF_KEYWORD"
+                ),
+                None,
+            )
+            if endif_node is None:
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self.message,
+                severity=Severity.WARNING,
+                lines=context.lines,
+                start_node=endif_node,
+                end_node=endif_node,
+            )
+        return storage.diagnostics
+
+
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
     code = "BSL097"
 

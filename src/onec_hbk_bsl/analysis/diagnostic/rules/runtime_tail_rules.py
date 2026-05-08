@@ -105,7 +105,6 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
                 seen[key] = span
         i += 1
     return diags
-
 def run_bsl198_if_else_duplicated_condition(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
@@ -148,56 +147,4 @@ def run_bsl198_if_else_duplicated_condition(path: str, lines: list[str]) -> list
                         conditions[cond] = j
             j += 1
         i = j + 1
-    return diags
-
-
-def run_bsl199_if_else_if_ends_with_else(path: str, lines: list[str]) -> list[Any]:
-    _diag = _diag_module()
-    diags: list[Any] = []
-    re_if = re.compile(r"^\s*(?:Если|If)\b", re.IGNORECASE)
-    re_elseif = re.compile(r"^\s*(?:ИначеЕсли|ElseIf)\b", re.IGNORECASE)
-    re_else = re.compile(r"^\s*(?:Иначе|Else)\b(?!\s*(?:Если|If)\b)", re.IGNORECASE)
-    re_endif = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
-    i = 0
-    while i < len(lines):
-        if not re_if.match(lines[i]):
-            i += 1
-            continue
-        has_elseif = False
-        has_else = False
-        depth = 1
-        j = i + 1
-        while j < len(lines) and depth > 0:
-            bl = lines[j]
-            if re_if.match(bl):
-                depth += 1
-            elif re_endif.match(bl):
-                depth -= 1
-            elif depth == 1:
-                if re_elseif.match(bl):
-                    has_elseif = True
-                elif re_else.match(bl):
-                    has_else = True
-            j += 1
-        if has_elseif and not has_else:
-            endif_idx = j - 1
-            if 0 <= endif_idx < len(lines):
-                el = lines[endif_idx]
-                char = len(el) - len(el.lstrip())
-                diags.append(
-                    _diag.Diagnostic(
-                        file=path,
-                        line=endif_idx + 1,
-                        character=char,
-                        end_line=endif_idx + 1,
-                        end_character=len(el),
-                        severity=_diag.Severity.WARNING,
-                        code="BSL199",
-                        message=(
-                            'Синтаксическая конструкция вида "Если...Тогда...ИначеЕсли..." '
-                            'должна содержать ветвь "Иначе".'
-                        ),
-                    )
-                )
-        i += 1
     return diags

@@ -30,10 +30,6 @@ def extend_runtime_tail_rule_tasks(
         rule_tasks.append(
             ("BSL198", lambda: engine._rule_bsl198_if_else_duplicated_condition(path, lines))
         )
-    if engine._rule_enabled("BSL199"):
-        rule_tasks.append(
-            ("BSL199", lambda: engine._rule_bsl199_if_else_if_ends_with_else(path, lines))
-        )
     if engine._rule_enabled("BSL208") or engine._rule_enabled("BSL256"):
 
         def task_bsl208_bsl256() -> list[object]:

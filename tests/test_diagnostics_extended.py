@@ -4523,6 +4523,31 @@ class TestBsl263UseLessForEach:
         assert {d.message for d in diags} == {"Итератор не используется в теле цикла"}
 
 
+class TestBsl199IfElseIfEndsWithElse:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "IfElseIfEndsWithElseDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL199"}).check_file(str(fixture))
+            if d.code == "BSL199"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (21, 0, 21, 9),
+        ]
+        assert {d.severity for d in diags} == {Severity.WARNING}
+        assert {d.message for d in diags} == {
+            'Синтаксическая конструкция вида "Если...Тогда...ИначеЕсли..." '
+            'должна содержать ветвь "Иначе".'
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA
