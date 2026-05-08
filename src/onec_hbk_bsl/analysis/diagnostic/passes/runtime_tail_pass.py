@@ -84,10 +84,6 @@ def extend_runtime_tail_rule_tasks(
         rule_tasks.append(
             ("BSL263", lambda: engine._rule_bsl263_useless_for_each(path, lines, procs))
         )
-    if engine._rule_enabled("BSL265"):
-        rule_tasks.append(
-            ("BSL265", lambda: engine._rule_bsl265_useless_ternary_operator(path, lines))
-        )
     if engine._rule_enabled("BSL277"):
         rule_tasks.append(
             ("BSL277", lambda: engine._rule_bsl277_wrong_use_of_rollback_transaction(path, tree))

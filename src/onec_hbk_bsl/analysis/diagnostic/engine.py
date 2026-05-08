@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections import Counter, OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
+from onec_hbk_bsl.analysis.diagnostic.bslls_runtime import append_bslls_runtime_rule_tasks
 from onec_hbk_bsl.analysis.diagnostic.execution import execute_diagnostic_rule_tasks
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
@@ -614,6 +615,15 @@ class DiagnosticEngine:
             path=path,
             lines=lines,
             procs=procs,
+            tree=tree,
+            snapshot=snapshot,
+        )
+        append_bslls_runtime_rule_tasks(
+            _rule_tasks,
+            engine=self,
+            path=path,
+            content=content,
+            lines=lines,
             tree=tree,
             snapshot=snapshot,
         )
@@ -2575,35 +2585,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL039 — Nested ternary operator
-    # ------------------------------------------------------------------
-
-    def _rule_bsl039_nested_ternary(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Flag nested ?() expressions — they are nearly unreadable."""
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            m = _RE_NESTED_TERNARY.search(line)
-            if m:
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL039",
-                        message=(
-                            "Nested ternary ?() expression reduces readability. "
-                            "Extract inner condition to a variable."
-                        ),
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL040 — ЭтаФорма / ThisForm outside event handler context
     # ------------------------------------------------------------------
 
@@ -2717,35 +2698,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     MAX_VARIABLES: int = 15
-
-    # ------------------------------------------------------------------
-    # BSL047 — CurrentDate (non-UTC)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl047_current_date(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Flag ТекущаяДата()/CurrentDate() — prefer ТекущаяУниверсальнаяДата()."""
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.lstrip().startswith("//"):
-                continue
-            for m in _RE_CURRENT_DATE.finditer(line):
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.INFORMATION,
-                        code="BSL047",
-                        message=(
-                            "ТекущаяДата()/CurrentDate() returns local server time. "
-                            "Use ТекущаяУниверсальнаяДата()/CurrentUniversalDate() "
-                            "for UTC-safe code."
-                        ),
-                    )
-                )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL051 — Unreachable code after Return/Raise
@@ -6726,15 +6678,6 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[Any]
     ) -> list[Diagnostic]:
         return run_bsl263_useless_for_each(path, lines)
-
-    # ------------------------------------------------------------------
-    # BSL265 — UselessTernaryOperator
-    # ------------------------------------------------------------------
-
-    def _rule_bsl265_useless_ternary_operator(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        return run_bsl265_useless_ternary_operator(path, lines)
 
     # ------------------------------------------------------------------
     # BSL257 — UnaryPlusInConcatenation

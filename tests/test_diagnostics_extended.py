@@ -2512,6 +2512,36 @@ class TestBsl039NestedTernary:
         diags = _check(content, tmp_path)
         assert "BSL039" not in _codes(diags)
 
+    def test_bslls_fixture_multiline_and_if_condition_ranges(self, tmp_path: Path) -> None:
+        content = """\
+ПериодПо = ?(Шапка.ЭтоУвольнение
+           , Шапка.Дата
+           , ?(Шапка.ЭтоАванс
+             , Дата( Год(Шапка.ПериодРегистрации)
+                   , Месяц(Шапка.ПериодРегистрации)
+                   , 15
+                   )
+             , КонецМесяца(Шапка.ПериодРегистрации)
+             )
+            );
+
+Если ?(Стр.Emp_emptype = Null, 0, Стр.Emp_emptype) = 0 ИЛИ Условие() ИЛИ ?(Стр.Тест = Null, 1, Стр.Тест) = 2 Тогда
+КонецЕсли;
+
+Статус = ?(
+      ПолучитьСкидку() = 0,
+      "---",
+      ?(ПолучитьСкидку() > 30, "Особый клиент", "Обычный клиент")
+);
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL039"}) if d.code == "BSL039"]
+        assert [(d.line - 1, d.character, d.end_line - 1, d.end_character) for d in diags] == [
+            (2, 13, 8, 14),
+            (11, 5, 11, 50),
+            (11, 73, 11, 104),
+            (17, 6, 17, 65),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL041 — DeprecatedMessage
@@ -2577,20 +2607,45 @@ class TestBsl042EmptyExportMethod:
 
 
 # ---------------------------------------------------------------------------
-# BSL047 — DateTimeNow (CurrentDate)
+# BSL047 — MagicDate
 # ---------------------------------------------------------------------------
 
 
-class TestBsl047CurrentDate:
-    def test_current_date_detected(self, tmp_path: Path) -> None:
-        content = "Дата = ТекущаяДата();\n"
+class TestBsl047MagicDate:
+    def test_magic_date_detected_in_expression(self, tmp_path: Path) -> None:
+        content = 'День = Дата("00020101") + Шаг;\n'
         diags = _check(content, tmp_path, select={"BSL047"})
         assert "BSL047" in _codes(diags)
 
-    def test_current_date_in_comment_no_warning(self, tmp_path: Path) -> None:
-        content = "// Дата = ТекущаяДата();\n"
+    def test_simple_assignment_no_warning(self, tmp_path: Path) -> None:
+        content = "Конец = '12340101';\n"
         diags = _check(content, tmp_path, select={"BSL047"})
         assert "BSL047" not in _codes(diags)
+
+    def test_bslls_fixture_magic_date_count(self, tmp_path: Path) -> None:
+        content = """\
+День = Дата("00020101");
+День = Дата("00020101") + Шаг;
+День = Дата("00020101121314") + Шаг;
+День = '00010102' + Шаг;
+Пока Сейчас < '12340101' Цикл
+КонецЦикла;
+Конец = '12340101';
+День = Дата("00010101") + Шаг;
+День = '0001-01why not?01' + Шаг;
+День = '0001-01why not?02' + Шаг;
+ИменаПараметров = СтроковыеФункции.РазложитьСтрокуВМассивПодстрок(ИмяПараметра, , Дата("00050101"));
+ИменаПараметров = СтроковыеФункции.РазложитьСтрокуВМассивПодстрок(ИмяПараметра, "00050101", "00050101");
+Настройки = Настройки('12350101');
+Настройки.Свойство("00020501121314", ЗначениеЕдиничногоПараметра);
+Выполнить("00020501121314" + '12350101');
+ОтборЭлемента.ПравоеЗначение = Новый СтандартнаяДатаНачала(Дата('19800101000000'));
+Значение = ?(А = '39990202', '39991231235959', '39990101000000');
+Если Сейчас < Дата("12340101") Тогда
+КонецЕсли;
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL047"}) if d.code == "BSL047"]
+        assert len(diags) == 17
 
 
 # ---------------------------------------------------------------------------
@@ -3918,6 +3973,23 @@ class TestAdditionalParityBatch:
     def test_bsl249_uses_bslls_constructor_set(self, tmp_path: Path) -> None:
         diags = _check("Значение = Новый Кисть();\n", tmp_path, select={"BSL249"})
         assert "BSL249" not in _codes(diags)
+
+    def test_bsl265_bslls_useless_ternary_fixture_count(self, tmp_path: Path) -> None:
+        content = """\
+// Бессмысленные тернарники
+А = ?(Б = 1, Истина, Ложь);
+А = ?(Б = 0, False, True);
+А = ?(Б = 1, True, Истина);
+А = ?(Б = 0, Ложь, False);
+А = ?(истина, 1, 0);
+А = ?(false, 0, 1);
+
+А = ?(Б = 1, True, 1);
+А = ?(Б = 0, 0, False);
+БулевоЗначение = ?(ЗначениеЗаполнено(СсылкаНаСправочник), СсылкаНаСправочник.БулевоПоле, Ложь);
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL265"}) if d.code == "BSL265"]
+        assert len(diags) == 9
 
     def test_bsl153_flags_uppercase_structural_keyword(self, tmp_path: Path) -> None:
         diags = _check(

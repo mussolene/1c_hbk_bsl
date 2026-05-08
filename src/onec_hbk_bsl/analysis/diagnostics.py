@@ -317,7 +317,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
     run_bsl199_if_else_if_ends_with_else,
     run_bsl255_try_number,
     run_bsl263_useless_for_each,
-    run_bsl265_useless_ternary_operator,
 )
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -341,6 +340,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL022",
         "BSL029",
         "BSL035",
+        "BSL039",
+        "BSL047",
         "BSL051",
         "BSL077",
         "BSL221",
@@ -351,6 +352,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL179",
         "BSL253",
         "BSL260",
+        "BSL265",
         # BSLLS Typo checks string literal contents.
         "BSL256",
         # Query-text rules fire on continuation lines (|...) inside string literals.
@@ -469,7 +471,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL013": {
         "name": "CommentedCode",
         "description": "Block of commented-out source code detected",
-        "severity": "INFORMATION",
+        "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["unused"],
@@ -642,7 +644,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL039": {
         "name": "NestedTernaryOperator",
         "description": "Nested ternary ?() expression reduces readability",
-        "severity": "INFORMATION",
+        "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["brain-overload", "readability"],
@@ -675,8 +677,7 @@ RULE_METADATA: dict[str, dict] = {
     },
     "BSL047": {
         "name": "MagicDate",
-        "description": "ТекущаяДата()/CurrentDate() returns local server time — use "
-        "CurrentUniversalDate() for UTC-safe code",
+        "description": "Date literal is used directly instead of a named constant",
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
@@ -1869,7 +1870,7 @@ RULE_METADATA: dict[str, dict] = {
         "name": "UselessTernaryOperator",
         "description": "Ternary operator returns its condition directly — simplify to the "
         "condition",
-        "severity": "WARNING",
+        "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "MINOR",
         "tags": ["redundant", "readability"],
@@ -2040,7 +2041,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL040": "Использование «ЭтаФорма» вне обработчика событий",
     "BSL041": "Использование устаревшего метода Сообщить()/Message()",
     "BSL042": "Пустой экспортный метод",
-    "BSL047": "Магическая дата «ТекущаяДата»",
+    "BSL047": "Магическая дата",
     "BSL051": "Недостижимый код",
     "BSL052": "Условие всегда истинно или всегда ложно",
     "BSL054": "Переменная на уровне модуля",
@@ -2169,7 +2170,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL262": "Некорректные параметры ЗаписьЖурналаРегистрации()",
     "BSL263": "Цикл Для Каждого не использует переменную итерации",
     "BSL264": "Использование СистемнаяИнформация() раскрывает системные данные",
-    "BSL265": "Тернарный оператор возвращает само условие — упростите",
+    "BSL265": "Бесполезный тернарный оператор",
     "BSL266": "Параметр «Отказ» изменяется некорректно",
     "BSL267": "Использование инструментов выполнения внешнего кода",
     "BSL268": "НайтиПоНаименованию() — медленный полнотекстовый поиск",
@@ -2207,7 +2208,7 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL033": "Move the query outside the loop; collect data first, then iterate.",
     "BSL035": "Extract the repeated string to a named constant.",
     "BSL042": "Implement the method body or remove the Export keyword.",
-    "BSL047": "Use ТекущаяУниверсальнаяДата() for UTC-safe timestamps.",
+    "BSL047": "Extract the date literal to a named constant.",
     "BSL051": "Remove the unreachable code or restructure the control flow.",
     "BSL052": "Remove the constant condition — the branch always/never executes.",
     "BSL060": "Remove the double negation — НЕ НЕ cancels out.",
@@ -4001,12 +4002,6 @@ _RE_BOOL_OP = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
 # String concatenation inside a loop: variable = variable + "string" or + Str(...)
 _RE_STR_CONCAT = re.compile(
     r"\b\w+\s*=\s*\w+\s*\+\s*(?:\"[^\"]*\"|\w+\s*\()",
-    re.IGNORECASE,
-)
-
-# Nested ternary: ?( inside a ?(
-_RE_NESTED_TERNARY = re.compile(
-    r"\?\s*\([^)]*\?\s*\(",
     re.IGNORECASE,
 )
 

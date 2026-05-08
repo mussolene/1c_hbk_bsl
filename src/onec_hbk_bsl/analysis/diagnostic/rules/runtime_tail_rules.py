@@ -48,7 +48,6 @@ def run_bsl178_deprecated_methods_8317(path: str, lines: list[str], tree: Any) -
         )
     return diags
 
-
 def run_bsl186_extra_commas(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
@@ -348,32 +347,4 @@ def run_bsl263_useless_for_each(path: str, lines: list[str]) -> list[Any]:
                     )
                 )
         i += 1
-    return diags
-
-
-def run_bsl265_useless_ternary_operator(path: str, lines: list[str]) -> list[Any]:
-    _diag = _diag_module()
-    diags: list[Any] = []
-    re_ternary = re.compile(
-        r"\?\s*\([^,]+,\s*(?:Истина|True|Ложь|False)\s*,\s*(?:Истина|True|Ложь|False)\s*\)",
-        re.IGNORECASE | re.UNICODE,
-    )
-    re_comment = re.compile(r"^\s*//")
-    for idx, line in enumerate(lines):
-        if re_comment.match(line):
-            continue
-        m = re_ternary.search(line)
-        if m:
-            diags.append(
-                _diag.Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=m.start(),
-                    end_line=idx + 1,
-                    end_character=m.end(),
-                    severity=_diag.Severity.WARNING,
-                    code="BSL265",
-                    message="Тернарный оператор возвращает Истина/Ложь — замените на само условие",
-                )
-            )
     return diags

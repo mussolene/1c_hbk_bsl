@@ -126,8 +126,6 @@ def extend_core_rule_tasks(
         )
     if engine._rule_enabled("BSL036"):
         rule_tasks.append(("BSL036", lambda: engine._rule_bsl036_complex_condition(path, lines)))
-    if engine._rule_enabled("BSL039"):
-        rule_tasks.append(("BSL039", lambda: engine._rule_bsl039_nested_ternary(path, lines)))
     if engine._rule_enabled("BSL040"):
         rule_tasks.append(
             ("BSL040", lambda: engine._rule_bsl040_using_this_form(path, lines, procs))
@@ -138,8 +136,6 @@ def extend_core_rule_tasks(
         rule_tasks.append(
             ("BSL042", lambda: engine._rule_bsl042_empty_export_method(path, lines, procs))
         )
-    if engine._rule_enabled("BSL047"):
-        rule_tasks.append(("BSL047", lambda: engine._rule_bsl047_current_date(path, lines)))
     if engine._rule_enabled("BSL051"):
         rule_tasks.append(
             ("BSL051", lambda: engine._rule_bsl051_unreachable_code(path, lines, procs, tree))
