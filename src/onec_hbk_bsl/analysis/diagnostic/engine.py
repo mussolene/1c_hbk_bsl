@@ -2133,34 +2133,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL150 — BadWords (pattern from ``DiagnosticEngine(bad_words_pattern=...)``)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl150_bad_words(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        rx = self._bad_words_re
-        if rx is None:
-            return []
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if not line.strip():
-                continue
-            for m in rx.finditer(line):
-                w = m.group(0)
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=Severity.WARNING,
-                        code="BSL150",
-                        message=f"Нежелательное слово в коде: {w!r} (BadWords).",
-                    )
-                )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL033 — Query execution inside a loop
     # ------------------------------------------------------------------
 

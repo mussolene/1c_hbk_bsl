@@ -5,6 +5,7 @@ from typing import Any
 
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
+    BadWordsRule,
     BsllsDiagnosticRule,
     CanonicalSpellingKeywordsRule,
     ConsecutiveEmptyLinesRule,
@@ -60,6 +61,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     UsingHardcodeNetworkAddressRule(),
     UsingHardcodePathRule(),
     UsingServiceTagRule(),
+    BadWordsRule(),
     SpaceAtStartCommentRule(),
     EmptyStatementRule(),
     UsingGotoRule(),

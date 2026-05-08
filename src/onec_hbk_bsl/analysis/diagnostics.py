@@ -338,6 +338,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL221",
         "BSL222",
         "BSL148",
+        "BSL150",
         "BSL171",
         "BSL204",
         "BSL179",
@@ -476,7 +477,7 @@ RULE_METADATA: dict[str, dict] = {
         "severity": "INFORMATION",
         "sonar_type": "CODE_SMELL",
         "sonar_severity": "INFO",
-        "tags": ["convention"],
+        "tags": ["design"],
     },
     "BSL015": {
         "name": "NumberOfOptionalParams",

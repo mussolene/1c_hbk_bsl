@@ -23,7 +23,7 @@
 |---|---:|---|---|---|---|---|---|
 | `AllFunctionPathMustHaveReturn` | `BSL148` | `implemented` | upstream:diagnostics/AllFunctionPathMustHaveReturnDiagnostic.java:61 | CODE_SMELL | MAJOR | loopsExecutedAtLeastOnce, ignoreMissingElseOnExit | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1997 |
 | `AssignAliasFieldsInQuery` | `BSL149` | `implemented` | upstream:diagnostics/AssignAliasFieldsInQueryDiagnostic.java:44 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3581 |
-| `BadWords` | `BSL150` | `implemented` | upstream:diagnostics/BadWordsDiagnostic.java:44 | CODE_SMELL | MAJOR | badWords, findInComments | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2025 |
+| `BadWords` | `BSL150` | `implemented` | upstream:diagnostics/BadWordsDiagnostic.java:44 | CODE_SMELL | MAJOR | badWords, findInComments | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:664 |
 | `BeginTransactionBeforeTryCatch` | `BSL151` | `implemented` | upstream:diagnostics/BeginTransactionBeforeTryCatchDiagnostic.java:47 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3329 |
 | `CachedPublic` | `BSL152` | `implemented` | upstream:diagnostics/CachedPublicDiagnostic.java:52 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3374 |
 | `CanonicalSpellingKeywords` | `BSL153` | `implemented` | upstream:diagnostics/CanonicalSpellingKeywordsDiagnostic.java:53 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4800 |

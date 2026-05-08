@@ -661,6 +661,30 @@ def _ternary_spans(context: BsllsDocumentContext) -> list[_TernarySpan]:
     return spans
 
 
+class BadWordsRule(BsllsDiagnosticRule):
+    code = "BSL150"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        rx = getattr(context.diagnostics_engine, "_bad_words_re", None)
+        if rx is None:
+            return []
+        storage = DiagnosticStorage(context.path)
+        for line_idx, line in enumerate(context.lines):
+            if not line:
+                continue
+            for match in rx.finditer(line):
+                word = match.group(0)
+                storage.add_match(
+                    code=self.code,
+                    message=f"В тексте модуля найдено запрещенное слово <{word}>.",
+                    severity=Severity.WARNING,
+                    line=line_idx,
+                    start=match.start(),
+                    end=match.end(),
+                )
+        return storage.diagnostics
+
+
 class CanonicalSpellingKeywordsRule(BsllsDiagnosticRule):
     code = "BSL153"
     _bool_op_re = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE | re.UNICODE)
