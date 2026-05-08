@@ -4464,6 +4464,34 @@ class TestBsl277WrongUseOfRollbackTransaction:
         }
 
 
+class TestBsl276WrongUseFunctionProceedWithCall:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "WrongUseFunctionProceedWithCallDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL276"}).check_file(str(fixture))
+            if d.code == "BSL276"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 4, 2, 19),
+            (6, 4, 6, 19),
+            (11, 13, 11, 28),
+            (17, 13, 17, 28),
+        ]
+        assert {d.severity for d in diags} == {Severity.ERROR}
+        assert {d.message for d in diags} == {
+            "Использовать функцию ПродолжитьВызов() можно только в расширениях "
+            "и только в методах с аннотацией &Вместо."
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

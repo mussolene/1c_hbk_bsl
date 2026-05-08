@@ -2808,13 +2808,6 @@ _RE_BSL271_UNIX_UNAVAILABLE_NEW = re.compile(
     re.IGNORECASE,
 )
 _RE_BSL271_PLATFORM_GUARD = re.compile(r"\b(?:Linux_x86|Windows|MacOS)\b", re.IGNORECASE)
-_RE_BSL276_PROCEED_WITH_CALL = re.compile(
-    r"\b(?:ПродолжитьВызов|ProceedWithCall)\s*\(",
-    re.IGNORECASE,
-)
-_RE_BSL276_AROUND_ANNOTATION = re.compile(r"^\s*&(?:Вместо|Instead|Around)\b", re.IGNORECASE)
-
-
 # BSL215 — MissingParameterDescription: comment section headers and param entry
 _RE_BSL215_PARAMS_SECTION = re.compile(r"^\s*//\s*(?:Параметры|Parameters)\s*:?\s*$", re.IGNORECASE)
 _RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*-", re.UNICODE)

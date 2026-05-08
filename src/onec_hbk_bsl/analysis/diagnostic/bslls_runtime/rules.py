@@ -474,6 +474,8 @@ _BSL273_VIRTUAL_TABLE_RE = re.compile(
 )
 _BSL279_IDENTIFIER_RE = re.compile(r"\b\w*[ёЁ]\w*\b", re.UNICODE)
 _BSL277_ROLLBACK_NAMES = frozenset({"отменитьтранзакцию", "rollbacktransaction"})
+_BSL276_PROCEED_NAMES = frozenset({"продолжитьвызов", "proceedwithcall"})
+_BSL276_AROUND_ANNOTATION_RE = re.compile(r"^\s*&(?:Вместо|Instead|Around)\b", re.IGNORECASE)
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -2158,6 +2160,58 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
             end_line=int(call["line"]) - 1,
             end_character=int(call["end_character"]),
         )
+
+
+class WrongUseFunctionProceedWithCallRule(BsllsDiagnosticRule):
+    code = "BSL276"
+    message = (
+        "Использовать функцию ПродолжитьВызов() можно только в расширениях "
+        "и только в методах с аннотацией &Вместо."
+    )
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        global_calls, _call_starts, _proc_nodes, _try_nodes = (
+            WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
+        )
+        storage = DiagnosticStorage(context.path)
+        procs = list(getattr(context.snapshot, "procedures", []) or [])
+        if not procs:
+            procs = ExecuteExternalCodeRule._fallback_procs(context.lines)
+
+        for call in global_calls:
+            if str(call["name"]).casefold() not in _BSL276_PROCEED_NAMES:
+                continue
+            line = int(call["line"]) - 1
+            proc = self._proc_containing_line(procs, line)
+            if proc is None:
+                continue
+            if self._has_around_annotation(context.lines, int(proc.start_idx)):
+                continue
+            storage.add_range(
+                code=self.code,
+                message=self.message,
+                severity=Severity.ERROR,
+                line=line,
+                character=int(call["character"]),
+                end_line=line,
+                end_character=int(call["end_character"]),
+            )
+        return storage.diagnostics
+
+    @staticmethod
+    def _proc_containing_line(procs: list[Any], line: int) -> Any | None:
+        for proc in procs:
+            if int(proc.start_idx) <= line <= int(proc.end_idx):
+                return proc
+        return None
+
+    @staticmethod
+    def _has_around_annotation(lines: list[str], proc_start_idx: int) -> bool:
+        annotation_lines = lines[max(0, proc_start_idx - 3) : proc_start_idx + 1]
+        return any(_BSL276_AROUND_ANNOTATION_RE.match(line) for line in annotation_lines)
 
 
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):

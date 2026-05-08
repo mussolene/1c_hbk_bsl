@@ -49,13 +49,13 @@ def extend_method_contract_rule_tasks(
             )
         )
 
-    bsl221_222_239_271_276 = ("BSL221", "BSL222", "BSL239", "BSL271", "BSL276")
-    if any(engine._rule_enabled(code) for code in bsl221_222_239_271_276):
+    bsl221_222_239_271 = ("BSL221", "BSL222", "BSL239", "BSL271")
+    if any(engine._rule_enabled(code) for code in bsl221_222_239_271):
         rule_tasks.append(
             (
-                "BSL221_222_239_271_276",
-                lambda: engine._rule_bsl221_222_239_271_276_light_pool(
-                    path, lines, tree, procs, bsl221_222_239_271_276, snapshot
+                "BSL221_222_239_271",
+                lambda: engine._rule_bsl221_222_239_271_light_pool(
+                    path, lines, tree, procs, bsl221_222_239_271, snapshot
                 ),
             )
         )

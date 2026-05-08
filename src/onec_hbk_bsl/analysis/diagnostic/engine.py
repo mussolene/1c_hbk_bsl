@@ -5211,10 +5211,10 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL221 / BSL222 / BSL239 / BSL271 / BSL276 — lightweight mixed pool
+    # BSL221 / BSL222 / BSL239 / BSL271 — lightweight mixed pool
     # ------------------------------------------------------------------
 
-    def _rule_bsl221_222_239_271_276_light_pool(
+    def _rule_bsl221_222_239_271_light_pool(
         self,
         path: str,
         lines: list[str],
@@ -5292,7 +5292,7 @@ class DiagnosticEngine:
             return diags
 
         line_texts = lines
-        if {"BSL271", "BSL276"} & enabled_set:
+        if "BSL271" in enabled_set:
             for node in _ts_walk(root):
                 node_type = getattr(node, "type", None)
                 if "BSL271" in enabled_set and node_type == "new_expression":
@@ -5327,39 +5327,6 @@ class DiagnosticEngine:
                             severity=Severity.ERROR,
                             code="BSL271",
                             message=f'Объект "{type_name}" недоступен на Linux/Unix без платформенной проверки',
-                        )
-                    )
-
-                if "BSL276" in enabled_set and node_type == "method_call":
-                    ident = _ts_child_of_type(node, "identifier")
-                    if ident is None:
-                        continue
-                    name = _ts_node_text(ident)
-                    if name.casefold() not in {"продолжитьвызов", "proceedwithcall"}:
-                        continue
-                    line_1, char_1, end_char = _ts_method_identifier_span(node, line_texts) or (
-                        0,
-                        0,
-                        0,
-                    )
-                    proc = _proc_containing_line(procs, max(0, line_1 - 1))
-                    if proc is not None:
-                        annotation_lines = lines[max(0, proc.start_idx - 3) : proc.start_idx + 1]
-                        if any(
-                            _RE_BSL276_AROUND_ANNOTATION.match(annotation_line)
-                            for annotation_line in annotation_lines
-                        ):
-                            continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=line_1,
-                            character=char_1,
-                            end_line=line_1,
-                            end_character=end_char,
-                            severity=Severity.ERROR,
-                            code="BSL276",
-                            message="ПродолжитьВызов()/ProceedWithCall() допустим только в методах расширения с аннотацией Вместо",
                         )
                     )
 
