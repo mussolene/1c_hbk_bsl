@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections import Counter, OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
+from onec_hbk_bsl.analysis.diagnostic.domain import ProcedureModel
 from onec_hbk_bsl.analysis.diagnostic.pipeline import AnalysisFrame, PipelineExecutor
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
@@ -1830,24 +1831,8 @@ class DiagnosticEngine:
         """
         diags: list[Diagnostic] = []
         for proc in procs:
-            total = len(proc.params)
-            if total > self.max_params:
-                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=proc.header_col,
-                        end_line=proc.start_idx + 1,
-                        end_character=len(line_text),
-                        severity=Severity.WARNING,
-                        code="BSL031",
-                        message=(
-                            f"{proc.kind.capitalize()} '{proc.name}' has {total} parameters "
-                            f"(maximum {self.max_params})"
-                        ),
-                    )
-                )
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(model.validate_param_limit(lines, max_params=self.max_params))
         return diags
 
     # ------------------------------------------------------------------
@@ -2670,38 +2655,14 @@ class DiagnosticEngine:
         """
         diags: list[Diagnostic] = []
         for proc in procs:
-            header_line = lines[proc.start_idx]
-            m = _RE_PROC_HEADER.search(header_line)
-            if not m:
-                continue
-            kind = m.group("kw").lower()
-            # Only flag Процедура/Procedure, not Функция/Function
-            if kind not in ("процедура", "procedure"):
-                continue
-            # Scan body for Возврат <value>
-            for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
-                line = lines[idx]
-                # Skip comments
-                stripped = line.lstrip()
-                if stripped.startswith("//"):
-                    continue
-                if _RE_RETURN_VALUE.match(line):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=len(line) - len(stripped),
-                            end_line=idx + 1,
-                            end_character=len(line.rstrip()),
-                            severity=Severity.ERROR,
-                            code="BSL064",
-                            message=(
-                                "Процедура contains 'Возврат <value>' — "
-                                "change the declaration to 'Функция'."
-                            ),
-                        )
-                    )
-                    break  # One diagnostic per procedure is enough
+            model = ProcedureModel.from_proc_info(path, proc)
+            diags.extend(
+                model.validate_procedure_return_value(
+                    lines,
+                    return_value_re=_RE_RETURN_VALUE,
+                    proc_header_re=_RE_PROC_HEADER,
+                )
+            )
         return diags
 
     # ------------------------------------------------------------------
