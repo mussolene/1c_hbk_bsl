@@ -502,13 +502,6 @@ class DiagnosticEngine:
             _rule_tasks.append(
                 ("BSL156", lambda: self._rule_bsl156_code_out_of_region(path, lines, procs))
             )
-        if self._rule_enabled("BSL157"):
-            _rule_tasks.append(
-                (
-                    "BSL157",
-                    lambda: self._rule_bsl157_commit_transaction_outside_try(path, lines, snapshot),
-                )
-            )
         extend_module_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -3412,109 +3405,6 @@ class DiagnosticEngine:
         codes: tuple[str, ...],
     ) -> list[Diagnostic]:
         return run_bsl161_168_common_module_names(self._rule_enabled, path, lines, codes)
-
-    # ------------------------------------------------------------------
-    # BSL157 — CommitTransactionOutsideTryCatch
-    # ------------------------------------------------------------------
-
-    def _rule_bsl157_commit_transaction_outside_try(
-        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
-    ) -> list[Diagnostic]:
-        """ЗафиксироватьТранзакцию()/CommitTransaction() must be the last statement before Except."""
-        diags: list[Diagnostic] = []
-        _re_commit = re.compile(
-            r"^\s*(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(",
-            re.IGNORECASE,
-        )
-        _re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-        _re_except = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
-        _re_end_try = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
-        pending: tuple[int, int, int] | None = None
-        clean_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
-
-        for idx, line in enumerate(clean_lines):
-            if not line.strip():
-                continue
-
-            if _re_try.match(line):
-                if pending is not None:
-                    p_line, p_col, p_end = pending
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=p_line + 1,
-                            character=p_col,
-                            end_line=p_line + 1,
-                            end_character=p_end,
-                            severity=Severity.ERROR,
-                            code="BSL157",
-                            message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
-                        )
-                    )
-                pending = None
-                continue
-
-            if _re_except.match(line):
-                pending = None
-                continue
-
-            if _re_end_try.match(line):
-                if pending is not None:
-                    p_line, p_col, p_end = pending
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=p_line + 1,
-                            character=p_col,
-                            end_line=p_line + 1,
-                            end_character=p_end,
-                            severity=Severity.ERROR,
-                            code="BSL157",
-                            message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
-                        )
-                    )
-                pending = None
-                continue
-
-            m = _re_commit.search(line)
-            if m:
-                pending = (idx, len(line) - len(line.lstrip()), m.end())
-                continue
-
-            if pending is not None:
-                p_line, p_col, p_end = pending
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=p_line + 1,
-                        character=p_col,
-                        end_line=p_line + 1,
-                        end_character=p_end,
-                        severity=Severity.ERROR,
-                        code="BSL157",
-                        message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
-                    )
-                )
-                pending = None
-        if pending is not None:
-            p_line, p_col, p_end = pending
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=p_line + 1,
-                    character=p_col,
-                    end_line=p_line + 1,
-                    end_character=p_end,
-                    severity=Severity.ERROR,
-                    code="BSL157",
-                    message="Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед оператором 'Исключение'",
-                )
-            )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL173 — DeletingCollectionItem
-    # ------------------------------------------------------------------
 
     def _rule_bsl173_deleting_collection_item(
         self, path: str, lines: list[str], procs: list[Any]

@@ -4725,6 +4725,57 @@ class TestBsl262UsageWriteLogEvent:
         }
 
 
+class TestBsl157CommitTransactionOutsideTryCatch:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "CommitTransactionOutsideTryCatchDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL157"}).check_file(str(fixture))
+            if diag.code == "BSL157"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (37, 4, 37, 30),
+            (46, 12, 46, 38),
+            (58, 8, 58, 34),
+            (67, 4, 67, 30),
+            (75, 8, 75, 34),
+            (87, 8, 87, 34),
+            (99, 8, 99, 34),
+            (107, 0, 107, 26),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.ERROR}
+        assert {diag.message for diag in diags} == {
+            "Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке "
+            "'Попытка' перед оператором 'Исключение'"
+        }
+
+    def test_matches_bslls_single_sub_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "CommitTransactionOutsideTryCatchDiagnosticSingleSub.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL157"}).check_file(str(fixture))
+            if diag.code == "BSL157"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 4, 4, 30)
+        ]
+        assert {diag.severity for diag in diags} == {Severity.ERROR}
+
+
 class TestBsl230PairingBrokenTransaction:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (

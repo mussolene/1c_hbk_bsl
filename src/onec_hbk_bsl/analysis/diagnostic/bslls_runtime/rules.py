@@ -2458,6 +2458,74 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
         )
 
 
+class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
+    code = "BSL157"
+    message = (
+        "Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке "
+        "'Попытка' перед оператором 'Исключение'"
+    )
+    _commit_re = re.compile(r"^\s*(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(", re.IGNORECASE)
+    _try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+    _except_re = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
+    _end_try_re = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        clean_lines = (
+            context.snapshot.code_lines_without_comments if context.snapshot is not None else context.lines
+        )
+        storage = DiagnosticStorage(context.path)
+        pending: tuple[int, int, int] | None = None
+
+        for idx, line in enumerate(clean_lines):
+            if not line.strip():
+                continue
+
+            if self._try_re.match(line):
+                if pending is not None:
+                    self._add_pending(storage, pending)
+                pending = None
+                continue
+
+            if self._except_re.match(line):
+                pending = None
+                continue
+
+            if self._end_try_re.match(line):
+                if pending is not None:
+                    self._add_pending(storage, pending)
+                pending = None
+                continue
+
+            match = self._commit_re.search(line)
+            if match:
+                pending = (
+                    idx,
+                    len(line) - len(line.lstrip()),
+                    len(_code_before_comment(line).rstrip()),
+                )
+                continue
+
+            if pending is not None:
+                self._add_pending(storage, pending)
+                pending = None
+
+        if pending is not None:
+            self._add_pending(storage, pending)
+        return storage.diagnostics
+
+    def _add_pending(self, storage: DiagnosticStorage, pending: tuple[int, int, int]) -> None:
+        line, character, end_character = pending
+        storage.add_range(
+            code=self.code,
+            message=self.message,
+            severity=Severity.ERROR,
+            line=line,
+            character=character,
+            end_line=line,
+            end_character=end_character,
+        )
+
+
 class UnionAllRule(BsllsDiagnosticRule):
     code = "BSL258"
     message = "Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ"

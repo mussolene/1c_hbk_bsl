@@ -33,7 +33,7 @@
 | `CognitiveComplexity` | `BSL011` | `implemented` | upstream:diagnostics/CognitiveComplexityDiagnostic.java:52 | CODE_SMELL | CRITICAL | complexityThreshold, checkModuleBody | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1063 |
 | `CommandModuleExportMethods` | `BSL017` | `implemented` | upstream:diagnostics/CommandModuleExportMethodsDiagnostic.java:45 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1254 |
 | `CommentedCode` | `BSL013` | `implemented` | upstream:diagnostics/CommentedCodeDiagnostic.java:61 | CODE_SMELL | MINOR | threshold, exclusionPrefixes | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1117 |
-| `CommitTransactionOutsideTryCatch` | `BSL157` | `implemented` | upstream:diagnostics/CommitTransactionOutsideTryCatchDiagnostic.java:46 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3457 |
+| `CommitTransactionOutsideTryCatch` | `BSL157` | `implemented` | upstream:diagnostics/CommitTransactionOutsideTryCatchDiagnostic.java:46 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2459 |
 | `CommonModuleAssign` | `BSL158` | `implemented` | upstream:diagnostics/CommonModuleAssignDiagnostic.java:40 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3414 |
 | `CommonModuleInvalidType` | `BSL159` | `implemented` | upstream:diagnostics/CommonModuleInvalidTypeDiagnostic.java:49 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3423 |
 | `CommonModuleMissingAPI` | `BSL160` | `implemented` | upstream:diagnostics/CommonModuleMissingAPIDiagnostic.java:51 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3432 |
@@ -129,7 +129,7 @@
 | `NonStandardRegion` | `BSL016` | `implemented` | upstream:diagnostics/NonStandardRegionDiagnostic.java:51 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1221 |
 | `NumberOfOptionalParams` | `BSL015` | `implemented` | upstream:diagnostics/NumberOfOptionalParamsDiagnostic.java:41 | CODE_SMELL | MINOR | maxOptionalParamsCount | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1192 |
 | `NumberOfParams` | `BSL031` | `implemented` | upstream:diagnostics/NumberOfParamsDiagnostic.java:41 | CODE_SMELL | MINOR | maxParamsCount | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1921 |
-| `NumberOfValuesInStructureConstructor` | `BSL225` | `implemented` | upstream:diagnostics/NumberOfValuesInStructureConstructorDiagnostic.java:47 | CODE_SMELL | MINOR | maxValuesCount | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6122 |
+| `NumberOfValuesInStructureConstructor` | `BSL225` | `implemented` | upstream:diagnostics/NumberOfValuesInStructureConstructorDiagnostic.java:47 | CODE_SMELL | MINOR | maxValuesCount | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2105 |
 | `OSUsersMethod` | `BSL226` | `implemented` | upstream:diagnostics/OSUsersMethodDiagnostic.java:44 | SECURITY_HOTSPOT | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4511 |
 | `OneStatementPerLine` | `BSL227` | `implemented` | upstream:diagnostics/OneStatementPerLineDiagnostic.java:57 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4236 |
 | `OrderOfParams` | `BSL228` | `implemented` | upstream:diagnostics/OrderOfParamsDiagnostic.java:43 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3657 |
