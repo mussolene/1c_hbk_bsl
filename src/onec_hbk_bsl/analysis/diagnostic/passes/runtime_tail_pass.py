@@ -64,8 +64,6 @@ def extend_runtime_tail_rule_tasks(
         rule_tasks.append(
             ("BSL230", lambda: engine._rule_bsl230_pairing_broken_transaction(path, tree))
         )
-    if engine._rule_enabled("BSL255"):
-        rule_tasks.append(("BSL255", lambda: engine._rule_bsl255_try_number(path, lines)))
     if engine._rule_enabled("BSL258"):
         rule_tasks.append(("BSL258", lambda: engine._rule_bsl258_union_without_all(path, lines)))
     if engine._rule_enabled("BSL262"):

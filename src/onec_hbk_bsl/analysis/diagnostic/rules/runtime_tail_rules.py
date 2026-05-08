@@ -204,37 +204,6 @@ def run_bsl199_if_else_if_ends_with_else(path: str, lines: list[str]) -> list[An
     return diags
 
 
-def run_bsl255_try_number(path: str, lines: list[str]) -> list[Any]:
-    _diag = _diag_module()
-    diags: list[Any] = []
-    re_try = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-    re_endtry = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
-    re_except = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
-    re_number = re.compile(r"\b(?:Число|Number)\s*\(", re.IGNORECASE)
-    in_try_body = False
-    for idx, line in enumerate(lines):
-        if re_try.match(line):
-            in_try_body = True
-        elif re_except.match(line) or re_endtry.match(line):
-            in_try_body = False
-        if in_try_body:
-            m = re_number.search(line)
-            if m:
-                diags.append(
-                    _diag.Diagnostic(
-                        file=path,
-                        line=idx + 1,
-                        character=m.start(),
-                        end_line=idx + 1,
-                        end_character=m.end(),
-                        severity=_diag.Severity.WARNING,
-                        code="BSL255",
-                        message="Не следует использовать исключения для приведения значения к типу",
-                    )
-                )
-    return diags
-
-
 def run_bsl263_useless_for_each(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []

@@ -4877,13 +4877,6 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         return run_bsl254_transferring_parameters(self._symbol_index, path, lines, procs)
 
-    # ------------------------------------------------------------------
-    # BSL255 — TryNumber
-    # ------------------------------------------------------------------
-
-    def _rule_bsl255_try_number(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        return run_bsl255_try_number(path, lines)
-
     # BSL208 — LatinAndCyrillicSymbolInWord
     # BSL256 — Typo (BSLLS-style: pyspellchecker + pymorphy3, bundled BSLLS exceptions)
     # ------------------------------------------------------------------

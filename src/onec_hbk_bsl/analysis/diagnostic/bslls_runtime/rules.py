@@ -476,6 +476,7 @@ _BSL279_IDENTIFIER_RE = re.compile(r"\b\w*[ёЁ]\w*\b", re.UNICODE)
 _BSL277_ROLLBACK_NAMES = frozenset({"отменитьтранзакцию", "rollbacktransaction"})
 _BSL276_PROCEED_NAMES = frozenset({"продолжитьвызов", "proceedwithcall"})
 _BSL276_AROUND_ANNOTATION_RE = re.compile(r"^\s*&(?:Вместо|Instead|Around)\b", re.IGNORECASE)
+_BSL255_NUMBER_NAMES = frozenset({"число", "number"})
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
@@ -2212,6 +2213,70 @@ class WrongUseFunctionProceedWithCallRule(BsllsDiagnosticRule):
     def _has_around_annotation(lines: list[str], proc_start_idx: int) -> bool:
         annotation_lines = lines[max(0, proc_start_idx - 3) : proc_start_idx + 1]
         return any(_BSL276_AROUND_ANNOTATION_RE.match(line) for line in annotation_lines)
+
+
+class TryNumberRule(BsllsDiagnosticRule):
+    code = "BSL255"
+    message = "Не следует использовать исключения для приведения значения к типу"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        global_calls, call_starts, _proc_nodes, try_nodes = (
+            WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
+        )
+        storage = DiagnosticStorage(context.path)
+        seen: set[int] = set()
+
+        for try_node in try_nodes:
+            for call in self._try_code_block_calls(try_node, global_calls, call_starts):
+                if id(call["node"]) in seen:
+                    continue
+                if str(call["name"]).casefold() not in _BSL255_NUMBER_NAMES:
+                    continue
+                seen.add(id(call["node"]))
+                line = int(call["line"]) - 1
+                storage.add_range(
+                    code=self.code,
+                    message=self.message,
+                    severity=Severity.WARNING,
+                    line=line,
+                    character=int(call["character"]),
+                    end_line=line,
+                    end_character=_point_char(context.lines, call["node"].end_point),
+                )
+        return storage.diagnostics
+
+    @staticmethod
+    def _try_code_block_calls(
+        try_node: Any,
+        global_calls: list[dict[str, Any]],
+        call_starts: list[int],
+    ) -> list[dict[str, Any]]:
+        children = list(getattr(try_node, "children", []) or [])
+        try_idx = next(
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == "TRY_KEYWORD"
+            ),
+            None,
+        )
+        except_idx = next(
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == "EXCEPT_KEYWORD"
+            ),
+            len(children),
+        )
+        if try_idx is None:
+            return []
+        calls: list[dict[str, Any]] = []
+        for child in children[try_idx + 1 : except_idx]:
+            calls.extend(_calls_in_node(child, global_calls, call_starts))
+        return calls
 
 
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):

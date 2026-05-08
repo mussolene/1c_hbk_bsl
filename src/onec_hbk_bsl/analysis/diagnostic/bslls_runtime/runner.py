@@ -31,6 +31,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     SetPrivilegedModeRule,
     SpaceAtStartCommentRule,
     TempFilesDirRule,
+    TryNumberRule,
     UselessTernaryOperatorRule,
     UseSystemInformationRule,
     UsingExternalCodeToolsRule,
@@ -79,6 +80,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     UsingExternalCodeToolsRule(),
     UsingSynchronousCallsRule(),
     VirtualTableCallWithoutParametersRule(),
+    TryNumberRule(),
     WrongUseFunctionProceedWithCallRule(),
     WrongUseOfRollbackTransactionMethodRule(),
     ExtraCommasRule(),
@@ -108,7 +110,9 @@ def append_bslls_runtime_rule_tasks(
         bsl036_enabled=bool(engine._rule_enabled("BSL036")),
         runtime_call_context=(
             engine._runtime_call_context(tree, lines)
-            if engine._rule_enabled("BSL276") or engine._rule_enabled("BSL277")
+            if engine._rule_enabled("BSL255")
+            or engine._rule_enabled("BSL276")
+            or engine._rule_enabled("BSL277")
             else None
         ),
         ts_nodes_for_types=engine._ts_nodes_for_types,

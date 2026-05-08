@@ -310,7 +310,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.runtime_tail_rules import (
     run_bsl197_if_else_duplicated_code_block,
     run_bsl198_if_else_duplicated_condition,
     run_bsl199_if_else_if_ends_with_else,
-    run_bsl255_try_number,
     run_bsl263_useless_for_each,
 )
 from onec_hbk_bsl.parser.bsl_parser import BslParser

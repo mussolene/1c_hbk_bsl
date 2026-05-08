@@ -4366,21 +4366,29 @@ class TestBsl190FormDataToValue:
 
 
 class TestBsl255TryNumber:
-    def test_message_matches_bslls_style(self, tmp_path: Path) -> None:
-        content = """\
-Процедура Тест()
-    Попытка
-        Значение = Число(Строка);
-    Исключение
-    КонецПопытки;
-КонецПроцедуры
-"""
-        diags = _check(content, tmp_path, select={"BSL255"})
-        bsl255 = [d for d in diags if d.code == "BSL255"]
-        assert len(bsl255) == 1
-        assert (
-            bsl255[0].message == "Не следует использовать исключения для приведения значения к типу"
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "TryNumberDiagnostic.bsl"
         )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL255"}).check_file(str(fixture))
+            if d.code == "BSL255"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (9, 4, 9, 12),
+            (10, 4, 10, 13),
+            (13, 8, 13, 17),
+        ]
+        assert {d.severity for d in diags} == {Severity.WARNING}
+        assert {d.message for d in diags} == {
+            "Не следует использовать исключения для приведения значения к типу"
+        }
 
 
 class TestBsl273VirtualTableCallWithoutParameters:
