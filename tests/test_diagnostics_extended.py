@@ -4500,6 +4500,29 @@ class TestBsl276WrongUseFunctionProceedWithCall:
         }
 
 
+class TestBsl263UseLessForEach:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "UseLessForEachDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL263"}).check_file(str(fixture))
+            if d.code == "BSL263"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (3, 12, 3, 20),
+            (40, 16, 40, 26),
+        ]
+        assert {d.severity for d in diags} == {Severity.ERROR}
+        assert {d.message for d in diags} == {"Итератор не используется в теле цикла"}
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

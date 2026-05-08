@@ -106,7 +106,6 @@ def run_bsl197_if_else_duplicated_code_block(path: str, lines: list[str]) -> lis
         i += 1
     return diags
 
-
 def run_bsl198_if_else_duplicated_condition(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
@@ -198,56 +197,6 @@ def run_bsl199_if_else_if_ends_with_else(path: str, lines: list[str]) -> list[An
                             'Синтаксическая конструкция вида "Если...Тогда...ИначеЕсли..." '
                             'должна содержать ветвь "Иначе".'
                         ),
-                    )
-                )
-        i += 1
-    return diags
-
-
-def run_bsl263_useless_for_each(path: str, lines: list[str]) -> list[Any]:
-    _diag = _diag_module()
-    diags: list[Any] = []
-    re_foreach = re.compile(
-        r"^\s*(?:Для\s+Каждого|For\s+Each)\s+(\w+)\s+(?:Из|In)\b", re.IGNORECASE | re.UNICODE
-    )
-    re_end_loop = re.compile(r"^\s*(?:КонецЦикла|EndDo)\b", re.IGNORECASE)
-    re_comment = re.compile(r"^\s*//")
-    i = 0
-    while i < len(lines):
-        m = re_foreach.match(lines[i])
-        if m:
-            iter_var = m.group(1).casefold()
-            body_lines: list[str] = []
-            depth = 1
-            j = i + 1
-            while j < len(lines) and depth > 0:
-                bl = lines[j]
-                if re_foreach.match(bl):
-                    depth += 1
-                elif re_end_loop.match(bl):
-                    depth -= 1
-                if depth >= 1:
-                    body_lines.append(bl)
-                j += 1
-            var_used = False
-            for bl in body_lines:
-                if re_comment.match(bl):
-                    continue
-                clean = re.sub(r'"[^"]*"', '""', bl)
-                if re.search(r"\b" + re.escape(iter_var) + r"\b", clean, re.IGNORECASE):
-                    var_used = True
-                    break
-            if not var_used and body_lines:
-                diags.append(
-                    _diag.Diagnostic(
-                        file=path,
-                        line=i + 1,
-                        character=0,
-                        end_line=i + 1,
-                        end_character=len(lines[i]),
-                        severity=_diag.Severity.WARNING,
-                        code="BSL263",
-                        message=f"Переменная «{m.group(1)}» в «Для Каждого» нигде не используется в теле цикла",
                     )
                 )
         i += 1

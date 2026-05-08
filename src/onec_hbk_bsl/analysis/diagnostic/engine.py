@@ -5797,15 +5797,6 @@ class DiagnosticEngine:
         return run_bsl240_rewrite_method_parameter(path, lines, procs, tree, proc_node_map)
 
     # ------------------------------------------------------------------
-    # BSL263 — UseLessForEach
-    # ------------------------------------------------------------------
-
-    def _rule_bsl263_useless_for_each(
-        self, path: str, lines: list[str], procs: list[Any]
-    ) -> list[Diagnostic]:
-        return run_bsl263_useless_for_each(path, lines)
-
-    # ------------------------------------------------------------------
     # BSL257 — UnaryPlusInConcatenation
     # ------------------------------------------------------------------
 

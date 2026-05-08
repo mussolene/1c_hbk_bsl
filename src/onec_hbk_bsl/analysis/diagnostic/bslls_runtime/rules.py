@@ -2279,6 +2279,106 @@ class TryNumberRule(BsllsDiagnosticRule):
         return calls
 
 
+class UseLessForEachRule(BsllsDiagnosticRule):
+    code = "BSL263"
+    message = "Итератор не используется в теле цикла"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        module_vars = self._module_variable_names(context.tree.root_node)
+        storage = DiagnosticStorage(context.path)
+
+        for node in context.ts_nodes_for_types(context.tree, {"for_each_statement"})[
+            "for_each_statement"
+        ]:
+            iterator = self._iterator_node(node)
+            if iterator is None:
+                continue
+            iterator_name = _ts_node_text(iterator)
+            if iterator_name.casefold() in module_vars:
+                continue
+            body_nodes = self._body_nodes(node)
+            if not body_nodes:
+                continue
+            if self._has_iterator_usage(body_nodes, iterator_name):
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self.message,
+                severity=Severity.ERROR,
+                lines=context.lines,
+                start_node=iterator,
+                end_node=iterator,
+            )
+        return storage.diagnostics
+
+    @staticmethod
+    def _module_variable_names(root: Any) -> set[str]:
+        names: set[str] = set()
+        for node in _ts_walk(root):
+            if getattr(node, "type", None) != "var_definition":
+                continue
+            if getattr(getattr(node, "parent", None), "type", None) != "source_file":
+                continue
+            for child in _ts_walk(node):
+                if getattr(child, "type", None) == "identifier":
+                    names.add(_ts_node_text(child).casefold())
+        return names
+
+    @staticmethod
+    def _iterator_node(node: Any) -> Any | None:
+        seen_each = False
+        for child in _ts_children(node):
+            child_type = getattr(child, "type", None)
+            if child_type == "EACH_KEYWORD":
+                seen_each = True
+                continue
+            if seen_each and child_type == "identifier":
+                return child
+        return None
+
+    @staticmethod
+    def _body_nodes(node: Any) -> list[Any]:
+        children = _ts_children(node)
+        do_idx = next(
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == "DO_KEYWORD"
+            ),
+            None,
+        )
+        end_idx = next(
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == "ENDDO_KEYWORD"
+            ),
+            len(children),
+        )
+        if do_idx is None:
+            return []
+        return children[do_idx + 1 : end_idx]
+
+    @staticmethod
+    def _has_iterator_usage(body_nodes: list[Any], iterator_name: str) -> bool:
+        iterator_cf = iterator_name.casefold()
+        for body_node in body_nodes:
+            for node in _ts_walk(body_node):
+                if getattr(node, "type", None) != "identifier":
+                    continue
+                if _ts_node_text(node).casefold() != iterator_cf:
+                    continue
+                parent = getattr(node, "parent", None)
+                if getattr(parent, "type", None) == "method_call":
+                    continue
+                return True
+        return False
+
+
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
     code = "BSL097"
 

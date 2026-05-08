@@ -68,7 +68,3 @@ def extend_runtime_tail_rule_tasks(
         rule_tasks.append(("BSL258", lambda: engine._rule_bsl258_union_without_all(path, lines)))
     if engine._rule_enabled("BSL262"):
         rule_tasks.append(("BSL262", lambda: engine._rule_bsl262_usage_write_log_event(path, tree)))
-    if engine._rule_enabled("BSL263"):
-        rule_tasks.append(
-            ("BSL263", lambda: engine._rule_bsl263_useless_for_each(path, lines, procs))
-        )
