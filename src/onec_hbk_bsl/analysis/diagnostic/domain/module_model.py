@@ -630,3 +630,423 @@ class ModuleModel:
                     )
                 )
         return diags
+
+    def validate_excessive_nesting(
+        self,
+        lines: list[str],
+        *,
+        procs: list[ProcInfo],
+        max_nesting_depth: int,
+    ) -> list[Diagnostic]:
+        re_nest_open = re.compile(
+            r"^\s*(?:Если|If|ДляКаждого|Для\s+каждого|ForEach|For\s+Each|Для|For|Пока|While|Попытка|Try)\b",
+            re.IGNORECASE,
+        )
+        re_nest_close = re.compile(
+            r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b",
+            re.IGNORECASE,
+        )
+        diags: list[Diagnostic] = []
+
+        def scan_range(start_idx: int, end_idx: int) -> None:
+            nesting = 0
+            pending: tuple[int, int, int, int] | None = None
+
+            def flush_pending() -> None:
+                nonlocal pending
+                if pending is None:
+                    return
+                line_no, start_col, end_col, _level = pending
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_no,
+                        character=start_col,
+                        end_line=line_no,
+                        end_character=end_col,
+                        severity=Severity.WARNING,
+                        code="BSL020",
+                        message="Превышен допустимый уровень вложенности управляющих конструкций",
+                    )
+                )
+                pending = None
+
+            for i in range(start_idx, min(end_idx, len(lines))):
+                line = lines[i]
+                if re_nest_close.match(line):
+                    was_over_limit = nesting > max_nesting_depth
+                    nesting = max(0, nesting - 1)
+                    if was_over_limit and nesting <= max_nesting_depth:
+                        flush_pending()
+                    continue
+                if re_nest_open.match(line):
+                    nesting += 1
+                    if nesting > max_nesting_depth:
+                        start_col = len(line) - len(line.lstrip())
+                        keyword_len = len(line.lstrip().split(None, 1)[0])
+                        if pending is None or nesting >= pending[3]:
+                            pending = (i + 1, start_col, start_col + keyword_len, nesting)
+            flush_pending()
+
+        for proc in procs:
+            scan_range(proc.start_idx + 1, proc.end_idx)
+        covered: list[tuple[int, int]] = sorted((p.start_idx, p.end_idx) for p in procs)
+        cursor = 0
+        for start, end in covered:
+            if cursor < start:
+                scan_range(cursor, start)
+            cursor = max(cursor, end + 1)
+        if cursor < len(lines):
+            scan_range(cursor, len(lines))
+        return diags
+
+    def validate_statement_missing_semicolon(
+        self,
+        lines: list[str],
+        *,
+        procs: list[ProcInfo],
+        stmt_no_semi_re,
+        double_quoted_string_re,
+        single_quoted_string_re,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        continuation_re = re.compile(r"^\s*(?:И|Или|AND|OR)\b", re.IGNORECASE)
+        continuation_prefix_re = re.compile(
+            r"^\s*(?:[),.=]|[+\-*/%]|\b(?:И|Или|AND|OR)\b)",
+            re.IGNORECASE,
+        )
+        header_start_re = re.compile(r"^\s*(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE)
+        end_kw_re = re.compile(
+            r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b", re.IGNORECASE
+        )
+        terminal_end_kw_re = re.compile(
+            r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry|КонецФункции|EndFunction|КонецПроцедуры|EndProcedure)\b",
+            re.IGNORECASE,
+        )
+        control_header_start_re = re.compile(
+            r"^\s*(?:Если|If|ИначеЕсли|ElseIf|Пока|While|Для(?:\s+Каждого)?|For(?:\s+Each)?)\b",
+            re.IGNORECASE,
+        )
+        control_header_tail_re = re.compile(r"\)\s*(?:Тогда|Then|Цикл|Do)\s*$", re.IGNORECASE)
+
+        def code_without_comments_and_strings(text: str) -> str:
+            code = text.split("//", 1)[0]
+            code = double_quoted_string_re.sub('""', code)
+            code = single_quoted_string_re.sub("''", code)
+            return code
+
+        def missing_semicolon_anchor(code_part: str) -> int:
+            m_return = re.match(r"^(\s*(?:Возврат|Return)\s+)\S", code_part, re.IGNORECASE)
+            if m_return:
+                return m_return.end(1)
+            return max(0, len(code_part) - 1)
+
+        header_continuation_lines: set[int] = set()
+        for proc in procs:
+            header_end_idx = proc.start_idx
+            start_code = code_without_comments_and_strings(lines[proc.start_idx])
+            if header_start_re.match(start_code):
+                header_balance = start_code.count("(") - start_code.count(")")
+                j = proc.start_idx
+                while header_balance > 0 and j + 1 < min(proc.end_idx, len(lines)):
+                    j += 1
+                    header_balance += code_without_comments_and_strings(lines[j]).count("(")
+                    header_balance -= code_without_comments_and_strings(lines[j]).count(")")
+                header_end_idx = j
+                for line_idx in range(proc.start_idx + 1, header_end_idx + 1):
+                    header_continuation_lines.add(line_idx)
+
+            paren_balance = 0
+            for i in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+                if i <= header_end_idx:
+                    continue
+                line = lines[i]
+                stripped = line.rstrip()
+                if not stripped or stripped.strip().startswith("//"):
+                    continue
+                code_part = stripped.split("//")[0].rstrip()
+                if not code_part:
+                    continue
+                if header_start_re.match(code_part):
+                    continue
+                if control_header_start_re.match(code_part) and code_part.rstrip().endswith(
+                    ("Тогда", "Then", "Цикл", "Do")
+                ):
+                    continue
+                if control_header_tail_re.search(code_part):
+                    continue
+                if end_kw_re.match(code_part) and not code_part.endswith(";"):
+                    col = len(code_part) - len(code_part.lstrip())
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=i + 1,
+                            character=col,
+                            end_line=i + 1,
+                            end_character=col + len(code_part.lstrip()),
+                            severity=Severity.INFORMATION,
+                            code="BSL030",
+                            message=("Пропущена точка с запятой в конце выражения"),
+                        )
+                    )
+                    continue
+                code_masked = code_without_comments_and_strings(code_part)
+                starts_inside_multiline = paren_balance > 0
+                paren_balance = max(0, paren_balance + code_masked.count("(") - code_masked.count(")"))
+                last_char = code_part[-1]
+                if last_char in (";", ",", "(", "|", "+", "-", "*", "/", "="):
+                    continue
+                next_sig = None
+                for j in range(i + 1, min(proc.end_idx, len(lines))):
+                    nxt = lines[j].strip()
+                    if not nxt or nxt.startswith("//"):
+                        continue
+                    next_sig = lines[j]
+                    break
+                if starts_inside_multiline or paren_balance > 0:
+                    continue
+                if next_sig is not None and (
+                    continuation_re.match(next_sig) or continuation_prefix_re.match(next_sig)
+                ):
+                    continue
+                if stmt_no_semi_re.match(code_part):
+                    col = missing_semicolon_anchor(code_part)
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=i + 1,
+                            character=col,
+                            end_line=i + 1,
+                            end_character=col + 1,
+                            severity=Severity.INFORMATION,
+                            code="BSL030",
+                            message=("Пропущена точка с запятой в конце выражения"),
+                        )
+                    )
+        seen_lines = {diag.line for diag in diags}
+        for idx, line in enumerate(lines):
+            if idx in header_continuation_lines:
+                continue
+            stripped = line.rstrip()
+            if not stripped or stripped.strip().startswith("//"):
+                continue
+            code_part = stripped.split("//")[0].rstrip()
+            if not code_part or code_part.endswith(";"):
+                continue
+            if header_start_re.match(code_part):
+                continue
+            if control_header_start_re.match(code_part) and code_part.rstrip().endswith(
+                ("Тогда", "Then", "Цикл", "Do")
+            ):
+                continue
+            if control_header_tail_re.search(code_part):
+                continue
+            code_masked = code_without_comments_and_strings(code_part)
+            if code_masked.count("(") > code_masked.count(")"):
+                continue
+            if not stmt_no_semi_re.match(code_part):
+                continue
+            next_sig = None
+            for j in range(idx + 1, len(lines)):
+                nxt = lines[j].strip()
+                if not nxt or nxt.startswith("//"):
+                    continue
+                next_sig = lines[j]
+                break
+            if next_sig is not None and continuation_prefix_re.match(next_sig):
+                continue
+            if next_sig is None or not terminal_end_kw_re.match(next_sig):
+                continue
+            if idx + 1 in seen_lines:
+                continue
+            col = missing_semicolon_anchor(code_part)
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=idx + 1,
+                    character=col,
+                    end_line=idx + 1,
+                    end_character=col + 1,
+                    severity=Severity.INFORMATION,
+                    code="BSL030",
+                    message="Пропущена точка с запятой в конце выражения",
+                )
+            )
+        return diags
+
+    def validate_duplicate_string_literal(
+        self,
+        lines: list[str],
+        *,
+        procs: list[ProcInfo],
+        snapshot,
+        min_duplicate_uses: int,
+        string_literal_re,
+        scope_line_indices_fn,
+        line_starts_with_raise_statement_fn,
+    ) -> list[Diagnostic]:
+        from collections import Counter
+
+        diags: list[Diagnostic] = []
+        code_lines_wo_comments = snapshot.code_lines_without_comments if snapshot is not None else None
+        for scope_lines in scope_line_indices_fn(lines, procs):
+            counts: Counter[str] = Counter()
+            positions: dict[str, list[tuple[int, int]]] = {}
+            for idx in scope_lines:
+                line = code_lines_wo_comments[idx] if code_lines_wo_comments is not None else lines[idx]
+                if line.strip().startswith("//"):
+                    continue
+                for m in string_literal_re.finditer(line):
+                    val = m.group(1).strip()
+                    if not val:
+                        continue
+                    if re.search(r"\b(?:НСтр|NStr)\s*\([^)]*$", line[: m.start()], re.IGNORECASE):
+                        continue
+                    if re.fullmatch(r"\+\s*\w+\s*\+", val):
+                        continue
+                    counts[val] += 1
+                    positions.setdefault(val, []).append((idx + 1, m.start()))
+            for val, count in counts.items():
+                if count < min_duplicate_uses:
+                    continue
+                pos_list = positions[val]
+                if all(line_starts_with_raise_statement_fn(lines[ln - 1]) for ln, _ in pos_list):
+                    continue
+                line_no, col = pos_list[0]
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_no,
+                        character=col,
+                        end_line=line_no,
+                        end_character=col + len(val) + 2,
+                        severity=Severity.INFORMATION,
+                        code="BSL035",
+                        message=(
+                            "Необходимо избавиться от многократного использования "
+                            f'строкового литерала "{val}"'
+                        ),
+                    )
+                )
+        return diags
+
+    def validate_function_paths_return(self, *, tree, bsl148_function_name_spans, loops_executed_at_least_once: bool) -> list[Diagnostic]:
+        root = getattr(tree, "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, type(None))):
+            return []
+        diags: list[Diagnostic] = []
+        for line0, col0, col1 in bsl148_function_name_spans(
+            root, loops_executed_at_least_once=loops_executed_at_least_once
+        ):
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line0,
+                    character=col0,
+                    end_line=line0,
+                    end_character=col1,
+                    severity=Severity.WARNING,
+                    code="BSL148",
+                    message="Не все пути выполнения функции возвращают значение",
+                )
+            )
+        return diags
+
+    def validate_crazy_multiline_string(
+        self,
+        *,
+        lines: list[str],
+        tree,
+        error_nodes,
+        ts_walk_fn,
+        ts_node_text_fn,
+        utf8_byte_offset_to_lsp_character_fn,
+        adjacent_literals_re,
+        rule_descriptions_ru: dict[str, str],
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        if tree is not None:
+            for node in error_nodes if error_nodes is not None else ts_walk_fn(tree.root_node):
+                if getattr(node, "type", None) != "ERROR":
+                    continue
+                text = ts_node_text_fn(node).strip()
+                if not (text.startswith('"') and text.endswith('"')):
+                    continue
+                line_idx = node.start_point[0]
+                line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_idx + 1,
+                        character=utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1]),
+                        end_line=line_idx + 1,
+                        end_character=utf8_byte_offset_to_lsp_character_fn(line_text, node.end_point[1]),
+                        severity=Severity.INFORMATION,
+                        code="BSL171",
+                        message=rule_descriptions_ru["BSL171"],
+                    )
+                )
+        if diags:
+            return diags
+        for idx, line in enumerate(lines):
+            match = adjacent_literals_re.search(line)
+            if match is not None:
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=idx + 1,
+                        character=match.start(),
+                        end_line=idx + 1,
+                        end_character=match.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL171",
+                        message=rule_descriptions_ru["BSL171"],
+                    )
+                )
+                continue
+            if idx == 0:
+                continue
+            prev = lines[idx - 1].rstrip()
+            cur = line.lstrip()
+            if prev.endswith('"') and cur.startswith('"'):
+                end_character = min(len(line.rstrip()), len(line) - len(cur) + len(cur.split('"', 2)[1]) + 2)
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=idx + 1,
+                        character=len(line) - len(cur),
+                        end_line=idx + 1,
+                        end_character=end_character,
+                        severity=Severity.INFORMATION,
+                        code="BSL171",
+                        message=rule_descriptions_ru["BSL171"],
+                    )
+                )
+        return diags
+
+    def validate_invalid_character_in_file(self, *, lines: list[str], illegal_chars: dict[str, str]) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for line_idx, line in enumerate(lines, start=1):
+            hit = next(((pos, illegal_chars[ch]) for pos, ch in enumerate(line) if ch in illegal_chars), None)
+            if hit is None:
+                continue
+            pos, message = hit
+            quote_pos = line.rfind('"', 0, pos + 1)
+            anchor = quote_pos if quote_pos >= 0 else len(line) - len(line.lstrip())
+            end_character = len(line.rstrip())
+            closing_paren = line.rfind(")")
+            if closing_paren > anchor:
+                end_character = closing_paren
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line_idx,
+                    character=anchor,
+                    end_line=line_idx,
+                    end_character=end_character,
+                    severity=Severity.ERROR,
+                    code="BSL204",
+                    message=message,
+                )
+            )
+        return diags
