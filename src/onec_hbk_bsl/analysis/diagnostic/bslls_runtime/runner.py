@@ -5,6 +5,7 @@ from typing import Any
 
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
+    AssignAliasFieldsInQueryRule,
     BadWordsRule,
     BeginTransactionBeforeTryCatchRule,
     BsllsDiagnosticRule,
@@ -69,6 +70,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     UsingHardcodePathRule(),
     UsingServiceTagRule(),
     BadWordsRule(),
+    AssignAliasFieldsInQueryRule(),
     BeginTransactionBeforeTryCatchRule(),
     CodeBlockBeforeSubRule(),
     SpaceAtStartCommentRule(),

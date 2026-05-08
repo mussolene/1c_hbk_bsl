@@ -2938,6 +2938,19 @@ class IncorrectLineBreakRule(BsllsDiagnosticRule):
         return query_prev_lines
 
 
+class AssignAliasFieldsInQueryRule(BsllsDiagnosticRule):
+    code = "BSL149"
+    message = "Полям запроса следует назначать псевдонимы"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
+            run_bsl149_assign_alias_fields_in_query,
+        )
+
+        query_blocks = context.snapshot.query_text_blocks if context.snapshot is not None else None
+        return run_bsl149_assign_alias_fields_in_query(context.path, context.lines, query_blocks)
+
+
 class OneStatementPerLineRule(BsllsDiagnosticRule):
     code = "BSL227"
     message = "Несколько операторов на одной строке — разместите каждый на отдельной строке"

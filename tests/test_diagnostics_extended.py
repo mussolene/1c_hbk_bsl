@@ -3401,7 +3401,7 @@ class TestBsl055ConsecutiveBlankLines:
 # ---------------------------------------------------------------------------
 
 
-class TestBsl149AssignAliasFieldsInQuery:
+class TestBsl149AssignAliasFieldsInQueryFixture:
     def test_multiline_select_without_alias_detected(self, tmp_path: Path) -> None:
         content = """\
             ТекстЗапроса = "ВЫБРАТЬ
@@ -4962,6 +4962,30 @@ class TestBsl227OneStatementPerLine:
             (2, 10, 2, 14),
         ]
         assert {diag.severity for diag in diags} == {Severity.INFORMATION}
+
+
+class TestBsl149AssignAliasFieldsInQuery:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "AssignAliasFieldsInQueryDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL149"}).check_file(str(fixture))
+            if diag.code == "BSL149"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 3, 4, 16),
+            (6, 3, 6, 17),
+            (22, 3, 22, 16),
+            (24, 3, 24, 17),
+            (43, 4, 43, 17),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.WARNING}
 
 
 class TestRuleMetadataCompleteness:

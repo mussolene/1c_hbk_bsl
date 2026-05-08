@@ -13,13 +13,6 @@ def extend_runtime_tail_rule_tasks(
     tree: object,
     snapshot: object,
 ) -> None:
-    if engine._rule_enabled("BSL149"):
-        rule_tasks.append(
-            (
-                "BSL149",
-                lambda: engine._rule_bsl149_assign_alias_fields_in_query(path, lines, snapshot),
-            )
-        )
     if engine._rule_enabled("BSL208") or engine._rule_enabled("BSL256"):
 
         def task_bsl208_bsl256() -> list[object]:

@@ -3347,19 +3347,6 @@ class DiagnosticEngine:
         return run_bsl172_data_exchange_loading(path, lines, procs)
 
     # ------------------------------------------------------------------
-    # BSL149 — AssignAliasFieldsInQuery
-    # ------------------------------------------------------------------
-
-    def _rule_bsl149_assign_alias_fields_in_query(
-        self,
-        path: str,
-        lines: list[str],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        query_blocks = snapshot.query_text_blocks if snapshot is not None else None
-        return run_bsl149_assign_alias_fields_in_query(path, lines, query_blocks)
-
-    # ------------------------------------------------------------------
     # BSL220 / BSL235 / BSL269 — query text diagnostics
     # ------------------------------------------------------------------
 

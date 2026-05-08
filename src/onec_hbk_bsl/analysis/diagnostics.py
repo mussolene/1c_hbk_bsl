@@ -286,7 +286,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
     run_bsl244_253_261_runtime_pool,
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
-    run_bsl149_assign_alias_fields_in_query,
     run_bsl234_query_nested_fields_by_dot,
     run_bsl237_redundant_access_to_object,
     run_bsl245_server_side_export_form_method,
@@ -3178,6 +3177,10 @@ def _bsl149_append_missing_alias_diags(
             continue
         # Incomplete expression continuation (opened parenthesis not closed yet).
         if field.count("(") > field.count(")") and not _RE_BSL149_HAS_ALIAS.search(field):
+            continue
+        # Broken dynamic-query fragments may leave a dangling table prefix (`Таблица.`).
+        # BSLLS does not report those incomplete fields.
+        if field.endswith("."):
             continue
         if _RE_BSL149_SELECT.search(field):
             continue
