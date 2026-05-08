@@ -39,15 +39,6 @@ def extend_runtime_tail_rule_tasks(
                 lambda: engine._rule_bsl218_missing_temporary_file_deletion(path, lines, tree),
             )
         )
-    if engine._rule_enabled("BSL225"):
-        rule_tasks.append(
-            (
-                "BSL225",
-                lambda: engine._rule_bsl225_number_of_values_in_structure_constructor(
-                    path, lines, tree
-                ),
-            )
-        )
     if engine._rule_enabled("BSL230"):
         rule_tasks.append(
             ("BSL230", lambda: engine._rule_bsl230_pairing_broken_transaction(path, tree))

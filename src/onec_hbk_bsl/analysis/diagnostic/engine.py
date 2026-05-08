@@ -5685,18 +5685,6 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL225 — NumberOfValuesInStructureConstructor
-    # ------------------------------------------------------------------
-
-    def _rule_bsl225_number_of_values_in_structure_constructor(
-        self, path: str, lines: list[str], tree: Any
-    ) -> list[Diagnostic]:
-        nodes = self._ts_nodes_for_types(tree, {"new_expression"})
-        return run_bsl225_number_of_values_in_structure_constructor(
-            path, lines, tree, new_expression_nodes=nodes["new_expression"]
-        )
-
-    # ------------------------------------------------------------------
     # BSL234 — QueryNestedFieldsByDot
     # ------------------------------------------------------------------
 

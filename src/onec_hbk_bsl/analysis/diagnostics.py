@@ -293,7 +293,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
 from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
     run_bsl149_assign_alias_fields_in_query,
     run_bsl210_logical_or_in_where,
-    run_bsl225_number_of_values_in_structure_constructor,
     run_bsl230_pairing_broken_transaction,
     run_bsl234_query_nested_fields_by_dot,
     run_bsl237_redundant_access_to_object,
@@ -338,6 +337,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL203",
         "BSL205",
         "BSL264",
+        "BSL225",
         "BSL221",
         "BSL222",
         "BSL148",

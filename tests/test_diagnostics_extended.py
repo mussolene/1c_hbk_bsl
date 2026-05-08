@@ -4605,6 +4605,33 @@ class TestBsl197IfElseDuplicatedCodeBlock:
         }
 
 
+class TestBsl225NumberOfValuesInStructureConstructorBslls:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "NumberOfValuesInStructureConstructorDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL225"}).check_file(str(fixture))
+            if d.code == "BSL225"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (19, 12, 19, 119),
+            (24, 28, 24, 89),
+            (66, 9, 66, 78),
+            (71, 28, 71, 88),
+        ]
+        assert {d.severity for d in diags} == {Severity.INFORMATION}
+        assert {d.message for d in diags} == {
+            "Уменьшите количество значений свойств, передаваемых в конструктор структуры"
+        }
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA

@@ -359,64 +359,6 @@ def run_bsl258_union_without_all(path: str, lines: list[str]) -> list[Any]:
     return diags
 
 
-def run_bsl225_number_of_values_in_structure_constructor(
-    path: str,
-    lines: list[str],
-    tree: Any,
-    new_expression_nodes: list[Any] | None = None,
-) -> list[Any]:
-    _diag = _diag_module()
-    root = getattr(tree, "root_node", None)
-    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-        return []
-    type_names = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
-    diags: list[Any] = []
-    nodes = (
-        new_expression_nodes
-        if new_expression_nodes is not None
-        else [
-            node
-            for node in _diag._ts_walk(root)
-            if getattr(node, "type", None) == "new_expression"
-        ]
-    )
-    for node in nodes:
-        type_node = _diag._ts_child_of_type(node, "identifier")
-        if type_node is None:
-            continue
-        type_name = _diag._ts_node_text(type_node).casefold()
-        if type_name not in type_names:
-            continue
-        args = _diag._ts_child_of_type(node, "arguments")
-        if args is None:
-            continue
-        arg_count = len(
-            [child for child in getattr(args, "children", []) or [] if child.type == "expression"]
-        )
-        if arg_count <= 4:
-            continue
-        start_line_idx = node.start_point[0]
-        start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
-        start_char = _diag.utf8_byte_offset_to_lsp_character(start_line_text, node.start_point[1])
-        diags.append(
-            _diag.Diagnostic(
-                file=path,
-                line=start_line_idx + 1,
-                character=start_char,
-                end_line=start_line_idx + 1,
-                end_character=min(
-                    len(start_line_text), start_char + len(_diag._ts_node_text(type_node))
-                ),
-                severity=_diag.Severity.INFORMATION,
-                code="BSL225",
-                message=(
-                    "Уменьшите количество значений свойств, передаваемых в конструктор структуры"
-                ),
-            )
-        )
-    return diags
-
-
 def run_bsl234_query_nested_fields_by_dot(path: str, lines: list[str]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []

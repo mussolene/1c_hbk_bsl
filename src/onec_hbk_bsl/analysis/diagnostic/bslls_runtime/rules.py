@@ -2077,6 +2077,64 @@ class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
         ]
 
 
+class NumberOfValuesInStructureConstructorRule(BsllsDiagnosticRule):
+    code = "BSL225"
+    message = "Уменьшите количество значений свойств, передаваемых в конструктор структуры"
+    _type_names = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
+    _max_values_count = 3
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        storage = DiagnosticStorage(context.path)
+        for node in context.ts_nodes_for_types(context.tree, {"new_expression"})["new_expression"]:
+            type_node = self._type_node(node)
+            if type_node is None or _ts_node_text(type_node).casefold() not in self._type_names:
+                continue
+            args_node = next(
+                (
+                    child
+                    for child in _ts_children(node)
+                    if getattr(child, "type", None) == "arguments"
+                ),
+                None,
+            )
+            if args_node is None:
+                continue
+            if self._call_param_count(args_node) <= self._max_values_count + 1:
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self.message,
+                severity=Severity.INFORMATION,
+                lines=context.lines,
+                start_node=node,
+                end_node=node,
+            )
+        return storage.diagnostics
+
+    @staticmethod
+    def _type_node(node: Any) -> Any | None:
+        for child in _ts_children(node):
+            if getattr(child, "type", None) == "identifier":
+                return child
+        return None
+
+    @staticmethod
+    def _call_param_count(arguments_node: Any) -> int:
+        meaningful = [
+            child
+            for child in _ts_children(arguments_node)
+            if getattr(child, "type", None) not in {"(", ")", "line_comment", "comment"}
+        ]
+        if not meaningful:
+            return 0
+        comma_count = sum(1 for child in meaningful if getattr(child, "type", None) == ",")
+        return comma_count + 1
+
+
 class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
     code = "BSL277"
     message = "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"
