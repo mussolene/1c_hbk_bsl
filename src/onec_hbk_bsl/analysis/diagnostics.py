@@ -287,7 +287,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
 )
 from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
     run_bsl149_assign_alias_fields_in_query,
-    run_bsl210_logical_or_in_where,
     run_bsl234_query_nested_fields_by_dot,
     run_bsl237_redundant_access_to_object,
     run_bsl245_server_side_export_form_method,
@@ -1355,8 +1354,8 @@ RULE_METADATA: dict[str, dict] = {
         "description": "Logical OR (ИЛИ/OR) in WHERE clause may prevent index usage",
         "severity": "WARNING",
         "sonar_type": "CODE_SMELL",
-        "sonar_severity": "MINOR",
-        "tags": ["query", "performance"],
+        "sonar_severity": "MAJOR",
+        "tags": ["query", "performance", "standard"],
         "implemented": True,
     },
     "BSL211": {
@@ -3121,20 +3120,6 @@ _RE_BSL208_HAS_CYRILLIC = re.compile(r"[А-ЯЁа-яё]")
 
 # BSL210 — LogicalOrInTheWhereSectionOfQuery
 _RE_BSL210_OR = re.compile(r"\b(?:ИЛИ|OR)\b", re.IGNORECASE)
-_RE_BSL210_LINE_IS_WHERE = re.compile(r"^\s*(?:ГДЕ|WHERE)\b", re.IGNORECASE)
-_RE_BSL210_LINE_ENDS_WHERE = re.compile(
-    r"^\s*(?:СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
-    r"ИТОГИ|TOTALS|АВТОУПРЯДОЧИВАНИЕ|AUTOORDER|"
-    r"ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE)\b",
-    re.IGNORECASE,
-)
-_RE_BSL210_POST_WHERE_KEYWORD = re.compile(
-    r"\b(?:СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
-    r"ИТОГИ|TOTALS|АВТОУПРЯДОЧИВАНИЕ|AUTOORDER|ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE|"
-    r"ОБЪЕДИНИТЬ|UNION)\b",
-    re.IGNORECASE,
-)
-_BSL210_MESSAGE = 'Не следует использовать логическое "ИЛИ" в секции "ГДЕ" запроса'
 _RE_QUERY_JOIN_KEYWORD = re.compile(
     r"\b(?:ЛЕВОЕ|LEFT|ПРАВОЕ|RIGHT|ВНУТРЕННЕЕ|INNER|ПОЛНОЕ|FULL)(?:\s+ВНЕШНЕЕ|\s+OUTER)?\s+"
     r"(?:СОЕДИНЕНИЕ|JOIN)\b",
@@ -3174,66 +3159,6 @@ _RE_QUERY_PARSE_ERROR_TAIL_OPERATOR = re.compile(
     r"(?:[=<>+\-*/]|\b(?:И|AND|ИЛИ|OR)\b)\s*$", re.IGNORECASE
 )
 _RE_QUERY_FIELD_REF = re.compile(r"\b(?P<alias>\w+)\.(?P<field>\w+(?:\.\w+)*)\b", re.IGNORECASE)
-
-
-def _bsl210_where_clause_region_bounds(lit: str, where_match: re.Match) -> tuple[int, int]:
-    """Return [start, end) covering the WHERE clause starting at *where_match* (keyword inclusive)."""
-    i = where_match.end()
-    depth = 0
-    n = len(lit)
-    while i < n:
-        c = lit[i]
-        if c == "(":
-            depth += 1
-        elif c == ")":
-            depth -= 1
-            if depth < 0:
-                depth = 0
-        if depth == 0 and i > where_match.end() and _RE_BSL210_POST_WHERE_KEYWORD.match(lit, i):
-            return (where_match.start(), i)
-        i += 1
-    return (where_match.start(), n)
-
-
-def _bsl210_or_spans_in_query_literal(lit: str) -> list[tuple[int, int]]:
-    """Char spans (start, end exclusive) of ИЛИ/OR inside WHERE clauses of *lit*."""
-    out: list[tuple[int, int]] = []
-    pos = 0
-    while True:
-        m = _RE_QUERY_WHERE.search(lit, pos)
-        if not m:
-            break
-        _, re_ = _bsl210_where_clause_region_bounds(lit, m)
-        body = lit[m.end() : re_]
-        base = m.end()
-        for om in _RE_BSL210_OR.finditer(body):
-            out.append((base + om.start(), base + om.end()))
-        pos = re_
-    return out
-
-
-def _bsl210_iter_double_quoted_segments(line: str):
-    """Yield (opening_quote_index, inner_text) for each BSL string literal on *line*."""
-    i = 0
-    n = len(line)
-    while i < n:
-        if line[i] != '"':
-            i += 1
-            continue
-        q = i
-        i += 1
-        buf: list[str] = []
-        while i < n:
-            if line[i] == '"':
-                if i + 1 < n and line[i + 1] == '"':
-                    buf.append('"')
-                    i += 2
-                    continue
-                break
-            buf.append(line[i])
-            i += 1
-        yield q, "".join(buf)
-        i += 1
 
 
 def _bsl149_strip_leading_select_modifiers(text: str) -> str:

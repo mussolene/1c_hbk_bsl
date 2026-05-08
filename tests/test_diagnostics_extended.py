@@ -3518,6 +3518,25 @@ class TestBsl210LogicalOrInWhereSection:
         diags = _check(content, tmp_path, select={"BSL210"})
         assert _codes(diags).count("BSL210") == 1
 
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = Path(
+            ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
+            "LogicalOrInTheWhereSectionOfQueryDiagnostic.bsl"
+        )
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL210"}).check_file(str(fixture))
+            if diag.code == "BSL210"
+        ]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (8, 15, 18),
+            (20, 8, 11),
+            (32, 38, 41),
+            (44, 8, 11),
+            (45, 36, 39),
+            (59, 21, 24),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL060 — DoubleNegation

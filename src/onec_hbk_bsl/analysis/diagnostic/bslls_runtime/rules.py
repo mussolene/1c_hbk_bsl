@@ -2568,6 +2568,216 @@ class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
         return end_node
 
 
+class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
+    code = "BSL210"
+    message = 'Не следует использовать логическое "ИЛИ" в секции "ГДЕ" запроса'
+    _or_re = re.compile(r"\b(?:ИЛИ|OR)\b", re.IGNORECASE)
+    _select_re = re.compile(r"\b(?:ВЫБРАТЬ|SELECT)\b", re.IGNORECASE)
+    _where_re = re.compile(r"\b(?:ГДЕ|WHERE)\b", re.IGNORECASE)
+    _continuation_re = re.compile(r"^\s*\|")
+    _inline_comment_re = re.compile(r"\s*//.*$")
+    _line_is_where_re = re.compile(r"^\s*(?:ГДЕ|WHERE)\b", re.IGNORECASE)
+    _line_ends_where_re = re.compile(
+        r"^\s*(?:СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
+        r"ИТОГИ|TOTALS|АВТОУПРЯДОЧИВАНИЕ|AUTOORDER|"
+        r"ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE)\b",
+        re.IGNORECASE,
+    )
+    _post_where_keyword_re = re.compile(
+        r"\b(?:СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
+        r"ИТОГИ|TOTALS|АВТОУПРЯДОЧИВАНИЕ|AUTOORDER|ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE|"
+        r"ОБЪЕДИНИТЬ|UNION)\b",
+        re.IGNORECASE,
+    )
+    _clause_after_fields_re = re.compile(
+        r"\b(?:ИЗ|FROM|ГДЕ|WHERE|СГРУППИРОВАТЬ|GROUP\s+BY|УПОРЯДОЧИТЬ|ORDER\s+BY|"
+        r"ИМЕЮЩИЕ|HAVING|ИТОГИ|TOTALS|ОБЪЕДИНИТЬ|UNION)\b",
+        re.IGNORECASE,
+    )
+    _union_re = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        in_query = False
+        group_depth = 0
+        where_stack: list[int] = []
+
+        for idx, line in enumerate(context.lines):
+            stripped = line.rstrip()
+            if not self._continuation_re.match(stripped):
+                if in_query:
+                    in_query = False
+                    group_depth = 0
+                    where_stack.clear()
+                self._scan_line_literal_queries(storage, idx, line)
+                select_match = self._select_re.search(stripped)
+                if select_match:
+                    tail = stripped[select_match.end() :]
+                    if not self._clause_after_fields_re.search(tail):
+                        in_query = True
+                        group_depth = 0
+                        where_stack.clear()
+                continue
+
+            if not in_query:
+                if self._select_re.search(stripped):
+                    in_query = True
+                    group_depth = 0
+                    where_stack.clear()
+                else:
+                    continue
+
+            raw_content = stripped.lstrip()
+            if raw_content.startswith("|"):
+                raw_content = raw_content[1:]
+            content = self._inline_comment_re.sub("", raw_content).rstrip().lstrip()
+
+            line_rs = line.rstrip()
+            pipe_pos = line_rs.find("|")
+            if pipe_pos < 0:
+                continue
+            after_pipe = line_rs[pipe_pos + 1 :]
+            leading_ws = len(after_pipe) - len(after_pipe.lstrip())
+            content_base = pipe_pos + 1 + leading_ws
+
+            quote_pos = content.find('"')
+            ended_query = quote_pos >= 0
+            content_scan = content[:quote_pos].rstrip() if ended_query else content
+            tail_has_semi = ";" in content_scan
+            head = content_scan[: content_scan.index(";")].rstrip() if tail_has_semi else content_scan
+
+            if tail_has_semi and not head:
+                where_stack.clear()
+                group_depth = 0
+                if ended_query:
+                    in_query = False
+                continue
+            if not head:
+                if ended_query:
+                    in_query = False
+                    group_depth = 0
+                    where_stack.clear()
+                continue
+            if self._union_re.search(head):
+                where_stack.clear()
+                continue
+            if where_stack and self._line_ends_where_re.match(head) and group_depth == where_stack[-1]:
+                where_stack.pop()
+            if self._line_is_where_re.match(head):
+                where_stack.append(group_depth)
+            if where_stack:
+                for match in self._or_re.finditer(head):
+                    self._add_match(storage, idx, content_base + match.start(), content_base + match.end())
+
+            group_depth += head.count("(") - head.count(")")
+            if group_depth < 0:
+                group_depth = 0
+            while where_stack and group_depth < where_stack[-1]:
+                where_stack.pop()
+            if tail_has_semi:
+                where_stack.clear()
+                group_depth = 0
+            if ended_query:
+                in_query = False
+                group_depth = 0
+                where_stack.clear()
+
+        return storage.diagnostics
+
+    def _scan_line_literal_queries(
+        self, storage: DiagnosticStorage, line_idx: int, line: str
+    ) -> None:
+        if _line_comment(line):
+            return
+        for quote_pos, literal in self._double_quoted_segments(line):
+            if not (self._select_re.search(literal) and self._where_re.search(literal)):
+                continue
+            offset_base = 0
+            for part in literal.split(";"):
+                for start, end in self._or_spans_in_query_literal(part):
+                    self._add_match(
+                        storage,
+                        line_idx,
+                        quote_pos + 1 + offset_base + start,
+                        quote_pos + 1 + offset_base + end,
+                    )
+                offset_base += len(part) + 1
+
+    def _add_match(
+        self,
+        storage: DiagnosticStorage,
+        line_idx: int,
+        start: int,
+        end: int,
+    ) -> None:
+        storage.add_range(
+            code=self.code,
+            message=self.message,
+            severity=Severity.WARNING,
+            line=line_idx,
+            character=start,
+            end_line=line_idx,
+            end_character=end,
+        )
+
+    def _where_clause_region_bounds(self, literal: str, where_match: re.Match[str]) -> tuple[int, int]:
+        pos = where_match.end()
+        depth = 0
+        while pos < len(literal):
+            char = literal[pos]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth < 0:
+                    depth = 0
+            if (
+                depth == 0
+                and pos > where_match.end()
+                and self._post_where_keyword_re.match(literal, pos)
+            ):
+                return where_match.start(), pos
+            pos += 1
+        return where_match.start(), len(literal)
+
+    def _or_spans_in_query_literal(self, literal: str) -> list[tuple[int, int]]:
+        out: list[tuple[int, int]] = []
+        pos = 0
+        while True:
+            match = self._where_re.search(literal, pos)
+            if match is None:
+                break
+            _start, end = self._where_clause_region_bounds(literal, match)
+            body = literal[match.end() : end]
+            base = match.end()
+            for or_match in self._or_re.finditer(body):
+                out.append((base + or_match.start(), base + or_match.end()))
+            pos = end
+        return out
+
+    @staticmethod
+    def _double_quoted_segments(line: str):
+        pos = 0
+        while pos < len(line):
+            if line[pos] != '"':
+                pos += 1
+                continue
+            quote_pos = pos
+            pos += 1
+            buf: list[str] = []
+            while pos < len(line):
+                if line[pos] == '"':
+                    if pos + 1 < len(line) and line[pos + 1] == '"':
+                        buf.append('"')
+                        pos += 2
+                        continue
+                    break
+                buf.append(line[pos])
+                pos += 1
+            yield quote_pos, "".join(buf)
+            pos += 1
+
+
 class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
     code = "BSL157"
     message = (

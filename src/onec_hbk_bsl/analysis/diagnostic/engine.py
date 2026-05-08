@@ -505,10 +505,6 @@ class DiagnosticEngine:
             tree=tree,
             idx=idx,
         )
-        if self._rule_enabled("BSL210"):
-            _rule_tasks.append(
-                ("BSL210", lambda: self._rule_bsl210_logical_or_in_where(path, lines))
-            )
         extend_style_token_rule_tasks(
             _rule_tasks,
             engine=self,
@@ -3362,39 +3358,6 @@ class DiagnosticEngine:
     ) -> list[Diagnostic]:
         query_blocks = snapshot.query_text_blocks if snapshot is not None else None
         return run_bsl149_assign_alias_fields_in_query(path, lines, query_blocks)
-
-    # ------------------------------------------------------------------
-    # BSL210 — LogicalOrInTheWhereSectionOfQuery
-    # ------------------------------------------------------------------
-
-    def _rule_bsl210_logical_or_in_where(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        return run_bsl210_logical_or_in_where(path, lines)
-
-    def _bsl210_scan_line_literal_queries(self, path: str, idx: int, line: str) -> list[Diagnostic]:
-        """One-line (or same-line) literals: ВЫБРАТЬ ... ГДЕ ... ИЛИ ..."""
-        if _RE_COMMENT_LINE.match(line):
-            return []
-        diags: list[Diagnostic] = []
-        for quote_pos, literal in _bsl210_iter_double_quoted_segments(line):
-            if not (_RE_BSL149_SELECT.search(literal) and _RE_QUERY_WHERE.search(literal)):
-                continue
-            offset_base = 0
-            for part in literal.split(";"):
-                for start, end in _bsl210_or_spans_in_query_literal(part):
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=quote_pos + 1 + offset_base + start,
-                            end_line=idx + 1,
-                            end_character=quote_pos + 1 + offset_base + end,
-                            severity=Severity.WARNING,
-                            code="BSL210",
-                            message=_BSL210_MESSAGE,
-                        )
-                    )
-                offset_base += len(part) + 1
-        return diags
 
     # ------------------------------------------------------------------
     # BSL220 / BSL235 / BSL269 — query text diagnostics
