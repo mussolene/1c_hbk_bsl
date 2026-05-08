@@ -281,9 +281,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.method_contract_rules import (
     run_bsl240_rewrite_method_parameter,
     run_bsl254_transferring_parameters,
 )
-from onec_hbk_bsl.analysis.diagnostic.rules.misc_runtime_rules import (
-    run_bsl257_unary_plus_in_concatenation,
-)
 from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
     run_bsl174_187_236_238_query_metadata_pool,
     run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
@@ -1790,10 +1787,10 @@ RULE_METADATA: dict[str, dict] = {
     "BSL257": {
         "name": "UnaryPlusInConcatenation",
         "description": "Unary plus (+) before a value in string concatenation — usually a mistake",
-        "severity": "WARNING",
-        "sonar_type": "BUG",
-        "sonar_severity": "MAJOR",
-        "tags": ["suspicious", "correctness"],
+        "severity": "ERROR",
+        "sonar_type": "ERROR",
+        "sonar_severity": "BLOCKER",
+        "tags": ["suspicious", "brainoverload"],
         "implemented": True,
     },
     "BSL258": {

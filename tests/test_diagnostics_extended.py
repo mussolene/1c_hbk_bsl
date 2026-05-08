@@ -4439,6 +4439,32 @@ class TestBsl255TryNumber:
         }
 
 
+class TestBsl257UnaryPlusInConcatenation:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "UnaryPlusInConcatenationDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL257"}).check_file(str(fixture))
+            if diag.code == "BSL257"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (6, 20, 6, 21),
+            (9, 33, 9, 34),
+            (24, 21, 24, 22),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.ERROR}
+        assert {diag.message for diag in diags} == {
+            "Унарный плюс в конкатенации строк потенциально приводит к ошибке времени выполнения"
+        }
+
+
 class TestBsl273VirtualTableCallWithoutParameters:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (

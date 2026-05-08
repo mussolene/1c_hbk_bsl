@@ -168,7 +168,7 @@
 | `TransferringParametersBetweenClientAndServer` | `BSL254` | `implemented` | upstream:diagnostics/TransferringParametersBetweenClientAndServerDiagnostic.java:68 | CODE_SMELL | MAJOR | cachedValueNames | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5235 |
 | `TryNumber` | `BSL255` | `implemented` | upstream:diagnostics/TryNumberDiagnostic.java:45 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5244 |
 | `Typo` | `BSL256` | `implemented` | upstream:diagnostics/TypoDiagnostic.java:71 | CODE_SMELL | INFO | minWordLength, userWordsToIgnore, caseInsensitive | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5329 |
-| `UnaryPlusInConcatenation` | `BSL257` | `implemented` | upstream:diagnostics/UnaryPlusInConcatenationDiagnostic.java:44 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6213 |
+| `UnaryPlusInConcatenation` | `BSL257` | `implemented` | upstream:diagnostics/UnaryPlusInConcatenationDiagnostic.java:44 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2526 |
 | `UnionAll` | `BSL258` | `implemented` | upstream:diagnostics/UnionAllDiagnostic.java:45 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4749 |
 | `UnknownPreprocessorSymbol` | `BSL259` | `implemented` | upstream:diagnostics/UnknownPreprocessorSymbolDiagnostic.java:40 | ERROR | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3672 |
 | `UnreachableCode` | `BSL051` | `implemented` | upstream:diagnostics/UnreachableCodeDiagnostic.java:56 | ERROR | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2455 |

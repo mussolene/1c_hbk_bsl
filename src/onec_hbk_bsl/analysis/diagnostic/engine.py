@@ -513,10 +513,6 @@ class DiagnosticEngine:
             tree=tree,
             idx=idx,
         )
-        if self._rule_enabled("BSL257"):
-            _rule_tasks.append(
-                ("BSL257", lambda: self._rule_bsl257_unary_plus_in_concatenation(path, lines))
-            )
         if self._rule_enabled("BSL210"):
             _rule_tasks.append(
                 ("BSL210", lambda: self._rule_bsl210_logical_or_in_where(path, lines))
@@ -5565,12 +5561,3 @@ class DiagnosticEngine:
         proc_node_map: dict[tuple[str, int, str], Any] | None = None,
     ) -> list[Diagnostic]:
         return run_bsl240_rewrite_method_parameter(path, lines, procs, tree, proc_node_map)
-
-    # ------------------------------------------------------------------
-    # BSL257 — UnaryPlusInConcatenation
-    # ------------------------------------------------------------------
-
-    def _rule_bsl257_unary_plus_in_concatenation(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        return run_bsl257_unary_plus_in_concatenation(path, lines)

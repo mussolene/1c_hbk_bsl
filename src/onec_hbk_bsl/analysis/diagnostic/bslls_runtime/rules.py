@@ -2526,6 +2526,80 @@ class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
         )
 
 
+class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
+    code = "BSL257"
+    message = "Унарный плюс в конкатенации строк потенциально приводит к ошибке времени выполнения"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+
+        storage = DiagnosticStorage(context.path)
+        leaves = self._default_leaves(context.tree.root_node)
+        previous_by_pos = {
+            self._node_key(node): leaves[idx - 1] for idx, node in enumerate(leaves[1:], start=1)
+        }
+        for unary_node in context.ts_nodes_for_types(context.tree, {"unary_expression"})["unary_expression"]:
+            operator = next(
+                (
+                    child
+                    for child in _ts_children(unary_node)
+                    if getattr(child, "type", None) == "operator" and _ts_node_text(child) == "+"
+                ),
+                None,
+            )
+            if operator is None or self._has_numeric_operand(unary_node):
+                continue
+            previous = previous_by_pos.get(self._node_key(operator))
+            if previous is None or getattr(previous, "type", None) != "operator" or _ts_node_text(previous) != "+":
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self.message,
+                severity=Severity.ERROR,
+                lines=context.lines,
+                start_node=operator,
+                end_node=operator,
+            )
+        return storage.diagnostics
+
+    @staticmethod
+    def _default_leaves(root: Any) -> list[Any]:
+        leaves = [
+            node
+            for node in _ts_walk(root)
+            if not _ts_children(node)
+            and getattr(node, "type", None) not in {"line_comment", "comment"}
+            and _ts_node_text(node).strip()
+        ]
+        return sorted(leaves, key=lambda node: getattr(node, "start_byte", -1))
+
+    @staticmethod
+    def _node_key(node: Any) -> tuple[int, int, str, str]:
+        return (
+            int(getattr(node, "start_byte", -1)),
+            int(getattr(node, "end_byte", -1)),
+            str(getattr(node, "type", "")),
+            _ts_node_text(node),
+        )
+
+    @staticmethod
+    def _has_numeric_operand(unary_node: Any) -> bool:
+        operand = next(
+            (
+                child
+                for child in _ts_children(unary_node)
+                if getattr(child, "type", None) == "expression"
+            ),
+            None,
+        )
+        return operand is not None and any(
+            getattr(child, "type", None) == "number" for child in _ts_walk(operand)
+        )
+
+
 class UnionAllRule(BsllsDiagnosticRule):
     code = "BSL258"
     message = "Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ"
