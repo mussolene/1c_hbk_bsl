@@ -1899,7 +1899,13 @@ class DiagnosticEngine:
         regions: list[_RegionInfo],
         procs: list[_ProcInfo],
     ) -> list[Diagnostic]:
-        return run_bsl152_cached_public(path, lines, regions, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl152_cached_public(
+            lines=lines,
+            regions=regions,
+            procs=procs,
+            runner=run_bsl152_cached_public,
+        )
 
     # ------------------------------------------------------------------
     # BSL154 — CodeAfterAsyncCall (client command / form / managed app modules)
@@ -1908,7 +1914,12 @@ class DiagnosticEngine:
     def _rule_bsl154_code_after_async(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        return run_bsl154_code_after_async(path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl154_code_after_async(
+            lines=lines,
+            procs=procs,
+            runner=run_bsl154_code_after_async,
+        )
 
     # ------------------------------------------------------------------
     # BSL156 — CodeOutOfRegion
@@ -1917,7 +1928,12 @@ class DiagnosticEngine:
     def _rule_bsl156_code_out_of_region(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        return run_bsl156_code_out_of_region(path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl156_code_out_of_region(
+            lines=lines,
+            procs=procs,
+            runner=run_bsl156_code_out_of_region,
+        )
 
     # ------------------------------------------------------------------
     # BSL158 — CommonModuleAssign (indexed configuration)
@@ -1926,7 +1942,12 @@ class DiagnosticEngine:
     def _rule_bsl158_common_module_assign(
         self, path: str, lines: list[str], symbol_index: Any
     ) -> list[Diagnostic]:
-        return run_bsl158_common_module_assign(path, lines, symbol_index)
+        model = ModuleModel(path=path)
+        return model.validate_bsl158_common_module_assign(
+            lines=lines,
+            symbol_index=symbol_index,
+            runner=run_bsl158_common_module_assign,
+        )
 
     # ------------------------------------------------------------------
     # BSL159 — CommonModuleInvalidType (sibling module XML)
@@ -1935,7 +1956,11 @@ class DiagnosticEngine:
     def _rule_bsl159_common_module_invalid_type(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        return run_bsl159_common_module_invalid_type(path, lines)
+        model = ModuleModel(path=path)
+        return model.validate_bsl159_common_module_invalid_type(
+            lines=lines,
+            runner=run_bsl159_common_module_invalid_type,
+        )
 
     # ------------------------------------------------------------------
     # BSL160 — CommonModuleMissingAPI
@@ -1948,7 +1973,13 @@ class DiagnosticEngine:
         regions: list[_RegionInfo],
         procs: list[_ProcInfo],
     ) -> list[Diagnostic]:
-        return run_bsl160_common_module_missing_api(path, lines, regions, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl160_common_module_missing_api(
+            lines=lines,
+            regions=regions,
+            procs=procs,
+            runner=run_bsl160_common_module_missing_api,
+        )
 
     # ------------------------------------------------------------------
     # BSL161–BSL168 — CommonModuleName* (sibling module XML)
@@ -1960,12 +1991,23 @@ class DiagnosticEngine:
         lines: list[str],
         codes: tuple[str, ...],
     ) -> list[Diagnostic]:
-        return run_bsl161_168_common_module_names(self._rule_enabled, path, lines, codes)
+        model = ModuleModel(path=path)
+        return model.validate_bsl161_168_common_module_names(
+            lines=lines,
+            codes=codes,
+            enabled_rule_fn=self._rule_enabled,
+            runner=run_bsl161_168_common_module_names,
+        )
 
     def _rule_bsl173_deleting_collection_item(
         self, path: str, lines: list[str], procs: list[Any]
     ) -> list[Diagnostic]:
-        return run_bsl173_deleting_collection_item(path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl173_deleting_collection_item(
+            lines=lines,
+            procs=procs,
+            runner=run_bsl173_deleting_collection_item,
+        )
 
     # ------------------------------------------------------------------
     # BSL172 — DataExchangeLoading
@@ -1974,7 +2016,12 @@ class DiagnosticEngine:
     def _rule_bsl172_data_exchange_loading(
         self, path: str, lines: list[str], procs: list[Any]
     ) -> list[Diagnostic]:
-        return run_bsl172_data_exchange_loading(path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl172_data_exchange_loading(
+            lines=lines,
+            procs=procs,
+            runner=run_bsl172_data_exchange_loading,
+        )
 
     # ------------------------------------------------------------------
     # BSL220 / BSL235 / BSL269 — query text diagnostics
@@ -1987,8 +2034,13 @@ class DiagnosticEngine:
         codes: tuple[str, ...],
         query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl220_235_269_query_text_diagnostics(
-            path, lines, codes, self._rule_enabled, query_blocks
+        model = ModuleModel(path=path)
+        return model.validate_bsl220_235_269_query_text_diagnostics(
+            lines=lines,
+            codes=codes,
+            query_blocks=query_blocks,
+            enabled_rule_fn=self._rule_enabled,
+            runner=run_bsl220_235_269_query_text_diagnostics,
         )
 
     # ------------------------------------------------------------------
@@ -2002,8 +2054,13 @@ class DiagnosticEngine:
         codes: tuple[str, ...],
         query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl191_201_query_text_diagnostics(
-            path, lines, codes, self._rule_enabled, query_blocks
+        model = ModuleModel(path=path)
+        return model.validate_bsl191_201_query_text_diagnostics(
+            lines=lines,
+            codes=codes,
+            query_blocks=query_blocks,
+            enabled_rule_fn=self._rule_enabled,
+            runner=run_bsl191_201_query_text_diagnostics,
         )
 
     # ------------------------------------------------------------------
@@ -2017,8 +2074,13 @@ class DiagnosticEngine:
         procs: list[_ProcInfo],
         codes: tuple[str, ...],
     ) -> list[Diagnostic]:
-        return run_bsl192_193_194_228_266_method_contract_diagnostics(
-            path, lines, procs, codes, self._rule_enabled
+        model = ModuleModel(path=path)
+        return model.validate_bsl192_193_194_228_266_method_contract_diagnostics(
+            lines=lines,
+            procs=procs,
+            codes=codes,
+            enabled_rule_fn=self._rule_enabled,
+            runner=run_bsl192_193_194_228_266_method_contract_diagnostics,
         )
 
     # ------------------------------------------------------------------

@@ -1386,3 +1386,39 @@ class ModuleModel:
                 continue
             diags.append(Diagnostic(file=self.path, line=idx + 1, character=match.start("name"), end_line=idx + 1, end_character=match.end("name"), severity=Severity.WARNING, code="BSL268", message=f'Использование метода "{match.group("name")}" снижает производительность поиска'))
         return diags
+
+    def validate_bsl152_cached_public(self, *, lines: list[str], regions: list[RegionInfo], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+        return runner(self.path, lines, regions, procs)
+
+    def validate_bsl154_code_after_async(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+        return runner(self.path, lines, procs)
+
+    def validate_bsl156_code_out_of_region(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+        return runner(self.path, lines, procs)
+
+    def validate_bsl158_common_module_assign(self, *, lines: list[str], symbol_index, runner) -> list[Diagnostic]:
+        return runner(self.path, lines, symbol_index)
+
+    def validate_bsl159_common_module_invalid_type(self, *, lines: list[str], runner) -> list[Diagnostic]:
+        return runner(self.path, lines)
+
+    def validate_bsl160_common_module_missing_api(self, *, lines: list[str], regions: list[RegionInfo], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+        return runner(self.path, lines, regions, procs)
+
+    def validate_bsl161_168_common_module_names(self, *, lines: list[str], codes: tuple[str, ...], enabled_rule_fn, runner) -> list[Diagnostic]:
+        return runner(enabled_rule_fn, self.path, lines, codes)
+
+    def validate_bsl173_deleting_collection_item(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+        return runner(self.path, lines, procs)
+
+    def validate_bsl172_data_exchange_loading(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+        return runner(self.path, lines, procs)
+
+    def validate_bsl220_235_269_query_text_diagnostics(self, *, lines: list[str], codes: tuple[str, ...], query_blocks, enabled_rule_fn, runner) -> list[Diagnostic]:
+        return runner(self.path, lines, codes, enabled_rule_fn, query_blocks)
+
+    def validate_bsl191_201_query_text_diagnostics(self, *, lines: list[str], codes: tuple[str, ...], query_blocks, enabled_rule_fn, runner) -> list[Diagnostic]:
+        return runner(self.path, lines, codes, enabled_rule_fn, query_blocks)
+
+    def validate_bsl192_193_194_228_266_method_contract_diagnostics(self, *, lines: list[str], procs: list[ProcInfo], codes: tuple[str, ...], enabled_rule_fn, runner) -> list[Diagnostic]:
+        return runner(self.path, lines, procs, codes, enabled_rule_fn)
