@@ -4026,6 +4026,8 @@ class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
             run_bsl159_common_module_invalid_type,
             run_bsl160_common_module_missing_api,
             run_bsl161_168_common_module_names,
+            run_bsl172_data_exchange_loading,
+            run_bsl173_deleting_collection_item,
         )
 
         code = self.code
@@ -4051,6 +4053,10 @@ class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
             return run_bsl160_common_module_missing_api(
                 context.path, context.lines, regions, procs
             )
+        if code == "BSL172":
+            return run_bsl172_data_exchange_loading(context.path, context.lines, procs)
+        if code == "BSL173":
+            return run_bsl173_deleting_collection_item(context.path, context.lines, procs)
         return [
             diag
             for diag in run_bsl161_168_common_module_names(
@@ -4061,6 +4067,59 @@ class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
             )
             if diag.code == code
         ]
+
+
+class MethodContractDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis.diagnostic.rules.method_contract_rules import (
+            run_bsl192_193_194_228_266_method_contract_diagnostics,
+            run_bsl212_missed_required_parameter,
+            run_bsl215_missing_parameter_description,
+            run_bsl224_nested_function_in_parameters,
+            run_bsl233_public_methods_description,
+            run_bsl240_rewrite_method_parameter,
+            run_bsl254_transferring_parameters,
+        )
+
+        code = self.code
+        snapshot = context.snapshot
+        procs = list(getattr(snapshot, "procedures", []) or [])
+
+        if code in {"BSL192", "BSL193", "BSL194", "BSL228"}:
+            return run_bsl192_193_194_228_266_method_contract_diagnostics(
+                context.path,
+                context.lines,
+                procs,
+                (code,),
+                context.diagnostics_engine._rule_enabled,
+            )
+        if code == "BSL212":
+            calls = list(getattr(snapshot, "calls", []) or [])
+            return run_bsl212_missed_required_parameter(
+                context.path, context.content, context.lines, procs, calls
+            )
+        if code == "BSL215":
+            return run_bsl215_missing_parameter_description(context.path, context.lines, procs)
+        if code == "BSL224":
+            return run_bsl224_nested_function_in_parameters(
+                context.path, context.lines, context.tree
+            )
+        if code == "BSL233":
+            return run_bsl233_public_methods_description(context.path, context.lines, procs)
+        if code == "BSL240":
+            proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
+            return run_bsl240_rewrite_method_parameter(
+                context.path, context.lines, procs, context.tree, proc_node_map
+            )
+        return run_bsl254_transferring_parameters(
+            getattr(context.diagnostics_engine, "_symbol_index", None),
+            context.path,
+            context.lines,
+            procs,
+        )
 
 
 class EngineBridgeRule(BsllsDiagnosticRule):
