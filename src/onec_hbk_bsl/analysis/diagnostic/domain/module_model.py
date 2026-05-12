@@ -2184,6 +2184,102 @@ class ModuleModel:
                     )
         return diags
 
+    def validate_bsl217_missing_temp_storage_deletion(
+        self,
+        *,
+        lines: list[str],
+        tree: Any | None,
+        method_call_nodes: list[Any] | None,
+        global_method_calls_from_nodes_fn,
+        ts_global_method_calls_fn,
+        bsl217_get_from_temp_storage_names: set[str],
+        ts_method_identifier_span_fn,
+        ts_assignment_lvalue_text_fn,
+        ts_bsl218_skip_error_ancestor_fn,
+        ts_bsl218_code_block_roots_fn,
+        bsl217_delete_from_temp_storage_names: set[str],
+        ts_method_call_arg_exprs_fn,
+        ts_node_text_fn,
+        rule_descriptions_ru: dict[str, str],
+    ) -> list[Diagnostic]:
+        if tree is None:
+            return []
+        diags: list[Diagnostic] = []
+        calls = (
+            global_method_calls_from_nodes_fn(method_call_nodes, lines)
+            if method_call_nodes is not None
+            else ts_global_method_calls_fn(tree.root_node, lines)
+        )
+        for call in calls:
+            if str(call["name"]).casefold() not in bsl217_get_from_temp_storage_names:
+                continue
+            method_node = call["node"]
+            assign_anc: Any | None = None
+            cur: Any | None = method_node
+            while cur is not None:
+                if getattr(cur, "type", None) == "assignment_statement":
+                    assign_anc = cur
+                    break
+                cur = getattr(cur, "parent", None)
+
+            span = ts_method_identifier_span_fn(method_node, lines)
+            if span is None:
+                continue
+            line_1, char_1, end_ch = span
+
+            if assign_anc is None:
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_1,
+                        character=char_1,
+                        end_line=line_1,
+                        end_character=end_ch,
+                        severity=Severity.WARNING,
+                        code="BSL217",
+                        message=rule_descriptions_ru["BSL217"],
+                    )
+                )
+                continue
+
+            var_name = ts_assignment_lvalue_text_fn(assign_anc)
+            if not var_name:
+                continue
+            stmt_parent = ts_bsl218_skip_error_ancestor_fn(getattr(assign_anc, "parent", None))
+            roots = ts_bsl218_code_block_roots_fn(stmt_parent) if stmt_parent is not None else None
+            if not roots:
+                continue
+            deleted = False
+            for subtree in roots:
+                for later_call in ts_global_method_calls_fn(subtree, lines):
+                    if later_call["line"] <= line_1:
+                        continue
+                    if str(later_call["name"]).casefold() not in bsl217_delete_from_temp_storage_names:
+                        continue
+                    for expr in ts_method_call_arg_exprs_fn(later_call["node"]):
+                        if ts_node_text_fn(expr).strip().casefold() == var_name.casefold():
+                            deleted = True
+                            break
+                    if deleted:
+                        break
+                if deleted:
+                    break
+            if deleted:
+                continue
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line_1,
+                    character=char_1,
+                    end_line=line_1,
+                    end_character=end_ch,
+                    severity=Severity.WARNING,
+                    code="BSL217",
+                    message=rule_descriptions_ru["BSL217"],
+                )
+            )
+        return diags
+
     def validate_bsl202_205_223_243_249_light_call_pool(
         self,
         *,
