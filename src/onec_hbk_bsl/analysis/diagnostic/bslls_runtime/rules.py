@@ -4013,6 +4013,56 @@ class QueryTextDiagnosticsRule(BsllsDiagnosticRule):
         )
 
 
+class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
+            run_bsl152_cached_public,
+            run_bsl154_code_after_async,
+            run_bsl156_code_out_of_region,
+            run_bsl158_common_module_assign,
+            run_bsl159_common_module_invalid_type,
+            run_bsl160_common_module_missing_api,
+            run_bsl161_168_common_module_names,
+        )
+
+        code = self.code
+        snapshot = context.snapshot
+        procs = list(getattr(snapshot, "procedures", []) or [])
+        regions = list(getattr(snapshot, "regions", []) or [])
+
+        if code == "BSL152":
+            return run_bsl152_cached_public(context.path, context.lines, regions, procs)
+        if code == "BSL154":
+            return run_bsl154_code_after_async(context.path, context.lines, procs)
+        if code == "BSL156":
+            return run_bsl156_code_out_of_region(context.path, context.lines, procs)
+        if code == "BSL158":
+            return run_bsl158_common_module_assign(
+                context.path,
+                context.lines,
+                getattr(context.diagnostics_engine, "_symbol_index", None),
+            )
+        if code == "BSL159":
+            return run_bsl159_common_module_invalid_type(context.path, context.lines)
+        if code == "BSL160":
+            return run_bsl160_common_module_missing_api(
+                context.path, context.lines, regions, procs
+            )
+        return [
+            diag
+            for diag in run_bsl161_168_common_module_names(
+                context.diagnostics_engine._rule_enabled,
+                context.path,
+                context.lines,
+                (code,),
+            )
+            if diag.code == code
+        ]
+
+
 class EngineBridgeRule(BsllsDiagnosticRule):
     def __init__(self, code: str):
         self.code = code
