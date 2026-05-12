@@ -1860,6 +1860,173 @@ class ModuleModel:
                     )
         return diags
 
+    def validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
+        self,
+        *,
+        lines: list[str],
+        symbols: list[Any],
+        calls: list[Any],
+        enabled_codes: tuple[str, ...],
+        line_comment_re,
+        bsl176_deprecated_doc_re,
+        mask_double_quoted_strings_preserve_len_fn,
+        bsl175_attribute_re,
+        bsl175_attr_replacements: dict[str, str],
+        bsl175_method_replacements: dict[str, str],
+        bsl175_child_form_items_re,
+        bsl175_enum_replacements: dict[str, str],
+        bsl175_enum_name_re,
+        bsl175_global_method_re,
+        bsl175_global_methods: set[str],
+    ) -> list[Diagnostic]:
+        enabled = set(enabled_codes)
+        diags: list[Diagnostic] = []
+
+        deprecated_locals: dict[str, str] = {}
+        deprecated_callers: set[str] = set()
+        if "BSL176" in enabled:
+            for sym in symbols:
+                if getattr(sym, "kind", "") not in {"procedure", "function"}:
+                    continue
+                doc_comment = getattr(sym, "doc_comment", "") or ""
+                if not bsl176_deprecated_doc_re.search(doc_comment):
+                    continue
+                name = getattr(sym, "name", "")
+                if not name:
+                    continue
+                deprecated_locals[name.casefold()] = name
+                deprecated_callers.add(name.casefold())
+
+        for idx, line in enumerate(lines):
+            if line_comment_re.match(line):
+                continue
+            clean = mask_double_quoted_strings_preserve_len_fn(line)
+            comment_pos = clean.find("//")
+            if comment_pos >= 0:
+                clean = clean[:comment_pos]
+
+            if "BSL175" in enabled:
+                for match in bsl175_attribute_re.finditer(clean):
+                    name = match.group("name")
+                    replacement = bsl175_attr_replacements.get(name.casefold())
+                    if not replacement:
+                        continue
+                    if name.casefold() in bsl175_method_replacements:
+                        diags.append(
+                            Diagnostic(
+                                file=self.path,
+                                line=idx + 1,
+                                character=match.start("name"),
+                                end_line=idx + 1,
+                                end_character=match.end("name"),
+                                severity=Severity.INFORMATION,
+                                code="BSL175",
+                                message=(
+                                    f'Метод "{name}" устарел. Вместо него стоит использовать '
+                                    f'"{replacement}"'
+                                ),
+                            )
+                        )
+                    else:
+                        diags.append(
+                            Diagnostic(
+                                file=self.path,
+                                line=idx + 1,
+                                character=match.start("name"),
+                                end_line=idx + 1,
+                                end_character=match.end("name"),
+                                severity=Severity.INFORMATION,
+                                code="BSL175",
+                                message=(
+                                    f'Атрибут "{name}" устарел. Вместо него стоит использовать '
+                                    f"{replacement}"
+                                ),
+                            )
+                        )
+                for match in bsl175_child_form_items_re.finditer(clean):
+                    name = match.group("name")
+                    replacement = bsl175_enum_replacements.get(name.casefold())
+                    if not replacement:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL175",
+                            message=(
+                                f'Используется старое наименование "{name}". Вместо него '
+                                f'необходимо использовать "{replacement}"'
+                            ),
+                        )
+                    )
+                for match in bsl175_enum_name_re.finditer(clean):
+                    name = match.group("name")
+                    replacement = bsl175_enum_replacements.get(name.casefold())
+                    if not replacement:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL175",
+                            message=(
+                                f'Используется старое наименование "{name}". Вместо него '
+                                f'необходимо использовать "{replacement}"'
+                            ),
+                        )
+                    )
+                for match in bsl175_global_method_re.finditer(clean):
+                    name = match.group("name")
+                    if name.casefold() not in bsl175_global_methods:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL175",
+                            message=f'Метод "{name}" устарел и больше не используется',
+                        )
+                    )
+
+        if "BSL176" in enabled and deprecated_locals:
+            for call in calls:
+                callee_name = getattr(call, "callee_name", "")
+                if not callee_name:
+                    continue
+                callee_cf = callee_name.casefold()
+                if callee_cf not in deprecated_locals:
+                    continue
+                caller_name = getattr(call, "caller_name", None)
+                if caller_name and caller_name.casefold() in deprecated_callers:
+                    continue
+                start_char = int(getattr(call, "caller_character", 0))
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=int(getattr(call, "caller_line", 1)),
+                        character=start_char,
+                        end_line=int(getattr(call, "caller_line", 1)),
+                        end_character=start_char + len(callee_name),
+                        severity=Severity.INFORMATION,
+                        code="BSL176",
+                        message=f'Удалите вызов устаревшего метода "{callee_name}".',
+                    )
+                )
+
+        return diags
+
     def validate_bsl202_205_223_243_249_light_call_pool(
         self,
         *,

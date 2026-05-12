@@ -2481,155 +2481,24 @@ class DiagnosticEngine:
         calls: list[Any],
         enabled_codes: tuple[str, ...],
     ) -> list[Diagnostic]:
-        """Batch deprecated API diagnostics sharing one lightweight source pass."""
-        enabled = set(enabled_codes)
-        diags: list[Diagnostic] = []
-
-        deprecated_locals: dict[str, str] = {}
-        deprecated_callers: set[str] = set()
-        if "BSL176" in enabled:
-            for sym in symbols:
-                if getattr(sym, "kind", "") not in {"procedure", "function"}:
-                    continue
-                doc_comment = getattr(sym, "doc_comment", "") or ""
-                if not _RE_BSL176_DEPRECATED_DOC.search(doc_comment):
-                    continue
-                name = getattr(sym, "name", "")
-                if not name:
-                    continue
-                deprecated_locals[name.casefold()] = name
-                deprecated_callers.add(name.casefold())
-
-        for idx, line in enumerate(lines):
-            if _RE_LINE_COMMENT.match(line):
-                continue
-            clean = _mask_double_quoted_strings_preserve_len(line)
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
-                clean = clean[:comment_pos]
-                line = line[:comment_pos]
-
-            if "BSL175" in enabled:
-                for match in _RE_BSL175_ATTRIBUTE.finditer(clean):
-                    name = match.group("name")
-                    replacement = _BSL175_ATTR_REPLACEMENTS.get(name.casefold())
-                    if not replacement:
-                        continue
-                    if name.casefold() in _BSL175_METHOD_REPLACEMENTS:
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=idx + 1,
-                                character=match.start("name"),
-                                end_line=idx + 1,
-                                end_character=match.end("name"),
-                                severity=Severity.INFORMATION,
-                                code="BSL175",
-                                message=(
-                                    f'Метод "{name}" устарел. Вместо него стоит использовать '
-                                    f'"{replacement}"'
-                                ),
-                            )
-                        )
-                    else:
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=idx + 1,
-                                character=match.start("name"),
-                                end_line=idx + 1,
-                                end_character=match.end("name"),
-                                severity=Severity.INFORMATION,
-                                code="BSL175",
-                                message=(
-                                    f'Атрибут "{name}" устарел. Вместо него стоит использовать '
-                                    f"{replacement}"
-                                ),
-                            )
-                        )
-                for match in _RE_BSL175_CHILD_FORM_ITEMS.finditer(clean):
-                    name = match.group("name")
-                    replacement = _BSL175_ENUM_REPLACEMENTS.get(name.casefold())
-                    if not replacement:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.INFORMATION,
-                            code="BSL175",
-                            message=(
-                                f'Используется старое наименование "{name}". Вместо него '
-                                f'необходимо использовать "{replacement}"'
-                            ),
-                        )
-                    )
-                for match in _RE_BSL175_ENUM_NAME.finditer(clean):
-                    name = match.group("name")
-                    replacement = _BSL175_ENUM_REPLACEMENTS.get(name.casefold())
-                    if not replacement:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.INFORMATION,
-                            code="BSL175",
-                            message=(
-                                f'Используется старое наименование "{name}". Вместо него '
-                                f'необходимо использовать "{replacement}"'
-                            ),
-                        )
-                    )
-                for match in _RE_BSL175_GLOBAL_METHOD.finditer(clean):
-                    name = match.group("name")
-                    if name.casefold() not in _BSL175_GLOBAL_METHODS:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.INFORMATION,
-                            code="BSL175",
-                            message=f'Метод "{name}" устарел и больше не используется',
-                        )
-                    )
-
-        if "BSL176" in enabled and deprecated_locals:
-            for call in calls:
-                callee_name = getattr(call, "callee_name", "")
-                if not callee_name:
-                    continue
-                callee_cf = callee_name.casefold()
-                if callee_cf not in deprecated_locals:
-                    continue
-                caller_name = getattr(call, "caller_name", None)
-                if caller_name and caller_name.casefold() in deprecated_callers:
-                    continue
-                start_char = int(getattr(call, "caller_character", 0))
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=int(getattr(call, "caller_line", 1)),
-                        character=start_char,
-                        end_line=int(getattr(call, "caller_line", 1)),
-                        end_character=start_char + len(callee_name),
-                        severity=Severity.INFORMATION,
-                        code="BSL176",
-                        message=f'Удалите вызов устаревшего метода "{callee_name}".',
-                    )
-                )
-
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
+            lines=lines,
+            symbols=symbols,
+            calls=calls,
+            enabled_codes=enabled_codes,
+            line_comment_re=_RE_LINE_COMMENT,
+            bsl176_deprecated_doc_re=_RE_BSL176_DEPRECATED_DOC,
+            mask_double_quoted_strings_preserve_len_fn=_mask_double_quoted_strings_preserve_len,
+            bsl175_attribute_re=_RE_BSL175_ATTRIBUTE,
+            bsl175_attr_replacements=_BSL175_ATTR_REPLACEMENTS,
+            bsl175_method_replacements=_BSL175_METHOD_REPLACEMENTS,
+            bsl175_child_form_items_re=_RE_BSL175_CHILD_FORM_ITEMS,
+            bsl175_enum_replacements=_BSL175_ENUM_REPLACEMENTS,
+            bsl175_enum_name_re=_RE_BSL175_ENUM_NAME,
+            bsl175_global_method_re=_RE_BSL175_GLOBAL_METHOD,
+            bsl175_global_methods=_BSL175_GLOBAL_METHODS,
+        )
 
     # ------------------------------------------------------------------
     # BSL215 — MissingParameterDescription
