@@ -2807,185 +2807,24 @@ class DiagnosticEngine:
         enabled: tuple[str, ...],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        root = getattr(tree, "root_node", None)
-        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-            return []
-
-        enabled_set = set(enabled)
-        diags: list[Diagnostic] = []
-        clean_lines = (
-            snapshot.code_lines_without_comments
-            if snapshot is not None
-            else [_strip_inline_comment_preserve_strings(line) for line in lines]
+        model = ModuleModel(path=path)
+        return model.validate_bsl202_205_223_243_249_light_call_pool(
+            lines=lines,
+            tree=tree,
+            enabled=enabled,
+            snapshot=snapshot,
+            strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
+            ts_nodes_for_types_fn=self._ts_nodes_for_types,
+            ts_child_of_type_fn=_ts_child_of_type,
+            ts_node_text_fn=_ts_node_text,
+            ts_method_call_arg_exprs_fn=_ts_method_call_arg_exprs,
+            ts_walk_fn=_ts_walk,
+            ts_method_identifier_span_fn=_ts_method_identifier_span,
+            utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+            bsl223_structure_names=_BSL223_STRUCTURE_NAMES,
+            bsl249_style_constructor_names=_BSL249_STYLE_CONSTRUCTOR_NAMES,
+            split_top_level_args_fn=_split_top_level_args,
         )
-
-        def placeholder_indexes(template: str) -> set[int]:
-            out: set[int] = set()
-            i = 0
-            while i < len(template):
-                if template[i] != "%":
-                    i += 1
-                    continue
-                if i + 1 < len(template) and template[i + 1] == "%":
-                    i += 2
-                    continue
-                if i + 1 < len(template) and template[i + 1] == "(":
-                    j = i + 2
-                    digits: list[str] = []
-                    while j < len(template) and template[j].isdigit():
-                        digits.append(template[j])
-                        j += 1
-                    if digits and j < len(template) and template[j] == ")":
-                        out.add(int("".join(digits)))
-                        i = j + 1
-                        continue
-                j = i + 1
-                digits = []
-                while j < len(template) and template[j].isdigit():
-                    digits.append(template[j])
-                    j += 1
-                if digits:
-                    out.add(int("".join(digits)))
-                    i = j
-                    continue
-                i += 1
-            return out
-
-        if {"BSL202", "BSL223"} & enabled_set:
-            line_texts = lines
-            nodes = self._ts_nodes_for_types(tree, {"method_call", "new_expression"})
-
-            if "BSL223" in enabled_set:
-                for node in nodes["new_expression"]:
-                    type_node = _ts_child_of_type(node, "identifier")
-                    if (
-                        type_node is not None
-                        and _ts_node_text(type_node).casefold() in _BSL223_STRUCTURE_NAMES
-                    ):
-                        args = _ts_method_call_arg_exprs(node)
-                        if len(args) > 1:
-                            nested = False
-                            for expr in args[1:]:
-                                for child in _ts_walk(expr):
-                                    if getattr(child, "type", None) != "new_expression":
-                                        continue
-                                    nested_args = _ts_method_call_arg_exprs(child)
-                                    if len(nested_args) > 1:
-                                        nested = True
-                                        break
-                                if nested:
-                                    break
-                            if nested:
-                                line_idx = node.start_point[0]
-                                line_text = (
-                                    line_texts[line_idx] if line_idx < len(line_texts) else ""
-                                )
-                                start_char = utf8_byte_offset_to_lsp_character(
-                                    line_text, node.start_point[1]
-                                )
-                                diags.append(
-                                    Diagnostic(
-                                        file=path,
-                                        line=line_idx + 1,
-                                        character=start_char,
-                                        end_line=line_idx + 1,
-                                        end_character=min(
-                                            len(line_text),
-                                            start_char + len(_ts_node_text(type_node)),
-                                        ),
-                                        severity=Severity.INFORMATION,
-                                        code="BSL223",
-                                        message=(
-                                            "Избегайте вложенных конструкторов в объявлении структуры"
-                                        ),
-                                    )
-                                )
-
-            for node in nodes["method_call"]:
-                ident = _ts_child_of_type(node, "identifier")
-                if ident is None:
-                    continue
-                name_cf = _ts_node_text(ident).casefold()
-                span = _ts_method_identifier_span(node, line_texts)
-                if span is None:
-                    continue
-                line_1, char_1, end_char = span
-
-                if "BSL202" in enabled_set and name_cf in {"стршаблон", "strtemplate"}:
-                    args = _ts_method_call_arg_exprs(node)
-                    if args:
-                        first = _ts_node_text(args[0]).strip()
-                        if len(first) >= 2 and first[0] == '"' and first[-1] == '"':
-                            template = first[1:-1].replace('""', '"')
-                            indexes = placeholder_indexes(template)
-                            expected = max(indexes) if indexes else 0
-                            actual = max(0, len(args) - 1)
-                            if expected != actual:
-                                diags.append(
-                                    Diagnostic(
-                                        file=path,
-                                        line=line_1,
-                                        character=char_1,
-                                        end_line=line_1,
-                                        end_character=end_char,
-                                        severity=Severity.ERROR,
-                                        code="BSL202",
-                                        message=(
-                                            "Количество параметров СтрШаблон()/StrTemplate() "
-                                            "не соответствует шаблону"
-                                        ),
-                                    )
-                                )
-
-        if {"BSL243", "BSL249"} & enabled_set:
-            for idx, line in enumerate(clean_lines):
-                if "BSL243" in enabled_set:
-                    for m in re.finditer(
-                        r"\b(?P<obj>\w+)\s*\.\s*(?:Вставить|Insert|Добавить|Add)\s*\((?P<args>[^)]*)\)",
-                        line,
-                        re.IGNORECASE,
-                    ):
-                        obj = m.group("obj").casefold()
-                        parts = [part.strip() for part in _split_top_level_args(m.group("args"))]
-                        relevant = [part for part in parts if part]
-                        if any(part.casefold() == obj for part in relevant):
-                            start = m.start("obj")
-                            diags.append(
-                                Diagnostic(
-                                    file=path,
-                                    line=idx + 1,
-                                    character=start,
-                                    end_line=idx + 1,
-                                    end_character=start + len(m.group("obj")),
-                                    severity=Severity.ERROR,
-                                    code="BSL243",
-                                    message="Нельзя вставлять объект в самого себя",
-                                )
-                            )
-                if "BSL249" in enabled_set:
-                    for m in re.finditer(
-                        r"\b(?:Новый|New)\s+(?P<name>\w+)\b",
-                        line,
-                        re.IGNORECASE,
-                    ):
-                        if m.group("name").casefold() not in _BSL249_STYLE_CONSTRUCTOR_NAMES:
-                            continue
-                        diags.append(
-                            Diagnostic(
-                                file=path,
-                                line=idx + 1,
-                                character=m.start(),
-                                end_line=idx + 1,
-                                end_character=m.end("name"),
-                                severity=Severity.ERROR,
-                                code="BSL249",
-                                message=(
-                                    f"Замените конструктор {m.group('name')} на получение элемента стиля"
-                                ),
-                            )
-                        )
-
-        return diags
 
     # ------------------------------------------------------------------
     # BSL221 / BSL222 / BSL239 / BSL271 — lightweight mixed pool
@@ -3000,114 +2839,26 @@ class DiagnosticEngine:
         enabled: tuple[str, ...],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        enabled_set = set(enabled)
-        diags: list[Diagnostic] = []
-        clean_lines = (
-            snapshot.code_lines_without_comments
-            if snapshot is not None
-            else [_strip_inline_comment_preserve_strings(line) for line in lines]
+        model = ModuleModel(path=path)
+        return model.validate_bsl221_222_239_271_light_pool(
+            lines=lines,
+            tree=tree,
+            procs=procs,
+            enabled=enabled,
+            snapshot=snapshot,
+            strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
+            reserved_parameter_names_re=self._reserved_parameter_names_re,
+            ts_walk_fn=_ts_walk,
+            ts_child_of_type_fn=_ts_child_of_type,
+            ts_node_text_fn=_ts_node_text,
+            utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+            bsl221_nstr_re=_RE_BSL221_NSTR,
+            bsl221_lang_re=_RE_BSL221_LANG,
+            bsl271_unix_unavailable_new_re=_RE_BSL271_UNIX_UNAVAILABLE_NEW,
+            bsl271_platform_guard_re=_RE_BSL271_PLATFORM_GUARD,
+            proc_name_span_fn=_proc_name_span,
+            declared_languages=self._declared_languages,
         )
-
-        if {"BSL221", "BSL222"} & enabled_set:
-            for idx, line in enumerate(clean_lines):
-                for match in _RE_BSL221_NSTR.finditer(line):
-                    langs = {
-                        m.group("lang").casefold()
-                        for m in _RE_BSL221_LANG.finditer(match.group("body"))
-                    }
-                    missing = self._declared_languages - langs
-                    if not missing:
-                        continue
-                    code = (
-                        "BSL222"
-                        if re.search(r"\b(?:СтрШаблон|StrTemplate)\s*\(", line, re.IGNORECASE)
-                        else "BSL221"
-                    )
-                    if code not in enabled_set:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start(),
-                            end_line=idx + 1,
-                            end_character=match.end(),
-                            severity=Severity.WARNING if code == "BSL222" else Severity.INFORMATION,
-                            code=code,
-                            message=(
-                                "НСтр() не содержит все объявленные языки"
-                                if code == "BSL221"
-                                else "Не используйте неполную НСтр() внутри СтрШаблон()/StrTemplate()"
-                            ),
-                        )
-                    )
-
-        if "BSL239" in enabled_set and self._reserved_parameter_names_re is not None:
-            for proc in procs:
-                line_text = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-                for param in proc.params:
-                    if not self._reserved_parameter_names_re.fullmatch(param):
-                        continue
-                    col = line_text.find(param)
-                    if col < 0:
-                        col = proc.header_col
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=proc.start_idx + 1,
-                            character=col,
-                            end_line=proc.start_idx + 1,
-                            end_character=col + len(param),
-                            severity=Severity.WARNING,
-                            code="BSL239",
-                            message=f'Имя параметра "{param}" входит в список зарезервированных',
-                        )
-                    )
-
-        root = getattr(tree, "root_node", None)
-        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-            return diags
-
-        line_texts = lines
-        if "BSL271" in enabled_set:
-            for node in _ts_walk(root):
-                node_type = getattr(node, "type", None)
-                if "BSL271" in enabled_set and node_type == "new_expression":
-                    type_node = _ts_child_of_type(node, "identifier")
-                    if type_node is None:
-                        continue
-                    type_name = _ts_node_text(type_node)
-                    if not _RE_BSL271_UNIX_UNAVAILABLE_NEW.search(f"Новый {type_name}"):
-                        continue
-                    guarded = False
-                    cur = getattr(node, "parent", None)
-                    while cur is not None:
-                        if getattr(cur, "type", None) in {
-                            "if_statement",
-                            "elseif_clause",
-                        } and _RE_BSL271_PLATFORM_GUARD.search(_ts_node_text(cur)):
-                            guarded = True
-                            break
-                        cur = getattr(cur, "parent", None)
-                    if guarded:
-                        continue
-                    line_idx = node.start_point[0]
-                    line_text = line_texts[line_idx] if line_idx < len(line_texts) else ""
-                    start_char = utf8_byte_offset_to_lsp_character(line_text, node.start_point[1])
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=line_idx + 1,
-                            character=start_char,
-                            end_line=line_idx + 1,
-                            end_character=min(len(line_text), start_char + len(type_name)),
-                            severity=Severity.ERROR,
-                            code="BSL271",
-                            message=f'Объект "{type_name}" недоступен на Linux/Unix без платформенной проверки',
-                        )
-                    )
-
-        return diags
 
     # ------------------------------------------------------------------
     # BSL229 / BSL275 / BSL278 — local XML-backed pool
