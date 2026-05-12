@@ -581,60 +581,24 @@ class DiagnosticEngine:
         procs: list[_ProcInfo],
         regions: list[_RegionInfo],
     ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        if not any(region.name.lower() in _API_REGION_NAMES for region in regions):
-            return diags
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_non_export_in_api_regions(
-                    lines,
-                    regions=regions,
-                    api_region_names=_API_REGION_NAMES,
-                    proc_name_span=_proc_name_span,
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl003_non_export_in_api_region(
+            lines=lines,
+            procs=procs,
+            regions=regions,
+            api_region_names=_API_REGION_NAMES,
+            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+            proc_name_span_fn=_proc_name_span,
+        )
 
     # ------------------------------------------------------------------
     # BSL004 — EmptyCodeBlock
     # ------------------------------------------------------------------
 
     def _rule_bsl004_empty_except(self, path: str, lines: list[str], tree: Any) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        empty_msg = "Наполните блок кодом или удалите его"
-        opener_re = re.compile(
-            r"^\s*(?:Если\b.*\bТогда|If\b.*\bThen|ИначеЕсли\b.*\bТогда|ElseIf\b.*\bThen|ElsIf\b.*\bThen|Иначе\b|Else\b|Пока\b.*\bЦикл|While\b.*\bDo)",
-            re.IGNORECASE,
-        )
-        terminator_re = re.compile(
-            r"^\s*(?:ИначеЕсли\b|ElseIf\b|ElsIf\b|Иначе\b|Else\b|КонецЕсли\b|EndIf\b|КонецЦикла\b|EndDo\b)",
-            re.IGNORECASE,
-        )
-
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            if not opener_re.match(line):
-                continue
-            j = idx + 1
-            while j < len(lines) and (not lines[j].strip() or lines[j].lstrip().startswith("//")):
-                j += 1
-            if j >= len(lines) or not terminator_re.match(lines[j]):
-                continue
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=len(line) - len(line.lstrip()),
-                    end_line=idx + 1,
-                    end_character=len(line.split("//", 1)[0].rstrip()),
-                    severity=Severity.WARNING,
-                    code="BSL004",
-                    message=empty_msg,
-                )
-            )
-        return diags
+        _ = tree
+        model = ModuleModel(path=path)
+        return model.validate_bsl004_empty_code_block(lines=lines)
 
     # ------------------------------------------------------------------
     # BSL007 — Unused local variable
@@ -1368,16 +1332,13 @@ class DiagnosticEngine:
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
         """Flag exported methods that have no meaningful body (only comments/blanks)."""
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_empty_export_method(
-                    lines,
-                    blank_or_comment_re=_RE_BLANK_OR_COMMENT,
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl042_empty_export_method(
+            lines=lines,
+            procs=procs,
+            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+            blank_or_comment_re=_RE_BLANK_OR_COMMENT,
+        )
 
     # ------------------------------------------------------------------
     # ------------------------------------------------------------------
@@ -1662,40 +1623,22 @@ class DiagnosticEngine:
 
         Excludes parameters that start with '_' (convention for intentionally unused).
         """
-        # BSLLS does not run UnusedParameters on form modules — form event handlers
-        # always have platform-defined signatures that may not use all parameters.
-        if path_is_likely_form_module_bsl(path):
-            return []
-        diags: list[Diagnostic] = []
-        root = getattr(tree, "root_node", None)
-        tree_is_ts = root is not None and isinstance(
-            getattr(root, "text", None), (bytes, bytearray)
+        model = ModuleModel(path=path)
+        return model.validate_bsl062_unused_parameter(
+            lines=lines,
+            procs=procs,
+            tree=tree,
+            proc_node_map=proc_node_map,
+            path_is_likely_form_module_bsl_fn=path_is_likely_form_module_bsl,
+            find_proc_definition_node_fn=_find_proc_definition_node,
+            collect_identifier_casefolds_in_proc_body_fn=_collect_identifier_casefolds_in_proc_body,
+            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+            bsl062_skip_standard_command_params=_BSL062_SKIP_STANDARD_COMMAND_PARAMS,
+            is_typical_client_command_handler_fn=_is_typical_client_command_handler,
+            is_client_notify_completion_export_handler_fn=(
+                _is_client_notify_completion_export_handler
+            ),
         )
-
-        for proc in procs:
-            used_casefold: set[str] | None = None
-            if tree_is_ts:
-                key = (proc.name, proc.start_idx, proc.kind)
-                proc_node = (
-                    proc_node_map.get(key)
-                    if proc_node_map is not None
-                    else _find_proc_definition_node(tree, proc)
-                )
-                if proc_node is not None:
-                    used_casefold = _collect_identifier_casefolds_in_proc_body(proc_node)
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_unused_parameters(
-                    lines,
-                    used_casefold=used_casefold,
-                    skip_standard_params=_BSL062_SKIP_STANDARD_COMMAND_PARAMS,
-                    is_typical_client_command_handler=_is_typical_client_command_handler,
-                    is_client_notify_completion_export_handler=(
-                        _is_client_notify_completion_export_handler
-                    ),
-                )
-            )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL064 — Procedure returns value
@@ -1707,17 +1650,14 @@ class DiagnosticEngine:
         """
         Flag a Процедура body that contains 'Возврат <value>' — it should be a Функция.
         """
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_procedure_return_value(
-                    lines,
-                    return_value_re=_RE_RETURN_VALUE,
-                    proc_header_re=_RE_PROC_HEADER,
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl064_procedure_returns_value(
+            lines=lines,
+            procs=procs,
+            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+            return_value_re=_RE_RETURN_VALUE,
+            proc_header_re=_RE_PROC_HEADER,
+        )
 
     # ------------------------------------------------------------------
     # BSL065 — Missing export comment

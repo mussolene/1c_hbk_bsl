@@ -2280,6 +2280,153 @@ class ModuleModel:
             )
         return diags
 
+    def validate_bsl003_non_export_in_api_region(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        regions: list[RegionInfo],
+        api_region_names: set[str],
+        procedure_model_from_proc_info_fn,
+        proc_name_span_fn,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        if not any(region.name.lower() in api_region_names for region in regions):
+            return diags
+        for proc in procs:
+            model = procedure_model_from_proc_info_fn(self.path, proc)
+            diags.extend(
+                model.validate_non_export_in_api_regions(
+                    lines,
+                    regions=regions,
+                    api_region_names=api_region_names,
+                    proc_name_span=proc_name_span_fn,
+                )
+            )
+        return diags
+
+    def validate_bsl004_empty_code_block(self, *, lines: list[str]) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        empty_msg = "Наполните блок кодом или удалите его"
+        opener_re = re.compile(
+            r"^\s*(?:Если\b.*\bТогда|If\b.*\bThen|ИначеЕсли\b.*\bТогда|ElseIf\b.*\bThen|ElsIf\b.*\bThen|Иначе\b|Else\b|Пока\b.*\bЦикл|While\b.*\bDo)",
+            re.IGNORECASE,
+        )
+        terminator_re = re.compile(
+            r"^\s*(?:ИначеЕсли\b|ElseIf\b|ElsIf\b|Иначе\b|Else\b|КонецЕсли\b|EndIf\b|КонецЦикла\b|EndDo\b)",
+            re.IGNORECASE,
+        )
+
+        for idx, line in enumerate(lines):
+            if line.strip().startswith("//"):
+                continue
+            if not opener_re.match(line):
+                continue
+            j = idx + 1
+            while j < len(lines) and (not lines[j].strip() or lines[j].lstrip().startswith("//")):
+                j += 1
+            if j >= len(lines) or not terminator_re.match(lines[j]):
+                continue
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=idx + 1,
+                    character=len(line) - len(line.lstrip()),
+                    end_line=idx + 1,
+                    end_character=len(line.split("//", 1)[0].rstrip()),
+                    severity=Severity.WARNING,
+                    code="BSL004",
+                    message=empty_msg,
+                )
+            )
+        return diags
+
+    def validate_bsl042_empty_export_method(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        procedure_model_from_proc_info_fn,
+        blank_or_comment_re,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            model = procedure_model_from_proc_info_fn(self.path, proc)
+            diags.extend(
+                model.validate_empty_export_method(
+                    lines,
+                    blank_or_comment_re=blank_or_comment_re,
+                )
+            )
+        return diags
+
+    def validate_bsl062_unused_parameter(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        tree: Any,
+        proc_node_map: dict[tuple[str, int, str], Any] | None,
+        path_is_likely_form_module_bsl_fn,
+        find_proc_definition_node_fn,
+        collect_identifier_casefolds_in_proc_body_fn,
+        procedure_model_from_proc_info_fn,
+        bsl062_skip_standard_command_params: set[str],
+        is_typical_client_command_handler_fn,
+        is_client_notify_completion_export_handler_fn,
+    ) -> list[Diagnostic]:
+        if path_is_likely_form_module_bsl_fn(self.path):
+            return []
+        diags: list[Diagnostic] = []
+        root = getattr(tree, "root_node", None)
+        tree_is_ts = root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
+
+        for proc in procs:
+            used_casefold: set[str] | None = None
+            if tree_is_ts:
+                key = (proc.name, proc.start_idx, proc.kind)
+                proc_node = (
+                    proc_node_map.get(key)
+                    if proc_node_map is not None
+                    else find_proc_definition_node_fn(tree, proc)
+                )
+                if proc_node is not None:
+                    used_casefold = collect_identifier_casefolds_in_proc_body_fn(proc_node)
+            model = procedure_model_from_proc_info_fn(self.path, proc)
+            diags.extend(
+                model.validate_unused_parameters(
+                    lines,
+                    used_casefold=used_casefold,
+                    skip_standard_params=bsl062_skip_standard_command_params,
+                    is_typical_client_command_handler=is_typical_client_command_handler_fn,
+                    is_client_notify_completion_export_handler=(
+                        is_client_notify_completion_export_handler_fn
+                    ),
+                )
+            )
+        return diags
+
+    def validate_bsl064_procedure_returns_value(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        procedure_model_from_proc_info_fn,
+        return_value_re,
+        proc_header_re,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            model = procedure_model_from_proc_info_fn(self.path, proc)
+            diags.extend(
+                model.validate_procedure_return_value(
+                    lines,
+                    return_value_re=return_value_re,
+                    proc_header_re=proc_header_re,
+                )
+            )
+        return diags
+
     def validate_bsl202_205_223_243_249_light_call_pool(
         self,
         *,
