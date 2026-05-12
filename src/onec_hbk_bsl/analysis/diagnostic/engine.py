@@ -3449,15 +3449,16 @@ class DiagnosticEngine:
         query_blocks: list[QueryTextBlockInfo] | None = None,
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        enabled = tuple(code for code in enabled if self._rule_enabled(code))
-        if not enabled:
-            return []
-        return run_bsl174_187_236_238_query_metadata_pool(
-            path,
-            lines,
-            enabled,
-            query_blocks,
-            snapshot.code_lines_without_comments if snapshot is not None else None,
+        model = ModuleModel(path=path)
+        return model.validate_bsl174_187_236_238_query_metadata_pool(
+            lines=lines,
+            enabled=enabled,
+            enabled_rule_fn=self._rule_enabled,
+            query_blocks=query_blocks,
+            code_lines_without_comments=(
+                snapshot.code_lines_without_comments if snapshot is not None else None
+            ),
+            runner=run_bsl174_187_236_238_query_metadata_pool,
         )
 
     def _rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
@@ -3468,15 +3469,16 @@ class DiagnosticEngine:
         enabled: tuple[str, ...],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        enabled = tuple(code for code in enabled if self._rule_enabled(code))
-        if not enabled:
-            return []
-        return run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
-            path,
-            lines,
-            procs,
-            enabled,
-            snapshot.code_lines_without_comments if snapshot is not None else None,
+        model = ModuleModel(path=path)
+        return model.validate_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
+            lines=lines,
+            procs=procs,
+            enabled=enabled,
+            enabled_rule_fn=self._rule_enabled,
+            code_lines_without_comments=(
+                snapshot.code_lines_without_comments if snapshot is not None else None
+            ),
+            runner=run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
         )
 
     def _rule_bsl244_253_261_runtime_pool(
@@ -3487,12 +3489,15 @@ class DiagnosticEngine:
         enabled: tuple[str, ...],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl244_253_261_runtime_pool(
-            path,
-            lines,
-            procs,
-            enabled,
-            snapshot.code_lines_without_comments if snapshot is not None else None,
+        model = ModuleModel(path=path)
+        return model.validate_bsl244_253_261_runtime_pool(
+            lines=lines,
+            procs=procs,
+            enabled=enabled,
+            code_lines_without_comments=(
+                snapshot.code_lines_without_comments if snapshot is not None else None
+            ),
+            runner=run_bsl244_253_261_runtime_pool,
         )
 
     # ------------------------------------------------------------------
@@ -3502,7 +3507,11 @@ class DiagnosticEngine:
     def _rule_bsl234_query_nested_fields_by_dot(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        return run_bsl234_query_nested_fields_by_dot(path, lines)
+        model = ModuleModel(path=path)
+        return model.validate_bsl234_query_nested_fields_by_dot(
+            lines=lines,
+            runner=run_bsl234_query_nested_fields_by_dot,
+        )
 
     # ------------------------------------------------------------------
     # BSL237 — RedundantAccessToObject
@@ -3511,7 +3520,11 @@ class DiagnosticEngine:
     def _rule_bsl237_redundant_access_to_object(
         self, path: str, lines: list[str]
     ) -> list[Diagnostic]:
-        return run_bsl237_redundant_access_to_object(path, lines)
+        model = ModuleModel(path=path)
+        return model.validate_bsl237_redundant_access_to_object(
+            lines=lines,
+            runner=run_bsl237_redundant_access_to_object,
+        )
 
     # ------------------------------------------------------------------
     # BSL245 — ServerSideExportFormMethod
@@ -3520,7 +3533,12 @@ class DiagnosticEngine:
     def _rule_bsl245_server_side_export_form_method(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        return run_bsl245_server_side_export_form_method(path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl245_server_side_export_form_method(
+            lines=lines,
+            procs=procs,
+            runner=run_bsl245_server_side_export_form_method,
+        )
 
     # ------------------------------------------------------------------
     # BSL240 — RewriteMethodParameter
@@ -3534,4 +3552,11 @@ class DiagnosticEngine:
         tree: Any,
         proc_node_map: dict[tuple[str, int, str], Any] | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl240_rewrite_method_parameter(path, lines, procs, tree, proc_node_map)
+        model = ModuleModel(path=path)
+        return model.validate_bsl240_rewrite_method_parameter(
+            lines=lines,
+            procs=procs,
+            tree=tree,
+            proc_node_map=proc_node_map,
+            runner=run_bsl240_rewrite_method_parameter,
+        )

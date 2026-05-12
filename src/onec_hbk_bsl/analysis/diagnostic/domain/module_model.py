@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
@@ -1422,3 +1423,78 @@ class ModuleModel:
 
     def validate_bsl192_193_194_228_266_method_contract_diagnostics(self, *, lines: list[str], procs: list[ProcInfo], codes: tuple[str, ...], enabled_rule_fn, runner) -> list[Diagnostic]:
         return runner(self.path, lines, procs, codes, enabled_rule_fn)
+
+    def validate_bsl174_187_236_238_query_metadata_pool(
+        self,
+        *,
+        lines: list[str],
+        enabled: tuple[str, ...],
+        enabled_rule_fn,
+        query_blocks,
+        code_lines_without_comments,
+        runner,
+    ) -> list[Diagnostic]:
+        enabled_codes = tuple(code for code in enabled if enabled_rule_fn(code))
+        if not enabled_codes:
+            return []
+        return runner(
+            self.path,
+            lines,
+            enabled_codes,
+            query_blocks,
+            code_lines_without_comments,
+        )
+
+    def validate_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        enabled: tuple[str, ...],
+        enabled_rule_fn,
+        code_lines_without_comments,
+        runner,
+    ) -> list[Diagnostic]:
+        enabled_codes = tuple(code for code in enabled if enabled_rule_fn(code))
+        if not enabled_codes:
+            return []
+        return runner(
+            self.path,
+            lines,
+            procs,
+            enabled_codes,
+            code_lines_without_comments,
+        )
+
+    def validate_bsl244_253_261_runtime_pool(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        enabled: tuple[str, ...],
+        code_lines_without_comments,
+        runner,
+    ) -> list[Diagnostic]:
+        return runner(
+            self.path,
+            lines,
+            procs,
+            enabled,
+            code_lines_without_comments,
+        )
+
+    def validate_bsl234_query_nested_fields_by_dot(self, *, lines: list[str], runner) -> list[Diagnostic]:
+        return runner(self.path, lines)
+
+    def validate_bsl237_redundant_access_to_object(self, *, lines: list[str], runner) -> list[Diagnostic]:
+        return runner(self.path, lines)
+
+    def validate_bsl245_server_side_export_form_method(
+        self, *, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
+        return runner(self.path, lines, procs)
+
+    def validate_bsl240_rewrite_method_parameter(
+        self, *, lines: list[str], procs: list[Any], tree, proc_node_map, runner
+    ) -> list[Diagnostic]:
+        return runner(self.path, lines, procs, tree, proc_node_map)
