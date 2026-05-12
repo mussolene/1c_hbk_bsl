@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -2425,6 +2426,277 @@ class ModuleModel:
                     proc_header_re=proc_header_re,
                 )
             )
+        return diags
+
+    def validate_bsl007_unused_local_variable(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        snapshot,
+        strip_inline_comment_preserve_strings_fn,
+        bsl007_strip_double_quoted_segments_fn,
+        bsl007_simple_assign_at_start_re,
+        var_local_re,
+        region_line_re,
+        preproc_line_re,
+        compiler_directive_re,
+        module_assign_re,
+    ) -> list[Diagnostic]:
+        re_for_index_header = re.compile(r"^\s*(?:Для|For)\s+(\w+)\s*=", re.IGNORECASE)
+        diags: list[Diagnostic] = []
+        inside_proc: set[int] = set()
+        for proc in procs:
+            for i in range(proc.start_idx, proc.end_idx + 1):
+                inside_proc.add(i)
+
+        code_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
+
+        def read_words_ignoring_member_access(code_fragment: str) -> set[str]:
+            reads: set[str] = set()
+            for match in re.finditer(r"\b\w+\b", code_fragment, re.IGNORECASE):
+                if match.start() > 0 and code_fragment[match.start() - 1] == ".":
+                    continue
+                reads.add(match.group(0).casefold())
+            return reads
+
+        def read_names_by_line(raw_line: str) -> set[str]:
+            if not raw_line.strip():
+                return set()
+            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
+            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
+            match = bsl007_simple_assign_at_start_re.match(code_clean)
+            if match:
+                tail = code_clean[match.end() :]
+                return read_words_ignoring_member_access(tail)
+            return read_words_ignoring_member_access(code_clean)
+
+        line_read_names = [read_names_by_line(line) for line in code_lines]
+        file_read_counts: Counter[str] = Counter()
+        for names in line_read_names:
+            file_read_counts.update(names)
+
+        module_declared_cf: set[str] = set()
+        for idx, line in enumerate(lines):
+            if idx in inside_proc:
+                continue
+            m_decl = var_local_re.match(line)
+            if not m_decl:
+                continue
+            module_declared_cf.update(
+                n.strip().casefold() for n in m_decl.group("names").split(",") if n.strip()
+            )
+
+        for idx, line in enumerate(lines):
+            if idx in inside_proc:
+                continue
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+            if region_line_re.match(line) or preproc_line_re.match(line):
+                continue
+            if compiler_directive_re.match(stripped):
+                continue
+            match = module_assign_re.match(line)
+            if not match:
+                continue
+            var_name = match.group(1)
+            if file_read_counts.get(var_name.casefold(), 0) > 0:
+                continue
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=idx + 1,
+                    character=line.find(var_name) if var_name in line else 0,
+                    end_line=idx + 1,
+                    end_character=len(line.rstrip()),
+                    severity=Severity.WARNING,
+                    code="BSL007",
+                    message=f"Удалите неиспользуемую переменную {var_name}",
+                )
+            )
+
+        for proc in procs:
+            proc_lines = lines[proc.start_idx : proc.end_idx + 1]
+            param_cf = {p.casefold() for p in proc.params}
+            emitted: set[tuple[int, str]] = set()
+            declared: list[tuple[str, int]] = []
+            decl_rel_indices: set[int] = set()
+            for rel_idx, pline in enumerate(proc_lines[1:], 1):
+                m = var_local_re.match(pline)
+                if not m:
+                    continue
+                decl_rel_indices.add(rel_idx)
+                for var_name in (n.strip() for n in m.group("names").split(",") if n.strip()):
+                    declared.append((var_name, rel_idx))
+
+            declared_cf = {n.casefold() for n, _ in declared}
+            body_lo = proc.start_idx + 1
+            body_hi = proc.end_idx - 1
+            proc_read_counts: Counter[str] = Counter()
+            for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
+                for read_name in line_read_names[abs_idx]:
+                    proc_read_counts[read_name] += 1
+
+            def emit_unused(
+                abs_line: int,
+                var_name: str,
+                emitted_local: set[tuple[int, str]] = emitted,
+            ) -> None:
+                key = (abs_line, var_name.casefold())
+                if key in emitted_local:
+                    return
+                emitted_local.add(key)
+                char_pos = lines[abs_line].find(var_name) if var_name in lines[abs_line] else 0
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=abs_line + 1,
+                        character=char_pos,
+                        end_line=abs_line + 1,
+                        end_character=char_pos + len(var_name),
+                        severity=Severity.WARNING,
+                        code="BSL007",
+                        message=f"Удалите неиспользуемую переменную {var_name}",
+                    )
+                )
+
+            for var_name, rel_idx in declared:
+                abs_decl = proc.start_idx + rel_idx
+                uses = proc_read_counts.get(var_name.casefold(), 0) - (
+                    1 if var_name.casefold() in line_read_names[abs_decl] else 0
+                )
+                if uses > 0:
+                    continue
+                emit_unused(abs_decl, var_name)
+
+            implicit_first_unused: dict[str, tuple[str, int]] = {}
+            for rel_idx, pline in enumerate(proc_lines[1:], 1):
+                abs_line = proc.start_idx + rel_idx
+                if abs_line >= proc.end_idx:
+                    continue
+                match = module_assign_re.match(pline)
+                if not match:
+                    continue
+                var_name = match.group(1)
+                var_cf = var_name.casefold()
+                if var_cf in param_cf or var_cf in declared_cf or var_cf in module_declared_cf:
+                    continue
+                if rel_idx in decl_rel_indices:
+                    continue
+                if proc_read_counts.get(var_cf, 0) > 0:
+                    continue
+                implicit_first_unused.setdefault(var_cf, (var_name, abs_line))
+            for var_name, abs_line in sorted(implicit_first_unused.values(), key=lambda item: item[1]):
+                emit_unused(abs_line, var_name)
+
+            for rel_idx, pline in enumerate(proc_lines[1:], 1):
+                abs_line = proc.start_idx + rel_idx
+                if abs_line >= proc.end_idx:
+                    continue
+                m_for = re_for_index_header.match(pline)
+                if not m_for:
+                    continue
+                var_name = m_for.group(1)
+                var_cf = var_name.casefold()
+                if var_cf in param_cf:
+                    continue
+                used = False
+                for abs_idx in range(abs_line + 1, min(proc.end_idx, len(lines))):
+                    if var_cf in line_read_names[abs_idx]:
+                        used = True
+                        break
+                if not used:
+                    emit_unused(abs_line, var_name)
+        return diags
+
+    def validate_bsl051_unreachable_code(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        tree: Any,
+        bsl051_delimiter_lines_for_tree_fn,
+        bsl051_all_branch_exit_end_if_lines_fn,
+        re_unconditional_exit,
+        re_bsl051_delimiter_fallback,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        delimiter_lines = bsl051_delimiter_lines_for_tree_fn(tree)
+        end_line_idxs = {proc.end_idx for proc in procs}
+
+        for proc in procs:
+            body_lines = list(enumerate(lines[proc.start_idx + 1 : proc.end_idx], start=proc.start_idx + 1))
+            emitted_lines: set[int] = set()
+
+            def emit_unreachable(
+                abs_idx: int,
+                line: str,
+                emitted_lines_local: set[int] = emitted_lines,
+            ) -> None:
+                if abs_idx in emitted_lines_local or abs_idx in end_line_idxs:
+                    return
+                next_indent = len(line) - len(line.lstrip())
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=abs_idx + 1,
+                        character=next_indent,
+                        end_line=abs_idx + 1,
+                        end_character=len(line),
+                        severity=Severity.ERROR,
+                        code="BSL051",
+                        message="Исправьте алгоритм, т.к. этот код никогда не будет исполнен",
+                    )
+                )
+                emitted_lines_local.add(abs_idx)
+
+            i = 0
+            while i < len(body_lines):
+                abs_idx, line = body_lines[i]
+                if re_unconditional_exit.match(line) and ";" in line:
+                    exit_indent = len(line) - len(line.lstrip())
+                    j = i + 1
+                    crossed_preprocessor = False
+                    while j < len(body_lines):
+                        next_abs, next_line = body_lines[j]
+                        stripped = next_line.strip()
+                        if not stripped or stripped.startswith("//"):
+                            j += 1
+                            continue
+                        if stripped.startswith("#"):
+                            crossed_preprocessor = True
+                            j += 1
+                            continue
+                        next_indent = len(next_line) - len(next_line.lstrip())
+                        if not crossed_preprocessor and next_indent <= exit_indent and next_abs not in end_line_idxs:
+                            if delimiter_lines is not None:
+                                is_block_delimiter = next_abs in delimiter_lines
+                            else:
+                                is_block_delimiter = bool(re_bsl051_delimiter_fallback.match(next_line))
+                            if not is_block_delimiter:
+                                emit_unreachable(next_abs, next_line)
+                        break
+                    i = j
+                    continue
+                i += 1
+
+            if_exit_lines = bsl051_all_branch_exit_end_if_lines_fn(body_lines)
+            if if_exit_lines:
+                for pos, (abs_idx, _line) in enumerate(body_lines):
+                    if abs_idx not in if_exit_lines:
+                        continue
+                    end_indent = len(lines[abs_idx]) - len(lines[abs_idx].lstrip())
+                    for next_abs, next_line in body_lines[pos + 1 :]:
+                        stripped = next_line.strip()
+                        if not stripped or stripped.startswith("//") or stripped.startswith("#"):
+                            continue
+                        if next_abs in end_line_idxs:
+                            break
+                        next_indent = len(next_line) - len(next_line.lstrip())
+                        if next_indent <= end_indent and not re_bsl051_delimiter_fallback.match(next_line):
+                            emit_unreachable(next_abs, next_line)
+                        break
         return diags
 
     def validate_bsl202_205_223_243_249_light_call_pool(

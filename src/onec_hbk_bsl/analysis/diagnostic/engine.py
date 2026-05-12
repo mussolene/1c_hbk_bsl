@@ -9,7 +9,7 @@ rule bodies are migrated out of ``diagnostics.py``.
 
 from __future__ import annotations
 
-from collections import Counter, OrderedDict
+from collections import OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
 from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel, ProcedureModel
@@ -611,186 +611,20 @@ class DiagnosticEngine:
         procs: list[_ProcInfo],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        re_for_index_header = re.compile(r"^\s*(?:Для|For)\s+(\w+)\s*=", re.IGNORECASE)
-        diags: list[Diagnostic] = []
-        inside_proc: set[int] = set()
-        for proc in procs:
-            for i in range(proc.start_idx, proc.end_idx + 1):
-                inside_proc.add(i)
-
-        code_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
-
-        def _read_words_ignoring_member_access(code_fragment: str) -> set[str]:
-            reads: set[str] = set()
-            for match in re.finditer(r"\b\w+\b", code_fragment, re.IGNORECASE):
-                if match.start() > 0 and code_fragment[match.start() - 1] == ".":
-                    continue
-                reads.add(match.group(0).casefold())
-            return reads
-
-        def _read_names_by_line(raw_line: str) -> set[str]:
-            if not raw_line.strip():
-                return set()
-            code_no_comments = _strip_inline_comment_preserve_strings(raw_line)
-            code_clean = _bsl007_strip_double_quoted_segments(code_no_comments)
-            m = _BSL007_SIMPLE_ASSIGN_AT_START.match(code_clean)
-            if m:
-                tail = code_clean[m.end() :]
-                return _read_words_ignoring_member_access(tail)
-            return _read_words_ignoring_member_access(code_clean)
-
-        line_read_names = [_read_names_by_line(line) for line in code_lines]
-        file_read_counts: Counter[str] = Counter()
-        for names in line_read_names:
-            file_read_counts.update(names)
-
-        module_declared_cf: set[str] = set()
-        for idx, line in enumerate(lines):
-            if idx in inside_proc:
-                continue
-            m_decl = _RE_VAR_LOCAL.match(line)
-            if not m_decl:
-                continue
-            module_declared_cf.update(
-                n.strip().casefold() for n in m_decl.group("names").split(",") if n.strip()
-            )
-
-        # --- Module-level simple assigns (BSLLS UnusedLocalVariable on top-level code) ---
-        for idx, line in enumerate(lines):
-            if idx in inside_proc:
-                continue
-            stripped = line.strip()
-            if not stripped or stripped.startswith("//"):
-                continue
-            if _RE_REGION_LINE.match(line) or _RE_PREPROC_LINE.match(line):
-                continue
-            if _RE_COMPILER_DIRECTIVE.match(stripped):
-                continue
-            m = _RE_MODULE_ASSIGN.match(line)
-            if not m:
-                continue
-            var_name = m.group(1)
-            if file_read_counts.get(var_name.casefold(), 0) > 0:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=line.find(var_name) if var_name in line else 0,
-                    end_line=idx + 1,
-                    end_character=len(line.rstrip()),
-                    severity=Severity.WARNING,
-                    code="BSL007",
-                    message=f"Удалите неиспользуемую переменную {var_name}",
-                )
-            )
-
-        for proc in procs:
-            proc_lines = lines[proc.start_idx : proc.end_idx + 1]
-            param_cf = {p.casefold() for p in proc.params}
-            emitted: set[tuple[int, str]] = set()
-
-            # --- Pass 1: collect all Перем declarations (O(L)) ---
-            declared: list[tuple[str, int]] = []  # (var_name, rel_idx in proc_lines)
-            decl_rel_indices: set[int] = set()
-            for rel_idx, pline in enumerate(proc_lines[1:], 1):
-                m = _RE_VAR_LOCAL.match(pline)
-                if not m:
-                    continue
-                decl_rel_indices.add(rel_idx)
-                for var_name in (n.strip() for n in m.group("names").split(",") if n.strip()):
-                    declared.append((var_name, rel_idx))
-
-            declared_cf = {n.casefold() for n, _ in declared}
-            body_lo = proc.start_idx + 1
-            body_hi = proc.end_idx - 1
-            proc_read_counts: Counter[str] = Counter()
-            for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
-                for read_name in line_read_names[abs_idx]:
-                    proc_read_counts[read_name] += 1
-
-            def _emit_unused(
-                abs_line: int,
-                var_name: str,
-                _emitted: set[tuple[int, str]] = emitted,
-            ) -> None:
-                key = (abs_line, var_name.casefold())
-                if key in _emitted:
-                    return
-                _emitted.add(key)
-                char_pos = lines[abs_line].find(var_name) if var_name in lines[abs_line] else 0
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=abs_line + 1,
-                        character=char_pos,
-                        end_line=abs_line + 1,
-                        end_character=char_pos + len(var_name),
-                        severity=Severity.WARNING,
-                        code="BSL007",
-                        message=f"Удалите неиспользуемую переменную {var_name}",
-                    )
-                )
-
-            for var_name, rel_idx in declared:
-                abs_decl = proc.start_idx + rel_idx
-                uses = proc_read_counts.get(var_name.casefold(), 0) - (
-                    1 if var_name.casefold() in line_read_names[abs_decl] else 0
-                )
-                if uses > 0:
-                    continue
-                _emit_unused(abs_decl, var_name)
-
-            # --- Implicit locals: ``Имя =`` without preceding ``Перем`` in this proc ---
-            # Module-level ``Перем`` names are form/module state, not local variables.
-            implicit_first_unused: dict[str, tuple[str, int]] = {}
-            for rel_idx, pline in enumerate(proc_lines[1:], 1):
-                abs_line = proc.start_idx + rel_idx
-                if abs_line >= proc.end_idx:
-                    continue
-                m = _RE_MODULE_ASSIGN.match(pline)
-                if not m:
-                    continue
-                var_name = m.group(1)
-                var_cf = var_name.casefold()
-                if var_cf in param_cf:
-                    continue
-                if var_cf in declared_cf:
-                    continue
-                if var_cf in module_declared_cf:
-                    continue
-                if rel_idx in decl_rel_indices:
-                    continue
-                if proc_read_counts.get(var_cf, 0) > 0:
-                    continue
-                implicit_first_unused.setdefault(var_cf, (var_name, abs_line))
-            for var_name, abs_line in sorted(
-                implicit_first_unused.values(),
-                key=lambda item: item[1],
-            ):
-                _emit_unused(abs_line, var_name)
-
-            # --- For-loop index variable never read in loop body ---
-            for rel_idx, pline in enumerate(proc_lines[1:], 1):
-                abs_line = proc.start_idx + rel_idx
-                if abs_line >= proc.end_idx:
-                    continue
-                m_for = re_for_index_header.match(pline)
-                if not m_for:
-                    continue
-                var_name = m_for.group(1)
-                var_cf = var_name.casefold()
-                if var_cf in param_cf:
-                    continue
-                used = False
-                for abs_idx in range(abs_line + 1, min(proc.end_idx, len(lines))):
-                    if var_cf in line_read_names[abs_idx]:
-                        used = True
-                        break
-                if not used:
-                    _emit_unused(abs_line, var_name)
-
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl007_unused_local_variable(
+            lines=lines,
+            procs=procs,
+            snapshot=snapshot,
+            strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
+            bsl007_strip_double_quoted_segments_fn=_bsl007_strip_double_quoted_segments,
+            bsl007_simple_assign_at_start_re=_BSL007_SIMPLE_ASSIGN_AT_START,
+            var_local_re=_RE_VAR_LOCAL,
+            region_line_re=_RE_REGION_LINE,
+            preproc_line_re=_RE_PREPROC_LINE,
+            compiler_directive_re=_RE_COMPILER_DIRECTIVE,
+            module_assign_re=_RE_MODULE_ASSIGN,
+        )
 
     # ------------------------------------------------------------------
     # BSL008 — Too many return statements
@@ -1360,99 +1194,16 @@ class DiagnosticEngine:
         the tree-sitter CST keyword nodes when the parse is clean; otherwise
         the same tokens are matched with a regex fallback (``_RegexTree`` / ERROR).
         """
-        diags: list[Diagnostic] = []
-        delimiter_lines = _bsl051_delimiter_lines_for_tree(tree)
-
-        # Track which lines are proc-end markers to avoid false positives
-        end_line_idxs: set[int] = set()
-        for proc in procs:
-            end_line_idxs.add(proc.end_idx)
-
-        for proc in procs:
-            body_lines = list(
-                enumerate(lines[proc.start_idx + 1 : proc.end_idx], start=proc.start_idx + 1)
-            )
-            emitted_lines: set[int] = set()
-
-            def emit_unreachable(
-                abs_idx: int,
-                line: str,
-                emitted_lines: set[int] = emitted_lines,
-            ) -> None:
-                if abs_idx in emitted_lines or abs_idx in end_line_idxs:
-                    return
-                next_indent = len(line) - len(line.lstrip())
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=abs_idx + 1,
-                        character=next_indent,
-                        end_line=abs_idx + 1,
-                        end_character=len(line),
-                        severity=Severity.ERROR,
-                        code="BSL051",
-                        message="Исправьте алгоритм, т.к. этот код никогда не будет исполнен",
-                    )
-                )
-                emitted_lines.add(abs_idx)
-
-            i = 0
-            while i < len(body_lines):
-                abs_idx, line = body_lines[i]
-                if _RE_UNCONDITIONAL_EXIT.match(line) and ";" in line:
-                    exit_indent = len(line) - len(line.lstrip())
-                    # Look at next non-blank, non-comment line
-                    j = i + 1
-                    crossed_preprocessor = False
-                    while j < len(body_lines):
-                        next_abs, next_line = body_lines[j]
-                        stripped = next_line.strip()
-                        if not stripped or stripped.startswith("//"):
-                            j += 1
-                            continue
-                        if stripped.startswith("#"):
-                            crossed_preprocessor = True
-                            j += 1
-                            continue
-                        next_indent = len(next_line) - len(next_line.lstrip())
-                        # Same or lesser indent => same scope => unreachable
-                        if (
-                            not crossed_preprocessor
-                            and next_indent <= exit_indent
-                            and next_abs not in end_line_idxs
-                        ):
-                            if delimiter_lines is not None:
-                                is_block_delimiter = next_abs in delimiter_lines
-                            else:
-                                is_block_delimiter = bool(
-                                    _RE_BSL051_DELIMITER_FALLBACK.match(next_line)
-                                )
-                            if not is_block_delimiter:
-                                emit_unreachable(next_abs, next_line)
-                        break
-                    i = j
-                    continue
-                i += 1
-
-            if_exit_lines = self._bsl051_all_branch_exit_end_if_lines(body_lines)
-            if if_exit_lines:
-                for pos, (abs_idx, _line) in enumerate(body_lines):
-                    if abs_idx not in if_exit_lines:
-                        continue
-                    end_indent = len(lines[abs_idx]) - len(lines[abs_idx].lstrip())
-                    for next_abs, next_line in body_lines[pos + 1 :]:
-                        stripped = next_line.strip()
-                        if not stripped or stripped.startswith("//") or stripped.startswith("#"):
-                            continue
-                        if next_abs in end_line_idxs:
-                            break
-                        next_indent = len(next_line) - len(next_line.lstrip())
-                        if next_indent <= end_indent and not _RE_BSL051_DELIMITER_FALLBACK.match(
-                            next_line
-                        ):
-                            emit_unreachable(next_abs, next_line)
-                        break
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl051_unreachable_code(
+            lines=lines,
+            procs=procs,
+            tree=tree,
+            bsl051_delimiter_lines_for_tree_fn=_bsl051_delimiter_lines_for_tree,
+            bsl051_all_branch_exit_end_if_lines_fn=self._bsl051_all_branch_exit_end_if_lines,
+            re_unconditional_exit=_RE_UNCONDITIONAL_EXIT,
+            re_bsl051_delimiter_fallback=_RE_BSL051_DELIMITER_FALLBACK,
+        )
 
     @staticmethod
     def _bsl051_all_branch_exit_end_if_lines(body_lines: list[tuple[int, str]]) -> set[int]:
