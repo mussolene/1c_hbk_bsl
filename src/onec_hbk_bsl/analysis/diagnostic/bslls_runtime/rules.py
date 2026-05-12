@@ -4122,6 +4122,38 @@ class MethodContractDiagnosticsRule(BsllsDiagnosticRule):
         )
 
 
+class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
+            run_bsl174_187_236_238_query_metadata_pool,
+            run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
+        )
+
+        code = self.code
+        snapshot = context.snapshot
+        procs = list(getattr(snapshot, "procedures", []) or [])
+        query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
+
+        if code in {"BSL174", "BSL187", "BSL236", "BSL238"}:
+            return run_bsl174_187_236_238_query_metadata_pool(
+                context.path,
+                context.lines,
+                (code,),
+                query_blocks,
+                context.lines,
+            )
+        return run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
+            context.path,
+            context.lines,
+            procs,
+            (code,),
+            context.lines,
+        )
+
+
 class EngineBridgeRule(BsllsDiagnosticRule):
     def __init__(self, code: str):
         self.code = code
