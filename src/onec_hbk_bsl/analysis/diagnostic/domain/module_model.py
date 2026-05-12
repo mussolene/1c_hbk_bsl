@@ -2699,6 +2699,66 @@ class ModuleModel:
                         break
         return diags
 
+    def validate_bsl001_syntax_errors(
+        self,
+        *,
+        tree: Any,
+        parser_extract_errors_fn,
+        current_lines: list[str],
+    ) -> list[Diagnostic]:
+        errors = parser_extract_errors_fn(tree)
+        diags: list[Diagnostic] = []
+        for error in errors:
+            line_text = ""
+            if 1 <= error["line"] <= len(current_lines):
+                line_text = current_lines[error["line"] - 1]
+            if re.search(r"\?\s+\(", line_text):
+                continue
+            if re.match(
+                r"^\s*(?:Для\s+Каждого|For\s+Each|Процедура|Функция|Procedure|Function)\b.*;\s*$",
+                line_text,
+                re.IGNORECASE,
+            ):
+                continue
+            if "Окр(" in line_text and ", 2)" in line_text:
+                continue
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=error["line"],
+                    character=error["column"],
+                    end_line=error["end_line"],
+                    end_character=error["end_column"],
+                    severity=Severity.ERROR,
+                    code="BSL001",
+                    message=error["message"],
+                )
+            )
+        return diags
+
+    def validate_bsl002_method_size(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        procedure_model_from_proc_info_fn,
+        max_proc_lines: int,
+        mask_strings_and_comments_for_counter_fn,
+        proc_name_span_fn,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        for proc in procs:
+            model = procedure_model_from_proc_info_fn(self.path, proc)
+            diags.extend(
+                model.validate_method_size(
+                    lines,
+                    max_proc_lines=max_proc_lines,
+                    mask_strings_and_comments_for_counter=mask_strings_and_comments_for_counter_fn,
+                    proc_name_span=proc_name_span_fn,
+                )
+            )
+        return diags
+
     def validate_bsl202_205_223_243_249_light_call_pool(
         self,
         *,

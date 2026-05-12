@@ -520,35 +520,12 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl001_syntax_errors(self, path: str, tree: Any) -> list[Diagnostic]:
-        errors = self._get_parser().extract_errors(tree)
-        diags: list[Diagnostic] = []
-        for e in errors:
-            line_text = ""
-            if 1 <= e["line"] <= len(getattr(self, "_current_lines", [])):
-                line_text = self._current_lines[e["line"] - 1]
-            if re.search(r"\?\s+\(", line_text):
-                continue
-            if re.match(
-                r"^\s*(?:Для\s+Каждого|For\s+Each|Процедура|Функция|Procedure|Function)\b.*;\s*$",
-                line_text,
-                re.IGNORECASE,
-            ):
-                continue
-            if "Окр(" in line_text and ", 2)" in line_text:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=e["line"],
-                    character=e["column"],
-                    end_line=e["end_line"],
-                    end_character=e["end_column"],
-                    severity=Severity.ERROR,
-                    code="BSL001",
-                    message=e["message"],
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl001_syntax_errors(
+            tree=tree,
+            parser_extract_errors_fn=self._get_parser().extract_errors,
+            current_lines=getattr(self, "_current_lines", []),
+        )
 
     # ------------------------------------------------------------------
     # BSL002 — Method too long
@@ -557,18 +534,15 @@ class DiagnosticEngine:
     def _rule_bsl002_method_size(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_method_size(
-                    lines,
-                    max_proc_lines=self.max_proc_lines,
-                    mask_strings_and_comments_for_counter=_mask_strings_and_comments_for_counter,
-                    proc_name_span=_proc_name_span,
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl002_method_size(
+            lines=lines,
+            procs=procs,
+            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+            max_proc_lines=self.max_proc_lines,
+            mask_strings_and_comments_for_counter_fn=_mask_strings_and_comments_for_counter,
+            proc_name_span_fn=_proc_name_span,
+        )
 
     # ------------------------------------------------------------------
     # BSL003 — Non-export method in API region
