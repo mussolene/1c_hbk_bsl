@@ -253,6 +253,9 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     YoLetterUsageRule(),
 )
 BSL_RUNTIME_RULE_CODES: frozenset[str] = frozenset(rule.code for rule in _RULES)
+_NATIVE_RUNTIME_RULE_CODES: frozenset[str] = frozenset(
+    rule.code for rule in _RULES if not isinstance(rule, EngineBridgeRule)
+)
 
 
 def append_bslls_runtime_rule_tasks(
@@ -286,5 +289,7 @@ def append_bslls_runtime_rule_tasks(
         diagnostics_engine=engine,
     )
     for rule in _RULES:
+        if isinstance(rule, EngineBridgeRule) and rule.code in _NATIVE_RUNTIME_RULE_CODES:
+            continue
         if engine._rule_enabled(rule.code):
             rule_tasks.append((rule.code, lambda rule=rule: rule.run(context)))
