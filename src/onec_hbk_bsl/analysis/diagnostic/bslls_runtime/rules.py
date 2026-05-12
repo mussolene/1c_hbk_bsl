@@ -4130,6 +4130,7 @@ class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
         from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
             run_bsl174_187_236_238_query_metadata_pool,
             run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
+            run_bsl244_253_261_runtime_pool,
         )
 
         code = self.code
@@ -4143,6 +4144,14 @@ class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
                 context.lines,
                 (code,),
                 query_blocks,
+                context.lines,
+            )
+        if code in {"BSL244", "BSL253", "BSL261"}:
+            return run_bsl244_253_261_runtime_pool(
+                context.path,
+                context.lines,
+                procs,
+                (code,),
                 context.lines,
             )
         return run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
