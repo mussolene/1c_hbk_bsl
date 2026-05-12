@@ -2426,7 +2426,14 @@ class DiagnosticEngine:
         procs: list[_ProcInfo],
         calls: list[Any],
     ) -> list[Diagnostic]:
-        return run_bsl212_missed_required_parameter(path, content, lines, procs, calls)
+        model = ModuleModel(path=path)
+        return model.validate_bsl212_missed_required_parameter(
+            content=content,
+            lines=lines,
+            procs=procs,
+            calls=calls,
+            runner=run_bsl212_missed_required_parameter,
+        )
 
     def _rule_bsl206_207_209_query_join_diagnostics(
         self,
@@ -2435,8 +2442,13 @@ class DiagnosticEngine:
         codes: tuple[str, ...],
         query_blocks: list[QueryTextBlockInfo] | None = None,
     ) -> list[Diagnostic]:
-        return run_bsl206_207_209_query_join_diagnostics(
-            path, lines, codes, self._rule_enabled, query_blocks
+        model = ModuleModel(path=path)
+        return model.validate_bsl206_207_209_query_join_diagnostics(
+            lines=lines,
+            codes=codes,
+            enabled_rule_fn=self._rule_enabled,
+            query_blocks=query_blocks,
+            runner=run_bsl206_207_209_query_join_diagnostics,
         )
 
     # ------------------------------------------------------------------
@@ -2626,7 +2638,12 @@ class DiagnosticEngine:
     def _rule_bsl215_missing_parameter_description(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        return run_bsl215_missing_parameter_description(path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl215_missing_parameter_description(
+            lines=lines,
+            procs=procs,
+            runner=run_bsl215_missing_parameter_description,
+        )
 
     # ------------------------------------------------------------------
     # BSL233 — PublicMethodsDescription
@@ -2635,7 +2652,12 @@ class DiagnosticEngine:
     def _rule_bsl233_public_methods_description(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        return run_bsl233_public_methods_description(path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl233_public_methods_description(
+            lines=lines,
+            procs=procs,
+            runner=run_bsl233_public_methods_description,
+        )
 
     # ------------------------------------------------------------------
     # BSL216 — MissingSpace
@@ -2673,7 +2695,13 @@ class DiagnosticEngine:
     def _rule_bsl254_transferring_parameters(
         self, path: str, lines: list[str], procs: list[_ProcInfo]
     ) -> list[Diagnostic]:
-        return run_bsl254_transferring_parameters(self._symbol_index, path, lines, procs)
+        model = ModuleModel(path=path)
+        return model.validate_bsl254_transferring_parameters(
+            symbol_index=self._symbol_index,
+            lines=lines,
+            procs=procs,
+            runner=run_bsl254_transferring_parameters,
+        )
 
     # BSL208 — LatinAndCyrillicSymbolInWord
     # BSL256 — Typo (BSLLS-style: pyspellchecker + pymorphy3, bundled BSLLS exceptions)
@@ -2793,7 +2821,12 @@ class DiagnosticEngine:
     def _rule_bsl224_nested_function_in_parameters(
         self, path: str, lines: list[str], tree: Any
     ) -> list[Diagnostic]:
-        return run_bsl224_nested_function_in_parameters(path, lines, tree)
+        model = ModuleModel(path=path)
+        return model.validate_bsl224_nested_function_in_parameters(
+            lines=lines,
+            tree=tree,
+            runner=run_bsl224_nested_function_in_parameters,
+        )
 
     # ------------------------------------------------------------------
     # BSL202 / BSL223 / BSL243 / BSL249 — lightweight call pool

@@ -1499,6 +1499,36 @@ class ModuleModel:
     ) -> list[Diagnostic]:
         return runner(self.path, lines, procs, tree, proc_node_map)
 
+    def validate_bsl212_missed_required_parameter(
+        self, *, content: str, lines: list[str], procs: list[ProcInfo], calls: list[Any], runner
+    ) -> list[Diagnostic]:
+        return runner(self.path, content, lines, procs, calls)
+
+    def validate_bsl206_207_209_query_join_diagnostics(
+        self, *, lines: list[str], codes: tuple[str, ...], enabled_rule_fn, query_blocks, runner
+    ) -> list[Diagnostic]:
+        return runner(self.path, lines, codes, enabled_rule_fn, query_blocks)
+
+    def validate_bsl215_missing_parameter_description(
+        self, *, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
+        return runner(self.path, lines, procs)
+
+    def validate_bsl233_public_methods_description(
+        self, *, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
+        return runner(self.path, lines, procs)
+
+    def validate_bsl254_transferring_parameters(
+        self, *, symbol_index, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
+        return runner(symbol_index, self.path, lines, procs)
+
+    def validate_bsl224_nested_function_in_parameters(
+        self, *, lines: list[str], tree, runner
+    ) -> list[Diagnostic]:
+        return runner(self.path, lines, tree)
+
     def validate_bsl202_205_223_243_249_light_call_pool(
         self,
         *,
