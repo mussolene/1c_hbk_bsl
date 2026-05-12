@@ -2027,6 +2027,91 @@ class ModuleModel:
 
         return diags
 
+    def validate_bsl171_204_217_248_251_252_259_268_light_pool(
+        self,
+        *,
+        content: str,
+        lines: list[str],
+        tree: Any,
+        procs: list[ProcInfo],
+        codes: tuple[str, ...],
+        rule_enabled_fn,
+        ts_nodes_for_types_fn,
+        rule_bsl171_fn,
+        rule_bsl204_fn,
+        rule_bsl217_fn,
+        rule_bsl248_fn,
+        rule_bsl251_fn,
+        rule_bsl252_fn,
+        rule_bsl259_fn,
+        rule_bsl268_fn,
+    ) -> list[Diagnostic]:
+        enabled = {code for code in codes if rule_enabled_fn(code)}
+        if not enabled:
+            return []
+
+        diags: list[Diagnostic] = []
+        root = getattr(tree, "root_node", None)
+        tree_ok = root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
+        typed_nodes: dict[str, list[Any]] = {}
+        if tree_ok:
+            wanted = {
+                "ERROR",
+                "ternary_expression",
+                "assignment_statement",
+                "preprocessor",
+                "method_call",
+            }
+            typed_nodes = ts_nodes_for_types_fn(tree, wanted)
+
+        if "BSL171" in enabled:
+            diags.extend(rule_bsl171_fn(self.path, lines, tree if tree_ok else None, typed_nodes.get("ERROR")))
+        if "BSL204" in enabled:
+            diags.extend(rule_bsl204_fn(self.path, content, lines))
+        if "BSL217" in enabled:
+            diags.extend(
+                rule_bsl217_fn(self.path, lines, tree if tree_ok else None, typed_nodes.get("method_call"))
+            )
+        if "BSL248" in enabled:
+            diags.extend(rule_bsl248_fn(self.path, lines, tree if tree_ok else None, procs))
+        if "BSL251" in enabled:
+            diags.extend(
+                rule_bsl251_fn(
+                    self.path,
+                    lines,
+                    tree if tree_ok else None,
+                    typed_nodes.get("ternary_expression"),
+                )
+            )
+        if "BSL252" in enabled:
+            diags.extend(
+                rule_bsl252_fn(
+                    self.path,
+                    lines,
+                    tree if tree_ok else None,
+                    typed_nodes.get("assignment_statement"),
+                )
+            )
+        if "BSL259" in enabled:
+            diags.extend(
+                rule_bsl259_fn(
+                    self.path,
+                    lines,
+                    tree if tree_ok else None,
+                    typed_nodes.get("preprocessor"),
+                )
+            )
+        if "BSL268" in enabled:
+            diags.extend(
+                rule_bsl268_fn(
+                    self.path,
+                    lines,
+                    tree if tree_ok else None,
+                    typed_nodes.get("method_call"),
+                )
+            )
+        return diags
+
     def validate_bsl202_205_223_243_249_light_call_pool(
         self,
         *,

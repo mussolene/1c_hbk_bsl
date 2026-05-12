@@ -2096,69 +2096,24 @@ class DiagnosticEngine:
         procs: list[_ProcInfo],
         codes: tuple[str, ...],
     ) -> list[Diagnostic]:
-        enabled = {code for code in codes if self._rule_enabled(code)}
-        if not enabled:
-            return []
-
-        diags: list[Diagnostic] = []
-        root = getattr(tree, "root_node", None)
-        tree_ok = root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
-        typed_nodes: dict[str, list[Any]] = {}
-        if tree_ok:
-            wanted = {
-                "ERROR",
-                "ternary_expression",
-                "assignment_statement",
-                "preprocessor",
-                "method_call",
-            }
-            typed_nodes = self._ts_nodes_for_types(tree, wanted)
-
-        if "BSL171" in enabled:
-            diags.extend(
-                self._rule_bsl171_crazy_multiline_string(
-                    path, lines, tree if tree_ok else None, typed_nodes.get("ERROR")
-                )
-            )
-        if "BSL204" in enabled:
-            diags.extend(self._rule_bsl204_invalid_character_in_file(path, content, lines))
-        if "BSL217" in enabled:
-            diags.extend(
-                self._rule_bsl217_missing_temp_storage_deletion(
-                    path, lines, tree if tree_ok else None, typed_nodes.get("method_call")
-                )
-            )
-        if "BSL248" in enabled:
-            diags.extend(
-                self._rule_bsl248_several_compiler_directives(
-                    path, lines, tree if tree_ok else None, procs
-                )
-            )
-        if "BSL251" in enabled:
-            diags.extend(
-                self._rule_bsl251_ternary_operator_usage(
-                    path, lines, tree if tree_ok else None, typed_nodes.get("ternary_expression")
-                )
-            )
-        if "BSL252" in enabled:
-            diags.extend(
-                self._rule_bsl252_this_object_assign(
-                    path, lines, tree if tree_ok else None, typed_nodes.get("assignment_statement")
-                )
-            )
-        if "BSL259" in enabled:
-            diags.extend(
-                self._rule_bsl259_unknown_preprocessor_symbol(
-                    path, lines, tree if tree_ok else None, typed_nodes.get("preprocessor")
-                )
-            )
-        if "BSL268" in enabled:
-            diags.extend(
-                self._rule_bsl268_using_find_element_by_string(
-                    path, lines, tree if tree_ok else None, typed_nodes.get("method_call")
-                )
-            )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl171_204_217_248_251_252_259_268_light_pool(
+            content=content,
+            lines=lines,
+            tree=tree,
+            procs=procs,
+            codes=codes,
+            rule_enabled_fn=self._rule_enabled,
+            ts_nodes_for_types_fn=self._ts_nodes_for_types,
+            rule_bsl171_fn=self._rule_bsl171_crazy_multiline_string,
+            rule_bsl204_fn=self._rule_bsl204_invalid_character_in_file,
+            rule_bsl217_fn=self._rule_bsl217_missing_temp_storage_deletion,
+            rule_bsl248_fn=self._rule_bsl248_several_compiler_directives,
+            rule_bsl251_fn=self._rule_bsl251_ternary_operator_usage,
+            rule_bsl252_fn=self._rule_bsl252_this_object_assign,
+            rule_bsl259_fn=self._rule_bsl259_unknown_preprocessor_symbol,
+            rule_bsl268_fn=self._rule_bsl268_using_find_element_by_string,
+        )
 
     def _rule_bsl171_crazy_multiline_string(
         self, path: str, lines: list[str], tree: Any | None, error_nodes: list[Any] | None = None
