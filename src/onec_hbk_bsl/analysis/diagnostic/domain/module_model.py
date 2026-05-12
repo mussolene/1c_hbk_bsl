@@ -2112,6 +2112,78 @@ class ModuleModel:
             )
         return diags
 
+    def validate_bsl208_latin_cyrillic_symbol_in_word(
+        self,
+        *,
+        lines: list[str],
+        snapshot,
+        rule_enabled_fn,
+        re_double_quoted_string,
+        re_bsl208_has_latin,
+        re_bsl208_has_cyrillic,
+        re_bsl208_word,
+        re_bsl208_trailing_lang,
+        bsl208_word_is_standard_tech_name_fn,
+    ) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        re_comment = re.compile(r"^\s*//")
+        seen_bsl208: set[str] = set()
+
+        masked_lines = snapshot.masked_lines if snapshot is not None else None
+        comment_starts = snapshot.comment_starts if snapshot is not None else None
+        for idx, line in enumerate(lines):
+            if re_comment.match(line):
+                continue
+            clean = masked_lines[idx] if masked_lines is not None else re_double_quoted_string.sub('""', line)
+            comment_pos = comment_starts[idx] if comment_starts is not None else clean.find("//")
+            if comment_pos is not None and comment_pos >= 0:
+                clean = clean[:comment_pos]
+            if not (re_bsl208_has_latin.search(clean) and re_bsl208_has_cyrillic.search(clean)):
+                continue
+            for match in re_bsl208_word.finditer(clean):
+                word = match.group()
+                if bsl208_word_is_standard_tech_name_fn(word):
+                    continue
+                if len(word) >= 4 and re_bsl208_trailing_lang.match(word):
+                    continue
+                if not (re_bsl208_has_latin.search(word) and re_bsl208_has_cyrillic.search(word)):
+                    continue
+                before = clean[match.start() - 1] if match.start() > 0 else ""
+                after = clean[match.end()] if match.end() < len(clean) else ""
+                is_declaration = re.match(
+                    r"^\s*(?:Процедура|Функция|Procedure|Function)\b",
+                    clean,
+                    re.IGNORECASE,
+                )
+                if before == "." or (after == "(" and is_declaration is None):
+                    continue
+                if after == ".":
+                    continue
+                if re.match(r"^\s*(?:Для|For)\s+(?:Каждого|Each)\b", clean, re.IGNORECASE):
+                    continue
+                assign_pos = clean.find("=")
+                is_self_update = (
+                    assign_pos >= 0
+                    and match.end() <= assign_pos
+                    and re.search(r"\b" + re.escape(word) + r"\b", clean[assign_pos + 1 :], re.IGNORECASE)
+                )
+                seen_key = f"{word}@{idx}" if is_self_update else word
+                if rule_enabled_fn("BSL208") and seen_key not in seen_bsl208:
+                    seen_bsl208.add(seen_key)
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=match.start(),
+                            end_line=idx + 1,
+                            end_character=match.end(),
+                            severity=Severity.INFORMATION,
+                            code="BSL208",
+                            message="Нельзя использовать латинские и кириллические символы в одном идентификаторе",
+                        )
+                    )
+        return diags
+
     def validate_bsl202_205_223_243_249_light_call_pool(
         self,
         *,

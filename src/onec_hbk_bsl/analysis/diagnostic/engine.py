@@ -2544,75 +2544,18 @@ class DiagnosticEngine:
         Spell-check **Typo** is implemented in :meth:`_rule_bsl256_bslls_typo_spellcheck`
         (Python-only engine; see :mod:`onec_hbk_bsl.analysis.bslls_typo`).
         """
-        diags: list[Diagnostic] = []
-        _re_comment = re.compile(r"^\s*//")
-        # Emit at most once per unique identifier per file (BSL LS behaviour)
-        seen_bsl208: set[str] = set()
-
-        masked_lines = snapshot.masked_lines if snapshot is not None else None
-        comment_starts = snapshot.comment_starts if snapshot is not None else None
-        for idx, line in enumerate(lines):
-            if _re_comment.match(line):
-                continue
-            clean = (
-                masked_lines[idx]
-                if masked_lines is not None
-                else _RE_DOUBLE_QUOTED_STRING.sub('""', line)
-            )
-            comment_pos = comment_starts[idx] if comment_starts is not None else clean.find("//")
-            if comment_pos is not None and comment_pos >= 0:
-                clean = clean[:comment_pos]
-            if not (_RE_BSL208_HAS_LATIN.search(clean) and _RE_BSL208_HAS_CYRILLIC.search(clean)):
-                continue
-            for m in _RE_BSL208_WORD.finditer(clean):
-                word = m.group()
-                # Skip well-known 1C platform names where Latin substrings are
-                # all recognised technology acronyms (e.g. HTTPЗапрос, JSONЗапись).
-                if _bsl208_word_is_standard_tech_name(word):
-                    continue
-                # BSLLS allowTrailingPartsInAnotherLanguage=true: skip words where
-                # Latin/Cyrillic appears only as a trailing or leading block (no interleaving).
-                if len(word) >= 4 and _RE_BSL208_TRAILING_LANG.match(word):
-                    continue
-                if not (_RE_BSL208_HAS_LATIN.search(word) and _RE_BSL208_HAS_CYRILLIC.search(word)):
-                    continue
-                before = clean[m.start() - 1] if m.start() > 0 else ""
-                after = clean[m.end()] if m.end() < len(clean) else ""
-                is_declaration = re.match(
-                    r"^\s*(?:Процедура|Функция|Procedure|Function)\b",
-                    clean,
-                    re.IGNORECASE,
-                )
-                if before == "." or (after == "(" and is_declaration is None):
-                    continue
-                if after == ".":
-                    continue
-                if re.match(r"^\s*(?:Для|For)\s+(?:Каждого|Each)\b", clean, re.IGNORECASE):
-                    continue
-                assign_pos = clean.find("=")
-                is_self_update = (
-                    assign_pos >= 0
-                    and m.end() <= assign_pos
-                    and re.search(
-                        r"\b" + re.escape(word) + r"\b", clean[assign_pos + 1 :], re.IGNORECASE
-                    )
-                )
-                seen_key = f"{word}@{idx}" if is_self_update else word
-                if self._rule_enabled("BSL208") and seen_key not in seen_bsl208:
-                    seen_bsl208.add(seen_key)
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=m.start(),
-                            end_line=idx + 1,
-                            end_character=m.end(),
-                            severity=Severity.INFORMATION,
-                            code="BSL208",
-                            message="Нельзя использовать латинские и кириллические символы в одном идентификаторе",
-                        )
-                    )
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl208_latin_cyrillic_symbol_in_word(
+            lines=lines,
+            snapshot=snapshot,
+            rule_enabled_fn=self._rule_enabled,
+            re_double_quoted_string=_RE_DOUBLE_QUOTED_STRING,
+            re_bsl208_has_latin=_RE_BSL208_HAS_LATIN,
+            re_bsl208_has_cyrillic=_RE_BSL208_HAS_CYRILLIC,
+            re_bsl208_word=_RE_BSL208_WORD,
+            re_bsl208_trailing_lang=_RE_BSL208_TRAILING_LANG,
+            bsl208_word_is_standard_tech_name_fn=_bsl208_word_is_standard_tech_name,
+        )
 
     def _rule_bsl256_bslls_typo_spellcheck(self, path: str, tree: Any) -> list[Diagnostic]:
         """BSLLS-style Typo: bundled ``TypoDiagnostic_ru.properties`` + Python spell/morphology."""
