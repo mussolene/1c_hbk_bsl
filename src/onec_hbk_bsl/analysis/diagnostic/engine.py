@@ -2904,139 +2904,18 @@ class DiagnosticEngine:
         procs: list[_ProcInfo],
         enabled: tuple[str, ...],
     ) -> list[Diagnostic]:
-        enabled_set = set(enabled)
-        diags: list[Diagnostic] = []
-        low = path.replace("\\", "/").lower()
-        file_path = Path(path)
-
-        def _line1_span() -> tuple[int, int]:
-            if lines:
-                return 0, max(len(lines[0].rstrip()), 1)
-            return 0, 1
-
-        def _add_line1(code: str, message: str) -> None:
-            c0, c1 = _line1_span()
-            severity_name = str(RULE_METADATA.get(code, {}).get("severity", "WARNING")).upper()
-            severity = getattr(Severity, severity_name, Severity.WARNING)
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=1,
-                    character=c0,
-                    end_line=1,
-                    end_character=c1,
-                    severity=severity,
-                    code=code,
-                    message=message,
-                )
-            )
-
-        def _find_config_root(start: Path) -> Path | None:
-            for parent in (start.parent, *start.parents):
-                if (parent / "Configuration.xml").exists():
-                    return parent
-            return None
-
-        def _xml_bool_tag_local(xml_text: str, tag: str) -> bool | None:
-            match = re.search(
-                _RE_XML_BOOL_SIMPLE.format(tag=re.escape(tag)),
-                xml_text,
-                re.IGNORECASE,
-            )
-            if match is None:
-                return None
-            return match.group(1).lower() == "true"
-
-        def _proc_by_name(name: str) -> _ProcInfo | None:
-            target = name.casefold()
-            for proc in procs:
-                if proc.name.casefold() == target:
-                    return proc
-            return None
-
-        if "BSL229" in enabled_set and low.endswith("/ext/sessionmodule.bsl"):
-            config_root = _find_config_root(file_path)
-            if config_root is not None:
-                try:
-                    config_text = (config_root / "Configuration.xml").read_text(
-                        encoding="utf-8-sig",
-                        errors="replace",
-                    )
-                except OSError:
-                    config_text = ""
-                if config_text:
-                    managed_in_ordinary = _xml_bool_tag_local(
-                        config_text,
-                        "UseManagedFormInOrdinaryApplication",
-                    )
-                    ordinary_in_managed = _xml_bool_tag_local(
-                        config_text,
-                        "UseOrdinaryFormInManagedApplication",
-                    )
-                    if managed_in_ordinary is False:
-                        _add_line1(
-                            "BSL229",
-                            "Конфигурация не поддерживает использование управляемых форм в обычном приложении",
-                        )
-                    if ordinary_in_managed is True:
-                        _add_line1(
-                            "BSL229",
-                            "Конфигурация использует обычные формы в режиме управляемого приложения",
-                        )
-
-        if "BSL275" in enabled_set and low.endswith("/ext/module.bsl") and "/httpservices/" in low:
-            service_dir = file_path.parent.parent
-            service_xml = service_dir.parent / f"{service_dir.name}.xml"
-            try:
-                xml_text = service_xml.read_text(encoding="utf-8-sig", errors="replace")
-            except OSError:
-                xml_text = ""
-            for handler_match in _RE_BSL275_HANDLER.finditer(xml_text):
-                handler_name = handler_match.group(1).strip()
-                if not handler_name:
-                    _add_line1("BSL275", "Не указан обработчик метода HTTP-сервиса")
-                    continue
-                proc = _proc_by_name(handler_name)
-                if proc is None:
-                    _add_line1("BSL275", f"Не найден обработчик HTTP-сервиса {handler_name}")
-                    continue
-                if len(proc.params) != 1:
-                    start_char, end_char = _proc_name_span(lines, proc)
-                    severity_name = str(
-                        RULE_METADATA.get("BSL275", {}).get("severity", "ERROR")
-                    ).upper()
-                    severity = getattr(Severity, severity_name, Severity.ERROR)
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=proc.start_idx + 1,
-                            character=start_char,
-                            end_line=proc.start_idx + 1,
-                            end_character=end_char,
-                            severity=severity,
-                            code="BSL275",
-                            message=(
-                                f"Обработчик HTTP-сервиса {handler_name} должен принимать ровно один параметр"
-                            ),
-                        )
-                    )
-
-        if "BSL278" in enabled_set and low.endswith("/ext/module.bsl") and "/webservices/" in low:
-            service_dir = file_path.parent.parent
-            service_xml = service_dir.parent / f"{service_dir.name}.xml"
-            try:
-                xml_text = service_xml.read_text(encoding="utf-8-sig", errors="replace")
-            except OSError:
-                xml_text = ""
-            for proc_match in _RE_BSL278_PROCNAME.finditer(xml_text):
-                handler_name = proc_match.group(1).strip()
-                if not handler_name:
-                    _add_line1("BSL278", "Не указан обработчик операции веб-сервиса")
-                    continue
-                if _proc_by_name(handler_name) is None:
-                    _add_line1("BSL278", f"Не найден обработчик веб-сервиса {handler_name}")
-
-        return diags
+        model = ModuleModel(path=path)
+        return model.validate_bsl229_275_278_local_xml_pool(
+            lines=lines,
+            procs=procs,
+            enabled=enabled,
+            rule_metadata=RULE_METADATA,
+            severity_cls=Severity,
+            proc_name_span_fn=_proc_name_span,
+            re_xml_bool_simple=_RE_XML_BOOL_SIMPLE,
+            re_bsl275_handler=_RE_BSL275_HANDLER,
+            re_bsl278_procname=_RE_BSL278_PROCNAME,
+        )
 
     def _rule_bsl169_170_181_182_196_260_light_pool(
         self,
@@ -3046,184 +2925,18 @@ class DiagnosticEngine:
         enabled: tuple[str, ...],
         snapshot: DocumentSnapshot | None = None,
     ) -> list[Diagnostic]:
-        enabled_set = set(enabled)
-        diags: list[Diagnostic] = []
-        is_form_or_command = path_is_likely_form_module_bsl(path) or _path_is_command_module_bsl(
-            path
+        model = ModuleModel(path=path)
+        return model.validate_bsl169_170_181_182_196_260_light_pool(
+            lines=lines,
+            procs=procs,
+            enabled=enabled,
+            snapshot=snapshot,
+            path_is_likely_form_module_bsl_fn=path_is_likely_form_module_bsl,
+            path_is_command_module_bsl_fn=_path_is_command_module_bsl,
+            strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
+            line_comment_re=_RE_LINE_COMMENT,
+            proc_name_span_fn=_proc_name_span,
         )
-        clean_lines = (
-            snapshot.code_lines_without_comments
-            if snapshot is not None
-            else [_strip_inline_comment_preserve_strings(line) for line in lines]
-        )
-        collision_names = {
-            "проверитьбит",
-            "проверитьпобитовоймаске",
-            "установитьбит",
-            "побитовоеи",
-            "побитовоеили",
-            "побитовоене",
-            "побитовоеине",
-            "побитовоеисключительноеили",
-            "побитовыйсдвигвлево",
-            "побитовыйсдвигвправо",
-            "checkbit",
-            "checkbybitmask",
-            "setbit",
-            "bitwiseand",
-            "bitwiseor",
-            "bitwisenot",
-            "bitwiseandnot",
-            "bitwisexor",
-            "bitwiseshiftleft",
-            "bitwiseshiftright",
-        }
-
-        for proc in procs:
-            annotation_lines: list[tuple[int, str]] = []
-            j = proc.start_idx - 1
-            while j >= 0:
-                line = lines[j]
-                if not line.strip() or _RE_LINE_COMMENT.match(line):
-                    j -= 1
-                    continue
-                if line.lstrip().startswith("&"):
-                    annotation_lines.append((j, line))
-                    j -= 1
-                    continue
-                break
-            if "BSL169" in enabled_set and is_form_or_command and not annotation_lines:
-                c0, c1 = _proc_name_span(lines, proc)
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=c0,
-                        end_line=proc.start_idx + 1,
-                        end_character=c1,
-                        severity=Severity.WARNING,
-                        code="BSL169",
-                        message=f"Для метода {proc.name} потеряна директива компиляции",
-                    )
-                )
-            if "BSL170" in enabled_set and not is_form_or_command:
-                for ann_idx, ann_line in annotation_lines:
-                    col = ann_line.find("&")
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=ann_idx + 1,
-                            character=max(col, 0),
-                            end_line=ann_idx + 1,
-                            end_character=max(col, 0) + max(len(ann_line.strip()), 1),
-                            severity=Severity.WARNING,
-                            code="BSL170",
-                            message="Директива компиляции в этом модуле избыточна",
-                        )
-                    )
-            if "BSL182" in enabled_set:
-                hits: list[tuple[int, int]] = []
-                for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
-                    line = clean_lines[idx]
-                    if re.search(r"\b(?:АвтоТестПроверка|AutoTestCheck)\b", line, re.IGNORECASE):
-                        col = re.search(
-                            r"\b(?:АвтоТестПроверка|AutoTestCheck)\b",
-                            line,
-                            re.IGNORECASE,
-                        )
-                        if col is not None:
-                            hits.append((idx, col.start()))
-                for idx, col in hits[1:]:
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=col,
-                            end_line=idx + 1,
-                            end_character=col + len("АвтоТестПроверка"),
-                            severity=Severity.WARNING,
-                            code="BSL182",
-                            message="Избыточная повторная проверка АвтоТестПроверка",
-                        )
-                    )
-            if "BSL196" in enabled_set and proc.name.casefold() in collision_names:
-                c0, c1 = _proc_name_span(lines, proc)
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=proc.start_idx + 1,
-                        character=c0,
-                        end_line=proc.start_idx + 1,
-                        end_character=c1,
-                        severity=Severity.ERROR,
-                        code="BSL196",
-                        message=f"Имя метода {proc.name} конфликтует с глобальным контекстом 8.3.12",
-                    )
-                )
-            if "BSL181" in enabled_set:
-                seen_inserts: set[tuple[str, str, str]] = set()
-                for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
-                    line = clean_lines[idx]
-                    for match in re.finditer(
-                        r"\b(?P<target>\w+)\.(?P<method>Добавить|Add|Вставить|Insert)\s*\((?P<arg>[^)]*)\)",
-                        line,
-                        re.IGNORECASE,
-                    ):
-                        key = (
-                            match.group("target").casefold(),
-                            match.group("method").casefold(),
-                            re.sub(r"\s+", "", match.group("arg")).casefold(),
-                        )
-                        if key in seen_inserts:
-                            diags.append(
-                                Diagnostic(
-                                    file=path,
-                                    line=idx + 1,
-                                    character=match.start("target"),
-                                    end_line=idx + 1,
-                                    end_character=match.end("arg"),
-                                    severity=Severity.WARNING,
-                                    code="BSL181",
-                                    message="Обнаружена дублирующаяся вставка в коллекцию",
-                                )
-                            )
-                        else:
-                            seen_inserts.add(key)
-            if "BSL260" in enabled_set:
-                for idx, _raw_line in enumerate(lines):
-                    line = clean_lines[idx]
-                    assign = re.search(
-                        r"(?P<var>\w+)\s*=\s*(?P<expr>\w+(?:\.\w+)*\.(?:НайтиПоКоду|FindByCode)\s*\([^)]*\))",
-                        line,
-                        re.IGNORECASE,
-                    )
-                    if assign is None:
-                        continue
-                    var_name = assign.group("var")
-                    lookahead = "\n".join(lines[idx + 1 : min(len(lines), idx + 4)])
-                    if re.search(
-                        rf"\b(?:ЗначениеЗаполнено|ValueIsFilled)\s*\([^)]*\b{re.escape(var_name)}\b",
-                        lookahead,
-                        re.IGNORECASE,
-                    ) or re.search(
-                        rf"\b{re.escape(var_name)}\b\s*(?:=|<>)\s*(?:Неопределено|Undefined)",
-                        lookahead,
-                        re.IGNORECASE,
-                    ):
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=assign.start("expr"),
-                            end_line=idx + 1,
-                            end_character=assign.end("expr"),
-                            severity=Severity.WARNING,
-                            code="BSL260",
-                            message="Использование НайтиПоКоду() небезопасно без проверки результата",
-                        )
-                    )
-        return diags
 
     def _rule_bsl174_187_236_238_query_metadata_pool(
         self,
