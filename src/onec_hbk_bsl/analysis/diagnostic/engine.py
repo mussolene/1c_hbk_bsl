@@ -378,16 +378,12 @@ class DiagnosticEngine:
         tree_is_ts = snapshot.is_tree_sitter
         procs = snapshot.procedures
         proc_source = "ast" if tree_is_ts else "regex"
-        regex_fallback_procs_used = 0 if tree_is_ts else 1
         regions = snapshot.regions
         regions_source = "ast" if tree_is_ts else "regex"
-        regex_fallback_regions_used = 0 if tree_is_ts else 1
         last_metrics: dict[str, Any] = {
             "tree_is_ts": bool(tree_is_ts),
             "proc_source": proc_source,
             "regions_source": regions_source,
-            "regex_fallback_procs_used": regex_fallback_procs_used,
-            "regex_fallback_regions_used": regex_fallback_regions_used,
         }
         last_metrics.update(
             {
@@ -624,10 +620,9 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
 
     def _rule_bsl009_self_assign(self, path: str, lines: list[str], tree: Any) -> list[Diagnostic]:
-        if _ts_tree_ok_for_rules(tree):
-            return _diagnostics_bsl009_from_tree(path, tree.root_node)
-        model = ModuleModel(path=path)
-        return model.validate_self_assign_regex_fallback(lines, self_assign_re=_RE_SELF_ASSIGN)
+        if not _ts_tree_ok_for_rules(tree):
+            return []
+        return _diagnostics_bsl009_from_tree(path, tree.root_node)
 
     # ------------------------------------------------------------------
     # BSL011 — Cognitive complexity
@@ -1268,8 +1263,7 @@ class DiagnosticEngine:
                 )
             return diags
 
-        model = ModuleModel(path=path)
-        return model.validate_useless_condition_regex_fallback(lines, if_literal_re=_RE_IF_LITERAL)
+        return []
 
     # ------------------------------------------------------------------
     # BSL054 — Module-level Перем/Var (global state)
