@@ -3966,6 +3966,53 @@ class YoLetterUsageRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
+class QueryJoinDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
+            run_bsl206_207_209_query_join_diagnostics,
+        )
+
+        query_blocks = list(getattr(context.snapshot, "query_text_blocks", []) or [])
+        return run_bsl206_207_209_query_join_diagnostics(
+            context.path,
+            context.lines,
+            (self.code,),
+            context.diagnostics_engine._rule_enabled,
+            query_blocks,
+        )
+
+
+class QueryTextDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
+            run_bsl191_201_query_text_diagnostics,
+            run_bsl220_235_269_query_text_diagnostics,
+        )
+
+        query_blocks = list(getattr(context.snapshot, "query_text_blocks", []) or [])
+        if self.code in {"BSL191", "BSL201"}:
+            return run_bsl191_201_query_text_diagnostics(
+                context.path,
+                context.lines,
+                (self.code,),
+                context.diagnostics_engine._rule_enabled,
+                query_blocks,
+            )
+        return run_bsl220_235_269_query_text_diagnostics(
+            context.path,
+            context.lines,
+            (self.code,),
+            context.diagnostics_engine._rule_enabled,
+            query_blocks,
+        )
+
+
 class EngineBridgeRule(BsllsDiagnosticRule):
     def __init__(self, code: str):
         self.code = code
