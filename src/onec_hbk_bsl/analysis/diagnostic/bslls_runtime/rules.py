@@ -3923,15 +3923,16 @@ class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
 
 class ExtraCommasRule(BsllsDiagnosticRule):
     code = "BSL186"
-    _trailing_comma_re = re.compile(r",\s*[)\];]")
+    _trailing_comma_re = re.compile(r",(?=\s*\))")
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
                 continue
-            clean = _code_mask_without_strings_and_comments(line)
-            match = self._trailing_comma_re.search(clean)
+            comment_start = comment_start_outside_double_quotes(line)
+            code = line if comment_start is None else line[:comment_start]
+            match = self._trailing_comma_re.search(code)
             if match is None:
                 continue
             storage.add_range(

@@ -4988,6 +4988,41 @@ class TestBsl149AssignAliasFieldsInQuery:
         assert {diag.severity for diag in diags} == {Severity.WARNING}
 
 
+class TestBsl186ExtraCommas:
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "ExtraCommasDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL186"}).check_file(str(fixture))
+            if diag.code == "BSL186"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (9, 35, 9, 36),
+            (10, 35, 10, 36),
+            (11, 49, 11, 50),
+            (12, 45, 12, 46),
+            (14, 31, 14, 32),
+            (18, 38, 18, 39),
+        ]
+
+    def test_string_argument_before_closing_paren_is_not_extra_comma(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                ПараметрыЗаписи.Вставить("Комментарий", "");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL186"})
+        assert [diag for diag in diags if diag.code == "BSL186"] == []
+
+
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE, RULE_METADATA
