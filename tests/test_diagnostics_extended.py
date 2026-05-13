@@ -2065,6 +2065,21 @@ class TestBsl024SpaceAtStartComment:
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" not in _codes(diags)
 
+    def test_commented_call_no_bsl024(self, tmp_path: Path) -> None:
+        content = '//НСтр("ru=\'строка\'") +\nА = 1;\n'
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
+    def test_commented_if_no_bsl024(self, tmp_path: Path) -> None:
+        content = '//Если Условие Тогда\n//КонецЕсли;\nА = 1;\n'
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
+    def test_query_pipe_comment_reports_bsl024(self, tmp_path: Path) -> None:
+        content = "//|\tИ Поле = &Поле\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" in _codes(diags)
+
     def test_inline_comment_without_space_reports(self, tmp_path: Path) -> None:
         content = "Перем1 = 7; //И это плохо\n"
         diags = _check(content, tmp_path, select={"BSL024"})

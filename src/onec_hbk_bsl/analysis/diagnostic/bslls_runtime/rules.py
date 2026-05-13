@@ -398,6 +398,8 @@ _BSL024_COMMENTED_CODE_RE = re.compile(
     r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Перем"
     r"|Function|Procedure|EndProcedure|EndFunction|Var)\b"
     r"|(?:ВЫБРАТЬ|SELECT)\b"
+    r"|(?:Если|If|ИначеЕсли|ElseIf|ElsIf|КонецЕсли|EndIf)\b"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\("
     r"|\w.*(?:;|:=)"
     r")",
     re.IGNORECASE,
@@ -655,8 +657,7 @@ def bsl024_find_report_comment_col(line: str) -> int | None:
     if rest.startswith("@") or rest.lower().startswith("(c)") or rest.startswith("©"):
         return None
     if (
-        comment_text.startswith("//|")
-        or comment_text.startswith("//!")
+        comment_text.startswith("//!")
         or re.match(r"//\s*noqa\b", comment_text, re.IGNORECASE)
         or re.match(r"//\s*bsl-disable\b", comment_text, re.IGNORECASE)
     ):
