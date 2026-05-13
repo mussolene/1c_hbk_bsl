@@ -224,36 +224,6 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.proc_helpers import (
     procedure_compiler_execution_context as _procedure_compiler_execution_context,
 )
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
-from onec_hbk_bsl.analysis.diagnostic.passes.core_pass import (
-    extend_core_rule_tasks,
-)
-from onec_hbk_bsl.analysis.diagnostic.passes.metadata_pass import (
-    extend_metadata_rule_tasks,
-)
-from onec_hbk_bsl.analysis.diagnostic.passes.method_pass import (
-    extend_method_contract_rule_tasks,
-)
-from onec_hbk_bsl.analysis.diagnostic.passes.module_pass import (
-    extend_module_rule_tasks,
-)
-from onec_hbk_bsl.analysis.diagnostic.passes.query_pass import (
-    extend_query_join_rule_tasks,
-    extend_query_metadata_rule_tasks,
-    extend_query_text_rule_tasks,
-    extend_query_top_rule_tasks,
-)
-from onec_hbk_bsl.analysis.diagnostic.passes.runtime_tail_pass import (
-    extend_runtime_tail_rule_tasks,
-)
-from onec_hbk_bsl.analysis.diagnostic.passes.security_pass import (
-    extend_security_rule_tasks,
-)
-from onec_hbk_bsl.analysis.diagnostic.passes.style_pass import (
-    extend_style_comment_rule_tasks,
-    extend_style_spacing_rule_tasks,
-    extend_style_tail_rule_tasks,
-    extend_style_token_rule_tasks,
-)
 from onec_hbk_bsl.analysis.diagnostic.models import (
     Diagnostic,
     ProcInfo,
