@@ -897,20 +897,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL030 — Procedure/function header ends with semicolon
-    # ------------------------------------------------------------------
-
-    def _rule_bsl030_header_semicolon(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """
-        Detect procedure/function headers that end with a semicolon.
-
-        BSL does not require (or allow) a semicolon on the header line;
-        adding one is a common copy-paste error from other languages.
-        """
-        model = ModuleModel(path=path)
-        return model.validate_header_semicolon(lines, header_semicolon_re=_RE_HEADER_SEMICOLON)
-
-    # ------------------------------------------------------------------
     # BSL031 — Too many parameters (total, not just optional)
     # ------------------------------------------------------------------
 
@@ -1475,57 +1461,6 @@ class DiagnosticEngine:
     )
 
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    # Lines that are allowed to have ; mid-line (for/each, string literals etc.)
-    _MULTI_STMT_SKIP = re.compile(
-        r"^\s*(?:Для|For|ДляКаждого|ForEach|Пока|While|#)",
-        re.IGNORECASE,
-    )
-
-    _MAX_PARAMS = 7
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    _MAX_NESTING_DEPTH = 6
-
-    # Keywords that increase nesting depth
-    _NESTING_OPEN = re.compile(
-        r"^\s*(?:Если|If|"
-        r"Для|For|ДляКаждого|ForEach|Пока|While|"
-        r"Попытка|Try)\b",
-        re.IGNORECASE,
-    )
-    _NESTING_CLOSE = re.compile(
-        r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b",
-        re.IGNORECASE,
-    )
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    _MAX_MODULE_LINES = 500
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    _RE_FOR_INDEX = re.compile(
-        r"^\s*(?:Для|For)\s+\w+\s*=\s*\d+\s+(?:По|To)\b",
-        re.IGNORECASE,
-    )
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    _MAX_LINE_LENGTH = 120
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    _MIN_PROC_NAME_LEN = 3
-
-    # ------------------------------------------------------------------
     # BSL131 — DuplicateRegion
     # ------------------------------------------------------------------
 
@@ -1535,212 +1470,6 @@ class DiagnosticEngine:
         """Detect duplicated region names, including BSLLS standard-region synonyms."""
         model = ModuleModel(path=path)
         return model.validate_duplicate_regions(lines, regions=regions)
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    MAX_CYCLOMATIC_COMPLEXITY: int = 10
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    _MAX_PARAM_NAME_LEN: int = 30
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    _MAX_DEFAULT_VALUE_LEN: int = 50
-
-    def _rule_bsl152_cached_public(
-        self,
-        path: str,
-        lines: list[str],
-        regions: list[_RegionInfo],
-        procs: list[_ProcInfo],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl152_cached_public(
-            lines=lines,
-            regions=regions,
-            procs=procs,
-            runner=run_bsl152_cached_public,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL154 — CodeAfterAsyncCall (client command / form / managed app modules)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl154_code_after_async(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl154_code_after_async(
-            lines=lines,
-            procs=procs,
-            runner=run_bsl154_code_after_async,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL156 — CodeOutOfRegion
-    # ------------------------------------------------------------------
-
-    def _rule_bsl156_code_out_of_region(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl156_code_out_of_region(
-            lines=lines,
-            procs=procs,
-            runner=run_bsl156_code_out_of_region,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL158 — CommonModuleAssign (indexed configuration)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl158_common_module_assign(
-        self, path: str, lines: list[str], symbol_index: Any
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl158_common_module_assign(
-            lines=lines,
-            symbol_index=symbol_index,
-            runner=run_bsl158_common_module_assign,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL159 — CommonModuleInvalidType (sibling module XML)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl159_common_module_invalid_type(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl159_common_module_invalid_type(
-            lines=lines,
-            runner=run_bsl159_common_module_invalid_type,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL160 — CommonModuleMissingAPI
-    # ------------------------------------------------------------------
-
-    def _rule_bsl160_common_module_missing_api(
-        self,
-        path: str,
-        lines: list[str],
-        regions: list[_RegionInfo],
-        procs: list[_ProcInfo],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl160_common_module_missing_api(
-            lines=lines,
-            regions=regions,
-            procs=procs,
-            runner=run_bsl160_common_module_missing_api,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL161–BSL168 — CommonModuleName* (sibling module XML)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl161_168_common_module_names(
-        self,
-        path: str,
-        lines: list[str],
-        codes: tuple[str, ...],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl161_168_common_module_names(
-            lines=lines,
-            codes=codes,
-            enabled_rule_fn=self._rule_enabled,
-            runner=run_bsl161_168_common_module_names,
-        )
-
-    def _rule_bsl173_deleting_collection_item(
-        self, path: str, lines: list[str], procs: list[Any]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl173_deleting_collection_item(
-            lines=lines,
-            procs=procs,
-            runner=run_bsl173_deleting_collection_item,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL172 — DataExchangeLoading
-    # ------------------------------------------------------------------
-
-    def _rule_bsl172_data_exchange_loading(
-        self, path: str, lines: list[str], procs: list[Any]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl172_data_exchange_loading(
-            lines=lines,
-            procs=procs,
-            runner=run_bsl172_data_exchange_loading,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL220 / BSL235 / BSL269 — query text diagnostics
-    # ------------------------------------------------------------------
-
-    def _rule_bsl220_235_269_query_text_diagnostics(
-        self,
-        path: str,
-        lines: list[str],
-        codes: tuple[str, ...],
-        query_blocks: list[QueryTextBlockInfo] | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl220_235_269_query_text_diagnostics(
-            lines=lines,
-            codes=codes,
-            query_blocks=query_blocks,
-            enabled_rule_fn=self._rule_enabled,
-            runner=run_bsl220_235_269_query_text_diagnostics,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL191 / BSL201 — query text diagnostics
-    # ------------------------------------------------------------------
-
-    def _rule_bsl191_201_query_text_diagnostics(
-        self,
-        path: str,
-        lines: list[str],
-        codes: tuple[str, ...],
-        query_blocks: list[QueryTextBlockInfo] | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl191_201_query_text_diagnostics(
-            lines=lines,
-            codes=codes,
-            query_blocks=query_blocks,
-            enabled_rule_fn=self._rule_enabled,
-            runner=run_bsl191_201_query_text_diagnostics,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL192 / BSL193 / BSL194 / BSL228 / BSL266 — method contract diagnostics
-    # ------------------------------------------------------------------
-
-    def _rule_bsl192_193_194_228_266_method_contract_diagnostics(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        codes: tuple[str, ...],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl192_193_194_228_266_method_contract_diagnostics(
-            lines=lines,
-            procs=procs,
-            codes=codes,
-            enabled_rule_fn=self._rule_enabled,
-            runner=run_bsl192_193_194_228_266_method_contract_diagnostics,
-        )
 
     # ------------------------------------------------------------------
     # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
@@ -1964,43 +1693,6 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL206 / BSL207 / BSL209 — join-related query diagnostics
-    # ------------------------------------------------------------------
-
-    def _rule_bsl212_missed_required_parameter(
-        self,
-        path: str,
-        content: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        calls: list[Any],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl212_missed_required_parameter(
-            content=content,
-            lines=lines,
-            procs=procs,
-            calls=calls,
-            runner=run_bsl212_missed_required_parameter,
-        )
-
-    def _rule_bsl206_207_209_query_join_diagnostics(
-        self,
-        path: str,
-        lines: list[str],
-        codes: tuple[str, ...],
-        query_blocks: list[QueryTextBlockInfo] | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl206_207_209_query_join_diagnostics(
-            lines=lines,
-            codes=codes,
-            enabled_rule_fn=self._rule_enabled,
-            query_blocks=query_blocks,
-            runner=run_bsl206_207_209_query_join_diagnostics,
-        )
-
-    # ------------------------------------------------------------------
     # BSL190 — FormDataToValue
     # ------------------------------------------------------------------
 
@@ -2053,29 +1745,9 @@ class DiagnosticEngine:
     # BSL215 — MissingParameterDescription
     # ------------------------------------------------------------------
 
-    def _rule_bsl215_missing_parameter_description(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl215_missing_parameter_description(
-            lines=lines,
-            procs=procs,
-            runner=run_bsl215_missing_parameter_description,
-        )
-
     # ------------------------------------------------------------------
     # BSL233 — PublicMethodsDescription
     # ------------------------------------------------------------------
-
-    def _rule_bsl233_public_methods_description(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl233_public_methods_description(
-            lines=lines,
-            procs=procs,
-            runner=run_bsl233_public_methods_description,
-        )
 
     # ------------------------------------------------------------------
     # BSL216 — MissingSpace
@@ -2109,17 +1781,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
     # BSL254 — TransferringParametersBetweenClientAndServer
     # ------------------------------------------------------------------
-
-    def _rule_bsl254_transferring_parameters(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl254_transferring_parameters(
-            symbol_index=self._symbol_index,
-            lines=lines,
-            procs=procs,
-            runner=run_bsl254_transferring_parameters,
-        )
 
     # BSL208 — LatinAndCyrillicSymbolInWord
     # BSL256 — Typo (BSLLS-style: pyspellchecker + pymorphy3, bundled BSLLS exceptions)
@@ -2178,16 +1839,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
     # BSL224 — NestedFunctionInParameters
     # ------------------------------------------------------------------
-
-    def _rule_bsl224_nested_function_in_parameters(
-        self, path: str, lines: list[str], tree: Any
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl224_nested_function_in_parameters(
-            lines=lines,
-            tree=tree,
-            runner=run_bsl224_nested_function_in_parameters,
-        )
 
     # ------------------------------------------------------------------
     # BSL202 / BSL223 / BSL243 / BSL249 — lightweight call pool
@@ -2297,124 +1948,4 @@ class DiagnosticEngine:
             strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
             line_comment_re=_RE_LINE_COMMENT,
             proc_name_span_fn=_proc_name_span,
-        )
-
-    def _rule_bsl174_187_236_238_query_metadata_pool(
-        self,
-        path: str,
-        lines: list[str],
-        enabled: tuple[str, ...],
-        query_blocks: list[QueryTextBlockInfo] | None = None,
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl174_187_236_238_query_metadata_pool(
-            lines=lines,
-            enabled=enabled,
-            enabled_rule_fn=self._rule_enabled,
-            query_blocks=query_blocks,
-            code_lines_without_comments=(
-                snapshot.code_lines_without_comments if snapshot is not None else None
-            ),
-            runner=run_bsl174_187_236_238_query_metadata_pool,
-        )
-
-    def _rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        enabled: tuple[str, ...],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
-            lines=lines,
-            procs=procs,
-            enabled=enabled,
-            enabled_rule_fn=self._rule_enabled,
-            code_lines_without_comments=(
-                snapshot.code_lines_without_comments if snapshot is not None else None
-            ),
-            runner=run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
-        )
-
-    def _rule_bsl244_253_261_runtime_pool(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        enabled: tuple[str, ...],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl244_253_261_runtime_pool(
-            lines=lines,
-            procs=procs,
-            enabled=enabled,
-            code_lines_without_comments=(
-                snapshot.code_lines_without_comments if snapshot is not None else None
-            ),
-            runner=run_bsl244_253_261_runtime_pool,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL234 — QueryNestedFieldsByDot
-    # ------------------------------------------------------------------
-
-    def _rule_bsl234_query_nested_fields_by_dot(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl234_query_nested_fields_by_dot(
-            lines=lines,
-            runner=run_bsl234_query_nested_fields_by_dot,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL237 — RedundantAccessToObject
-    # ------------------------------------------------------------------
-
-    def _rule_bsl237_redundant_access_to_object(
-        self, path: str, lines: list[str]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl237_redundant_access_to_object(
-            lines=lines,
-            runner=run_bsl237_redundant_access_to_object,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL245 — ServerSideExportFormMethod
-    # ------------------------------------------------------------------
-
-    def _rule_bsl245_server_side_export_form_method(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl245_server_side_export_form_method(
-            lines=lines,
-            procs=procs,
-            runner=run_bsl245_server_side_export_form_method,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL240 — RewriteMethodParameter
-    # ------------------------------------------------------------------
-
-    def _rule_bsl240_rewrite_method_parameter(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[Any],
-        tree: Any,
-        proc_node_map: dict[tuple[str, int, str], Any] | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl240_rewrite_method_parameter(
-            lines=lines,
-            procs=procs,
-            tree=tree,
-            proc_node_map=proc_node_map,
-            runner=run_bsl240_rewrite_method_parameter,
         )
