@@ -370,7 +370,5 @@ class TestCheckFileOptimization:
             "build_document_snapshot",
             lambda *args, **kwargs: _FakeSnapshot(),
         )
-        monkeypatch.setattr(engine, "_rule_bsl002_method_size", lambda *args, **kwargs: [])
-
         result = engine._run_rules("x.bsl", "Процедура Тест()\nКонецПроцедуры\n", object())
         assert result == []

@@ -4299,10 +4299,24 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL001":
             return engine._rule_bsl001_syntax_errors(context.path, context.tree)
         if code == "BSL002":
-            return engine._rule_bsl002_method_size(context.path, context.lines, procs)
+            return model.validate_bsl002_method_size(
+                lines=context.lines,
+                procs=procs,
+                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                max_proc_lines=engine.max_proc_lines,
+                mask_strings_and_comments_for_counter_fn=(
+                    _diag._mask_strings_and_comments_for_counter
+                ),
+                proc_name_span_fn=_diag._proc_name_span,
+            )
         if code == "BSL003":
-            return engine._rule_bsl003_non_export_in_api_region(
-                context.path, context.lines, procs, regions
+            return model.validate_bsl003_non_export_in_api_region(
+                lines=context.lines,
+                procs=procs,
+                regions=regions,
+                api_region_names=_diag._API_REGION_NAMES,
+                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                proc_name_span_fn=_diag._proc_name_span,
             )
         if code == "BSL004":
             return model.validate_bsl004_empty_code_block(lines=context.lines)
@@ -4355,15 +4369,30 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 )
             return diags
         if code == "BSL016":
-            return engine._rule_bsl016_non_standard_region(context.path, context.lines, regions)
+            return model.validate_non_standard_regions(
+                context.lines,
+                regions=regions,
+                standard_regions_for_path=_diag._standard_regions_for_path,
+                is_standard_region_name_for_path=_diag._is_standard_region_name_for_path,
+            )
         if code == "BSL017":
             return model.validate_export_in_command_or_form_module(context.lines, procs=procs)
         if code == "BSL019":
             return engine._rule_bsl019_cyclomatic_complexity(context.path, context.lines, procs)
         if code == "BSL020":
-            return engine._rule_bsl020_excessive_nesting(context.path, context.lines, procs)
+            return model.validate_excessive_nesting(
+                context.lines,
+                procs=procs,
+                max_nesting_depth=engine.max_nesting_depth,
+            )
         if code == "BSL022":
-            return engine._rule_bsl022_deprecated_message(context.path, context.lines, procs)
+            return model.validate_deprecated_warning(
+                context.lines,
+                procs=procs,
+                deprecated_message_re=_diag._RE_DEPRECATED_MSG,
+                proc_containing_line=_diag._proc_containing_line,
+                is_typical_client_command_handler=_diag._is_typical_client_command_handler,
+            )
         if code == "BSL026":
             return model.validate_empty_regions(context.lines, regions=regions)
         if code == "BSL028":
@@ -4371,8 +4400,12 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL029":
             return engine._rule_bsl029_magic_number(context.path, context.lines, procs, snapshot)
         if code == "BSL030":
-            return engine._rule_bsl030_statement_missing_semicolon(
-                context.path, context.lines, procs
+            return model.validate_statement_missing_semicolon(
+                context.lines,
+                procs=procs,
+                stmt_no_semi_re=_diag._RE_STMT_NO_SEMI,
+                double_quoted_string_re=_diag._RE_DOUBLE_QUOTED_STRING,
+                single_quoted_string_re=_diag._RE_SINGLE_QUOTED_STRING,
             )
         if code == "BSL031":
             diags = []
@@ -4409,9 +4442,23 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 bool_op_re=_diag._RE_BOOL_OP,
             )
         if code == "BSL040":
-            return engine._rule_bsl040_using_this_form(context.path, context.lines, procs)
+            return model.validate_this_form_usage(
+                context.lines,
+                procs=procs,
+                path_is_likely_form_module_bsl=_diag.path_is_likely_form_module_bsl,
+                proc_containing_line=_diag._proc_containing_line,
+                mask_double_quoted_strings_preserve_len=(
+                    _diag._mask_double_quoted_strings_preserve_len
+                ),
+                this_form_re=_diag._RE_THIS_FORM,
+            )
         if code == "BSL042":
-            return engine._rule_bsl042_empty_export_method(context.path, context.lines, procs)
+            return model.validate_bsl042_empty_export_method(
+                lines=context.lines,
+                procs=procs,
+                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                blank_or_comment_re=_diag._RE_BLANK_OR_COMMENT,
+            )
         if code == "BSL051":
             return engine._rule_bsl051_unreachable_code(
                 context.path, context.lines, procs, context.tree
@@ -4419,8 +4466,12 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL052":
             return engine._rule_bsl052_useless_condition(context.path, context.lines, context.tree)
         if code == "BSL054":
-            return engine._rule_bsl054_module_level_variable(
-                context.path, context.lines, procs, snapshot
+            clean_lines = snapshot.code_lines_without_comments
+            return model.validate_module_level_export_variables(
+                context.lines,
+                procs=procs,
+                var_module_export_re=_diag._RE_VAR_MODULE_EXPORT,
+                clean_lines=clean_lines,
             )
         if code == "BSL062":
             proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
@@ -4428,7 +4479,13 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 context.path, context.lines, procs, context.tree, proc_node_map
             )
         if code == "BSL064":
-            return engine._rule_bsl064_procedure_returns_value(context.path, context.lines, procs)
+            return model.validate_bsl064_procedure_returns_value(
+                lines=context.lines,
+                procs=procs,
+                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                return_value_re=_diag._RE_RETURN_VALUE,
+                proc_header_re=_diag._RE_PROC_HEADER,
+            )
         if code == "BSL065":
             diags = []
             for proc in procs:
@@ -4443,12 +4500,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return diags
         if code == "BSL077":
             query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
-            return engine._rule_bsl077_select_top_without_order_by(
-                context.path, context.lines, query_blocks
+            return model.validate_select_top_without_order_by(
+                query_blocks=query_blocks,
+                query_top_re=_diag._RE_QUERY_TOP,
+                query_union_re=_diag._RE_QUERY_UNION,
+                query_where_re=_diag._RE_QUERY_WHERE,
+                query_order_by_re=_diag._RE_QUERY_ORDER_BY,
             )
         if code == "BSL131":
             return model.validate_duplicate_regions(context.lines, regions=regions)
-        return engine._rule_bsl148_all_function_paths_return(context.path, context.tree)
+        return model.validate_function_paths_return(
+            tree=context.tree,
+            bsl148_function_name_spans=_diag.bsl148_function_name_spans,
+            loops_executed_at_least_once=engine.bsl148_loops_executed_at_least_once,
+        )
 
 
 class DeprecatedApiDiagnosticsRule(BsllsDiagnosticRule):

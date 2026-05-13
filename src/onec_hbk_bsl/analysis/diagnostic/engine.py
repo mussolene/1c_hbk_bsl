@@ -527,39 +527,9 @@ class DiagnosticEngine:
     # BSL002 — Method too long
     # ------------------------------------------------------------------
 
-    def _rule_bsl002_method_size(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl002_method_size(
-            lines=lines,
-            procs=procs,
-            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
-            max_proc_lines=self.max_proc_lines,
-            mask_strings_and_comments_for_counter_fn=_mask_strings_and_comments_for_counter,
-            proc_name_span_fn=_proc_name_span,
-        )
-
     # ------------------------------------------------------------------
     # BSL003 — Non-export method in API region
     # ------------------------------------------------------------------
-
-    def _rule_bsl003_non_export_in_api_region(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        regions: list[_RegionInfo],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl003_non_export_in_api_region(
-            lines=lines,
-            procs=procs,
-            regions=regions,
-            api_region_names=_API_REGION_NAMES,
-            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
-            proc_name_span_fn=_proc_name_span,
-        )
 
     # ------------------------------------------------------------------
     # BSL007 — Unused local variable
@@ -621,20 +591,6 @@ class DiagnosticEngine:
     # BSL016 — Non-standard region name
     # ------------------------------------------------------------------
 
-    def _rule_bsl016_non_standard_region(
-        self,
-        path: str,
-        lines: list[str],
-        regions: list[_RegionInfo],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_non_standard_regions(
-            lines,
-            regions=regions,
-            standard_regions_for_path=_standard_regions_for_path,
-            is_standard_region_name_for_path=_is_standard_region_name_for_path,
-        )
-
     # ------------------------------------------------------------------
     # BSL019 — McCabe cyclomatic complexity
     # ------------------------------------------------------------------
@@ -660,58 +616,13 @@ class DiagnosticEngine:
     # BSL020 — Excessive nesting depth
     # ------------------------------------------------------------------
 
-    def _rule_bsl020_excessive_nesting(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_excessive_nesting(
-            lines,
-            procs=procs,
-            max_nesting_depth=self.max_nesting_depth,
-        )
-
     # ------------------------------------------------------------------
     # BSL022 — Deprecated Предупреждение() / Warning()
     # ------------------------------------------------------------------
 
-    def _rule_bsl022_deprecated_message(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Flag calls to Предупреждение()/Warning() — deprecated modal dialogs.
-
-        These block execution and are not allowed in background procedures.
-        Use ПоказатьПредупреждение() / ShowMessageBox() instead.
-        """
-        model = ModuleModel(path=path)
-        return model.validate_deprecated_warning(
-            lines,
-            procs=procs,
-            deprecated_message_re=_RE_DEPRECATED_MSG,
-            proc_containing_line=_proc_containing_line,
-            is_typical_client_command_handler=_is_typical_client_command_handler,
-        )
-
     # ------------------------------------------------------------------
     # BSL030 — SemicolonPresence: «;» в конце выражения (BSLLS) + лишняя «;» в заголовке
     # ------------------------------------------------------------------
-
-    def _rule_bsl030_statement_missing_semicolon(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        BSLLS ``SemicolonPresence``: пропущена точка с запятой в конце выражения (код BSL030).
-
-        Ранее дублировалось как BSL025 — для паритета с BSLLS JSON используем BSL030.
-        """
-        model = ModuleModel(path=path)
-        return model.validate_statement_missing_semicolon(
-            lines,
-            procs=procs,
-            stmt_no_semi_re=_RE_STMT_NO_SEMI,
-            double_quoted_string_re=_RE_DOUBLE_QUOTED_STRING,
-            single_quoted_string_re=_RE_SINGLE_QUOTED_STRING,
-        )
 
     # ------------------------------------------------------------------
     # BSL028 — MissingCodeTryCatch (risky calls without error handling)
@@ -785,14 +696,6 @@ class DiagnosticEngine:
     # BSL148 — AllFunctionPathMustHaveReturn
     # ------------------------------------------------------------------
 
-    def _rule_bsl148_all_function_paths_return(self, path: str, tree: Any) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_function_paths_return(
-            tree=tree,
-            bsl148_function_name_spans=bsl148_function_name_spans,
-            loops_executed_at_least_once=self.bsl148_loops_executed_at_least_once,
-        )
-
     # ------------------------------------------------------------------
     # BSL033 — Query execution inside a loop
     # ------------------------------------------------------------------
@@ -862,40 +765,9 @@ class DiagnosticEngine:
     # BSL040 — ЭтаФорма / ThisForm outside event handler context
     # ------------------------------------------------------------------
 
-    def _rule_bsl040_using_this_form(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        BSLLS parity:
-        - check only form modules
-        - skip procedures/functions that already accept ЭтаФорма/ThisForm as a parameter
-        - report each direct token occurrence outside comments/strings
-        """
-        model = ModuleModel(path=path)
-        return model.validate_this_form_usage(
-            lines,
-            procs=procs,
-            path_is_likely_form_module_bsl=path_is_likely_form_module_bsl,
-            proc_containing_line=_proc_containing_line,
-            mask_double_quoted_strings_preserve_len=_mask_double_quoted_strings_preserve_len,
-            this_form_re=_RE_THIS_FORM,
-        )
-
     # ------------------------------------------------------------------
     # BSL042 — Empty export method
     # ------------------------------------------------------------------
-
-    def _rule_bsl042_empty_export_method(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """Flag exported methods that have no meaningful body (only comments/blanks)."""
-        model = ModuleModel(path=path)
-        return model.validate_bsl042_empty_export_method(
-            lines=lines,
-            procs=procs,
-            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
-            blank_or_comment_re=_RE_BLANK_OR_COMMENT,
-        )
 
     # ------------------------------------------------------------------
     # BSL051 — Unreachable code after Return/Raise
@@ -1018,29 +890,6 @@ class DiagnosticEngine:
     # BSL054 — Module-level Перем/Var (global state)
     # ------------------------------------------------------------------
 
-    def _rule_bsl054_module_level_variable(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        """
-        Flag exported Перем/Var declarations at module level (BSLLS ExportVariables).
-
-        Only flags ``Перем Name Экспорт;`` — exported module-level state that leaks
-        outside the module.  Non-exported module variables are intentional and not
-        flagged (matches BSLLS ExportVariables default behaviour).
-        """
-        clean_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
-        model = ModuleModel(path=path)
-        return model.validate_module_level_export_variables(
-            lines,
-            procs=procs,
-            var_module_export_re=_RE_VAR_MODULE_EXPORT,
-            clean_lines=clean_lines,
-        )
-
     # ------------------------------------------------------------------
     # BSL062 — Unused parameter
     # ------------------------------------------------------------------
@@ -1084,51 +933,9 @@ class DiagnosticEngine:
     # BSL064 — Procedure returns value
     # ------------------------------------------------------------------
 
-    def _rule_bsl064_procedure_returns_value(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Flag a Процедура body that contains 'Возврат <value>' — it should be a Функция.
-        """
-        model = ModuleModel(path=path)
-        return model.validate_bsl064_procedure_returns_value(
-            lines=lines,
-            procs=procs,
-            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
-            return_value_re=_RE_RETURN_VALUE,
-            proc_header_re=_RE_PROC_HEADER,
-        )
-
     # ------------------------------------------------------------------
     # BSL077 — SelectTopWithoutOrderBy
     # ------------------------------------------------------------------
-
-    def _rule_bsl077_select_top_without_order_by(
-        self,
-        path: str,
-        lines: list[str],
-        query_blocks: list[QueryTextBlockInfo] | None = None,
-    ) -> list[Diagnostic]:
-        """Flag query text with TOP/ПЕРВЫЕ used without ORDER BY/УПОРЯДОЧИТЬ."""
-        if query_blocks is None:
-            blocks_iter = [
-                QueryTextBlockInfo(
-                    start_idx=start_idx,
-                    block_lines=tuple(block_lines),
-                    content_lines=tuple(),
-                )
-                for start_idx, block_lines in _iter_query_text_blocks(lines)
-            ]
-        else:
-            blocks_iter = query_blocks
-        model = ModuleModel(path=path)
-        return model.validate_select_top_without_order_by(
-            query_blocks=blocks_iter,
-            query_top_re=_RE_QUERY_TOP,
-            query_union_re=_RE_QUERY_UNION,
-            query_where_re=_RE_QUERY_WHERE,
-            query_order_by_re=_RE_QUERY_ORDER_BY,
-        )
 
     # ------------------------------------------------------------------
     # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
