@@ -4165,6 +4165,208 @@ class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
         )
 
 
+def _run_bsl171_crazy_multiline_string(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    error_nodes: list[Any] | None = None,
+) -> list[Diagnostic]:
+    model = ModuleModel(path=path)
+    return model.validate_crazy_multiline_string(
+        lines=lines,
+        tree=tree,
+        error_nodes=error_nodes,
+        ts_walk_fn=_diag._ts_walk,
+        ts_node_text_fn=_diag._ts_node_text,
+        utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+        adjacent_literals_re=_diag._RE_BSL171_ADJACENT_LITERALS,
+        rule_descriptions_ru=_diag.RULE_DESCRIPTIONS_RU,
+    )
+
+
+def _run_bsl204_invalid_character_in_file(
+    path: str, content: str, lines: list[str]
+) -> list[Diagnostic]:
+    _ = content
+    model = ModuleModel(path=path)
+    return model.validate_invalid_character_in_file(
+        lines=lines,
+        illegal_chars=_diag._BSL204_ILLEGAL_CHARS,
+    )
+
+
+def _run_bsl217_missing_temp_storage_deletion(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    method_call_nodes: list[Any] | None = None,
+) -> list[Diagnostic]:
+    model = ModuleModel(path=path)
+    return model.validate_bsl217_missing_temp_storage_deletion(
+        lines=lines,
+        tree=tree,
+        method_call_nodes=method_call_nodes,
+        global_method_calls_from_nodes_fn=_diag._global_method_calls_from_nodes,
+        ts_global_method_calls_fn=_diag._ts_global_method_calls,
+        bsl217_get_from_temp_storage_names=_diag._BSL217_GET_FROM_TEMP_STORAGE_NAMES,
+        ts_method_identifier_span_fn=_diag._ts_method_identifier_span,
+        ts_assignment_lvalue_text_fn=_diag._ts_assignment_lvalue_text,
+        ts_bsl218_skip_error_ancestor_fn=_diag._ts_bsl218_skip_error_ancestor,
+        ts_bsl218_code_block_roots_fn=_diag._ts_bsl218_code_block_roots,
+        bsl217_delete_from_temp_storage_names=_diag._BSL217_DELETE_FROM_TEMP_STORAGE_NAMES,
+        ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
+        ts_node_text_fn=_diag._ts_node_text,
+        rule_descriptions_ru=_diag.RULE_DESCRIPTIONS_RU,
+    )
+
+
+def _run_bsl248_several_compiler_directives(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    procs: list[Any],
+) -> list[Diagnostic]:
+    if tree is None:
+        return []
+    diags: list[Diagnostic] = []
+    root = tree.root_node
+    children = list(getattr(root, "children", []) or [])
+    proc_by_line = {proc.start_idx: proc for proc in procs}
+
+    idx = 0
+    while idx < len(children):
+        directives: list[Any] = []
+        while idx < len(children) and getattr(children[idx], "type", None) == "preprocessor":
+            if _diag._ts_node_text(children[idx]).strip().startswith("&"):
+                directives.append(children[idx])
+            idx += 1
+        if idx >= len(children):
+            break
+        node = children[idx]
+        node_type = getattr(node, "type", None)
+        if len(directives) > 1 and node_type in {
+            "procedure_definition",
+            "function_definition",
+            "var_definition",
+        }:
+            if node_type in {"procedure_definition", "function_definition"}:
+                proc = proc_by_line.get(node.start_point[0])
+                if proc is not None:
+                    start_char, end_char = _diag._proc_name_span(lines, proc)
+                    diags.append(
+                        Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=start_char,
+                            end_line=proc.start_idx + 1,
+                            end_character=end_char,
+                            severity=Severity.ERROR,
+                            code="BSL248",
+                            message=_diag.RULE_DESCRIPTIONS_RU["BSL248"],
+                        )
+                    )
+            else:
+                line_idx = node.start_point[0]
+                line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=path,
+                        line=line_idx + 1,
+                        character=0,
+                        end_line=line_idx + 1,
+                        end_character=len(line_text.rstrip()),
+                        severity=Severity.ERROR,
+                        code="BSL248",
+                        message=_diag.RULE_DESCRIPTIONS_RU["BSL248"],
+                    )
+                )
+        idx += 1
+    return diags
+
+
+def _run_bsl251_ternary_operator_usage(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    ternary_nodes: list[Any] | None = None,
+) -> list[Diagnostic]:
+    model = ModuleModel(path=path)
+    return model.validate_ternary_operator_usage(
+        lines=lines,
+        tree=tree,
+        ternary_nodes=ternary_nodes,
+        ts_walk_fn=_diag._ts_walk,
+        utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+        rule_descriptions_ru=_diag.RULE_DESCRIPTIONS_RU,
+    )
+
+
+def _run_bsl252_this_object_assign(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    assignment_nodes: list[Any] | None = None,
+) -> list[Diagnostic]:
+    model = ModuleModel(path=path)
+    return model.validate_this_object_assign(
+        path=path,
+        lines=lines,
+        tree=tree,
+        assignment_nodes=assignment_nodes,
+        path_is_likely_form_module_bsl=_diag.path_is_likely_form_module_bsl,
+        common_module_path_re=_diag._RE_COMMON_MODULE_PATH,
+        ts_walk_fn=_diag._ts_walk,
+        ts_child_of_type_fn=_diag._ts_child_of_type,
+        ts_node_text_fn=_diag._ts_node_text,
+        utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+        rule_descriptions_ru=_diag.RULE_DESCRIPTIONS_RU,
+    )
+
+
+def _run_bsl259_unknown_preprocessor_symbol(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    preprocessor_nodes: list[Any] | None = None,
+) -> list[Diagnostic]:
+    model = ModuleModel(path=path)
+    return model.validate_unknown_preprocessor_symbol(
+        lines=lines,
+        tree=tree,
+        preprocessor_nodes=preprocessor_nodes,
+        ts_walk_fn=_diag._ts_walk,
+        ts_child_of_type_fn=_diag._ts_child_of_type,
+        ts_node_text_fn=_diag._ts_node_text,
+        utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+        allowed_preproc_symbols=_diag._BSL259_ALLOWED_PREPROC_SYMBOLS,
+        preproc_keywords=_diag._BSL259_PREPROC_KEYWORDS,
+        preproc_if_re=_diag._RE_BSL259_PREPROC_IF,
+        preproc_identifier_re=_diag._RE_BSL259_IDENTIFIER,
+    )
+
+
+def _run_bsl268_using_find_element_by_string(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    method_call_nodes: list[Any] | None = None,
+) -> list[Diagnostic]:
+    model = ModuleModel(path=path)
+    return model.validate_using_find_element_by_string(
+        lines=lines,
+        tree=tree,
+        method_call_nodes=method_call_nodes,
+        ts_walk_fn=_diag._ts_walk,
+        ts_child_of_type_fn=_diag._ts_child_of_type,
+        ts_node_text_fn=_diag._ts_node_text,
+        ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
+        utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+        method_name_re=_diag._RE_BSL268_FIND_BY_STRING,
+        line_comment_re=_diag._RE_LINE_COMMENT,
+        mask_double_quoted_strings_preserve_len_fn=_diag._mask_double_quoted_strings_preserve_len,
+    )
+
+
 class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
     def __init__(self, code: str):
         self.code = code
@@ -4174,53 +4376,94 @@ class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
         engine = context.diagnostics_engine
         snapshot = context.snapshot
         procs = list(getattr(snapshot, "procedures", []) or [])
+        model = ModuleModel(path=context.path)
 
         if code in {"BSL169", "BSL170", "BSL181", "BSL182", "BSL196", "BSL260"}:
             return [
                 diag
-                for diag in engine._rule_bsl169_170_181_182_196_260_light_pool(
-                    context.path,
-                    context.lines,
-                    procs,
-                    (code,),
-                    snapshot,
+                for diag in model.validate_bsl169_170_181_182_196_260_light_pool(
+                    lines=context.lines,
+                    procs=procs,
+                    enabled=(code,),
+                    snapshot=snapshot,
+                    path_is_likely_form_module_bsl_fn=_diag.path_is_likely_form_module_bsl,
+                    path_is_command_module_bsl_fn=_diag._path_is_command_module_bsl,
+                    strip_inline_comment_preserve_strings_fn=(
+                        _diag._strip_inline_comment_preserve_strings
+                    ),
+                    line_comment_re=_diag._RE_LINE_COMMENT,
+                    proc_name_span_fn=_diag._proc_name_span,
                 )
                 if diag.code == code
             ]
         if code in {"BSL171", "BSL204", "BSL217", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
             return [
                 diag
-                for diag in engine._rule_bsl171_204_217_248_251_252_259_268_light_pool(
-                    context.path,
-                    context.content,
-                    context.lines,
-                    context.tree,
-                    procs,
-                    (code,),
+                for diag in model.validate_bsl171_204_217_248_251_252_259_268_light_pool(
+                    content=context.content,
+                    lines=context.lines,
+                    tree=context.tree,
+                    procs=procs,
+                    codes=(code,),
+                    rule_enabled_fn=engine._rule_enabled,
+                    ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+                    rule_bsl171_fn=_run_bsl171_crazy_multiline_string,
+                    rule_bsl204_fn=_run_bsl204_invalid_character_in_file,
+                    rule_bsl217_fn=_run_bsl217_missing_temp_storage_deletion,
+                    rule_bsl248_fn=_run_bsl248_several_compiler_directives,
+                    rule_bsl251_fn=_run_bsl251_ternary_operator_usage,
+                    rule_bsl252_fn=_run_bsl252_this_object_assign,
+                    rule_bsl259_fn=_run_bsl259_unknown_preprocessor_symbol,
+                    rule_bsl268_fn=_run_bsl268_using_find_element_by_string,
                 )
                 if diag.code == code
             ]
         if code in {"BSL202", "BSL223", "BSL243", "BSL249"}:
             return [
                 diag
-                for diag in engine._rule_bsl202_205_223_243_249_light_call_pool(
-                    context.path,
-                    context.lines,
-                    context.tree,
-                    (code,),
-                    snapshot,
+                for diag in model.validate_bsl202_205_223_243_249_light_call_pool(
+                    lines=context.lines,
+                    tree=context.tree,
+                    enabled=(code,),
+                    snapshot=snapshot,
+                    strip_inline_comment_preserve_strings_fn=(
+                        _diag._strip_inline_comment_preserve_strings
+                    ),
+                    ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+                    ts_child_of_type_fn=_diag._ts_child_of_type,
+                    ts_node_text_fn=_diag._ts_node_text,
+                    ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
+                    ts_walk_fn=_diag._ts_walk,
+                    ts_method_identifier_span_fn=_diag._ts_method_identifier_span,
+                    utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+                    bsl223_structure_names=_diag._BSL223_STRUCTURE_NAMES,
+                    bsl249_style_constructor_names=_diag._BSL249_STYLE_CONSTRUCTOR_NAMES,
+                    split_top_level_args_fn=_diag._split_top_level_args,
                 )
                 if diag.code == code
             ]
         return [
             diag
-            for diag in engine._rule_bsl221_222_239_271_light_pool(
-                context.path,
-                context.lines,
-                context.tree,
-                procs,
-                (code,),
-                snapshot,
+            for diag in model.validate_bsl221_222_239_271_light_pool(
+                lines=context.lines,
+                tree=context.tree,
+                procs=procs,
+                enabled=(code,),
+                snapshot=snapshot,
+                strip_inline_comment_preserve_strings_fn=(
+                    _diag._strip_inline_comment_preserve_strings
+                ),
+                reserved_parameter_names_re=engine._reserved_parameter_names_re,
+                ts_walk_fn=_diag._ts_walk,
+                ts_child_of_type_fn=_diag._ts_child_of_type,
+                ts_node_text_fn=_diag._ts_node_text,
+                utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+                bsl221_nstr_re=_diag._RE_BSL221_NSTR,
+                bsl221_lang_re=_diag._RE_BSL221_LANG,
+                bsl271_unix_unavailable_new_re=_diag._RE_BSL271_UNIX_UNAVAILABLE_NEW,
+                bsl271_platform_guard_re=_diag._RE_BSL271_PLATFORM_GUARD,
+                proc_name_span_fn=_diag._proc_name_span,
+                declared_languages=engine._declared_languages,
             )
             if diag.code == code
         ]
@@ -4232,13 +4475,19 @@ class LocalXmlDiagnosticsRule(BsllsDiagnosticRule):
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         procs = list(getattr(context.snapshot, "procedures", []) or [])
+        model = ModuleModel(path=context.path)
         return [
             diag
-            for diag in context.diagnostics_engine._rule_bsl229_275_278_local_xml_pool(
-                context.path,
-                context.lines,
-                procs,
-                (self.code,),
+            for diag in model.validate_bsl229_275_278_local_xml_pool(
+                lines=context.lines,
+                procs=procs,
+                enabled=(self.code,),
+                rule_metadata=_diag.RULE_METADATA,
+                severity_cls=Severity,
+                proc_name_span_fn=_diag._proc_name_span,
+                re_xml_bool_simple=_diag._RE_XML_BOOL_SIMPLE,
+                re_bsl275_handler=_diag._RE_BSL275_HANDLER,
+                re_bsl278_procname=_diag._RE_BSL278_PROCNAME,
             )
             if diag.code == self.code
         ]
