@@ -1279,6 +1279,33 @@ class TestBsl007UnusedLocalVariableParity:
         diags = _check(content, tmp_path, select={"BSL007"})
         assert "BSL007" in _codes(diags)
 
+    def test_for_each_variable_unused_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Коллекция)
+                Для каждого Элемент Из Коллекция Цикл
+                    Сообщить("x");
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+        assert len(diags) == 1
+        assert "Элемент" in diags[0].message
+
+    def test_repeated_for_variable_reports_first_symbol(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Для НомУр = 1 По 3 Цикл
+                    Сообщить("x");
+                КонецЦикла;
+                Для НомУр = 1 По 3 Цикл
+                    Сообщить("x");
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+        assert len(diags) == 1
+        assert diags[0].line == 2
+
     def test_implicit_local_reports_first_assignment_site(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()

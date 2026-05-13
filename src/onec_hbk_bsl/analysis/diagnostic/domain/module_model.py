@@ -2496,7 +2496,10 @@ class ModuleModel:
         compiler_directive_re,
         module_assign_re,
     ) -> list[Diagnostic]:
-        re_for_index_header = re.compile(r"^\s*(?:Для|For)\s+(\w+)\s*=", re.IGNORECASE)
+        re_for_index_header = re.compile(
+            r"^\s*(?:Для\s+(?:каждого\s+)?|For\s+(?:Each\s+)?)(\w+)\s*(?:=|\b(?:Из|In)\b)",
+            re.IGNORECASE,
+        )
         diags: list[Diagnostic] = []
         inside_proc: set[int] = set()
         for proc in procs:
@@ -2643,6 +2646,16 @@ class ModuleModel:
             for var_name, abs_line in sorted(implicit_first_unused.values(), key=lambda item: item[1]):
                 emit_unused(abs_line, var_name)
 
+            loop_headers_by_var: dict[str, set[int]] = {}
+            for rel_idx, pline in enumerate(proc_lines[1:], 1):
+                abs_line = proc.start_idx + rel_idx
+                if abs_line >= proc.end_idx:
+                    continue
+                m_for = re_for_index_header.match(pline)
+                if m_for:
+                    loop_headers_by_var.setdefault(m_for.group(1).casefold(), set()).add(abs_line)
+
+            emitted_loop_vars: set[str] = set()
             for rel_idx, pline in enumerate(proc_lines[1:], 1):
                 abs_line = proc.start_idx + rel_idx
                 if abs_line >= proc.end_idx:
@@ -2652,15 +2665,18 @@ class ModuleModel:
                     continue
                 var_name = m_for.group(1)
                 var_cf = var_name.casefold()
-                if var_cf in param_cf:
+                if var_cf in param_cf or var_cf in emitted_loop_vars:
                     continue
                 used = False
                 for abs_idx in range(abs_line + 1, min(proc.end_idx, len(lines))):
+                    if abs_idx in loop_headers_by_var.get(var_cf, set()):
+                        continue
                     if var_cf in line_read_names[abs_idx]:
                         used = True
                         break
                 if not used:
                     emit_unused(abs_line, var_name)
+                    emitted_loop_vars.add(var_cf)
         return diags
 
     def validate_bsl051_unreachable_code(
