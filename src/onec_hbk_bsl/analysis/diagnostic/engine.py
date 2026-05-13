@@ -562,15 +562,6 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL004 — EmptyCodeBlock
-    # ------------------------------------------------------------------
-
-    def _rule_bsl004_empty_except(self, path: str, lines: list[str], tree: Any) -> list[Diagnostic]:
-        _ = tree
-        model = ModuleModel(path=path)
-        return model.validate_bsl004_empty_code_block(lines=lines)
-
-    # ------------------------------------------------------------------
     # BSL007 — Unused local variable
     # ------------------------------------------------------------------
 
@@ -595,25 +586,6 @@ class DiagnosticEngine:
             compiler_directive_re=_RE_COMPILER_DIRECTIVE,
             module_assign_re=_RE_MODULE_ASSIGN,
         )
-
-    # ------------------------------------------------------------------
-    # BSL008 — Too many return statements
-    # ------------------------------------------------------------------
-
-    def _rule_bsl008_too_many_returns(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_max_returns(
-                    lines,
-                    max_returns=self.max_returns,
-                    return_re=_RE_RETURN,
-                )
-            )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL009 — Self-assignment
@@ -646,58 +618,6 @@ class DiagnosticEngine:
         return diags
 
     # ------------------------------------------------------------------
-    # BSL012 — Hardcoded credentials
-    # ------------------------------------------------------------------
-
-    def _rule_bsl012_hardcode_credentials(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_hardcoded_credentials(lines, credentials_re=_RE_CREDENTIALS)
-
-    # ------------------------------------------------------------------
-    # BSL013 — Commented-out code
-    # ------------------------------------------------------------------
-
-    def _rule_bsl013_commented_code(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_commented_code(
-            lines,
-            commented_code_re=_RE_COMMENTED_CODE,
-            min_commented_code_block=self.MIN_COMMENTED_CODE_BLOCK,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL014 — Line too long
-    # ------------------------------------------------------------------
-
-    def _rule_bsl014_line_too_long(
-        self, path: str, lines: list[str], snapshot: DocumentSnapshot | None = None
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_line_too_long(
-            lines,
-            max_line_length=self.max_line_length,
-            snapshot=snapshot,
-        )
-
-    # ------------------------------------------------------------------
-    # BSL015 — Too many optional parameters
-    # ------------------------------------------------------------------
-
-    def _rule_bsl015_optional_params_count(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_optional_param_limit(
-                    lines,
-                    max_optional_params=self.max_optional_params,
-                )
-            )
-        return diags
-
-    # ------------------------------------------------------------------
     # BSL016 — Non-standard region name
     # ------------------------------------------------------------------
 
@@ -714,22 +634,6 @@ class DiagnosticEngine:
             standard_regions_for_path=_standard_regions_for_path,
             is_standard_region_name_for_path=_is_standard_region_name_for_path,
         )
-
-    # ------------------------------------------------------------------
-    # BSL017 — Export modifier in command/form module
-    # ------------------------------------------------------------------
-
-    def _rule_bsl017_export_in_command_module(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Flag Export methods if the file name indicates a command or form module.
-
-        Command modules: *Command.bsl, ФормаКоманды.bsl
-        Form modules:    *Form.bsl, Форма*.bsl
-        """
-        model = ModuleModel(path=path)
-        return model.validate_export_in_command_or_form_module(lines, procs=procs)
 
     # ------------------------------------------------------------------
     # BSL019 — McCabe cyclomatic complexity
@@ -810,25 +714,6 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL026 — Empty #Область / #Region block
-    # ------------------------------------------------------------------
-
-    def _rule_bsl026_empty_region(
-        self,
-        path: str,
-        lines: list[str],
-        regions: list[_RegionInfo],
-    ) -> list[Diagnostic]:
-        """
-        Flag #Область blocks that contain no executable code.
-
-        A region is considered empty if the only content between its open and
-        close markers is blank lines, comments, or nested region markers.
-        """
-        model = ModuleModel(path=path)
-        return model.validate_empty_regions(lines, regions=regions)
-
-    # ------------------------------------------------------------------
     # BSL028 — MissingCodeTryCatch (risky calls without error handling)
     # ------------------------------------------------------------------
 
@@ -892,53 +777,6 @@ class DiagnosticEngine:
                     any_digit_re=_RE_BSL029_ANY_DIGIT,
                     simple_assign_re=_RE_BSL029_SIMPLE_ASSIGN,
                     ternary_re=_RE_BSL029_TERNARY,
-                )
-            )
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL031 — Too many parameters (total, not just optional)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl031_number_of_params(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Flag methods with more than *max_params* parameters in total.
-
-        Complements BSL015 (optional params only); this rule counts all params.
-        """
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(model.validate_param_limit(lines, max_params=self.max_params))
-        return diags
-
-    # ------------------------------------------------------------------
-    # BSL032 — Function may not return a value
-    # ------------------------------------------------------------------
-
-    def _rule_bsl032_function_return_value(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Detect functions that may exit without a Возврат/Return statement.
-
-        Only flags *functions* (not procedures). A function that has no Возврат
-        at all (or only inside conditional branches that may not execute) is
-        likely a bug — the caller receives Неопределено unexpectedly.
-
-        Heuristic: if the function body has no bare (non-indented) Возврат
-        outside a nested Если/Для/Пока block, flag it.
-        """
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_function_has_return(
-                    lines,
-                    return_re=_RE_RETURN,
-                    proc_name_span=_proc_name_span,
                 )
             )
         return diags
@@ -1021,76 +859,6 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL036 — Complex condition (too many boolean operators)
-    # ------------------------------------------------------------------
-
-    _RE_IF_OR_ELSEIF_LINE = re.compile(r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b", re.IGNORECASE)
-    _RE_THEN_WORD = re.compile(r"\b(?:Тогда|Then)\b", re.IGNORECASE)
-
-    def _bsl036_if_condition_chunk(self, lines: list[str], idx: int) -> str | None:
-        """
-        Text of ``Если``/``ИначеЕсли`` condition through ``Тогда`` (BSLLS counts whole condition).
-
-        Returns None if *idx* is not the first line of an If/ElseIf condition.
-        """
-        line = lines[idx]
-        if line.strip().startswith("//"):
-            return None
-        if not self._RE_IF_OR_ELSEIF_LINE.match(line):
-            return None
-        if self._RE_THEN_WORD.search(line):
-            return line
-        parts = [line]
-        j = idx + 1
-        max_j = min(len(lines), idx + 48)
-        while j < max_j:
-            parts.append(lines[j])
-            if self._RE_THEN_WORD.search(lines[j]):
-                break
-            j += 1
-        return "\n".join(parts)
-
-    def _line_triggers_bsl036(self, lines: list[str], idx: int) -> bool:
-        """True when line *idx* starts a condition that exceeds *max_bool_ops* (BSLLS IfConditionComplexity)."""
-        chunk = self._bsl036_if_condition_chunk(lines, idx)
-        if chunk is None:
-            return False
-        return len(_RE_BOOL_OP.findall(chunk)) + 1 > self.max_bool_ops
-
-    def _line_in_triggered_bsl036_condition(self, lines: list[str], idx: int) -> bool:
-        """
-        True if line *idx* belongs to an If/ElseIf..Тогда block whose **first** line
-        triggers BSL036 — suppress BSL153 on continuation lines (BSLLS: IfConditionComplexity).
-        """
-        if not self._rule_enabled("BSL036"):
-            return False
-        for start in range(max(0, idx - 48), idx + 1):
-            if self._bsl036_if_condition_chunk(lines, start) is None:
-                continue
-            if not self._line_triggers_bsl036(lines, start):
-                continue
-            j = start
-            while j < len(lines):
-                if self._RE_THEN_WORD.search(lines[j]):
-                    return start <= idx <= j
-                j += 1
-        return False
-
-    def _rule_bsl036_complex_condition(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """
-        Flag Если/If lines with more boolean operators than *max_bool_ops*.
-
-        A condition like ``А И Б ИЛИ В И Г`` is hard to read and should
-        be refactored into named boolean variables or helper functions.
-        """
-        model = ModuleModel(path=path)
-        return model.validate_complex_condition(
-            lines=lines,
-            max_bool_ops=self.max_bool_ops,
-            bool_op_re=_RE_BOOL_OP,
-        )
-
-    # ------------------------------------------------------------------
     # BSL040 — ЭтаФорма / ThisForm outside event handler context
     # ------------------------------------------------------------------
 
@@ -1128,11 +896,6 @@ class DiagnosticEngine:
             procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
             blank_or_comment_re=_RE_BLANK_OR_COMMENT,
         )
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    MAX_VARIABLES: int = 15
 
     # ------------------------------------------------------------------
     # BSL051 — Unreachable code after Return/Raise
@@ -1279,34 +1042,6 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL219 — MissingVariablesDescription (module Перем)
-    # ------------------------------------------------------------------
-
-    def _rule_bsl219_missing_variables_description(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        """
-        Flag module-level ``Перем`` without a preceding ``//`` / ``///`` description line.
-
-        Aligns with BSLLS ``MissingVariablesDescription`` for module variables.
-        """
-        clean_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
-        model = ModuleModel(path=path)
-        return model.validate_module_variables_description(
-            lines,
-            procs=procs,
-            var_module_re=_RE_VAR_MODULE,
-            clean_lines=clean_lines,
-            has_preceding_description=_module_export_var_has_preceding_description,
-        )
-
-    MIN_METHOD_NAME_LEN: int = 3
-
-    # ------------------------------------------------------------------
     # BSL062 — Unused parameter
     # ------------------------------------------------------------------
 
@@ -1365,44 +1100,6 @@ class DiagnosticEngine:
         )
 
     # ------------------------------------------------------------------
-    # BSL065 — Missing export comment
-    # ------------------------------------------------------------------
-
-    def _rule_bsl065_missing_export_comment(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Flag functions whose doc block lacks a valid ``Возвращаемое значение`` section.
-        """
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_missing_export_comment(
-                    lines,
-                    compiler_directive_re=_RE_COMPILER_DIRECTIVE,
-                    bsl215_comment_line_re=_RE_BSL215_COMMENT_LINE,
-                )
-            )
-        return diags
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    MAX_ELSEIF_BRANCHES: int = 5
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    # Numbers always allowed (too common/obvious to flag)
-    _MAGIC_NUMBER_ALLOWED: frozenset[str] = frozenset({"0", "1", "2", "-1", "100"})
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    MAX_IF_DEPTH_FOR_ELSE_CHECK: int = 1  # only top-level if-blocks
-
-    # ------------------------------------------------------------------
     # BSL077 — SelectTopWithoutOrderBy
     # ------------------------------------------------------------------
 
@@ -1432,44 +1129,6 @@ class DiagnosticEngine:
             query_where_re=_RE_QUERY_WHERE,
             query_order_by_re=_RE_QUERY_ORDER_BY,
         )
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    MAX_METHOD_CHAIN_DEPTH: int = 5
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    MAX_MODULE_VARIABLES: int = 10
-
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-
-    # Objects that are cheap/intentional to create per-iteration
-    _ALLOWED_NEW_IN_LOOP: frozenset[str] = frozenset(
-        {
-            "структура",
-            "соответствие",
-            "массив",
-            "список",
-            "structure",
-            "map",
-            "array",
-            "list",
-        }
-    )
-
-    # ------------------------------------------------------------------
-    # BSL131 — DuplicateRegion
-    # ------------------------------------------------------------------
-
-    def _rule_bsl131_duplicate_region(
-        self, path: str, lines: list[str], regions: list[_RegionInfo]
-    ) -> list[Diagnostic]:
-        """Detect duplicated region names, including BSLLS standard-region synonyms."""
-        model = ModuleModel(path=path)
-        return model.validate_duplicate_regions(lines, regions=regions)
 
     # ------------------------------------------------------------------
     # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
@@ -1695,20 +1354,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
     # BSL190 — FormDataToValue
     # ------------------------------------------------------------------
-
-    def _rule_bsl190_form_data_to_value(self, path: str, lines: list[str]) -> list[Diagnostic]:
-        """Flag calls to ДанныеФормыВЗначение()/FormDataToValue() — slow operation.
-
-        BSLLS: prefer working with server objects directly instead of converting
-        form data to value, which involves full serialization/deserialization.
-        """
-        model = ModuleModel(path=path)
-        return model.validate_form_data_to_value(
-            lines=lines,
-            line_comment_re=_RE_LINE_COMMENT,
-            double_quoted_string_re=_RE_DOUBLE_QUOTED_STRING,
-            bsl190_form_data_re=_RE_BSL190_FORM_DATA,
-        )
 
     # ------------------------------------------------------------------
     # BSL175 / BSL176 — deprecated API pool
