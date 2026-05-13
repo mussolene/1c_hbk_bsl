@@ -596,6 +596,94 @@ class ProcedureModel:
         diags: list[Diagnostic] = []
         masked_lines = snapshot.masked_lines if snapshot is not None else None
         code_lines_wo_comments = snapshot.code_lines_without_comments if snapshot is not None else None
+        container_assign_re = re.compile(
+            r"^\s*(?P<name>[\w.]+)\s*=\s*(?:Новый|New)\s+"
+            r"(?P<type>Структура|Structure|ФиксированнаяСтруктура|FixedStructure|Соответствие|Map)\b",
+            re.IGNORECASE,
+        )
+        insert_call_re = re.compile(
+            r"(?P<receiver>[\w.]+)\s*\.\s*(?:Вставить|Insert)\s*\(",
+            re.IGNORECASE,
+        )
+        container_vars: dict[str, str] = {}
+
+        def split_top_level_args(text: str) -> list[tuple[int, int, str]]:
+            args: list[tuple[int, int, str]] = []
+            start = 0
+            depth = 0
+            in_string = False
+            pos = 0
+            while pos < len(text):
+                char = text[pos]
+                if in_string:
+                    if char == '"':
+                        if pos + 1 < len(text) and text[pos + 1] == '"':
+                            pos += 2
+                            continue
+                        in_string = False
+                    pos += 1
+                    continue
+                if char == '"':
+                    in_string = True
+                elif char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth = max(0, depth - 1)
+                elif char == "," and depth == 0:
+                    args.append((start, pos, text[start:pos]))
+                    start = pos + 1
+                pos += 1
+            args.append((start, len(text), text[start:]))
+            return args
+
+        def numeric_is_simple_ternary_branch(code: str, start: int, end: int) -> bool:
+            qmark = code.rfind("?", 0, start)
+            if qmark < 0:
+                return False
+            open_paren = code.find("(", qmark, start + 1)
+            if open_paren < 0:
+                return False
+            close_paren = code.find(")", end)
+            if close_paren < 0:
+                return False
+            args = split_top_level_args(code[open_paren + 1 : close_paren])
+            if len(args) != 3:
+                return False
+            relative_start = start - open_paren - 1
+            relative_end = end - open_paren - 1
+            for arg_start, arg_end, arg_text in args[1:]:
+                if not (arg_start <= relative_start and relative_end <= arg_end):
+                    continue
+                return re.fullmatch(r"\s*-?[0-9]+(?:\.[0-9]+)?\s*", arg_text) is not None
+            return False
+
+        def numeric_is_inside_known_container_insert(code: str, start: int, end: int) -> bool:
+            call_match: re.Match[str] | None = None
+            for candidate in insert_call_re.finditer(code):
+                if candidate.end() <= start:
+                    call_match = candidate
+                else:
+                    break
+            if call_match is None:
+                return False
+            receiver_type = container_vars.get(call_match.group("receiver").casefold())
+            if receiver_type is None:
+                return False
+            close_paren = code.find(")", max(end, call_match.end()))
+            if close_paren < 0:
+                return False
+            args = split_top_level_args(code[call_match.end() : close_paren])
+            relative_start = start - call_match.end()
+            relative_end = end - call_match.end()
+            for arg_index, (arg_start, arg_end, _arg_text) in enumerate(args):
+                if not (arg_start <= relative_start and relative_end <= arg_end):
+                    continue
+                if receiver_type in {"соответствие", "map"}:
+                    return True
+                if arg_index == 1:
+                    return True
+                return False
+            return False
 
         for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
             line = lines[i]
@@ -605,8 +693,6 @@ class ProcedureModel:
             if stripped.startswith("|"):
                 continue
             if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
-                continue
-            if not any_digit_re.search(line):
                 continue
             code_part = (
                 code_lines_wo_comments[i] if code_lines_wo_comments is not None else line.split("//")[0]
@@ -628,9 +714,13 @@ class ProcedureModel:
             comment_pos = code_part.find("//")
             if comment_pos >= 0:
                 code_part = code_part[:comment_pos]
+            assignment = container_assign_re.match(code_part)
+            if assignment is not None:
+                container_vars[assignment.group("name").casefold()] = assignment.group("type").casefold()
+            if not any_digit_re.search(line):
+                continue
             if simple_assign_re.match(code_part):
                 continue
-            code_part = ternary_re.sub(lambda m: f"?({m.group('condition')},0,0)", code_part)
             code_part = re.sub(
                 r"\b(?:Новый|New)\s+(?:Структура|Structure|Соответствие|Map)\s*\([^)]*\)",
                 "Новый Структура()",
@@ -662,6 +752,10 @@ class ProcedureModel:
                     suffix = code_part[m.end() :]
                     if re.match(r"\s*(?:По|To)\b", suffix, re.IGNORECASE):
                         continue
+                if numeric_is_simple_ternary_branch(code_part, m.start(), m.end()):
+                    continue
+                if numeric_is_inside_known_container_insert(code_part, m.start(), m.end()):
+                    continue
                 lpos = m.start() - 1
                 while lpos >= 0 and code_part[lpos] in " \t":
                     lpos -= 1

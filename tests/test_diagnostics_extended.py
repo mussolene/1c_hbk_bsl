@@ -2253,6 +2253,50 @@ class TestBsl029MagicNumber:
         diags = _check(content, tmp_path, select={"BSL029"})
         assert "BSL029" in _codes(diags)
 
+    def test_known_structure_and_map_insert_values_are_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                СтруктураДанных = Новый Структура;
+                СтруктураДанных.Вставить("Код", 42);
+                СтруктураДанных.Вставить(ПолучитьКлюч(), 100);
+                СоответствиеДанных = Новый Соответствие;
+                СоответствиеДанных.Вставить(2024, 19242);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_nested_numeric_inside_ternary_branch_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Телефон = ?(СтрНачинаетсяС(Телефон, "+7"), "8" + Сред(Телефон, 3), Телефон);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 67, 68),
+        ]
+
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = Path(".agent/tmp/bslls-source/src/test/resources/diagnostics/MagicNumberDiagnostic.bsl")
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL029"}).check_file(str(fixture))
+            if diag.code == "BSL029"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 18, 4, 20),
+            (4, 23, 4, 25),
+            (8, 31, 8, 33),
+            (12, 20, 12, 21),
+            (21, 21, 21, 23),
+            (24, 24, 24, 26),
+            (28, 34, 28, 35),
+            (34, 37, 34, 38),
+            (35, 37, 35, 38),
+            (45, 12, 45, 14),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL030 — SemicolonPresence (missing statement semicolon)
