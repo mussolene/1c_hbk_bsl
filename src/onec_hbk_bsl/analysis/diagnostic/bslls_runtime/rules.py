@@ -2802,7 +2802,7 @@ class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
             leading_ws = len(after_pipe) - len(after_pipe.lstrip())
             content_base = pipe_pos + 1 + leading_ws
 
-            quote_pos = content.find('"')
+            quote_pos = self._closing_quote_pos(content)
             ended_query = quote_pos >= 0
             content_scan = content[:quote_pos].rstrip() if ended_query else content
             tail_has_semi = ";" in content_scan
@@ -2916,6 +2916,19 @@ class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
                 out.append((base + or_match.start(), base + or_match.end()))
             pos = end
         return out
+
+    @staticmethod
+    def _closing_quote_pos(text: str) -> int:
+        pos = 0
+        while pos < len(text):
+            if text[pos] != '"':
+                pos += 1
+                continue
+            if pos + 1 < len(text) and text[pos + 1] == '"':
+                pos += 2
+                continue
+            return pos
+        return -1
 
     @staticmethod
     def _double_quoted_segments(line: str):

@@ -3612,6 +3612,22 @@ class TestBsl210LogicalOrInWhereSection:
         diags = _check(content, tmp_path, select={"BSL210"})
         assert _codes(diags).count("BSL210") == 1
 
+    def test_escaped_quotes_do_not_end_multiline_query_literal(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса =
+            "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Документ.РасходнаяНакладная КАК Т
+            |ГДЕ
+            |   Т.Номер В (""001"", ""002"")
+            |   ИЛИ Т.Проведен";
+        """
+        diags = _check(content, tmp_path, select={"BSL210"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL210"] == [
+            (8, 4, 7),
+        ]
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
