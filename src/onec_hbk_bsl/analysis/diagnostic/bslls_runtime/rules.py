@@ -157,6 +157,143 @@ def _add_node_range(
     )
 
 
+def _add_node_start_token_range(
+    storage: DiagnosticStorage,
+    *,
+    code: str,
+    message: str,
+    severity: Severity,
+    lines: list[str],
+    node: Any,
+) -> None:
+    token = next(
+        (
+            child
+            for child in _ts_children(node)
+            if getattr(child, "start_point", None) == getattr(node, "start_point", None)
+        ),
+        node,
+    )
+    start = token.start_point
+    end = token.end_point
+    if int(start[0]) != int(end[0]) or _point_char(lines, end) <= _point_char(lines, start):
+        end = start
+    storage.add_range(
+        code=code,
+        message=message,
+        severity=severity,
+        line=int(start[0]),
+        character=_point_char(lines, start),
+        end_line=int(end[0]),
+        end_character=max(_point_char(lines, end), _point_char(lines, start) + 1),
+    )
+
+
+def _diagnostics_bsl020_nested_statements(context: BsllsDocumentContext) -> list[Diagnostic]:
+    root = getattr(getattr(context.tree, "root_node", None), "text", None)
+    if not isinstance(root, (bytes, bytearray)):
+        return []
+
+    control_types = {
+        "if_statement",
+        "while_statement",
+        "for_statement",
+        "for_each_statement",
+        "try_statement",
+    }
+    storage = DiagnosticStorage(context.path)
+    stack: list[Any] = []
+    last_entered: Any | None = None
+    max_allowed = int(getattr(context.diagnostics_engine, "max_nesting_depth", 4))
+
+    def walk(node: Any) -> None:
+        nonlocal last_entered
+        is_control = getattr(node, "type", None) in control_types
+        if is_control:
+            stack.append(node)
+            last_entered = node
+        for child in _ts_children(node):
+            walk(child)
+        if is_control:
+            if node is last_entered and len(stack) > max_allowed:
+                _add_node_start_token_range(
+                    storage,
+                    code="BSL020",
+                    message="Превышен допустимый уровень вложенности управляющих конструкций",
+                    severity=Severity.WARNING,
+                    lines=context.lines,
+                    node=node,
+                )
+            stack.pop()
+
+    walk(context.tree.root_node)
+    return storage.diagnostics
+
+
+def _diagnostics_bsl173_deleting_collection_item(
+    context: BsllsDocumentContext,
+) -> list[Diagnostic]:
+    root = getattr(getattr(context.tree, "root_node", None), "text", None)
+    if not isinstance(root, (bytes, bytearray)):
+        return []
+
+    storage = DiagnosticStorage(context.path)
+    for node in context.ts_nodes_for_types(context.tree, {"for_each_statement"})[
+        "for_each_statement"
+    ]:
+        children = _ts_children(node)
+        collection_expr: Any | None = None
+        for idx, child in enumerate(children):
+            if getattr(child, "type", None) == "IN_KEYWORD":
+                collection_expr = next(
+                    (
+                        candidate
+                        for candidate in children[idx + 1 :]
+                        if getattr(candidate, "type", None) == "expression"
+                    ),
+                    None,
+                )
+                break
+        if collection_expr is None:
+            continue
+        collection_original = _ts_node_text(collection_expr)
+        collection_text = collection_original.casefold()
+        prefix = f"{collection_text}."
+        body_started = False
+        for child in children:
+            child_type = getattr(child, "type", None)
+            if child_type == "DO_KEYWORD":
+                body_started = True
+                continue
+            if child_type == "ENDDO_KEYWORD":
+                break
+            if not body_started:
+                continue
+            for call_statement in _ts_walk(child):
+                if getattr(call_statement, "type", None) != "call_statement":
+                    continue
+                call_text = _ts_node_text(call_statement).casefold()
+                compact = re.sub(r"\s+", "", call_text)
+                if not (
+                    compact.startswith(f"{prefix}удалить(")
+                    or compact.startswith(f"{prefix}delete(")
+                ):
+                    continue
+                _add_node_range(
+                    storage,
+                    code="BSL173",
+                    message=(
+                        f'Не следует удалять элементы коллекции "{collection_original}" '
+                        'при ее обходе оператором "Для каждого ... Из ... Цикл"'
+                    ),
+                    severity=Severity.ERROR,
+                    lines=context.lines,
+                    start_node=call_statement,
+                    end_node=call_statement,
+                )
+    return storage.diagnostics
+
+
 def _single_line_call_end(line: str, open_paren: int) -> int:
     depth = 0
     pos = open_paren
@@ -1312,7 +1449,7 @@ class NestedTernaryOperatorRule(BsllsDiagnosticRule):
 class MagicDateRule(BsllsDiagnosticRule):
     code = "BSL047"
     _authorized = {"00010101", "00010101000000", "000101010000"}
-    _date_literal_re = re.compile(r"'([^']*)'")
+    _date_literal_re = re.compile(r"'([0-9][^']*[0-9])'")
     _string_literal_re = re.compile(r'"([0-9]{8}|[0-9]{14})"')
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
@@ -1327,7 +1464,9 @@ class MagicDateRule(BsllsDiagnosticRule):
             ):
                 for match in regex.finditer(code_part):
                     value = match.group(1)
-                    if self._line_prefix_skips(line, match.start(), value, is_string):
+                    if self._line_prefix_skips(
+                        line, match.start(), match.end(), value, is_string
+                    ):
                         continue
                     storage.add_match(
                         code=self.code,
@@ -1364,7 +1503,9 @@ class MagicDateRule(BsllsDiagnosticRule):
         return hour <= 24 and minute <= 60 and second <= 60
 
     @classmethod
-    def _line_prefix_skips(cls, line: str, start: int, value: str, is_string: bool) -> bool:
+    def _line_prefix_skips(
+        cls, line: str, start: int, end: int, value: str, is_string: bool
+    ) -> bool:
         prefix = line[:start]
         code = line.split("//", 1)[0]
         if value in cls._authorized:
@@ -1375,6 +1516,12 @@ class MagicDateRule(BsllsDiagnosticRule):
         if not is_string and len(digits) not in (8, 14):
             return True
         if re.search(r"\b(?:Возврат|Return)\b", prefix, re.IGNORECASE):
+            return True
+        suffix = code[end:].strip()
+        if (
+            re.match(r"^\s*[\wА-Яа-яЁё.]+\s*=\s*$", prefix, re.IGNORECASE)
+            and suffix in {"", ";"}
+        ):
             return True
         if re.search(r"\b(?:Функция|Function|Процедура|Procedure)\b", prefix, re.IGNORECASE):
             return True
@@ -4034,9 +4181,8 @@ class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
         )
 
         code = self.code
-        snapshot = context.snapshot
-        procs = list(getattr(snapshot, "procedures", []) or [])
-        regions = list(getattr(snapshot, "regions", []) or [])
+        procs = context.procedures
+        regions = context.regions
 
         if code == "BSL152":
             return run_bsl152_cached_public(context.path, context.lines, regions, procs)
@@ -4059,7 +4205,14 @@ class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL172":
             return run_bsl172_data_exchange_loading(context.path, context.lines, procs)
         if code == "BSL173":
-            return run_bsl173_deleting_collection_item(context.path, context.lines, procs)
+            ts_diags = _diagnostics_bsl173_deleting_collection_item(context)
+            regex_diags = run_bsl173_deleting_collection_item(context.path, context.lines, procs)
+            merged: dict[tuple[int, int], Diagnostic] = {}
+            for diag in ts_diags + regex_diags:
+                key = (diag.line, diag.character)
+                if key not in merged:
+                    merged[key] = diag
+            return list(merged.values())
         return [
             diag
             for diag in run_bsl161_168_common_module_names(
@@ -4089,7 +4242,7 @@ class MethodContractDiagnosticsRule(BsllsDiagnosticRule):
 
         code = self.code
         snapshot = context.snapshot
-        procs = list(getattr(snapshot, "procedures", []) or [])
+        procs = context.procedures
 
         if code in {"BSL192", "BSL193", "BSL194", "BSL228", "BSL266"}:
             return run_bsl192_193_194_228_266_method_contract_diagnostics(
@@ -4138,7 +4291,7 @@ class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
 
         code = self.code
         snapshot = context.snapshot
-        procs = list(getattr(snapshot, "procedures", []) or [])
+        procs = context.procedures
         query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
 
         if code in {"BSL174", "BSL187", "BSL236", "BSL238"}:
@@ -4376,8 +4529,8 @@ class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
         code = self.code
         engine = context.diagnostics_engine
         snapshot = context.snapshot
-        procs = list(getattr(snapshot, "procedures", []) or [])
-        model = ModuleModel(path=context.path)
+        procs = context.procedures
+        model = context.module_model
 
         if code in {"BSL169", "BSL170", "BSL181", "BSL182", "BSL196", "BSL260"}:
             return [
@@ -4476,7 +4629,7 @@ class LocalXmlDiagnosticsRule(BsllsDiagnosticRule):
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         procs = list(getattr(context.snapshot, "procedures", []) or [])
-        model = ModuleModel(path=context.path)
+        model = context.module_model
         return [
             diag
             for diag in model.validate_bsl229_275_278_local_xml_pool(
@@ -4517,7 +4670,7 @@ class MissingSpaceRuntimeRule(BsllsDiagnosticRule):
     code = "BSL216"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        model = ModuleModel(path=context.path)
+        model = context.module_model
         return model.validate_missing_space(
             lines=context.lines,
             snapshot=context.snapshot,
@@ -4583,9 +4736,9 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         code = self.code
         engine = context.diagnostics_engine
         snapshot = context.snapshot
-        procs = list(getattr(snapshot, "procedures", []) or [])
-        regions = list(getattr(snapshot, "regions", []) or [])
-        model = ModuleModel(path=context.path)
+        procs = context.procedures
+        regions = context.regions
+        model = context.module_model
 
         if code == "BSL001":
             return model.validate_bsl001_syntax_errors(
@@ -4715,6 +4868,9 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 )
             return diags
         if code == "BSL020":
+            ts_diags = _diagnostics_bsl020_nested_statements(context)
+            if ts_diags:
+                return ts_diags
             return model.validate_excessive_nesting(
                 context.lines,
                 procs=procs,
@@ -4951,7 +5107,7 @@ class DeprecatedApiDiagnosticsRule(BsllsDiagnosticRule):
         snapshot = context.snapshot
         symbols = list(getattr(snapshot, "symbols", []) or [])
         calls = list(getattr(snapshot, "calls", []) or [])
-        model = ModuleModel(path=context.path)
+        model = context.module_model
         return [
             diag
             for diag in model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
@@ -4981,7 +5137,7 @@ class FormDataToValueRule(BsllsDiagnosticRule):
     code = "BSL190"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        model = ModuleModel(path=context.path)
+        model = context.module_model
         return model.validate_form_data_to_value(
             lines=context.lines,
             line_comment_re=_diag._RE_LINE_COMMENT,
@@ -4994,7 +5150,7 @@ class LatinCyrillicRuntimeRule(BsllsDiagnosticRule):
     code = "BSL208"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        model = ModuleModel(path=context.path)
+        model = context.module_model
         return [
             diag
             for diag in model.validate_bsl208_latin_cyrillic_symbol_in_word(
@@ -5020,7 +5176,7 @@ class MissingVariablesDescriptionRule(BsllsDiagnosticRule):
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         procs = list(getattr(context.snapshot, "procedures", []) or [])
         clean_lines = context.snapshot.code_lines_without_comments
-        model = ModuleModel(path=context.path)
+        model = context.module_model
         return model.validate_module_variables_description(
             context.lines,
             procs=procs,

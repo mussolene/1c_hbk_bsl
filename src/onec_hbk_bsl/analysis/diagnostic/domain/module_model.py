@@ -899,8 +899,8 @@ class ModuleModel:
                 if line.strip().startswith("//"):
                     continue
                 for m in string_literal_re.finditer(line):
-                    val = m.group(1).strip()
-                    if not val:
+                    val = m.group(1)
+                    if len(val) + 2 < 5:
                         continue
                     if re.search(r"\b(?:НСтр|NStr)\s*\([^)]*$", line[: m.start()], re.IGNORECASE):
                         continue
