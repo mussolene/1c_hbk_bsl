@@ -1063,6 +1063,17 @@ class TestTailParityBatches:
 # ---------------------------------------------------------------------------
 
 
+class TestBsl204InvalidCharacterInFile:
+    def test_escaped_quote_string_span(self, tmp_path: Path) -> None:
+        content = 'Процедура Тест()\n\tНСтр("ru=\'текст "" – хвост\'") +\nКонецПроцедуры\n'
+        diags = _check(content, tmp_path, select={"BSL204"})
+        bsl204 = [d for d in diags if d.code == "BSL204"]
+        assert len(bsl204) == 1
+        assert bsl204[0].line == 2
+        assert bsl204[0].character == content.splitlines()[1].index('"')
+        assert bsl204[0].end_character == content.splitlines()[1].rindex('"') + 1
+
+
 # ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------

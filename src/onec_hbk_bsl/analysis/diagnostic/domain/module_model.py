@@ -1020,17 +1020,45 @@ class ModuleModel:
 
     def validate_invalid_character_in_file(self, *, lines: list[str], illegal_chars: dict[str, str]) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
+
+        def string_literal_span_containing(line: str, pos: int) -> tuple[int, int] | None:
+            idx = 0
+            while idx < len(line):
+                if line[idx] != '"':
+                    idx += 1
+                    continue
+                start = idx
+                idx += 1
+                while idx < len(line):
+                    if line[idx] == '"':
+                        if idx + 1 < len(line) and line[idx + 1] == '"':
+                            idx += 2
+                            continue
+                        end = idx + 1
+                        if start <= pos < end:
+                            return start, end
+                        idx = end
+                        break
+                    idx += 1
+                else:
+                    if start <= pos < len(line):
+                        return start, len(line.rstrip())
+            return None
+
         for line_idx, line in enumerate(lines, start=1):
             hit = next(((pos, illegal_chars[ch]) for pos, ch in enumerate(line) if ch in illegal_chars), None)
             if hit is None:
                 continue
             pos, message = hit
-            quote_pos = line.rfind('"', 0, pos + 1)
-            anchor = quote_pos if quote_pos >= 0 else len(line) - len(line.lstrip())
-            end_character = len(line.rstrip())
-            closing_paren = line.rfind(")")
-            if closing_paren > anchor:
-                end_character = closing_paren
+            string_span = string_literal_span_containing(line, pos)
+            if string_span is None:
+                anchor = len(line) - len(line.lstrip())
+                end_character = len(line.rstrip())
+                closing_paren = line.rfind(")")
+                if closing_paren > anchor:
+                    end_character = closing_paren
+            else:
+                anchor, end_character = string_span
             diags.append(
                 Diagnostic(
                     file=self.path,
