@@ -1527,6 +1527,10 @@ class MagicDateRule(BsllsDiagnosticRule):
         if re.search(r"\b(?:Возврат|Return)\b", prefix, re.IGNORECASE):
             return True
         suffix = code[end:].strip()
+        if re.match(r"^\s*[\wА-Яа-яЁё.]+\s*=\s*$", prefix, re.IGNORECASE) and (
+            suffix.startswith(",") or suffix.startswith(")")
+        ):
+            return True
         if (
             re.match(r"^\s*[\wА-Яа-яЁё.]+\s*=\s*$", prefix, re.IGNORECASE)
             and suffix in {"", ";"}

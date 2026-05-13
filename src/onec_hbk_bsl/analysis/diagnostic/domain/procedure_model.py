@@ -590,7 +590,7 @@ class ProcedureModel:
     ) -> list[Diagnostic]:
         re_magic = re.compile(
             r"(?<![\"'\w.])"
-            r"(?:-?(?:[2-9]\d*|\d{2,})(?:\.\d+)?|-?0\.(?:0*[1-9]\d*))"
+            r"(?:-?(?:[2-9]\d*|\d{2,})(?:\.\d+)?|-?1\.\d*[1-9]\d*|-?0\.(?:0*[1-9]\d*))"
             r"(?![\w.\"])",
         )
         diags: list[Diagnostic] = []
@@ -675,20 +675,31 @@ class ProcedureModel:
             args = split_top_level_args(code[call_match.end() : close_paren])
             relative_start = start - call_match.end()
             relative_end = end - call_match.end()
-            for arg_index, (arg_start, arg_end, _arg_text) in enumerate(args):
+            for arg_index, (arg_start, arg_end, arg_text) in enumerate(args):
                 if not (arg_start <= relative_start and relative_end <= arg_end):
                     continue
                 if receiver_type in {"соответствие", "map"}:
                     return True
                 if arg_index == 1:
-                    return True
+                    return re.fullmatch(
+                        r"\s*-?(?:\d+(?:\.\d+)?|0\.\d+)\s*",
+                        arg_text,
+                    ) is not None
                 return False
             return False
+
+        query_line_indices: set[int] = set()
+        if snapshot is not None:
+            for block in getattr(snapshot, "query_text_blocks", []) or []:
+                for query_line in getattr(block, "content_lines", []) or []:
+                    query_line_indices.add(int(query_line.line_no) - 1)
 
         for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
             line = lines[i]
             stripped = line.strip()
             if not stripped or stripped.startswith("//"):
+                continue
+            if i in query_line_indices:
                 continue
             if stripped.startswith("|"):
                 continue

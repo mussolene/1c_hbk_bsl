@@ -17,6 +17,7 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
         in_select = True
         skip_select = False
         paren_depth = 0
+        case_depth = 0
         first_content_line = True
         for (
             line_no,
@@ -55,6 +56,15 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
 
             if not content:
                 continue
+            case_head = content.strip()
+            if _diag._RE_BSL149_CASE_PART.match(case_head):
+                if re.match(r"^\s*(?:ВЫБОР|CASE)\b", case_head, re.IGNORECASE):
+                    case_depth += 1
+                elif re.match(r"^\s*(?:КОНЕЦ|END)\b", case_head, re.IGNORECASE):
+                    case_depth = max(0, case_depth - 1)
+                continue
+            if case_depth > 0:
+                continue
             if _diag._RE_BSL149_UNION.search(content):
                 in_select = False
                 skip_select = True
@@ -86,6 +96,8 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
                 continue
             if not in_select:
                 continue
+            if content.rstrip().endswith(("+", "-", "*", "/")):
+                continue
             _diag._bsl149_append_missing_alias_diags(path, idx, line, content, diags)
     return diags
 
@@ -101,6 +113,7 @@ def run_bsl149_assign_alias_fields_in_query(
     in_select = False
     skip_select = False
     paren_depth = 0
+    case_depth = 0
 
     for idx, line in enumerate(lines):
         stripped = line.rstrip()
@@ -160,6 +173,15 @@ def run_bsl149_assign_alias_fields_in_query(
             continue
         if not content:
             continue
+        case_head = content.strip()
+        if _diag._RE_BSL149_CASE_PART.match(case_head):
+            if re.match(r"^\s*(?:ВЫБОР|CASE)\b", case_head, re.IGNORECASE):
+                case_depth += 1
+            elif re.match(r"^\s*(?:КОНЕЦ|END)\b", case_head, re.IGNORECASE):
+                case_depth = max(0, case_depth - 1)
+            continue
+        if case_depth > 0:
+            continue
         if _diag._RE_BSL149_UNION.search(content):
             in_select = False
             skip_select = True
@@ -190,6 +212,8 @@ def run_bsl149_assign_alias_fields_in_query(
             in_select = False
             continue
         if not in_select:
+            continue
+        if content.rstrip().endswith(("+", "-", "*", "/")):
             continue
         _diag._bsl149_append_missing_alias_diags(path, idx, line, content, diags)
 

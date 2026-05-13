@@ -51,6 +51,19 @@ _RE_QUERY_TEXT_START = re.compile(r'"\s*(?:ВЫБРАТЬ|SELECT)\b', re.IGNOREC
 _RE_QUERY_INLINE_COMMENT = re.compile(r"\s*//.*$")
 
 
+def _query_content_end_quote(content: str) -> int | None:
+    pos = 0
+    while pos < len(content):
+        if content[pos] != '"':
+            pos += 1
+            continue
+        if pos + 1 < len(content) and content[pos + 1] == '"':
+            pos += 2
+            continue
+        return pos
+    return None
+
+
 @dataclass(frozen=True)
 class ProcInfo:
     """Procedure or function definition extracted from source."""
@@ -435,8 +448,9 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
             if not content:
                 continue
 
-            ended_query = '"' in content
-            head = content.split('"', 1)[0].rstrip() if ended_query else content
+            end_quote = _query_content_end_quote(content)
+            ended_query = end_quote is not None
+            head = content[:end_quote].rstrip() if ended_query else content
             if not head:
                 if ended_query:
                     break

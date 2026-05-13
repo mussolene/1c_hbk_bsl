@@ -291,6 +291,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL024",
         "BSL029",
         "BSL035",
+        "BSL036",
         "BSL039",
         "BSL047",
         "BSL051",
@@ -3233,8 +3234,9 @@ def _iter_query_text_content_lines(start_idx: int, block_lines: list[str]):
         if not content:
             continue
 
-        ended_query = '"' in content
-        head = content.split('"', 1)[0].rstrip() if ended_query else content
+        end_quote = _query_content_end_quote(content)
+        ended_query = end_quote is not None
+        head = content[:end_quote].rstrip() if ended_query else content
         if not head:
             if ended_query:
                 break
@@ -3243,6 +3245,19 @@ def _iter_query_text_content_lines(start_idx: int, block_lines: list[str]):
         yield start_idx + offset + 1, content_base, content, head, ended_query
         if ended_query:
             break
+
+
+def _query_content_end_quote(content: str) -> int | None:
+    pos = 0
+    while pos < len(content):
+        if content[pos] != '"':
+            pos += 1
+            continue
+        if pos + 1 < len(content) and content[pos + 1] == '"':
+            pos += 2
+            continue
+        return pos
+    return None
 
 
 def _snapshot_query_blocks(lines: list[str], query_blocks: list[QueryTextBlockInfo] | None):
@@ -3506,10 +3521,8 @@ def _arithmetic_missing_space_cols_in_line(line: str, in_str_at_start: bool = Fa
 
 
 def _module_export_var_has_preceding_description(lines: list[str], var_line_idx: int) -> bool:
-    """Previous non-blank line is a non-empty ``//`` or ``///`` comment (BSLLS MissingVariablesDescription)."""
+    """Immediately preceding line is a non-empty ``//`` or ``///`` comment."""
     j = var_line_idx - 1
-    while j >= 0 and not lines[j].strip():
-        j -= 1
     if j < 0:
         return False
     s = lines[j].strip()

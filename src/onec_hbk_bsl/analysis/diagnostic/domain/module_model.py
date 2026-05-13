@@ -241,7 +241,7 @@ class ModuleModel:
         for proc in procs:
             for i in range(proc.start_idx, proc.end_idx + 1):
                 inside.add(i)
-        for idx, line in enumerate(lines):
+        for idx, _line in enumerate(lines):
             if idx in inside:
                 continue
             m = var_module_export_re.match(clean_lines[idx])
@@ -253,7 +253,7 @@ class ModuleModel:
                     line=idx + 1,
                     character=m.start("names"),
                     end_line=idx + 1,
-                    end_character=len(line),
+                    end_character=len(clean_lines[idx].rstrip().rstrip(";").rstrip()),
                     severity=Severity.WARNING,
                     code="BSL054",
                     message="Не рекомендуется использовать экспортные переменные. Это может стать источником трудновоспроизводимых ошибок",
@@ -292,7 +292,7 @@ class ModuleModel:
                     line=idx + 1,
                     character=m.start("names"),
                     end_line=idx + 1,
-                    end_character=m.end("names"),
+                    end_character=len(code_part.rstrip().rstrip(";").rstrip()),
                     severity=Severity.INFORMATION,
                     code="BSL219",
                     message="Добавьте описание переменной",
@@ -894,8 +894,6 @@ class ModuleModel:
                     val = m.group(1)
                     if len(val) + 2 < 5:
                         continue
-                    if re.search(r"\b(?:НСтр|NStr)\s*\([^)]*$", line[: m.start()], re.IGNORECASE):
-                        continue
                     if re.fullmatch(r"\+\s*\w+\s*\+", val):
                         continue
                     counts[val] += 1
@@ -968,21 +966,44 @@ class ModuleModel:
                     continue
                 line_idx = node.start_point[0]
                 line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                if re.search(r"\+\s*\"", line_text) or re.search(r"\"\s*\+", line_text):
+                    continue
+                start_char = utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1])
+                end_char = utf8_byte_offset_to_lsp_character_fn(line_text, node.end_point[1])
+                quote_char = line_text.find('"', start_char, max(end_char, start_char + 1))
+                if quote_char >= 0 and "+" in line_text[start_char:quote_char]:
+                    continue
+                before = line_text[: start_char if quote_char < 0 else quote_char].rstrip()
+                after = line_text[end_char:].lstrip()
+                if before.endswith("+") or after.startswith("+"):
+                    continue
                 diags.append(
                     Diagnostic(
                         file=self.path,
                         line=line_idx + 1,
-                        character=utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1]),
+                        character=start_char,
                         end_line=line_idx + 1,
-                        end_character=utf8_byte_offset_to_lsp_character_fn(line_text, node.end_point[1]),
+                        end_character=end_char,
                         severity=Severity.INFORMATION,
                         code="BSL171",
                         message=rule_descriptions_ru["BSL171"],
                     )
                 )
         if diags:
-            return diags
+            return [
+                diag
+                for diag in diags
+                if not (
+                    1 <= diag.line <= len(lines)
+                    and (
+                        re.search(r"\+\s*\"", lines[diag.line - 1])
+                        or re.search(r"\"\s*\+", lines[diag.line - 1])
+                    )
+                )
+            ]
         for idx, line in enumerate(lines):
+            if re.search(r"\+\s*\"", line) or re.search(r"\"\s*\+", line):
+                continue
             match = adjacent_literals_re.search(line)
             if match is not None:
                 diags.append(
@@ -1083,34 +1104,44 @@ class ModuleModel:
         re_if_or_elseif_line = re.compile(r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b", re.IGNORECASE)
         re_then_word = re.compile(r"\b(?:Тогда|Then)\b", re.IGNORECASE)
 
-        def if_condition_chunk(idx: int) -> str | None:
+        def if_condition_chunk(idx: int) -> tuple[str, int, int] | None:
             line = lines[idx]
             if line.strip().startswith("//"):
                 return None
             if not re_if_or_elseif_line.match(line):
                 return None
             if re_then_word.search(line):
-                return line
+                end_idx = idx
+                end_char = re_then_word.search(line).end()
+                return line, end_idx, end_char
             parts = [line]
             j = idx + 1
             max_j = min(len(lines), idx + 48)
             while j < max_j:
                 parts.append(lines[j])
-                if re_then_word.search(lines[j]):
+                then_match = re_then_word.search(lines[j])
+                if then_match:
+                    return "\n".join(parts), j, then_match.end()
+                if re.match(r"^\s*(?:Тогда|Then)\b", lines[j], re.IGNORECASE):
                     break
                 j += 1
-            return "\n".join(parts)
+            return "\n".join(parts), j - 1, len(lines[j - 1].rstrip()) if j > idx else len(line.rstrip())
 
-        def line_triggers(idx: int) -> bool:
+        def triggered_condition_span(idx: int) -> tuple[int, int] | None:
             chunk = if_condition_chunk(idx)
             if chunk is None:
-                return False
-            return len(bool_op_re.findall(chunk)) + 1 > max_bool_ops
+                return None
+            text, end_idx, end_char = chunk
+            if len(bool_op_re.findall(text)) + 1 <= max_bool_ops:
+                return None
+            return end_idx, end_char
 
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
-            if not line_triggers(idx):
+            end_span = triggered_condition_span(idx)
+            if end_span is None:
                 continue
+            end_line_idx, end_char = end_span
             char = len(line) - len(line.lstrip())
             kw = line.lstrip()
             if kw.lower().startswith("если "):
@@ -1126,8 +1157,8 @@ class ModuleModel:
                     file=self.path,
                     line=idx + 1,
                     character=char,
-                    end_line=idx + 1,
-                    end_character=char + 1,
+                    end_line=end_line_idx + 1,
+                    end_character=end_char,
                     severity=Severity.INFORMATION,
                     code="BSL036",
                     message="Выделите условие оператора Если в отдельный метод или переменную",
@@ -2782,6 +2813,10 @@ class ModuleModel:
             if 1 <= error["line"] <= len(current_lines):
                 line_text = current_lines[error["line"] - 1]
             if re.search(r"\?\s+\(", line_text):
+                continue
+            if re.search(r";\s*;", line_text):
+                continue
+            if re.match(r"^\s*(?:/|\+|-|\*|\b(?:И|ИЛИ|And|Or)\b)", line_text, re.IGNORECASE):
                 continue
             if re.match(
                 r"^\s*(?:Для\s+Каждого|For\s+Each|Процедура|Функция|Procedure|Function)\b.*;\s*$",

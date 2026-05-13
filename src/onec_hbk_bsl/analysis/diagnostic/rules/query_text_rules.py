@@ -51,9 +51,11 @@ def run_bsl220_235_269_query_text_diagnostics(
         if not content_lines:
             continue
 
+        has_escaped_empty_query_string = any('""""' in content for _, _, content, _, _ in content_lines)
         last_content = content_lines[-1][2]
         if (
             "BSL235" in enabled
+            and not has_escaped_empty_query_string
             and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
             and (
                 not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
@@ -79,7 +81,7 @@ def run_bsl220_235_269_query_text_diagnostics(
                 multi_match = re.search(r'"{4,}', content)
                 if multi_match:
                     run = multi_match.group(0)
-                    if len(run) == 4 and re.search(r"(?:=|<>)\s*\"{4}", content):
+                    if len(run) == 4:
                         continue
                     diags.append(
                         _diag.Diagnostic(
@@ -115,9 +117,11 @@ def run_bsl220_235_269_query_text_diagnostics(
             if not content_lines:
                 continue
 
+            has_escaped_empty_query_string = any('""""' in content for _, _, content, _, _ in content_lines)
             last_content = content_lines[-1][2]
             if (
                 "BSL235" in enabled
+                and not has_escaped_empty_query_string
                 and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
                 and (
                     not _diag._query_has_balanced_parens(
@@ -145,7 +149,7 @@ def run_bsl220_235_269_query_text_diagnostics(
                     multi_match = re.search(r'"{4,}', content)
                     if multi_match:
                         run = multi_match.group(0)
-                        if len(run) == 4 and re.search(r"(?:=|<>)\s*\"{4}", content):
+                        if len(run) == 4:
                             continue
                         diags.append(
                             _diag.Diagnostic(
