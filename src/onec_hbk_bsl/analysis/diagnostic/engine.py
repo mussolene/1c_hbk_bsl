@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections import OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
-from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel, ProcedureModel
+from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
 from onec_hbk_bsl.analysis.diagnostic.pipeline import AnalysisFrame, PipelineExecutor
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
@@ -515,14 +515,6 @@ class DiagnosticEngine:
     # BSL001 — Parse errors
     # ------------------------------------------------------------------
 
-    def _rule_bsl001_syntax_errors(self, path: str, tree: Any) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl001_syntax_errors(
-            tree=tree,
-            parser_extract_errors_fn=self._get_parser().extract_errors,
-            current_lines=getattr(self, "_current_lines", []),
-        )
-
     # ------------------------------------------------------------------
     # BSL002 — Method too long
     # ------------------------------------------------------------------
@@ -535,57 +527,13 @@ class DiagnosticEngine:
     # BSL007 — Unused local variable
     # ------------------------------------------------------------------
 
-    def _rule_bsl007_unused_local_variable(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl007_unused_local_variable(
-            lines=lines,
-            procs=procs,
-            snapshot=snapshot,
-            strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
-            bsl007_strip_double_quoted_segments_fn=_bsl007_strip_double_quoted_segments,
-            bsl007_simple_assign_at_start_re=_BSL007_SIMPLE_ASSIGN_AT_START,
-            var_local_re=_RE_VAR_LOCAL,
-            region_line_re=_RE_REGION_LINE,
-            preproc_line_re=_RE_PREPROC_LINE,
-            compiler_directive_re=_RE_COMPILER_DIRECTIVE,
-            module_assign_re=_RE_MODULE_ASSIGN,
-        )
-
     # ------------------------------------------------------------------
     # BSL009 — Self-assignment
     # ------------------------------------------------------------------
 
-    def _rule_bsl009_self_assign(self, path: str, lines: list[str], tree: Any) -> list[Diagnostic]:
-        if not _ts_tree_ok_for_rules(tree):
-            return []
-        return _diagnostics_bsl009_from_tree(path, tree.root_node)
-
     # ------------------------------------------------------------------
     # BSL011 — Cognitive complexity
     # ------------------------------------------------------------------
-
-    def _rule_bsl011_cognitive_complexity(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        metrics = self._complexity_metrics_for_procs(lines, procs)
-        for proc, (cc, _mc) in zip(procs, metrics, strict=False):
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_cognitive_complexity(
-                    cognitive_complexity=cc,
-                    max_cognitive_complexity=self.max_cognitive_complexity,
-                    proc_name_span=_proc_name_span,
-                    lines=lines,
-                )
-            )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL016 — Non-standard region name
@@ -594,23 +542,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
     # BSL019 — McCabe cyclomatic complexity
     # ------------------------------------------------------------------
-
-    def _rule_bsl019_cyclomatic_complexity(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        metrics = self._complexity_metrics_for_procs(lines, procs)
-        for proc, (_cog, cc) in zip(procs, metrics, strict=False):
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_mccabe_complexity(
-                    mccabe_complexity=cc,
-                    max_mccabe_complexity=self.max_mccabe_complexity,
-                    proc_name_span=_proc_name_span,
-                    lines=lines,
-                )
-            )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL020 — Excessive nesting depth
@@ -640,57 +571,9 @@ class DiagnosticEngine:
     _RE_TRY_BLOCK = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
     _RE_TRY_CLOSE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 
-    def _rule_bsl028_missing_try_catch(
-        self, path: str, lines: list[str], procs: list[_ProcInfo]
-    ) -> list[Diagnostic]:
-        """
-        Detect risky API calls (network, file, Execute) outside a Try/Except block.
-        """
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_missing_try_catch(
-                    lines,
-                    try_block_re=self._RE_TRY_BLOCK,
-                    try_close_re=self._RE_TRY_CLOSE,
-                    risky_call_re=self._RE_RISKY_CALL,
-                )
-            )
-        return diags
-
     # ------------------------------------------------------------------
     # BSL029 — MagicNumber
     # ------------------------------------------------------------------
-
-    def _rule_bsl029_magic_number(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        """
-        Detect numeric literals > 1 used directly in executable code.
-
-        Ignores:
-        - 0 and 1 (universally accepted)
-        - Lines that look like constant declarations (Перем Х = N)
-        - Comment lines and strings
-        """
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_magic_numbers(
-                    lines,
-                    snapshot=snapshot,
-                    any_digit_re=_RE_BSL029_ANY_DIGIT,
-                    simple_assign_re=_RE_BSL029_SIMPLE_ASSIGN,
-                    ternary_re=_RE_BSL029_TERNARY,
-                )
-            )
-        return diags
 
     # ------------------------------------------------------------------
     # BSL148 — AllFunctionPathMustHaveReturn
@@ -700,66 +583,9 @@ class DiagnosticEngine:
     # BSL033 — Query execution inside a loop
     # ------------------------------------------------------------------
 
-    def _rule_bsl033_query_in_loop(
-        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
-    ) -> list[Diagnostic]:
-        """
-        Detect ``.Выполнить()`` / ``.Execute()`` calls inside loops.
-
-        Executing queries inside loops is a critical performance anti-pattern
-        in 1C Enterprise — it causes N database round-trips per iteration.
-        """
-        loop_lines: set[int] | None = None
-        if _ts_tree_ok_for_rules(tree):
-            loop_lines = loop_body_line_indices_0(tree.root_node)
-        diags: list[Diagnostic] = []
-        for proc in procs:
-            model = ProcedureModel.from_proc_info(path, proc)
-            diags.extend(
-                model.validate_query_in_loop(
-                    lines,
-                    loop_lines=loop_lines,
-                    query_execute_re=_RE_QUERY_EXECUTE,
-                    loop_open_re=_RE_LOOP_OPEN,
-                    loop_close_re=_RE_LOOP_CLOSE,
-                )
-            )
-        return diags
-
     # ------------------------------------------------------------------
     # BSL035 — Duplicate string literal
     # ------------------------------------------------------------------
-
-    def _rule_bsl035_duplicate_string_literal(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        """
-        Flag string literals that appear *min_duplicate_uses* or more times **within
-        the same scope** (one procedure/function body, or module-level code).
-
-        Counting separately per method avoids false positives when the same key
-        literals (e.g. ``Вставить("СерийныйНомер", ...)``) appear in different
-        functions.
-
-        BSLLS ``DuplicateStringLiteral``: одна диагностика на литерал при достижении порога,
-        с привязкой к *первой* позиции вхождения (relatedInformation в BSLLS — остальные строки).
-
-        Ignores short/trivial strings (less than 4 chars after stripping).
-        """
-        model = ModuleModel(path=path)
-        return model.validate_duplicate_string_literal(
-            lines,
-            procs=procs,
-            snapshot=snapshot,
-            min_duplicate_uses=self.min_duplicate_uses,
-            string_literal_re=_RE_STRING_LITERAL,
-            scope_line_indices_fn=_bsl035_scope_line_indices,
-            line_starts_with_raise_statement_fn=_line_starts_with_raise_statement,
-        )
 
     # ------------------------------------------------------------------
     # BSL040 — ЭтаФорма / ThisForm outside event handler context
@@ -772,28 +598,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
     # BSL051 — Unreachable code after Return/Raise
     # ------------------------------------------------------------------
-
-    def _rule_bsl051_unreachable_code(
-        self, path: str, lines: list[str], procs: list[_ProcInfo], tree: Any
-    ) -> list[Diagnostic]:
-        """
-        Flag code that follows an unconditional Возврат/Return or
-        ВызватьИсключение/Raise within the same scope block.
-
-        Block boundaries (КонецЕсли, КонецПопытки, Исключение, …) are taken from
-        the tree-sitter CST keyword nodes when the parse is clean; otherwise
-        the same tokens are matched with a regex fallback (``_RegexTree`` / ERROR).
-        """
-        model = ModuleModel(path=path)
-        return model.validate_bsl051_unreachable_code(
-            lines=lines,
-            procs=procs,
-            tree=tree,
-            bsl051_delimiter_lines_for_tree_fn=_bsl051_delimiter_lines_for_tree,
-            bsl051_all_branch_exit_end_if_lines_fn=self._bsl051_all_branch_exit_end_if_lines,
-            re_unconditional_exit=_RE_UNCONDITIONAL_EXIT,
-            re_bsl051_delimiter_fallback=_RE_BSL051_DELIMITER_FALLBACK,
-        )
 
     @staticmethod
     def _bsl051_all_branch_exit_end_if_lines(body_lines: list[tuple[int, str]]) -> set[int]:
@@ -851,41 +655,6 @@ class DiagnosticEngine:
     # BSL052 — Useless condition (literal True/False in If)
     # ------------------------------------------------------------------
 
-    def _rule_bsl052_useless_condition(
-        self, path: str, lines: list[str], tree: Any
-    ) -> list[Diagnostic]:
-        """Flag Если Истина/Ложь Тогда — condition is never evaluated."""
-        root = getattr(tree, "root_node", None)
-        tree_is_ts = root is not None and isinstance(
-            getattr(root, "text", None), (bytes, bytearray)
-        )
-        if tree_is_ts and root is not None and not tree_has_errors(root):
-            pairs: list[tuple[int, str]] = []
-            _bsl052_collect_literal_if_nodes(root, pairs)
-            diags: list[Diagnostic] = []
-            for line_idx, literal in pairs:
-                if line_idx >= len(lines):
-                    continue
-                line = lines[line_idx]
-                diags.append(
-                    Diagnostic(
-                        file=path,
-                        line=line_idx + 1,
-                        character=len(line) - len(line.lstrip()),
-                        end_line=line_idx + 1,
-                        end_character=len(line),
-                        severity=Severity.WARNING,
-                        code="BSL052",
-                        message=(
-                            f"Condition is always '{literal}' — "
-                            "this If branch either always or never executes."
-                        ),
-                    )
-                )
-            return diags
-
-        return []
-
     # ------------------------------------------------------------------
     # BSL054 — Module-level Перем/Var (global state)
     # ------------------------------------------------------------------
@@ -893,41 +662,6 @@ class DiagnosticEngine:
     # ------------------------------------------------------------------
     # BSL062 — Unused parameter
     # ------------------------------------------------------------------
-
-    def _rule_bsl062_unused_parameter(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[_ProcInfo],
-        tree: Any,
-        proc_node_map: dict[tuple[str, int, str], Any] | None = None,
-    ) -> list[Diagnostic]:
-        """
-        Flag method parameters that are never referenced in the method body.
-
-        Parameter names come from ``proc.params`` (tree-sitter when available). Whether a
-        name is used is determined by walking the procedure body CST and collecting
-        ``identifier`` nodes (excluding the ``parameters`` subtree). When tree-sitter is
-        unavailable (_RegexTree), falls back to a word-boundary scan of the body text.
-
-        Excludes parameters that start with '_' (convention for intentionally unused).
-        """
-        model = ModuleModel(path=path)
-        return model.validate_bsl062_unused_parameter(
-            lines=lines,
-            procs=procs,
-            tree=tree,
-            proc_node_map=proc_node_map,
-            path_is_likely_form_module_bsl_fn=path_is_likely_form_module_bsl,
-            find_proc_definition_node_fn=_find_proc_definition_node,
-            collect_identifier_casefolds_in_proc_body_fn=_collect_identifier_casefolds_in_proc_body,
-            procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
-            bsl062_skip_standard_command_params=_BSL062_SKIP_STANDARD_COMMAND_PARAMS,
-            is_typical_client_command_handler_fn=_is_typical_client_command_handler,
-            is_client_notify_completion_export_handler_fn=(
-                _is_client_notify_completion_export_handler
-            ),
-        )
 
     # ------------------------------------------------------------------
     # BSL064 — Procedure returns value
