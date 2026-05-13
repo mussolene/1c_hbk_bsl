@@ -141,6 +141,30 @@ class TestBsl004EmptyExceptHandler:
         assert len(bsl004) >= 1
         assert bsl004[0].line == 2
 
+    def test_bsl004_reports_multiline_if_on_then_token(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если ЗначениеЗаполнено(Параметр1,
+        Параметр2) Тогда
+
+        // Комментарий без исполняемого кода
+
+    ИначеЕсли Истина Тогда
+        Сообщить("OK");
+    КонецЕсли;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        bsl004 = [d for d in issues if d.code == "BSL004"]
+        assert len(bsl004) == 1
+        assert bsl004[0].line == 3
+        assert bsl004[0].character == content.splitlines()[2].index("Тогда")
+        assert bsl004[0].end_character == bsl004[0].character + len("Тогда")
+
 
 # ---------------------------------------------------------------------------
 # No issues on clean file

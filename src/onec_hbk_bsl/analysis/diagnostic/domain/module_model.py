@@ -2315,17 +2315,48 @@ class ModuleModel:
             r"^\s*(?:Если\b.*\bТогда|If\b.*\bThen|ИначеЕсли\b.*\bТогда|ElseIf\b.*\bThen|ElsIf\b.*\bThen|Иначе\b|Else\b|Пока\b.*\bЦикл|While\b.*\bDo)",
             re.IGNORECASE,
         )
+        multiline_if_start_re = re.compile(r"^\s*(?:Если|If|ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE)
+        branch_end_token_re = re.compile(r"\b(?:Тогда|Then)\b", re.IGNORECASE)
         terminator_re = re.compile(
             r"^\s*(?:ИначеЕсли\b|ElseIf\b|ElsIf\b|Иначе\b|Else\b|КонецЕсли\b|EndIf\b|КонецЦикла\b|EndDo\b)",
             re.IGNORECASE,
         )
 
+        def code_part(line: str) -> str:
+            return line.split("//", 1)[0].rstrip()
+
+        def opener_span(idx: int) -> tuple[int, int, int] | None:
+            line = lines[idx]
+            if opener_re.match(line):
+                match = branch_end_token_re.search(code_part(line))
+                if match:
+                    return idx, match.start(), match.end()
+                return idx, len(line) - len(line.lstrip()), len(code_part(line))
+
+            if not multiline_if_start_re.match(line):
+                return None
+            scan_idx = idx + 1
+            while scan_idx < len(lines):
+                stripped = lines[scan_idx].strip()
+                if not stripped or stripped.startswith("//"):
+                    scan_idx += 1
+                    continue
+                if terminator_re.match(lines[scan_idx]):
+                    return None
+                match = branch_end_token_re.search(code_part(lines[scan_idx]))
+                if match:
+                    return scan_idx, match.start(), match.end()
+                scan_idx += 1
+            return None
+
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
                 continue
-            if not opener_re.match(line):
+            span = opener_span(idx)
+            if span is None:
                 continue
-            j = idx + 1
+            anchor_idx, start_character, end_character = span
+            j = anchor_idx + 1
             while j < len(lines) and (not lines[j].strip() or lines[j].lstrip().startswith("//")):
                 j += 1
             if j >= len(lines) or not terminator_re.match(lines[j]):
@@ -2333,10 +2364,10 @@ class ModuleModel:
             diags.append(
                 Diagnostic(
                     file=self.path,
-                    line=idx + 1,
-                    character=len(line) - len(line.lstrip()),
-                    end_line=idx + 1,
-                    end_character=len(line.split("//", 1)[0].rstrip()),
+                    line=anchor_idx + 1,
+                    character=start_character,
+                    end_line=anchor_idx + 1,
+                    end_character=end_character,
                     severity=Severity.WARNING,
                     code="BSL004",
                     message=empty_msg,
