@@ -3701,8 +3701,8 @@ _RE_ERROR_INFO_ASSIGN = re.compile(
     re.IGNORECASE,
 )
 
-# String literal extractor (simplified — single-quoted not used in BSL)
-_RE_STRING_LITERAL = re.compile(r'(?<![A-Za-zА-ЯЁа-яё0-9_])"([^"]{3,})"')
+# String literal extractor with BSL doubled-quote escaping.
+_RE_STRING_LITERAL = re.compile(r'(?<![A-Za-zА-ЯЁа-яё0-9_])"((?:[^"]|"")*)"')
 
 # Boolean operators count in a single condition line
 _RE_BOOL_OP = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
@@ -4222,7 +4222,7 @@ _RE_COMMENT_ONLY_LINE = re.compile(r"^\s*//")
 _RE_REGION_OPEN_LINE = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE)
 _RE_REGION_CLOSE_LINE = re.compile(r"^\s*#(?:КонецОбласти|EndRegion)\b", re.IGNORECASE)
 
-_RE_STRING_LITERAL = re.compile(r'(?<![A-Za-zА-ЯЁа-яё0-9_])"([^"]{3,})"')
+_RE_STRING_LITERAL = re.compile(r'(?<![A-Za-zА-ЯЁа-яё0-9_])"((?:[^"]|"")*)"')
 
 _RE_PARAM_HAS_DEFAULT = re.compile(r"=")
 

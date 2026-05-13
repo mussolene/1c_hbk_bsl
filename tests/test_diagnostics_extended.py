@@ -2493,6 +2493,21 @@ class TestBsl035DuplicateStringLiteral:
         assert all('", Запрос["' not in message for message in messages)
         assert all('"].Получить("' not in message for message in messages)
 
+    def test_escaped_quotes_are_part_of_literal(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = "Код ""240"" места";
+                Б = "Код ""240"" места";
+                В = "Код ""240"" места";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, min_duplicate_uses=3, select={"BSL035"})
+        bsl035 = [d for d in diags if d.code == "BSL035"]
+        assert [(d.line, d.character, d.end_character) for d in bsl035] == [(2, 8, 27)]
+        assert bsl035[0].message == (
+            'Необходимо избавиться от многократного использования строкового литерала "Код ""240"" места"'
+        )
+
 
 # ---------------------------------------------------------------------------
 # BSL036 — ComplexCondition
