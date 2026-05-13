@@ -279,6 +279,14 @@ def _diagnostics_bsl173_deleting_collection_item(
                     or compact.startswith(f"{prefix}delete(")
                 ):
                     continue
+                call_expression = next(
+                    (
+                        child
+                        for child in _ts_children(call_statement)
+                        if getattr(child, "type", None) == "call_expression"
+                    ),
+                    call_statement,
+                )
                 _add_node_range(
                     storage,
                     code="BSL173",
@@ -289,7 +297,7 @@ def _diagnostics_bsl173_deleting_collection_item(
                     severity=Severity.ERROR,
                     lines=context.lines,
                     start_node=call_statement,
-                    end_node=call_statement,
+                    end_node=call_expression,
                 )
     return storage.diagnostics
 
