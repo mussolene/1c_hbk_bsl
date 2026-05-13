@@ -4282,59 +4282,30 @@ class TypoRuntimeRule(BsllsDiagnosticRule):
         )
 
 
-class EngineBridgeRule(BsllsDiagnosticRule):
+class CoreDiagnosticsRule(BsllsDiagnosticRule):
     def __init__(self, code: str):
         self.code = code
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        code = self.code
         engine = context.diagnostics_engine
         snapshot = context.snapshot
         procs = list(getattr(snapshot, "procedures", []) or [])
         regions = list(getattr(snapshot, "regions", []) or [])
-        symbols: list[Any] | None = None
-        calls: list[Any] | None = None
-        proc_node_map: dict[Any, Any] | None = None
-        query_blocks: list[Any] | None = None
 
-        def _symbols() -> list[Any]:
-            nonlocal symbols
-            if symbols is None:
-                symbols = list(getattr(snapshot, "symbols", []) or [])
-            return symbols
-
-        def _calls() -> list[Any]:
-            nonlocal calls
-            if calls is None:
-                calls = list(getattr(snapshot, "calls", []) or [])
-            return calls
-
-        def _proc_node_map() -> dict[Any, Any]:
-            nonlocal proc_node_map
-            if proc_node_map is None:
-                proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
-            return proc_node_map
-
-        def _query_blocks() -> list[Any]:
-            nonlocal query_blocks
-            if query_blocks is None:
-                query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
-            return query_blocks
-
-        code = self.code
         if code == "BSL001":
             return engine._rule_bsl001_syntax_errors(context.path, context.tree)
         if code == "BSL002":
             return engine._rule_bsl002_method_size(context.path, context.lines, procs)
         if code == "BSL003":
-            return engine._rule_bsl003_non_export_in_api_region(context.path, context.lines, procs, regions)
+            return engine._rule_bsl003_non_export_in_api_region(
+                context.path, context.lines, procs, regions
+            )
         if code == "BSL004":
             return engine._rule_bsl004_empty_except(context.path, context.lines, context.tree)
         if code == "BSL007":
             return engine._rule_bsl007_unused_local_variable(
-                context.path,
-                context.lines,
-                procs,
-                snapshot,
+                context.path, context.lines, procs, snapshot
             )
         if code == "BSL008":
             return engine._rule_bsl008_too_many_returns(context.path, context.lines, procs)
@@ -4375,7 +4346,9 @@ class EngineBridgeRule(BsllsDiagnosticRule):
         if code == "BSL032":
             return engine._rule_bsl032_function_return_value(context.path, context.lines, procs)
         if code == "BSL033":
-            return engine._rule_bsl033_query_in_loop(context.path, context.lines, procs, context.tree)
+            return engine._rule_bsl033_query_in_loop(
+                context.path, context.lines, procs, context.tree
+            )
         if code == "BSL035":
             return engine._rule_bsl035_duplicate_string_literal(
                 context.path, context.lines, procs, snapshot
@@ -4397,206 +4370,80 @@ class EngineBridgeRule(BsllsDiagnosticRule):
                 context.path, context.lines, procs, snapshot
             )
         if code == "BSL062":
+            proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
             return engine._rule_bsl062_unused_parameter(
-                context.path, context.lines, procs, context.tree, _proc_node_map()
+                context.path, context.lines, procs, context.tree, proc_node_map
             )
         if code == "BSL064":
             return engine._rule_bsl064_procedure_returns_value(context.path, context.lines, procs)
         if code == "BSL065":
             return engine._rule_bsl065_missing_export_comment(context.path, context.lines, procs)
         if code == "BSL077":
+            query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
             return engine._rule_bsl077_select_top_without_order_by(
-                context.path, context.lines, _query_blocks()
+                context.path, context.lines, query_blocks
             )
         if code == "BSL131":
             return engine._rule_bsl131_duplicate_region(context.path, context.lines, regions)
-        if code == "BSL148":
-            return engine._rule_bsl148_all_function_paths_return(context.path, context.tree)
-        if code == "BSL152":
-            return engine._rule_bsl152_cached_public(context.path, context.lines, regions, procs)
-        if code == "BSL154":
-            return engine._rule_bsl154_code_after_async(context.path, context.lines, procs)
-        if code == "BSL156":
-            return engine._rule_bsl156_code_out_of_region(context.path, context.lines, procs)
-        if code == "BSL158":
-            return engine._rule_bsl158_common_module_assign(
-                context.path, context.lines, getattr(engine, "_symbol_index", None)
+        return engine._rule_bsl148_all_function_paths_return(context.path, context.tree)
+
+
+class DeprecatedApiDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        snapshot = context.snapshot
+        symbols = list(getattr(snapshot, "symbols", []) or [])
+        calls = list(getattr(snapshot, "calls", []) or [])
+        return [
+            diag
+            for diag in context.diagnostics_engine._rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
+                context.path,
+                context.lines,
+                symbols,
+                calls,
+                (self.code,),
             )
-        if code == "BSL159":
-            return engine._rule_bsl159_common_module_invalid_type(context.path, context.lines)
-        if code == "BSL160":
-            return engine._rule_bsl160_common_module_missing_api(
-                context.path, context.lines, regions, procs
+            if diag.code == self.code
+        ]
+
+
+class FormDataToValueRule(BsllsDiagnosticRule):
+    code = "BSL190"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        return context.diagnostics_engine._rule_bsl190_form_data_to_value(
+            context.path,
+            context.lines,
+        )
+
+
+class LatinCyrillicRuntimeRule(BsllsDiagnosticRule):
+    code = "BSL208"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        procs = list(getattr(context.snapshot, "procedures", []) or [])
+        return [
+            diag
+            for diag in context.diagnostics_engine._rule_bsl208_bsl256_latin_cyrillic_and_typo(
+                context.path,
+                context.lines,
+                procs,
+                context.snapshot,
             )
-        if code in {
-            "BSL161",
-            "BSL162",
-            "BSL163",
-            "BSL164",
-            "BSL165",
-            "BSL166",
-            "BSL167",
-            "BSL168",
-        }:
-            return [
-                d
-                for d in engine._rule_bsl161_168_common_module_names(
-                    context.path, context.lines, (code,)
-                )
-                if d.code == code
-            ]
-        if code == "BSL172":
-            return engine._rule_bsl172_data_exchange_loading(context.path, context.lines, procs)
-        if code in {"BSL175", "BSL176", "BSL177", "BSL179", "BSL195"}:
-            return [
-                d
-                for d in engine._rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
-                    context.path, context.lines, _symbols(), _calls(), (code,)
-                )
-                if d.code == code
-            ]
-        if code == "BSL190":
-            return engine._rule_bsl190_form_data_to_value(context.path, context.lines)
-        if code in {"BSL202", "BSL205", "BSL223", "BSL243", "BSL249"}:
-            return [
-                d
-                for d in engine._rule_bsl202_205_223_243_249_light_call_pool(
-                    context.path,
-                    context.lines,
-                    context.tree,
-                    (code,),
-                    snapshot,
-                )
-                if d.code == code
-            ]
-        if code in {"BSL206", "BSL207", "BSL209"}:
-            return [
-                d
-                for d in engine._rule_bsl206_207_209_query_join_diagnostics(
-                    context.path, context.lines, (code,), _query_blocks()
-                )
-                if d.code == code
-            ]
-        if code == "BSL208":
-            return [d for d in engine._rule_bsl208_bsl256_latin_cyrillic_and_typo(context.path, context.lines, procs, snapshot) if d.code == code]
-        if code == "BSL212":
-            return engine._rule_bsl212_missed_required_parameter(
-                context.path, context.content, context.lines, procs, _calls()
-            )
-        if code == "BSL215":
-            return engine._rule_bsl215_missing_parameter_description(context.path, context.lines, procs)
-        if code == "BSL216":
-            return engine._rule_bsl216_missing_space(context.path, context.lines, snapshot)
-        if code == "BSL219":
-            return engine._rule_bsl219_missing_variables_description(
-                context.path, context.lines, procs, snapshot
-            )
-        if code in {"BSL220", "BSL235", "BSL269"}:
-            return [
-                d
-                for d in engine._rule_bsl220_235_269_query_text_diagnostics(
-                    context.path, context.lines, (code,), _query_blocks()
-                )
-                if d.code == code
-            ]
-        if code in {"BSL174", "BSL187", "BSL236", "BSL238"}:
-            return [
-                d
-                for d in engine._rule_bsl174_187_236_238_query_metadata_pool(
-                    context.path,
-                    context.lines,
-                    (code,),
-                    _query_blocks(),
-                    snapshot,
-                )
-                if d.code == code
-            ]
-        if code in {"BSL169", "BSL170", "BSL181", "BSL182", "BSL196", "BSL260"}:
-            return [
-                d
-                for d in engine._rule_bsl169_170_181_182_196_260_light_pool(
-                    context.path, context.lines, procs, (code,), snapshot
-                )
-                if d.code == code
-            ]
-        if code in {"BSL192", "BSL193", "BSL194", "BSL228", "BSL266"}:
-            return [
-                d
-                for d in engine._rule_bsl192_193_194_228_266_method_contract_diagnostics(
-                    context.path, context.lines, procs, (code,)
-                )
-                if d.code == code
-            ]
-        if code in {"BSL171", "BSL204", "BSL217", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
-            return [
-                d
-                for d in engine._rule_bsl171_204_217_248_251_252_259_268_light_pool(
-                    context.path,
-                    context.content,
-                    context.lines,
-                    context.tree,
-                    procs,
-                    (code,),
-                )
-                if d.code == code
-            ]
-        if code in {"BSL189", "BSL211", "BSL213", "BSL214", "BSL231", "BSL232", "BSL241", "BSL242", "BSL246", "BSL274"}:
-            return [
-                d
-                for d in engine._rule_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
-                    context.path,
-                    context.lines,
-                    procs,
-                    (code,),
-                    snapshot,
-                )
-                if d.code == code
-            ]
-        if code in {"BSL244", "BSL253", "BSL261"}:
-            return [
-                d
-                for d in engine._rule_bsl244_253_261_runtime_pool(
-                    context.path,
-                    context.lines,
-                    procs,
-                    (code,),
-                    snapshot,
-                )
-                if d.code == code
-            ]
-        if code in {"BSL221", "BSL222", "BSL239", "BSL271"}:
-            return [
-                d
-                for d in engine._rule_bsl221_222_239_271_light_pool(
-                    context.path,
-                    context.lines,
-                    context.tree,
-                    procs,
-                    ("BSL221", "BSL222", "BSL239", "BSL271"),
-                    snapshot,
-                )
-                if d.code == code
-            ]
-        if code == "BSL224":
-            return engine._rule_bsl224_nested_function_in_parameters(
-                context.path, context.lines, context.tree
-            )
-        if code in {"BSL229", "BSL275", "BSL278"}:
-            return [d for d in engine._rule_bsl229_275_278_local_xml_pool(context.path, context.lines, procs, ("BSL229", "BSL275", "BSL278")) if d.code == code]
-        if code == "BSL233":
-            return engine._rule_bsl233_public_methods_description(context.path, context.lines, procs)
-        if code == "BSL234":
-            return engine._rule_bsl234_query_nested_fields_by_dot(context.path, context.lines)
-        if code == "BSL237":
-            return engine._rule_bsl237_redundant_access_to_object(context.path, context.lines)
-        if code == "BSL240":
-            return engine._rule_bsl240_rewrite_method_parameter(
-                context.path, context.lines, procs, context.tree, _proc_node_map()
-            )
-        if code == "BSL245":
-            return engine._rule_bsl245_server_side_export_form_method(context.path, context.lines, procs)
-        if code == "BSL254":
-            return engine._rule_bsl254_transferring_parameters(context.path, context.lines, procs)
-        if code == "BSL256":
-            return engine._rule_bsl256_bslls_typo_spellcheck(context.path, context.tree)
-        return []
+            if diag.code == self.code
+        ]
+
+
+class MissingVariablesDescriptionRule(BsllsDiagnosticRule):
+    code = "BSL219"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        procs = list(getattr(context.snapshot, "procedures", []) or [])
+        return context.diagnostics_engine._rule_bsl219_missing_variables_description(
+            context.path,
+            context.lines,
+            procs,
+            context.snapshot,
+        )
