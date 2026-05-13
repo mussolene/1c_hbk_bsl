@@ -3138,13 +3138,15 @@ def _bsl149_append_missing_alias_diags(
     field_region = _bsl149_strip_leading_select_modifiers(field_region)
     if not field_region:
         return
-    for seg in field_region.split(","):
+    for seg in split_commas_outside_double_quotes(field_region):
         field = seg.strip().rstrip('";')
         if not field or field == "*" or re.match(r"^\w+\.\*$", field, re.UNICODE):
             continue
         # Multi-line CASE expressions are often split by query continuation lines.
         # Skip intermediate CASE fragments; final line with alias is validated normally.
         if _RE_BSL149_CASE_PART.match(field):
+            continue
+        if re.search(r"\b(?:ВЫБОР|CASE)\b", field, re.IGNORECASE):
             continue
         # WHERE/JOIN condition fragments (`И ...` / `ИЛИ ...`) are not SELECT fields.
         if re.match(r"^(?:И|ИЛИ|AND|OR)\b", field, re.IGNORECASE):

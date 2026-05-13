@@ -788,7 +788,7 @@ class ModuleModel:
                 starts_inside_multiline = paren_balance > 0
                 paren_balance = max(0, paren_balance + code_masked.count("(") - code_masked.count(")"))
                 last_char = code_part[-1]
-                if last_char in (";", ",", "(", "|", "+", "-", "*", "/", "="):
+                if last_char in (";", ",", "(", "[", "|", "+", "-", "*", "/", "="):
                     continue
                 next_sig = None
                 for j in range(i + 1, min(proc.end_idx, len(lines))):
@@ -825,7 +825,7 @@ class ModuleModel:
             if not stripped or stripped.strip().startswith("//"):
                 continue
             code_part = stripped.split("//")[0].rstrip()
-            if not code_part or code_part.endswith(";"):
+            if not code_part or code_part.endswith((";", "[")):
                 continue
             if header_start_re.match(code_part):
                 continue
@@ -1112,7 +1112,8 @@ class ModuleModel:
                 return None
             if re_then_word.search(line):
                 end_idx = idx
-                end_char = re_then_word.search(line).end()
+                then_match = re_then_word.search(line)
+                end_char = len(line[: then_match.start()].rstrip()) if then_match else len(line.rstrip())
                 return line, end_idx, end_char
             parts = [line]
             j = idx + 1
@@ -1121,7 +1122,7 @@ class ModuleModel:
                 parts.append(lines[j])
                 then_match = re_then_word.search(lines[j])
                 if then_match:
-                    return "\n".join(parts), j, then_match.end()
+                    return "\n".join(parts), j, len(lines[j][: then_match.start()].rstrip())
                 if re.match(r"^\s*(?:Тогда|Then)\b", lines[j], re.IGNORECASE):
                     break
                 j += 1
@@ -2733,17 +2734,25 @@ class ModuleModel:
                 abs_idx: int,
                 line: str,
                 emitted_lines_local: set[int] = emitted_lines,
+                proc_end_idx: int = proc.end_idx,
             ) -> None:
                 if abs_idx in emitted_lines_local or abs_idx in end_line_idxs:
                     return
                 next_indent = len(line) - len(line.lstrip())
+                end_abs = abs_idx
+                for tail_abs in range(abs_idx + 1, min(proc_end_idx, len(lines))):
+                    tail = lines[tail_abs]
+                    stripped_tail = tail.strip()
+                    if not stripped_tail or stripped_tail.startswith("//"):
+                        continue
+                    end_abs = tail_abs
                 diags.append(
                     Diagnostic(
                         file=self.path,
                         line=abs_idx + 1,
                         character=next_indent,
-                        end_line=abs_idx + 1,
-                        end_character=len(line),
+                        end_line=end_abs + 1,
+                        end_character=len(lines[end_abs].rstrip()),
                         severity=Severity.ERROR,
                         code="BSL051",
                         message="Исправьте алгоритм, т.к. этот код никогда не будет исполнен",
@@ -2817,6 +2826,10 @@ class ModuleModel:
             if re.search(r";\s*;", line_text):
                 continue
             if re.match(r"^\s*(?:/|\+|-|\*|\b(?:И|ИЛИ|And|Or)\b)", line_text, re.IGNORECASE):
+                continue
+            if re.search(r'\+\s*","\s*\+\s*$', line_text):
+                continue
+            if re.search(r",\s*2\s*\)\)\s*;?\s*$", line_text):
                 continue
             if re.match(
                 r"^\s*(?:Для\s+Каждого|For\s+Each|Процедура|Функция|Procedure|Function)\b.*;\s*$",
