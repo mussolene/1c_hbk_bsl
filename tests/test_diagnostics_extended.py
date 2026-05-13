@@ -1496,10 +1496,34 @@ class TestBsl013CommentedCode:
         assert len(bsl013) >= 1
 
     def test_single_comment_no_warning(self, tmp_path: Path) -> None:
-        """A single comment line is not enough to trigger the rule."""
         content = """\
             // TODO: реализовать
             Процедура Тест()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        assert "BSL013" not in _codes(diags)
+
+    def test_single_commented_expression_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = НСтр("ru='До '") +
+                //НСтр("ru='Закомментировано '") +
+                НСтр("ru='После'");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        bsl013 = [d for d in diags if d.code == "BSL013"]
+        assert len(bsl013) == 1
+        assert bsl013[0].line == 3
+        assert bsl013[0].character == 4
+
+    def test_query_keyword_prefix_is_not_code(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                // Изменения в оформлении ячеек: установка значения "НетЛинии" для
+                // свойства "ГраницаСнизу" (в случае задания номеров специальных колонок):
+                Сообщить("OK");
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL013"})

@@ -41,12 +41,31 @@ class ModuleModel:
         lines: list[str],
         *,
         commented_code_re,
-        min_commented_code_block: int,
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
-        consecutive = 0
-        start_line = 0
+        group_start: int | None = None
+        group_end: int | None = None
+        group_has_code = False
         in_query_comment = False
+
+        def add_group() -> None:
+            if group_start is None or group_end is None or not group_has_code:
+                return
+            start_character = lines[group_start].find("//")
+            end_character = len(lines[group_end].rstrip())
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=group_start + 1,
+                    character=max(start_character, 0),
+                    end_line=group_end + 1,
+                    end_character=end_character,
+                    severity=Severity.INFORMATION,
+                    code="BSL013",
+                    message="Программные модули не должны иметь закомментированных фрагментов кода",
+                )
+            )
+
         for idx, line in enumerate(lines):
             comment_text = ""
             if line.lstrip().startswith("//"):
@@ -54,51 +73,24 @@ class ModuleModel:
             is_query_comment = bool(
                 comment_text
                 and re.match(
-                    r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|КАК|И\b|ИЛИ\b)",
+                    r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|КАК|И|ИЛИ)\b",
                     comment_text,
                     re.IGNORECASE,
                 )
             )
-            if commented_code_re.match(line) or (in_query_comment and line.lstrip().startswith("//")):
-                if consecutive == 0:
-                    start_line = idx
-                consecutive += 1
+            if line.lstrip().startswith("//"):
+                if group_start is None:
+                    group_start = idx
+                group_end = idx
+                group_has_code = group_has_code or commented_code_re.match(line) is not None or in_query_comment
                 in_query_comment = in_query_comment or is_query_comment
             else:
-                if consecutive >= min_commented_code_block:
-                    report_start = start_line
-                    while report_start > 0 and lines[report_start - 1].lstrip().startswith("//"):
-                        report_start -= 1
-                    diags.append(
-                        Diagnostic(
-                            file=self.path,
-                            line=report_start + 1,
-                            character=1,
-                            end_line=idx,
-                            end_character=0,
-                            severity=Severity.INFORMATION,
-                            code="BSL013",
-                            message="Программные модули не должны иметь закомментированных фрагментов кода",
-                        )
-                    )
-                consecutive = 0
+                add_group()
+                group_start = None
+                group_end = None
+                group_has_code = False
                 in_query_comment = False
-        if consecutive >= min_commented_code_block:
-            report_start = start_line
-            while report_start > 0 and lines[report_start - 1].lstrip().startswith("//"):
-                report_start -= 1
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=report_start + 1,
-                    character=1,
-                    end_line=len(lines),
-                    end_character=0,
-                    severity=Severity.INFORMATION,
-                    code="BSL013",
-                    message="Программные модули не должны иметь закомментированных фрагментов кода",
-                )
-            )
+        add_group()
         return diags
 
     def validate_line_too_long(

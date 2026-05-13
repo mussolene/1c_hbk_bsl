@@ -108,7 +108,6 @@ class DiagnosticEngine:
     MAX_PARAMS: int = 7
     MAX_BOOL_OPS: int = 3
     MIN_DUPLICATE_USES: int = 3
-    MIN_COMMENTED_CODE_BLOCK: int = 2
     MAX_MODULE_LINES: int = 1000
 
     def __init__(

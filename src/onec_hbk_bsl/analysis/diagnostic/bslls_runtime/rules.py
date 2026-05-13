@@ -4847,7 +4847,6 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return model.validate_commented_code(
                 context.lines,
                 commented_code_re=_diag._RE_COMMENTED_CODE,
-                min_commented_code_block=engine.MIN_COMMENTED_CODE_BLOCK,
             )
         if code == "BSL014":
             return model.validate_line_too_long(

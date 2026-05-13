@@ -4165,6 +4165,7 @@ _RE_COMMENTED_CODE = re.compile(
     r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Перем"
     r"|Function|Procedure|EndProcedure|EndFunction|Var)\b"
     r"|(?:ВЫБРАТЬ|SELECT)\b"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\("
     # OR a line that looks like a statement (ends with ; or contains :=)
     r"|\w.*(?:;|:=)"
     r")",
