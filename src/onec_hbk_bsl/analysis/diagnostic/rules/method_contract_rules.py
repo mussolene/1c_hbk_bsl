@@ -47,6 +47,14 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                 )
             )
 
+        def param_list_span(proc_start_idx: int, fallback_start: int, fallback_end: int) -> tuple[int, int]:
+            header_line = lines[proc_start_idx] if 0 <= proc_start_idx < len(lines) else ""
+            open_paren = header_line.find("(")
+            close_paren = header_line.rfind(")")
+            if open_paren >= 0 and close_paren > open_paren:
+                return open_paren + 1, close_paren
+            return fallback_start, fallback_end
+
         if "BSL228" in enabled and proc.optional_params:
             seen_optional = False
             for param in proc.params:
@@ -54,16 +62,17 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                     seen_optional = True
                     continue
                 if seen_optional:
+                    param_start, param_end = param_list_span(proc.start_idx, start_char, end_char)
                     diags.append(
                         _diag.Diagnostic(
                             file=path,
                             line=proc.start_idx + 1,
-                            character=start_char,
+                            character=param_start,
                             end_line=proc.start_idx + 1,
-                            end_character=end_char,
-                            severity=_diag.Severity.INFORMATION,
+                            end_character=param_end,
+                            severity=_diag.Severity.WARNING,
                             code="BSL228",
-                            message="Порядок параметров метода не соответствует соглашению",
+                            message="Переместите необязательные параметры после обязательных",
                         )
                     )
                     break

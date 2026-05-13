@@ -1074,6 +1074,23 @@ class TestBsl204InvalidCharacterInFile:
         assert bsl204[0].end_character == content.splitlines()[1].rindex('"') + 1
 
 
+class TestBsl228OrderOfParams:
+    def test_reports_parameter_list_range(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(Знач Парам1 = Неопределено, Знач Парам2)
+                Возврат Парам2;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL228"})
+        bsl228 = [d for d in diags if d.code == "BSL228"]
+        assert len(bsl228) == 1
+        line = "Функция Тест(Знач Парам1 = Неопределено, Знач Парам2)"
+        assert bsl228[0].severity == Severity.WARNING
+        assert bsl228[0].message == "Переместите необязательные параметры после обязательных"
+        assert bsl228[0].character == line.index("(") + 1
+        assert bsl228[0].end_character == line.rindex(")")
+
+
 # ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------
