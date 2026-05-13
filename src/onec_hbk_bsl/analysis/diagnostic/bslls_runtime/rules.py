@@ -4088,7 +4088,7 @@ class MethodContractDiagnosticsRule(BsllsDiagnosticRule):
         snapshot = context.snapshot
         procs = list(getattr(snapshot, "procedures", []) or [])
 
-        if code in {"BSL192", "BSL193", "BSL194", "BSL228"}:
+        if code in {"BSL192", "BSL193", "BSL194", "BSL228", "BSL266"}:
             return run_bsl192_193_194_228_266_method_contract_diagnostics(
                 context.path,
                 context.lines,
@@ -4160,6 +4160,125 @@ class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
             procs,
             (code,),
             context.lines,
+        )
+
+
+class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        code = self.code
+        engine = context.diagnostics_engine
+        snapshot = context.snapshot
+        procs = list(getattr(snapshot, "procedures", []) or [])
+
+        if code in {"BSL169", "BSL170", "BSL181", "BSL182", "BSL196", "BSL260"}:
+            return [
+                diag
+                for diag in engine._rule_bsl169_170_181_182_196_260_light_pool(
+                    context.path,
+                    context.lines,
+                    procs,
+                    (code,),
+                    snapshot,
+                )
+                if diag.code == code
+            ]
+        if code in {"BSL171", "BSL204", "BSL217", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
+            return [
+                diag
+                for diag in engine._rule_bsl171_204_217_248_251_252_259_268_light_pool(
+                    context.path,
+                    context.content,
+                    context.lines,
+                    context.tree,
+                    procs,
+                    (code,),
+                )
+                if diag.code == code
+            ]
+        if code in {"BSL202", "BSL223", "BSL243", "BSL249"}:
+            return [
+                diag
+                for diag in engine._rule_bsl202_205_223_243_249_light_call_pool(
+                    context.path,
+                    context.lines,
+                    context.tree,
+                    (code,),
+                    snapshot,
+                )
+                if diag.code == code
+            ]
+        return [
+            diag
+            for diag in engine._rule_bsl221_222_239_271_light_pool(
+                context.path,
+                context.lines,
+                context.tree,
+                procs,
+                (code,),
+                snapshot,
+            )
+            if diag.code == code
+        ]
+
+
+class LocalXmlDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        procs = list(getattr(context.snapshot, "procedures", []) or [])
+        return [
+            diag
+            for diag in context.diagnostics_engine._rule_bsl229_275_278_local_xml_pool(
+                context.path,
+                context.lines,
+                procs,
+                (self.code,),
+            )
+            if diag.code == self.code
+        ]
+
+
+class QueryRuntimeDiagnosticsRule(BsllsDiagnosticRule):
+    def __init__(self, code: str):
+        self.code = code
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
+            run_bsl234_query_nested_fields_by_dot,
+            run_bsl237_redundant_access_to_object,
+            run_bsl245_server_side_export_form_method,
+        )
+
+        if self.code == "BSL234":
+            return run_bsl234_query_nested_fields_by_dot(context.path, context.lines)
+        if self.code == "BSL237":
+            return run_bsl237_redundant_access_to_object(context.path, context.lines)
+        procs = list(getattr(context.snapshot, "procedures", []) or [])
+        return run_bsl245_server_side_export_form_method(context.path, context.lines, procs)
+
+
+class MissingSpaceRuntimeRule(BsllsDiagnosticRule):
+    code = "BSL216"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        return context.diagnostics_engine._rule_bsl216_missing_space(
+            context.path,
+            context.lines,
+            context.snapshot,
+        )
+
+
+class TypoRuntimeRule(BsllsDiagnosticRule):
+    code = "BSL256"
+
+    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        return context.diagnostics_engine._rule_bsl256_bslls_typo_spellcheck(
+            context.path,
+            context.tree,
         )
 
 
