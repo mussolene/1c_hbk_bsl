@@ -4267,10 +4267,31 @@ class MissingSpaceRuntimeRule(BsllsDiagnosticRule):
     code = "BSL216"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        return context.diagnostics_engine._rule_bsl216_missing_space(
-            context.path,
-            context.lines,
-            context.snapshot,
+        model = ModuleModel(path=context.path)
+        return model.validate_missing_space(
+            lines=context.lines,
+            snapshot=context.snapshot,
+            line_comment_re=_diag._RE_LINE_COMMENT,
+            build_line_string_states_fn=_diag._build_line_string_states,
+            mask_double_quoted_strings_preserve_len_fn=(
+                _diag._mask_double_quoted_strings_preserve_len
+            ),
+            comment_start_outside_double_quotes_fn=_diag._comment_start_outside_double_quotes,
+            strip_inline_comment_preserve_strings_fn=(
+                _diag._strip_inline_comment_preserve_strings
+            ),
+            proc_header_re=_diag._RE_BSL216_PROC_HEADER,
+            any_keyword_re=_diag._RE_BSL216_ANY_KEYWORD,
+            arithmetic_missing_space_cols_in_line_fn=(
+                _diag._arithmetic_missing_space_cols_in_line
+            ),
+            comma_missing_space_after_cols_in_line_fn=(
+                _diag._comma_missing_space_after_cols_in_line
+            ),
+            semicolon_nospace_re=_diag._RE_BSL216_SEMICOLON_NOSPACE,
+            left_right_keywords_re=_diag._RE_BSL216_LEFT_RIGHT_KEYWORDS,
+            left_keywords_re=_diag._RE_BSL216_LEFT_KEYWORDS,
+            right_keywords_re=_diag._RE_BSL216_RIGHT_KEYWORDS,
         )
 
 
@@ -4278,10 +4299,30 @@ class TypoRuntimeRule(BsllsDiagnosticRule):
     code = "BSL256"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        return context.diagnostics_engine._rule_bsl256_bslls_typo_spellcheck(
-            context.path,
-            context.tree,
+        if not context.diagnostics_engine._rule_enabled("BSL256"):
+            return []
+        root = getattr(context.tree, "root_node", None)
+        if root is None or not hasattr(root, "text"):
+            return []
+        if not isinstance(root.text, (bytes, bytearray)):
+            return []
+        rows = _diag.bslls_typo.spellcheck_typo_diagnostics(
+            path=context.path,
+            tree=context.tree,
         )
+        return [
+            Diagnostic(
+                file=d["file"],
+                line=d["line"],
+                character=d["character"],
+                end_line=d["end_line"],
+                end_character=d["end_character"],
+                severity=Severity.INFORMATION,
+                code=d["code"],
+                message=d["message"],
+            )
+            for d in rows
+        ]
 
 
 class CoreDiagnosticsRule(BsllsDiagnosticRule):
@@ -4660,14 +4701,27 @@ class DeprecatedApiDiagnosticsRule(BsllsDiagnosticRule):
         snapshot = context.snapshot
         symbols = list(getattr(snapshot, "symbols", []) or [])
         calls = list(getattr(snapshot, "calls", []) or [])
+        model = ModuleModel(path=context.path)
         return [
             diag
-            for diag in context.diagnostics_engine._rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
-                context.path,
-                context.lines,
-                symbols,
-                calls,
-                (self.code,),
+            for diag in model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
+                lines=context.lines,
+                symbols=symbols,
+                calls=calls,
+                enabled_codes=(self.code,),
+                line_comment_re=_diag._RE_LINE_COMMENT,
+                bsl176_deprecated_doc_re=_diag._RE_BSL176_DEPRECATED_DOC,
+                mask_double_quoted_strings_preserve_len_fn=(
+                    _diag._mask_double_quoted_strings_preserve_len
+                ),
+                bsl175_attribute_re=_diag._RE_BSL175_ATTRIBUTE,
+                bsl175_attr_replacements=_diag._BSL175_ATTR_REPLACEMENTS,
+                bsl175_method_replacements=_diag._BSL175_METHOD_REPLACEMENTS,
+                bsl175_child_form_items_re=_diag._RE_BSL175_CHILD_FORM_ITEMS,
+                bsl175_enum_replacements=_diag._BSL175_ENUM_REPLACEMENTS,
+                bsl175_enum_name_re=_diag._RE_BSL175_ENUM_NAME,
+                bsl175_global_method_re=_diag._RE_BSL175_GLOBAL_METHOD,
+                bsl175_global_methods=_diag._BSL175_GLOBAL_METHODS,
             )
             if diag.code == self.code
         ]
@@ -4690,14 +4744,21 @@ class LatinCyrillicRuntimeRule(BsllsDiagnosticRule):
     code = "BSL208"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        procs = list(getattr(context.snapshot, "procedures", []) or [])
+        model = ModuleModel(path=context.path)
         return [
             diag
-            for diag in context.diagnostics_engine._rule_bsl208_bsl256_latin_cyrillic_and_typo(
-                context.path,
-                context.lines,
-                procs,
-                context.snapshot,
+            for diag in model.validate_bsl208_latin_cyrillic_symbol_in_word(
+                lines=context.lines,
+                snapshot=context.snapshot,
+                rule_enabled_fn=context.diagnostics_engine._rule_enabled,
+                re_double_quoted_string=_diag._RE_DOUBLE_QUOTED_STRING,
+                re_bsl208_has_latin=_diag._RE_BSL208_HAS_LATIN,
+                re_bsl208_has_cyrillic=_diag._RE_BSL208_HAS_CYRILLIC,
+                re_bsl208_word=_diag._RE_BSL208_WORD,
+                re_bsl208_trailing_lang=_diag._RE_BSL208_TRAILING_LANG,
+                bsl208_word_is_standard_tech_name_fn=(
+                    _diag._bsl208_word_is_standard_tech_name
+                ),
             )
             if diag.code == self.code
         ]

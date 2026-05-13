@@ -900,33 +900,6 @@ class DiagnosticEngine:
     # BSL175 / BSL176 — deprecated API pool
     # ------------------------------------------------------------------
 
-    def _rule_bsl175_176_177_179_195_deprecated_api_diagnostics(
-        self,
-        path: str,
-        lines: list[str],
-        symbols: list[Any],
-        calls: list[Any],
-        enabled_codes: tuple[str, ...],
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
-            lines=lines,
-            symbols=symbols,
-            calls=calls,
-            enabled_codes=enabled_codes,
-            line_comment_re=_RE_LINE_COMMENT,
-            bsl176_deprecated_doc_re=_RE_BSL176_DEPRECATED_DOC,
-            mask_double_quoted_strings_preserve_len_fn=_mask_double_quoted_strings_preserve_len,
-            bsl175_attribute_re=_RE_BSL175_ATTRIBUTE,
-            bsl175_attr_replacements=_BSL175_ATTR_REPLACEMENTS,
-            bsl175_method_replacements=_BSL175_METHOD_REPLACEMENTS,
-            bsl175_child_form_items_re=_RE_BSL175_CHILD_FORM_ITEMS,
-            bsl175_enum_replacements=_BSL175_ENUM_REPLACEMENTS,
-            bsl175_enum_name_re=_RE_BSL175_ENUM_NAME,
-            bsl175_global_method_re=_RE_BSL175_GLOBAL_METHOD,
-            bsl175_global_methods=_BSL175_GLOBAL_METHODS,
-        )
-
     # ------------------------------------------------------------------
     # BSL215 — MissingParameterDescription
     # ------------------------------------------------------------------
@@ -939,31 +912,6 @@ class DiagnosticEngine:
     # BSL216 — MissingSpace
     # ------------------------------------------------------------------
 
-    def _rule_bsl216_missing_space(
-        self,
-        path: str,
-        lines: list[str],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        model = ModuleModel(path=path)
-        return model.validate_missing_space(
-            lines=lines,
-            snapshot=snapshot,
-            line_comment_re=_RE_LINE_COMMENT,
-            build_line_string_states_fn=_build_line_string_states,
-            mask_double_quoted_strings_preserve_len_fn=_mask_double_quoted_strings_preserve_len,
-            comment_start_outside_double_quotes_fn=_comment_start_outside_double_quotes,
-            strip_inline_comment_preserve_strings_fn=_strip_inline_comment_preserve_strings,
-            proc_header_re=_RE_BSL216_PROC_HEADER,
-            any_keyword_re=_RE_BSL216_ANY_KEYWORD,
-            arithmetic_missing_space_cols_in_line_fn=_arithmetic_missing_space_cols_in_line,
-            comma_missing_space_after_cols_in_line_fn=_comma_missing_space_after_cols_in_line,
-            semicolon_nospace_re=_RE_BSL216_SEMICOLON_NOSPACE,
-            left_right_keywords_re=_RE_BSL216_LEFT_RIGHT_KEYWORDS,
-            left_keywords_re=_RE_BSL216_LEFT_KEYWORDS,
-            right_keywords_re=_RE_BSL216_RIGHT_KEYWORDS,
-        )
-
     # ------------------------------------------------------------------
     # BSL254 — TransferringParametersBetweenClientAndServer
     # ------------------------------------------------------------------
@@ -971,56 +919,6 @@ class DiagnosticEngine:
     # BSL208 — LatinAndCyrillicSymbolInWord
     # BSL256 — Typo (BSLLS-style: pyspellchecker + pymorphy3, bundled BSLLS exceptions)
     # ------------------------------------------------------------------
-
-    def _rule_bsl208_bsl256_latin_cyrillic_and_typo(
-        self,
-        path: str,
-        lines: list[str],
-        procs: list[Any],
-        snapshot: DocumentSnapshot | None = None,
-    ) -> list[Diagnostic]:
-        """
-        Mixed Latin/Cyrillic identifiers for **LatinAndCyrillicSymbolInWord** (BSL208).
-
-        Spell-check **Typo** is implemented in :meth:`_rule_bsl256_bslls_typo_spellcheck`
-        (Python-only engine; see :mod:`onec_hbk_bsl.analysis.bslls_typo`).
-        """
-        model = ModuleModel(path=path)
-        return model.validate_bsl208_latin_cyrillic_symbol_in_word(
-            lines=lines,
-            snapshot=snapshot,
-            rule_enabled_fn=self._rule_enabled,
-            re_double_quoted_string=_RE_DOUBLE_QUOTED_STRING,
-            re_bsl208_has_latin=_RE_BSL208_HAS_LATIN,
-            re_bsl208_has_cyrillic=_RE_BSL208_HAS_CYRILLIC,
-            re_bsl208_word=_RE_BSL208_WORD,
-            re_bsl208_trailing_lang=_RE_BSL208_TRAILING_LANG,
-            bsl208_word_is_standard_tech_name_fn=_bsl208_word_is_standard_tech_name,
-        )
-
-    def _rule_bsl256_bslls_typo_spellcheck(self, path: str, tree: Any) -> list[Diagnostic]:
-        """BSLLS-style Typo: bundled ``TypoDiagnostic_ru.properties`` + Python spell/morphology."""
-        if not self._rule_enabled("BSL256"):
-            return []
-        root = getattr(tree, "root_node", None)
-        if root is None or not hasattr(root, "text"):
-            return []
-        if not isinstance(root.text, (bytes, bytearray)):
-            return []
-        rows = bslls_typo.spellcheck_typo_diagnostics(path=path, tree=tree)
-        return [
-            Diagnostic(
-                file=d["file"],
-                line=d["line"],
-                character=d["character"],
-                end_line=d["end_line"],
-                end_character=d["end_character"],
-                severity=Severity.INFORMATION,
-                code=d["code"],
-                message=d["message"],
-            )
-            for d in rows
-        ]
 
     # ------------------------------------------------------------------
     # BSL224 — NestedFunctionInParameters
