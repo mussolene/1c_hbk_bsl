@@ -2057,6 +2057,16 @@ class TestBsl200IncorrectLineBreak:
         diags = _check(content, tmp_path, select={"BSL200"})
         assert "BSL200" in _codes(diags)
 
+    def test_line_starting_with_comma_after_open_string_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Имена.Вставить("Первый"
+                , Второй);
+        """
+        diags = _check(content, tmp_path, select={"BSL200"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags if d.code == "BSL200"] == [
+            (2, 4, 2, 14),
+        ]
+
     def test_query_assignment_before_query_text_is_skipped(self, tmp_path: Path) -> None:
         content = """\
             Запрос.Текст =
@@ -2100,6 +2110,22 @@ class TestBsl200IncorrectLineBreak:
             (102, 2, 102, 3),
             (106, 2, 106, 3),
             (110, 2, 110, 3),
+        ]
+
+
+class TestBsl216MissingSpace:
+    def test_semicolon_before_comment_reports_even_with_comment_slash(self, tmp_path: Path) -> None:
+        content = "ПотокXML.ЗаписатьКонецЭлемента();// \"ФИО\"\n"
+        diags = _check(content, tmp_path, select={"BSL216"})
+        assert [(d.line, d.character, d.message) for d in diags if d.code == "BSL216"] == [
+            (1, 32, "Справа от ';' не хватает пробела"),
+        ]
+
+    def test_comma_before_string_reports_when_plus_is_inside_string(self, tmp_path: Path) -> None:
+        content = 'Результат = ?(Настройки.Погрешность," ± " + Погрешность, "");\n'
+        diags = _check(content, tmp_path, select={"BSL216"})
+        assert [(d.line, d.character, d.message) for d in diags if d.code == "BSL216"] == [
+            (1, 35, "Справа от ',' не хватает пробела"),
         ]
 
 

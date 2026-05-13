@@ -3067,11 +3067,12 @@ class IncorrectLineBreakRule(BsllsDiagnosticRule):
         start = match.start(1)
         end = match.end(1)
         in_comment = comment_start is not None and end >= comment_start
+        token_end = start + 1
         in_string = span_is_inside_double_quoted_string(
             line,
             start,
-            end,
-            in_str_at_start=in_string_at_start,
+            token_end,
+            in_str_at_start=False if line[start:token_end] in ",);" else in_string_at_start,
         )
         if in_comment or in_string:
             return

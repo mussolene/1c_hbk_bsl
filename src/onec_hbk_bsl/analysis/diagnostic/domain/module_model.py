@@ -1228,7 +1228,8 @@ class ModuleModel:
                             diags.append(Diagnostic(file=self.path, line=idx + 1, character=start, end_line=idx + 1, end_character=end, severity=Severity.INFORMATION, code="BSL216", message=msg))
                     pos = end
             if has_arithmetic_ops:
-                for col in arithmetic_missing_space_cols_in_line_fn(line, in_str_start):
+                arithmetic_cols = arithmetic_missing_space_cols_in_line_fn(line, in_str_start)
+                for col in arithmetic_cols:
                     op = line[col]
                     left_missing = col > 0 and line[col - 1] not in " \t"
                     right_missing = col + 1 < len(line) and line[col + 1] not in " \t"
@@ -1239,7 +1240,8 @@ class ModuleModel:
                     else:
                         msg = f"Справа от '{op}' не хватает пробела"
                     diags.append(Diagnostic(file=self.path, line=idx + 1, character=col, end_line=idx + 1, end_character=col + 1, severity=Severity.INFORMATION, code="BSL216", message=msg))
-                continue
+                if arithmetic_cols:
+                    continue
             comma_cols = comma_missing_space_after_cols_in_line_fn(code_no_comments) if has_comma else []
             if has_comma:
                 extra_comma_cols = {m.start() for m in re.finditer(r",(?=\))", code_no_comments)}
