@@ -90,6 +90,43 @@ _RE_COGNITIVE_EXPR_TERMINATOR = re.compile(
 _RE_COGNITIVE_CONTROL_TERMINATOR = re.compile(r"\b(?:Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
 _RE_ASSIGNMENT_CONTINUATION = re.compile(r"[=+\-*/]\s*$")
 _RE_LINE_COMMENT = re.compile(r"^\s*//")
+_RE_CREDENTIALS = re.compile(
+    r"(?:пароль|password|passwd|pwd|secret|credential(?:s)?|token"
+    r'|логин|login|auth|apikey|api_key|accesskey|access_key)\s*=\s*"[^"]{2,}"',
+    re.IGNORECASE,
+)
+_RE_COMMENTED_CODE = re.compile(
+    r"^\s*//\s*(?:"
+    r"(?:(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\([^)]*\)\s*(?:Экспорт|Export)?\s*$"
+    r"|(?:Перем|Var)\s+\w+"
+    r"|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)"
+    r"|(?:ВЫБРАТЬ|SELECT)\b"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\([^)]*\)\s*(?:[+;*/-])"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*="
+    r")",
+    re.IGNORECASE,
+)
+_RE_COMMENTED_QUERY_LINE = re.compile(
+    r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|INTO)\b"
+)
+_RE_COMMENTED_EXAMPLE_MARKER = re.compile(
+    r"^(?:Пример|Example)\s*:",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_COMMENTED_EMBEDDED_CALL = re.compile(
+    r"\b[A-Za-zА-Яа-яЁё_]\w*\s*\(",
+    re.UNICODE,
+)
+_RE_COMMENTED_EMBEDDED_COMPARISON = re.compile(r"(?:<>|<=|>=|=)", re.UNICODE)
+_RE_COMMENTED_EMBEDDED_CASE_TEXT = re.compile(
+    r"""^\s*"[^"]+"\s*-\s+в\s+случае\b""",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_COMMENTED_EMBEDDED_BOOL_TEXT = re.compile(
+    r"^\s*(?:и|или|and|or)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_COMMENTED_INLINE_ASSIGNMENT = re.compile(r"\b\w+\s*=\s*\w+\b", re.UNICODE)
 _RE_BSL200_INCORRECT_START = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
 _RE_BSL200_INCORRECT_END = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
 _RE_BSL216_SEMICOLON_NOSPACE = re.compile(r";(?=\S)")
@@ -321,6 +358,19 @@ def _arithmetic_missing_space_cols_in_line(line: str, in_str_at_start: bool = Fa
     return cols
 
 
+def _comment_looks_like_embedded_code(text: str) -> bool:
+    if not text:
+        return False
+    if _RE_COMMENTED_EMBEDDED_CALL.search(text) is None:
+        return False
+    if _RE_COMMENTED_EMBEDDED_COMPARISON.search(text) is None:
+        return False
+    return (
+        _RE_COMMENTED_EMBEDDED_CASE_TEXT.search(text) is not None
+        or _RE_COMMENTED_EMBEDDED_BOOL_TEXT.search(text) is not None
+    )
+
+
 def _calc_complexity_metrics_from_lines(
     lines: list[str],
     start_idx: int,
@@ -420,6 +470,7 @@ class LineDiagnosticFact:
     character: int
     end_character: int
     message: str
+    end_line_idx: int | None = None
 
 
 @dataclass(frozen=True)
@@ -877,6 +928,8 @@ class DocumentSnapshot:
     )
     _missing_space_facts: list[LineDiagnosticFact] | None = None
     _incorrect_line_break_facts: list[LineDiagnosticFact] | None = None
+    _hardcoded_credential_facts: list[LineDiagnosticFact] | None = None
+    _commented_code_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
 
@@ -1364,6 +1417,110 @@ class DocumentSnapshot:
             end,
             "Проверьте правильность переноса операндов, операторов и параметров",
         )
+
+    @property
+    def hardcoded_credential_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL012 hardcoded credential facts."""
+        if self._hardcoded_credential_facts is not None:
+            return self._hardcoded_credential_facts
+        facts: list[LineDiagnosticFact] = []
+        for idx, line in enumerate(self.lines):
+            if line.strip().startswith("//"):
+                continue
+            match = _RE_CREDENTIALS.search(line)
+            if match is None:
+                continue
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=idx,
+                    character=match.start(),
+                    end_character=match.end(),
+                    message=f"Possible hardcoded credential: {match.group()!r}",
+                )
+            )
+        self._hardcoded_credential_facts = facts
+        return facts
+
+    @property
+    def commented_code_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL013 commented-code facts."""
+        if self._commented_code_facts is not None:
+            return self._commented_code_facts
+
+        facts: list[LineDiagnosticFact] = []
+        group_start: int | None = None
+        group_end: int | None = None
+        group_has_code = False
+        group_has_example_marker = False
+        in_query_comment = False
+
+        def add_group() -> None:
+            nonlocal group_start, group_end, group_has_code, group_has_example_marker
+            if group_start is None or group_end is None or not group_has_code:
+                return
+            if group_has_example_marker:
+                return
+            start_character = self.lines[group_start].find("//")
+            end_character = len(self.lines[group_end].rstrip())
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=group_start,
+                    character=max(start_character, 0),
+                    end_character=end_character,
+                    end_line_idx=group_end,
+                    message="Программные модули не должны иметь закомментированных фрагментов кода",
+                )
+            )
+
+        for idx, line in enumerate(self.lines):
+            comment_text = ""
+            line_is_comment = line.lstrip().startswith("//")
+            if line_is_comment:
+                comment_text = line.lstrip()[2:].strip()
+            is_query_comment = bool(
+                comment_text and _RE_COMMENTED_QUERY_LINE.match(comment_text)
+            )
+            if line_is_comment:
+                if group_start is None:
+                    group_start = idx
+                group_end = idx
+                group_has_example_marker = group_has_example_marker or bool(
+                    _RE_COMMENTED_EXAMPLE_MARKER.match(comment_text)
+                )
+                group_has_code = (
+                    group_has_code
+                    or _RE_COMMENTED_CODE.match(line) is not None
+                    or _comment_looks_like_embedded_code(comment_text)
+                    or in_query_comment
+                )
+                in_query_comment = in_query_comment or is_query_comment
+                continue
+
+            add_group()
+            group_start = None
+            group_end = None
+            group_has_code = False
+            group_has_example_marker = False
+            in_query_comment = False
+            comment_pos = line.find("//")
+            if comment_pos >= 0:
+                inline_comment = line[comment_pos:]
+                if _RE_COMMENTED_INLINE_ASSIGNMENT.search(inline_comment):
+                    facts.append(
+                        LineDiagnosticFact(
+                            line_idx=idx,
+                            character=comment_pos,
+                            end_character=len(line.rstrip()),
+                            message=(
+                                "Программные модули не должны иметь "
+                                "закомментированных фрагментов кода"
+                            ),
+                        )
+                    )
+
+        add_group()
+        self._commented_code_facts = facts
+        return facts
 
     def line_too_long_facts(self, max_line_length: int) -> list[LineDiagnosticFact]:
         """Return cached BSL014 line-length facts for the configured limit."""

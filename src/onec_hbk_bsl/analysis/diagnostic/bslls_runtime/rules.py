@@ -4839,15 +4839,35 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 )
             return diags
         if code == "BSL012":
-            return model.validate_hardcoded_credentials(
-                context.lines,
-                credentials_re=_diag._RE_CREDENTIALS,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx) + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.ERROR,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.hardcoded_credential_facts
+            ]
         if code == "BSL013":
-            return model.validate_commented_code(
-                context.lines,
-                commented_code_re=_diag._RE_COMMENTED_CODE,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx) + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.INFORMATION,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.commented_code_facts
+            ]
         if code == "BSL014":
             assert snapshot is not None
             return [

@@ -2351,15 +2351,6 @@ _RE_SELF_ASSIGN = re.compile(
     re.IGNORECASE,
 )
 
-# Hardcoded credentials
-_RE_CREDENTIALS = re.compile(
-    r"(?:пароль|password|passwd|pwd|secret|credential(?:s)?|token"
-    r'|логин|login|auth|apikey|api_key|accesskey|access_key)\s*=\s*"[^"]{2,}"',
-    re.IGNORECASE,
-)
-
-# Commented-out code heuristic — defined below (search for _RE_COMMENTED_CODE second definition)
-
 def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool = False) -> str:
     if not in_string_at_start and '"' not in line and "//" not in line:
         return line
@@ -4020,20 +4011,6 @@ _RE_MIXED_IDENT = re.compile(
 _RE_BREAK = re.compile(r"^\s*(?:Прервать|Break)\s*;", re.IGNORECASE)
 
 _RE_CONTINUE = re.compile(r"^\s*(?:Продолжить|Continue)\s*;", re.IGNORECASE)
-
-_RE_COMMENTED_CODE = re.compile(
-    r"^\s*//\s*(?:"
-    # Strong BSL declarations / terminators. Declaration openers require a
-    # callable/variable shape so prose like "// Процедура формирует..." stays documentation.
-    r"(?:(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\([^)]*\)\s*(?:Экспорт|Export)?\s*$"
-    r"|(?:Перем|Var)\s+\w+"
-    r"|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)"
-    r"|(?:ВЫБРАТЬ|SELECT)\b"
-    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\([^)]*\)\s*(?:[+;*/-])"
-    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*="
-    r")",
-    re.IGNORECASE,
-)
 
 _RE_HARDCODED_PATH = re.compile(
     r'"(?:[A-Za-z]:\\|/(?:home|usr|etc|var|opt|tmp)/)[^"]*"',
