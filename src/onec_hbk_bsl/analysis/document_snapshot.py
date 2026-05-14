@@ -127,6 +127,10 @@ _RE_COMMENTED_EMBEDDED_BOOL_TEXT = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _RE_COMMENTED_INLINE_ASSIGNMENT = re.compile(r"\b\w+\s*=\s*\w+\b", re.UNICODE)
+_RE_REGION_EMPTY_CODE = re.compile(
+    r"^\s*(?!//|#(?:Область|Region|КонецОбласти|EndRegion))\S",
+    re.IGNORECASE,
+)
 _RE_BSL200_INCORRECT_START = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
 _RE_BSL200_INCORRECT_END = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
 _RE_BSL216_SEMICOLON_NOSPACE = re.compile(r";(?=\S)")
@@ -149,6 +153,118 @@ _BINARY_LHS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
     "0123456789_)]\"|'"
+)
+_STANDARD_REGIONS_BY_KIND: dict[str, frozenset[str]] = {
+    "manager": frozenset(
+        {
+            "программныйинтерфейс",
+            "служебныйпрограммныйинтерфейс",
+            "служебныепроцедурыифункции",
+            "обработчикисобытий",
+            "инициализация",
+            "public",
+            "internal",
+            "private",
+            "eventhandlers",
+            "initialize",
+        }
+    ),
+    "object": frozenset(
+        {
+            "описаниепеременных",
+            "программныйинтерфейс",
+            "служебныйпрограммныйинтерфейс",
+            "служебныепроцедурыифункции",
+            "обработчикисобытий",
+            "инициализация",
+            "variables",
+            "public",
+            "internal",
+            "private",
+            "eventhandlers",
+            "initialize",
+        }
+    ),
+    "form": frozenset(
+        {
+            "описаниепеременных",
+            "обработчикисобытийформы",
+            "обработчикисобытийэлементовшапкиформы",
+            "обработчикикомандформы",
+            "инициализация",
+            "служебныепроцедурыифункции",
+            "variables",
+            "formeventhandlers",
+            "formheaderitemseventhandlers",
+            "formcommandseventhandlers",
+            "initialize",
+            "private",
+        }
+    ),
+    "form-table-prefix": frozenset(
+        {
+            "обработчикисобытийэлементовтаблицыформы",
+            "formtableitemseventhandlers",
+        }
+    ),
+    "common": frozenset(
+        {
+            "программныйинтерфейс",
+            "служебныйпрограммныйинтерфейс",
+            "служебныепроцедурыифункции",
+            "public",
+            "internal",
+            "private",
+        }
+    ),
+    "application": frozenset(
+        {
+            "описаниепеременных",
+            "программныйинтерфейс",
+            "обработчикисобытий",
+            "служебныепроцедурыифункции",
+            "variables",
+            "public",
+            "eventhandlers",
+            "private",
+        }
+    ),
+    "service": frozenset(
+        {
+            "обработчикисобытий",
+            "служебныепроцедурыифункции",
+            "eventhandlers",
+            "private",
+        }
+    ),
+    "external-connection": frozenset(
+        {
+            "программныйинтерфейс",
+            "обработчикисобытий",
+            "служебныепроцедурыифункции",
+            "public",
+            "eventhandlers",
+            "private",
+        }
+    ),
+}
+_DUPLICATE_REGION_ALIASES = {
+    "программныйинтерфейс": "public",
+    "публичный": "public",
+    "public": "public",
+    "служебныйпрограммныйинтерфейс": "internal",
+    "служебный": "internal",
+    "internal": "internal",
+    "служебныепроцедурыифункции": "private",
+    "приватный": "private",
+    "private": "private",
+    "обработчикисобытий": "eventhandlers",
+    "eventhandlers": "eventhandlers",
+    "обработчикисобытийформы": "formeventhandlers",
+    "formeventhandlers": "formeventhandlers",
+}
+_STANDARD_DUPLICATE_REGION_ALIASES = frozenset(
+    {"public", "internal", "private", "eventhandlers", "formeventhandlers"}
 )
 _MCCABE_GROUPING_KEYWORDS = frozenset(
     {
@@ -369,6 +485,47 @@ def _comment_looks_like_embedded_code(text: str) -> bool:
         _RE_COMMENTED_EMBEDDED_CASE_TEXT.search(text) is not None
         or _RE_COMMENTED_EMBEDDED_BOOL_TEXT.search(text) is not None
     )
+
+
+def _standard_regions_for_path(path: str) -> frozenset[str]:
+    low = path.replace("\\", "/").lower()
+    if "/forms/" in low and low.endswith("/form/module.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["form"]
+    if low.endswith("/ext/managermodule.bsl") or low.endswith("managermodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["manager"]
+    if low.endswith("/ext/objectmodule.bsl") or low.endswith("objectmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["object"]
+    if low.endswith("/ext/recordsetmodule.bsl") or low.endswith("recordsetmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["object"]
+    if "/commonmodules/" in low:
+        return _STANDARD_REGIONS_BY_KIND["common"]
+    if low.endswith("applicationmodule.bsl") or low.endswith("managedapplicationmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["application"]
+    if low.endswith("ordinaryapplicationmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["application"]
+    if low.endswith("commandmodule.bsl") or low.endswith("sessionmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["service"]
+    if low.endswith("httpservicemodule.bsl") or low.endswith("webservicemodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["service"]
+    if low.endswith("externalconnectionmodule.bsl"):
+        return _STANDARD_REGIONS_BY_KIND["external-connection"]
+    return frozenset()
+
+
+def _is_standard_region_name_for_path(path: str, region_name: str) -> bool:
+    name = region_name.strip().lower()
+    allowed = _standard_regions_for_path(path)
+    if not allowed:
+        return True
+    if name in allowed:
+        return True
+    table_prefixes = _STANDARD_REGIONS_BY_KIND["form-table-prefix"]
+    return any(name.startswith(prefix) for prefix in table_prefixes)
+
+
+def _normalize_duplicate_region_name(name: str) -> str:
+    raw = re.sub(r"\s+", "", name).casefold()
+    return _DUPLICATE_REGION_ALIASES.get(raw, raw)
 
 
 def _calc_complexity_metrics_from_lines(
@@ -930,6 +1087,9 @@ class DocumentSnapshot:
     _incorrect_line_break_facts: list[LineDiagnosticFact] | None = None
     _hardcoded_credential_facts: list[LineDiagnosticFact] | None = None
     _commented_code_facts: list[LineDiagnosticFact] | None = None
+    _non_standard_region_facts: list[LineDiagnosticFact] | None = None
+    _empty_region_facts: list[LineDiagnosticFact] | None = None
+    _duplicate_region_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
 
@@ -1521,6 +1681,101 @@ class DocumentSnapshot:
         add_group()
         self._commented_code_facts = facts
         return facts
+
+    @property
+    def non_standard_region_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL016 non-standard region facts."""
+        if self._non_standard_region_facts is not None:
+            return self._non_standard_region_facts
+        allowed = _standard_regions_for_path(self.path)
+        if not allowed or not self.regions:
+            self._non_standard_region_facts = []
+            return self._non_standard_region_facts
+
+        facts: list[LineDiagnosticFact] = []
+        for region in self.regions:
+            if _is_standard_region_name_for_path(self.path, region.name):
+                continue
+            line_idx = region.start_idx
+            line_text = self.lines[line_idx] if line_idx < len(self.lines) else ""
+            start_char = 1 if line_text.startswith("#") else 0
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=line_idx,
+                    character=start_char,
+                    end_character=len(line_text),
+                    message=f'Нужно удалить нестандартный раздел "{region.name}"',
+                )
+            )
+        self._non_standard_region_facts = facts
+        return facts
+
+    @property
+    def empty_region_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL026 empty region facts."""
+        if self._empty_region_facts is not None:
+            return self._empty_region_facts
+        facts: list[LineDiagnosticFact] = []
+        for region in self.regions:
+            has_code = False
+            for line_idx in range(region.start_idx + 1, min(region.end_idx, len(self.lines))):
+                if _RE_REGION_EMPTY_CODE.match(self.lines[line_idx]):
+                    has_code = True
+                    break
+            if has_code:
+                continue
+            line_idx = region.start_idx
+            line_text = self.lines[line_idx] if line_idx < len(self.lines) else ""
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=line_idx,
+                    character=0,
+                    end_character=len(line_text),
+                    message=f'Область "{region.name}" не содержит функций или процедур',
+                )
+            )
+        self._empty_region_facts = facts
+        return facts
+
+    @property
+    def duplicate_region_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL131 duplicate region facts."""
+        if self._duplicate_region_facts is not None:
+            return self._duplicate_region_facts
+
+        facts: list[LineDiagnosticFact] = []
+        seen: dict[str, RegionInfo] = {}
+        for region in self.regions:
+            key = _normalize_duplicate_region_name(region.name)
+            if not key:
+                continue
+            if key not in seen:
+                seen[key] = region
+                continue
+            prev = seen[key]
+            if key not in _STANDARD_DUPLICATE_REGION_ALIASES and not self._region_is_empty(prev):
+                seen[key] = region
+                continue
+            line = self.lines[region.start_idx] if 0 <= region.start_idx < len(self.lines) else ""
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=region.start_idx,
+                    character=len(line) - len(line.lstrip()),
+                    end_character=len(line.rstrip()),
+                    message=f'Нужно удалить дубли раздела "{region.name}"',
+                )
+            )
+            seen[key] = region
+        self._duplicate_region_facts = facts
+        return facts
+
+    def _region_is_empty(self, region: RegionInfo) -> bool:
+        for line_idx in range(region.start_idx + 1, min(region.end_idx, len(self.lines))):
+            stripped = self.lines[line_idx].strip()
+            if not stripped or stripped.startswith("//") or stripped.startswith("#"):
+                continue
+            return False
+        return True
 
     def line_too_long_facts(self, max_line_length: int) -> list[LineDiagnosticFact]:
         """Return cached BSL014 line-length facts for the configured limit."""

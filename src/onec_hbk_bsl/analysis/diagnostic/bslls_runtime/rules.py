@@ -4895,12 +4895,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 )
             return diags
         if code == "BSL016":
-            return model.validate_non_standard_regions(
-                context.lines,
-                regions=regions,
-                standard_regions_for_path=_diag._standard_regions_for_path,
-                is_standard_region_name_for_path=_diag._is_standard_region_name_for_path,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.INFORMATION,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.non_standard_region_facts
+            ]
         if code == "BSL017":
             return model.validate_export_in_command_or_form_module(context.lines, procs=procs)
         if code == "BSL019":
@@ -4935,7 +4943,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 is_typical_client_command_handler=_diag._is_typical_client_command_handler,
             )
         if code == "BSL026":
-            return model.validate_empty_regions(context.lines, regions=regions)
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.INFORMATION,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.empty_region_facts
+            ]
         if code == "BSL028":
             diags = []
             for proc in procs:
@@ -5141,7 +5162,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 query_order_by_re=_diag._RE_QUERY_ORDER_BY,
             )
         if code == "BSL131":
-            return model.validate_duplicate_regions(context.lines, regions=regions)
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.INFORMATION,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.duplicate_region_facts
+            ]
         return model.validate_function_paths_return(
             tree=context.tree,
             bsl148_function_name_spans=_diag.bsl148_function_name_spans,
