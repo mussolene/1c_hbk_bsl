@@ -78,45 +78,6 @@ class ModuleModel:
             )
         return diags
 
-    def validate_module_variables_description(
-        self,
-        lines: list[str],
-        *,
-        procs: list[ProcInfo],
-        var_module_re,
-        clean_lines: list[str],
-        has_preceding_description,
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        inside: set[int] = set()
-        for proc in procs:
-            for i in range(proc.start_idx, proc.end_idx + 1):
-                inside.add(i)
-        for idx, _line in enumerate(lines):
-            if idx in inside:
-                continue
-            code_part = clean_lines[idx].rstrip()
-            if not code_part.strip():
-                continue
-            m = var_module_re.match(code_part)
-            if not m:
-                continue
-            if has_preceding_description(lines, idx):
-                continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=idx + 1,
-                    character=m.start("names"),
-                    end_line=idx + 1,
-                    end_character=len(code_part.rstrip().rstrip(";").rstrip()),
-                    severity=Severity.INFORMATION,
-                    code="BSL219",
-                    message="Добавьте описание переменной",
-                )
-            )
-        return diags
-
     def validate_self_assign_regex_fallback(
         self, lines: list[str], *, self_assign_re
     ) -> list[Diagnostic]:
@@ -590,91 +551,6 @@ class ModuleModel:
                         message=rule_descriptions_ru["BSL171"],
                     )
                 )
-        return diags
-
-    def validate_invalid_character_in_file(
-        self, *, lines: list[str], illegal_chars: dict[str, str]
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-
-        def string_literal_span_containing(line: str, pos: int) -> tuple[int, int] | None:
-            idx = 0
-            while idx < len(line):
-                if line[idx] != '"':
-                    idx += 1
-                    continue
-                start = idx
-                idx += 1
-                while idx < len(line):
-                    if line[idx] == '"':
-                        if idx + 1 < len(line) and line[idx + 1] == '"':
-                            idx += 2
-                            continue
-                        end = idx + 1
-                        if start <= pos < end:
-                            return start, end
-                        idx = end
-                        break
-                    idx += 1
-                else:
-                    if start <= pos < len(line):
-                        return start, len(line.rstrip())
-            return None
-
-        for line_idx, line in enumerate(lines, start=1):
-            hit = next(
-                ((pos, illegal_chars[ch]) for pos, ch in enumerate(line) if ch in illegal_chars),
-                None,
-            )
-            if hit is None:
-                continue
-            pos, message = hit
-            string_span = string_literal_span_containing(line, pos)
-            if string_span is None:
-                anchor = len(line) - len(line.lstrip())
-                end_character = len(line.rstrip())
-            else:
-                anchor, end_character = string_span
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=line_idx,
-                    character=anchor,
-                    end_line=line_idx,
-                    end_character=end_character,
-                    severity=Severity.ERROR,
-                    code="BSL204",
-                    message=message,
-                )
-            )
-        return diags
-
-    def validate_form_data_to_value(
-        self, *, lines: list[str], line_comment_re, double_quoted_string_re, bsl190_form_data_re
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line_comment_re.match(line):
-                continue
-            clean = double_quoted_string_re.sub('""', line)
-            comment_pos = clean.find("//")
-            if comment_pos >= 0:
-                clean = clean[:comment_pos]
-            m = bsl190_form_data_re.search(clean)
-            if not m:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=idx + 1,
-                    character=m.start(),
-                    end_line=idx + 1,
-                    end_character=m.end(),
-                    severity=Severity.INFORMATION,
-                    code="BSL190",
-                    message="Не рекомендуемое использование метода ДанныеФормыВЗначение",
-                )
-            )
         return diags
 
     def validate_ternary_operator_usage(
@@ -1601,10 +1477,9 @@ class ModuleModel:
 
         return diags
 
-    def validate_bsl171_204_217_248_251_252_259_268_light_pool(
+    def validate_bsl171_217_248_251_252_259_268_light_pool(
         self,
         *,
-        content: str,
         lines: list[str],
         tree: Any,
         procs: list[ProcInfo],
@@ -1612,7 +1487,6 @@ class ModuleModel:
         rule_enabled_fn,
         ts_nodes_for_types_fn,
         rule_bsl171_fn,
-        rule_bsl204_fn,
         rule_bsl217_fn,
         rule_bsl248_fn,
         rule_bsl251_fn,
@@ -1644,8 +1518,6 @@ class ModuleModel:
                     self.path, lines, tree if tree_ok else None, typed_nodes.get("ERROR")
                 )
             )
-        if "BSL204" in enabled:
-            diags.extend(rule_bsl204_fn(self.path, content, lines))
         if "BSL217" in enabled:
             diags.extend(
                 rule_bsl217_fn(

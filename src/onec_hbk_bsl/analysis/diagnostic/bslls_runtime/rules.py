@@ -4367,17 +4367,6 @@ def _run_bsl171_crazy_multiline_string(
     )
 
 
-def _run_bsl204_invalid_character_in_file(
-    path: str, content: str, lines: list[str]
-) -> list[Diagnostic]:
-    _ = content
-    model = ModuleModel(path=path)
-    return model.validate_invalid_character_in_file(
-        lines=lines,
-        illegal_chars=_diag._BSL204_ILLEGAL_CHARS,
-    )
-
-
 def _run_bsl217_missing_temp_storage_deletion(
     path: str,
     lines: list[str],
@@ -4579,11 +4568,25 @@ class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
                 )
                 if diag.code == code
             ]
-        if code in {"BSL171", "BSL204", "BSL217", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
+        if code == "BSL204":
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.ERROR,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.invalid_character_facts
+            ]
+        if code in {"BSL171", "BSL217", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
             return [
                 diag
-                for diag in model.validate_bsl171_204_217_248_251_252_259_268_light_pool(
-                    content=context.content,
+                for diag in model.validate_bsl171_217_248_251_252_259_268_light_pool(
                     lines=context.lines,
                     tree=context.tree,
                     procs=procs,
@@ -4591,7 +4594,6 @@ class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
                     rule_enabled_fn=engine._rule_enabled,
                     ts_nodes_for_types_fn=engine._ts_nodes_for_types,
                     rule_bsl171_fn=_run_bsl171_crazy_multiline_string,
-                    rule_bsl204_fn=_run_bsl204_invalid_character_in_file,
                     rule_bsl217_fn=_run_bsl217_missing_temp_storage_deletion,
                     rule_bsl248_fn=_run_bsl248_several_compiler_directives,
                     rule_bsl251_fn=_run_bsl251_ternary_operator_usage,
@@ -5260,13 +5262,20 @@ class FormDataToValueRule(BsllsDiagnosticRule):
     code = "BSL190"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        model = context.module_model
-        return model.validate_form_data_to_value(
-            lines=context.lines,
-            line_comment_re=_diag._RE_LINE_COMMENT,
-            double_quoted_string_re=_diag._RE_DOUBLE_QUOTED_STRING,
-            bsl190_form_data_re=_diag._RE_BSL190_FORM_DATA,
-        )
+        assert context.snapshot is not None
+        return [
+            Diagnostic(
+                file=context.path,
+                line=fact.line_idx + 1,
+                character=fact.character,
+                end_line=fact.line_idx + 1,
+                end_character=fact.end_character,
+                severity=Severity.INFORMATION,
+                code=self.code,
+                message=fact.message,
+            )
+            for fact in context.snapshot.form_data_to_value_facts
+        ]
 
 
 class LatinCyrillicRuntimeRule(BsllsDiagnosticRule):
@@ -5295,13 +5304,17 @@ class MissingVariablesDescriptionRule(BsllsDiagnosticRule):
     code = "BSL219"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        procs = list(getattr(context.snapshot, "procedures", []) or [])
-        clean_lines = context.snapshot.code_lines_without_comments
-        model = context.module_model
-        return model.validate_module_variables_description(
-            context.lines,
-            procs=procs,
-            var_module_re=_diag._RE_VAR_MODULE,
-            clean_lines=clean_lines,
-            has_preceding_description=_diag._module_export_var_has_preceding_description,
-        )
+        assert context.snapshot is not None
+        return [
+            Diagnostic(
+                file=context.path,
+                line=fact.line_idx + 1,
+                character=fact.character,
+                end_line=fact.line_idx + 1,
+                end_character=fact.end_character,
+                severity=Severity.INFORMATION,
+                code=self.code,
+                message=fact.message,
+            )
+            for fact in context.snapshot.module_variable_description_facts
+        ]

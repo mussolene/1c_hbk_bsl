@@ -102,6 +102,23 @@ _RE_THIS_FORM = re.compile(
     r"\b(?:ЭтаФорма|ThisForm)\b",
     re.IGNORECASE,
 )
+_RE_BSL190_FORM_DATA = re.compile(
+    r"\b(?:ДанныеФормыВЗначение|FormDataToValue)\s*\(",
+    re.IGNORECASE,
+)
+_RE_VAR_MODULE = re.compile(
+    r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s*(?:Экспорт|Export)?\s*;",
+    re.IGNORECASE,
+)
+_BSL204_ILLEGAL_CHARS = {
+    "\u00ad": 'Нужно исправить на правильный символ "-"',
+    "\u2012": 'Нужно исправить на правильный символ "-"',
+    "\u2013": 'Нужно исправить на правильный символ "-"',
+    "\u2014": 'Нужно исправить на правильный символ "-"',
+    "\u2015": 'Нужно исправить на правильный символ "-"',
+    "\u2212": 'Нужно исправить на правильный символ "-"',
+    "\u00a0": "Нужно заменить символ неразрывного пробела на обычный пробел",
+}
 _RE_COMPLEX_CONDITION_HEAD = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b",
     re.IGNORECASE,
@@ -510,6 +527,43 @@ def _comment_looks_like_embedded_code(text: str) -> bool:
         _RE_COMMENTED_EMBEDDED_CASE_TEXT.search(text) is not None
         or _RE_COMMENTED_EMBEDDED_BOOL_TEXT.search(text) is not None
     )
+
+
+def _double_quoted_span_containing(line: str, pos: int) -> tuple[int, int] | None:
+    idx = 0
+    while idx < len(line):
+        if line[idx] != '"':
+            idx += 1
+            continue
+        start = idx
+        idx += 1
+        while idx < len(line):
+            if line[idx] == '"':
+                if idx + 1 < len(line) and line[idx + 1] == '"':
+                    idx += 2
+                    continue
+                end = idx + 1
+                if start <= pos < end:
+                    return start, end
+                idx = end
+                break
+            idx += 1
+        else:
+            if start <= pos < len(line):
+                return start, len(line.rstrip())
+    return None
+
+
+def _has_preceding_variable_description(lines: list[str], var_line_idx: int) -> bool:
+    prev_idx = var_line_idx - 1
+    if prev_idx < 0:
+        return False
+    stripped = lines[prev_idx].strip()
+    if stripped.startswith("///"):
+        return len(stripped) > 3
+    if stripped.startswith("//"):
+        return len(stripped[2:].strip()) > 0
+    return False
 
 
 def _standard_regions_for_path(path: str) -> frozenset[str]:
@@ -1130,6 +1184,9 @@ class DocumentSnapshot:
     _deprecated_warning_facts: list[LineDiagnosticFact] | None = None
     _command_or_form_export_facts: list[LineDiagnosticFact] | None = None
     _this_form_usage_facts: list[LineDiagnosticFact] | None = None
+    _form_data_to_value_facts: list[LineDiagnosticFact] | None = None
+    _invalid_character_facts: list[LineDiagnosticFact] | None = None
+    _module_variable_description_facts: list[LineDiagnosticFact] | None = None
     _complex_condition_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _select_top_without_order_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
@@ -1908,6 +1965,101 @@ class DocumentSnapshot:
                     )
                 )
         self._this_form_usage_facts = facts
+        return facts
+
+    @property
+    def form_data_to_value_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL190 ДанныеФормыВЗначение/FormDataToValue facts."""
+        if self._form_data_to_value_facts is not None:
+            return self._form_data_to_value_facts
+
+        facts: list[LineDiagnosticFact] = []
+        for idx, line in enumerate(self.lines):
+            if _RE_LINE_COMMENT.match(line):
+                continue
+            clean = self.masked_lines[idx]
+            comment_start = self.comment_starts[idx]
+            if comment_start is not None:
+                clean = clean[:comment_start]
+            match = _RE_BSL190_FORM_DATA.search(clean)
+            if match is None:
+                continue
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=idx,
+                    character=match.start(),
+                    end_character=match.end(),
+                    message="Не рекомендуемое использование метода ДанныеФормыВЗначение",
+                )
+            )
+        self._form_data_to_value_facts = facts
+        return facts
+
+    @property
+    def invalid_character_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL204 invalid-character facts."""
+        if self._invalid_character_facts is not None:
+            return self._invalid_character_facts
+
+        facts: list[LineDiagnosticFact] = []
+        for line_idx, line in enumerate(self.lines):
+            hit = next(
+                (
+                    (pos, _BSL204_ILLEGAL_CHARS[ch])
+                    for pos, ch in enumerate(line)
+                    if ch in _BSL204_ILLEGAL_CHARS
+                ),
+                None,
+            )
+            if hit is None:
+                continue
+            pos, message = hit
+            string_span = _double_quoted_span_containing(line, pos)
+            if string_span is None:
+                anchor = len(line) - len(line.lstrip())
+                end_character = len(line.rstrip())
+            else:
+                anchor, end_character = string_span
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=line_idx,
+                    character=anchor,
+                    end_character=end_character,
+                    message=message,
+                )
+            )
+        self._invalid_character_facts = facts
+        return facts
+
+    @property
+    def module_variable_description_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL219 module-level variable description facts."""
+        if self._module_variable_description_facts is not None:
+            return self._module_variable_description_facts
+
+        inside_procedure_lines: set[int] = set()
+        for proc in self.procedures:
+            inside_procedure_lines.update(range(proc.start_idx, proc.end_idx + 1))
+
+        facts: list[LineDiagnosticFact] = []
+        for idx, clean_line in enumerate(self.code_lines_without_comments):
+            if idx in inside_procedure_lines:
+                continue
+            code_part = clean_line.rstrip()
+            if not code_part.strip():
+                continue
+            match = _RE_VAR_MODULE.match(code_part)
+            if match is None or _has_preceding_variable_description(self.lines, idx):
+                continue
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=idx,
+                    character=match.start("names"),
+                    end_character=len(code_part.rstrip().rstrip(";").rstrip()),
+                    message="Добавьте описание переменной",
+                )
+            )
+        self._module_variable_description_facts = facts
         return facts
 
     def complex_condition_facts(self, max_bool_ops: int) -> list[LineDiagnosticFact]:

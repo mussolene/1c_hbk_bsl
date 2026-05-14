@@ -2323,12 +2323,6 @@ _RE_VAR_LOCAL = re.compile(
     re.IGNORECASE,
 )
 
-# Module-level ``Перем Имя;`` / ``Var Name;`` (BSLLS MissingVariablesDescription)
-_RE_VAR_MODULE = re.compile(
-    r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s*(?:Экспорт|Export)?\s*;",
-    re.IGNORECASE,
-)
-
 # Module-level ``Перем Имя Экспорт;`` / ``Var Name Export;`` (BSLLS ExportVariables)
 _RE_VAR_MODULE_EXPORT = re.compile(
     r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s+(?:Экспорт|Export)\s*;",
@@ -3267,8 +3261,6 @@ def _extract_call_argument_presence(
     return [bool(part.strip()) for part in _split_top_level_args(args_text)]
 
 
-# BSL190 — FormDataToValue / ДанныеФормыВЗначение
-_RE_BSL190_FORM_DATA = re.compile(r"\b(?:ДанныеФормыВЗначение|FormDataToValue)\s*\(", re.IGNORECASE)
 # BSL-x module-level Перем / preprocessor lines
 _RE_PERЕМ_LINE = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
 _RE_REGION_LINE = re.compile(r"^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b", re.IGNORECASE)
@@ -3353,19 +3345,6 @@ def _bsl007_name_used_in_file(
 def _compile_call_pattern(proc_name: str) -> re.Pattern[str]:
     """Cached per-name call regex."""
     return re.compile(r"(?<![.\w])" + re.escape(proc_name) + r"\s*\(", re.IGNORECASE)
-
-
-def _module_export_var_has_preceding_description(lines: list[str], var_line_idx: int) -> bool:
-    """Immediately preceding line is a non-empty ``//`` or ``///`` comment."""
-    j = var_line_idx - 1
-    if j < 0:
-        return False
-    s = lines[j].strip()
-    if s.startswith("///"):
-        return len(s) > 3
-    if s.startswith("//"):
-        return len(s[2:].strip()) > 0
-    return False
 
 
 # Standard technology acronyms used in 1C BSL identifiers — mixing Cyrillic base with a
@@ -3863,15 +3842,6 @@ _BSL259_ALLOWED_PREPROC_SYMBOLS = frozenset(
     }
 )
 _BSL259_PREPROC_KEYWORDS = frozenset({"и", "или", "не", "and", "or", "not", "истина", "ложь"})
-_BSL204_ILLEGAL_CHARS = {
-    "\u00ad": 'Нужно исправить на правильный символ "-"',
-    "\u2012": 'Нужно исправить на правильный символ "-"',
-    "\u2013": 'Нужно исправить на правильный символ "-"',
-    "\u2014": 'Нужно исправить на правильный символ "-"',
-    "\u2015": 'Нужно исправить на правильный символ "-"',
-    "\u2212": 'Нужно исправить на правильный символ "-"',
-    "\u00a0": "Нужно заменить символ неразрывного пробела на обычный пробел",
-}
 _RE_BSL248_COMPILER_DIRECTIVE = re.compile(r"^\s*&(?:На|At)\w+", re.IGNORECASE | re.UNICODE)
 _RE_BSL259_IDENTIFIER = re.compile(r"\b[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*\b", re.UNICODE)
 # Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
