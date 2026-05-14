@@ -28,17 +28,36 @@ python -m pytest tests/ -q --no-cov --tb=short 2>&1 | tail -6
 echo "==> Lint"
 python -m ruff check src/ tests/ 2>&1 | tail -5
 
-# ── 3. bump vscode-extension/package.json ────────────────────────────────────
-echo "==> Bump vscode-extension to ${VERSION}"
-PKG="vscode-extension/package.json"
-# Use python for portable in-place JSON edit (no jq dependency)
-python - "$PKG" "$VERSION" <<'PY'
-import json, sys
-path, ver = sys.argv[1], sys.argv[2]
-pkg = json.loads(open(path).read())
-print(f"  {pkg['version']} -> {ver}")
-pkg["version"] = ver
-open(path, "w").write(json.dumps(pkg, indent=2, ensure_ascii=False) + "\n")
+# ── 3. bump project release metadata ─────────────────────────────────────────
+echo "==> Bump release metadata to ${VERSION}"
+python - "$VERSION" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path.cwd()
+ver = sys.argv[1]
+
+for rel in ("vscode-extension/package.json", "vscode-extension/package-lock.json"):
+    path = root / rel
+    data = json.loads(path.read_text(encoding="utf-8"))
+    print(f"  {rel}: {data['version']} -> {ver}")
+    data["version"] = ver
+    if rel.endswith("package-lock.json"):
+        data["packages"][""]["version"] = ver
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+(root / "src/onec_hbk_bsl/_version.py").write_text(
+    f'"""Generated version metadata for runtime use."""\n\n__version__ = "{ver}"\n',
+    encoding="utf-8",
+)
+
+subprocess.run(
+    ["npm", "install", "--package-lock-only", "--ignore-scripts"],
+    cwd=root / "vscode-extension",
+    check=True,
+)
 PY
 
 # ── 4. build VSIX ─────────────────────────────────────────────────────────────
@@ -59,16 +78,14 @@ code --install-extension "$VSIX" --force 2>&1 | tail -2
 
 # ── 6. commit ─────────────────────────────────────────────────────────────────
 echo "==> Commit"
-git add "$PKG"
+git add vscode-extension/package.json vscode-extension/package-lock.json src/onec_hbk_bsl/_version.py
 # Commit message via ollama if available, else use MESSAGE
 if command -v ot &>/dev/null; then
     COMMIT_MSG="$(git diff --cached --stat | ot "write concise commit message for: ${MESSAGE}")"
 else
     COMMIT_MSG="chore(release): bump vscode-extension to ${TAG}"
 fi
-git commit -m "${COMMIT_MSG}
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+git commit -m "${COMMIT_MSG}"
 
 # ── 7. tag ────────────────────────────────────────────────────────────────────
 echo "==> Tag ${TAG}"

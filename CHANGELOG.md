@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.29] - 2026-05-14
+
+### Changed
+
+- Синхронизированы релизные версии Python runtime и VS Code extension.
+- Обновлена metadata лицензии Python-пакета на SPDX-строку `MIT` для актуального setuptools.
+- Локальный релизный скрипт теперь обновляет extension manifest, lockfile и runtime `_version.py` согласованно.
+
 ## [0.7.27] - 2026-05-06
 
 ### Changed
