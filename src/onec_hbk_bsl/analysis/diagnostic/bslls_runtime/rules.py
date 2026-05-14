@@ -3272,15 +3272,11 @@ class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
     message = "Унарный плюс в конкатенации строк потенциально приводит к ошибке времени выполнения"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        root = getattr(getattr(context.tree, "root_node", None), "text", None)
-        if not isinstance(root, (bytes, bytearray)):
+        source_bytes = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(source_bytes, (bytes, bytearray)):
             return []
 
         storage = DiagnosticStorage(context.path)
-        leaves = self._default_leaves(context.tree.root_node)
-        previous_by_pos = {
-            self._node_key(node): leaves[idx - 1] for idx, node in enumerate(leaves[1:], start=1)
-        }
         for unary_node in context.ts_nodes_for_types(context.tree, {"unary_expression"})[
             "unary_expression"
         ]:
@@ -3294,12 +3290,7 @@ class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
             )
             if operator is None or self._has_numeric_operand(unary_node):
                 continue
-            previous = previous_by_pos.get(self._node_key(operator))
-            if (
-                previous is None
-                or getattr(previous, "type", None) != "operator"
-                or _ts_node_text(previous) != "+"
-            ):
+            if not self._previous_non_space_is_plus(source_bytes, int(operator.start_byte)):
                 continue
             _add_node_range(
                 storage,
@@ -3313,24 +3304,11 @@ class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
     @staticmethod
-    def _default_leaves(root: Any) -> list[Any]:
-        leaves = [
-            node
-            for node in _ts_walk(root)
-            if not _ts_children(node)
-            and getattr(node, "type", None) not in {"line_comment", "comment"}
-            and _ts_node_text(node).strip()
-        ]
-        return sorted(leaves, key=lambda node: getattr(node, "start_byte", -1))
-
-    @staticmethod
-    def _node_key(node: Any) -> tuple[int, int, str, str]:
-        return (
-            int(getattr(node, "start_byte", -1)),
-            int(getattr(node, "end_byte", -1)),
-            str(getattr(node, "type", "")),
-            _ts_node_text(node),
-        )
+    def _previous_non_space_is_plus(source_bytes: bytes | bytearray, start_byte: int) -> bool:
+        pos = start_byte - 1
+        while pos >= 0 and source_bytes[pos] in b" \t\r\n":
+            pos -= 1
+        return pos >= 0 and source_bytes[pos] == ord("+")
 
     @staticmethod
     def _has_numeric_operand(unary_node: Any) -> bool:

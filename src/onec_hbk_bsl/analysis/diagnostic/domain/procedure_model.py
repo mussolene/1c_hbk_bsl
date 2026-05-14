@@ -6,6 +6,36 @@ from dataclasses import dataclass
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
+_BSL029_MAGIC_NUMBER_RE = re.compile(
+    r"(?<![\"'\w.])"
+    r"(?:-?(?:[2-9]\d*|\d{2,})(?:\.\d+)?|-?1\.\d*[1-9]\d*|-?0\.(?:0*[1-9]\d*))"
+    r"(?![\w.\"])",
+)
+_BSL029_CONTAINER_ASSIGN_RE = re.compile(
+    r"^\s*(?P<name>[\w.]+)\s*=\s*(?:Новый|New)\s+"
+    r"(?P<type>Структура|Structure|ФиксированнаяСтруктура|FixedStructure|Соответствие|Map)\b",
+    re.IGNORECASE,
+)
+_BSL029_INSERT_CALL_RE = re.compile(
+    r"(?P<receiver>[\w.]+)\s*\.\s*(?:Вставить|Insert)\s*\(",
+    re.IGNORECASE,
+)
+_BSL029_VAR_ASSIGN_RE = re.compile(r"^\s*(?:Перем|Var)\s+\w+\s*=", re.IGNORECASE)
+_BSL029_SIMPLE_NUMBER_RE = re.compile(r"\s*-?[0-9]+(?:\.[0-9]+)?\s*")
+_BSL029_CONTAINER_NEW_RE = re.compile(
+    r"\b(?:Новый|New)\s+(?:Структура|Structure|Соответствие|Map)\s*\([^)]*\)",
+    re.IGNORECASE,
+)
+_BSL029_FIXED_CONTAINER_NEW_RE = re.compile(
+    r"\b(?:Новый|New)\s+(?:ФиксированнаяСтруктура|FixedStructure)\s*\([^)]*\)",
+    re.IGNORECASE,
+)
+_BSL029_TO_PREFIX_RE = re.compile(r"\b(?:По|To)\s*$", re.IGNORECASE)
+_BSL029_FOR_PREFIX_RE = re.compile(r"\b(?:Для|For)\s+\w+\s*=\s*$", re.IGNORECASE)
+_BSL029_TO_SUFFIX_RE = re.compile(r"\s*(?:По|To)\b", re.IGNORECASE)
+_BSL029_SINGLE_QUOTED_STRING_RE = re.compile(r"'[^'\n]*(?:''[^'\n]*)*'")
+_BSL029_DOUBLE_QUOTED_STRING_RE = re.compile(r'"[^"\n]*(?:""[^"\n]*)*"')
+
 
 @dataclass(frozen=True, slots=True)
 class ProcedureModel:
@@ -612,24 +642,10 @@ class ProcedureModel:
         simple_assign_re,
         ternary_re,
     ) -> list[Diagnostic]:
-        re_magic = re.compile(
-            r"(?<![\"'\w.])"
-            r"(?:-?(?:[2-9]\d*|\d{2,})(?:\.\d+)?|-?1\.\d*[1-9]\d*|-?0\.(?:0*[1-9]\d*))"
-            r"(?![\w.\"])",
-        )
         diags: list[Diagnostic] = []
         masked_lines = snapshot.masked_lines if snapshot is not None else None
         code_lines_wo_comments = (
             snapshot.code_lines_without_comments if snapshot is not None else None
-        )
-        container_assign_re = re.compile(
-            r"^\s*(?P<name>[\w.]+)\s*=\s*(?:Новый|New)\s+"
-            r"(?P<type>Структура|Structure|ФиксированнаяСтруктура|FixedStructure|Соответствие|Map)\b",
-            re.IGNORECASE,
-        )
-        insert_call_re = re.compile(
-            r"(?P<receiver>[\w.]+)\s*\.\s*(?:Вставить|Insert)\s*\(",
-            re.IGNORECASE,
         )
         container_vars: dict[str, str] = {}
 
@@ -680,12 +696,12 @@ class ProcedureModel:
             for arg_start, arg_end, arg_text in args[1:]:
                 if not (arg_start <= relative_start and relative_end <= arg_end):
                     continue
-                return re.fullmatch(r"\s*-?[0-9]+(?:\.[0-9]+)?\s*", arg_text) is not None
+                return _BSL029_SIMPLE_NUMBER_RE.fullmatch(arg_text) is not None
             return False
 
         def numeric_is_inside_known_container_insert(code: str, start: int, end: int) -> bool:
             call_match: re.Match[str] | None = None
-            for candidate in insert_call_re.finditer(code):
+            for candidate in _BSL029_INSERT_CALL_RE.finditer(code):
                 if candidate.end() <= start:
                     call_match = candidate
                 else:
@@ -732,7 +748,7 @@ class ProcedureModel:
                 continue
             if stripped.startswith("|"):
                 continue
-            if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
+            if _BSL029_VAR_ASSIGN_RE.match(line):
                 continue
             code_part = (
                 code_lines_wo_comments[i]
@@ -742,21 +758,19 @@ class ProcedureModel:
             code_part = (
                 masked_lines[i]
                 if masked_lines is not None
-                else re.sub(
-                    r'"[^"\n]*(?:""[^"\n]*)*"',
+                else _BSL029_DOUBLE_QUOTED_STRING_RE.sub(
                     lambda m: '"' + (" " * max(0, len(m.group(0)) - 2)) + '"',
                     code_part,
                 )
             )
-            code_part = re.sub(
-                r"'[^'\n]*(?:''[^'\n]*)*'",
+            code_part = _BSL029_SINGLE_QUOTED_STRING_RE.sub(
                 lambda m: "'" + (" " * max(0, len(m.group(0)) - 2)) + "'",
                 code_part,
             )
             comment_pos = code_part.find("//")
             if comment_pos >= 0:
                 code_part = code_part[:comment_pos]
-            assignment = container_assign_re.match(code_part)
+            assignment = _BSL029_CONTAINER_ASSIGN_RE.match(code_part)
             if assignment is not None:
                 container_vars[assignment.group("name").casefold()] = assignment.group(
                     "type"
@@ -765,19 +779,15 @@ class ProcedureModel:
                 continue
             if simple_assign_re.match(code_part):
                 continue
-            code_part = re.sub(
-                r"\b(?:Новый|New)\s+(?:Структура|Structure|Соответствие|Map)\s*\([^)]*\)",
+            code_part = _BSL029_CONTAINER_NEW_RE.sub(
                 "Новый Структура()",
                 code_part,
-                flags=re.IGNORECASE,
             )
-            code_part = re.sub(
-                r"\b(?:Новый|New)\s+(?:ФиксированнаяСтруктура|FixedStructure)\s*\([^)]*\)",
+            code_part = _BSL029_FIXED_CONTAINER_NEW_RE.sub(
                 "Новый ФиксированнаяСтруктура()",
                 code_part,
-                flags=re.IGNORECASE,
             )
-            for m in re_magic.finditer(code_part):
+            for m in _BSL029_MAGIC_NUMBER_RE.finditer(code_part):
                 sign_pos = m.start() - 1
                 while sign_pos >= 0 and code_part[sign_pos] in " \t":
                     sign_pos -= 1
@@ -790,11 +800,11 @@ class ProcedureModel:
                     if before_sign < 0 or code_part[before_sign] in "(,=":
                         continue
                 prefix = code_part[: m.start()]
-                if re.search(r"\b(?:По|To)\s*$", prefix, re.IGNORECASE):
+                if _BSL029_TO_PREFIX_RE.search(prefix):
                     continue
-                if re.search(r"\b(?:Для|For)\s+\w+\s*=\s*$", prefix, re.IGNORECASE):
+                if _BSL029_FOR_PREFIX_RE.search(prefix):
                     suffix = code_part[m.end() :]
-                    if re.match(r"\s*(?:По|To)\b", suffix, re.IGNORECASE):
+                    if _BSL029_TO_SUFFIX_RE.match(suffix):
                         continue
                 if numeric_is_simple_ternary_branch(code_part, m.start(), m.end()):
                     continue
