@@ -78,7 +78,6 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     split_commas_outside_double_quotes,
     strip_leading_val_keywords,
 )
-from onec_hbk_bsl.analysis.bslls_parity import merge_profile_with_select
 from onec_hbk_bsl.analysis.diagnostic.rules.control_flow_rules import (
     bsl148_function_name_spans,
 )
@@ -2746,13 +2745,6 @@ def parse_env_rule_filters() -> tuple[set[str] | None, set[str] | None]:
     select = normalize_rule_code_set(raw_sel.split(",")) if raw_sel else None
     ignore = normalize_rule_code_set(raw_ign.split(",")) if raw_ign else None
     return select, ignore
-
-
-def parse_env_rule_profile() -> str | None:
-    """Return the only supported public rule profile."""
-    from onec_hbk_bsl.analysis.bslls_parity import STRICT_BSLLS_PROFILE
-
-    return STRICT_BSLLS_PROFILE
 
 
 # Deprecated dialog: Предупреждение(...) / Warning(...)

@@ -567,10 +567,9 @@ def compare_with_bslls_baseline(
     *,
     workspace_root: Path,
     files: list[Path],
-    profile: str,
     baseline: dict[str, Any],
 ) -> dict[str, Any]:
-    formatter = BslFormatter(profile=profile)
+    formatter = BslFormatter()
 
     our_diags: list[Diagnostic] = []
     formatting: dict[str, dict[str, Any]] = {}
@@ -580,7 +579,7 @@ def compare_with_bslls_baseline(
         indexer.index_metadata(str(workspace_root))
         for path in files:
             indexer.index_file(str(path))
-        engine = DiagnosticEngine(profile=profile, symbol_index=idx)
+        engine = DiagnosticEngine(symbol_index=idx)
         for path in files:
             rel = _relative_file(path, workspace_root)
             content = path.read_text(encoding="utf-8", errors="ignore")
@@ -632,7 +631,6 @@ def compare_with_bslls(
     *,
     workspace_root: Path,
     files: list[Path],
-    profile: str,
     config_path: Path | None,
     jar_path: Path,
 ) -> dict[str, Any]:
@@ -645,6 +643,5 @@ def compare_with_bslls(
     return compare_with_bslls_baseline(
         workspace_root=workspace_root,
         files=files,
-        profile=profile,
         baseline=baseline,
     )

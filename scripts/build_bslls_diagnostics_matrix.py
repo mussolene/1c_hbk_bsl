@@ -198,6 +198,18 @@ def parse_bslls_diagnostics() -> list[BsllsDiagnostic]:
     return diagnostics
 
 
+def fallback_bslls_diagnostics(name_to_code: dict[str, str]) -> list[BsllsDiagnostic]:
+    """Build a reduced matrix from the embedded BSLLS name map when upstream source is absent."""
+    return [
+        BsllsDiagnostic(
+            name=name,
+            class_name=f"{name}Diagnostic",
+            source=SourceRef(f"upstream:diagnostics/{name}Diagnostic.java", 1),
+        )
+        for name in sorted(name_to_code)
+    ]
+
+
 def parse_local_registry() -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     sys.path.insert(0, str(REPO_ROOT / "src"))
     from onec_hbk_bsl.analysis.diagnostics import (  # noqa: PLC0415
@@ -318,10 +330,15 @@ def md_escape(value: Any) -> str:
 
 def render_markdown(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
+    source_note = (
+        "Источник BSLLS: upstream `bsl-language-server` develop, статическое чтение Java/properties."
+        if payload.get("source_mode") == "upstream"
+        else "Источник BSLLS: встроенная карта имён/кодов; внешний upstream source недоступен."
+    )
     lines = [
         "# BSLLS diagnostics static matrix",
         "",
-        "Источник BSLLS: upstream `bsl-language-server` develop, статическое чтение Java/properties.",
+        source_note,
         "Локальный источник: `src/onec_hbk_bsl/analysis/diagnostics.py` и `src/onec_hbk_bsl/analysis/diagnostic/**`.",
         "",
         "## Summary",
@@ -390,8 +407,15 @@ def render_markdown(payload: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    bslls = parse_bslls_diagnostics()
     metadata, name_to_code = parse_local_registry()
+    source_mode = "upstream"
+    try:
+        bslls = parse_bslls_diagnostics()
+    except SystemExit as exc:
+        source_mode = "embedded"
+        print(str(exc), file=sys.stderr)
+        print("Falling back to embedded BSLLS diagnostic name map.", file=sys.stderr)
+        bslls = fallback_bslls_diagnostics(name_to_code)
     refs = find_local_refs(metadata)
 
     diagnostics = []
@@ -442,6 +466,7 @@ def main() -> None:
     priority_statuses = {"missing", "metadata_only", "implemented_unregistered"}
     priority_gaps = [item for item in diagnostics if item["status"] in priority_statuses][:40]
     payload = {
+        "source_mode": source_mode,
         "summary": {
             "bslls_total": len(diagnostics),
             "local_total": len(metadata),
@@ -456,10 +481,16 @@ def main() -> None:
     JSON_OUT.parent.mkdir(parents=True, exist_ok=True)
     MD_OUT.parent.mkdir(parents=True, exist_ok=True)
     JSON_OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    MD_OUT.write_text(render_markdown(payload), encoding="utf-8")
+    wrote_md = False
+    if source_mode == "upstream":
+        MD_OUT.write_text(render_markdown(payload), encoding="utf-8")
+        wrote_md = True
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
     print(f"wrote {rel(JSON_OUT)}")
-    print(f"wrote {rel(MD_OUT)}")
+    if wrote_md:
+        print(f"wrote {rel(MD_OUT)}")
+    else:
+        print(f"skipped {rel(MD_OUT)} (embedded source mode)")
 
 
 if __name__ == "__main__":

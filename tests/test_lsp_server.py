@@ -69,12 +69,12 @@ class TestBslLanguageServerInit:
     ) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         monkeypatch.delenv("BSL_PROFILE", raising=False)
-        from onec_hbk_bsl.analysis.bslls_parity import strict_bslls_rule_codes
+        from onec_hbk_bsl.analysis.bslls_parity import bslls_rule_codes
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE
         from onec_hbk_bsl.lsp.server import BslLanguageServer
 
         ls = BslLanguageServer()
-        expected = strict_bslls_rule_codes(
+        expected = bslls_rule_codes(
             _BSLLS_NAME_TO_CODE,
             default_disabled_codes=ls.diagnostics_engine.DEFAULT_DISABLED,
         )

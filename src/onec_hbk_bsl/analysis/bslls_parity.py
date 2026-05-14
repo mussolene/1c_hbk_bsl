@@ -1,9 +1,9 @@
-"""BSLLS parity matrix and rule-profile helpers.
+"""BSLLS parity matrix and default-rule helpers.
 
 This module centralizes the mapping between the local diagnostics registry and
 the reference BSLLS rule names. It is the runtime source of truth for:
 
-- strict BSLLS-compatible rule profile
+- the default BSLLS-compatible rule set
 - machine-readable parity matrix generation for docs/tests
 - categorisation of local-only and duplicate rules
 """
@@ -15,8 +15,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-STRICT_BSLLS_PROFILE = "strict-bslls"
-SUPPORTED_PROFILES = frozenset({STRICT_BSLLS_PROFILE})
 BSLLS_OS_ONLY_NAMES = frozenset(
     {
         "UnusedParameters",
@@ -101,24 +99,12 @@ class ParityRow:
     category: str
 
 
-def normalize_rule_profile(profile: str | None) -> str | None:
-    """Return canonical profile name or ``None`` when unset/unknown."""
-    if not profile:
-        return None
-    p = str(profile).strip().casefold()
-    if not p:
-        return None
-    if p == STRICT_BSLLS_PROFILE:
-        return STRICT_BSLLS_PROFILE
-    return None
-
-
-def strict_bslls_rule_codes(
+def default_bslls_rule_codes(
     bslls_name_to_code: dict[str, str],
     *,
     default_disabled_codes: set[str] | frozenset[str] = frozenset(),
 ) -> frozenset[str]:
-    """Canonical BSLLS-compatible rule set aligned with BSLLS default BSL profile."""
+    """Canonical BSLLS-compatible rule set aligned with BSLLS defaults."""
     return frozenset(
         code
         for name, code in bslls_name_to_code.items()
@@ -128,47 +114,42 @@ def strict_bslls_rule_codes(
     )
 
 
-def select_codes_for_profile(
-    profile: str | None,
-    bslls_name_to_code: dict[str, str],
-    *,
-    default_disabled_codes: set[str] | frozenset[str] = frozenset(),
-) -> set[str] | None:
-    """Return an implicit select-set for the BSLLS profile, or ``None`` for internal API mode."""
-    p = normalize_rule_profile(profile)
-    if p == STRICT_BSLLS_PROFILE:
-        return set(
-            strict_bslls_rule_codes(
-                bslls_name_to_code,
-                default_disabled_codes=default_disabled_codes,
-            )
-        )
-    return None
-
-
-def merge_profile_with_select(
-    profile: str | None,
+def merge_default_with_select(
     select: set[str] | None,
     bslls_name_to_code: dict[str, str],
     *,
     default_disabled_codes: set[str] | frozenset[str] = frozenset(),
-) -> set[str] | None:
+) -> set[str]:
     """
-    Combine explicit ``select`` with profile defaults.
+    Combine explicit ``select`` with the canonical default rule set.
 
-    In ``strict-bslls`` mode, explicit selection narrows the canonical BSLLS set
-    instead of expanding it with local-only rules.
+    Without an explicit selection, only the canonical BSLLS-compatible default
+    rule set is active. Explicit selection runs the requested BSLLS rules,
+    including rules that BSLLS disables by default, but never exposes local-only
+    rules as selectable diagnostics.
     """
-    profile_select = select_codes_for_profile(
-        profile,
+    default_select = set(
+        default_bslls_rule_codes(
+            bslls_name_to_code,
+            default_disabled_codes=default_disabled_codes,
+        )
+    )
+    if not select:
+        return default_select
+    return set(select) & set(bslls_name_to_code.values())
+
+
+# Backward-compatible helper name for tests/tools that still describe the oracle
+# relationship as "BSLLS". It is not a runtime profile or user mode.
+def bslls_rule_codes(
+    bslls_name_to_code: dict[str, str],
+    *,
+    default_disabled_codes: set[str] | frozenset[str] = frozenset(),
+) -> frozenset[str]:
+    return default_bslls_rule_codes(
         bslls_name_to_code,
         default_disabled_codes=default_disabled_codes,
     )
-    if profile_select is None:
-        return set(select) if select else None
-    if not select:
-        return profile_select
-    return set(select) & profile_select
 
 
 def build_parity_rows(

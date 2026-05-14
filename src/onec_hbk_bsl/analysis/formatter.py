@@ -399,13 +399,8 @@ def _format_bslls_token_stream(
 class BslFormatter:
     """BSLLS-aligned BSL formatter."""
 
-    def __init__(self, profile: str = "strict-bslls") -> None:
-        if profile != "strict-bslls":
-            raise ValueError("Only the strict-bslls formatter profile is supported")
-        self.profile = profile
-
     @staticmethod
-    def _default_insert_spaces(_profile: str, explicit: bool | None) -> bool:
+    def _default_insert_spaces(explicit: bool | None) -> bool:
         return False if explicit is None else explicit
 
     def format(  # noqa: A003
@@ -414,7 +409,7 @@ class BslFormatter:
         indent_size: int = 4,
         insert_spaces: bool | None = None,
     ) -> str:
-        insert_spaces = self._default_insert_spaces(self.profile, insert_spaces)
+        insert_spaces = self._default_insert_spaces(insert_spaces)
         if content.startswith("\ufeff"):
             content = content[1:]
         return _format_bslls_token_stream(
@@ -475,5 +470,4 @@ class BslFormatter:
         return prefix_len
 
 
-strict_bslls_formatter = BslFormatter(profile="strict-bslls")
-default_formatter = strict_bslls_formatter
+default_formatter = BslFormatter()

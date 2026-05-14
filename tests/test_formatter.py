@@ -11,9 +11,9 @@ from onec_hbk_bsl.analysis.formatter import BslFormatter
 
 
 class TestFormatterDefaults:
-    def test_default_profile_is_strict_bslls(self) -> None:
+    def test_default_formatter_exists(self) -> None:
         f = BslFormatter()
-        assert f.profile == "strict-bslls"
+        assert isinstance(f, BslFormatter)
 
     def test_default_indents_with_tabs(self) -> None:
         f = BslFormatter()
@@ -134,16 +134,16 @@ class TestDocCommentBlocks:
         assert lines[0].strip() == "//  Параметры   :"
         assert lines[1].strip() == "// Имя"
 
-    def test_strict_bslls_profile_keeps_comment_block_without_hanging_indent(self) -> None:
-        f = BslFormatter(profile="strict-bslls")
+    def test_default_keeps_comment_block_without_hanging_indent(self) -> None:
+        f = BslFormatter()
         code = "// Параметры:\n// Имя - Строка - описание\n// продолжение описания\n"
         lines = f.format(code).splitlines()
         assert lines[0].strip() == "// Параметры:"
         assert lines[1].strip() == "// Имя - Строка - описание"
         assert lines[2].strip() == "// продолжение описания"
 
-    def test_strict_bslls_nested_call_argument_continuation_indent(self) -> None:
-        f = BslFormatter(profile="strict-bslls")
+    def test_nested_call_argument_continuation_indent(self) -> None:
+        f = BslFormatter()
         code = (
             "Процедура Тест()\n"
             "\tОтвет.УстановитьТелоИзСтроки(СтрШаблон(НСтр(\"ru = 'Ошибка %1 %2'\"),\n"
@@ -342,10 +342,6 @@ class TestBlankLines:
         result = f.format("А = 1;")
         assert not result.endswith("\n")
 
-    def test_non_bslls_profile_is_rejected(self) -> None:
-        with pytest.raises(ValueError):
-            BslFormatter(profile="other-profile")
-
     def test_single_trailing_newline(self) -> None:
         f = BslFormatter()
         result = f.format("А = 1;\n\n\n")
@@ -501,6 +497,6 @@ class TestBsllsFixtureParity:
             pytest.skip("BSLLS upstream provider fixtures are not available")
         source = source_path.read_text(encoding="utf-8")
         expected = expected_path.read_text(encoding="utf-8")
-        f = BslFormatter(profile="strict-bslls")
+        f = BslFormatter()
         actual = f.format(source, indent_size=indent_size, insert_spaces=True)
         assert actual.rstrip("\n") == expected.rstrip("\n")

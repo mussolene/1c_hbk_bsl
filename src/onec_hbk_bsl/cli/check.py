@@ -315,7 +315,6 @@ def _run_checks(
         return DiagnosticEngine(
             select=select,
             ignore=effective_ignore or None,
-            profile=cfg.profile,
             symbol_index=shared_symbol_index,
             **engine_kw,
         )

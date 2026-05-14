@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections import OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
+from onec_hbk_bsl.analysis.bslls_parity import merge_default_with_select
 from onec_hbk_bsl.analysis.diagnostic.pipeline import AnalysisFrame, PipelineExecutor
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
@@ -115,7 +116,6 @@ class DiagnosticEngine:
         parser: BslParser | None = None,
         select: set[str] | None = None,
         ignore: set[str] | None = None,
-        profile: str | None = None,
         *,
         max_proc_lines: int = MAX_PROC_LINES,
         max_returns: int = MAX_RETURNS,
@@ -140,8 +140,7 @@ class DiagnosticEngine:
         self._parser_tls = threading.local()
         self._symbol_index = symbol_index
         _user_select = normalize_rule_code_set(select) if select else None
-        self._select: set[str] | None = merge_profile_with_select(
-            profile,
+        self._select: set[str] | None = merge_default_with_select(
             _user_select,
             _BSLLS_NAME_TO_CODE,
             default_disabled_codes=self.DEFAULT_DISABLED,

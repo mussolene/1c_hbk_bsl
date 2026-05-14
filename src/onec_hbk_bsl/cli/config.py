@@ -66,12 +66,6 @@ class BslConfig:
             return None
         return normalize_rule_code_set(str(x) for x in v)
 
-    @property
-    def profile(self) -> str | None:
-        from onec_hbk_bsl.analysis.bslls_parity import STRICT_BSLLS_PROFILE
-
-        return STRICT_BSLLS_PROFILE
-
     # ------------------------------------------------------------------
     # File filtering
     # ------------------------------------------------------------------

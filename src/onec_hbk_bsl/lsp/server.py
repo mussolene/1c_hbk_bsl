@@ -166,7 +166,6 @@ from onec_hbk_bsl.analysis.diagnostics import (
     display_name_for_rule_code,
     lsp_compat_severity,
     parse_env_rule_filters,
-    parse_env_rule_profile,
 )
 from onec_hbk_bsl.analysis.document_snapshot import DocumentSnapshot, build_document_snapshot
 from onec_hbk_bsl.analysis.formatter import (
@@ -295,12 +294,10 @@ class BslLanguageServer(LanguageServer):
         db_path = resolve_index_db_path(os.getcwd())
         self.symbol_index = SymbolIndex(db_path=db_path)
         _sel, _ign = parse_env_rule_filters()
-        _profile = parse_env_rule_profile()
         self.diagnostics_engine = DiagnosticEngine(
             symbol_index=self.symbol_index,
             select=_sel,
             ignore=_ign,
-            profile=_profile,
         )
         # quiet=True: suppress Rich progress bar that would corrupt the JSON-RPC stdio pipe.
         self.indexer = IncrementalIndexer(index=self.symbol_index, quiet=True)
@@ -2721,7 +2718,7 @@ def on_type_formatting(
     effective_insert = (
         insert_spaces
         if insert_spaces is not None
-        else default_formatter._default_insert_spaces(default_formatter.profile, None)
+        else default_formatter._default_insert_spaces(None)
     )
     indent_level = default_formatter._indent_at(
         lines,

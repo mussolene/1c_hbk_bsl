@@ -96,7 +96,7 @@ def _container_bslls(
     return json.loads(report_path.read_text(encoding="utf-8"))
 
 
-def _local_diagnostics(target: Path, *, profile: str, repo_root: Path) -> list[Any]:
+def _local_diagnostics(target: Path, *, repo_root: Path) -> list[Any]:
     from onec_hbk_bsl.analysis.bslls_runtime_parity import iter_bsl_files
     from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
     from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
@@ -108,7 +108,7 @@ def _local_diagnostics(target: Path, *, profile: str, repo_root: Path) -> list[A
     indexer.index_metadata(str(target if target.is_dir() else target.parent))
     for path in files:
         indexer.index_file(str(path))
-    engine = DiagnosticEngine(profile=profile, symbol_index=idx)
+    engine = DiagnosticEngine(symbol_index=idx)
     out = []
     try:
         for path in files:
@@ -177,7 +177,6 @@ def main() -> int:
         description="Compare onec-hbk-bsl diagnostics with container BSLLS",
     )
     parser.add_argument("target", nargs="?", default="tests/fixtures")
-    parser.add_argument("--profile", default="strict-bslls")
     parser.add_argument("--image", default=os.environ.get("BSLLS_ORACLE_IMAGE", DEFAULT_IMAGE))
     parser.add_argument(
         "--output-dir",
@@ -226,7 +225,7 @@ def main() -> int:
     )
 
     ours = normalize_our_diagnostics(
-        _local_diagnostics(effective_target, profile=args.profile, repo_root=repo_root),
+        _local_diagnostics(effective_target, repo_root=repo_root),
         workspace_root=effective_target,
     )
     bslls = normalize_bslls_json_report(
@@ -244,7 +243,6 @@ def main() -> int:
     payload = {
         "target": _rel(effective_target, repo_root),
         "original_target": original_target,
-        "profile": args.profile,
         "rule_filter": {
             "input": args.rule,
             "codes": sorted(_rule_filter_codes(args.rule)),

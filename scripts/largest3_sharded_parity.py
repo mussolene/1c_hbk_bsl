@@ -74,7 +74,6 @@ def main() -> int:
         result = compare_with_bslls_baseline(
             workspace_root=corpus_root,
             files=[file_path],
-            profile="strict-bslls",
             baseline=baseline,
         )
         d = result["diagnostics"]
@@ -122,7 +121,6 @@ def main() -> int:
         "mode": "largest3_sharded",
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "corpus_root": str(corpus_root),
-        "profile": "strict-bslls",
         "shards": shard_results,
         "aggregate": {
             **agg,
