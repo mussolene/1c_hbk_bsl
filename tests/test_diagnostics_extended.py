@@ -137,11 +137,7 @@ class TestBsl215MissingParameterDescriptionParity:
             КонецФункции
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
-        assert len(diags) == 1
-        assert (
-            diags[0].message
-            == 'Необходимо удалить описания параметров "Параметр1, Параметр2", отсутствующих в сигнатуре метода'
-        )
+        assert not diags
 
     def test_documented_param_order_matches_bslls(self, tmp_path: Path) -> None:
         content = """\

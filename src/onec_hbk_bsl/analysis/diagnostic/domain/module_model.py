@@ -966,7 +966,16 @@ class ModuleModel:
                     continue
                 line_idx = node.start_point[0]
                 line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                prev_line = lines[line_idx - 1] if line_idx > 0 else ""
                 if re.search(r"\+\s*\"", line_text) or re.search(r"\"\s*\+", line_text):
+                    continue
+                next_line = lines[line_idx + 1] if line_idx + 1 < len(lines) else ""
+                if re.match(r"^\s*\+\s*\"", next_line):
+                    continue
+                if (
+                    re.search(r"\bНСтр\s*\(", prev_line + line_text, re.IGNORECASE)
+                    and (prev_line.rstrip().endswith("+") or re.match(r"^\s*\+\s*\"", next_line))
+                ):
                     continue
                 start_char = utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1])
                 end_char = utf8_byte_offset_to_lsp_character_fn(line_text, node.end_point[1])
@@ -1006,6 +1015,12 @@ class ModuleModel:
                 continue
             match = adjacent_literals_re.search(line)
             if match is not None:
+                prev = lines[idx - 1] if idx > 0 else ""
+                next_line = lines[idx + 1] if idx + 1 < len(lines) else ""
+                if re.search(r"\bНСтр\s*\(", prev + line, re.IGNORECASE) and (
+                    prev.rstrip().endswith("+") or re.match(r"^\s*\+\s*\"", next_line)
+                ):
+                    continue
                 diags.append(
                     Diagnostic(
                         file=self.path,
@@ -1024,6 +1039,11 @@ class ModuleModel:
             prev = lines[idx - 1].rstrip()
             cur = line.lstrip()
             if prev.endswith('"') and cur.startswith('"'):
+                next_line = lines[idx + 1] if idx + 1 < len(lines) else ""
+                if re.match(r"^\s*\+\s*\"", next_line):
+                    continue
+                if re.search(r"\bНСтр\s*\(", prev + line, re.IGNORECASE) and prev.endswith("+"):
+                    continue
                 end_character = min(len(line.rstrip()), len(line) - len(cur) + len(cur.split('"', 2)[1]) + 2)
                 diags.append(
                     Diagnostic(
@@ -1075,9 +1095,6 @@ class ModuleModel:
             if string_span is None:
                 anchor = len(line) - len(line.lstrip())
                 end_character = len(line.rstrip())
-                closing_paren = line.rfind(")")
-                if closing_paren > anchor:
-                    end_character = closing_paren
             else:
                 anchor, end_character = string_span
             diags.append(
@@ -2382,7 +2399,7 @@ class ModuleModel:
             if opener_re.match(line):
                 match = branch_end_token_re.search(code_part(line))
                 if match:
-                    return idx, match.start(), match.end()
+                    return idx, len(line) - len(line.lstrip()), len(code_part(line))
                 return idx, len(line) - len(line.lstrip()), len(code_part(line))
 
             if not multiline_if_start_re.match(line):
@@ -2816,6 +2833,20 @@ class ModuleModel:
         current_lines: list[str],
     ) -> list[Diagnostic]:
         errors = parser_extract_errors_fn(tree)
+        # tree-sitter may produce nested ERROR nodes with the same start point.
+        # Keep one diagnostic per location, preferring the widest span/message.
+        by_start: dict[tuple[int, int], dict[str, Any]] = {}
+        for err in errors:
+            key = (int(err.get("line", 0)), int(err.get("column", 0)))
+            prev = by_start.get(key)
+            if prev is None:
+                by_start[key] = err
+                continue
+            prev_span = (int(prev.get("end_line", 0)), int(prev.get("end_column", 0)))
+            cur_span = (int(err.get("end_line", 0)), int(err.get("end_column", 0)))
+            if cur_span > prev_span or len(str(err.get("message", ""))) > len(str(prev.get("message", ""))):
+                by_start[key] = err
+        errors = list(by_start.values())
         diags: list[Diagnostic] = []
         for error in errors:
             line_text = ""

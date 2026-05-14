@@ -222,6 +222,10 @@ class BslParser:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
+            if node.type in ("ERROR", "error") and self._is_identifier_with_yo_error(node):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
             errors.append(
                 {
                     "line": node.start_point[0] + 1,
@@ -233,6 +237,16 @@ class BslParser:
             )
         for child in node.children:
             self._collect_errors(child, errors)
+
+    @staticmethod
+    def _is_identifier_with_yo_error(node: Any) -> bool:
+        """tree-sitter-bsl currently splits valid identifiers containing ``ё``."""
+        text = node.text if isinstance(node.text, bytes) else b""
+        value = text.decode("utf-8", errors="replace").strip()
+        if not value or "ё" not in value.casefold():
+            return False
+        first = value.split(None, 1)[0].rstrip(";,.")
+        return bool(first and "ё" in first.casefold() and first.replace("_", "").isalnum())
 
     @staticmethod
     def _prev_sibling_type(node: Any) -> str:

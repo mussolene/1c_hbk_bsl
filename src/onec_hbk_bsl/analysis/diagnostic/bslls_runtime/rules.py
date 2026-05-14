@@ -57,6 +57,7 @@ def _path_is_bsl272_server_only_module(path: str) -> bool:
         )
     return normalized.endswith(
         (
+            "/objectmodule.bsl",
             "/ext/objectmodule.bsl",
             "/ext/managermodule.bsl",
             "/ext/recordsetmodule.bsl",
@@ -1187,7 +1188,7 @@ class DeprecatedMessageRule(BsllsDiagnosticRule):
                 code=self.code,
                 line=idx,
                 start=match.start(),
-                end=match.end(),
+                end=max(match.start(), match.end() - 1),
                 severity=Severity.INFORMATION,
                 message='Не следует использовать устаревший метод "Сообщить"',
             )
@@ -2715,6 +2716,11 @@ class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
         node_type = getattr(node, "type", None)
         if node_type in cls._ignored_before_body_types:
             return False
+        if node_type in {"ERROR", "error"}:
+            text = _ts_node_text(node).strip()
+            first = text.split(None, 1)[0].rstrip(";,.")
+            if first and "ё" in first.casefold() and first.replace("_", "").isalnum():
+                return False
         if node_type != "preprocessor":
             return True
         return False

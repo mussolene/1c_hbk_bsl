@@ -2386,7 +2386,11 @@ def _compute_cached_code_lens_metrics(
         for proc in procs
         for cognitive, mccabe in [
             _calc_complexity_metrics(
-                lines, proc.start_idx, proc.end_idx, string_states=string_states
+                lines,
+                proc.start_idx,
+                proc.end_idx,
+                string_states=string_states,
+                proc_name=proc.name,
             )
         ]
     ]
@@ -2573,7 +2577,11 @@ def on_code_lens(ls: BslLanguageServer, params: CodeLensParams) -> list[CodeLens
     result: list[CodeLens] = []
     for proc in procs:
         cc, mc = _calc_complexity_metrics(
-            lines, proc.start_idx, proc.end_idx, string_states=string_states
+            lines,
+            proc.start_idx,
+            proc.end_idx,
+            string_states=string_states,
+            proc_name=proc.name,
         )
         line = proc.start_idx  # 0-based header line
         r = Range(start=Position(line=line, character=0), end=Position(line=line, character=0))

@@ -265,12 +265,15 @@ def run_bsl215_missing_parameter_description(
         # after which missing parameter descriptions should be reported.
         if not any(cl.strip().startswith("//") for cl in comment_block):
             continue
-
         params_section_start = None
         for ci, cl in enumerate(comment_block):
             if _diag._RE_BSL215_PARAMS_SECTION.match(cl):
                 params_section_start = ci
                 break
+        if params_section_start is None and len(comment_block) == 1:
+            text = re.sub(r"^\s*//\s*", "", comment_block[0]).strip()
+            if text and text[0].islower():
+                continue
 
         actual_params_cf = {p.casefold() for p in proc.params}
         try:
@@ -426,7 +429,7 @@ def run_bsl215_missing_parameter_description(
                 extra.append(pname)
             else:
                 seen_actual_docs.add(pcf)
-        if extra:
+        if extra and actual_params_cf:
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -864,7 +867,7 @@ def run_bsl240_rewrite_method_parameter(
             )
             if pnode is not None:
                 bl = _diag._ts_first_body_statement_line_idx(pnode)
-                if bl is not None:
+                if bl is not None and bl > proc.start_idx:
                     body_start = bl
                 else:
                     body_start = _diag._proc_body_start_line_idx_fallback(lines, proc)
@@ -881,6 +884,7 @@ def run_bsl240_rewrite_method_parameter(
             continue
         opt_cf = {n.casefold() for n in (getattr(proc, "optional_params", None) or [])}
         val_cf -= opt_cf
+        used_before_assign: set[str] = set()
 
         for li in range(body_start, min(body_start + 15, proc.end_idx)):
             if li >= len(lines):
@@ -893,7 +897,7 @@ def run_bsl240_rewrite_method_parameter(
                 lhs = am.group(1).casefold()
                 if lhs in val_cf and lhs not in _diag._BSL062_SKIP_STANDARD_COMMAND_PARAMS:
                     rhs = line[am.end() :].strip()
-                    if lhs not in rhs.casefold():
+                    if lhs not in rhs.casefold() and lhs not in used_before_assign:
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
@@ -910,4 +914,11 @@ def run_bsl240_rewrite_method_parameter(
                             )
                         )
                         param_names.discard(lhs)
+                for param_cf in val_cf:
+                    if param_cf != lhs and re.search(rf"\b{re.escape(param_cf)}\b", line, re.IGNORECASE):
+                        used_before_assign.add(param_cf)
+                continue
+            for param_cf in val_cf:
+                if re.search(rf"\b{re.escape(param_cf)}\b", line, re.IGNORECASE):
+                    used_before_assign.add(param_cf)
     return diags

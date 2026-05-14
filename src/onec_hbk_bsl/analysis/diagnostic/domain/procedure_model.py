@@ -332,6 +332,8 @@ class ProcedureModel:
                 first_part = text.split("-", 1)[0].strip()
                 if text.startswith("-") and text.rstrip().endswith("."):
                     continue
+                if "—" in text and "-" not in text:
+                    continue
                 if has_struct_fields and ":" not in first_part and "-" in text:
                     continue
                 has_valid_return_entry = True
@@ -500,6 +502,27 @@ class ProcedureModel:
             line = lines[i]
             if try_block_re.match(line):
                 in_try = True
+            elif re.match(r"^\s*(?:Исключение|Except)\b", line, re.IGNORECASE) and in_try:
+                j = i + 1
+                while j < min(self.end_idx, len(lines)):
+                    stripped = lines[j].strip()
+                    if not stripped or stripped.startswith("//"):
+                        j += 1
+                        continue
+                    break
+                if j < len(lines) and try_close_re.match(lines[j]):
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=i + 1,
+                            character=len(line) - len(line.lstrip()),
+                            end_line=i + 1,
+                            end_character=len(line.rstrip()),
+                            severity=Severity.ERROR,
+                            code="BSL028",
+                            message='Отсутствует код в блоке "Исключение"',
+                        )
+                    )
             elif try_close_re.match(line) and in_try:
                 in_try = False
             if in_try or not risky_call_re.match(line):

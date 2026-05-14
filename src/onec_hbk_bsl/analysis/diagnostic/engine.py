@@ -438,7 +438,11 @@ class DiagnosticEngine:
         string_states = _build_line_string_states(lines)
         return [
             _calc_complexity_metrics(
-                lines, proc.start_idx, proc.end_idx, string_states=string_states
+                lines,
+                proc.start_idx,
+                proc.end_idx,
+                string_states=string_states,
+                proc_name=proc.name,
             )
             for proc in procs
         ]

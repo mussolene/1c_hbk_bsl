@@ -2385,34 +2385,35 @@ _RE_MCCABE_TERNARY = re.compile(r"\?\s*\(")
 
 
 def _count_mccabe_bool_ops(text: str, paren_depth: int = 0) -> tuple[int, int]:
-    if _RE_MCCABE_BOOL.search(text) is None:
-        if "(" not in text and ")" not in text:
-            return 0, paren_depth
-        for ch in text:
-            if ch == "(":
-                paren_depth += 1
-            elif ch == ")":
-                paren_depth = max(0, paren_depth - 1)
-        return 0, paren_depth
-    count = 0
+    _ = paren_depth
+    return len(_RE_MCCABE_BOOL.findall(text)), 0
+
+
+def _count_cognitive_ternary_ops(text: str, control_nesting: int) -> int:
+    score = 0
+    ternary_depth = 0
+    paren_stack: list[bool] = []
     i = 0
     while i < len(text):
-        ch = text[i]
-        if ch == "(":
-            paren_depth += 1
-            i += 1
+        if text[i] == "?" and i + 1 < len(text) and text[i + 1] == "(":
+            score += 1 + control_nesting + ternary_depth
+            ternary_depth += 1
+            paren_stack.append(True)
+            i += 2
             continue
-        if ch == ")":
-            paren_depth = max(0, paren_depth - 1)
-            i += 1
-            continue
-        match = _RE_MCCABE_BOOL.match(text, i)
-        if match:
-            count += 1 + paren_depth
-            i = match.end()
-            continue
+        if text[i] == "(":
+            paren_stack.append(False)
+        elif text[i] == ")" and paren_stack:
+            if paren_stack.pop():
+                ternary_depth = max(0, ternary_depth - 1)
         i += 1
-    return count, paren_depth
+    return score
+
+
+def _line_has_self_call(line: str, proc_name: str | None) -> bool:
+    if not proc_name:
+        return False
+    return bool(re.search(rf"(?<![.\w]){re.escape(proc_name)}\s*\(", line, re.IGNORECASE))
 
 
 def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool = False) -> str:
@@ -3142,6 +3143,11 @@ def _bsl149_append_missing_alias_diags(
         field = seg.strip().rstrip('";')
         if not field or field == "*" or re.match(r"^\w+\.\*$", field, re.UNICODE):
             continue
+        field_line_match = re.search(re.escape(field), line, re.IGNORECASE)
+        if field_line_match and re.search(
+            r"\b(?:КАК|AS)\b", line[field_line_match.end() :], re.IGNORECASE
+        ):
+            continue
         # Multi-line CASE expressions are often split by query continuation lines.
         # Skip intermediate CASE fragments; final line with alias is validated normally.
         if _RE_BSL149_CASE_PART.match(field):
@@ -3164,7 +3170,7 @@ def _bsl149_append_missing_alias_diags(
             field_for_message = re.sub(r"\s+", "", field) if field and field[0].isdigit() else field
             field_start = 0
             field_end = len(line.rstrip())
-            match = re.search(re.escape(field), line, re.IGNORECASE)
+            match = field_line_match
             if match:
                 field_start = match.start()
                 field_end = match.end()
@@ -4850,6 +4856,16 @@ def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
                         optional_count += 1
                         optional_params_list.append(param_name)
 
+    header_match = _RE_PROC_HEADER.search(_ts_node_text(node))
+    if header_match is not None:
+        name = header_match.group("name")
+        is_export = bool(header_match.group("export"))
+        parsed = _parse_params(header_match.group("params") or "")
+        params = [p[0] for p in parsed]
+        val_params = [p[0] for p in parsed if p[1]]
+        optional_count = sum(1 for p in parsed if p[2])
+        optional_params_list = [p[0] for p in parsed if p[2]]
+
     if not name:
         return None
 
@@ -4910,6 +4926,10 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
         ):
             start = node.start_point
             end = node.end_point
+            for child in getattr(node, "children", []) or []:
+                if getattr(child, "type", None) == "expression":
+                    end = child.start_point
+                    break
             diags.append(
                 Diagnostic(
                     file=path,
@@ -4935,6 +4955,7 @@ def _calc_cognitive_complexity(
     end_idx: int,
     *,
     string_states: list[bool] | None = None,
+    proc_name: str | None = None,
 ) -> int:
     """
     Calculate simplified Cognitive Complexity for a procedure body.
@@ -4988,7 +5009,9 @@ def _calc_cognitive_complexity(
         )
         if not bool_expr_open:
             bool_last_op = None
-        complexity += len(_RE_MCCABE_TERNARY.findall(line_no_strings)) * (1 + nesting)
+        complexity += _count_cognitive_ternary_ops(line_no_strings, nesting)
+        if _line_has_self_call(line_no_strings, proc_name):
+            complexity += 1
         if _CC_OPEN.match(line):
             complexity += 1 + nesting
             nesting += 1
@@ -5005,6 +5028,7 @@ def _calc_mccabe_complexity(
     end_idx: int,
     *,
     string_states: list[bool] | None = None,
+    proc_name: str | None = None,
 ) -> int:
     """
     Calculate McCabe cyclomatic complexity for a procedure body.
@@ -5034,6 +5058,8 @@ def _calc_mccabe_complexity(
         bool_count, paren_depth = _count_mccabe_bool_ops(line_no_strings, paren_depth)
         cc += bool_count
         cc += len(_RE_MCCABE_TERNARY.findall(line_no_strings))
+        if _line_has_self_call(line_no_strings, proc_name):
+            cc += 1
     return cc
 
 
@@ -5043,6 +5069,7 @@ def _calc_complexity_metrics(
     end_idx: int,
     *,
     string_states: list[bool] | None = None,
+    proc_name: str | None = None,
 ) -> tuple[int, int]:
     """Calculate cognitive and McCabe complexity in a single pass over a procedure body."""
     cognitive = 0
@@ -5092,7 +5119,9 @@ def _calc_complexity_metrics(
         if not bool_expr_open:
             bool_last_op = None
         ternary_count = len(_RE_MCCABE_TERNARY.findall(line_no_strings))
-        cognitive += ternary_count * (1 + nesting)
+        cognitive += _count_cognitive_ternary_ops(line_no_strings, nesting)
+        if _line_has_self_call(line_no_strings, proc_name):
+            cognitive += 1
         if _CC_OPEN.match(line):
             cognitive += 1 + nesting
             nesting += 1
@@ -5106,6 +5135,8 @@ def _calc_complexity_metrics(
         bool_count, paren_depth = _count_mccabe_bool_ops(line_no_strings, paren_depth)
         mccabe += bool_count
         mccabe += ternary_count
+        if _line_has_self_call(line_no_strings, proc_name):
+            mccabe += 1
     return cognitive, mccabe
 
 

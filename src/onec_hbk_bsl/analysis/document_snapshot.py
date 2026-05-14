@@ -176,6 +176,17 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
                         optional_count += 1
                         optional_params_list.append(param_name)
 
+    node_text = _ts_node_text(node)
+    header_match = _RE_PROC_HEADER.search(node_text)
+    if header_match is not None:
+        name = header_match.group("name")
+        is_export = bool(header_match.group("export"))
+        parsed = _parse_params(header_match.group("params") or "")
+        params = [param[0] for param in parsed]
+        val_params = [param[0] for param in parsed if param[1]]
+        optional_count = sum(1 for param in parsed if param[2])
+        optional_params_list = [param[0] for param in parsed if param[2]]
+
     if not name:
         return None
 
@@ -683,6 +694,7 @@ class DocumentSnapshot:
                 proc.start_idx,
                 proc.end_idx,
                 string_states=string_states,
+                proc_name=proc.name,
             )
             for proc in procs
         ]
