@@ -12,6 +12,7 @@ import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from onec_hbk_bsl.analysis.bsl_string_split import (
@@ -867,6 +868,7 @@ class DocumentSnapshot:
     _code_lines_wo_comments: list[str] | None = None
     _counter_lines: list[str] | None = None
     _line_lengths: list[int] | None = None
+    _reported_line_lengths: list[int] | None = None
     _blank_line_flags: list[bool] | None = None
     _has_parse_errors: bool | None = None
     _ts_node_groups: dict[str, list[Any]] | None = None
@@ -875,6 +877,7 @@ class DocumentSnapshot:
     )
     _missing_space_facts: list[LineDiagnosticFact] | None = None
     _incorrect_line_break_facts: list[LineDiagnosticFact] | None = None
+    _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
 
     @property
@@ -1009,6 +1012,37 @@ class DocumentSnapshot:
         if self._line_lengths is None:
             self._line_lengths = [len(line) for line in self.lines]
         return self._line_lengths
+
+    @property
+    def reported_line_lengths(self) -> list[int]:
+        """Return BSLLS-compatible visible line lengths used by BSL014."""
+        if self._reported_line_lengths is not None:
+            return self._reported_line_lengths
+
+        if "\r" not in self.content and Path(self.path).is_file():
+            try:
+                raw_line_source = [
+                    raw.decode("utf-8", errors="ignore")
+                    for raw in Path(self.path).read_bytes().splitlines(True)
+                ]
+            except OSError:
+                raw_line_source = self.content.splitlines(True)
+            if len(raw_line_source) != len(self.content.splitlines()):
+                raw_line_source = self.content.splitlines(True)
+        else:
+            raw_line_source = self.content.splitlines(True)
+
+        reported_lengths: list[int] = []
+        for raw in raw_line_source:
+            raw_no_lf = raw.rstrip("\n")
+            raw_no_eol = raw_no_lf.rstrip("\r")
+            if raw_no_lf.endswith("\r"):
+                visible_len = len(raw_no_eol.rstrip("\t"))
+            else:
+                visible_len = len(raw_no_eol.rstrip())
+            reported_lengths.append(visible_len)
+        self._reported_line_lengths = reported_lengths
+        return reported_lengths
 
     @property
     def blank_line_flags(self) -> list[bool]:
@@ -1330,6 +1364,45 @@ class DocumentSnapshot:
             end,
             "Проверьте правильность переноса операндов, операторов и параметров",
         )
+
+    def line_too_long_facts(self, max_line_length: int) -> list[LineDiagnosticFact]:
+        """Return cached BSL014 line-length facts for the configured limit."""
+        if self._line_too_long_facts_cache is None:
+            self._line_too_long_facts_cache = {}
+        cached = self._line_too_long_facts_cache.get(max_line_length)
+        if cached is not None:
+            return cached
+
+        facts: list[LineDiagnosticFact] = []
+        reported_lengths = self.reported_line_lengths
+        for idx, line in enumerate(self.lines):
+            if line.lstrip().startswith("|"):
+                content = line.lstrip()[1:].lstrip()
+                if re.search(
+                    r"\b(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|КАК|AS|ЗНАЧЕНИЕ|VALUE|ВЫРАЗИТЬ|CAST|СОЕДИНЕНИЕ|JOIN)\b",
+                    content,
+                    re.IGNORECASE,
+                ):
+                    continue
+                if len(line.rstrip()) <= 140:
+                    continue
+            length = len(line.rstrip())
+            reported_length = reported_lengths[idx] if idx < len(reported_lengths) else length
+            if reported_length <= max_line_length:
+                continue
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=idx,
+                    character=0,
+                    end_character=length,
+                    message=(
+                        f"Длина строки {reported_length} превышает максимально допустимую "
+                        f"{max_line_length}"
+                    ),
+                )
+            )
+        self._line_too_long_facts_cache[max_line_length] = facts
+        return facts
 
     def get_runtime_call_context(self) -> Any | None:
         """Return cached runtime call context if it has been built."""

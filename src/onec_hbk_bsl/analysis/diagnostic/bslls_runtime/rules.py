@@ -4849,11 +4849,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 commented_code_re=_diag._RE_COMMENTED_CODE,
             )
         if code == "BSL014":
-            return model.validate_line_too_long(
-                context.lines,
-                max_line_length=engine.max_line_length,
-                snapshot=snapshot,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.INFORMATION,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.line_too_long_facts(engine.max_line_length)
+            ]
         if code == "BSL015":
             diags = []
             for proc in procs:
