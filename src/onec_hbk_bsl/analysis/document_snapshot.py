@@ -98,6 +98,10 @@ _RE_DEPRECATED_MSG = re.compile(
     r"^\s*(?:Предупреждение|Warning)\s*\(",
     re.IGNORECASE,
 )
+_RE_THIS_FORM = re.compile(
+    r"\b(?:ЭтаФорма|ThisForm)\b",
+    re.IGNORECASE,
+)
 _RE_CREDENTIALS = re.compile(
     r"(?:пароль|password|passwd|pwd|secret|credential(?:s)?|token"
     r'|логин|login|auth|apikey|api_key|accesskey|access_key)\s*=\s*"[^"]{2,}"',
@@ -518,6 +522,18 @@ def _standard_regions_for_path(path: str) -> frozenset[str]:
     if low.endswith("externalconnectionmodule.bsl"):
         return _STANDARD_REGIONS_BY_KIND["external-connection"]
     return frozenset()
+
+
+def _path_is_likely_form_module_bsl(path: str) -> bool:
+    try:
+        p = Path(path).resolve()
+    except OSError:
+        return False
+    stem = p.stem.lower()
+    if "форма" in stem or stem.endswith("form"):
+        return True
+    parts = [x.lower() for x in p.parts]
+    return p.name.lower() == "module.bsl" and ("forms" in parts or "формы" in parts)
 
 
 def _is_standard_region_name_for_path(path: str, region_name: str) -> bool:
@@ -1099,6 +1115,8 @@ class DocumentSnapshot:
     _empty_region_facts: list[LineDiagnosticFact] | None = None
     _duplicate_region_facts: list[LineDiagnosticFact] | None = None
     _deprecated_warning_facts: list[LineDiagnosticFact] | None = None
+    _command_or_form_export_facts: list[LineDiagnosticFact] | None = None
+    _this_form_usage_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
 
@@ -1804,6 +1822,77 @@ class DocumentSnapshot:
                 )
             )
         self._deprecated_warning_facts = facts
+        return facts
+
+    @property
+    def command_or_form_export_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL017 export-in-command/form-module facts."""
+        if self._command_or_form_export_facts is not None:
+            return self._command_or_form_export_facts
+        stem_lower = Path(self.path).stem.lower()
+        is_command_or_form = (
+            stem_lower.endswith("command")
+            or stem_lower.endswith("команды")
+            or "форма" in stem_lower
+            or "form" in stem_lower
+        )
+        if not is_command_or_form:
+            self._command_or_form_export_facts = []
+            return self._command_or_form_export_facts
+
+        facts: list[LineDiagnosticFact] = []
+        for proc in self.procedures:
+            if not proc.is_export:
+                continue
+            line_text = self.lines[proc.start_idx] if proc.start_idx < len(self.lines) else ""
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=proc.start_idx,
+                    character=proc.header_col,
+                    end_character=len(line_text),
+                    message=(
+                        f"Export modifier is not allowed in command/form modules "
+                        f"({proc.kind} '{proc.name}')"
+                    ),
+                )
+            )
+        self._command_or_form_export_facts = facts
+        return facts
+
+    @property
+    def this_form_usage_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL040 ThisForm usage facts."""
+        if self._this_form_usage_facts is not None:
+            return self._this_form_usage_facts
+        if not _path_is_likely_form_module_bsl(self.path):
+            self._this_form_usage_facts = []
+            return self._this_form_usage_facts
+
+        facts: list[LineDiagnosticFact] = []
+        for idx, line in enumerate(self.lines):
+            proc = proc_containing_line(self.procedures, idx)
+            if proc is not None and any(
+                re.fullmatch(r"(?:ЭтаФорма|ThisForm)", param, re.IGNORECASE)
+                for param in proc.params
+            ):
+                continue
+            clean = mask_double_quoted_strings_preserve_len(line)
+            comment_col = clean.find("//")
+            if comment_col >= 0:
+                clean = clean[:comment_col]
+            for match in _RE_THIS_FORM.finditer(clean):
+                facts.append(
+                    LineDiagnosticFact(
+                        line_idx=idx,
+                        character=match.start(),
+                        end_character=match.end(),
+                        message=(
+                            "Избегайте использования ЭтаФорма/ThisForm, "
+                            "передавайте форму в параметрах метода"
+                        ),
+                    )
+                )
+        self._this_form_usage_facts = facts
         return facts
 
     def _region_is_empty(self, region: RegionInfo) -> bool:

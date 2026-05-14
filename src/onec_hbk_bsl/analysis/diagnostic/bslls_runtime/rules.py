@@ -4910,7 +4910,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 for fact in snapshot.non_standard_region_facts
             ]
         if code == "BSL017":
-            return model.validate_export_in_command_or_form_module(context.lines, procs=procs)
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.WARNING,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.command_or_form_export_facts
+            ]
         if code == "BSL019":
             diags = []
             metrics = engine._complexity_metrics_for_procs(context.lines, procs)
@@ -5053,16 +5066,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 bool_op_re=_diag._RE_BOOL_OP,
             )
         if code == "BSL040":
-            return model.validate_this_form_usage(
-                context.lines,
-                procs=procs,
-                path_is_likely_form_module_bsl=_diag.path_is_likely_form_module_bsl,
-                proc_containing_line=_diag._proc_containing_line,
-                mask_double_quoted_strings_preserve_len=(
-                    _diag._mask_double_quoted_strings_preserve_len
-                ),
-                this_form_re=_diag._RE_THIS_FORM,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.INFORMATION,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.this_form_usage_facts
+            ]
         if code == "BSL042":
             return model.validate_bsl042_empty_export_method(
                 lines=context.lines,

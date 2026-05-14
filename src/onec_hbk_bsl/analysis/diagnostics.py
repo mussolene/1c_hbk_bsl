@@ -3555,12 +3555,6 @@ _RE_STR_CONCAT = re.compile(
     re.IGNORECASE,
 )
 
-# ЭтаФорма / ThisForm outside a comment
-_RE_THIS_FORM = re.compile(
-    r"\b(?:ЭтаФорма|ThisForm)\b",
-    re.IGNORECASE,
-)
-
 # ОписаниеОповещения / NotifyDescription
 _RE_NOTIFY_DESCRIPTION = re.compile(
     r"\bОписаниеОповещения\s*\(|NotifyDescription\s*\(",
