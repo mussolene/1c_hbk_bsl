@@ -2202,6 +2202,8 @@ class TestBsl200IncorrectLineBreak:
         fixture = Path(
             ".agent/tmp/bslls-source/src/test/resources/diagnostics/IncorrectLineBreakDiagnostic.bsl"
         )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
         diags = [
             diag
             for diag in DiagnosticEngine(select={"BSL200"}).check_file(str(fixture))
@@ -2393,6 +2395,8 @@ class TestBsl029MagicNumber:
         fixture = Path(
             ".agent/tmp/bslls-source/src/test/resources/diagnostics/MagicNumberDiagnostic.bsl"
         )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
         diags = [
             diag
             for diag in DiagnosticEngine(select={"BSL029"}).check_file(str(fixture))
@@ -3791,6 +3795,8 @@ class TestBsl210LogicalOrInWhereSection:
             ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
             "LogicalOrInTheWhereSectionOfQueryDiagnostic.bsl"
         )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
         diags = [
             diag
             for diag in DiagnosticEngine(select={"BSL210"}).check_file(str(fixture))

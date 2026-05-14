@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
 
@@ -34,6 +36,8 @@ def test_bsl155_matches_upstream_fixture_range() -> None:
     p = Path(
         ".agent/tmp/bslls-source/src/test/resources/diagnostics/CodeBlockBeforeSubDiagnostic.bsl"
     )
+    if not p.exists():
+        pytest.skip("BSLLS fixture is not available")
     engine = DiagnosticEngine(select={"BSL155"})
     diags = [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
     assert len(diags) == 1
