@@ -510,6 +510,13 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="onec-hbk-bsl",
+        usage=(
+            "onec-hbk-bsl format [PATH ...] [--check] [--indent-size N] [--insert-spaces]\n"
+            "       onec-hbk-bsl [--version] [--log-level {debug,info,warning,error}]\n"
+            "                    (--lsp | --mcp | --watch [PATH ...] | --check [PATH ...] |\n"
+            "                     --index [PATH] | --bench [PATH] | --list-rules | --init)\n"
+            "                    [options]"
+        ),
         description="BSL (1C Enterprise) analyzer — MCP server, LSP server, and CLI linter",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""

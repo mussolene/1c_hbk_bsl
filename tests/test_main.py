@@ -242,7 +242,7 @@ class TestMainFormat:
         assert exc_info.value.code == 1
         assert path.read_text(encoding="utf-8") == original
 
-    def test_format_subcommand_writes_strict_bslls_tabs(self, tmp_path: Path) -> None:
+    def test_format_subcommand_writes_default_tabs(self, tmp_path: Path) -> None:
         path = tmp_path / "dirty.bsl"
         path.write_text("Процедура Тест()\nА = 1;\nКонецПроцедуры\n", encoding="utf-8")
         with patch("sys.argv", ["onec-hbk-bsl", "format", str(tmp_path)]):
@@ -250,6 +250,14 @@ class TestMainFormat:
                 main()
         assert exc_info.value.code == 0
         assert "\n\tА = 1;" in path.read_text(encoding="utf-8")
+
+    def test_help_mentions_format_subcommand(self, capsys: pytest.CaptureFixture) -> None:
+        with patch("sys.argv", ["onec-hbk-bsl", "--help"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "onec-hbk-bsl format [PATH ...]" in out
 
     def test_format_subcommand_check_clean_exits_zero(self, tmp_path: Path) -> None:
         path = tmp_path / "clean.bsl"

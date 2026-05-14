@@ -295,7 +295,7 @@ class BslLanguageServer(LanguageServer):
         db_path = resolve_index_db_path(os.getcwd())
         self.symbol_index = SymbolIndex(db_path=db_path)
         _sel, _ign = parse_env_rule_filters()
-        _profile = parse_env_rule_profile() or "strict-bslls"
+        _profile = parse_env_rule_profile()
         self.diagnostics_engine = DiagnosticEngine(
             symbol_index=self.symbol_index,
             select=_sel,
@@ -2764,7 +2764,7 @@ def _resolve_insert_spaces(options: Any) -> bool | None:
     """Return ``textDocument/formatting`` insertSpaces when the client sent it.
 
     ``None`` means: let :class:`~onec_hbk_bsl.analysis.formatter.BslFormatter`
-    pick the default for its profile (``strict-bslls`` → tabs, same as BSLLS CLI
+    pick the default for the BSLLS-compatible formatter (tabs, same as BSLLS CLI
     and :file:`vscode-extension/package.json` ``[bsl].editor.insertSpaces`` false).
     """
     if options is None:

@@ -12,7 +12,6 @@ Supported keys
 --------------
 select              list[str]   — run only these rule codes
 ignore              list[str]   — always-skip rule codes
-profile             str         — strict-bslls
 exclude             list[str]   — glob patterns for excluded paths
 per-file-ignores    dict        — {"pattern": ["BSL001"]}
 format              str         — text | json | sonarqube | sarif
