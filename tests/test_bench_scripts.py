@@ -28,3 +28,13 @@ def test_bench_profile_path_for_run_cache_modes() -> None:
     assert bench_profile._path_for_run(base, 2, "hit") == base
     assert bench_profile._path_for_run(base, 2, "miss").startswith(base)
     assert bench_profile._path_for_run(base, 2, "miss") != base
+
+
+def test_bslls_oracle_parity_rule_filter_accepts_code_and_name() -> None:
+    bslls_oracle_parity = _load_script_module("bslls_oracle_parity")
+
+    by_code = bslls_oracle_parity._rule_filter_codes(["BSL265"])
+    by_name = bslls_oracle_parity._rule_filter_codes(["UselessTernaryOperator"])
+
+    assert by_code == {"BSL265"}
+    assert by_name == {"BSL265"}

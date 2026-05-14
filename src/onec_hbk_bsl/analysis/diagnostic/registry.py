@@ -48,23 +48,11 @@ _EXPLICIT_PHASE: dict[str, RulePhase] = {
     "BSL009": RulePhase.HYBRID,
     "BSL014": RulePhase.LINE,
     "BSL016": RulePhase.REGION,
-    "BSL018": RulePhase.HYBRID,
     "BSL033": RulePhase.HYBRID,
-    "BSL038": RulePhase.HYBRID,
     "BSL051": RulePhase.HYBRID,
     "BSL052": RulePhase.HYBRID,
-    "BSL059": RulePhase.HYBRID,
     "BSL060": RulePhase.HYBRID,
-    "BSL061": RulePhase.HYBRID,
     "BSL062": RulePhase.HYBRID,
-    "BSL070": RulePhase.HYBRID,
-    "BSL085": RulePhase.HYBRID,
-    "BSL091": RulePhase.HYBRID,
-    "BSL092": RulePhase.HYBRID,
-    "BSL119": RulePhase.LINE,
-    "BSL120": RulePhase.LINE,
-    "BSL121": RulePhase.LINE,
-    "BSL280": RulePhase.INDEX,
 }
 
 

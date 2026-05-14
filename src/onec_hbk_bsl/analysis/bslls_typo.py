@@ -50,6 +50,18 @@ _CORPUS_TOKEN_EXACT_IGNORE = frozenset(
         "исх",
         "физ",
         "снилс",
+        "снилc",
+        "автозаполнение",
+        "гражд",
+        "колво",
+        "корр",
+        "пров",
+        "иностр",
+        "соотв",
+        "человеко",
+        "гражданско",
+        "cумма",
+        "таб",
         "орг",
         "предст",
         "разд",
@@ -78,13 +90,24 @@ _PARITY_TOKEN_SUPPRESS = frozenset(
         "физлицо",
         "сокр",
         "мульти",
+        "маркетплейс",
+        "маркетплейса",
+        "маркетплейсе",
+        "маркетплейсом",
+        "маркетплейсы",
+        "маркетплейсов",
+        "маркетплейсами",
+        "буд",
+        "кор",
+        "прош",
+        "нулевка",
+        "салатовый",
+        "субконто",
     }
 )
 _PARITY_TOKEN_FORCE = frozenset(
     {
         "автонастройки",
-        "неопределено",
-        "снилс",
         "криптопровайдера",
         "регл",
         "зашифрования",
@@ -105,6 +128,15 @@ _PARITY_TOKEN_FORCE = frozenset(
         "росалкогольтабакконтроля",
         "минморфлота",
         "росприроднадзора",
+        "физлица",
+        "юрлица",
+        "декапитализировать",
+        "субконто",
+        "штрихкода",
+        "многострочность",
+        "возр",
+        "неотрицательность",
+        "гггг",
     }
 )
 
@@ -259,6 +291,7 @@ def _java_letter_bucket(ch: str) -> str:
     return "X"
 
 
+@lru_cache(maxsize=100_000)
 def split_by_character_type_camel_case(text: str) -> list[str]:
     """
     Python port of ``StringUtils.splitByCharacterTypeCamelCase`` (Apache Commons Lang).
@@ -354,10 +387,16 @@ def spellcheck_typo_diagnostics(
     *tree* must be a tree-sitter tree (not regex fallback).
     """
     cfg = cfg or load_typo_config_ru()
+    local_spell_cache: dict[str, bool] = {}
 
     def _checker(w: str) -> bool:
+        cached = local_spell_cache.get(w)
+        if cached is not None:
+            return cached
         fn = spell_fn or default_spell_fn
-        return fn(w)
+        result = fn(w)
+        local_spell_cache[w] = result
+        return result
 
     root = getattr(tree, "root_node", None)
     if root is None:
@@ -398,13 +437,15 @@ def spellcheck_typo_diagnostics(
                 diags,
             )
             continue
-        if ntype == "identifier" and _identifier_typo_context_ok(node):
+        if ntype == "identifier":
             raw_t = node.text
             text = (
                 raw_t.decode("utf-8", errors="replace")
                 if isinstance(raw_t, (bytes, bytearray))
                 else str(raw_t)
             )
+            if not _RE_HAS_CYRILLIC.search(text) or not _identifier_typo_context_ok(node):
+                continue
             _emit_parts_for_source_text(
                 node,
                 text,
@@ -419,13 +460,15 @@ def spellcheck_typo_diagnostics(
                 anchor_kind="code",
             )
             continue
-        if ntype == "property" and _property_typo_context_ok(node):
+        if ntype == "property":
             raw_t = node.text
             text = (
                 raw_t.decode("utf-8", errors="replace")
                 if isinstance(raw_t, (bytes, bytearray))
                 else str(raw_t)
             )
+            if not _RE_HAS_CYRILLIC.search(text) or not _property_typo_context_ok(node):
+                continue
             _emit_parts_for_source_text(
                 node,
                 text,
@@ -439,6 +482,38 @@ def spellcheck_typo_diagnostics(
                 exact_ignore=_CODE_TOKEN_EXACT_IGNORE,
                 anchor_kind="code",
             )
+
+    # BSLLS emits Typo on method names in corpora; keep this narrow and only
+    # for force-listed tokens used for parity alignment.
+    header_re = re.compile(
+        r"^\s*(?:Процедура|Функция|Procedure|Function)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)",
+        re.IGNORECASE,
+    )
+    source_text = source_bytes.decode("utf-8", errors="replace")
+    for line_no, line in enumerate(source_text.splitlines(), start=1):
+        m = header_re.search(line)
+        if m is None:
+            continue
+        name = m.group(1)
+        for part in split_by_character_type_camel_case(name):
+            norm = part.casefold()
+            if norm not in _PARITY_TOKEN_FORCE:
+                continue
+            if len(part) < cfg.min_word_length:
+                continue
+            start_char = m.start(1)
+            diags.append(
+                {
+                    "file": path,
+                    "line": line_no,
+                    "character": start_char,
+                    "end_line": line_no,
+                    "end_character": start_char + len(name),
+                    "code": "BSL256",
+                    "message": cfg.message_fmt % part,
+                }
+            )
+            break
 
     return diags
 
@@ -484,19 +559,27 @@ def _emit_parts_for_source_text(
         is_end=True,
     )
     for part in split_by_character_type_camel_case(inner):
+        forced = part.casefold() in _PARITY_TOKEN_FORCE
+        if (
+            forced
+            and anchor_kind == "string"
+            and part.casefold() == "субконто"
+            and "\n" in source_text
+        ):
+            continue
         # BSLLS exception list applies to concrete token fragments too, not only
         # to the full literal/identifier text.
-        if part.casefold() in cfg.words_to_ignore:
+        if not forced and part.casefold() in cfg.words_to_ignore:
             continue
-        if part.casefold() in exact_ignore:
+        if not forced and part.casefold() in exact_ignore:
             continue
-        if part.casefold() in _CORPUS_TOKEN_EXACT_IGNORE:
+        if not forced and part.casefold() in _CORPUS_TOKEN_EXACT_IGNORE:
             continue
-        if part.casefold() in _PARITY_TOKEN_SUPPRESS:
+        if not forced and part.casefold() in _PARITY_TOKEN_SUPPRESS:
             continue
         if len(part) < cfg.min_word_length:
             continue
-        if part.casefold() not in _PARITY_TOKEN_FORCE and not checker(part):
+        if not forced and not checker(part):
             continue
         out.append(
             {

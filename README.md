@@ -29,7 +29,60 @@
 | **CLI-линтер** | `onec-hbk-bsl --check` для использования в CI |
 | **Инкрементальная индексация** | SQLite-индекс, обновляется только при изменении файлов |
 
+**BSLLS-паритет:** диагностики и форматирование ориентированы на поведение BSL Language Server. В рантайме не запускается Java/BSLLS и нет альтернативных legacy/compat режимов: `select` / `ignore` только фильтруют стандартный BSLLS-совместимый набор.
+
 **Производительность:** ~600 файлов/сек · <100 мс запуска · ~80 МБ RAM
+
+---
+
+## Быстрый старт
+
+### VS Code / Cursor
+
+1. Установите расширение `mussolene.1c-hbk-bsl`.
+2. Откройте репозиторий с `.bsl` / `.os` файлами.
+3. Дождитесь запуска LSP: в панели **Problems** появятся диагностики `onec-hbk-bsl · BSL…`, а `Format Document` будет использовать BSLLS-ориентированный форматтер.
+
+Минимальные настройки для обычной работы:
+
+```json
+{
+  "[bsl]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": false
+  }
+}
+```
+
+### CLI / CI
+
+```bash
+uv tool install onec-hbk-bsl
+onec-hbk-bsl --check /path/to/1c-project
+onec-hbk-bsl --check /path/to/1c-project --format sarif > bsl-results.sarif
+```
+
+По умолчанию CLI использует тот же BSLLS-совместимый набор правил. Для узких прогонов задавайте фильтры:
+
+```bash
+BSL_SELECT=BSL001,BSL011 onec-hbk-bsl --check .
+BSL_IGNORE=BSL012 onec-hbk-bsl --check .
+```
+
+Конфигурация проекта читается из `onec-hbk-bsl.toml` или секции `[tool."onec-hbk-bsl"]` в `pyproject.toml`; явные CLI/env параметры имеют приоритет.
+
+### Docker LSP
+
+```json
+{
+  "onecHbkBsl.useDocker": true,
+  "onecHbkBsl.dockerContainer": "onec-hbk-bsl-default"
+}
+```
+
+Контейнер должен быть заранее запущен и видеть workspace по тому же пути, что открыт в редакторе.
 
 ---
 
@@ -41,7 +94,7 @@
 ext install mussolene.1c-hbk-bsl
 ```
 
-При первом открытии `.bsl` файла расширение автоматически скачает серверный бинарник.
+При первом открытии `.bsl` файла расширение найдёт установленный или вложенный серверный бинарник; если подходящего бинарника нет, предложит скачать его из GitHub Releases.
 
 Для ручной настройки добавьте в `.vscode/settings.json`:
 
@@ -71,6 +124,10 @@ uv tool install onec-hbk-bsl
 # Линтинг проекта
 onec-hbk-bsl --check /path/to/1c-project
 
+# Форматирование проекта
+onec-hbk-bsl format /path/to/1c-project
+onec-hbk-bsl format /path/to/1c-project --check
+
 # MCP-сервер для Claude
 onec-hbk-bsl --mcp --port 8051
 
@@ -87,7 +144,7 @@ onec-hbk-bsl --index /path/to/1c-project
 
 | Параметр | По умолчанию | Описание |
 |---|---|---|
-| `onecHbkBsl.serverPath` | `onec-hbk-bsl` | Путь к бинарнику сервера; значение по умолчанию не подставляет путь из системного `PATH` — укажите полный путь к своему `onec-hbk-bsl`, либо используйте бинарник из VSIX / скачанный расширением |
+| `onecHbkBsl.serverPath` | `onec-hbk-bsl` | Путь к бинарнику сервера; значение по умолчанию ищет установленный `onec-hbk-bsl` в системном `PATH`, затем использует бинарник из VSIX / кэша / скачивания |
 | `onecHbkBsl.indexDbPath` | *(пусто)* → `.git/onec-hbk-bsl_index.sqlite` или `~/.cache/onec-hbk-bsl/…` | Явный путь к SQLite-индексу (необязательно) |
 | `onecHbkBsl.logLevel` | `info` | Уровень логирования |
 | `onecHbkBsl.diagnostics.enabled` | `true` | Диагностики в реальном времени |
@@ -109,11 +166,16 @@ onec-hbk-bsl --index /path/to/1c-project
 
 ## Правила диагностик
 
-В реестре объявлены коды **BSL001–BSL280**. Реализованная логика и набор **включённых по умолчанию** задаются в движке. Полный список с уровнями: `onec-hbk-bsl --list-rules`.
+В реестре объявлены коды **BSL001–BSL280**. Публичный набор диагностик соответствует BSLLS-поведению по умолчанию; полный список с уровнями: `onec-hbk-bsl --list-rules`.
 
-**Политика по умолчанию:** значительная часть кодов из реестра **выключена** (`DEFAULT_DISABLED` в `DiagnosticEngine` в коде): снижение шума, дубликаты имён BSLLS, спорные или тяжёлые проверки. Включён «базовый» набор для практичного линтинга; точный состав — в матрице (колонка «Выкл. по умолч.»). Настройки `onecHbkBsl.diagnostics.select` / `ignore` и переменные `BSL_SELECT` / `BSL_IGNORE` переопределяют набор.
+**Политика по умолчанию:** запускается BSLLS-совместимый набор. Настройки `onecHbkBsl.diagnostics.select` / `ignore` и переменные `BSL_SELECT` / `BSL_IGNORE` фильтруют правила из этого набора; альтернативных legacy/compat режимов нет.
 
-Профиль правил можно выбирать через `--profile` или `profile` в `onec-hbk-bsl.toml`.
+### Что считается совместимостью с BSLLS
+
+- Имена диагностик, уровни, anchors и сообщения выравниваются по BSLLS там, где правило реализовано.
+- Счетчики `MethodSize`, `CognitiveComplexity` и `CyclomaticComplexity` следуют BSLLS-семантике: многострочные сигнатуры не входят в тело метода, comment-only границы тела не расширяют `MethodSize`, булевы операторы в строках и query-тексте не добавляют сложность BSL-коду.
+- Форматирование использует BSLLS-ориентированное поведение по умолчанию: табы для `[bsl]`, отступ 4, нормализация пробелов вокруг типовых токенов и безопасное on-type форматирование только для отступа новой строки.
+- Если нужен меньший набор правил, используйте `select` / `ignore`; это фильтр поверх стандартного набора, а не переключение на другой режим.
 
 Примеры (не исчерпывающий список):
 
@@ -125,7 +187,7 @@ onec-hbk-bsl --index /path/to/1c-project
 | BSL005 | WRN | UsingHardcodeNetworkAddress | Захардкоженный IP / URL |
 | BSL011 | WRN | CognitiveComplexity | Когнитивная сложность > 15 |
 | BSL012 | WRN | UsingHardcodeSecretInformation | Захардкоженный пароль / токен |
-| BSL019 | WRN | CyclomaticComplexity | Цикломатическая сложность > 10 |
+| BSL019 | WRN | CyclomaticComplexity | Цикломатическая сложность > 20 |
 | BSL033 | ERR | CreateQueryInCycle | Запрос внутри цикла |
 | BSL-DEAD | INF | *(индекс)* | Неиспользуемая неэкспортная процедура/функция (нет вызовов в проекте) |
 | BSL050 | WRN | LargeTransaction | `НачатьТранзакцию` без Зафиксировать/Отменить |
@@ -207,7 +269,7 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 │   ├── analysis/     # символы, граф вызовов, диагностики
 │   ├── indexer/      # инкрементальный SQLite-индекс (FTS5)
 │   ├── lsp/          # pygls LSP-сервер
-│   ├── mcp_bridge/   # MCP-сервер (fastmcp)
+│   ├── mcp_bridge/   # MCP-сервер (Python MCP SDK)
 │   └── cli/          # CLI-интерфейс
 └── vscode-extension/
     ├── src/          # TypeScript LanguageClient
@@ -253,5 +315,5 @@ MIT © 2024 1C HBK BSL Contributors
 | [tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl) | MIT | Парсер / грамматика BSL для синтаксического анализа |
 | [pygls](https://github.com/openlawlibrary/pygls) | Apache 2.0 | LSP-сервер (Python Language Server Protocol framework) |
 | [lsprotocol](https://github.com/microsoft/lsprotocol) | MIT | LSP-типы (Python) |
-| [fastmcp](https://github.com/jlowin/fastmcp) | Apache 2.0 | MCP-сервер |
+| [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | MIT | MCP-сервер |
 | [bsl-language-server](https://github.com/1c-syntax/bsl-language-server) | LGPL v3 | Справочник диагностик BSL (коды BSL*) — код не используется |

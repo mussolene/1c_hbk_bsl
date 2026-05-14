@@ -44,7 +44,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Annotated
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 
 from onec_hbk_bsl.analysis.call_graph import build_call_graph
 from onec_hbk_bsl.analysis.diagnostics import (
@@ -53,7 +53,6 @@ from onec_hbk_bsl.analysis.diagnostics import (
     display_name_for_rule_code,
     normalize_rule_code_set,
     parse_env_rule_filters,
-    parse_env_rule_profile,
 )
 from onec_hbk_bsl.analysis.fix_engine import apply_fixes as _apply_fixes
 from onec_hbk_bsl.analysis.formatter import default_formatter
@@ -311,13 +310,12 @@ def _mcp_unused_diagnostics(file_path: str, idx: SymbolIndex) -> list[dict]:
 def _resolve_mcp_check_file_select_ignore(
     select: str | None,
     ignore: str | None,
-) -> tuple[set[str] | None, set[str] | None, str | None]:
+) -> tuple[set[str] | None, set[str] | None]:
     """
     Tool parameters override environment when non-empty; otherwise use
     ``BSL_SELECT`` / ``BSL_IGNORE`` (same as LSP).
     """
     env_sel, env_ign = parse_env_rule_filters()
-    env_profile = parse_env_rule_profile()
     if select and select.strip():
         sel = normalize_rule_code_set(select.split(","))
     else:
@@ -326,7 +324,7 @@ def _resolve_mcp_check_file_select_ignore(
         ign = normalize_rule_code_set(ignore.split(","))
     else:
         ign = env_ign
-    return sel, ign, env_profile
+    return sel, ign
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +332,7 @@ def _resolve_mcp_check_file_select_ignore(
 # ---------------------------------------------------------------------------
 
 
-def create_mcp_app() -> FastMCP:
+def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     """Create and return the FastMCP application with all BSL tools registered."""
     mcp = FastMCP(
         name="onec-hbk-bsl",
@@ -344,6 +342,8 @@ def create_mcp_app() -> FastMCP:
             "Then use bsl_find_symbol, bsl_callers, bsl_callees, etc. "
             "to explore the codebase."
         ),
+        host=host,
+        port=port,
     )
 
     # ------------------------------------------------------------------
@@ -580,8 +580,8 @@ def create_mcp_app() -> FastMCP:
 
     @mcp.tool(
         description=(
-            "Run the full BSL DiagnosticEngine on a file (same rules as LSP: BSL001–BSL280 registry, "
-            "respects BSL_SELECT/BSL_IGNORE env, optional BSL280 with workspace metadata index). "
+            "Run the full BSL DiagnosticEngine on a file (BSLLS-compatible public registry, "
+            "respects BSL_SELECT/BSL_IGNORE env and workspace metadata-aware rules). "
             "Set include_unused=true to also emit BSL-DEAD (unused non-export procedures/functions) "
             "when the symbol index is populated."
         )
@@ -600,7 +600,7 @@ def create_mcp_app() -> FastMCP:
         Run the DiagnosticEngine on *file_path* and return all issues.
 
         Uses the same rule selection as LSP: environment ``BSL_SELECT`` /
-        ``BSL_IGNORE``, the workspace index for metadata-aware rules (e.g. BSL280),
+        ``BSL_IGNORE``, the workspace index for metadata-aware rules,
         and includes ``rule_name`` (BSLLS-style) next to internal ``code``.
 
         Returns:
@@ -610,14 +610,12 @@ def create_mcp_app() -> FastMCP:
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
         env_sel, env_ign = parse_env_rule_filters()
-        env_profile = parse_env_rule_profile()
         idx = _get_index(workspace_root)
         engine = DiagnosticEngine(
             parser=_get_parser(),
             symbol_index=idx,
             select=env_sel,
             ignore=env_ign,
-            profile=env_profile,
         )
         issues = engine.check_file(path)
         diags = _mcp_diagnostic_list(issues)
@@ -691,7 +689,7 @@ def create_mcp_app() -> FastMCP:
         select: Annotated[
             str | None,
             "Comma-separated rules (BSL### or BSLLS names). "
-            "If omitted, uses BSL_SELECT env (same as LSP); if env unset, all rules.",
+            "If omitted, uses BSL_SELECT env (same as LSP).",
         ] = None,
         ignore: Annotated[
             str | None,
@@ -719,14 +717,13 @@ def create_mcp_app() -> FastMCP:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
-        select_set, ignore_set, profile = _resolve_mcp_check_file_select_ignore(select, ignore)
+        select_set, ignore_set = _resolve_mcp_check_file_select_ignore(select, ignore)
         idx = _get_index(workspace_root)
         engine = DiagnosticEngine(
             parser=_get_parser(),
             symbol_index=idx,
             select=select_set,
             ignore=ignore_set,
-            profile=profile,
         )
         issues = engine.check_file(path)
         diags = _mcp_diagnostic_list(issues)
@@ -745,7 +742,7 @@ def create_mcp_app() -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Return metadata for all built-in BSL lint rules (registry BSL001–BSL280).",
+        description="Return metadata for BSLLS-compatible public BSL lint rules.",
     )
     def bsl_list_rules(
         tag_filter: Annotated[
@@ -1306,14 +1303,13 @@ def create_mcp_app() -> FastMCP:
         """
         Run the FixEngine on *file_path* and return fixed content.
 
-        Fixable rules: BSL009 (trailing whitespace), BSL010 (missing EOF newline),
-        BSL055 (commented-out code removal), BSL060 (tab → spaces).
+        Fixable rules: BSL009, BSL055, BSL060.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
         if not Path(path).exists():
             return {"error": f"File not found: {path}", "file_path": path}
 
-        fixable_codes = {"BSL009", "BSL010", "BSL055", "BSL060"}
+        fixable_codes = {"BSL009", "BSL055", "BSL060"}
         select_set = normalize_rule_code_set(rules.split(",")) if rules else None
         run_codes = (select_set & fixable_codes) if select_set else fixable_codes
 
@@ -1322,7 +1318,6 @@ def create_mcp_app() -> FastMCP:
             symbol_index=_get_index(workspace_root),
             select=run_codes,
             ignore=None,
-            profile=parse_env_rule_profile(),
         )
         issues = engine.check_file(path)
         fixable = [d for d in issues if d.code in fixable_codes]

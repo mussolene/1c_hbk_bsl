@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
     bsl154_code_after_async_spans,
-    bsl155_code_block_before_sub,
     bsl156_diagnostics,
 )
 
@@ -134,6 +133,23 @@ def common_module_xml_flags_invalid(module_bsl_path: str) -> bool | None:
         external_connection=ext,
         client_ordinary_application=coa,
         client_managed_application=cma,
+    )
+
+
+def common_module_execute_external_code_applicable(module_bsl_path: str) -> bool:
+    xp = common_module_xml_for_module_bsl(module_bsl_path)
+    if xp is None:
+        return False
+    try:
+        raw = xp.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    if "<commonmodule" not in raw.casefold():
+        return False
+    return (
+        _xml_bool_tag(raw, "Server")
+        or _xml_bool_tag(raw, "ClientOrdinaryApplication")
+        or _xml_bool_tag(raw, "ExternalConnection")
     )
 
 
@@ -328,8 +344,11 @@ def common_module_xml_for_module_bsl(module_bsl_path: str) -> Path | None:
     if p.parent.name.lower() != "ext":
         return None
     mod_dir = p.parent.parent
-    xml = mod_dir / f"{mod_dir.name}.xml"
-    return xml if xml.is_file() else None
+    sibling_xml = mod_dir.parent / f"{mod_dir.name}.xml"
+    if sibling_xml.is_file():
+        return sibling_xml
+    nested_xml = mod_dir / f"{mod_dir.name}.xml"
+    return nested_xml if nested_xml.is_file() else None
 
 
 def return_values_reuse_cached_from_xml_text(raw: str) -> bool:
@@ -432,28 +451,6 @@ def run_bsl154_code_after_async(path: str, lines: list[str], procs: list[_ProcIn
                     f"После асинхронного вызова «{method}» следует исполняемый код "
                     f"(BSLLS CodeAfterAsyncCall)."
                 ),
-            )
-        )
-    return diags
-
-
-def run_bsl155_code_block_before_sub(
-    path: str, lines: list[str], procs: list[_ProcInfo]
-) -> list[Any]:
-    Diagnostic, Severity = _diag_types()
-    proc_tuples = [(p.start_idx, p.end_idx) for p in procs]
-    diags: list[Any] = []
-    for line_1, c0, c1, msg in bsl155_code_block_before_sub(lines, proc_tuples):
-        diags.append(
-            Diagnostic(
-                file=path,
-                line=line_1,
-                character=c0,
-                end_line=line_1,
-                end_character=c1,
-                severity=Severity.WARNING,
-                code="BSL155",
-                message=msg,
             )
         )
     return diags
@@ -679,7 +676,6 @@ def run_bsl173_deleting_collection_item(path: str, lines: list[str], procs: list
     while i < len(lines):
         m = re_foreach.match(lines[i])
         if m:
-            iter_var = m.group(1).casefold()
             collection = m.group(2).casefold()
             depth = 1
             j = i + 1
@@ -695,12 +691,7 @@ def run_bsl173_deleting_collection_item(path: str, lines: list[str], procs: list
                     dm = re_delete.search(bl)
                     if dm:
                         obj = dm.group(1).casefold().split(".")[-1]
-                        arg_start = bl.find("(", dm.end() - 1) + 1
-                        arg_end = bl.find(")", arg_start) if arg_start > 0 else -1
-                        arg = (
-                            bl[arg_start:arg_end].strip().casefold() if arg_end > arg_start else ""
-                        )
-                        if obj == collection or arg == iter_var:
+                        if obj == collection:
                             diags.append(
                                 Diagnostic(
                                     file=path,

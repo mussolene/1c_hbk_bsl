@@ -28,8 +28,11 @@ npx license-checker --production --csv
 | tree-sitter | MIT | Parser runtime |
 | tree-sitter-bsl | MIT | BSL grammar ([alkoleft/tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl)) |
 | watchfiles | MIT | File watching |
-| fastmcp | Apache-2.0 | MCP server framework |
+| MCP Python SDK | MIT | MCP server framework |
 | pygls | Apache-2.0 | LSP framework ([pygls](https://github.com/openlawlibrary/pygls), per `LICENSE.txt` in wheel) |
+| pyspellchecker | MIT | Typo diagnostic spell-check backend |
+| pymorphy3 | MIT | Russian morphology for Typo diagnostics |
+| pymorphy3-dicts-ru | MIT | Russian dictionary data for `pymorphy3` |
 | rich | MIT | Terminal UI |
 
 Transitive dependencies include **MIT**, **Apache-2.0**, **BSD-2/3-Clause**, **ISC**, **MPL-2.0** (certifi), **PSF-2.0** (typing_extensions), **Unlicense** (email-validator), and others compatible with redistribution of this project under MIT, provided license texts are preserved where required.

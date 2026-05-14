@@ -7,6 +7,13 @@ This runbook covers production usage of:
 
 **Note:** `onec-hbk-bsl` does **not** bundle or call a separate Java analyzer at runtime.
 
+## Public Compatibility Contract
+- Default diagnostics use the BSLLS-compatible public rule set. There are no user-facing strict/legacy/compat mode switches.
+- `BSL_SELECT` / `BSL_IGNORE` and `onecHbkBsl.diagnostics.select` / `ignore` only filter the default rule set.
+- Formatting uses the BSLLS-oriented defaults exposed by the extension: tabs for `[bsl]`, logical indent width 4, safe on-type indentation on newline only.
+- Diagnostics/indexing parser fallbacks are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.
+- The formatter has no parser/line/CST fallback mode: it formats from the BSLLS-compatible token stream.
+
 ## Startup And Activation
 - VSCode extension activates on:
   - `onLanguage:bsl`
@@ -15,10 +22,10 @@ This runbook covers production usage of:
   - `onCommand:onecHbkBsl.showStatus`
 - Server binary resolution order:
   1. `onecHbkBsl.serverPath` (explicit filesystem path; default placeholder does not override)
-  2. bundled extension binary
-  3. previously downloaded binary in extension global storage
-  4. release download fallback (if supported for platform)  
-  (System `PATH` is not searched — set `serverPath` to a `onec-hbk-bsl` from `pip`/`uv`/build output if needed.)
+  2. installed `onec-hbk-bsl` found on system `PATH`
+  3. bundled extension binary
+  4. previously downloaded binary in extension global storage
+  5. release download fallback (if supported for platform)
 
 ## Docker LSP (`onecHbkBsl.useDocker`)
 
@@ -58,11 +65,12 @@ When `useDocker` is true, the extension runs:
 ## Operational Commands
 - Lint: `ruff check`
 - Tests + coverage gate: `PYTHONPATH=src pytest -q`
-- Benchmarks: `PYTHONPATH=src python -m onec_hbk_bsl --bench <workspace>`
+- Benchmarks: `PYTHONPATH=src python3 -m onec_hbk_bsl --bench <workspace>`
 - VSCode extension compile: `npm run compile` (in `vscode-extension`)
 
 ## Release Go/No-Go
 - `ruff check` passes.
 - `PYTHONPATH=src pytest -q` passes with coverage threshold.
 - If extension changed, `npm run compile` passes.
+- BSLLS oracle parity checks for selected release corpora have no `only_ours`, `only_bslls`, message, severity, or anchor mismatches.
 - Bench output is collected and reviewed (cold/warm index, diagnostics timing).

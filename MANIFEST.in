@@ -1,0 +1,36 @@
+include LICENSE
+include README.md
+include pyproject.toml
+graft src
+
+prune .agent
+prune .claude
+prune .codex
+prune .github
+prune assets
+prune build
+prune corpus-largest-3
+prune data
+prune dist
+prune docker
+prune docs
+prune htmlcov
+prune packaging
+prune scripts
+prune tests
+prune vscode-extension
+
+exclude .gitattributes
+exclude .gitignore
+exclude .gitleaks.toml
+exclude .pre-commit-hooks.yaml
+exclude AGENTS.md
+exclude CLAUDE.md
+exclude CONTRIBUTING.md
+exclude Makefile
+exclude env.example
+exclude uv.lock
+
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store

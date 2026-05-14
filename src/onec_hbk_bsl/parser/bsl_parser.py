@@ -210,6 +210,22 @@ class BslParser:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
+            if node.type in ("ERROR", "error") and self._is_cascade_after_keyword_property_error(
+                node
+            ):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
+            if node.type in ("ERROR", "error") and self._is_keyword_property_call_wrapper_error(
+                node
+            ):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
+            if node.type in ("ERROR", "error") and self._is_identifier_with_yo_error(node):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
             errors.append(
                 {
                     "line": node.start_point[0] + 1,
@@ -221,6 +237,16 @@ class BslParser:
             )
         for child in node.children:
             self._collect_errors(child, errors)
+
+    @staticmethod
+    def _is_identifier_with_yo_error(node: Any) -> bool:
+        """tree-sitter-bsl currently splits valid identifiers containing ``ё``."""
+        text = node.text if isinstance(node.text, bytes) else b""
+        value = text.decode("utf-8", errors="replace").strip()
+        if not value or "ё" not in value.casefold():
+            return False
+        first = value.split(None, 1)[0].rstrip(";,.")
+        return bool(first and "ё" in first.casefold() and first.replace("_", "").isalnum())
 
     @staticmethod
     def _prev_sibling_type(node: Any) -> str:
@@ -338,6 +364,48 @@ class BslParser:
             return True
 
         return False
+
+    @classmethod
+    def _is_cascade_after_keyword_property_error(cls, node: Any) -> bool:
+        """Suppress grammar cascades after valid member calls named like BSL keywords.
+
+        Example: ``Поток.Перейти(Аргумент, Перечисление.Значение);`` may parse
+        ``Перейти`` as ``GOTO_KEYWORD`` and then emit extra ERROR nodes for the
+        remaining arguments/closing tokens. The original keyword-as-property
+        ERROR is already suppressed; this catches the directly related cascade.
+        """
+        parent = getattr(node, "parent", None)
+        if parent is None or parent.type not in (
+            "assignment_statement",
+            "call_statement",
+            "property_access",
+        ):
+            return False
+        text = node.text if isinstance(node.text, bytes) else b""
+        stripped = text.strip()
+        if not (stripped.startswith(b",") or stripped.startswith(b")")):
+            return False
+        for sibling in parent.children:
+            if sibling.id == node.id:
+                break
+            if cls._node_contains_keyword_property_error(sibling):
+                return True
+        return False
+
+    @classmethod
+    def _is_keyword_property_call_wrapper_error(cls, node: Any) -> bool:
+        text = node.text if isinstance(node.text, bytes) else b""
+        if not text.strip().endswith(b";"):
+            return False
+        return cls._node_contains_keyword_property_error(node)
+
+    @classmethod
+    def _node_contains_keyword_property_error(cls, node: Any) -> bool:
+        if getattr(node, "type", None) in ("ERROR", "error") and cls._is_keyword_as_property_error(
+            node
+        ):
+            return True
+        return any(cls._node_contains_keyword_property_error(child) for child in node.children)
 
 
 # ---------------------------------------------------------------------------

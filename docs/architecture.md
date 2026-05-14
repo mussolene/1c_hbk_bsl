@@ -6,7 +6,7 @@
 
 BSL Analyzer (`onec-hbk-bsl`) — статический анализ для языка 1C Enterprise BSL. Три интерфейса над общим SQLite-индексом символов и вызовов:
 
-1. **MCP server** (FastMCP) — инструменты для ассистентов (поиск символов, диагностики, метаданные, и др.)
+1. **MCP server** (Python MCP SDK) — инструменты для ассистентов (поиск символов, диагностики, метаданные, и др.)
 2. **LSP server** (pygls) — VS Code / Cursor: определение, ссылки, переименование, дополнение, подсказки сигнатур, форматирование, диагностики
 3. **CLI** — `onec-hbk-bsl --check`, `--index`, и т.д.
 
@@ -18,7 +18,7 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │                                                              │
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────────┐ │
 │  │  --mcp   │   │  --lsp   │   │  --check / --index       │ │
-│  │ FastMCP  │   │  pygls   │   │  CLI (rich output)       │ │
+│  │   MCP    │   │  pygls   │   │  CLI (rich output)       │ │
 │  │ HTTP/SSE │   │  stdio   │   │                          │ │
 │  └────┬─────┘   └────┬─────┘   └────────────┬─────────────┘ │
 │       │              │                       │               │
@@ -27,7 +27,7 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │  ┌──────────────┐  ┌───────────────┐  ┌──────────────────┐  │
 │  │  symbols.py  │  │ call_graph.py │  │  diagnostics.py  │  │
 │  │  Symbol      │  │  Call         │  │  DiagnosticEngine│  │
-│  │  extraction  │  │  build_call_  │  │  BSL001–BSL280   │  │
+│  │  extraction  │  │  build_call_  │  │  BSLLS registry  │  │
 │  │              │  │  graph()      │  │  (реестр; подмн. │  │
 │  │              │  │               │  │   набор активен) │  │
 │  └──────┬───────┘  └───────┬───────┘  └──────┬───────────┘  │
@@ -58,7 +58,7 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
   └──────────────┘           └──────────────────┘
 ```
 
-Классификация правил по **фазе вызова** (строки / CST / гибрид и т.д.) и снимок в `last_metrics["rule_invoke"]`: [diagnostics_rule_invoke.md](diagnostics_rule_invoke.md) (модуль `diagnostics_rule_registry.py`; на исполнение правил не влияет).
+Классификация правил по **фазе вызова** (строки / CST / гибрид и т.д.) и снимок в `last_metrics["rule_invoke"]`: [diagnostics_rule_invoke.md](diagnostics_rule_invoke.md) (модуль `src/onec_hbk_bsl/analysis/diagnostic/registry.py`; на исполнение правил не влияет).
 
 ## Data Flow
 
@@ -99,15 +99,17 @@ Formatted response (dict / LSP Location)
 `textDocument/formatting` and `textDocument/rangeFormatting` use `BslFormatter`
 (`src/onec_hbk_bsl/analysis/formatter.py`).
 
-- **Structural block indent:** tree-sitter walk (`formatter_structural.py`),
-  merged with a keyword heuristic for blank/comment/`#` lines and when the parse
-  tree is a regex stub or contains ERROR nodes.
-- **Multi-line expression indent (BSL LS style):** extra level after a bare `=`
-  until `;`, leading `.` chains, operator context for `Если`/`Пока`/`Для` until
-  `Тогда`/`Цикл`, procedure signature tracking — line-based state in `formatter.py`.
-- **Token spacing in argument lists:** `formatter_ast_spacing.py` (comma spacing and related layout on valid CST).
+- **BSLLS-compatible token stream:** `formatter_tokens.py` provides the lexer used
+  by the formatter. It recognizes preprocessor lines, comments, annotations,
+  strings/query pipes, datetime literals, keywords, operators, and punctuation.
+- **Formatting state:** `formatter.py` applies BSLLS-like indentation and spacing
+  from the token stream. Range formatting formats the full document first and
+  then returns the requested lines, so the selected range keeps surrounding
+  token context.
+- **Parse-tree helpers:** diagnostics and snapshots use `parse_tree.py` for CST
+  parse-error checks. Formatting no longer depends on CST indentation fallbacks.
 
-Связь с диагностиками стиля (BSL024, BSL055, BSL136, BSL216) поддерживается в текущем наборе тестов и правилах движка.
+Связь с диагностиками стиля BSLLS поддерживается в текущем наборе тестов и правилах движка.
 
 Политика структурных правил и CST: [cst_policy.md](cst_policy.md).
 
@@ -166,7 +168,7 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | Metadata | `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index` |
 | 1C Help (optional) | `bsl_1c_help_search_keyword`, `bsl_1c_help_get_topic` |
 
-`bsl_diagnostics` / `bsl_check_file` run the full diagnostic engine for a file (registry BSL001–BSL280). Optional `include_unused=true` appends **BSL-DEAD** (unused non-export symbols) when the index is populated — same signal as LSP Problems under source `onec-hbk-bsl · BSL-DEAD`. Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
+`bsl_diagnostics` / `bsl_check_file` run the BSLLS-compatible diagnostic engine for a file. Optional `include_unused=true` appends **BSL-DEAD** (unused non-export symbols) when the index is populated — same signal as LSP Problems under source `onec-hbk-bsl · BSL-DEAD`. Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
 
 ## LSP capabilities (current)
 

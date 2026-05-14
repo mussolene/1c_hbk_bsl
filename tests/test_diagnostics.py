@@ -72,7 +72,7 @@ class TestBsl002LongProcedure:
 
     def test_long_procedure_triggers_bsl002(self, tmp_path: Path) -> None:
         # Build a procedure with 210 body lines
-        body = "\n".join(f"    // строка {i};" for i in range(210))
+        body = "\n".join(f"    Переменная{i} = {i};" for i in range(210))
         content = f"Процедура ДлиннаяПроцедура()\n{body}\nКонецПроцедуры\n"
         bsl_file = tmp_path / "long.bsl"
         bsl_file.write_text(content, encoding="utf-8")
@@ -86,12 +86,12 @@ class TestBsl002LongProcedure:
 
 
 # ---------------------------------------------------------------------------
-# BSL004 — Empty exception handler
+# BSL004 — EmptyCodeBlock
 # ---------------------------------------------------------------------------
 
 
 class TestBsl004EmptyExceptHandler:
-    def test_empty_except_triggers_bsl004(self, tmp_path: Path) -> None:
+    def test_empty_except_does_not_trigger_bsl004_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Попытка
@@ -103,8 +103,7 @@ class TestBsl004EmptyExceptHandler:
         """
         issues = _check_content(content, tmp_path)
         bsl004 = [d for d in issues if d.code == "BSL004"]
-        assert len(bsl004) >= 1
-        assert bsl004[0].severity == Severity.WARNING
+        assert bsl004 == []
 
     def test_nonempty_except_no_bsl004(self, tmp_path: Path) -> None:
         content = """\
@@ -120,22 +119,17 @@ class TestBsl004EmptyExceptHandler:
         bsl004 = [d for d in issues if d.code == "BSL004"]
         assert bsl004 == []
 
-    def test_sample_bsl_has_bsl004(self, sample_bsl_path: str) -> None:
-        """sample.bsl intentionally contains an empty Except block → BSL004."""
+    def test_sample_bsl_empty_except_is_not_bsl004(self, sample_bsl_path: str) -> None:
         engine = DiagnosticEngine()
         issues = engine.check_file(sample_bsl_path)
         bsl004 = [d for d in issues if d.code == "BSL004"]
-        assert len(bsl004) >= 1, (
-            "sample.bsl has an intentionally empty Except block (СброситьСчётчик)"
-        )
+        assert bsl004 == []
 
-    def test_bsl004_reports_correct_line(self, tmp_path: Path) -> None:
+    def test_bsl004_reports_empty_if_line(self, tmp_path: Path) -> None:
         content = """\
 Процедура Тест()
-    Попытка
-        Х = 1;
-    Исключение
-    КонецПопытки;
+    Если Истина Тогда
+    КонецЕсли;
 КонецПроцедуры
 """
         bsl_file = tmp_path / "t.bsl"
@@ -145,8 +139,31 @@ class TestBsl004EmptyExceptHandler:
         issues = engine.check_file(str(bsl_file))
         bsl004 = [d for d in issues if d.code == "BSL004"]
         assert len(bsl004) >= 1
-        # "Исключение" is on line 4 (1-based)
-        assert bsl004[0].line == 4
+        assert bsl004[0].line == 2
+
+    def test_bsl004_reports_multiline_if_on_then_token(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если ЗначениеЗаполнено(Параметр1,
+        Параметр2) Тогда
+
+        // Комментарий без исполняемого кода
+
+    ИначеЕсли Истина Тогда
+        Сообщить("OK");
+    КонецЕсли;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        bsl004 = [d for d in issues if d.code == "BSL004"]
+        assert len(bsl004) == 1
+        assert bsl004[0].line == 3
+        assert bsl004[0].character == content.splitlines()[2].index("Тогда")
+        assert bsl004[0].end_character == bsl004[0].character + len("Тогда")
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +191,35 @@ class TestCleanFile:
 
 
 class TestCheckFileOptimization:
+    def test_complexity_rules_reuse_string_state_per_file(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import onec_hbk_bsl.analysis.document_snapshot as snapshot_mod
+
+        body = "\n".join(
+            [
+                "    Если Истина Тогда",
+                '        Сообщение("ok");',
+                "    КонецЕсли;",
+            ]
+        )
+        content = "\n".join(f"Процедура Тест{i}()\n{body}\nКонецПроцедуры" for i in range(12))
+        bsl_file = tmp_path / "many_procs.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+        calls = {"value": 0}
+        original = snapshot_mod.build_line_string_states
+
+        def counted(lines: list[str]) -> list[bool]:
+            calls["value"] += 1
+            return original(lines)
+
+        monkeypatch.setattr(snapshot_mod, "build_line_string_states", counted)
+
+        engine = DiagnosticEngine(select={"BSL011", "BSL019"})
+        engine.check_file(str(bsl_file))
+
+        assert calls["value"] == 1
+
     def test_check_file_reads_content_once_when_tree_not_provided(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -348,7 +394,5 @@ class TestCheckFileOptimization:
             "build_document_snapshot",
             lambda *args, **kwargs: _FakeSnapshot(),
         )
-        monkeypatch.setattr(engine, "_rule_bsl002_method_size", lambda *args, **kwargs: [])
-
         result = engine._run_rules("x.bsl", "Процедура Тест()\nКонецПроцедуры\n", object())
         assert result == []

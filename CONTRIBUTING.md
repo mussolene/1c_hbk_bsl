@@ -83,7 +83,7 @@ The ruff configuration is in `pyproject.toml` under `[tool.ruff]`.
 3. Add a new private method `_rule_bslXXX_description(self, path, content) -> list[Diagnostic]`
 4. Call it inside `check_file()`
 5. Add tests in `tests/test_diagnostics.py` following the existing pattern
-6. See [docs/cst_policy.md](docs/cst_policy.md); refresh [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md) if your workflow regenerates it
+6. See [docs/cst_policy.md](docs/cst_policy.md) and verify the rule appears in `onec-hbk-bsl --list-rules`
 
 Rule naming convention: `BSL001–BSL099` are reserved for core rules.
 Community rules start at `BSL200`.
@@ -107,7 +107,7 @@ data flow, and SQLite schema. Operational notes: [docs/Production-Notes.md](docs
 If the PR changes LSP/MCP behavior, diagnostic rules, VS Code settings in `vscode-extension/package.json`, or MCP tool names:
 
 - Update [README.md](README.md) and/or [docs/Production-Notes.md](docs/Production-Notes.md) as needed.
-- For new or renamed rules, refresh [docs/bsl_rules_matrix.md](docs/bsl_rules_matrix.md) if your workflow regenerates it.
+- For new or renamed rules, verify `onec-hbk-bsl --list-rules` and update user-facing docs when behavior changes.
 - Optional: add a line to [CHANGELOG.md](CHANGELOG.md) for user-visible behavior changes.
 
 ## Pull Request Checklist

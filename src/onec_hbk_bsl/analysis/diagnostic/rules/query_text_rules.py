@@ -10,7 +10,7 @@ def _diag_module() -> Any:
     return _diag
 
 
-def run_bsl220_235_269_273_query_text_diagnostics(
+def run_bsl220_235_269_query_text_diagnostics(
     path: str,
     lines: list[str],
     codes: tuple[str, ...],
@@ -34,6 +34,8 @@ def run_bsl220_235_269_273_query_text_diagnostics(
         tail = content.split('"', 1)[1].strip() if '"' in content else ""
         if tail not in {"", ";"}:
             return False
+        if re.search(r"(?:=|<>)\s*\"{4}", content):
+            return False
         return bool(
             _diag._RE_QUERY_PARSE_ERROR_TAIL_KEYWORD.search(head)
             or _diag._RE_QUERY_PARSE_ERROR_TAIL_OPERATOR.search(head)
@@ -49,9 +51,18 @@ def run_bsl220_235_269_273_query_text_diagnostics(
         if not content_lines:
             continue
 
-        if "BSL235" in enabled and (
-            not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
-            or _has_plain_tail_parse_error(content_lines)
+        has_escaped_empty_query_string = any(
+            '""""' in content for _, _, content, _, _ in content_lines
+        )
+        last_content = content_lines[-1][2]
+        if (
+            "BSL235" in enabled
+            and not has_escaped_empty_query_string
+            and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
+            and (
+                not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
+                or _has_plain_tail_parse_error(content_lines)
+            )
         ):
             line_no, content_base, _content, head, _ = content_lines[-1]
             diags.append(
@@ -71,6 +82,9 @@ def run_bsl220_235_269_273_query_text_diagnostics(
             if "BSL220" in enabled:
                 multi_match = re.search(r'"{4,}', content)
                 if multi_match:
+                    run = multi_match.group(0)
+                    if len(run) == 4:
+                        continue
                     diags.append(
                         _diag.Diagnostic(
                             file=path,
@@ -99,59 +113,26 @@ def run_bsl220_235_269_273_query_text_diagnostics(
                         )
                     )
 
-            if "BSL273" in enabled:
-                for match in _diag._RE_QUERY_VIRTUAL_TABLE_CALL.finditer(head):
-                    open_match = match.group("open")
-                    if open_match is None:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=content_base + match.start("name"),
-                                end_line=line_no,
-                                end_character=content_base + match.end("name"),
-                                severity=_diag.Severity.WARNING,
-                                code="BSL273",
-                                message="Обращение к виртуальной таблице без параметров",
-                            )
-                        )
-                        continue
-
-                    open_idx = match.end("open") - 1
-                    close_idx = _diag._find_matching_paren(head, open_idx)
-                    if close_idx < 0:
-                        continue
-                    args = head[open_idx + 1 : close_idx]
-                    parts = [part.strip() for part in _diag._split_top_level_args(args)]
-                    if not parts or all(not part for part in parts):
-                        is_violation = True
-                    elif len(parts) == 1:
-                        is_violation = False
-                    else:
-                        is_violation = all(not part for part in parts[1:])
-                    if is_violation:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=content_base + match.start("name"),
-                                end_line=line_no,
-                                end_character=content_base + close_idx + 1,
-                                severity=_diag.Severity.WARNING,
-                                code="BSL273",
-                                message="Обращение к виртуальной таблице без параметров",
-                            )
-                        )
-
     if query_blocks is None:
         for start_idx, block_lines in _diag._iter_query_text_blocks(lines):
             content_lines = list(_diag._iter_query_text_content_lines(start_idx, block_lines))
             if not content_lines:
                 continue
 
-            if "BSL235" in enabled and (
-                not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
-                or _has_plain_tail_parse_error(content_lines)
+            has_escaped_empty_query_string = any(
+                '""""' in content for _, _, content, _, _ in content_lines
+            )
+            last_content = content_lines[-1][2]
+            if (
+                "BSL235" in enabled
+                and not has_escaped_empty_query_string
+                and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
+                and (
+                    not _diag._query_has_balanced_parens(
+                        [head for _, _, _, head, _ in content_lines]
+                    )
+                    or _has_plain_tail_parse_error(content_lines)
+                )
             ):
                 line_no, content_base, _content, head, _ = content_lines[-1]
                 diags.append(
@@ -171,6 +152,9 @@ def run_bsl220_235_269_273_query_text_diagnostics(
                 if "BSL220" in enabled:
                     multi_match = re.search(r'"{4,}', content)
                     if multi_match:
+                        run = multi_match.group(0)
+                        if len(run) == 4:
+                            continue
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
@@ -199,49 +183,6 @@ def run_bsl220_235_269_273_query_text_diagnostics(
                             )
                         )
 
-                if "BSL273" in enabled:
-                    for match in _diag._RE_QUERY_VIRTUAL_TABLE_CALL.finditer(head):
-                        open_match = match.group("open")
-                        if open_match is None:
-                            diags.append(
-                                _diag.Diagnostic(
-                                    file=path,
-                                    line=line_no,
-                                    character=content_base + match.start("name"),
-                                    end_line=line_no,
-                                    end_character=content_base + match.end("name"),
-                                    severity=_diag.Severity.WARNING,
-                                    code="BSL273",
-                                    message="Обращение к виртуальной таблице без параметров",
-                                )
-                            )
-                            continue
-
-                        open_idx = match.end("open") - 1
-                        close_idx = _diag._find_matching_paren(head, open_idx)
-                        if close_idx < 0:
-                            continue
-                        args = head[open_idx + 1 : close_idx]
-                        parts = [part.strip() for part in _diag._split_top_level_args(args)]
-                        if not parts or all(not part for part in parts):
-                            is_violation = True
-                        elif len(parts) == 1:
-                            is_violation = False
-                        else:
-                            is_violation = all(not part for part in parts[1:])
-                        if is_violation:
-                            diags.append(
-                                _diag.Diagnostic(
-                                    file=path,
-                                    line=line_no,
-                                    character=content_base + match.start("name"),
-                                    end_line=line_no,
-                                    end_character=content_base + close_idx + 1,
-                                    severity=_diag.Severity.WARNING,
-                                    code="BSL273",
-                                    message="Обращение к виртуальной таблице без параметров",
-                                )
-                            )
     return diags
 
 
@@ -356,14 +297,30 @@ def run_bsl206_207_209_query_join_diagnostics(
             continue
 
         pending_datasource = False
+        pending_join_datasource = False
         join_on_active = False
         join_buffer = ""
 
-        for line_no, content_base, _content, head, _ended_query in content_lines:
+        def has_join_before_query_end(lines_slice: list[Any], start_pos: int) -> bool:
+            for _line_no, _content_base, _content, future_head, _ended_query in lines_slice[
+                start_pos + 1 :
+            ]:
+                if (
+                    ";" in future_head
+                    or _diag._RE_BSL149_UNION.search(future_head)
+                    or _diag._RE_BSL149_SELECT.search(future_head)
+                ):
+                    return False
+                if _diag._RE_QUERY_JOIN_KEYWORD.search(future_head):
+                    return True
+            return False
+
+        for pos, (line_no, content_base, _content, head, _ended_query) in enumerate(content_lines):
             if _diag._RE_QUERY_JOIN_END_KEYWORD.search(head):
                 join_on_active = False
                 join_buffer = ""
                 pending_datasource = False
+                pending_join_datasource = False
 
             same_line_datasource = bool(
                 re.search(r"\b(?:ИЗ|FROM)\s*$", head, re.IGNORECASE)
@@ -376,9 +333,14 @@ def run_bsl206_207_209_query_join_diagnostics(
                     re.IGNORECASE,
                 )
             )
+            join_datasource = bool(
+                pending_join_datasource
+                or re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
+                or _diag._RE_QUERY_JOIN_KEYWORD.search(head)
+            )
 
             if pending_datasource or same_line_datasource:
-                if "BSL206" in enabled:
+                if "BSL206" in enabled and join_datasource:
                     subquery_match = _diag._RE_QUERY_DATASOURCE_SUBQUERY.search(head)
                     if subquery_match:
                         diags.append(
@@ -395,23 +357,35 @@ def run_bsl206_207_209_query_join_diagnostics(
                         )
                 if "BSL207" in enabled:
                     virtual_match = _diag._RE_QUERY_VIRTUAL_TABLE.search(head)
-                    if virtual_match:
+                    if virtual_match and (
+                        join_datasource or has_join_before_query_end(content_lines, pos)
+                    ):
+                        end_character = content_base + virtual_match.end()
+                        open_idx = virtual_match.end() - 1
+                        if open_idx >= 0 and head[open_idx] == "(":
+                            close_idx = _diag._find_matching_paren(head, open_idx)
+                            if close_idx > open_idx:
+                                end_character = content_base + close_idx + 1
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
                                 line=line_no,
                                 character=content_base + virtual_match.start(),
                                 end_line=line_no,
-                                end_character=content_base + virtual_match.end(),
+                                end_character=end_character,
                                 severity=_diag.Severity.WARNING,
                                 code="BSL207",
-                                message="Соединение с виртуальной таблицей в запросе",
+                                message="Не следует использовать соединения с виртуальными таблицами",
                             )
                         )
 
             pending_datasource = bool(
                 re.search(r"\b(?:ИЗ|FROM)\s*$", head, re.IGNORECASE)
                 or re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
+                or _diag._RE_QUERY_JOIN_KEYWORD.search(head)
+            ) and not _diag._RE_QUERY_ON_KEYWORD.search(head)
+            pending_join_datasource = bool(
+                re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
                 or _diag._RE_QUERY_JOIN_KEYWORD.search(head)
             ) and not _diag._RE_QUERY_ON_KEYWORD.search(head)
 
@@ -439,7 +413,7 @@ def run_bsl206_207_209_query_join_diagnostics(
                                 end_character=content_base + or_match.end(),
                                 severity=_diag.Severity.WARNING,
                                 code="BSL209",
-                                message="Логическое ИЛИ в секции соединения запроса",
+                                message="Обнаружен оператор 'ИЛИ' в условии соединения",
                             )
                         )
 

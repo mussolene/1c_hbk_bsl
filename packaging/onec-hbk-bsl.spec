@@ -23,8 +23,8 @@ SRC_MAIN = ROOT / "src" / "onec_hbk_bsl" / "__main__.py"
 
 # Project data. certifi/jsonschema/etc. come from PyInstaller hooks via the import graph.
 datas: list = [(str(ROOT / "data"), "data")]
-# fastmcp reads __version__ via importlib.metadata.version("fastmcp") at import time — needs dist-info in the bundle.
-datas += copy_metadata("fastmcp")
+# MCP SDK may use importlib.metadata at runtime; keep its dist-info in the bundle.
+datas += copy_metadata("mcp")
 # Keep project metadata available in the bundle; runtime version lookup itself
 # falls back to generated _version.py when frozen.
 datas += copy_metadata("onec-hbk-bsl")
@@ -60,6 +60,8 @@ excludes = [
     "numpy",
     "pandas",
     "IPython",
+    "cryptography",
+    "pygments",
 ]
 
 block_cipher = None

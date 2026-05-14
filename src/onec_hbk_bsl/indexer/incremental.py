@@ -19,8 +19,7 @@ from typing import Any
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
-from onec_hbk_bsl.analysis.call_graph import extract_calls
-from onec_hbk_bsl.analysis.symbols import extract_symbols
+from onec_hbk_bsl.analysis.semantic import extract_semantic_model
 from onec_hbk_bsl.indexer.metadata_parser import (
     crawl_config,
     find_config_root,
@@ -32,6 +31,27 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 logger = logging.getLogger(__name__)
 
 BSL_EXTENSIONS = {".bsl", ".os"}
+_DEFAULT_EXCLUDED_DIRS = {
+    ".agent",
+    ".agents",
+    ".cache",
+    ".codex",
+    ".cursor",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "out",
+    "target",
+    "vendor",
+}
 
 # Upper bound for BSL_INDEX_PARSE_WORKERS — each worker holds a Tree-sitter parser
 # and parsed AST payloads; unbounded queues previously allowed RAM to grow to 100+ GB
@@ -404,11 +424,10 @@ class IncrementalIndexer:
         """Parse one file and return prepared symbol/call dict lists."""
         try:
             tree = self._get_parser().parse_file(path)
-            symbols = extract_symbols(tree, file_path=path)
-            calls = extract_calls(tree, file_path=path)
+            semantic = extract_semantic_model(tree, file_path=path)
             return {
-                "symbols": [_symbol_to_dict(s) for s in symbols],
-                "calls": [_call_to_dict(c) for c in calls],
+                "symbols": [_symbol_to_dict(s) for s in semantic.symbols],
+                "calls": [_call_to_dict(c) for c in semantic.calls],
             }
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
@@ -423,7 +442,12 @@ class IncrementalIndexer:
         """
         root = os.path.abspath(workspace)
         result: list[str] = []
-        for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = [
+                name
+                for name in dirnames
+                if name not in _DEFAULT_EXCLUDED_DIRS and not name.endswith(".egg-info")
+            ]
             for name in filenames:
                 suf = Path(name).suffix.lower()
                 if suf in BSL_EXTENSIONS:

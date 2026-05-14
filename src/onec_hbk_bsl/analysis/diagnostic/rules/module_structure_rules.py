@@ -119,31 +119,6 @@ def _raw_without_bom(line: str) -> str:
     return line.strip().lstrip("\ufeff")
 
 
-def bsl155_code_block_before_sub(
-    lines: list[str],
-    procedures: list[tuple[int, int]],
-) -> list[tuple[int, int, int, str]]:
-    if not procedures:
-        return []
-    first_proc = min(s for s, _e in procedures)
-    msg = "Исполняемый код перед объявлениями процедур и функций (BSLLS CodeBlockBeforeSub)."
-    for i in range(first_proc):
-        line = lines[i]
-        raw = _raw_without_bom(line)
-        if not raw or raw.startswith("//") or raw.startswith("#"):
-            continue
-        if _RE_COMPILER.match(line):
-            continue
-        if _RE_MODULE_VAR.match(line):
-            continue
-        c0 = len(line) - len(line.lstrip())
-        c1 = len(line.rstrip())
-        if c1 <= c0:
-            c0, c1 = 0, 1
-        return [(i + 1, c0, c1, msg)]
-    return []
-
-
 def module_region_intervals(lines: list[str]) -> list[tuple[int, int]]:
     stack: list[int] = []
     out: list[tuple[int, int]] = []

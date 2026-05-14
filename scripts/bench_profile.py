@@ -5,10 +5,10 @@ cProfile для check_content() на синтетических BSL файлах
 Вывод: top-N функций по cumtime в формате pstats.
 
 Использование:
-    python scripts/bench_profile.py 3000         # один размер
-    python scripts/bench_profile.py --all        # все размеры
-    python scripts/bench_profile.py 3000 --top=30
-    python scripts/bench_profile.py 3000 --runs=5
+    python3 scripts/bench_profile.py 3000         # один размер
+    python3 scripts/bench_profile.py --all        # все размеры
+    python3 scripts/bench_profile.py 3000 --top=30
+    python3 scripts/bench_profile.py 3000 --runs=5
 """
 
 from __future__ import annotations

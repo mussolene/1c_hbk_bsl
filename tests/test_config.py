@@ -35,16 +35,6 @@ class TestBslConfigIgnore:
         assert cfg.ignore == {"BSL001", "BSL002"}
 
 
-class TestBslConfigProfile:
-    def test_profile_none_when_empty(self) -> None:
-        cfg = BslConfig({})
-        assert cfg.profile is None
-
-    def test_profile_normalized(self) -> None:
-        cfg = BslConfig({"profile": "bslls-core"})
-        assert cfg.profile == "strict-bslls"
-
-
 class TestBslConfigExclude:
     def test_exclude_empty(self) -> None:
         cfg = BslConfig({})

@@ -7,6 +7,7 @@ Usage:
     onec-hbk-bsl --mcp --stdio                     Start MCP server over stdio (Claude Desktop)
     onec-hbk-bsl --mcp --workspace /path/to/proj   Serve specific workspace (auto-indexes if empty)
     onec-hbk-bsl --check [PATH ...]                 Run linter (ruff-style output)
+    onec-hbk-bsl format [PATH ...]                  Format BSL files in-place
     onec-hbk-bsl --check [PATH] --diff              Check only git-changed BSL files
     onec-hbk-bsl --index [PATH]                     Force full reindex of workspace
     onec-hbk-bsl --list-rules                       Show all available rules
@@ -16,7 +17,6 @@ Usage:
 Check mode flags:
     --select BSL001,BSL002         Run only these rules
     --ignore BSL002                Skip these rules
-    --profile strict-bslls         Use canonical BSLLS core profile
     --format text|json|sonarqube|sarif  Output format (default: text)
     --jobs N                       Parallel workers (0 = auto, 1 = serial)
     --sonar-root PATH              Project root for SonarQube/SARIF relative paths
@@ -36,25 +36,35 @@ import argparse
 import logging
 import os
 import sys
-
-from rich.logging import RichHandler
+from pathlib import Path
 
 from onec_hbk_bsl import __version__
 
 
-def _setup_logging(level: str) -> None:
-    from rich.console import Console
+def _setup_logging(level: str, use_rich: bool = True) -> None:
+    if use_rich:
+        from rich.console import Console
+        from rich.logging import RichHandler
+
+        logging.basicConfig(
+            level=level.upper(),
+            format="%(message)s",
+            datefmt="[%X]",
+            # Explicitly route to stderr — stdout is reserved for LSP JSON-RPC in stdio mode
+            handlers=[RichHandler(console=Console(stderr=True), rich_tracebacks=True)],
+            force=True,
+        )
+        return
 
     logging.basicConfig(
         level=level.upper(),
-        format="%(message)s",
-        datefmt="[%X]",
-        # Explicitly route to stderr — stdout is reserved for LSP JSON-RPC in stdio mode
-        handlers=[RichHandler(console=Console(stderr=True), rich_tracebacks=True)],
+        format="[%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,
+        force=True,
     )
 
 
-def _run_lsp() -> None:
+def _run_lsp(log_level: str = "warning") -> None:
     # In LSP stdio mode stdout is the exclusive JSON-RPC pipe.
     # Reconfigure logging with force=True so that any previously installed
     # handlers (e.g. from _setup_logging) are replaced with a plain stderr
@@ -67,7 +77,7 @@ def _run_lsp() -> None:
     # corrupt the JSON-RPC framing and crash the connection.
     os.environ["BSL_LSP_MODE"] = "1"
     logging.basicConfig(
-        level=logging.WARNING,  # silence noisy pygls INFO startup messages
+        level=getattr(logging, log_level.upper(), logging.WARNING),
         format="[bsl-lsp] %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
         force=True,
@@ -126,13 +136,14 @@ def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
 
     _autoindex_if_empty(workspace, db_path)
 
-    app = create_mcp_app()
     if stdio:
+        app = create_mcp_app()
         logging.getLogger(__name__).info("Starting BSL MCP server on stdio")
         app.run(transport="stdio")
     else:
+        app = create_mcp_app(host="0.0.0.0", port=port)
         logging.getLogger(__name__).info("Starting BSL MCP server on port %d", port)
-        app.run(transport="streamable-http", host="0.0.0.0", port=port)
+        app.run(transport="streamable-http")
 
 
 def _run_check(
@@ -140,7 +151,6 @@ def _run_check(
     fmt: str,
     select: set[str] | None,
     ignore: set[str] | None,
-    profile: str | None,
     jobs: int,
     sonar_root: str | None,
     exit_zero: bool,
@@ -158,8 +168,6 @@ def _run_check(
     # Load config from the first checked path (or cwd)
     search_from = paths[0] if paths else os.getcwd()
     cfg = load_config(search_from)
-    if profile:
-        cfg._data["profile"] = profile
 
     # --diff: resolve paths to git-changed BSL files
     if diff:
@@ -191,12 +199,73 @@ def _run_check(
     )
 
 
+def _iter_bsl_source_files(paths: list[str]) -> list[Path]:
+    suffixes = {".bsl", ".os"}
+    out: list[Path] = []
+    for raw in paths:
+        path = Path(raw)
+        if path.is_file():
+            if path.suffix.lower() in suffixes or path.name == "Module.bsl":
+                out.append(path)
+            continue
+        if path.is_dir():
+            out.extend(
+                p
+                for p in path.rglob("*")
+                if p.is_file() and (p.suffix.lower() in suffixes or p.name == "Module.bsl")
+            )
+    return sorted(set(out))
+
+
+def _run_format(
+    paths: list[str],
+    *,
+    check: bool,
+    indent_size: int,
+    insert_spaces: bool | None,
+) -> int:
+    """Format BSL files in-place, or only check whether formatting would change them."""
+    from onec_hbk_bsl.analysis.formatter import default_formatter
+
+    files = _iter_bsl_source_files(paths)
+    changed: list[Path] = []
+    failed: list[tuple[Path, str]] = []
+
+    for path in files:
+        try:
+            original = path.read_text(encoding="utf-8")
+            formatted = default_formatter.format(
+                original,
+                indent_size=indent_size,
+                insert_spaces=insert_spaces,
+            )
+        except Exception as exc:  # noqa: BLE001
+            failed.append((path, str(exc)))
+            continue
+        if formatted == original:
+            continue
+        changed.append(path)
+        if not check:
+            path.write_text(formatted, encoding="utf-8")
+
+    for path in changed:
+        action = "would format" if check else "formatted"
+        print(f"{action}: {path}")
+    for path, reason in failed:
+        print(f"format failed: {path}: {reason}", file=sys.stderr)
+
+    if failed:
+        return 2
+    if check and changed:
+        return 1
+    return 0
+
+
 def _run_watch(
     paths: list[str],
     fmt: str,
     select: set[str] | None,
     ignore: set[str] | None,
-    profile: str | None,
     jobs: int,
     sonar_root: str | None,
     exit_zero: bool,
@@ -218,8 +287,6 @@ def _run_watch(
     _console = Console(stderr=True)
     search_from = paths[0] if paths else os.getcwd()
     cfg = load_config(search_from)
-    if profile:
-        cfg._data["profile"] = profile
     workspace = (
         paths[0]
         if len(paths) == 1 and os.path.isdir(paths[0])
@@ -270,8 +337,7 @@ def _run_init(target_dir: str) -> None:
 # Rules to run (empty = all rules)
 # select = ["BSL001", "BSL002"]
 
-# Rule profile: "strict-bslls" or "compat"
-# profile = "strict-bslls"
+# Diagnostics always use the BSLLS-compatible default rule set.
 
 # Rules to always skip
 ignore = []
@@ -309,7 +375,6 @@ exclude = [
 # max-returns              = 3      # BSL008
 # max-bool-ops             = 3      # BSL036
 # min-duplicate-uses       = 3      # BSL035
-# max-module-lines         = 1000   # BSL063
 """
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -402,12 +467,62 @@ def _parse_codes(raw: str | None) -> set[str] | None:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "format":
+        parser = argparse.ArgumentParser(
+            prog="onec-hbk-bsl format",
+            description="Format BSL files using the BSLLS-aligned formatter",
+        )
+        parser.add_argument("paths", nargs="*", help="Files or directories to format")
+        parser.add_argument(
+            "--check",
+            action="store_true",
+            help="Only check whether files are already formatted",
+        )
+        parser.add_argument(
+            "--indent-size",
+            type=int,
+            default=4,
+            metavar="N",
+            help="Indent width when spaces are requested (default: 4)",
+        )
+        parser.add_argument(
+            "--insert-spaces",
+            action="store_true",
+            default=None,
+            help="Indent with spaces instead of BSLLS-default tabs",
+        )
+        parser.add_argument(
+            "--log-level",
+            default=os.environ.get("LOG_LEVEL", "warning"),
+            choices=["debug", "info", "warning", "error"],
+            help="Logging verbosity (default: warning)",
+        )
+        args = parser.parse_args(sys.argv[2:])
+        _setup_logging(args.log_level, use_rich=True)
+        sys.exit(
+            _run_format(
+                args.paths or [os.getcwd()],
+                check=args.check,
+                indent_size=args.indent_size,
+                insert_spaces=args.insert_spaces,
+            )
+        )
+
     parser = argparse.ArgumentParser(
         prog="onec-hbk-bsl",
+        usage=(
+            "onec-hbk-bsl format [PATH ...] [--check] [--indent-size N] [--insert-spaces]\n"
+            "       onec-hbk-bsl [--version] [--log-level {debug,info,warning,error}]\n"
+            "                    (--lsp | --mcp | --watch [PATH ...] | --check [PATH ...] |\n"
+            "                     --index [PATH] | --bench [PATH] | --list-rules | --init)\n"
+            "                    [options]"
+        ),
         description="BSL (1C Enterprise) analyzer — MCP server, LSP server, and CLI linter",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  onec-hbk-bsl format .                               Format BSL files in-place
+  onec-hbk-bsl format . --check                       Check formatting without writing
   onec-hbk-bsl --check .                              Check current directory
   onec-hbk-bsl --check src/ --select BSL001,MethodSize
   onec-hbk-bsl --check . --ignore BSL014 --format json > issues.json
@@ -515,12 +630,6 @@ Examples:
         ),
     )
     parser.add_argument(
-        "--profile",
-        choices=["strict-bslls", "compat"],
-        default=None,
-        help="Rule profile: canonical BSLLS core or backward-compatible local set",
-    )
-    parser.add_argument(
         "--jobs",
         type=int,
         default=0,
@@ -588,11 +697,10 @@ Examples:
         default=False,
         help=(
             "Auto-fix supported issues in-place. "
-            "Supported rules: BSL009, BSL010, BSL055, BSL060. "
+            "Supported rules: BSL009, BSL055, BSL060. "
             "Remaining unfixable issues are still reported."
         ),
     )
-
     # Index options
     parser.add_argument(
         "--force",
@@ -609,28 +717,34 @@ Examples:
     )
 
     args = parser.parse_args()
-    _setup_logging(args.log_level)
 
     if args.list_rules:
+        _setup_logging(args.log_level, use_rich=True)
         from onec_hbk_bsl.cli.check import list_rules
 
         list_rules(tag=args.tag)
         return
 
     if args.init:
+        _setup_logging(args.log_level, use_rich=True)
         _run_init(os.getcwd())
         return
 
     if args.lsp:
-        _run_lsp()
+        _run_lsp(args.log_level)
+        return
 
     elif args.mcp:
+        _setup_logging(args.log_level, use_rich=False)
         _run_mcp(args.port, stdio=args.stdio, workspace=os.path.abspath(args.workspace))
+        return
 
     elif getattr(args, "bench", None) is not None:
+        _setup_logging(args.log_level, use_rich=True)
         sys.exit(_run_bench(args.bench))
 
     elif args.check is not None:
+        _setup_logging(args.log_level, use_rich=True)
         paths = args.check if args.check else [os.getcwd()]
         sys.exit(
             _run_check(
@@ -638,7 +752,6 @@ Examples:
                 fmt=args.format,
                 select=_parse_codes(args.select),
                 ignore=_parse_codes(args.ignore),
-                profile=args.profile,
                 jobs=args.jobs,
                 sonar_root=args.sonar_root,
                 exit_zero=args.exit_zero,
@@ -653,19 +766,20 @@ Examples:
         )
 
     elif args.watch is not None:
+        _setup_logging(args.log_level, use_rich=True)
         watch_paths = args.watch if args.watch else [os.getcwd()]
         _run_watch(
             watch_paths,
             fmt=args.format,
             select=_parse_codes(args.select),
             ignore=_parse_codes(args.ignore),
-            profile=args.profile,
             jobs=args.jobs,
             sonar_root=args.sonar_root,
             exit_zero=args.exit_zero,
         )
 
     elif args.index is not None:
+        _setup_logging(args.log_level, use_rich=True)
         _run_index(args.index, force=args.force)
 
 

@@ -7,7 +7,12 @@ from onec_hbk_bsl.analysis.diagnostic.registry import (
     build_enabled_invoke_snapshot,
     infer_rule_invoke,
 )
-from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA, DiagnosticEngine
+from onec_hbk_bsl.analysis.diagnostics import (
+    RULE_METADATA,
+    DiagnosticEngine,
+    normalize_rule_code_set,
+    resolve_rule_token_to_code,
+)
 
 
 def test_infer_explicit_bsl014_line() -> None:
@@ -24,8 +29,20 @@ def test_infer_heuristic_complexity_proc() -> None:
 
 
 def test_build_snapshot_respects_engine_select() -> None:
-    eng = DiagnosticEngine(select={"BSL014", "BSL280"})
+    eng = DiagnosticEngine(select={"BSL014", "BSL278"})
     snap = build_enabled_invoke_snapshot(eng, RULE_METADATA)
     assert snap["counts_by_phase"].get("line") == 1
-    assert snap["counts_by_phase"].get("index") == 1
+    assert snap["counts_by_phase"].get("other") == 1
     assert "BSL014" in snap["codes_by_phase"].get("line", [])
+
+
+def test_local_only_rules_are_not_public_or_selectable() -> None:
+    for code in ("BSL999", "BSL998"):
+        assert code not in RULE_METADATA
+        assert resolve_rule_token_to_code(code) is None
+        assert not DiagnosticEngine(select={code})._rule_enabled(code)
+
+    assert normalize_rule_code_set(["BSL999,LineLength,WrongWebServiceHandler"]) == {
+        "BSL014",
+        "BSL278",
+    }

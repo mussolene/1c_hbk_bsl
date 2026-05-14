@@ -39,6 +39,8 @@ class NormalizedDiagnostic:
     code_source: str
     message: str
     message_norm: str
+    end_line: int = 0
+    end_character: int = 0
 
 
 def iter_bsl_files(root: Path) -> list[Path]:
@@ -185,6 +187,8 @@ def normalize_our_diagnostics(
                 file=_relative_file(d.file, workspace_root),
                 line=int(d.line),
                 character=int(d.character),
+                end_line=int(d.end_line),
+                end_character=int(d.end_character),
                 severity=str(
                     getattr(lsp_compat_severity(d.code, d.severity), "name", d.severity)
                 ).upper(),
@@ -194,7 +198,17 @@ def normalize_our_diagnostics(
                 message_norm=normalize_message(d.message),
             )
         )
-    return sorted(rows, key=lambda row: (row.file, row.line, row.character, row.code))
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.file,
+            row.line,
+            row.character,
+            row.end_line,
+            row.end_character,
+            row.code,
+        ),
+    )
 
 
 def normalize_bslls_json_report(
@@ -219,6 +233,8 @@ def normalize_bslls_json_report(
                     file=file_path,
                     line=int(start.get("line", 0)) + 1,
                     character=int(start.get("character", 0)),
+                    end_line=int(diag.get("range", {}).get("end", {}).get("line", 0)) + 1,
+                    end_character=int(diag.get("range", {}).get("end", {}).get("character", 0)),
                     severity=str(diag.get("severity") or "").upper(),
                     code=rule,
                     code_source=rule,
@@ -226,15 +242,29 @@ def normalize_bslls_json_report(
                     message_norm=normalize_message(message),
                 )
             )
-    return sorted(rows, key=lambda row: (row.file, row.line, row.character, row.code))
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.file,
+            row.line,
+            row.character,
+            row.end_line,
+            row.end_character,
+            row.code,
+        ),
+    )
 
 
 def diff_diagnostics(
     ours: list[NormalizedDiagnostic],
     bslls: list[NormalizedDiagnostic],
 ) -> dict[str, Any]:
-    ours_by_key = {(d.file, d.line, d.character, d.code): d for d in ours}
-    bslls_by_key = {(d.file, d.line, d.character, d.code): d for d in bslls}
+    ours_by_key = {
+        (d.file, d.line, d.character, d.end_line, d.end_character, d.code): d for d in ours
+    }
+    bslls_by_key = {
+        (d.file, d.line, d.character, d.end_line, d.end_character, d.code): d for d in bslls
+    }
     ours_keys = set(ours_by_key)
     bslls_keys = set(bslls_by_key)
 
@@ -537,10 +567,9 @@ def compare_with_bslls_baseline(
     *,
     workspace_root: Path,
     files: list[Path],
-    profile: str,
     baseline: dict[str, Any],
 ) -> dict[str, Any]:
-    formatter = BslFormatter(profile=profile)
+    formatter = BslFormatter()
 
     our_diags: list[Diagnostic] = []
     formatting: dict[str, dict[str, Any]] = {}
@@ -550,7 +579,7 @@ def compare_with_bslls_baseline(
         indexer.index_metadata(str(workspace_root))
         for path in files:
             indexer.index_file(str(path))
-        engine = DiagnosticEngine(profile=profile, symbol_index=idx)
+        engine = DiagnosticEngine(symbol_index=idx)
         for path in files:
             rel = _relative_file(path, workspace_root)
             content = path.read_text(encoding="utf-8", errors="ignore")
@@ -602,7 +631,6 @@ def compare_with_bslls(
     *,
     workspace_root: Path,
     files: list[Path],
-    profile: str,
     config_path: Path | None,
     jar_path: Path,
 ) -> dict[str, Any]:
@@ -615,6 +643,5 @@ def compare_with_bslls(
     return compare_with_bslls_baseline(
         workspace_root=workspace_root,
         files=files,
-        profile=profile,
         baseline=baseline,
     )
