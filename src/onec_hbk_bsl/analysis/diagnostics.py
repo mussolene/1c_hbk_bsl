@@ -2389,11 +2389,74 @@ _RE_MCCABE_BRANCH = re.compile(
 _RE_MCCABE_BOOL = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
 # McCabe: ternary operator ?(
 _RE_MCCABE_TERNARY = re.compile(r"\?\s*\(")
+_RE_MCCABE_CALL_PREFIX = re.compile(
+    r"(?P<name>[A-Za-zА-Яа-яЁё_]\w*)\s*$",
+    re.IGNORECASE | re.UNICODE,
+)
+_MCCABE_GROUPING_KEYWORDS = {
+    "если",
+    "if",
+    "иначеесли",
+    "elsif",
+    "пока",
+    "while",
+    "не",
+    "not",
+    "и",
+    "and",
+    "или",
+    "or",
+    "возврат",
+    "return",
+}
+
+
+def _is_mccabe_grouping_paren(text: str, index: int) -> bool:
+    prefix = text[:index]
+    if not prefix.strip():
+        return True
+    previous = prefix.rstrip()
+    previous_char = previous[-1]
+    if previous_char == "?":
+        return False
+    match = _RE_MCCABE_CALL_PREFIX.search(previous)
+    if match is None:
+        return True
+    return match.group("name").casefold() in _MCCABE_GROUPING_KEYWORDS
 
 
 def _count_mccabe_bool_ops(text: str, paren_depth: int = 0) -> tuple[int, int]:
-    _ = paren_depth
-    return len(_RE_MCCABE_BOOL.findall(text)), 0
+    paren_stack = [True] * max(0, paren_depth)
+    if _RE_MCCABE_BOOL.search(text) is None:
+        if "(" not in text and ")" not in text:
+            return 0, paren_depth
+        for i, ch in enumerate(text):
+            if ch == "(":
+                paren_stack.append(_is_mccabe_grouping_paren(text, i))
+            elif ch == ")":
+                if paren_stack:
+                    paren_stack.pop()
+        return 0, sum(1 for item in paren_stack if item)
+    count = 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "(":
+            paren_stack.append(_is_mccabe_grouping_paren(text, i))
+            i += 1
+            continue
+        if ch == ")":
+            if paren_stack:
+                paren_stack.pop()
+            i += 1
+            continue
+        match = _RE_MCCABE_BOOL.match(text, i)
+        if match:
+            count += 1 + sum(1 for item in paren_stack if item)
+            i = match.end()
+            continue
+        i += 1
+    return count, sum(1 for item in paren_stack if item)
 
 
 def _count_cognitive_ternary_ops(text: str, control_nesting: int) -> int:

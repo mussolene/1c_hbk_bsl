@@ -48,10 +48,29 @@ class ModuleModel:
         group_start: int | None = None
         group_end: int | None = None
         group_has_code = False
+        group_has_example_marker = False
         in_query_comment = False
+
+        def comment_looks_like_embedded_code(text: str) -> bool:
+            if not text:
+                return False
+            has_call = re.search(r"\b[A-Za-zА-Яа-яЁё_]\w*\s*\(", text, re.UNICODE) is not None
+            if not has_call:
+                return False
+            has_comparison = re.search(r"(?:<>|<=|>=|=)", text, re.UNICODE) is not None
+            if not has_comparison:
+                return False
+            return (
+                re.search(r"""^\s*"[^"]+"\s*-\s+в\s+случае\b""", text, re.IGNORECASE | re.UNICODE)
+                is not None
+                or re.search(r"^\s*(?:и|или|and|or)\b", text, re.IGNORECASE | re.UNICODE)
+                is not None
+            )
 
         def add_group() -> None:
             if group_start is None or group_end is None or not group_has_code:
+                return
+            if group_has_example_marker:
                 return
             start_character = lines[group_start].find("//")
             end_character = len(lines[group_end].rstrip())
@@ -83,8 +102,14 @@ class ModuleModel:
                 if group_start is None:
                     group_start = idx
                 group_end = idx
+                group_has_example_marker = group_has_example_marker or bool(
+                    re.match(r"^(?:Пример|Example)\s*:", comment_text, re.IGNORECASE | re.UNICODE)
+                )
                 group_has_code = (
-                    group_has_code or commented_code_re.match(line) is not None or in_query_comment
+                    group_has_code
+                    or commented_code_re.match(line) is not None
+                    or comment_looks_like_embedded_code(comment_text)
+                    or in_query_comment
                 )
                 in_query_comment = in_query_comment or is_query_comment
             else:
@@ -92,6 +117,7 @@ class ModuleModel:
                 group_start = None
                 group_end = None
                 group_has_code = False
+                group_has_example_marker = False
                 in_query_comment = False
                 comment_pos = line.find("//")
                 if comment_pos >= 0:

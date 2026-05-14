@@ -60,6 +60,10 @@ def _path_is_bsl272_server_only_module(path: str) -> bool:
         )
     return normalized.endswith(
         (
+            "objectmodule.bsl",
+            "managermodule.bsl",
+            "recordsetmodule.bsl",
+            "valuemanagermodule.bsl",
             "/objectmodule.bsl",
             "/ext/objectmodule.bsl",
             "/ext/managermodule.bsl",
@@ -1571,8 +1575,14 @@ class MagicDateRule(BsllsDiagnosticRule):
 
 class UselessTernaryOperatorRule(BsllsDiagnosticRule):
     code = "BSL265"
-    _boolean_operand_re = re.compile(r"\b(?:Истина|True|Ложь|False)\b", re.IGNORECASE | re.UNICODE)
+    _boolean_operand_re = re.compile(
+        r"^\s*(?:Истина|True|Ложь|False)\s*$", re.IGNORECASE | re.UNICODE
+    )
     _comment_re = re.compile(r"^\s*//")
+
+    @classmethod
+    def _is_boolean_operand(cls, text: str) -> bool:
+        return bool(cls._boolean_operand_re.match(text))
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
@@ -1581,7 +1591,18 @@ class UselessTernaryOperatorRule(BsllsDiagnosticRule):
             if self._comment_re.match(line_text):
                 continue
             ternary_text = context.content[span.start : span.end]
-            if self._boolean_operand_re.search(ternary_text):
+            open_pos = ternary_text.find("(")
+            close_pos = ternary_text.rfind(")")
+            if open_pos < 0 or close_pos <= open_pos:
+                continue
+            parts = _split_top_level_args(ternary_text[open_pos + 1 : close_pos])
+            if len(parts) < 3:
+                continue
+            condition_is_bool = self._is_boolean_operand(parts[0])
+            both_branches_bool = self._is_boolean_operand(parts[1]) and self._is_boolean_operand(
+                parts[2]
+            )
+            if condition_is_bool or both_branches_bool:
                 storage.add_range(
                     code=self.code,
                     line=span.line,

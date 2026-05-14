@@ -584,6 +584,15 @@ class TestSecurityApiParityBatch:
         diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
         assert "BSL272" not in _codes(diags)
 
+    def test_bsl272_skips_staged_object_module_name(self, tmp_path: Path) -> None:
+        path = tmp_path / "f000_ObjectModule.bsl"
+        path.write_text(
+            'Процедура П()\n    УдалитьФайлы("tmp.xml");\nКонецПроцедуры\n',
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
+        assert "BSL272" not in _codes(diags)
+
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()
@@ -1598,6 +1607,34 @@ class TestBsl013CommentedCode:
         diags = _check(content, tmp_path, select={"BSL013"})
         assert "BSL013" not in _codes(diags)
 
+    def test_documentation_example_call_is_not_commented_code(self, tmp_path: Path) -> None:
+        content = """\
+            // Параметры:
+            //  Организация - ссылка.
+            //
+            // Пример:
+            //  РегламентированнаяОтчетность.ПолучитьСсылкуНаРеглОтчет("РСВ", Организация);
+            //
+            Функция Тест(Организация) Экспорт
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        assert "BSL013" not in _codes(diags)
+
+    def test_embedded_expression_in_comment_group_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                // Специальная обработка автоматически задаваемого номера:
+                // "Приложение" - в случае ВРег(СокрЛП(ИмяФормы)) = ВРег("ФормаОтчета2025Кв1")
+                Сообщить("OK");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        bsl013 = [d for d in diags if d.code == "BSL013"]
+        assert len(bsl013) == 1
+        assert bsl013[0].line == 2
+        assert bsl013[0].end_line == 3
+
 
 # ---------------------------------------------------------------------------
 # BSL014 — LineTooLong
@@ -1896,6 +1933,32 @@ class TestBsl019CyclomaticComplexity:
         """
         diags = _check(content, tmp_path, max_mccabe_complexity=10)
         assert "BSL019" not in _codes(diags)
+
+    def test_function_call_parentheses_do_not_duplicate_boolean_cost(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Функция Проверка(А, Б)
+                Если Проверить(А И Б) Тогда
+                    Возврат Истина;
+                КонецЕсли;
+                Возврат Ложь;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_mccabe_complexity=3)
+        assert "BSL019" not in _codes(diags)
+
+    def test_grouping_parentheses_duplicate_boolean_cost(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Проверка(А, Б)
+                Если (А И Б) Тогда
+                    Возврат Истина;
+                КонецЕсли;
+                Возврат Ложь;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_mccabe_complexity=3)
+        assert "BSL019" in _codes(diags)
 
 
 # ---------------------------------------------------------------------------
@@ -4614,7 +4677,7 @@ class TestAdditionalParityBatch:
 БулевоЗначение = ?(ЗначениеЗаполнено(СсылкаНаСправочник), СсылкаНаСправочник.БулевоПоле, Ложь);
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL265"}) if d.code == "BSL265"]
-        assert len(diags) == 9
+        assert len(diags) == 6
 
     def test_bsl153_flags_uppercase_structural_keyword(self, tmp_path: Path) -> None:
         diags = _check(
