@@ -14,42 +14,6 @@ from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 class ModuleModel:
     path: str
 
-    def validate_deprecated_warning(
-        self,
-        lines: list[str],
-        *,
-        procs: list[ProcInfo],
-        deprecated_message_re,
-        proc_containing_line,
-        is_typical_client_command_handler,
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            m = deprecated_message_re.match(line)
-            if not m:
-                continue
-            proc = proc_containing_line(procs, idx)
-            if proc is not None and is_typical_client_command_handler(proc, lines):
-                continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=idx + 1,
-                    character=len(line) - len(line.lstrip()),
-                    end_line=idx + 1,
-                    end_character=len(line),
-                    severity=Severity.WARNING,
-                    code="BSL022",
-                    message=(
-                        "Предупреждение()/Warning() is a modal dialog deprecated in managed UI. "
-                        "Use ПоказатьПредупреждение() / ShowMessageBox() instead."
-                    ),
-                )
-            )
-        return diags
-
     def validate_useless_condition_regex_fallback(
         self,
         lines: list[str],
@@ -210,29 +174,6 @@ class ModuleModel:
                         f"Export modifier is not allowed in command/form modules "
                         f"({proc.kind} '{proc.name}')"
                     ),
-                )
-            )
-        return diags
-
-    def validate_header_semicolon(
-        self, lines: list[str], *, header_semicolon_re
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.strip().startswith("//"):
-                continue
-            if not header_semicolon_re.match(line):
-                continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=idx + 1,
-                    character=len(line.rstrip()) - 1,
-                    end_line=idx + 1,
-                    end_character=len(line.rstrip()),
-                    severity=Severity.INFORMATION,
-                    code="BSL030",
-                    message="Procedure/function header should not end with a semicolon",
                 )
             )
         return diags

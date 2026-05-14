@@ -2667,11 +2667,6 @@ def parse_env_rule_filters() -> tuple[set[str] | None, set[str] | None]:
     return select, ignore
 
 
-# Deprecated dialog: Предупреждение(...) / Warning(...)
-_RE_DEPRECATED_MSG = re.compile(
-    r"^\s*(?:Предупреждение|Warning)\s*\(",
-    re.IGNORECASE,
-)
 _RE_BSL202_STRTEMPLATE = re.compile(r"\b(?:СтрШаблон|StrTemplate)\s*\(", re.IGNORECASE)
 _BSL223_STRUCTURE_NAMES = frozenset(
     {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
@@ -3524,13 +3519,6 @@ _RE_MAGIC_NUMBER = re.compile(
     r"-?(?:[2-9]\d*|\d{2,})"  # 2+ digit integer OR single digit >= 2
     r"(?:\.\d+)?"  # optional decimal part
     r"(?![\w.\"])",  # not followed by word/dot/quote
-)
-
-# Procedure/function header line that erroneously ends with ;
-_RE_HEADER_SEMICOLON = re.compile(
-    r"^\s*(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\([^)]*\)\s*"
-    r"(?:(?:Экспорт|Export)\s*)?;",
-    re.IGNORECASE,
 )
 
 # Query execution in loop — Запрос.Выполнить() or Выполнить() after .

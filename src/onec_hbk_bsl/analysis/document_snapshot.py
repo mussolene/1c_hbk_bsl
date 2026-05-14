@@ -20,6 +20,10 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     strip_leading_val_keywords,
 )
 from onec_hbk_bsl.analysis.call_graph import Call
+from onec_hbk_bsl.analysis.diagnostic.helpers.proc_helpers import (
+    is_typical_client_command_handler,
+    proc_containing_line,
+)
 from onec_hbk_bsl.analysis.diagnostic.string_state import (
     build_line_string_states,
     comma_missing_space_after_cols_in_line,
@@ -90,6 +94,10 @@ _RE_COGNITIVE_EXPR_TERMINATOR = re.compile(
 _RE_COGNITIVE_CONTROL_TERMINATOR = re.compile(r"\b(?:Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
 _RE_ASSIGNMENT_CONTINUATION = re.compile(r"[=+\-*/]\s*$")
 _RE_LINE_COMMENT = re.compile(r"^\s*//")
+_RE_DEPRECATED_MSG = re.compile(
+    r"^\s*(?:Предупреждение|Warning)\s*\(",
+    re.IGNORECASE,
+)
 _RE_CREDENTIALS = re.compile(
     r"(?:пароль|password|passwd|pwd|secret|credential(?:s)?|token"
     r'|логин|login|auth|apikey|api_key|accesskey|access_key)\s*=\s*"[^"]{2,}"',
@@ -1090,6 +1098,7 @@ class DocumentSnapshot:
     _non_standard_region_facts: list[LineDiagnosticFact] | None = None
     _empty_region_facts: list[LineDiagnosticFact] | None = None
     _duplicate_region_facts: list[LineDiagnosticFact] | None = None
+    _deprecated_warning_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
 
@@ -1767,6 +1776,34 @@ class DocumentSnapshot:
             )
             seen[key] = region
         self._duplicate_region_facts = facts
+        return facts
+
+    @property
+    def deprecated_warning_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL022 deprecated modal warning facts."""
+        if self._deprecated_warning_facts is not None:
+            return self._deprecated_warning_facts
+        facts: list[LineDiagnosticFact] = []
+        for idx, line in enumerate(self.lines):
+            if line.strip().startswith("//"):
+                continue
+            if _RE_DEPRECATED_MSG.match(line) is None:
+                continue
+            proc = proc_containing_line(self.procedures, idx)
+            if proc is not None and is_typical_client_command_handler(proc, self.lines):
+                continue
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=idx,
+                    character=len(line) - len(line.lstrip()),
+                    end_character=len(line),
+                    message=(
+                        "Предупреждение()/Warning() is a modal dialog deprecated in managed UI. "
+                        "Use ПоказатьПредупреждение() / ShowMessageBox() instead."
+                    ),
+                )
+            )
+        self._deprecated_warning_facts = facts
         return facts
 
     def _region_is_empty(self, region: RegionInfo) -> bool:

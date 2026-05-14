@@ -4935,13 +4935,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 max_nesting_depth=engine.max_nesting_depth,
             )
         if code == "BSL022":
-            return model.validate_deprecated_warning(
-                context.lines,
-                procs=procs,
-                deprecated_message_re=_diag._RE_DEPRECATED_MSG,
-                proc_containing_line=_diag._proc_containing_line,
-                is_typical_client_command_handler=_diag._is_typical_client_command_handler,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.WARNING,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.deprecated_warning_facts
+            ]
         if code == "BSL026":
             assert snapshot is not None
             return [
