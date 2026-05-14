@@ -3546,9 +3546,6 @@ _RE_ERROR_INFO_ASSIGN = re.compile(
 # String literal extractor with BSL doubled-quote escaping.
 _RE_STRING_LITERAL = re.compile(r'(?<![A-Za-zА-ЯЁа-яё0-9_])"((?:[^"]|"")*)"')
 
-# Boolean operators count in a single condition line
-_RE_BOOL_OP = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
-
 # String concatenation inside a loop: variable = variable + "string" or + Str(...)
 _RE_STR_CONCAT = re.compile(
     r"\b\w+\s*=\s*\w+\s*\+\s*(?:\"[^\"]*\"|\w+\s*\()",
@@ -3696,13 +3693,6 @@ _RE_QUERY_TEXT_START = re.compile(
     r'"\s*(?:ВЫБРАТЬ|SELECT)\b',
     re.IGNORECASE,
 )
-_RE_QUERY_WHERE = re.compile(
-    r"\b(?:ГДЕ|WHERE)\b",
-    re.IGNORECASE,
-)
-_RE_QUERY_TOP = re.compile(r"\b(?:ПЕРВЫЕ|TOP)\s+(\d+)\b", re.IGNORECASE)
-_RE_QUERY_ORDER_BY = re.compile(r"\b(?:УПОРЯДОЧИТЬ|ORDER\s+BY)\b", re.IGNORECASE)
-_RE_QUERY_UNION = re.compile(r"\b(?:ОБЪЕДИНИТЬ|UNION)\b", re.IGNORECASE)
 _RE_QUERY_END_QUOTE = re.compile(r'[^|"]*"')
 
 # Unconditional exit from method body (for unreachable code detection)

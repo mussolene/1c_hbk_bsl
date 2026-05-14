@@ -102,6 +102,19 @@ _RE_THIS_FORM = re.compile(
     r"\b(?:ЭтаФорма|ThisForm)\b",
     re.IGNORECASE,
 )
+_RE_COMPLEX_CONDITION_HEAD = re.compile(
+    r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b",
+    re.IGNORECASE,
+)
+_RE_COMPLEX_CONDITION_THEN = re.compile(r"\b(?:Тогда|Then)\b", re.IGNORECASE)
+_RE_COMPLEX_CONDITION_BOOL_OP = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
+_RE_QUERY_WHERE = re.compile(
+    r"\b(?:ГДЕ|WHERE)\b",
+    re.IGNORECASE,
+)
+_RE_QUERY_TOP = re.compile(r"\b(?:ПЕРВЫЕ|TOP)\s+(\d+)\b", re.IGNORECASE)
+_RE_QUERY_ORDER_BY = re.compile(r"\b(?:УПОРЯДОЧИТЬ|ORDER\s+BY)\b", re.IGNORECASE)
+_RE_QUERY_UNION = re.compile(r"\b(?:ОБЪЕДИНИТЬ|UNION)\b", re.IGNORECASE)
 _RE_CREDENTIALS = re.compile(
     r"(?:пароль|password|passwd|pwd|secret|credential(?:s)?|token"
     r'|логин|login|auth|apikey|api_key|accesskey|access_key)\s*=\s*"[^"]{2,}"',
@@ -1117,6 +1130,8 @@ class DocumentSnapshot:
     _deprecated_warning_facts: list[LineDiagnosticFact] | None = None
     _command_or_form_export_facts: list[LineDiagnosticFact] | None = None
     _this_form_usage_facts: list[LineDiagnosticFact] | None = None
+    _complex_condition_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
+    _select_top_without_order_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
 
@@ -1893,6 +1908,151 @@ class DocumentSnapshot:
                     )
                 )
         self._this_form_usage_facts = facts
+        return facts
+
+    def complex_condition_facts(self, max_bool_ops: int) -> list[LineDiagnosticFact]:
+        """Return cached BSL036 complex If/ElseIf condition facts."""
+        if self._complex_condition_facts_cache is None:
+            self._complex_condition_facts_cache = {}
+        cached = self._complex_condition_facts_cache.get(max_bool_ops)
+        if cached is not None:
+            return cached
+
+        facts: list[LineDiagnosticFact] = []
+        for idx, line in enumerate(self.lines):
+            span = self._complex_condition_span(idx, max_bool_ops)
+            if span is None:
+                continue
+            end_line_idx, end_char = span
+            char = len(line) - len(line.lstrip())
+            keyword = line.lstrip()
+            keyword_lower = keyword.lower()
+            if keyword_lower.startswith("если "):
+                char += len("Если ")
+            elif keyword_lower.startswith("if "):
+                char += len("If ")
+            elif keyword_lower.startswith("иначеесли "):
+                char += len("ИначеЕсли ")
+            elif keyword_lower.startswith("elsif "):
+                char += len("ElsIf ")
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=idx,
+                    character=char,
+                    end_line_idx=end_line_idx,
+                    end_character=end_char,
+                    message="Выделите условие оператора Если в отдельный метод или переменную",
+                )
+            )
+        self._complex_condition_facts_cache[max_bool_ops] = facts
+        return facts
+
+    def _complex_condition_span(
+        self,
+        line_idx: int,
+        max_bool_ops: int,
+    ) -> tuple[int, int] | None:
+        chunk = self._complex_condition_chunk(line_idx)
+        if chunk is None:
+            return None
+        text, end_line_idx, end_char = chunk
+        if len(_RE_COMPLEX_CONDITION_BOOL_OP.findall(text)) + 1 <= max_bool_ops:
+            return None
+        return end_line_idx, end_char
+
+    def _complex_condition_chunk(self, line_idx: int) -> tuple[str, int, int] | None:
+        line = self.lines[line_idx]
+        if line.strip().startswith("//"):
+            return None
+        if not _RE_COMPLEX_CONDITION_HEAD.match(line):
+            return None
+        masked_line = re.sub(r"//.*", "", line)
+        then_match = _RE_COMPLEX_CONDITION_THEN.search(masked_line)
+        if then_match is not None:
+            return (
+                masked_line,
+                line_idx,
+                len(masked_line[: then_match.start()].rstrip()),
+            )
+
+        parts = [masked_line]
+        idx = line_idx + 1
+        max_idx = min(len(self.lines), line_idx + 48)
+        while idx < max_idx:
+            masked_next = re.sub(r"//.*", "", self.lines[idx])
+            parts.append(masked_next)
+            then_match = _RE_COMPLEX_CONDITION_THEN.search(masked_next)
+            if then_match is not None:
+                return "\n".join(parts), idx, len(masked_next[: then_match.start()].rstrip())
+            if re.match(r"^\s*(?:Тогда|Then)\b", masked_next, re.IGNORECASE):
+                break
+            idx += 1
+        return (
+            "\n".join(parts),
+            idx - 1,
+            len(re.sub(r"//.*", "", self.lines[idx - 1]).rstrip())
+            if idx > line_idx
+            else len(masked_line.rstrip()),
+        )
+
+    @property
+    def select_top_without_order_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL077 SELECT TOP/FIRST without ORDER BY facts."""
+        if self._select_top_without_order_facts is not None:
+            return self._select_top_without_order_facts
+
+        facts: list[LineDiagnosticFact] = []
+        for block in self.query_text_blocks:
+            start_idx = block.start_idx
+            block_lines = list(block.block_lines)
+            query_text = block.query_text
+            top_matches = list(_RE_QUERY_TOP.finditer(query_text))
+            if not top_matches:
+                continue
+            has_union = bool(_RE_QUERY_UNION.search(query_text))
+            has_where = bool(_RE_QUERY_WHERE.search(query_text))
+            if not has_union and _RE_QUERY_ORDER_BY.search(query_text):
+                continue
+
+            for top_match in top_matches:
+                top_limit = top_match.group(1)
+                if not has_union:
+                    next_union = _RE_QUERY_UNION.search(query_text, top_match.end())
+                    segment_end = next_union.start() if next_union else len(query_text)
+                    segment_text = query_text[top_match.start() : segment_end]
+                    if _RE_QUERY_ORDER_BY.search(segment_text):
+                        continue
+                if not has_union and top_limit in {"0", "1"} and has_where:
+                    continue
+
+                rel_pos = top_match.start()
+                passed = 0
+                line_idx = start_idx
+                col = 0
+                end_col = 0
+                for offset, raw_line in enumerate(block_lines):
+                    line_len = len(raw_line)
+                    if rel_pos <= passed + line_len:
+                        line_idx = start_idx + offset
+                        col = max(0, rel_pos - passed)
+                        local_match = _RE_QUERY_TOP.search(raw_line[col:])
+                        if local_match is not None:
+                            col += local_match.start()
+                            end_col = col + (local_match.end() - local_match.start())
+                        else:
+                            end_col = min(len(raw_line), col + len(top_match.group(0)))
+                        break
+                    passed += line_len + 1
+
+                facts.append(
+                    LineDiagnosticFact(
+                        line_idx=line_idx,
+                        character=col,
+                        end_character=end_col,
+                        message="Нужно изменить запрос, добавив упорядочивание",
+                    )
+                )
+        self._select_top_without_order_facts = facts
         return facts
 
     def _region_is_empty(self, region: RegionInfo) -> bool:

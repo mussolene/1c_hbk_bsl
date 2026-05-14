@@ -5060,11 +5060,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 line_starts_with_raise_statement_fn=_diag._line_starts_with_raise_statement,
             )
         if code == "BSL036":
-            return model.validate_complex_condition(
-                lines=context.lines,
-                max_bool_ops=engine.max_bool_ops,
-                bool_op_re=_diag._RE_BOOL_OP,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx) + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.INFORMATION,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.complex_condition_facts(engine.max_bool_ops)
+            ]
         if code == "BSL040":
             assert snapshot is not None
             return [
@@ -5177,14 +5186,20 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 )
             return diags
         if code == "BSL077":
-            query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
-            return model.validate_select_top_without_order_by(
-                query_blocks=query_blocks,
-                query_top_re=_diag._RE_QUERY_TOP,
-                query_union_re=_diag._RE_QUERY_UNION,
-                query_where_re=_diag._RE_QUERY_WHERE,
-                query_order_by_re=_diag._RE_QUERY_ORDER_BY,
-            )
+            assert snapshot is not None
+            return [
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.WARNING,
+                    code=code,
+                    message=fact.message,
+                )
+                for fact in snapshot.select_top_without_order_facts
+            ]
         if code == "BSL131":
             assert snapshot is not None
             return [
