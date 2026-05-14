@@ -2598,6 +2598,21 @@ class TestBsl035DuplicateStringLiteral:
             'Необходимо избавиться от многократного использования строкового литерала "Код ""240"" места"'
         )
 
+    def test_duplicate_grouping_is_case_insensitive(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = "Раздел";
+                Б = "раздел";
+                В = "Раздел";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, min_duplicate_uses=3, select={"BSL035"})
+        bsl035 = [d for d in diags if d.code == "BSL035"]
+        assert len(bsl035) == 1
+        assert bsl035[0].message == (
+            'Необходимо избавиться от многократного использования строкового литерала "Раздел"'
+        )
+
 
 # ---------------------------------------------------------------------------
 # BSL036 — ComplexCondition
@@ -2626,6 +2641,17 @@ class TestBsl036ComplexCondition:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, max_bool_ops=3)
+        assert "BSL036" not in _codes(diags)
+
+    def test_trailing_comment_bool_words_do_not_count(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(А, Б, В)
+                Если А И Б И В Тогда // и комментарий не часть условия
+                    А = 1;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
         assert "BSL036" not in _codes(diags)
 
     def test_multiline_condition_bool_ops_bslls_alignment(self, tmp_path: Path) -> None:

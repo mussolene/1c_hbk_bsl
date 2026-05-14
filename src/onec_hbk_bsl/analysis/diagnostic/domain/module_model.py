@@ -886,6 +886,7 @@ class ModuleModel:
         for scope_lines in scope_line_indices_fn(lines, procs):
             counts: Counter[str] = Counter()
             positions: dict[str, list[tuple[int, int]]] = {}
+            display_values: dict[str, str] = {}
             for idx in scope_lines:
                 line = code_lines_wo_comments[idx] if code_lines_wo_comments is not None else lines[idx]
                 if line.strip().startswith("//"):
@@ -896,15 +897,18 @@ class ModuleModel:
                         continue
                     if re.fullmatch(r"\+\s*\w+\s*\+", val):
                         continue
-                    counts[val] += 1
-                    positions.setdefault(val, []).append((idx + 1, m.start()))
-            for val, count in counts.items():
+                    key = val.casefold()
+                    counts[key] += 1
+                    positions.setdefault(key, []).append((idx + 1, m.start()))
+                    display_values.setdefault(key, val)
+            for key, count in counts.items():
                 if count < min_duplicate_uses:
                     continue
-                pos_list = positions[val]
+                pos_list = positions[key]
                 if all(line_starts_with_raise_statement_fn(lines[ln - 1]) for ln, _ in pos_list):
                     continue
                 line_no, col = pos_list[0]
+                val = display_values[key]
                 diags.append(
                     Diagnostic(
                         file=self.path,
@@ -1127,23 +1131,25 @@ class ModuleModel:
                 return None
             if not re_if_or_elseif_line.match(line):
                 return None
-            if re_then_word.search(line):
+            masked_line = re.sub(r"//.*", "", line)
+            if re_then_word.search(masked_line):
                 end_idx = idx
-                then_match = re_then_word.search(line)
-                end_char = len(line[: then_match.start()].rstrip()) if then_match else len(line.rstrip())
-                return line, end_idx, end_char
-            parts = [line]
+                then_match = re_then_word.search(masked_line)
+                end_char = len(masked_line[: then_match.start()].rstrip()) if then_match else len(masked_line.rstrip())
+                return masked_line, end_idx, end_char
+            parts = [masked_line]
             j = idx + 1
             max_j = min(len(lines), idx + 48)
             while j < max_j:
-                parts.append(lines[j])
-                then_match = re_then_word.search(lines[j])
+                masked_next = re.sub(r"//.*", "", lines[j])
+                parts.append(masked_next)
+                then_match = re_then_word.search(masked_next)
                 if then_match:
-                    return "\n".join(parts), j, len(lines[j][: then_match.start()].rstrip())
-                if re.match(r"^\s*(?:Тогда|Then)\b", lines[j], re.IGNORECASE):
+                    return "\n".join(parts), j, len(masked_next[: then_match.start()].rstrip())
+                if re.match(r"^\s*(?:Тогда|Then)\b", masked_next, re.IGNORECASE):
                     break
                 j += 1
-            return "\n".join(parts), j - 1, len(lines[j - 1].rstrip()) if j > idx else len(line.rstrip())
+            return "\n".join(parts), j - 1, len(re.sub(r"//.*", "", lines[j - 1]).rstrip()) if j > idx else len(masked_line.rstrip())
 
         def triggered_condition_span(idx: int) -> tuple[int, int] | None:
             chunk = if_condition_chunk(idx)
