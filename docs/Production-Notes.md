@@ -8,8 +8,8 @@ This runbook covers production usage of:
 **Note:** `onec-hbk-bsl` does **not** bundle or call a separate Java analyzer at runtime.
 
 ## Public Compatibility Contract
-- Default diagnostics use the BSLLS-compatible public profile. There are no user-facing strict/legacy/compat profile switches.
-- `BSL_SELECT` / `BSL_IGNORE` and `onecHbkBsl.diagnostics.select` / `ignore` only filter the default profile.
+- Default diagnostics use the BSLLS-compatible public rule set. There are no user-facing strict/legacy/compat mode switches.
+- `BSL_SELECT` / `BSL_IGNORE` and `onecHbkBsl.diagnostics.select` / `ignore` only filter the default rule set.
 - Formatting uses the BSLLS-oriented defaults exposed by the extension: tabs for `[bsl]`, logical indent width 4, safe on-type indentation on newline only.
 - Diagnostics/indexing parser fallbacks are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.
 - The formatter has no parser/line/CST fallback mode: it formats from the BSLLS-compatible token stream.

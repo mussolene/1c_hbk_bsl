@@ -64,11 +64,10 @@ class TestBslLanguageServerInit:
         ls = BslLanguageServer()
         assert isinstance(ls.diagnostics_engine, DiagnosticEngine)
 
-    def test_server_defaults_diagnostics_to_strict_bslls(
+    def test_server_defaults_diagnostics_to_bslls_rule_set(
         self, tmp_path: Path, monkeypatch: object
     ) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
-        monkeypatch.delenv("BSL_PROFILE", raising=False)
         from onec_hbk_bsl.analysis.bslls_parity import bslls_rule_codes
         from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE
         from onec_hbk_bsl.lsp.server import BslLanguageServer

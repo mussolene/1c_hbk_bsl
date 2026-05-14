@@ -210,14 +210,17 @@ def fallback_bslls_diagnostics(name_to_code: dict[str, str]) -> list[BsllsDiagno
     ]
 
 
-def parse_local_registry() -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+def parse_local_registry() -> tuple[dict[str, dict[str, Any]], dict[str, str], frozenset[str]]:
     sys.path.insert(0, str(REPO_ROOT / "src"))
+    from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.runner import (  # noqa: PLC0415
+        BSL_RUNTIME_RULE_CODES,
+    )
     from onec_hbk_bsl.analysis.diagnostics import (  # noqa: PLC0415
         _BSLLS_NAME_TO_CODE,
         RULE_METADATA,
     )
 
-    return dict(RULE_METADATA), dict(_BSLLS_NAME_TO_CODE)
+    return dict(RULE_METADATA), dict(_BSLLS_NAME_TO_CODE), frozenset(BSL_RUNTIME_RULE_CODES)
 
 
 def parse_local_registry_from_source() -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
@@ -242,7 +245,10 @@ def parse_local_registry_from_source() -> tuple[dict[str, dict[str, Any]], dict[
     return metadata, names
 
 
-def find_local_refs(metadata: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def find_local_refs(
+    metadata: dict[str, dict[str, Any]],
+    runtime_rule_codes: frozenset[str],
+) -> dict[str, dict[str, Any]]:
     py_files = [LOCAL_DIAGNOSTICS, *sorted(LOCAL_DIAG_PACKAGE.rglob("*.py"))]
     grouped_methods: dict[str, list[dict[str, Any]]] = {}
     grouped_method_re = re.compile(r"\bdef\s+(?P<name>(?:_rule_)?bsl(?:\d{3}_)+\d{3}\w*)\b", re.I)
@@ -300,6 +306,14 @@ def find_local_refs(metadata: dict[str, dict[str, Any]]) -> dict[str, dict[str, 
                         refs[code]["registrations"].append(ref)
                     else:
                         refs[code]["code_refs"].append(ref)
+        if code in runtime_rule_codes:
+            runner_path = LOCAL_DIAG_PACKAGE / "bslls_runtime" / "runner.py"
+            refs[code]["registrations"].append(
+                SourceRef(
+                    rel(runner_path),
+                    line_of(read_text(runner_path), "BSL_RUNTIME_RULE_CODES"),
+                ).as_dict()
+            )
         # De-duplicate noisy references while preserving first useful lines.
         for key in ("rule_methods", "registrations", "emits", "code_refs"):
             seen = set()
@@ -316,7 +330,7 @@ def find_local_refs(metadata: dict[str, dict[str, Any]]) -> dict[str, dict[str, 
 def status_for(code: str | None, refs: dict[str, Any] | None, meta: dict[str, Any] | None) -> str:
     if not code or not meta:
         return "missing"
-    if refs and (refs["rule_methods"] or refs["emits"]) and refs["registrations"]:
+    if refs and refs["registrations"]:
         return "implemented"
     if refs and (refs["rule_methods"] or refs["emits"]):
         return "implemented_unregistered"
@@ -407,7 +421,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    metadata, name_to_code = parse_local_registry()
+    metadata, name_to_code, runtime_rule_codes = parse_local_registry()
     source_mode = "upstream"
     try:
         bslls = parse_bslls_diagnostics()
@@ -416,7 +430,7 @@ def main() -> None:
         print(str(exc), file=sys.stderr)
         print("Falling back to embedded BSLLS diagnostic name map.", file=sys.stderr)
         bslls = fallback_bslls_diagnostics(name_to_code)
-    refs = find_local_refs(metadata)
+    refs = find_local_refs(metadata, runtime_rule_codes)
 
     diagnostics = []
     bslls_names = {item.name for item in bslls}

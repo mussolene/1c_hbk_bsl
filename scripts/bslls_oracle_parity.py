@@ -150,9 +150,7 @@ def _rule_filter_codes(rules: list[str]) -> set[str]:
     from onec_hbk_bsl.analysis.diagnostics import resolve_rule_token_to_code
 
     return {
-        code
-        for token in _rule_filter_tokens(rules)
-        if (code := resolve_rule_token_to_code(token))
+        code for token in _rule_filter_tokens(rules) if (code := resolve_rule_token_to_code(token))
     }
 
 

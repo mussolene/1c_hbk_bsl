@@ -337,7 +337,7 @@ def _run_init(target_dir: str) -> None:
 # Rules to run (empty = all rules)
 # select = ["BSL001", "BSL002"]
 
-# Diagnostics always use the BSLLS-compatible default profile.
+# Diagnostics always use the BSLLS-compatible default rule set.
 
 # Rules to always skip
 ignore = []

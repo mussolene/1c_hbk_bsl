@@ -41,7 +41,7 @@ class TestLineCommentNormalization:
         line = result.splitlines()[0].lstrip()
         assert line == "//    bar"
 
-    def test_strict_bslls_preserves_comment_block_spacing(self) -> None:
+    def test_bslls_default_preserves_comment_block_spacing(self) -> None:
         f = BslFormatter()
         code = (
             "// Параметры:\n"
@@ -247,7 +247,7 @@ class TestIndentation:
         code = "Процедура Т()\nА = Метод( 1  ,2 , 3 );\nКонецПроцедуры\n"
         assert "Метод(1, 2, 3)" in f.format(code)
 
-    def test_strict_bslls_empty_argument_spacing_before_string(self) -> None:
+    def test_bslls_default_empty_argument_spacing_before_string(self) -> None:
         f = BslFormatter()
         code = (
             "Процедура Т()\n"
@@ -331,7 +331,7 @@ class TestBlankLines:
         result = f.format(code)
         assert "А = 1;\n\n\n\n\nБ = 2;" in result
 
-    def test_strict_bslls_preserves_consecutive_blank_lines(self) -> None:
+    def test_bslls_default_preserves_consecutive_blank_lines(self) -> None:
         f = BslFormatter()
         code = "А = 1;\n\n\nБ = 2;\n"
         result = f.format(code)
@@ -436,7 +436,7 @@ class TestBslContinuationIndent:
         lines = result.splitlines()
         assert lines[2].startswith("\t\t\tИНН"), lines[2]
 
-    def test_strict_bslls_binary_plus_and_unary_minus_spacing(self) -> None:
+    def test_bslls_default_binary_plus_and_unary_minus_spacing(self) -> None:
         f = BslFormatter()
         code = (
             "Процедура Т()\n"
