@@ -297,7 +297,21 @@ def run_bsl206_207_209_query_join_diagnostics(
         join_on_active = False
         join_buffer = ""
 
-        for line_no, content_base, _content, head, _ended_query in content_lines:
+        def has_join_before_query_end(lines_slice: list[Any], start_pos: int) -> bool:
+            for _line_no, _content_base, _content, future_head, _ended_query in lines_slice[
+                start_pos + 1 :
+            ]:
+                if (
+                    ";" in future_head
+                    or _diag._RE_BSL149_UNION.search(future_head)
+                    or _diag._RE_BSL149_SELECT.search(future_head)
+                ):
+                    return False
+                if _diag._RE_QUERY_JOIN_KEYWORD.search(future_head):
+                    return True
+            return False
+
+        for pos, (line_no, content_base, _content, head, _ended_query) in enumerate(content_lines):
             if _diag._RE_QUERY_JOIN_END_KEYWORD.search(head):
                 join_on_active = False
                 join_buffer = ""
@@ -339,17 +353,25 @@ def run_bsl206_207_209_query_join_diagnostics(
                         )
                 if "BSL207" in enabled:
                     virtual_match = _diag._RE_QUERY_VIRTUAL_TABLE.search(head)
-                    if virtual_match:
+                    if virtual_match and (
+                        join_datasource or has_join_before_query_end(content_lines, pos)
+                    ):
+                        end_character = content_base + virtual_match.end()
+                        open_idx = virtual_match.end() - 1
+                        if open_idx >= 0 and head[open_idx] == "(":
+                            close_idx = _diag._find_matching_paren(head, open_idx)
+                            if close_idx > open_idx:
+                                end_character = content_base + close_idx + 1
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
                                 line=line_no,
                                 character=content_base + virtual_match.start(),
                                 end_line=line_no,
-                                end_character=content_base + virtual_match.end(),
+                                end_character=end_character,
                                 severity=_diag.Severity.WARNING,
                                 code="BSL207",
-                                message="Соединение с виртуальной таблицей в запросе",
+                                message="Не следует использовать соединения с виртуальными таблицами",
                             )
                         )
 

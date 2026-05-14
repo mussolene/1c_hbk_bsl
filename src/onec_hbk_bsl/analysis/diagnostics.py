@@ -3139,6 +3139,8 @@ def _bsl149_append_missing_alias_diags(
     field_region = _bsl149_strip_leading_select_modifiers(field_region)
     if not field_region:
         return
+    if re.match(r"^\s*(?:И|ИЛИ|AND|OR)\b", field_region, re.IGNORECASE):
+        return
     for seg in split_commas_outside_double_quotes(field_region):
         field = seg.strip().rstrip('";')
         if not field or field == "*" or re.match(r"^\w+\.\*$", field, re.UNICODE):
@@ -3203,12 +3205,27 @@ def _iter_query_text_blocks(lines: list[str]):
     i = 0
     while i < len(lines):
         line = lines[i]
-        if not _RE_QUERY_TEXT_START.search(line):
+        starts_query = bool(_RE_QUERY_TEXT_START.search(line))
+        if not starts_query and '"' in line:
+            j_probe = i + 1
+            while (
+                j_probe < len(lines)
+                and (not lines[j_probe].strip() or lines[j_probe].lstrip().startswith("|"))
+            ):
+                if re.match(r"^\s*\|\s*(?:ВЫБРАТЬ|SELECT)\b", lines[j_probe], re.IGNORECASE):
+                    starts_query = True
+                    break
+                j_probe += 1
+        if not starts_query:
             i += 1
             continue
         block_lines = [line]
         j = i + 1
-        while j < len(lines) and (lines[j].lstrip().startswith("|") or not lines[j].strip()):
+        while j < len(lines) and (
+            lines[j].lstrip().startswith("|")
+            or lines[j].lstrip().startswith("//")
+            or not lines[j].strip()
+        ):
             block_lines.append(lines[j])
             j += 1
         yield i, block_lines
@@ -4182,14 +4199,14 @@ _RE_CONTINUE = re.compile(r"^\s*(?:Продолжить|Continue)\s*;", re.IGNOR
 
 _RE_COMMENTED_CODE = re.compile(
     r"^\s*//\s*(?:"
-    # Strong BSL declarations / terminators; prose comments with "Если/Для"
-    # are too noisy and BSLLS CodeRecognizer does not treat them as code.
-    r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Перем"
-    r"|Function|Procedure|EndProcedure|EndFunction|Var)\b"
+    # Strong BSL declarations / terminators. Declaration openers require a
+    # callable/variable shape so prose like "// Процедура формирует..." stays documentation.
+    r"(?:(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\([^)]*\)\s*(?:Экспорт|Export)?\s*$"
+    r"|(?:Перем|Var)\s+\w+"
+    r"|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)"
     r"|(?:ВЫБРАТЬ|SELECT)\b"
-    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\("
-    # OR a line that looks like a statement (ends with ; or contains :=)
-    r"|\w.*(?:;|:=)"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\([^)]*\)\s*(?:[+;*/-])"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*="
     r")",
     re.IGNORECASE,
 )

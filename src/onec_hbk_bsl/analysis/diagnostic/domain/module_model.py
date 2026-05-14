@@ -73,9 +73,8 @@ class ModuleModel:
             is_query_comment = bool(
                 comment_text
                 and re.match(
-                    r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|КАК|И|ИЛИ)\b",
+                    r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|INTO)\b",
                     comment_text,
-                    re.IGNORECASE,
                 )
             )
             if line.lstrip().startswith("//"):
@@ -90,6 +89,22 @@ class ModuleModel:
                 group_end = None
                 group_has_code = False
                 in_query_comment = False
+                comment_pos = line.find("//")
+                if comment_pos >= 0:
+                    inline_comment = line[comment_pos:]
+                    if re.search(r"\b\w+\s*=\s*\w+\b", inline_comment, re.UNICODE):
+                        diags.append(
+                            Diagnostic(
+                                file=self.path,
+                                line=idx + 1,
+                                character=comment_pos,
+                                end_line=idx + 1,
+                                end_character=len(line.rstrip()),
+                                severity=Severity.INFORMATION,
+                                code="BSL013",
+                                message="Программные модули не должны иметь закомментированных фрагментов кода",
+                            )
+                        )
         add_group()
         return diags
 
@@ -1265,13 +1280,13 @@ class ModuleModel:
             comment_pos = comment_starts[idx]
             if comment_pos is not None:
                 clean = clean[:comment_pos]
-            has_equals = "=" in clean
+            has_comparison = any(op in clean for op in comparison_ops)
             has_arithmetic_ops = any(op in line for op in "+-*/%")
             code_no_comments = code_lines_wo_comments[idx]
             has_comma = "," in code_no_comments
             has_semicolon = ";" in clean
             has_keyword_candidate = bool(any_keyword_re.search(clean))
-            if has_equals and not proc_header_re.match(clean):
+            if has_comparison:
                 pos = 0
                 seen_ops: set[tuple[int, str]] = set()
                 while pos < len(clean):
@@ -1304,6 +1319,11 @@ class ModuleModel:
                     pos = end
             if has_arithmetic_ops:
                 arithmetic_cols = arithmetic_missing_space_cols_in_line_fn(line, in_str_start)
+                stripped_line = line.lstrip()
+                if stripped_line.startswith(("+", "-")) and len(stripped_line) > 1 and stripped_line[1] not in " \t":
+                    arithmetic_cols = sorted(
+                        set(arithmetic_cols) | {len(line) - len(stripped_line)}
+                    )
                 for col in arithmetic_cols:
                     op = line[col]
                     left_missing = col > 0 and line[col - 1] not in " \t"
@@ -1315,8 +1335,6 @@ class ModuleModel:
                     else:
                         msg = f"Справа от '{op}' не хватает пробела"
                     diags.append(Diagnostic(file=self.path, line=idx + 1, character=col, end_line=idx + 1, end_character=col + 1, severity=Severity.INFORMATION, code="BSL216", message=msg))
-                if arithmetic_cols:
-                    continue
             comma_cols = comma_missing_space_after_cols_in_line_fn(code_no_comments) if has_comma else []
             if has_comma:
                 extra_comma_cols = {m.start() for m in re.finditer(r",(?=\))", code_no_comments)}
@@ -1325,15 +1343,12 @@ class ModuleModel:
             if comma_cols:
                 for comma_col in comma_cols:
                     diags.append(Diagnostic(file=self.path, line=idx + 1, character=comma_col, end_line=idx + 1, end_character=comma_col + 1, severity=Severity.INFORMATION, code="BSL216", message=("Справа от ',' не хватает пробела")))
-                continue
             m_semicolon = semicolon_nospace_re.search(clean) if has_semicolon else None
             if m_semicolon is None and has_semicolon and comment_pos is not None and comment_pos > 0 and clean_full[comment_pos - 1] == ";" and clean_full[comment_pos : comment_pos + 2] == "//":
                 semicolon_col = comment_pos - 1
                 diags.append(Diagnostic(file=self.path, line=idx + 1, character=semicolon_col, end_line=idx + 1, end_character=semicolon_col + 1, severity=Severity.INFORMATION, code="BSL216", message=("Справа от ';' не хватает пробела")))
-                continue
             if m_semicolon:
                 diags.append(Diagnostic(file=self.path, line=idx + 1, character=m_semicolon.start(), end_line=idx + 1, end_character=m_semicolon.end(), severity=Severity.INFORMATION, code="BSL216", message=("Справа от ';' не хватает пробела")))
-                continue
             if has_keyword_candidate:
                 for m_kw in left_right_keywords_re.finditer(clean):
                     start = m_kw.start(1)

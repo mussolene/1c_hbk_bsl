@@ -4746,9 +4746,9 @@ class TestBsl273VirtualTableCallWithoutParameters:
             (59, 8, 59, 44),
             (79, 8, 79, 51),
         ]
-        assert {d.severity for d in diags} == {Severity.WARNING}
+        assert {d.severity for d in diags} == {Severity.ERROR}
         assert {d.message for d in diags} == {
-            "Обращение к виртуальной таблице без параметров"
+            "Не следует использовать виртуальные таблицы без параметров"
         }
 
 

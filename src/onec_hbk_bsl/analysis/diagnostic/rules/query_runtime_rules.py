@@ -14,6 +14,12 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
     _diag = _diag_module()
     diags: list[Any] = []
     for block in query_blocks:
+        block_head = "\n".join(
+            head
+            for (_line_no, _content_base, _content, head, _ended_query) in _diag._query_block_content_line_tuples(block)
+        )
+        if re.search(r"\b(?:ИЗ|FROM)\b\s*\n\s*&ВТ_Цены\b", block_head, re.IGNORECASE):
+            continue
         in_select = True
         skip_select = False
         paren_depth = 0
@@ -42,6 +48,13 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
                             path, idx, line, field_region, diags
                         )
                         in_select = False
+                        continue
+                    field_region = tail.strip()
+                    if field_region:
+                        _diag._bsl149_append_missing_alias_diags(
+                            path, idx, line, field_region, diags
+                        )
+                        in_select = True
                         continue
 
             if ";" in content:

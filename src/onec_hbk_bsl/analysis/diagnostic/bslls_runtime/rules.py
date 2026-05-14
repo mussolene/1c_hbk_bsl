@@ -636,7 +636,7 @@ _QUERY_VIRTUAL_TABLE_NAME_PATTERN = (
     r"\.\w+(?:\.\w+)+"
 )
 _BSL273_VIRTUAL_TABLE_RE = re.compile(
-    rf"\b(?P<name>{_QUERY_VIRTUAL_TABLE_NAME_PATTERN})\s*(?P<open>\()?",
+    rf"\b(?P<name>{_QUERY_VIRTUAL_TABLE_NAME_PATTERN})(?!\.)\s*(?P<open>\()?",
     re.IGNORECASE | re.UNICODE,
 )
 _BSL279_IDENTIFIER_RE = re.compile(r"\b\w*[ёЁ]\w*\b", re.UNICODE)
@@ -2209,6 +2209,7 @@ class UsingSynchronousCallsRule(BsllsDiagnosticRule):
 
 class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
     code = "BSL273"
+    message = "Не следует использовать виртуальные таблицы без параметров"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
@@ -2218,8 +2219,8 @@ class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
                 if open_match is None:
                     storage.add_range(
                         code=self.code,
-                        message="Обращение к виртуальной таблице без параметров",
-                        severity=Severity.WARNING,
+                        message=self.message,
+                        severity=Severity.ERROR,
                         line=line_no - 1,
                         character=content_base + match.start("name"),
                         end_line=line_no - 1,
@@ -2228,7 +2229,10 @@ class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
                     continue
 
                 open_idx = match.end("open") - 1
-                close_idx = _matching_paren(head, open_idx) - 1
+                close_pos = _matching_paren(head, open_idx)
+                if close_pos == len(head) and ")" not in head[open_idx + 1 :]:
+                    continue
+                close_idx = close_pos - 1
                 if close_idx < open_idx:
                     continue
                 args = head[open_idx + 1 : close_idx]
@@ -2242,8 +2246,8 @@ class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
                 if violation:
                     storage.add_range(
                         code=self.code,
-                        message="Обращение к виртуальной таблице без параметров",
-                        severity=Severity.WARNING,
+                        message=self.message,
+                        severity=Severity.ERROR,
                         line=line_no - 1,
                         character=content_base + match.start("name"),
                         end_line=line_no - 1,

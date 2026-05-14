@@ -425,12 +425,27 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
     i = 0
     while i < len(lines):
         line = lines[i]
-        if not _RE_QUERY_TEXT_START.search(line):
+        starts_query = bool(_RE_QUERY_TEXT_START.search(line))
+        if not starts_query and '"' in line:
+            j_probe = i + 1
+            while (
+                j_probe < len(lines)
+                and (not lines[j_probe].strip() or lines[j_probe].lstrip().startswith("|"))
+            ):
+                if re.match(r"^\s*\|\s*(?:ВЫБРАТЬ|SELECT)\b", lines[j_probe], re.IGNORECASE):
+                    starts_query = True
+                    break
+                j_probe += 1
+        if not starts_query:
             i += 1
             continue
         block_lines = [line]
         j = i + 1
-        while j < len(lines) and (lines[j].lstrip().startswith("|") or not lines[j].strip()):
+        while j < len(lines) and (
+            lines[j].lstrip().startswith("|")
+            or lines[j].lstrip().startswith("//")
+            or not lines[j].strip()
+        ):
             block_lines.append(lines[j])
             j += 1
 
