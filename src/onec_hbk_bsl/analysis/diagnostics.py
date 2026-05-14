@@ -109,12 +109,6 @@ from onec_hbk_bsl.analysis.diagnostic.registry import (
     build_enabled_invoke_snapshot,
 )
 from onec_hbk_bsl.analysis.diagnostic.string_state import (
-    build_line_string_states as _build_line_string_states,
-)
-from onec_hbk_bsl.analysis.diagnostic.string_state import (
-    comma_missing_space_after_cols_in_line as _comma_missing_space_after_cols_in_line,
-)
-from onec_hbk_bsl.analysis.diagnostic.string_state import (
     comment_start_outside_double_quotes as _comment_start_outside_double_quotes,
 )
 from onec_hbk_bsl.analysis.diagnostic.string_state import (
@@ -2933,27 +2927,6 @@ def _caller_is_client_method(
     )
 
 
-# BSL216 — module-level patterns (avoid re.compile inside the hot loop)
-_RE_BSL216_ASSIGN_NOSPACE = re.compile(r"\b(\w+)=(\w)", re.UNICODE)
-_RE_BSL216_PROC_HEADER = re.compile(
-    r"^\s*(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE
-)
-_RE_BSL216_BEFORE_THEN = re.compile(r"(?<=\S)(?:Тогда|Then)\b", re.IGNORECASE)
-_RE_BSL216_SEMICOLON_NOSPACE = re.compile(r";(?=\S)")
-_RE_BSL216_LEFT_RIGHT_KEYWORDS = re.compile(r"\b(По|To|Из|In|Или|Or|И|And)\b", re.IGNORECASE)
-_RE_BSL216_LEFT_KEYWORDS = re.compile(r"\b(Экспорт|Export|Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
-_RE_BSL216_RIGHT_KEYWORDS = re.compile(
-    r"\b(Если|If|ИначеЕсли|ElsIf|ElseIf|Пока|While|Для|For|Не|Not|Каждого|Each)\b",
-    re.IGNORECASE,
-)
-_RE_BSL216_ANY_KEYWORD = re.compile(
-    r"\b(?:"
-    r"По|To|Из|In|Или|Or|И|And|"
-    r"Экспорт|Export|Тогда|Then|Цикл|Do|"
-    r"Если|If|ИначеЕсли|ElsIf|ElseIf|Пока|While|Для|For|Не|Not|Каждого|Each"
-    r")\b",
-    re.IGNORECASE,
-)
 # BSL215/BSL233 — compiler directive (e.g. &НаКлиенте) preceding a proc header
 _RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
 _RE_TRY_OPEN = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
@@ -3394,83 +3367,6 @@ def _bsl007_name_used_in_file(
 def _compile_call_pattern(proc_name: str) -> re.Pattern[str]:
     """Cached per-name call regex."""
     return re.compile(r"(?<![.\w])" + re.escape(proc_name) + r"\s*\(", re.IGNORECASE)
-
-
-def _arithmetic_missing_space_cols_in_line(line: str, in_str_at_start: bool = False) -> list[int]:
-    """
-    Returns 0-based columns where an arithmetic/comparison binary operator
-    lacks a space on at least one side (BSLLS MissingSpace rule for +/-/*/%).
-    Handles double-quoted strings and single-line comments.
-    Detects unary +/- and skips them.
-    """
-    # Chars that indicate the previous token is a valid LHS of binary operator.
-    _BINARY_LHS = frozenset(
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
-        "0123456789_)]\"|'"
-    )
-    # Chars after which +/- is unary (not binary).
-    _UNARY_AFTER = frozenset("(=[,+-*/%<>!&|~")
-
-    # Strip comment: find // outside strings.
-    stripped = line
-    in_s = in_str_at_start
-    for ci, ch in enumerate(line):
-        if ch == '"':
-            in_s = not in_s
-        elif ch == "/" and not in_s and ci + 1 < len(line) and line[ci + 1] == "/":
-            stripped = line[:ci]
-            break
-
-    cols: list[int] = []
-    in_s = in_str_at_start
-    in_sq = False  # inside single-quoted date/string literals '...'
-    prev_non_space = ""
-    i = 0
-    n = len(stripped)
-    while i < n:
-        ch = stripped[i]
-        if ch == '"' and not in_sq:
-            in_s = not in_s
-            prev_non_space = '"'
-            i += 1
-            continue
-        if ch == "'" and not in_s:
-            in_sq = not in_sq
-            prev_non_space = "'"
-            i += 1
-            continue
-        if in_s or in_sq:
-            i += 1
-            continue
-        if ch in " \t":
-            i += 1
-            continue
-
-        if ch in "+-*/%":
-            # Check for ** (not in BSL but guard anyway).
-            # Determine if binary operator.
-            if ch in "+-" and prev_non_space not in _BINARY_LHS:
-                # Unary.
-                prev_non_space = ch
-                i += 1
-                continue
-            # Space before: prev real char should have been a space.
-            prev_ch = stripped[i - 1] if i > 0 else ""
-            space_before = prev_ch in " \t"
-            # Space after.
-            next_ch = stripped[i + 1] if i + 1 < n else ""
-            space_after = next_ch in " \t"
-            if not space_before or not space_after:
-                cols.append(i)
-            prev_non_space = ch
-            i += 1
-            continue
-
-        prev_non_space = ch
-        i += 1
-
-    return cols
 
 
 def _module_export_var_has_preceding_description(lines: list[str], var_line_idx: int) -> bool:

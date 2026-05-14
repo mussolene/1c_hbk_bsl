@@ -21,8 +21,10 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
 from onec_hbk_bsl.analysis.call_graph import Call
 from onec_hbk_bsl.analysis.diagnostic.string_state import (
     build_line_string_states,
+    comma_missing_space_after_cols_in_line,
     comment_start_outside_double_quotes,
     mask_double_quoted_strings_preserve_len,
+    span_is_inside_double_quoted_string,
     strip_inline_comment_preserve_strings,
 )
 from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
@@ -86,6 +88,30 @@ _RE_COGNITIVE_EXPR_TERMINATOR = re.compile(
 )
 _RE_COGNITIVE_CONTROL_TERMINATOR = re.compile(r"\b(?:Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
 _RE_ASSIGNMENT_CONTINUATION = re.compile(r"[=+\-*/]\s*$")
+_RE_LINE_COMMENT = re.compile(r"^\s*//")
+_RE_BSL200_INCORRECT_START = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
+_RE_BSL200_INCORRECT_END = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
+_RE_BSL216_SEMICOLON_NOSPACE = re.compile(r";(?=\S)")
+_RE_BSL216_LEFT_RIGHT_KEYWORDS = re.compile(r"\b(По|To|Из|In|Или|Or|И|And)\b", re.IGNORECASE)
+_RE_BSL216_LEFT_KEYWORDS = re.compile(r"\b(Экспорт|Export|Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
+_RE_BSL216_RIGHT_KEYWORDS = re.compile(
+    r"\b(Если|If|ИначеЕсли|ElsIf|ElseIf|Пока|While|Для|For|Не|Not|Каждого|Each)\b",
+    re.IGNORECASE,
+)
+_RE_BSL216_ANY_KEYWORD = re.compile(
+    r"\b(?:"
+    r"По|To|Из|In|Или|Or|И|And|"
+    r"Экспорт|Export|Тогда|Then|Цикл|Do|"
+    r"Если|If|ИначеЕсли|ElsIf|ElseIf|Пока|While|Для|For|Не|Not|Каждого|Each"
+    r")\b",
+    re.IGNORECASE,
+)
+_COMPARISON_OPS = ("<=", ">=", "<>", "=", "<", ">")
+_BINARY_LHS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+    "0123456789_)]\"|'"
+)
 _MCCABE_GROUPING_KEYWORDS = frozenset(
     {
         "если",
@@ -238,6 +264,62 @@ def _line_has_self_call(line: str, proc_name: str | None) -> bool:
     return bool(re.search(rf"(?<![.\w]){re.escape(proc_name)}\s*\(", line, re.IGNORECASE))
 
 
+def _arithmetic_missing_space_cols_in_line(line: str, in_str_at_start: bool = False) -> list[int]:
+    stripped = line
+    in_s = in_str_at_start
+    for ci, ch in enumerate(line):
+        if ch == '"':
+            in_s = not in_s
+        elif ch == "/" and not in_s and ci + 1 < len(line) and line[ci + 1] == "/":
+            stripped = line[:ci]
+            break
+
+    cols: list[int] = []
+    in_s = in_str_at_start
+    in_sq = False
+    prev_non_space = ""
+    i = 0
+    n = len(stripped)
+    while i < n:
+        ch = stripped[i]
+        if ch == '"' and not in_sq:
+            in_s = not in_s
+            prev_non_space = '"'
+            i += 1
+            continue
+        if ch == "'" and not in_s:
+            in_sq = not in_sq
+            prev_non_space = "'"
+            i += 1
+            continue
+        if in_s or in_sq:
+            i += 1
+            continue
+        if ch in " \t":
+            i += 1
+            continue
+
+        if ch in "+-*/%":
+            if ch in "+-" and prev_non_space not in _BINARY_LHS:
+                prev_non_space = ch
+                i += 1
+                continue
+            prev_ch = stripped[i - 1] if i > 0 else ""
+            space_before = prev_ch in " \t"
+            next_ch = stripped[i + 1] if i + 1 < n else ""
+            space_after = next_ch in " \t"
+            if not space_before or not space_after:
+                cols.append(i)
+            prev_non_space = ch
+            i += 1
+            continue
+
+        prev_non_space = ch
+        i += 1
+
+    return cols
+
+
 def _calc_complexity_metrics_from_lines(
     lines: list[str],
     start_idx: int,
@@ -327,6 +409,16 @@ class ProcInfo:
     optional_count: int
     header_col: int = 0
     optional_params: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class LineDiagnosticFact:
+    """Zero-based same-line diagnostic fact derived from a document snapshot."""
+
+    line_idx: int
+    character: int
+    end_character: int
+    message: str
 
 
 @dataclass(frozen=True)
@@ -781,6 +873,8 @@ class DocumentSnapshot:
     _complexity_metrics_cache: dict[tuple[tuple[int, int], ...], list[tuple[int, int]]] | None = (
         None
     )
+    _missing_space_facts: list[LineDiagnosticFact] | None = None
+    _incorrect_line_break_facts: list[LineDiagnosticFact] | None = None
     _runtime_call_context_cache: Any | None = None
 
     @property
@@ -975,6 +1069,267 @@ class DocumentSnapshot:
         ]
         self._complexity_metrics_cache[key] = metrics
         return metrics
+
+    @property
+    def missing_space_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL216 spacing facts for this document."""
+        if self._missing_space_facts is not None:
+            return self._missing_space_facts
+
+        facts: list[LineDiagnosticFact] = []
+        str_states = self.line_string_states
+        masked_lines = self.masked_lines
+        comment_starts = self.comment_starts
+        code_lines_wo_comments = self.code_lines_without_comments
+        for idx, line in enumerate(self.lines):
+            if _RE_LINE_COMMENT.match(line):
+                continue
+            in_str_start = str_states[idx]
+            clean_full = masked_lines[idx]
+            clean = clean_full
+            comment_pos = comment_starts[idx]
+            if comment_pos is not None:
+                clean = clean[:comment_pos]
+            has_comparison = any(op in clean for op in _COMPARISON_OPS)
+            has_arithmetic_ops = any(op in line for op in "+-*/%")
+            code_no_comments = code_lines_wo_comments[idx]
+            has_comma = "," in code_no_comments
+            has_semicolon = ";" in clean
+            has_keyword_candidate = bool(_RE_BSL216_ANY_KEYWORD.search(clean))
+            if has_comparison:
+                facts.extend(self._missing_comparison_space_facts(idx, clean))
+            if has_arithmetic_ops:
+                facts.extend(
+                    self._missing_arithmetic_space_facts(idx, line, in_str_start)
+                )
+            if has_comma:
+                facts.extend(self._missing_comma_space_facts(idx, code_no_comments))
+            facts.extend(
+                self._missing_semicolon_space_facts(
+                    idx,
+                    clean,
+                    clean_full,
+                    comment_pos,
+                    has_semicolon,
+                )
+            )
+            if has_keyword_candidate:
+                facts.extend(self._missing_keyword_space_facts(idx, line, clean))
+        self._missing_space_facts = facts
+        return facts
+
+    def _missing_comparison_space_facts(
+        self,
+        line_idx: int,
+        clean: str,
+    ) -> list[LineDiagnosticFact]:
+        facts: list[LineDiagnosticFact] = []
+        pos = 0
+        seen_ops: set[tuple[int, str]] = set()
+        while pos < len(clean):
+            op = None
+            for candidate in _COMPARISON_OPS:
+                if clean.startswith(candidate, pos):
+                    op = candidate
+                    break
+            if op is None:
+                pos += 1
+                continue
+            start = pos
+            end = pos + len(op)
+            if op == "=" and (
+                (start > 0 and clean[start - 1] in "<>!")
+                or (end < len(clean) and clean[end] == "=")
+            ):
+                pos += 1
+                continue
+            left_missing = start > 0 and clean[start - 1] not in " \t"
+            right_missing = end < len(clean) and clean[end] not in " \t"
+            if left_missing or right_missing:
+                key = (start, op)
+                if key not in seen_ops:
+                    seen_ops.add(key)
+                    if left_missing and right_missing:
+                        msg = f"Слева и справа от '{op}' не хватает пробела"
+                    elif left_missing:
+                        msg = f"Слева от '{op}' не хватает пробела"
+                    else:
+                        msg = f"Справа от '{op}' не хватает пробела"
+                    facts.append(LineDiagnosticFact(line_idx, start, end, msg))
+            pos = end
+        return facts
+
+    def _missing_arithmetic_space_facts(
+        self,
+        line_idx: int,
+        line: str,
+        in_str_start: bool,
+    ) -> list[LineDiagnosticFact]:
+        arithmetic_cols = _arithmetic_missing_space_cols_in_line(line, in_str_start)
+        stripped_line = line.lstrip()
+        if (
+            stripped_line.startswith(("+", "-"))
+            and len(stripped_line) > 1
+            and stripped_line[1] not in " \t"
+        ):
+            arithmetic_cols = sorted(set(arithmetic_cols) | {len(line) - len(stripped_line)})
+        facts: list[LineDiagnosticFact] = []
+        for col in arithmetic_cols:
+            op = line[col]
+            left_missing = col > 0 and line[col - 1] not in " \t"
+            right_missing = col + 1 < len(line) and line[col + 1] not in " \t"
+            if left_missing and right_missing:
+                msg = f"Слева и справа от '{op}' не хватает пробела"
+            elif left_missing:
+                msg = f"Слева от '{op}' не хватает пробела"
+            else:
+                msg = f"Справа от '{op}' не хватает пробела"
+            facts.append(LineDiagnosticFact(line_idx, col, col + 1, msg))
+        return facts
+
+    def _missing_comma_space_facts(
+        self,
+        line_idx: int,
+        code_no_comments: str,
+    ) -> list[LineDiagnosticFact]:
+        comma_cols = comma_missing_space_after_cols_in_line(code_no_comments)
+        extra_comma_cols = {m.start() for m in re.finditer(r",(?=\))", code_no_comments)}
+        if extra_comma_cols:
+            comma_cols = sorted(set(comma_cols) | extra_comma_cols)
+        return [
+            LineDiagnosticFact(line_idx, comma_col, comma_col + 1, "Справа от ',' не хватает пробела")
+            for comma_col in comma_cols
+        ]
+
+    def _missing_semicolon_space_facts(
+        self,
+        line_idx: int,
+        clean: str,
+        clean_full: str,
+        comment_pos: int | None,
+        has_semicolon: bool,
+    ) -> list[LineDiagnosticFact]:
+        facts: list[LineDiagnosticFact] = []
+        m_semicolon = _RE_BSL216_SEMICOLON_NOSPACE.search(clean) if has_semicolon else None
+        if (
+            m_semicolon is None
+            and has_semicolon
+            and comment_pos is not None
+            and comment_pos > 0
+            and clean_full[comment_pos - 1] == ";"
+            and clean_full[comment_pos : comment_pos + 2] == "//"
+        ):
+            semicolon_col = comment_pos - 1
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx,
+                    semicolon_col,
+                    semicolon_col + 1,
+                    "Справа от ';' не хватает пробела",
+                )
+            )
+        if m_semicolon:
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx,
+                    m_semicolon.start(),
+                    m_semicolon.end(),
+                    "Справа от ';' не хватает пробела",
+                )
+            )
+        return facts
+
+    def _missing_keyword_space_facts(
+        self,
+        line_idx: int,
+        line: str,
+        clean: str,
+    ) -> list[LineDiagnosticFact]:
+        facts: list[LineDiagnosticFact] = []
+        for m_kw in _RE_BSL216_LEFT_RIGHT_KEYWORDS.finditer(clean):
+            start = m_kw.start(1)
+            end = m_kw.end(1)
+            left_missing = start > 0 and clean[start - 1] not in " \t"
+            right_missing = end < len(clean) and clean[end] not in " \t"
+            if not left_missing and not right_missing:
+                continue
+            kw = line[start:end]
+            if left_missing and right_missing:
+                msg = f"Слева и справа от '{kw}' не хватает пробела"
+            elif left_missing:
+                msg = f"Слева от '{kw}' не хватает пробела"
+            else:
+                msg = f"Справа от '{kw}' не хватает пробела"
+            facts.append(LineDiagnosticFact(line_idx, start, end, msg))
+        for m_kw in _RE_BSL216_LEFT_KEYWORDS.finditer(clean):
+            start = m_kw.start(1)
+            end = m_kw.end(1)
+            if start <= 0 or clean[start - 1] in " \t":
+                continue
+            kw = line[start:end]
+            facts.append(
+                LineDiagnosticFact(line_idx, start, end, f"Слева от '{kw}' не хватает пробела")
+            )
+        for m_kw in _RE_BSL216_RIGHT_KEYWORDS.finditer(clean):
+            start = m_kw.start(1)
+            end = m_kw.end(1)
+            if end >= len(clean) or clean[end] in " \t":
+                continue
+            kw = line[start:end]
+            facts.append(
+                LineDiagnosticFact(line_idx, start, end, f"Справа от '{kw}' не хватает пробела")
+            )
+        return facts
+
+    @property
+    def incorrect_line_break_facts(self) -> list[LineDiagnosticFact]:
+        """Return cached BSL200 token-adjacency line-break facts for this document."""
+        if self._incorrect_line_break_facts is not None:
+            return self._incorrect_line_break_facts
+        query_prev_lines = {
+            block.start_idx - 1 for block in self.query_text_blocks if block.start_idx > 0
+        }
+        facts: list[LineDiagnosticFact] = []
+        for idx, line in enumerate(self.lines):
+            if idx in query_prev_lines:
+                continue
+            for match in (
+                _RE_BSL200_INCORRECT_START.search(line),
+                _RE_BSL200_INCORRECT_END.search(line),
+            ):
+                fact = self._incorrect_line_break_fact(idx, line, match)
+                if fact is not None:
+                    facts.append(fact)
+        self._incorrect_line_break_facts = facts
+        return facts
+
+    def _incorrect_line_break_fact(
+        self,
+        line_idx: int,
+        line: str,
+        match: re.Match[str] | None,
+    ) -> LineDiagnosticFact | None:
+        if match is None:
+            return None
+        start = match.start(1)
+        end = match.end(1)
+        comment_start = self.comment_starts[line_idx]
+        in_comment = comment_start is not None and end >= comment_start
+        token_end = start + 1
+        in_string = span_is_inside_double_quoted_string(
+            line,
+            start,
+            token_end,
+            in_str_at_start=False if line[start:token_end] in ",);" else self.line_string_states[line_idx],
+        )
+        if in_comment or in_string:
+            return None
+        return LineDiagnosticFact(
+            line_idx,
+            start,
+            end,
+            "Проверьте правильность переноса операндов, операторов и параметров",
+        )
 
     def get_runtime_call_context(self) -> Any | None:
         """Return cached runtime call context if it has been built."""

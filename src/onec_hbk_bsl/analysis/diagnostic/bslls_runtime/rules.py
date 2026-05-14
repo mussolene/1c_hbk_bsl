@@ -19,7 +19,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
 from onec_hbk_bsl.analysis.diagnostic.string_state import (
     build_line_string_states,
     comment_start_outside_double_quotes,
-    span_is_inside_double_quoted_string,
 )
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 
@@ -3101,94 +3100,22 @@ class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
 
 class IncorrectLineBreakRule(BsllsDiagnosticRule):
     code = "BSL200"
-    message = "Проверьте правильность переноса операндов, операторов и параметров"
-    _incorrect_start_re = re.compile(r"^\s*(\)|;|,\s*\S+|\);)", re.IGNORECASE)
-    _incorrect_end_re = re.compile(r"\s+(ИЛИ|И|OR|AND|\+|-|/|%|\*)\s*(?://.*)?$", re.IGNORECASE)
-    _query_text_start_re = re.compile(r'"\s*(?:ВЫБРАТЬ|SELECT)\b', re.IGNORECASE)
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        storage = DiagnosticStorage(context.path)
-        string_states = (
-            context.snapshot.line_string_states
-            if context.snapshot is not None
-            else build_line_string_states(context.lines)
-        )
-        comment_starts = (
-            context.snapshot.comment_starts
-            if context.snapshot is not None
-            else [
-                comment_start_outside_double_quotes(line, string_states[idx])
-                for idx, line in enumerate(context.lines)
-            ]
-        )
-        query_prev_lines = self._query_first_prev_lines(context)
-
-        for idx, line in enumerate(context.lines):
-            if idx in query_prev_lines:
-                continue
-            self._check_match(
-                storage,
-                idx,
-                line,
-                self._incorrect_start_re.search(line),
-                string_states[idx],
-                comment_starts[idx],
+        assert context.snapshot is not None
+        return [
+            Diagnostic(
+                file=context.path,
+                line=fact.line_idx + 1,
+                character=fact.character,
+                end_line=fact.line_idx + 1,
+                end_character=fact.end_character,
+                severity=Severity.INFORMATION,
+                code=self.code,
+                message=fact.message,
             )
-            self._check_match(
-                storage,
-                idx,
-                line,
-                self._incorrect_end_re.search(line),
-                string_states[idx],
-                comment_starts[idx],
-            )
-        return storage.diagnostics
-
-    def _check_match(
-        self,
-        storage: DiagnosticStorage,
-        line_idx: int,
-        line: str,
-        match: re.Match[str] | None,
-        in_string_at_start: bool,
-        comment_start: int | None,
-    ) -> None:
-        if match is None:
-            return
-        start = match.start(1)
-        end = match.end(1)
-        in_comment = comment_start is not None and end >= comment_start
-        token_end = start + 1
-        in_string = span_is_inside_double_quoted_string(
-            line,
-            start,
-            token_end,
-            in_str_at_start=False if line[start:token_end] in ",);" else in_string_at_start,
-        )
-        if in_comment or in_string:
-            return
-        storage.add_range(
-            code=self.code,
-            message=self.message,
-            severity=Severity.INFORMATION,
-            line=line_idx,
-            character=start,
-            end_line=line_idx,
-            end_character=end,
-        )
-
-    def _query_first_prev_lines(self, context: BsllsDocumentContext) -> set[int]:
-        if context.snapshot is not None:
-            return {
-                block.start_idx - 1
-                for block in context.snapshot.query_text_blocks
-                if block.start_idx > 0
-            }
-        query_prev_lines: set[int] = set()
-        for idx, line in enumerate(context.lines):
-            if idx > 0 and self._query_text_start_re.search(line):
-                query_prev_lines.add(idx - 1)
-        return query_prev_lines
+            for fact in context.snapshot.incorrect_line_break_facts
+        ]
 
 
 class AssignAliasFieldsInQueryRule(BsllsDiagnosticRule):
@@ -4779,28 +4706,20 @@ class MissingSpaceRuntimeRule(BsllsDiagnosticRule):
     code = "BSL216"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
-        model = context.module_model
-        return model.validate_missing_space(
-            lines=context.lines,
-            snapshot=context.snapshot,
-            line_comment_re=_diag._RE_LINE_COMMENT,
-            build_line_string_states_fn=_diag._build_line_string_states,
-            mask_double_quoted_strings_preserve_len_fn=(
-                _diag._mask_double_quoted_strings_preserve_len
-            ),
-            comment_start_outside_double_quotes_fn=_diag._comment_start_outside_double_quotes,
-            strip_inline_comment_preserve_strings_fn=(_diag._strip_inline_comment_preserve_strings),
-            proc_header_re=_diag._RE_BSL216_PROC_HEADER,
-            any_keyword_re=_diag._RE_BSL216_ANY_KEYWORD,
-            arithmetic_missing_space_cols_in_line_fn=(_diag._arithmetic_missing_space_cols_in_line),
-            comma_missing_space_after_cols_in_line_fn=(
-                _diag._comma_missing_space_after_cols_in_line
-            ),
-            semicolon_nospace_re=_diag._RE_BSL216_SEMICOLON_NOSPACE,
-            left_right_keywords_re=_diag._RE_BSL216_LEFT_RIGHT_KEYWORDS,
-            left_keywords_re=_diag._RE_BSL216_LEFT_KEYWORDS,
-            right_keywords_re=_diag._RE_BSL216_RIGHT_KEYWORDS,
-        )
+        assert context.snapshot is not None
+        return [
+            Diagnostic(
+                file=context.path,
+                line=fact.line_idx + 1,
+                character=fact.character,
+                end_line=fact.line_idx + 1,
+                end_character=fact.end_character,
+                severity=Severity.INFORMATION,
+                code=self.code,
+                message=fact.message,
+            )
+            for fact in context.snapshot.missing_space_facts
+        ]
 
 
 class TypoRuntimeRule(BsllsDiagnosticRule):
