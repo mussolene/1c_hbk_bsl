@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_left
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
@@ -68,10 +69,11 @@ def _path_is_bsl272_server_only_module(path: str) -> bool:
     )
 
 
-def _code_mask_without_strings_and_comments(line: str) -> str:
+@lru_cache(maxsize=262_144)
+def _code_mask_without_strings_and_comments(line: str, in_string_start: bool = False) -> str:
     out: list[str] = []
     pos = 0
-    in_string = False
+    in_string = in_string_start
     while pos < len(line):
         char = line[pos]
         if in_string:
@@ -333,6 +335,7 @@ def _single_line_call_end(line: str, open_paren: int) -> int:
     return open_paren + 1
 
 
+@lru_cache(maxsize=262_144)
 def _comment_start_outside_string(line: str) -> int:
     pos = 0
     in_string = False
@@ -356,6 +359,7 @@ def _comment_start_outside_string(line: str) -> int:
     return -1
 
 
+@lru_cache(maxsize=262_144)
 def _code_before_comment(line: str) -> str:
     comment_start = _comment_start_outside_string(line)
     return line if comment_start < 0 else line[:comment_start]
@@ -3192,25 +3196,13 @@ class OneStatementPerLineRule(BsllsDiagnosticRule):
             if context.snapshot is not None
             else build_line_string_states(context.lines)
         )
-        comment_starts = (
-            context.snapshot.comment_starts
-            if context.snapshot is not None
-            else [
-                comment_start_outside_double_quotes(line, string_states[idx])
-                for idx, line in enumerate(context.lines)
-            ]
-        )
-
         for idx, line in enumerate(context.lines):
             stripped = line.lstrip()
             if not stripped or stripped.startswith("//") or stripped.startswith("#"):
                 continue
 
-            clean = line
-            comment_start = comment_starts[idx]
-            if comment_start is not None:
-                clean = clean[:comment_start]
-            spans = self._statement_spans(clean, line, in_str_at_start=string_states[idx])
+            clean = _code_mask_without_strings_and_comments(line, string_states[idx])
+            spans = self._statement_spans(clean)
             if len(spans) <= 1:
                 continue
             for start, end in spans[1:]:
@@ -3226,18 +3218,11 @@ class OneStatementPerLineRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
     @staticmethod
-    def _statement_spans(clean: str, line: str, *, in_str_at_start: bool) -> list[tuple[int, int]]:
+    def _statement_spans(clean: str) -> list[tuple[int, int]]:
         spans: list[tuple[int, int]] = []
         stmt_start = 0
         depth = 0
         for idx, ch in enumerate(clean):
-            if span_is_inside_double_quoted_string(
-                line,
-                idx,
-                idx + 1,
-                in_str_at_start=in_str_at_start,
-            ):
-                continue
             if ch == "(":
                 depth += 1
                 continue
