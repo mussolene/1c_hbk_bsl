@@ -49,6 +49,61 @@ _RE_REGION_CLOSE = re.compile(
 )
 _RE_QUERY_TEXT_START = re.compile(r'"\s*(?:ВЫБРАТЬ|SELECT)\b', re.IGNORECASE)
 _RE_QUERY_INLINE_COMMENT = re.compile(r"\s*//.*$")
+_CC_OPEN = re.compile(
+    r"^\s*(?:Если|If|ДляКаждого|ForEach|Для|For|Пока|While|Исключение|Except)\b",
+    re.IGNORECASE,
+)
+_CC_CLOSE = re.compile(
+    r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b",
+    re.IGNORECASE,
+)
+_CC_ELSE = re.compile(
+    r"^\s*(?:ИначеЕсли|ElsIf|Иначе|Else)\b",
+    re.IGNORECASE,
+)
+_RE_MCCABE_BRANCH = re.compile(
+    r"^\s*(?:Если|If|ИначеЕсли|ElsIf|Иначе|Else|Для|For|ДляКаждого|ForEach|Пока|While|Исключение|Except|Перейти|Goto)\b",
+    re.IGNORECASE,
+)
+_RE_MCCABE_BOOL = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
+_RE_MCCABE_TERNARY = re.compile(r"\?\s*\(")
+_RE_MCCABE_CALL_PREFIX = re.compile(
+    r"(?P<name>[A-Za-zА-Яа-яЁё_]\w*)\s*$",
+    re.IGNORECASE | re.UNICODE,
+)
+_RE_COGNITIVE_BOOL_TOKEN = re.compile(
+    r"\?\s*\(|\b(?:Не|Not|И|And|ИЛИ|Or)\b|[()]",
+    re.IGNORECASE,
+)
+_RE_COGNITIVE_BOOL_START = re.compile(r"^\s*(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
+_RE_COGNITIVE_OPEN_CONTROL_EXPR = re.compile(
+    r"\b(?:Если|If|ИначеЕсли|ElsIf|Пока|While)\b",
+    re.IGNORECASE,
+)
+_RE_COGNITIVE_EXPR_TERMINATOR = re.compile(
+    r"(?:;|\b(?:Тогда|Then|Цикл|Do)\b)\s*$",
+    re.IGNORECASE,
+)
+_RE_COGNITIVE_CONTROL_TERMINATOR = re.compile(r"\b(?:Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
+_RE_ASSIGNMENT_CONTINUATION = re.compile(r"[=+\-*/]\s*$")
+_MCCABE_GROUPING_KEYWORDS = frozenset(
+    {
+        "если",
+        "if",
+        "иначеесли",
+        "elsif",
+        "пока",
+        "while",
+        "не",
+        "not",
+        "и",
+        "and",
+        "или",
+        "or",
+        "возврат",
+        "return",
+    }
+)
 
 
 def _query_content_end_quote(content: str) -> int | None:
@@ -62,6 +117,200 @@ def _query_content_end_quote(content: str) -> int | None:
             continue
         return pos
     return None
+
+
+def _is_mccabe_grouping_paren(text: str, index: int) -> bool:
+    prefix = text[:index]
+    if not prefix.strip():
+        return True
+    previous = prefix.rstrip()
+    previous_char = previous[-1]
+    if previous_char == "?":
+        return False
+    match = _RE_MCCABE_CALL_PREFIX.search(previous)
+    if match is None:
+        return True
+    return match.group("name").casefold() in _MCCABE_GROUPING_KEYWORDS
+
+
+def _count_mccabe_bool_ops(text: str, paren_depth: int = 0) -> tuple[int, int]:
+    paren_stack = [True] * max(0, paren_depth)
+    if _RE_MCCABE_BOOL.search(text) is None:
+        if "(" not in text and ")" not in text:
+            return 0, paren_depth
+        for i, ch in enumerate(text):
+            if ch == "(":
+                paren_stack.append(_is_mccabe_grouping_paren(text, i))
+            elif ch == ")" and paren_stack:
+                paren_stack.pop()
+        return 0, sum(1 for item in paren_stack if item)
+    count = 0
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "(":
+            paren_stack.append(_is_mccabe_grouping_paren(text, i))
+            i += 1
+            continue
+        if ch == ")":
+            if paren_stack:
+                paren_stack.pop()
+            i += 1
+            continue
+        match = _RE_MCCABE_BOOL.match(text, i)
+        if match:
+            count += 1 + sum(1 for item in paren_stack if item)
+            i = match.end()
+            continue
+        i += 1
+    return count, sum(1 for item in paren_stack if item)
+
+
+def _count_cognitive_ternary_ops(
+    text: str,
+    control_nesting: int,
+    paren_stack: list[bool],
+) -> int:
+    score = 0
+    i = 0
+    while i < len(text):
+        if text[i] == "?":
+            j = i + 1
+            while j < len(text) and text[j].isspace():
+                j += 1
+            if j >= len(text) or text[j] != "(":
+                i += 1
+                continue
+            ternary_depth = sum(1 for item in paren_stack if item)
+            score += 1 + control_nesting + ternary_depth
+            paren_stack.append(True)
+            i = j + 1
+            continue
+        if text[i] == "(":
+            paren_stack.append(False)
+        elif text[i] == ")" and paren_stack:
+            paren_stack.pop()
+        i += 1
+    return score
+
+
+def _count_cognitive_bool_ops(text: str, last_op: str | None = None) -> tuple[int, str | None]:
+    count = 0
+    current = last_op
+    reset_on_close: list[bool] = []
+    pending_not = False
+    bool_seen_on_line = False
+    for match in _RE_COGNITIVE_BOOL_TOKEN.finditer(text):
+        lexeme = match.group(0)
+        folded = lexeme.casefold()
+        if lexeme.startswith("?"):
+            if not bool_seen_on_line:
+                current = None
+            pending_not = False
+            continue
+        if lexeme == "(":
+            is_not_grouping = pending_not and _is_mccabe_grouping_paren(text, match.start())
+            if is_not_grouping:
+                current = None
+            reset_on_close.append(is_not_grouping)
+            pending_not = False
+            continue
+        if lexeme == ")":
+            if reset_on_close and reset_on_close.pop():
+                current = None
+            pending_not = False
+            continue
+        if folded in {"не", "not"}:
+            pending_not = True
+            continue
+        pending_not = False
+        op = "and" if folded in {"and", "и"} else "or"
+        if op != current:
+            count += 1
+            current = op
+        bool_seen_on_line = True
+    return count, current
+
+
+def _line_has_self_call(line: str, proc_name: str | None) -> bool:
+    if not proc_name:
+        return False
+    return bool(re.search(rf"(?<![.\w]){re.escape(proc_name)}\s*\(", line, re.IGNORECASE))
+
+
+def _calc_complexity_metrics_from_lines(
+    lines: list[str],
+    start_idx: int,
+    end_idx: int,
+    *,
+    masked_lines: list[str],
+    proc_name: str | None = None,
+) -> tuple[int, int]:
+    cognitive = 0
+    nesting = 0
+    bool_last_op: str | None = None
+    bool_expr_open = False
+    ternary_paren_stack: list[bool] = []
+    mccabe = 1
+    paren_depth = 0
+    for i in range(start_idx + 1, min(end_idx, len(lines))):
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        if line.lstrip().startswith("|"):
+            bool_last_op = None
+            bool_expr_open = False
+            ternary_paren_stack.clear()
+            paren_depth = 0
+            continue
+        line_no_strings = masked_lines[i]
+
+        starts_with_bool = bool(_RE_COGNITIVE_BOOL_START.match(line_no_strings))
+        line_bool_count, bool_last_op = _count_cognitive_bool_ops(
+            line_no_strings,
+            bool_last_op if (bool_expr_open or starts_with_bool) else None,
+        )
+        cognitive += line_bool_count
+        line_has_bool = line_bool_count > 0 or _RE_MCCABE_BOOL.search(line_no_strings) is not None
+        opens_control_expr = bool(
+            _RE_COGNITIVE_OPEN_CONTROL_EXPR.search(line_no_strings)
+            and not _RE_COGNITIVE_CONTROL_TERMINATOR.search(line_no_strings)
+        )
+        line_terminates_expr = bool(_RE_COGNITIVE_EXPR_TERMINATOR.search(line_no_strings))
+        bool_expr_open = (
+            opens_control_expr
+            or bool(_RE_ASSIGNMENT_CONTINUATION.search(line_no_strings))
+            or (line_has_bool and not line_terminates_expr)
+            or bool((bool_expr_open or starts_with_bool) and not line_terminates_expr)
+        )
+        if not bool_expr_open:
+            bool_last_op = None
+        ternary_count = len(_RE_MCCABE_TERNARY.findall(line_no_strings))
+        cognitive += _count_cognitive_ternary_ops(
+            line_no_strings,
+            nesting,
+            ternary_paren_stack,
+        )
+        has_self_call = _line_has_self_call(line_no_strings, proc_name)
+        if has_self_call:
+            cognitive += 1
+        if _CC_OPEN.match(line):
+            cognitive += 1 + nesting
+            nesting += 1
+        elif _CC_CLOSE.match(line):
+            nesting = max(0, nesting - 1)
+        elif _CC_ELSE.match(line):
+            cognitive += 1
+
+        if _RE_MCCABE_BRANCH.match(line_no_strings):
+            mccabe += 1
+        bool_count, paren_depth = _count_mccabe_bool_ops(line_no_strings, paren_depth)
+        mccabe += bool_count
+        mccabe += ternary_count
+        if has_self_call:
+            mccabe += 1
+    return cognitive, mccabe
 
 
 @dataclass(frozen=True)
@@ -524,6 +773,7 @@ class DocumentSnapshot:
     _comment_starts: list[int | None] | None = None
     _masked_lines: list[str] | None = None
     _code_lines_wo_comments: list[str] | None = None
+    _counter_lines: list[str] | None = None
     _line_lengths: list[int] | None = None
     _blank_line_flags: list[bool] | None = None
     _has_parse_errors: bool | None = None
@@ -649,6 +899,18 @@ class DocumentSnapshot:
         return self._code_lines_wo_comments
 
     @property
+    def counter_lines(self) -> list[str]:
+        """Lines with comments and double-quoted strings masked for metric counters."""
+        if self._counter_lines is None:
+            states = self.line_string_states
+            code_lines = self.code_lines_without_comments
+            self._counter_lines = [
+                line if states[idx] else mask_double_quoted_strings_preserve_len(line)
+                for idx, line in enumerate(code_lines)
+            ]
+        return self._counter_lines
+
+    @property
     def line_lengths(self) -> list[int]:
         if self._line_lengths is None:
             self._line_lengths = [len(line) for line in self.lines]
@@ -693,8 +955,6 @@ class DocumentSnapshot:
     def complexity_metrics_for_procs(
         self,
         procs: list[ProcInfo],
-        *,
-        calculator: Callable[..., tuple[int, int]],
     ) -> list[tuple[int, int]]:
         """Return cached ``(cognitive, mccabe)`` metrics for procedures."""
         key = tuple((proc.start_idx, proc.end_idx) for proc in procs)
@@ -703,13 +963,12 @@ class DocumentSnapshot:
         cached = self._complexity_metrics_cache.get(key)
         if cached is not None:
             return cached
-        string_states = self.line_string_states
         metrics = [
-            calculator(
+            _calc_complexity_metrics_from_lines(
                 self.lines,
                 proc.start_idx,
                 proc.end_idx,
-                string_states=string_states,
+                masked_lines=self.counter_lines,
                 proc_name=proc.name,
             )
             for proc in procs

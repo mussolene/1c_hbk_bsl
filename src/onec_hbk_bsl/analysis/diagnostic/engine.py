@@ -432,22 +432,9 @@ class DiagnosticEngine:
     ) -> list[tuple[int, int]]:
         """Return cached ``(cognitive, mccabe)`` metrics for current file procedures."""
         snapshot = self._current_snapshot
-        if snapshot is not None and getattr(snapshot, "lines", None) is lines:
-            return snapshot.complexity_metrics_for_procs(
-                procs,
-                calculator=_calc_complexity_metrics,
-            )
-        string_states = _build_line_string_states(lines)
-        return [
-            _calc_complexity_metrics(
-                lines,
-                proc.start_idx,
-                proc.end_idx,
-                string_states=string_states,
-                proc_name=proc.name,
-            )
-            for proc in procs
-        ]
+        if snapshot is None or getattr(snapshot, "lines", None) is not lines:
+            raise RuntimeError("complexity metrics require the current DocumentSnapshot")
+        return snapshot.complexity_metrics_for_procs(procs)
 
     def _global_method_calls_from_nodes(
         self, method_call_nodes: list[Any], line_texts: list[str]

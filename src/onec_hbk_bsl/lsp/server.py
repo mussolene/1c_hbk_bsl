@@ -153,16 +153,11 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     parameter_name_from_declaration_fragment,
     split_commas_outside_double_quotes,
 )
-from onec_hbk_bsl.analysis.diagnostic.string_state import (
-    build_line_string_states as _build_line_string_states,
-)
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
     RULE_METADATA,
     DiagnosticEngine,
     Severity,
-    _calc_complexity_metrics,
-    _find_procedures_from_tree,
     display_name_for_rule_code,
     lsp_compat_severity,
     parse_env_rule_filters,
@@ -2380,21 +2375,12 @@ def _compute_cached_code_lens_metrics(
     if cache.code_lens_metrics is not None:
         return cache.code_lens_metrics
 
-    lines = content.splitlines()
-    procs = _find_procedures_from_tree(cache.tree)
-    string_states = _build_line_string_states(lines)
+    snapshot = cache.snapshot
+    procs = snapshot.procedures
+    complexity_metrics = snapshot.complexity_metrics_for_procs(procs)
     metrics = [
         _CodeLensMetric(line0=proc.start_idx, cognitive=cognitive, mccabe=mccabe)
-        for proc in procs
-        for cognitive, mccabe in [
-            _calc_complexity_metrics(
-                lines,
-                proc.start_idx,
-                proc.end_idx,
-                string_states=string_states,
-                proc_name=proc.name,
-            )
-        ]
+        for proc, (cognitive, mccabe) in zip(procs, complexity_metrics, strict=False)
     ]
 
     with ls._parsed_doc_cache_lock:
@@ -2569,24 +2555,22 @@ def on_code_lens(ls: BslLanguageServer, params: CodeLensParams) -> list[CodeLens
         return result or None
 
     try:
-        tree = _cached_parse_tree(ls, uri, content)
-        if tree is None:
+        cache = _get_lsp_document_context(
+            ls,
+            uri,
+            content,
+            allow_sync_build=_allow_sync_local_scope_parse(content),
+        )
+        if cache is None:
             return None
-        procs = _find_procedures_from_tree(tree)
-        lines = content.splitlines()
-        string_states = _build_line_string_states(lines)
+        snapshot = cache.snapshot
+        procs = snapshot.procedures
+        complexity_metrics = snapshot.complexity_metrics_for_procs(procs)
     except Exception:
         return None
 
     result: list[CodeLens] = []
-    for proc in procs:
-        cc, mc = _calc_complexity_metrics(
-            lines,
-            proc.start_idx,
-            proc.end_idx,
-            string_states=string_states,
-            proc_name=proc.name,
-        )
+    for proc, (cc, mc) in zip(procs, complexity_metrics, strict=False):
         line = proc.start_idx  # 0-based header line
         r = Range(start=Position(line=line, character=0), end=Position(line=line, character=0))
         # Cognitive complexity lens
