@@ -238,7 +238,11 @@ def format_tokens(content: str) -> list[FormatToken]:
                 while pos < length and _is_identifier_part(line[pos]):
                     pos += 1
                 text = line[start:pos]
-                tokens.append(FormatToken(_KEYWORD_TYPES.get(text.lower(), "identifier"), text, line_no, start))
+                tokens.append(
+                    FormatToken(
+                        _KEYWORD_TYPES.get(text.lower(), "identifier"), text, line_no, start
+                    )
+                )
                 continue
 
             tokens.append(FormatToken("operator", char, line_no, pos))
@@ -260,13 +264,17 @@ def _scan_string(line: str, line_no: int, start: int, tokens: list[FormatToken])
                 pos += 2
                 continue
             if content_start < pos:
-                tokens.append(FormatToken("string_content", line[content_start:pos], line_no, content_start))
+                tokens.append(
+                    FormatToken("string_content", line[content_start:pos], line_no, content_start)
+                )
             tokens.append(FormatToken('"', '"', line_no, pos))
             return pos + 1
         pos += 1
 
     if content_start < length:
-        tokens.append(FormatToken("string_content", line[content_start:length], line_no, content_start))
+        tokens.append(
+            FormatToken("string_content", line[content_start:length], line_no, content_start)
+        )
     return length + 1
 
 

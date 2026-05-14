@@ -229,7 +229,9 @@ def _tool_fns(app):
     import asyncio
 
     return {
-        tool.name: SimpleNamespace(fn=lambda _name=tool.name, **kwargs: _call_tool(app, _name, **kwargs))
+        tool.name: SimpleNamespace(
+            fn=lambda _name=tool.name, **kwargs: _call_tool(app, _name, **kwargs)
+        )
         for tool in asyncio.run(app.list_tools())
     }
 

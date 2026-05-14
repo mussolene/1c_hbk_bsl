@@ -69,8 +69,7 @@ class ModuleAnalysisContext:
     def procedures(self) -> tuple[ProcedureModel, ...]:
         if self._procedures is None:
             self._procedures = tuple(
-                ProcedureModel.from_proc_info(self.path, proc)
-                for proc in self.snapshot.procedures
+                ProcedureModel.from_proc_info(self.path, proc) for proc in self.snapshot.procedures
             )
         return self._procedures
 

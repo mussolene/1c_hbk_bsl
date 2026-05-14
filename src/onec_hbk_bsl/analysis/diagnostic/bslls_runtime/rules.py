@@ -32,8 +32,10 @@ class BsllsDiagnosticRule:
 
 def _path_is_form_module_bsl(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
-    return normalized.endswith("/forms/") or "/forms/" in normalized and normalized.endswith(
-        "/ext/module.bsl"
+    return (
+        normalized.endswith("/forms/")
+        or "/forms/" in normalized
+        and normalized.endswith("/ext/module.bsl")
     )
 
 
@@ -1474,9 +1476,7 @@ class MagicDateRule(BsllsDiagnosticRule):
             ):
                 for match in regex.finditer(code_part):
                     value = match.group(1)
-                    if self._line_prefix_skips(
-                        line, match.start(), match.end(), value, is_string
-                    ):
+                    if self._line_prefix_skips(line, match.start(), match.end(), value, is_string):
                         continue
                     storage.add_match(
                         code=self.code,
@@ -1532,10 +1532,7 @@ class MagicDateRule(BsllsDiagnosticRule):
             suffix.startswith(",") or suffix.startswith(")")
         ):
             return True
-        if (
-            re.match(r"^\s*[\wА-Яа-яЁё.]+\s*=\s*$", prefix, re.IGNORECASE)
-            and suffix in {"", ";"}
-        ):
+        if re.match(r"^\s*[\wА-Яа-яЁё.]+\s*=\s*$", prefix, re.IGNORECASE) and suffix in {"", ";"}:
             return True
         if re.search(r"\b(?:Функция|Function|Процедура|Procedure)\b", prefix, re.IGNORECASE):
             return True
@@ -1543,7 +1540,9 @@ class MagicDateRule(BsllsDiagnosticRule):
             return True
         if re.search(r"\b(?:ФиксированнаяСтруктура|FixedStructure)\s*\(", line, re.IGNORECASE):
             return True
-        if re.search(r"\b(?:Новый\s+)?(?:Структура|Structure|Соответствие|Map)\b", line, re.IGNORECASE):
+        if re.search(
+            r"\b(?:Новый\s+)?(?:Структура|Structure|Соответствие|Map)\b", line, re.IGNORECASE
+        ):
             return True
         if re.search(r"\.(?:Вставить|Insert)\s*\(", prefix, re.IGNORECASE):
             return True
@@ -1873,7 +1872,9 @@ class IsInRoleMethodRule(BsllsDiagnosticRule):
 
     @staticmethod
     def _has_privileged_var(expression: str, privileged_vars: set[str]) -> bool:
-        return any(re.search(rf"(?<!\w){re.escape(var)}(?!\w)", expression) for var in privileged_vars)
+        return any(
+            re.search(rf"(?<!\w){re.escape(var)}(?!\w)", expression) for var in privileged_vars
+        )
 
     @staticmethod
     def _next_privileged_call_start(expression: str, start: int) -> int | None:
@@ -1970,7 +1971,9 @@ class ExecuteExternalCodeRule(BsllsDiagnosticRule):
             r"([А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*)",
             re.IGNORECASE | re.UNICODE,
         )
-        end_re = re.compile(r"^\s*(?:КонецПроцедуры|EndProcedure|КонецФункции|EndFunction)\b", re.IGNORECASE)
+        end_re = re.compile(
+            r"^\s*(?:КонецПроцедуры|EndProcedure|КонецФункции|EndFunction)\b", re.IGNORECASE
+        )
         out: list[Any] = []
         idx = 0
         while idx < len(lines):
@@ -2013,7 +2016,9 @@ class ExecuteExternalCodeRule(BsllsDiagnosticRule):
         for proc in procs:
             if self._client_only_method(context.lines, int(proc.start_idx)):
                 continue
-            for idx in range(int(proc.start_idx) + 1, min(int(proc.end_idx) + 1, len(context.lines))):
+            for idx in range(
+                int(proc.start_idx) + 1, min(int(proc.end_idx) + 1, len(context.lines))
+            ):
                 clean = _code_mask_without_strings_and_comments(context.lines[idx])
                 for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
                     open_paren = clean.find("(", match.start())
@@ -2175,7 +2180,9 @@ class UsingSynchronousCallsRule(BsllsDiagnosticRule):
         skipped: set[int] = set()
         for proc in procs:
             if UsingSynchronousCallsRule._server_only_method(context.lines, int(proc.start_idx)):
-                skipped.update(range(int(proc.start_idx), min(int(proc.end_idx) + 1, len(context.lines))))
+                skipped.update(
+                    range(int(proc.start_idx), min(int(proc.end_idx) + 1, len(context.lines)))
+                )
         return skipped
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
@@ -2183,7 +2190,10 @@ class UsingSynchronousCallsRule(BsllsDiagnosticRule):
             return []
         storage = DiagnosticStorage(context.path)
         skipped_lines = self._server_only_lines(context)
-        clean_lines = [_code_mask_without_strings_and_comments(_code_before_comment(line)) for line in context.lines]
+        clean_lines = [
+            _code_mask_without_strings_and_comments(_code_before_comment(line))
+            for line in context.lines
+        ]
         for idx, clean in enumerate(clean_lines):
             if idx in skipped_lines:
                 continue
@@ -2430,7 +2440,9 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
         if node_type == "source_file":
             return [child for child in children if getattr(child, "type", None) != "preprocessor"]
         if node_type == "if_statement":
-            return cls._roots_between(children, "THEN_KEYWORD", {"elseif_clause", "else_clause", "ENDIF_KEYWORD"})
+            return cls._roots_between(
+                children, "THEN_KEYWORD", {"elseif_clause", "else_clause", "ENDIF_KEYWORD"}
+            )
         if node_type == "elseif_clause":
             return cls._roots_after(children, "THEN_KEYWORD")
         if node_type == "else_clause":
@@ -2448,7 +2460,11 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
         end_types: set[str],
     ) -> list[Any]:
         start_idx = next(
-            (idx for idx, child in enumerate(children) if getattr(child, "type", None) == start_type),
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == start_type
+            ),
             None,
         )
         if start_idx is None:
@@ -2466,7 +2482,11 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
     @staticmethod
     def _roots_after(children: list[Any], keyword_type: str) -> list[Any]:
         keyword_idx = next(
-            (idx for idx, child in enumerate(children) if getattr(child, "type", None) == keyword_type),
+            (
+                idx
+                for idx, child in enumerate(children)
+                if getattr(child, "type", None) == keyword_type
+            ),
             None,
         )
         if keyword_idx is None:
@@ -2528,7 +2548,9 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
         )
         if args is None:
             return []
-        return [child for child in _ts_children(args) if getattr(child, "type", None) == "expression"]
+        return [
+            child for child in _ts_children(args) if getattr(child, "type", None) == "expression"
+        ]
 
     @staticmethod
     def _add_call(storage: DiagnosticStorage, lines: list[str], call_node: Any) -> None:
@@ -2585,8 +2607,8 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
-        global_calls, call_starts, proc_nodes, _try_nodes = WrongUseOfRollbackTransactionMethodRule._runtime_context(
-            context
+        global_calls, call_starts, proc_nodes, _try_nodes = (
+            WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
         )
         storage = DiagnosticStorage(context.path)
         for proc_node in proc_nodes:
@@ -2641,7 +2663,9 @@ class BeginTransactionBeforeTryCatchRule(BsllsDiagnosticRule):
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         clean_lines = (
-            context.snapshot.code_lines_without_comments if context.snapshot is not None else context.lines
+            context.snapshot.code_lines_without_comments
+            if context.snapshot is not None
+            else context.lines
         )
         storage = DiagnosticStorage(context.path)
 
@@ -2821,7 +2845,9 @@ class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
             ended_query = quote_pos >= 0
             content_scan = content[:quote_pos].rstrip() if ended_query else content
             tail_has_semi = ";" in content_scan
-            head = content_scan[: content_scan.index(";")].rstrip() if tail_has_semi else content_scan
+            head = (
+                content_scan[: content_scan.index(";")].rstrip() if tail_has_semi else content_scan
+            )
 
             if tail_has_semi and not head:
                 where_stack.clear()
@@ -2838,13 +2864,19 @@ class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
             if self._union_re.search(head):
                 where_stack.clear()
                 continue
-            if where_stack and self._line_ends_where_re.match(head) and group_depth == where_stack[-1]:
+            if (
+                where_stack
+                and self._line_ends_where_re.match(head)
+                and group_depth == where_stack[-1]
+            ):
                 where_stack.pop()
             if self._line_is_where_re.match(head):
                 where_stack.append(group_depth)
             if where_stack:
                 for match in self._or_re.finditer(head):
-                    self._add_match(storage, idx, content_base + match.start(), content_base + match.end())
+                    self._add_match(
+                        storage, idx, content_base + match.start(), content_base + match.end()
+                    )
 
             group_depth += head.count("(") - head.count(")")
             if group_depth < 0:
@@ -2897,7 +2929,9 @@ class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
             end_character=end,
         )
 
-    def _where_clause_region_bounds(self, literal: str, where_match: re.Match[str]) -> tuple[int, int]:
+    def _where_clause_region_bounds(
+        self, literal: str, where_match: re.Match[str]
+    ) -> tuple[int, int]:
         pos = where_match.end()
         depth = 0
         while pos < len(literal):
@@ -2974,14 +3008,18 @@ class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
         "Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке "
         "'Попытка' перед оператором 'Исключение'"
     )
-    _commit_re = re.compile(r"^\s*(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(", re.IGNORECASE)
+    _commit_re = re.compile(
+        r"^\s*(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(", re.IGNORECASE
+    )
     _try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
     _except_re = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
     _end_try_re = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         clean_lines = (
-            context.snapshot.code_lines_without_comments if context.snapshot is not None else context.lines
+            context.snapshot.code_lines_without_comments
+            if context.snapshot is not None
+            else context.lines
         )
         storage = DiagnosticStorage(context.path)
         pending: tuple[int, int, int] | None = None
@@ -3116,7 +3154,11 @@ class IncorrectLineBreakRule(BsllsDiagnosticRule):
 
     def _query_first_prev_lines(self, context: BsllsDocumentContext) -> set[int]:
         if context.snapshot is not None:
-            return {block.start_idx - 1 for block in context.snapshot.query_text_blocks if block.start_idx > 0}
+            return {
+                block.start_idx - 1
+                for block in context.snapshot.query_text_blocks
+                if block.start_idx > 0
+            }
         query_prev_lines: set[int] = set()
         for idx, line in enumerate(context.lines):
             if idx > 0 and self._query_text_start_re.search(line):
@@ -3224,7 +3266,12 @@ class OneStatementPerLineRule(BsllsDiagnosticRule):
             sub = tail[: tail.rfind(";")].strip()
             if not sub:
                 continue
-            sub_start = start + then_match.end() + len(tail[: tail.rfind(";")]) - len(tail[: tail.rfind(";")].lstrip())
+            sub_start = (
+                start
+                + then_match.end()
+                + len(tail[: tail.rfind(";")])
+                - len(tail[: tail.rfind(";")].lstrip())
+            )
             expanded.append((sub_start, end))
         spans = expanded
         spans = [
@@ -3249,7 +3296,9 @@ class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
         previous_by_pos = {
             self._node_key(node): leaves[idx - 1] for idx, node in enumerate(leaves[1:], start=1)
         }
-        for unary_node in context.ts_nodes_for_types(context.tree, {"unary_expression"})["unary_expression"]:
+        for unary_node in context.ts_nodes_for_types(context.tree, {"unary_expression"})[
+            "unary_expression"
+        ]:
             operator = next(
                 (
                     child
@@ -3261,7 +3310,11 @@ class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
             if operator is None or self._has_numeric_operand(unary_node):
                 continue
             previous = previous_by_pos.get(self._node_key(operator))
-            if previous is None or getattr(previous, "type", None) != "operator" or _ts_node_text(previous) != "+":
+            if (
+                previous is None
+                or getattr(previous, "type", None) != "operator"
+                or _ts_node_text(previous) != "+"
+            ):
                 continue
             _add_node_range(
                 storage,
@@ -3354,17 +3407,17 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
     _message_wrong_number = "Неверное число параметров метода"
     _message_no_second = 'Не указан 2й параметр с типом "УровеньЖурналаРегистрации"'
     _message_no_comment = 'Не указан 5й параметр "Комментарий"'
-    _message_no_error_level = (
-        'Нужно указывать уровень "Ошибка" при записи в журнал регистрации внутри блока Исключение-КонецПопытки'
+    _message_no_error_level = 'Нужно указывать уровень "Ошибка" при записи в журнал регистрации внутри блока Исключение-КонецПопытки'
+    _message_no_detail = (
+        'В тексте комментария нет вызова "ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())"'
     )
-    _message_no_detail = 'В тексте комментария нет вызова "ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())"'
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
-        global_calls, call_starts, _proc_nodes, try_nodes = WrongUseOfRollbackTransactionMethodRule._runtime_context(
-            context
+        global_calls, call_starts, _proc_nodes, try_nodes = (
+            WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
         )
         except_blocks = self._except_blocks(try_nodes, global_calls, call_starts)
         storage = DiagnosticStorage(context.path)
@@ -3395,7 +3448,11 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
     @staticmethod
     def _call_params(call_node: Any) -> list[Any | None]:
         args_node = next(
-            (child for child in _ts_children(call_node) if getattr(child, "type", None) == "arguments"),
+            (
+                child
+                for child in _ts_children(call_node)
+                if getattr(child, "type", None) == "arguments"
+            ),
             None,
         )
         if args_node is None:
@@ -3479,7 +3536,10 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
             name in cls._error_info_names for name in call_names_cf
         ):
             return True
-        if any(name in cls._simple_error_names or name in cls._brief_error_names for name in call_names_cf):
+        if any(
+            name in cls._simple_error_names or name in cls._brief_error_names
+            for name in call_names_cf
+        ):
             return False
         if cls._expression_is_const(expr):
             return False
@@ -3524,16 +3584,14 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
         if getattr(member, "type", None) != "member":
             return None
         text = _ts_node_text(member).strip()
-        return text if text and re.fullmatch(r"[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*", text) else None
+        return (
+            text if text and re.fullmatch(r"[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*", text) else None
+        )
 
     @staticmethod
     def _first_assignment_expr(block_roots: list[Any], var_name: str) -> Any | None:
         assignment = next(
-            (
-                root
-                for root in block_roots
-                if getattr(root, "type", None) == "assignment_statement"
-            ),
+            (root for root in block_roots if getattr(root, "type", None) == "assignment_statement"),
             None,
         )
         if assignment is None:
@@ -3549,16 +3607,26 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
         if lvalue.casefold() != var_name.casefold():
             return None
         return next(
-            (child for child in children[eq_idx + 1 :] if getattr(child, "type", None) == "expression"),
+            (
+                child
+                for child in children[eq_idx + 1 :]
+                if getattr(child, "type", None) == "expression"
+            ),
             None,
         )
 
     @classmethod
     def _block_has_raise(cls, block_roots: list[Any]) -> bool:
-        return any(getattr(node, "type", None) in cls._raise_names for root in block_roots for node in _ts_walk(root))
+        return any(
+            getattr(node, "type", None) in cls._raise_names
+            for root in block_roots
+            for node in _ts_walk(root)
+        )
 
     @staticmethod
-    def _add_call(storage: DiagnosticStorage, lines: list[str], call_node: Any, message: str) -> None:
+    def _add_call(
+        storage: DiagnosticStorage, lines: list[str], call_node: Any, message: str
+    ) -> None:
         _add_node_range(
             storage,
             code=UsageWriteLogEventRule.code,
@@ -3603,7 +3671,9 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
     @staticmethod
-    def _runtime_context(context: BsllsDocumentContext) -> tuple[list[Any], list[int], list[Any], list[Any]]:
+    def _runtime_context(
+        context: BsllsDocumentContext,
+    ) -> tuple[list[Any], list[int], list[Any], list[Any]]:
         cached = context.runtime_call_context
         if cached is not None:
             return cached
@@ -3612,7 +3682,9 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
                 context.tree,
                 {"method_call", "procedure_definition", "function_definition", "try_statement"},
             )
-            global_calls = context.global_method_calls_from_nodes(nodes["method_call"], context.lines)
+            global_calls = context.global_method_calls_from_nodes(
+                nodes["method_call"], context.lines
+            )
             call_starts = [getattr(call["node"], "start_byte", -1) for call in global_calls]
             proc_nodes = nodes["procedure_definition"] + nodes["function_definition"]
             return global_calls, call_starts, proc_nodes, nodes["try_statement"]
@@ -3627,7 +3699,9 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
             for node in _diag._ts_walk(root)
             if getattr(node, "type", None) in {"procedure_definition", "function_definition"}
         ]
-        try_nodes = [node for node in _diag._ts_walk(root) if getattr(node, "type", None) == "try_statement"]
+        try_nodes = [
+            node for node in _diag._ts_walk(root) if getattr(node, "type", None) == "try_statement"
+        ]
         return global_calls, call_starts, proc_nodes, try_nodes
 
     @staticmethod
@@ -3930,7 +4004,9 @@ class IfElseIfEndsWithElseRule(BsllsDiagnosticRule):
 
 class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
     code = "BSL198"
-    message = 'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся условия'
+    message = (
+        'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся условия'
+    )
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -3966,7 +4042,9 @@ class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
         for child in _ts_children(if_statement):
             child_type = getattr(child, "type", None)
             if child_type == "expression":
-                expressions.append((child, *IfElseDuplicatedConditionRule._diagnostic_nodes(if_statement, child)))
+                expressions.append(
+                    (child, *IfElseDuplicatedConditionRule._diagnostic_nodes(if_statement, child))
+                )
             elif child_type == "elseif_clause":
                 expression = next(
                     (
@@ -3978,7 +4056,10 @@ class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
                 )
                 if expression is not None:
                     expressions.append(
-                        (expression, *IfElseDuplicatedConditionRule._diagnostic_nodes(child, expression))
+                        (
+                            expression,
+                            *IfElseDuplicatedConditionRule._diagnostic_nodes(child, expression),
+                        )
                     )
         return expressions
 
@@ -4004,7 +4085,9 @@ class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
 
 class IfElseDuplicatedCodeBlockRule(BsllsDiagnosticRule):
     code = "BSL197"
-    message = 'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода'
+    message = (
+        'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода'
+    )
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -4236,9 +4319,7 @@ class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL159":
             return run_bsl159_common_module_invalid_type(context.path, context.lines)
         if code == "BSL160":
-            return run_bsl160_common_module_missing_api(
-                context.path, context.lines, regions, procs
-            )
+            return run_bsl160_common_module_missing_api(context.path, context.lines, regions, procs)
         if code == "BSL172":
             return run_bsl172_data_exchange_loading(context.path, context.lines, procs)
         if code == "BSL173":
@@ -4717,14 +4798,10 @@ class MissingSpaceRuntimeRule(BsllsDiagnosticRule):
                 _diag._mask_double_quoted_strings_preserve_len
             ),
             comment_start_outside_double_quotes_fn=_diag._comment_start_outside_double_quotes,
-            strip_inline_comment_preserve_strings_fn=(
-                _diag._strip_inline_comment_preserve_strings
-            ),
+            strip_inline_comment_preserve_strings_fn=(_diag._strip_inline_comment_preserve_strings),
             proc_header_re=_diag._RE_BSL216_PROC_HEADER,
             any_keyword_re=_diag._RE_BSL216_ANY_KEYWORD,
-            arithmetic_missing_space_cols_in_line_fn=(
-                _diag._arithmetic_missing_space_cols_in_line
-            ),
+            arithmetic_missing_space_cols_in_line_fn=(_diag._arithmetic_missing_space_cols_in_line),
             comma_missing_space_after_cols_in_line_fn=(
                 _diag._comma_missing_space_after_cols_in_line
             ),
@@ -4813,9 +4890,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 strip_inline_comment_preserve_strings_fn=(
                     _diag._strip_inline_comment_preserve_strings
                 ),
-                bsl007_strip_double_quoted_segments_fn=(
-                    _diag._bsl007_strip_double_quoted_segments
-                ),
+                bsl007_strip_double_quoted_segments_fn=(_diag._bsl007_strip_double_quoted_segments),
                 bsl007_simple_assign_at_start_re=_diag._BSL007_SIMPLE_ASSIGN_AT_START,
                 var_local_re=_diag._RE_VAR_LOCAL,
                 region_line_re=_diag._RE_REGION_LINE,
@@ -5198,9 +5273,7 @@ class LatinCyrillicRuntimeRule(BsllsDiagnosticRule):
                 re_bsl208_has_cyrillic=_diag._RE_BSL208_HAS_CYRILLIC,
                 re_bsl208_word=_diag._RE_BSL208_WORD,
                 re_bsl208_trailing_lang=_diag._RE_BSL208_TRAILING_LANG,
-                bsl208_word_is_standard_tech_name_fn=(
-                    _diag._bsl208_word_is_standard_tech_name
-                ),
+                bsl208_word_is_standard_tech_name_fn=(_diag._bsl208_word_is_standard_tech_name),
             )
             if diag.code == self.code
         ]

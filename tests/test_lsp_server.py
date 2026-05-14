@@ -346,9 +346,7 @@ class TestHandlerFunctions:
         assert _allow_sync_local_scope_parse("А = 1;\n")
         assert not _allow_sync_local_scope_parse("А" * 1_000_001)
 
-    def test_large_document_uses_background_local_scope_cache(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_large_document_uses_background_local_scope_cache(self, tmp_path, monkeypatch) -> None:
         import threading
         from unittest.mock import MagicMock
 
@@ -474,9 +472,7 @@ class TestHandlerFunctions:
         assert hover is not None
         assert parse_calls == 1
 
-    def test_lsp_diagnostics_reuse_shared_context_after_hover(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_lsp_diagnostics_reuse_shared_context_after_hover(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
         from onec_hbk_bsl.lsp.server import _build_lsp_diagnostics_inner, on_did_open, on_hover

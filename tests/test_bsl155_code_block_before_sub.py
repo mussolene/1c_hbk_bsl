@@ -31,7 +31,9 @@ def test_bsl155_fires_executable_before_proc(tmp_path: Path) -> None:
 
 
 def test_bsl155_matches_upstream_fixture_range() -> None:
-    p = Path(".agent/tmp/bslls-source/src/test/resources/diagnostics/CodeBlockBeforeSubDiagnostic.bsl")
+    p = Path(
+        ".agent/tmp/bslls-source/src/test/resources/diagnostics/CodeBlockBeforeSubDiagnostic.bsl"
+    )
     engine = DiagnosticEngine(select={"BSL155"})
     diags = [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
     assert len(diags) == 1

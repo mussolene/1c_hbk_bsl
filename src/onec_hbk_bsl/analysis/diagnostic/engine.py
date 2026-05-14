@@ -504,9 +504,7 @@ class DiagnosticEngine:
             {"method_call", "procedure_definition", "function_definition", "try_statement"},
         )
         global_calls = self._global_method_calls_from_nodes(nodes["method_call"], lines)
-        global_call_starts = [
-            getattr(call["node"], "start_byte", -1) for call in global_calls
-        ]
+        global_call_starts = [getattr(call["node"], "start_byte", -1) for call in global_calls]
         proc_nodes = nodes["procedure_definition"] + nodes["function_definition"]
         context = (global_calls, global_call_starts, proc_nodes, nodes["try_statement"])
         if snapshot is not None and getattr(snapshot, "tree", None) is tree:

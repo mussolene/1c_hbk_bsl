@@ -2777,6 +2777,7 @@ _RE_BSL215_PARAMS_SECTION = re.compile(r"^\s*//\s*(?:Параметры|Paramete
 _RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*-", re.UNICODE)
 _RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
+
 def path_is_likely_form_module_bsl(path: str) -> bool:
     """
     True for EDT-style ``.../Forms/.../Ext/Module.bsl`` or file stems containing
@@ -3208,9 +3209,8 @@ def _iter_query_text_blocks(lines: list[str]):
         starts_query = bool(_RE_QUERY_TEXT_START.search(line))
         if not starts_query and '"' in line:
             j_probe = i + 1
-            while (
-                j_probe < len(lines)
-                and (not lines[j_probe].strip() or lines[j_probe].lstrip().startswith("|"))
+            while j_probe < len(lines) and (
+                not lines[j_probe].strip() or lines[j_probe].lstrip().startswith("|")
             ):
                 if re.match(r"^\s*\|\s*(?:ВЫБРАТЬ|SELECT)\b", lines[j_probe], re.IGNORECASE):
                     starts_query = True

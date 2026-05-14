@@ -428,9 +428,8 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
         starts_query = bool(_RE_QUERY_TEXT_START.search(line))
         if not starts_query and '"' in line:
             j_probe = i + 1
-            while (
-                j_probe < len(lines)
-                and (not lines[j_probe].strip() or lines[j_probe].lstrip().startswith("|"))
+            while j_probe < len(lines) and (
+                not lines[j_probe].strip() or lines[j_probe].lstrip().startswith("|")
             ):
                 if re.match(r"^\s*\|\s*(?:ВЫБРАТЬ|SELECT)\b", lines[j_probe], re.IGNORECASE):
                     starts_query = True
@@ -529,7 +528,9 @@ class DocumentSnapshot:
     _blank_line_flags: list[bool] | None = None
     _has_parse_errors: bool | None = None
     _ts_node_groups: dict[str, list[Any]] | None = None
-    _complexity_metrics_cache: dict[tuple[tuple[int, int], ...], list[tuple[int, int]]] | None = None
+    _complexity_metrics_cache: dict[tuple[tuple[int, int], ...], list[tuple[int, int]]] | None = (
+        None
+    )
     _runtime_call_context_cache: Any | None = None
 
     @property

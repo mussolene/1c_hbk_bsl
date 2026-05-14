@@ -234,9 +234,7 @@ def normalize_bslls_json_report(
                     line=int(start.get("line", 0)) + 1,
                     character=int(start.get("character", 0)),
                     end_line=int(diag.get("range", {}).get("end", {}).get("line", 0)) + 1,
-                    end_character=int(
-                        diag.get("range", {}).get("end", {}).get("character", 0)
-                    ),
+                    end_character=int(diag.get("range", {}).get("end", {}).get("character", 0)),
                     severity=str(diag.get("severity") or "").upper(),
                     code=rule,
                     code_source=rule,

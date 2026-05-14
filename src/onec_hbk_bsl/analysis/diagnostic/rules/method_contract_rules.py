@@ -47,7 +47,9 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                 )
             )
 
-        def param_list_span(proc_start_idx: int, fallback_start: int, fallback_end: int) -> tuple[int, int]:
+        def param_list_span(
+            proc_start_idx: int, fallback_start: int, fallback_end: int
+        ) -> tuple[int, int]:
             header_line = lines[proc_start_idx] if 0 <= proc_start_idx < len(lines) else ""
             open_paren = header_line.find("(")
             close_paren = header_line.rfind(")")
@@ -915,7 +917,9 @@ def run_bsl240_rewrite_method_parameter(
                         )
                         param_names.discard(lhs)
                 for param_cf in val_cf:
-                    if param_cf != lhs and re.search(rf"\b{re.escape(param_cf)}\b", line, re.IGNORECASE):
+                    if param_cf != lhs and re.search(
+                        rf"\b{re.escape(param_cf)}\b", line, re.IGNORECASE
+                    ):
                         used_before_assign.add(param_cf)
                 continue
             for param_cf in val_cf:

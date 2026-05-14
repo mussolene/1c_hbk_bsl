@@ -286,14 +286,18 @@ def _bslls_need_add_space(
         return True
 
     if kind == "(":
-        return previous.type not in {
-            "identifier",
-            "property",
-            "ANNOTATION_CUSTOM_SYMBOL",
-            "EXECUTE_KEYWORD",
-            "NEW_KEYWORD",
-            "RAISE_KEYWORD",
-        } and previous_kind != "?"
+        return (
+            previous.type
+            not in {
+                "identifier",
+                "property",
+                "ANNOTATION_CUSTOM_SYMBOL",
+                "EXECUTE_KEYWORD",
+                "NEW_KEYWORD",
+                "RAISE_KEYWORD",
+            }
+            and previous_kind != "?"
+        )
 
     return kind not in {";", ".", ",", ")", "[", "]"}
 
@@ -375,7 +379,8 @@ def _format_bslls_token_stream(
             additional_indent_level = current_indent_level
 
         if additional_indent_level > 0 and (
-            kind == ";" or (parameter_declaration_mode and token.type in _BSLLS_PRIMITIVE_TOKEN_TYPES)
+            kind == ";"
+            or (parameter_declaration_mode and token.type in _BSLLS_PRIMITIVE_TOKEN_TYPES)
         ):
             current_indent_level -= 1
             additional_indent_level = -1

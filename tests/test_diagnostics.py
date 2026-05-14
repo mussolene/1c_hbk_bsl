@@ -191,7 +191,9 @@ class TestCleanFile:
 
 
 class TestCheckFileOptimization:
-    def test_complexity_rules_reuse_string_state_per_file(self, tmp_path: Path, monkeypatch) -> None:
+    def test_complexity_rules_reuse_string_state_per_file(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         import onec_hbk_bsl.analysis.document_snapshot as snapshot_mod
 
         body = "\n".join(
@@ -201,9 +203,7 @@ class TestCheckFileOptimization:
                 "    КонецЕсли;",
             ]
         )
-        content = "\n".join(
-            f"Процедура Тест{i}()\n{body}\nКонецПроцедуры" for i in range(12)
-        )
+        content = "\n".join(f"Процедура Тест{i}()\n{body}\nКонецПроцедуры" for i in range(12))
         bsl_file = tmp_path / "many_procs.bsl"
         bsl_file.write_text(content, encoding="utf-8")
         calls = {"value": 0}

@@ -316,7 +316,9 @@ class TestSecurityApiParityBatch:
             КонецФункции
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL183"}) if d.code == "BSL183"]
-        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags
+        ] == [
             (9, 4, 9, 21, "ERROR"),
             (14, 4, 14, 21, "ERROR"),
             (19, 12, 19, 29, "ERROR"),
@@ -363,8 +365,14 @@ class TestSecurityApiParityBatch:
         path = common_modules / "Тест" / "Ext" / "Module.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
-        diags = [d for d in DiagnosticEngine(select={"BSL184"}).check_file(str(path)) if d.code == "BSL184"]
-        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL184"}).check_file(str(path))
+            if d.code == "BSL184"
+        ]
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags
+        ] == [
             (3, 4, 3, 21, "WARNING"),
             (7, 12, 7, 29, "WARNING"),
         ]
@@ -416,7 +424,9 @@ class TestSecurityApiParityBatch:
             КонецФункции
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL226"}) if d.code == "BSL226"]
-        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags
+        ] == [
             (6, 15, 6, 29, "WARNING"),
             (10, 8, 10, 15, "WARNING"),
             (14, 8, 14, 15, "WARNING"),
@@ -437,7 +447,9 @@ class TestSecurityApiParityBatch:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL247"}) if d.code == "BSL247"]
-        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags
+        ] == [
             (3, 4, 3, 36, "WARNING"),
             (5, 4, 5, 36, "WARNING"),
         ]
@@ -458,11 +470,15 @@ class TestSecurityApiParityBatch:
             EndFunction
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL250"}) if d.code == "BSL250"]
-        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags
+        ] == [
             (2, 14, 2, 36, "WARNING"),
             (9, 14, 9, 26, "WARNING"),
         ]
-        assert {d.message for d in diags} == {"Не рекомендуемый вызов функции КаталогВременныхФайлов()"}
+        assert {d.message for d in diags} == {
+            "Не рекомендуемый вызов функции КаталогВременныхФайлов()"
+        }
 
     def test_bsl267_external_code_tools_matches_bslls_fixture(self, tmp_path: Path) -> None:
         content = """\
@@ -485,7 +501,9 @@ class TestSecurityApiParityBatch:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL267"}) if d.code == "BSL267"]
-        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags
+        ] == [
             (2, 19, 2, 70, "ERROR"),
             (3, 16, 3, 54, "ERROR"),
             (5, 16, 5, 53, "ERROR"),
@@ -560,7 +578,7 @@ class TestSecurityApiParityBatch:
         path = tmp_path / "Catalogs" / "Тест" / "Ext" / "ObjectModule.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(
-            "Процедура П()\n    ЗапуститьПриложение(\"Таблица.xls\");\nКонецПроцедуры\n",
+            'Процедура П()\n    ЗапуститьПриложение("Таблица.xls");\nКонецПроцедуры\n',
             encoding="utf-8",
         )
         diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
@@ -2089,12 +2107,12 @@ class TestBsl024SpaceAtStartComment:
         assert "BSL024" not in _codes(diags)
 
     def test_commented_call_no_bsl024(self, tmp_path: Path) -> None:
-        content = '//НСтр("ru=\'строка\'") +\nА = 1;\n'
+        content = "//НСтр(\"ru='строка'\") +\nА = 1;\n"
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" not in _codes(diags)
 
     def test_commented_if_no_bsl024(self, tmp_path: Path) -> None:
-        content = '//Если Условие Тогда\n//КонецЕсли;\nА = 1;\n'
+        content = "//Если Условие Тогда\n//КонецЕсли;\nА = 1;\n"
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" not in _codes(diags)
 
@@ -2153,7 +2171,9 @@ class TestBsl200IncorrectLineBreak:
                 , Второй);
         """
         diags = _check(content, tmp_path, select={"BSL200"})
-        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags if d.code == "BSL200"] == [
+        assert [
+            (d.line, d.character, d.end_line, d.end_character) for d in diags if d.code == "BSL200"
+        ] == [
             (2, 4, 2, 14),
         ]
 
@@ -2179,7 +2199,9 @@ class TestBsl200IncorrectLineBreak:
         assert "BSL200" not in _codes(diags)
 
     def test_matches_bslls_fixture(self) -> None:
-        fixture = Path(".agent/tmp/bslls-source/src/test/resources/diagnostics/IncorrectLineBreakDiagnostic.bsl")
+        fixture = Path(
+            ".agent/tmp/bslls-source/src/test/resources/diagnostics/IncorrectLineBreakDiagnostic.bsl"
+        )
         diags = [
             diag
             for diag in DiagnosticEngine(select={"BSL200"}).check_file(str(fixture))
@@ -2205,7 +2227,7 @@ class TestBsl200IncorrectLineBreak:
 
 class TestBsl216MissingSpace:
     def test_semicolon_before_comment_reports_even_with_comment_slash(self, tmp_path: Path) -> None:
-        content = "ПотокXML.ЗаписатьКонецЭлемента();// \"ФИО\"\n"
+        content = 'ПотокXML.ЗаписатьКонецЭлемента();// "ФИО"\n'
         diags = _check(content, tmp_path, select={"BSL216"})
         assert [(d.line, d.character, d.message) for d in diags if d.code == "BSL216"] == [
             (1, 32, "Справа от ';' не хватает пробела"),
@@ -2368,7 +2390,9 @@ class TestBsl029MagicNumber:
         ]
 
     def test_matches_bslls_fixture(self) -> None:
-        fixture = Path(".agent/tmp/bslls-source/src/test/resources/diagnostics/MagicNumberDiagnostic.bsl")
+        fixture = Path(
+            ".agent/tmp/bslls-source/src/test/resources/diagnostics/MagicNumberDiagnostic.bsl"
+        )
         diags = [
             diag
             for diag in DiagnosticEngine(select={"BSL029"}).check_file(str(fixture))
@@ -3548,7 +3572,10 @@ class TestBsl258UnionAll:
         assert "BSL258" not in _codes(diags)
 
     def test_matches_bslls_fixture(self) -> None:
-        fixture = Path(".agent/tmp/bslls-source/src/test/resources/diagnostics") / "UnionAllDiagnostic.bsl"
+        fixture = (
+            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            / "UnionAllDiagnostic.bsl"
+        )
         if not fixture.exists():
             pytest.skip("BSLLS sources are not available")
 
@@ -5228,9 +5255,7 @@ class TestBsl186ExtraCommas:
             (18, 38, 18, 39),
         ]
 
-    def test_string_argument_before_closing_paren_is_not_extra_comma(
-        self, tmp_path: Path
-    ) -> None:
+    def test_string_argument_before_closing_paren_is_not_extra_comma(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 ПараметрыЗаписи.Вставить("Комментарий", "");

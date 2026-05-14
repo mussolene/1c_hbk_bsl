@@ -36,7 +36,9 @@ def test_bsl150_matches_bslls_configured_fixture() -> None:
 
     diags = [
         diag
-        for diag in DiagnosticEngine(select={"BSL150"}, bad_words_pattern="лотус|шмотус").check_file(str(fixture))
+        for diag in DiagnosticEngine(
+            select={"BSL150"}, bad_words_pattern="лотус|шмотус"
+        ).check_file(str(fixture))
         if diag.code == "BSL150"
     ]
 

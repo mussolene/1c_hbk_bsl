@@ -43,9 +43,9 @@ def test_bslls_keyword_fixture_parity(
     indent_size: int,
 ) -> None:
     formatter = BslFormatter()
-    assert formatter.format(_fixture(source_name), indent_size=indent_size, insert_spaces=True) == _fixture(
-        expected_name
-    )
+    assert formatter.format(
+        _fixture(source_name), indent_size=indent_size, insert_spaces=True
+    ) == _fixture(expected_name)
 
 
 def test_bslls_unary_minus_fixture_parity() -> None:
@@ -64,24 +64,28 @@ def test_bslls_range_fixture_parity() -> None:
     formatter = BslFormatter()
     source = _fixture("format.bsl")
     expected_lines = _fixture("format_formatted.bsl").split("\n")
-    expected_range = "\n".join(line for index, line in enumerate(expected_lines) if 4 <= index <= 25)
-    assert formatter.format_range(source, 4, 25, indent_size=4, insert_spaces=True) == expected_range
+    expected_range = "\n".join(
+        line for index, line in enumerate(expected_lines) if 4 <= index <= 25
+    )
+    assert (
+        formatter.format_range(source, 4, 25, indent_size=4, insert_spaces=True) == expected_range
+    )
 
 
 def test_bslls_fluent_fixture_parity() -> None:
     formatter = BslFormatter()
-    assert formatter.format(_fixture("formatFluent.bsl"), indent_size=2, insert_spaces=True) == _fixture(
-        "format_formattedFluent.bsl"
-    )
+    assert formatter.format(
+        _fixture("formatFluent.bsl"), indent_size=2, insert_spaces=True
+    ) == _fixture("format_formattedFluent.bsl")
 
 
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
         (
-            'Процедура Тест()\n'
+            "Процедура Тест()\n"
             '\tЗапрос = Новый Запрос("ВЫБРАТЬ\n'
-            '\t                      |Поле\n'
+            "\t                      |Поле\n"
             '\t                      |" +\n'
             "\t                      ?(Условие,\n"
             '\t                      "\tИ Поле <> &А",\n'
@@ -89,7 +93,7 @@ def test_bslls_fluent_fixture_parity() -> None:
             '\t                      "\n'
             '\t                      |И НЕ Поле");\n'
             "КонецПроцедуры\n",
-            'Процедура Тест()\n'
+            "Процедура Тест()\n"
             '\tЗапрос = Новый Запрос("ВЫБРАТЬ\n'
             "\t\t\t|Поле\n"
             '\t\t\t|" +\n'
@@ -101,7 +105,7 @@ def test_bslls_fluent_fixture_parity() -> None:
             "КонецПроцедуры",
         ),
         (
-            'Процедура Тест()\n'
+            "Процедура Тест()\n"
             "\tЕсли Условие Тогда\n"
             '\t\tЗапрос.Текст = Запрос.Текст + "\n'
             '\t\t                  |\tИ Поле = &Поле";\n'
@@ -110,7 +114,7 @@ def test_bslls_fluent_fixture_parity() -> None:
             "\t\t            |УПОРЯДОЧИТЬ ПО\n"
             '\t\t            |\tПоле";\n'
             "КонецПроцедуры\n",
-            'Процедура Тест()\n'
+            "Процедура Тест()\n"
             "\tЕсли Условие Тогда\n"
             '\t\tЗапрос.Текст = Запрос.Текст + "\n'
             '\t\t\t|\tИ Поле = &Поле";\n'

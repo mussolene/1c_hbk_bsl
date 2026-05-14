@@ -69,10 +69,7 @@ class BsllsDocumentContext:
     def procedure_models(self) -> list[ProcedureModel]:
         if self.analysis is not None:
             return list(self.analysis.procedures)
-        return [
-            ProcedureModel.from_proc_info(self.path, proc)
-            for proc in self.procedures
-        ]
+        return [ProcedureModel.from_proc_info(self.path, proc) for proc in self.procedures]
 
     @cached_property
     def string_states(self) -> list[bool]:

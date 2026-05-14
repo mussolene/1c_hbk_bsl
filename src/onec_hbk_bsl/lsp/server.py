@@ -1017,7 +1017,9 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
                     _lv_kind = _kind_map.get(_lv.kind, "переменная")
                     _parts: list[str] = [f"```bsl\n{_lv.name}\n```"]
                     _parts.append(f"*{_lv_kind}*, объявлена на строке {_lv.line}")
-                    _type = _engine.infer(_lv.name, pos.line) if _engine is not None else _lv.type_hint
+                    _type = (
+                        _engine.infer(_lv.name, pos.line) if _engine is not None else _lv.type_hint
+                    )
                     if _type:
                         _parts.append(f"**Тип:** `{_type}`")
                     return _hover_markdown(_parts)
@@ -2177,6 +2179,7 @@ def _extract_scope_vars(tree: Any, cursor_line0: int) -> list[_LocalVar]:
         return []
     return _extract_scope_vars_from_proc(proc_node, cursor_line0)
 
+
 def _iter_proc_nodes(node: Any) -> list[Any]:
     """Return all procedure/function nodes under *node* without descending into nested routines."""
     out: list[Any] = []
@@ -2371,7 +2374,9 @@ def _compute_cached_code_lens_metrics(
     with ls._parsed_doc_cache_lock:
         cache = ls._parsed_doc_cache.get(uri)
         current_version = ls._parsed_doc_cache_versions.get(uri)
-    if not isinstance(cache, _LspDocumentContext) or cache.content_hash != _content_cache_key(content):
+    if not isinstance(cache, _LspDocumentContext) or cache.content_hash != _content_cache_key(
+        content
+    ):
         return None
     if version is not None and current_version != version:
         return None
@@ -2559,7 +2564,9 @@ def on_code_lens(ls: BslLanguageServer, params: CodeLensParams) -> list[CodeLens
             result.append(
                 CodeLens(
                     range=r,
-                    command=Command(title=f"Цикломатическая сложность: {metric.mccabe}", command=""),
+                    command=Command(
+                        title=f"Цикломатическая сложность: {metric.mccabe}", command=""
+                    ),
                 )
             )
         return result or None

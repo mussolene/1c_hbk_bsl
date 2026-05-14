@@ -51,7 +51,9 @@ def run_bsl220_235_269_query_text_diagnostics(
         if not content_lines:
             continue
 
-        has_escaped_empty_query_string = any('""""' in content for _, _, content, _, _ in content_lines)
+        has_escaped_empty_query_string = any(
+            '""""' in content for _, _, content, _, _ in content_lines
+        )
         last_content = content_lines[-1][2]
         if (
             "BSL235" in enabled
@@ -117,7 +119,9 @@ def run_bsl220_235_269_query_text_diagnostics(
             if not content_lines:
                 continue
 
-            has_escaped_empty_query_string = any('""""' in content for _, _, content, _, _ in content_lines)
+            has_escaped_empty_query_string = any(
+                '""""' in content for _, _, content, _, _ in content_lines
+            )
             last_content = content_lines[-1][2]
             if (
                 "BSL235" in enabled

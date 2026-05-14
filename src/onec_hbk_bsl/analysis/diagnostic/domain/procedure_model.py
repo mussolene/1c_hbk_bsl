@@ -163,7 +163,9 @@ class ProcedureModel:
                 ]
         return []
 
-    def validate_max_returns(self, lines: list[str], *, max_returns: int, return_re) -> list[Diagnostic]:
+    def validate_max_returns(
+        self, lines: list[str], *, max_returns: int, return_re
+    ) -> list[Diagnostic]:
         proc_body = "\n".join(lines[self.start_idx : self.end_idx + 1])
         returns = list(return_re.finditer(proc_body))
         if len(returns) <= max_returns:
@@ -269,8 +271,7 @@ class ProcedureModel:
                     severity=Severity.WARNING,
                     code="BSL003",
                     message=(
-                        f'Переместите неэкспортный метод "{self.name}" '
-                        f'из области "{region.name}"'
+                        f'Переместите неэкспортный метод "{self.name}" из области "{region.name}"'
                     ),
                 )
             ]
@@ -618,7 +619,9 @@ class ProcedureModel:
         )
         diags: list[Diagnostic] = []
         masked_lines = snapshot.masked_lines if snapshot is not None else None
-        code_lines_wo_comments = snapshot.code_lines_without_comments if snapshot is not None else None
+        code_lines_wo_comments = (
+            snapshot.code_lines_without_comments if snapshot is not None else None
+        )
         container_assign_re = re.compile(
             r"^\s*(?P<name>[\w.]+)\s*=\s*(?:Новый|New)\s+"
             r"(?P<type>Структура|Structure|ФиксированнаяСтруктура|FixedStructure|Соответствие|Map)\b",
@@ -704,10 +707,13 @@ class ProcedureModel:
                 if receiver_type in {"соответствие", "map"}:
                     return True
                 if arg_index == 1:
-                    return re.fullmatch(
-                        r"\s*-?(?:\d+(?:\.\d+)?|0\.\d+)\s*",
-                        arg_text,
-                    ) is not None
+                    return (
+                        re.fullmatch(
+                            r"\s*-?(?:\d+(?:\.\d+)?|0\.\d+)\s*",
+                            arg_text,
+                        )
+                        is not None
+                    )
                 return False
             return False
 
@@ -729,7 +735,9 @@ class ProcedureModel:
             if re.match(r"^\s*(?:Перем|Var)\s+\w+\s*=", line, re.IGNORECASE):
                 continue
             code_part = (
-                code_lines_wo_comments[i] if code_lines_wo_comments is not None else line.split("//")[0]
+                code_lines_wo_comments[i]
+                if code_lines_wo_comments is not None
+                else line.split("//")[0]
             )
             code_part = (
                 masked_lines[i]
@@ -750,7 +758,9 @@ class ProcedureModel:
                 code_part = code_part[:comment_pos]
             assignment = container_assign_re.match(code_part)
             if assignment is not None:
-                container_vars[assignment.group("name").casefold()] = assignment.group("type").casefold()
+                container_vars[assignment.group("name").casefold()] = assignment.group(
+                    "type"
+                ).casefold()
             if not any_digit_re.search(line):
                 continue
             if simple_assign_re.match(code_part):

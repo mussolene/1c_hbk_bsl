@@ -14,7 +14,9 @@ from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 class ModuleModel:
     path: str
 
-    def validate_hardcoded_credentials(self, lines: list[str], *, credentials_re) -> list[Diagnostic]:
+    def validate_hardcoded_credentials(
+        self, lines: list[str], *, credentials_re
+    ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
@@ -81,7 +83,9 @@ class ModuleModel:
                 if group_start is None:
                     group_start = idx
                 group_end = idx
-                group_has_code = group_has_code or commented_code_re.match(line) is not None or in_query_comment
+                group_has_code = (
+                    group_has_code or commented_code_re.match(line) is not None or in_query_comment
+                )
                 in_query_comment = in_query_comment or is_query_comment
             else:
                 add_group()
@@ -443,7 +447,9 @@ class ModuleModel:
             )
         return diags
 
-    def validate_header_semicolon(self, lines: list[str], *, header_semicolon_re) -> list[Diagnostic]:
+    def validate_header_semicolon(
+        self, lines: list[str], *, header_semicolon_re
+    ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line.strip().startswith("//"):
@@ -480,7 +486,8 @@ class ModuleModel:
         for idx, line in enumerate(lines):
             proc = proc_containing_line(procs, idx)
             if proc is not None and any(
-                re.fullmatch(r"(?:ЭтаФорма|ThisForm)", param, re.IGNORECASE) for param in proc.params
+                re.fullmatch(r"(?:ЭтаФорма|ThisForm)", param, re.IGNORECASE)
+                for param in proc.params
             ):
                 continue
             clean = mask_double_quoted_strings_preserve_len(line)
@@ -724,7 +731,9 @@ class ModuleModel:
             r"^\s*(?:[),.=]|[+\-*/%]|\b(?:И|Или|AND|OR)\b)",
             re.IGNORECASE,
         )
-        header_start_re = re.compile(r"^\s*(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE)
+        header_start_re = re.compile(
+            r"^\s*(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE
+        )
         end_kw_re = re.compile(
             r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry)\b", re.IGNORECASE
         )
@@ -801,7 +810,9 @@ class ModuleModel:
                     continue
                 code_masked = code_without_comments_and_strings(code_part)
                 starts_inside_multiline = paren_balance > 0
-                paren_balance = max(0, paren_balance + code_masked.count("(") - code_masked.count(")"))
+                paren_balance = max(
+                    0, paren_balance + code_masked.count("(") - code_masked.count(")")
+                )
                 last_char = code_part[-1]
                 if last_char in (";", ",", "(", "[", "|", "+", "-", "*", "/", "="):
                     continue
@@ -897,13 +908,19 @@ class ModuleModel:
         from collections import Counter
 
         diags: list[Diagnostic] = []
-        code_lines_wo_comments = snapshot.code_lines_without_comments if snapshot is not None else None
+        code_lines_wo_comments = (
+            snapshot.code_lines_without_comments if snapshot is not None else None
+        )
         for scope_lines in scope_line_indices_fn(lines, procs):
             counts: Counter[str] = Counter()
             positions: dict[str, list[tuple[int, int]]] = {}
             display_values: dict[str, str] = {}
             for idx in scope_lines:
-                line = code_lines_wo_comments[idx] if code_lines_wo_comments is not None else lines[idx]
+                line = (
+                    code_lines_wo_comments[idx]
+                    if code_lines_wo_comments is not None
+                    else lines[idx]
+                )
                 if line.strip().startswith("//"):
                     continue
                 for m in string_literal_re.finditer(line):
@@ -941,7 +958,9 @@ class ModuleModel:
                 )
         return diags
 
-    def validate_function_paths_return(self, *, tree, bsl148_function_name_spans, loops_executed_at_least_once: bool) -> list[Diagnostic]:
+    def validate_function_paths_return(
+        self, *, tree, bsl148_function_name_spans, loops_executed_at_least_once: bool
+    ) -> list[Diagnostic]:
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, type(None))):
             return []
@@ -991,9 +1010,8 @@ class ModuleModel:
                 next_line = lines[line_idx + 1] if line_idx + 1 < len(lines) else ""
                 if re.match(r"^\s*\+\s*\"", next_line):
                     continue
-                if (
-                    re.search(r"\bНСтр\s*\(", prev_line + line_text, re.IGNORECASE)
-                    and (prev_line.rstrip().endswith("+") or re.match(r"^\s*\+\s*\"", next_line))
+                if re.search(r"\bНСтр\s*\(", prev_line + line_text, re.IGNORECASE) and (
+                    prev_line.rstrip().endswith("+") or re.match(r"^\s*\+\s*\"", next_line)
                 ):
                     continue
                 start_char = utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1])
@@ -1063,7 +1081,9 @@ class ModuleModel:
                     continue
                 if re.search(r"\bНСтр\s*\(", prev + line, re.IGNORECASE) and prev.endswith("+"):
                     continue
-                end_character = min(len(line.rstrip()), len(line) - len(cur) + len(cur.split('"', 2)[1]) + 2)
+                end_character = min(
+                    len(line.rstrip()), len(line) - len(cur) + len(cur.split('"', 2)[1]) + 2
+                )
                 diags.append(
                     Diagnostic(
                         file=self.path,
@@ -1078,7 +1098,9 @@ class ModuleModel:
                 )
         return diags
 
-    def validate_invalid_character_in_file(self, *, lines: list[str], illegal_chars: dict[str, str]) -> list[Diagnostic]:
+    def validate_invalid_character_in_file(
+        self, *, lines: list[str], illegal_chars: dict[str, str]
+    ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
 
         def string_literal_span_containing(line: str, pos: int) -> tuple[int, int] | None:
@@ -1106,7 +1128,10 @@ class ModuleModel:
             return None
 
         for line_idx, line in enumerate(lines, start=1):
-            hit = next(((pos, illegal_chars[ch]) for pos, ch in enumerate(line) if ch in illegal_chars), None)
+            hit = next(
+                ((pos, illegal_chars[ch]) for pos, ch in enumerate(line) if ch in illegal_chars),
+                None,
+            )
             if hit is None:
                 continue
             pos, message = hit
@@ -1150,7 +1175,11 @@ class ModuleModel:
             if re_then_word.search(masked_line):
                 end_idx = idx
                 then_match = re_then_word.search(masked_line)
-                end_char = len(masked_line[: then_match.start()].rstrip()) if then_match else len(masked_line.rstrip())
+                end_char = (
+                    len(masked_line[: then_match.start()].rstrip())
+                    if then_match
+                    else len(masked_line.rstrip())
+                )
                 return masked_line, end_idx, end_char
             parts = [masked_line]
             j = idx + 1
@@ -1164,7 +1193,13 @@ class ModuleModel:
                 if re.match(r"^\s*(?:Тогда|Then)\b", masked_next, re.IGNORECASE):
                     break
                 j += 1
-            return "\n".join(parts), j - 1, len(re.sub(r"//.*", "", lines[j - 1]).rstrip()) if j > idx else len(masked_line.rstrip())
+            return (
+                "\n".join(parts),
+                j - 1,
+                len(re.sub(r"//.*", "", lines[j - 1]).rstrip())
+                if j > idx
+                else len(masked_line.rstrip()),
+            )
 
         def triggered_condition_span(idx: int) -> tuple[int, int] | None:
             chunk = if_condition_chunk(idx)
@@ -1205,7 +1240,9 @@ class ModuleModel:
             )
         return diags
 
-    def validate_form_data_to_value(self, *, lines: list[str], line_comment_re, double_quoted_string_re, bsl190_form_data_re) -> list[Diagnostic]:
+    def validate_form_data_to_value(
+        self, *, lines: list[str], line_comment_re, double_quoted_string_re, bsl190_form_data_re
+    ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for idx, line in enumerate(lines):
             if line_comment_re.match(line):
@@ -1255,16 +1292,26 @@ class ModuleModel:
     ) -> list[Diagnostic]:
         comparison_ops = ("<=", ">=", "<>", "=", "<", ">")
         diags: list[Diagnostic] = []
-        str_states = snapshot.line_string_states if snapshot is not None else build_line_string_states_fn(lines)
+        str_states = (
+            snapshot.line_string_states
+            if snapshot is not None
+            else build_line_string_states_fn(lines)
+        )
         masked_lines = (
             snapshot.masked_lines
             if snapshot is not None
-            else [line if str_states[idx] else mask_double_quoted_strings_preserve_len_fn(line) for idx, line in enumerate(lines)]
+            else [
+                line if str_states[idx] else mask_double_quoted_strings_preserve_len_fn(line)
+                for idx, line in enumerate(lines)
+            ]
         )
         comment_starts = (
             snapshot.comment_starts
             if snapshot is not None
-            else [comment_start_outside_double_quotes_fn(line, str_states[idx]) for idx, line in enumerate(lines)]
+            else [
+                comment_start_outside_double_quotes_fn(line, str_states[idx])
+                for idx, line in enumerate(lines)
+            ]
         )
         code_lines_wo_comments = (
             snapshot.code_lines_without_comments
@@ -1300,7 +1347,10 @@ class ModuleModel:
                         continue
                     start = pos
                     end = pos + len(op)
-                    if op == "=" and ((start > 0 and clean[start - 1] in "<>!") or (end < len(clean) and clean[end] == "=")):
+                    if op == "=" and (
+                        (start > 0 and clean[start - 1] in "<>!")
+                        or (end < len(clean) and clean[end] == "=")
+                    ):
                         pos += 1
                         continue
                     left_missing = start > 0 and clean[start - 1] not in " \t"
@@ -1315,12 +1365,27 @@ class ModuleModel:
                                 msg = f"Слева от '{op}' не хватает пробела"
                             else:
                                 msg = f"Справа от '{op}' не хватает пробела"
-                            diags.append(Diagnostic(file=self.path, line=idx + 1, character=start, end_line=idx + 1, end_character=end, severity=Severity.INFORMATION, code="BSL216", message=msg))
+                            diags.append(
+                                Diagnostic(
+                                    file=self.path,
+                                    line=idx + 1,
+                                    character=start,
+                                    end_line=idx + 1,
+                                    end_character=end,
+                                    severity=Severity.INFORMATION,
+                                    code="BSL216",
+                                    message=msg,
+                                )
+                            )
                     pos = end
             if has_arithmetic_ops:
                 arithmetic_cols = arithmetic_missing_space_cols_in_line_fn(line, in_str_start)
                 stripped_line = line.lstrip()
-                if stripped_line.startswith(("+", "-")) and len(stripped_line) > 1 and stripped_line[1] not in " \t":
+                if (
+                    stripped_line.startswith(("+", "-"))
+                    and len(stripped_line) > 1
+                    and stripped_line[1] not in " \t"
+                ):
                     arithmetic_cols = sorted(
                         set(arithmetic_cols) | {len(line) - len(stripped_line)}
                     )
@@ -1334,21 +1399,74 @@ class ModuleModel:
                         msg = f"Слева от '{op}' не хватает пробела"
                     else:
                         msg = f"Справа от '{op}' не хватает пробела"
-                    diags.append(Diagnostic(file=self.path, line=idx + 1, character=col, end_line=idx + 1, end_character=col + 1, severity=Severity.INFORMATION, code="BSL216", message=msg))
-            comma_cols = comma_missing_space_after_cols_in_line_fn(code_no_comments) if has_comma else []
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=col,
+                            end_line=idx + 1,
+                            end_character=col + 1,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=msg,
+                        )
+                    )
+            comma_cols = (
+                comma_missing_space_after_cols_in_line_fn(code_no_comments) if has_comma else []
+            )
             if has_comma:
                 extra_comma_cols = {m.start() for m in re.finditer(r",(?=\))", code_no_comments)}
                 if extra_comma_cols:
                     comma_cols = sorted(set(comma_cols) | extra_comma_cols)
             if comma_cols:
                 for comma_col in comma_cols:
-                    diags.append(Diagnostic(file=self.path, line=idx + 1, character=comma_col, end_line=idx + 1, end_character=comma_col + 1, severity=Severity.INFORMATION, code="BSL216", message=("Справа от ',' не хватает пробела")))
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=comma_col,
+                            end_line=idx + 1,
+                            end_character=comma_col + 1,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=("Справа от ',' не хватает пробела"),
+                        )
+                    )
             m_semicolon = semicolon_nospace_re.search(clean) if has_semicolon else None
-            if m_semicolon is None and has_semicolon and comment_pos is not None and comment_pos > 0 and clean_full[comment_pos - 1] == ";" and clean_full[comment_pos : comment_pos + 2] == "//":
+            if (
+                m_semicolon is None
+                and has_semicolon
+                and comment_pos is not None
+                and comment_pos > 0
+                and clean_full[comment_pos - 1] == ";"
+                and clean_full[comment_pos : comment_pos + 2] == "//"
+            ):
                 semicolon_col = comment_pos - 1
-                diags.append(Diagnostic(file=self.path, line=idx + 1, character=semicolon_col, end_line=idx + 1, end_character=semicolon_col + 1, severity=Severity.INFORMATION, code="BSL216", message=("Справа от ';' не хватает пробела")))
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=idx + 1,
+                        character=semicolon_col,
+                        end_line=idx + 1,
+                        end_character=semicolon_col + 1,
+                        severity=Severity.INFORMATION,
+                        code="BSL216",
+                        message=("Справа от ';' не хватает пробела"),
+                    )
+                )
             if m_semicolon:
-                diags.append(Diagnostic(file=self.path, line=idx + 1, character=m_semicolon.start(), end_line=idx + 1, end_character=m_semicolon.end(), severity=Severity.INFORMATION, code="BSL216", message=("Справа от ';' не хватает пробела")))
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=idx + 1,
+                        character=m_semicolon.start(),
+                        end_line=idx + 1,
+                        end_character=m_semicolon.end(),
+                        severity=Severity.INFORMATION,
+                        code="BSL216",
+                        message=("Справа от ';' не хватает пробела"),
+                    )
+                )
             if has_keyword_candidate:
                 for m_kw in left_right_keywords_re.finditer(clean):
                     start = m_kw.start(1)
@@ -1364,24 +1482,66 @@ class ModuleModel:
                         msg = f"Слева от '{kw}' не хватает пробела"
                     else:
                         msg = f"Справа от '{kw}' не хватает пробела"
-                    diags.append(Diagnostic(file=self.path, line=idx + 1, character=start, end_line=idx + 1, end_character=end, severity=Severity.INFORMATION, code="BSL216", message=msg))
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=start,
+                            end_line=idx + 1,
+                            end_character=end,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=msg,
+                        )
+                    )
                 for m_kw in left_keywords_re.finditer(clean):
                     start = m_kw.start(1)
                     end = m_kw.end(1)
                     if start <= 0 or clean[start - 1] in " \t":
                         continue
                     kw = line[start:end]
-                    diags.append(Diagnostic(file=self.path, line=idx + 1, character=start, end_line=idx + 1, end_character=end, severity=Severity.INFORMATION, code="BSL216", message=(f"Слева от '{kw}' не хватает пробела")))
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=start,
+                            end_line=idx + 1,
+                            end_character=end,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=(f"Слева от '{kw}' не хватает пробела"),
+                        )
+                    )
                 for m_kw in right_keywords_re.finditer(clean):
                     start = m_kw.start(1)
                     end = m_kw.end(1)
                     if end >= len(clean) or clean[end] in " \t":
                         continue
                     kw = line[start:end]
-                    diags.append(Diagnostic(file=self.path, line=idx + 1, character=start, end_line=idx + 1, end_character=end, severity=Severity.INFORMATION, code="BSL216", message=(f"Справа от '{kw}' не хватает пробела")))
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=start,
+                            end_line=idx + 1,
+                            end_character=end,
+                            severity=Severity.INFORMATION,
+                            code="BSL216",
+                            message=(f"Справа от '{kw}' не хватает пробела"),
+                        )
+                    )
         return diags
 
-    def validate_ternary_operator_usage(self, *, lines: list[str], tree, ternary_nodes, ts_walk_fn, utf8_byte_offset_to_lsp_character_fn, rule_descriptions_ru: dict[str, str]) -> list[Diagnostic]:
+    def validate_ternary_operator_usage(
+        self,
+        *,
+        lines: list[str],
+        tree,
+        ternary_nodes,
+        ts_walk_fn,
+        utf8_byte_offset_to_lsp_character_fn,
+        rule_descriptions_ru: dict[str, str],
+    ) -> list[Diagnostic]:
         if tree is None:
             return []
         diags: list[Diagnostic] = []
@@ -1390,17 +1550,46 @@ class ModuleModel:
                 continue
             line_idx = node.start_point[0]
             line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-            diags.append(Diagnostic(file=self.path, line=line_idx + 1, character=utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1]), end_line=line_idx + 1, end_character=utf8_byte_offset_to_lsp_character_fn(line_text, node.end_point[1]), severity=Severity.INFORMATION, code="BSL251", message=rule_descriptions_ru["BSL251"]))
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line_idx + 1,
+                    character=utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1]),
+                    end_line=line_idx + 1,
+                    end_character=utf8_byte_offset_to_lsp_character_fn(
+                        line_text, node.end_point[1]
+                    ),
+                    severity=Severity.INFORMATION,
+                    code="BSL251",
+                    message=rule_descriptions_ru["BSL251"],
+                )
+            )
         return diags
 
-    def validate_this_object_assign(self, *, path: str, lines: list[str], tree, assignment_nodes, path_is_likely_form_module_bsl, common_module_path_re, ts_walk_fn, ts_child_of_type_fn, ts_node_text_fn, utf8_byte_offset_to_lsp_character_fn, rule_descriptions_ru: dict[str, str]) -> list[Diagnostic]:
+    def validate_this_object_assign(
+        self,
+        *,
+        path: str,
+        lines: list[str],
+        tree,
+        assignment_nodes,
+        path_is_likely_form_module_bsl,
+        common_module_path_re,
+        ts_walk_fn,
+        ts_child_of_type_fn,
+        ts_node_text_fn,
+        utf8_byte_offset_to_lsp_character_fn,
+        rule_descriptions_ru: dict[str, str],
+    ) -> list[Diagnostic]:
         low = path.replace("\\", "/").lower()
         if not (path_is_likely_form_module_bsl(path) or common_module_path_re.search(low)):
             return []
         if tree is None:
             return []
         diags: list[Diagnostic] = []
-        for node in assignment_nodes if assignment_nodes is not None else ts_walk_fn(tree.root_node):
+        for node in (
+            assignment_nodes if assignment_nodes is not None else ts_walk_fn(tree.root_node)
+        ):
             if getattr(node, "type", None) != "assignment_statement":
                 continue
             ident = ts_child_of_type_fn(node, "identifier")
@@ -1410,13 +1599,42 @@ class ModuleModel:
                 continue
             line_idx = ident.start_point[0]
             line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-            diags.append(Diagnostic(file=self.path, line=line_idx + 1, character=utf8_byte_offset_to_lsp_character_fn(line_text, ident.start_point[1]), end_line=line_idx + 1, end_character=utf8_byte_offset_to_lsp_character_fn(line_text, ident.end_point[1]), severity=Severity.ERROR, code="BSL252", message=rule_descriptions_ru["BSL252"]))
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line_idx + 1,
+                    character=utf8_byte_offset_to_lsp_character_fn(line_text, ident.start_point[1]),
+                    end_line=line_idx + 1,
+                    end_character=utf8_byte_offset_to_lsp_character_fn(
+                        line_text, ident.end_point[1]
+                    ),
+                    severity=Severity.ERROR,
+                    code="BSL252",
+                    message=rule_descriptions_ru["BSL252"],
+                )
+            )
         return diags
 
-    def validate_unknown_preprocessor_symbol(self, *, lines: list[str], tree, preprocessor_nodes, ts_walk_fn, ts_child_of_type_fn, ts_node_text_fn, utf8_byte_offset_to_lsp_character_fn, allowed_preproc_symbols: set[str], preproc_keywords: set[str], preproc_if_re, preproc_identifier_re) -> list[Diagnostic]:
+    def validate_unknown_preprocessor_symbol(
+        self,
+        *,
+        lines: list[str],
+        tree,
+        preprocessor_nodes,
+        ts_walk_fn,
+        ts_child_of_type_fn,
+        ts_node_text_fn,
+        utf8_byte_offset_to_lsp_character_fn,
+        allowed_preproc_symbols: set[str],
+        preproc_keywords: set[str],
+        preproc_if_re,
+        preproc_identifier_re,
+    ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         if tree is not None:
-            for node in (preprocessor_nodes if preprocessor_nodes is not None else ts_walk_fn(tree.root_node)):
+            for node in (
+                preprocessor_nodes if preprocessor_nodes is not None else ts_walk_fn(tree.root_node)
+            ):
                 if getattr(node, "type", None) != "preprocessor":
                     continue
                 expr = ts_child_of_type_fn(node, "expression")
@@ -1430,7 +1648,22 @@ class ModuleModel:
                         continue
                     line_idx = child.start_point[0]
                     line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-                    diags.append(Diagnostic(file=self.path, line=line_idx + 1, character=utf8_byte_offset_to_lsp_character_fn(line_text, child.start_point[1]), end_line=line_idx + 1, end_character=utf8_byte_offset_to_lsp_character_fn(line_text, child.end_point[1]), severity=Severity.WARNING, code="BSL259", message=f'Неизвестный символ препроцессора "{name}"'))
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=line_idx + 1,
+                            character=utf8_byte_offset_to_lsp_character_fn(
+                                line_text, child.start_point[1]
+                            ),
+                            end_line=line_idx + 1,
+                            end_character=utf8_byte_offset_to_lsp_character_fn(
+                                line_text, child.end_point[1]
+                            ),
+                            severity=Severity.WARNING,
+                            code="BSL259",
+                            message=f'Неизвестный символ препроцессора "{name}"',
+                        )
+                    )
             return diags
         for idx, line in enumerate(lines):
             match = preproc_if_re.match(line)
@@ -1441,14 +1674,48 @@ class ModuleModel:
                 name = ident.group(0)
                 if name.casefold() in allowed_preproc_symbols | preproc_keywords:
                     continue
-                diags.append(Diagnostic(file=self.path, line=idx + 1, character=ident.start(), end_line=idx + 1, end_character=ident.end(), severity=Severity.WARNING, code="BSL259", message=f'Неизвестный символ препроцессора "{name}"'))
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=idx + 1,
+                        character=ident.start(),
+                        end_line=idx + 1,
+                        end_character=ident.end(),
+                        severity=Severity.WARNING,
+                        code="BSL259",
+                        message=f'Неизвестный символ препроцессора "{name}"',
+                    )
+                )
         return diags
 
-    def validate_using_find_element_by_string(self, *, lines: list[str], tree, method_call_nodes, ts_walk_fn, ts_child_of_type_fn, ts_node_text_fn, ts_method_call_arg_exprs_fn, utf8_byte_offset_to_lsp_character_fn, method_name_re, line_comment_re, mask_double_quoted_strings_preserve_len_fn) -> list[Diagnostic]:
+    def validate_using_find_element_by_string(
+        self,
+        *,
+        lines: list[str],
+        tree,
+        method_call_nodes,
+        ts_walk_fn,
+        ts_child_of_type_fn,
+        ts_node_text_fn,
+        ts_method_call_arg_exprs_fn,
+        utf8_byte_offset_to_lsp_character_fn,
+        method_name_re,
+        line_comment_re,
+        mask_double_quoted_strings_preserve_len_fn,
+    ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
-        target_names = {"найтипонаименованию", "findbydescription", "найтипокоду", "findbycode", "найтипономеру", "findbynumber"}
+        target_names = {
+            "найтипонаименованию",
+            "findbydescription",
+            "найтипокоду",
+            "findbycode",
+            "найтипономеру",
+            "findbynumber",
+        }
         if tree is not None:
-            for node in method_call_nodes if method_call_nodes is not None else ts_walk_fn(tree.root_node):
+            for node in (
+                method_call_nodes if method_call_nodes is not None else ts_walk_fn(tree.root_node)
+            ):
                 if getattr(node, "type", None) != "method_call":
                     continue
                 ident = ts_child_of_type_fn(node, "identifier")
@@ -1462,11 +1729,29 @@ class ModuleModel:
                     continue
                 if args:
                     arg_text = ts_node_text_fn(args[0]).strip()
-                    if arg_text and not ((arg_text.startswith('"') and arg_text.endswith('"')) or re.fullmatch(r"\d+(?:\.\d+)?", arg_text)):
+                    if arg_text and not (
+                        (arg_text.startswith('"') and arg_text.endswith('"'))
+                        or re.fullmatch(r"\d+(?:\.\d+)?", arg_text)
+                    ):
                         continue
                 line_idx = ident.start_point[0]
                 line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-                diags.append(Diagnostic(file=self.path, line=line_idx + 1, character=utf8_byte_offset_to_lsp_character_fn(line_text, ident.start_point[1]), end_line=line_idx + 1, end_character=utf8_byte_offset_to_lsp_character_fn(line_text, ident.end_point[1]), severity=Severity.WARNING, code="BSL268", message=f'Использование метода "{name}" снижает производительность поиска'))
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_idx + 1,
+                        character=utf8_byte_offset_to_lsp_character_fn(
+                            line_text, ident.start_point[1]
+                        ),
+                        end_line=line_idx + 1,
+                        end_character=utf8_byte_offset_to_lsp_character_fn(
+                            line_text, ident.end_point[1]
+                        ),
+                        severity=Severity.WARNING,
+                        code="BSL268",
+                        message=f'Использование метода "{name}" снижает производительность поиска',
+                    )
+                )
             return diags
         for idx, line in enumerate(lines):
             if line_comment_re.match(line):
@@ -1478,43 +1763,84 @@ class ModuleModel:
             match = method_name_re.search(clean)
             if match is None:
                 continue
-            diags.append(Diagnostic(file=self.path, line=idx + 1, character=match.start("name"), end_line=idx + 1, end_character=match.end("name"), severity=Severity.WARNING, code="BSL268", message=f'Использование метода "{match.group("name")}" снижает производительность поиска'))
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=idx + 1,
+                    character=match.start("name"),
+                    end_line=idx + 1,
+                    end_character=match.end("name"),
+                    severity=Severity.WARNING,
+                    code="BSL268",
+                    message=f'Использование метода "{match.group("name")}" снижает производительность поиска',
+                )
+            )
         return diags
 
-    def validate_bsl152_cached_public(self, *, lines: list[str], regions: list[RegionInfo], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+    def validate_bsl152_cached_public(
+        self, *, lines: list[str], regions: list[RegionInfo], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, regions, procs)
 
-    def validate_bsl154_code_after_async(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+    def validate_bsl154_code_after_async(
+        self, *, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, procs)
 
-    def validate_bsl156_code_out_of_region(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+    def validate_bsl156_code_out_of_region(
+        self, *, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, procs)
 
-    def validate_bsl158_common_module_assign(self, *, lines: list[str], symbol_index, runner) -> list[Diagnostic]:
+    def validate_bsl158_common_module_assign(
+        self, *, lines: list[str], symbol_index, runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, symbol_index)
 
-    def validate_bsl159_common_module_invalid_type(self, *, lines: list[str], runner) -> list[Diagnostic]:
+    def validate_bsl159_common_module_invalid_type(
+        self, *, lines: list[str], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines)
 
-    def validate_bsl160_common_module_missing_api(self, *, lines: list[str], regions: list[RegionInfo], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+    def validate_bsl160_common_module_missing_api(
+        self, *, lines: list[str], regions: list[RegionInfo], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, regions, procs)
 
-    def validate_bsl161_168_common_module_names(self, *, lines: list[str], codes: tuple[str, ...], enabled_rule_fn, runner) -> list[Diagnostic]:
+    def validate_bsl161_168_common_module_names(
+        self, *, lines: list[str], codes: tuple[str, ...], enabled_rule_fn, runner
+    ) -> list[Diagnostic]:
         return runner(enabled_rule_fn, self.path, lines, codes)
 
-    def validate_bsl173_deleting_collection_item(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+    def validate_bsl173_deleting_collection_item(
+        self, *, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, procs)
 
-    def validate_bsl172_data_exchange_loading(self, *, lines: list[str], procs: list[ProcInfo], runner) -> list[Diagnostic]:
+    def validate_bsl172_data_exchange_loading(
+        self, *, lines: list[str], procs: list[ProcInfo], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, procs)
 
-    def validate_bsl220_235_269_query_text_diagnostics(self, *, lines: list[str], codes: tuple[str, ...], query_blocks, enabled_rule_fn, runner) -> list[Diagnostic]:
+    def validate_bsl220_235_269_query_text_diagnostics(
+        self, *, lines: list[str], codes: tuple[str, ...], query_blocks, enabled_rule_fn, runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, codes, enabled_rule_fn, query_blocks)
 
-    def validate_bsl191_201_query_text_diagnostics(self, *, lines: list[str], codes: tuple[str, ...], query_blocks, enabled_rule_fn, runner) -> list[Diagnostic]:
+    def validate_bsl191_201_query_text_diagnostics(
+        self, *, lines: list[str], codes: tuple[str, ...], query_blocks, enabled_rule_fn, runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, codes, enabled_rule_fn, query_blocks)
 
-    def validate_bsl192_193_194_228_266_method_contract_diagnostics(self, *, lines: list[str], procs: list[ProcInfo], codes: tuple[str, ...], enabled_rule_fn, runner) -> list[Diagnostic]:
+    def validate_bsl192_193_194_228_266_method_contract_diagnostics(
+        self,
+        *,
+        lines: list[str],
+        procs: list[ProcInfo],
+        codes: tuple[str, ...],
+        enabled_rule_fn,
+        runner,
+    ) -> list[Diagnostic]:
         return runner(self.path, lines, procs, codes, enabled_rule_fn)
 
     def validate_bsl174_187_236_238_query_metadata_pool(
@@ -1576,10 +1902,14 @@ class ModuleModel:
             code_lines_without_comments,
         )
 
-    def validate_bsl234_query_nested_fields_by_dot(self, *, lines: list[str], runner) -> list[Diagnostic]:
+    def validate_bsl234_query_nested_fields_by_dot(
+        self, *, lines: list[str], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines)
 
-    def validate_bsl237_redundant_access_to_object(self, *, lines: list[str], runner) -> list[Diagnostic]:
+    def validate_bsl237_redundant_access_to_object(
+        self, *, lines: list[str], runner
+    ) -> list[Diagnostic]:
         return runner(self.path, lines)
 
     def validate_bsl245_server_side_export_form_method(
@@ -1733,7 +2063,9 @@ class ModuleModel:
                     continue
                 if len(proc.params) != 1:
                     start_char, end_char = proc_name_span_fn(lines, proc)
-                    severity_name = str(rule_metadata.get("BSL275", {}).get("severity", "ERROR")).upper()
+                    severity_name = str(
+                        rule_metadata.get("BSL275", {}).get("severity", "ERROR")
+                    ).upper()
                     severity = getattr(severity_cls, severity_name, severity_cls.ERROR)
                     diags.append(
                         Diagnostic(
@@ -1780,9 +2112,9 @@ class ModuleModel:
     ) -> list[Diagnostic]:
         enabled_set = set(enabled)
         diags: list[Diagnostic] = []
-        is_form_or_command = path_is_likely_form_module_bsl_fn(self.path) or path_is_command_module_bsl_fn(
+        is_form_or_command = path_is_likely_form_module_bsl_fn(
             self.path
-        )
+        ) or path_is_command_module_bsl_fn(self.path)
         clean_lines = (
             snapshot.code_lines_without_comments
             if snapshot is not None
@@ -1858,7 +2190,9 @@ class ModuleModel:
                 for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
                     line = clean_lines[idx]
                     if re.search(r"\b(?:АвтоТестПроверка|AutoTestCheck)\b", line, re.IGNORECASE):
-                        col = re.search(r"\b(?:АвтоТестПроверка|AutoTestCheck)\b", line, re.IGNORECASE)
+                        col = re.search(
+                            r"\b(?:АвтоТестПроверка|AutoTestCheck)\b", line, re.IGNORECASE
+                        )
                         if col is not None:
                             hits.append((idx, col.start()))
                 for idx, col in hits[1:]:
@@ -2158,12 +2492,18 @@ class ModuleModel:
             typed_nodes = ts_nodes_for_types_fn(tree, wanted)
 
         if "BSL171" in enabled:
-            diags.extend(rule_bsl171_fn(self.path, lines, tree if tree_ok else None, typed_nodes.get("ERROR")))
+            diags.extend(
+                rule_bsl171_fn(
+                    self.path, lines, tree if tree_ok else None, typed_nodes.get("ERROR")
+                )
+            )
         if "BSL204" in enabled:
             diags.extend(rule_bsl204_fn(self.path, content, lines))
         if "BSL217" in enabled:
             diags.extend(
-                rule_bsl217_fn(self.path, lines, tree if tree_ok else None, typed_nodes.get("method_call"))
+                rule_bsl217_fn(
+                    self.path, lines, tree if tree_ok else None, typed_nodes.get("method_call")
+                )
             )
         if "BSL248" in enabled:
             diags.extend(rule_bsl248_fn(self.path, lines, tree if tree_ok else None, procs))
@@ -2227,7 +2567,11 @@ class ModuleModel:
         for idx, line in enumerate(lines):
             if re_comment.match(line):
                 continue
-            clean = masked_lines[idx] if masked_lines is not None else re_double_quoted_string.sub('""', line)
+            clean = (
+                masked_lines[idx]
+                if masked_lines is not None
+                else re_double_quoted_string.sub('""', line)
+            )
             comment_pos = comment_starts[idx] if comment_starts is not None else clean.find("//")
             if comment_pos is not None and comment_pos >= 0:
                 clean = clean[:comment_pos]
@@ -2258,7 +2602,9 @@ class ModuleModel:
                 is_self_update = (
                     assign_pos >= 0
                     and match.end() <= assign_pos
-                    and re.search(r"\b" + re.escape(word) + r"\b", clean[assign_pos + 1 :], re.IGNORECASE)
+                    and re.search(
+                        r"\b" + re.escape(word) + r"\b", clean[assign_pos + 1 :], re.IGNORECASE
+                    )
                 )
                 seen_key = f"{word}@{idx}" if is_self_update else word
                 if rule_enabled_fn("BSL208") and seen_key not in seen_bsl208:
@@ -2347,7 +2693,10 @@ class ModuleModel:
                 for later_call in ts_global_method_calls_fn(subtree, lines):
                     if later_call["line"] <= line_1:
                         continue
-                    if str(later_call["name"]).casefold() not in bsl217_delete_from_temp_storage_names:
+                    if (
+                        str(later_call["name"]).casefold()
+                        not in bsl217_delete_from_temp_storage_names
+                    ):
                         continue
                     for expr in ts_method_call_arg_exprs_fn(later_call["node"]):
                         if ts_node_text_fn(expr).strip().casefold() == var_name.casefold():
@@ -2405,7 +2754,9 @@ class ModuleModel:
             r"^\s*(?:Если\b.*\bТогда|If\b.*\bThen|ИначеЕсли\b.*\bТогда|ElseIf\b.*\bThen|ElsIf\b.*\bThen|Иначе\b|Else\b|Пока\b.*\bЦикл|While\b.*\bDo)",
             re.IGNORECASE,
         )
-        multiline_if_start_re = re.compile(r"^\s*(?:Если|If|ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE)
+        multiline_if_start_re = re.compile(
+            r"^\s*(?:Если|If|ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE
+        )
         branch_end_token_re = re.compile(r"\b(?:Тогда|Then)\b", re.IGNORECASE)
         terminator_re = re.compile(
             r"^\s*(?:ИначеЕсли\b|ElseIf\b|ElsIf\b|Иначе\b|Else\b|КонецЕсли\b|EndIf\b|КонецЦикла\b|EndDo\b)",
@@ -2503,7 +2854,9 @@ class ModuleModel:
             return []
         diags: list[Diagnostic] = []
         root = getattr(tree, "root_node", None)
-        tree_is_ts = root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
+        tree_is_ts = root is not None and isinstance(
+            getattr(root, "text", None), (bytes, bytearray)
+        )
 
         for proc in procs:
             used_casefold: set[str] | None = None
@@ -2713,7 +3066,9 @@ class ModuleModel:
                 if proc_read_counts.get(var_cf, 0) > 0:
                     continue
                 implicit_first_unused.setdefault(var_cf, (var_name, abs_line))
-            for var_name, abs_line in sorted(implicit_first_unused.values(), key=lambda item: item[1]):
+            for var_name, abs_line in sorted(
+                implicit_first_unused.values(), key=lambda item: item[1]
+            ):
                 emit_unused(abs_line, var_name)
 
             loop_headers_by_var: dict[str, set[int]] = {}
@@ -2765,7 +3120,9 @@ class ModuleModel:
         end_line_idxs = {proc.end_idx for proc in procs}
 
         for proc in procs:
-            body_lines = list(enumerate(lines[proc.start_idx + 1 : proc.end_idx], start=proc.start_idx + 1))
+            body_lines = list(
+                enumerate(lines[proc.start_idx + 1 : proc.end_idx], start=proc.start_idx + 1)
+            )
             emitted_lines: set[int] = set()
 
             def emit_unreachable(
@@ -2816,11 +3173,17 @@ class ModuleModel:
                             j += 1
                             continue
                         next_indent = len(next_line) - len(next_line.lstrip())
-                        if not crossed_preprocessor and next_indent <= exit_indent and next_abs not in end_line_idxs:
+                        if (
+                            not crossed_preprocessor
+                            and next_indent <= exit_indent
+                            and next_abs not in end_line_idxs
+                        ):
                             if delimiter_lines is not None:
                                 is_block_delimiter = next_abs in delimiter_lines
                             else:
-                                is_block_delimiter = bool(re_bsl051_delimiter_fallback.match(next_line))
+                                is_block_delimiter = bool(
+                                    re_bsl051_delimiter_fallback.match(next_line)
+                                )
                             if not is_block_delimiter:
                                 emit_unreachable(next_abs, next_line)
                         break
@@ -2841,7 +3204,9 @@ class ModuleModel:
                         if next_abs in end_line_idxs:
                             break
                         next_indent = len(next_line) - len(next_line.lstrip())
-                        if next_indent <= end_indent and not re_bsl051_delimiter_fallback.match(next_line):
+                        if next_indent <= end_indent and not re_bsl051_delimiter_fallback.match(
+                            next_line
+                        ):
                             emit_unreachable(next_abs, next_line)
                         break
         return diags
@@ -2865,7 +3230,9 @@ class ModuleModel:
                 continue
             prev_span = (int(prev.get("end_line", 0)), int(prev.get("end_column", 0)))
             cur_span = (int(err.get("end_line", 0)), int(err.get("end_column", 0)))
-            if cur_span > prev_span or len(str(err.get("message", ""))) > len(str(prev.get("message", ""))):
+            if cur_span > prev_span or len(str(err.get("message", ""))) > len(
+                str(prev.get("message", ""))
+            ):
                 by_start[key] = err
         errors = list(by_start.values())
         diags: list[Diagnostic] = []
@@ -3017,7 +3384,9 @@ class ModuleModel:
                                     break
                             if nested:
                                 line_idx = node.start_point[0]
-                                line_text = line_texts[line_idx] if line_idx < len(line_texts) else ""
+                                line_text = (
+                                    line_texts[line_idx] if line_idx < len(line_texts) else ""
+                                )
                                 start_char = utf8_byte_offset_to_lsp_character_fn(
                                     line_text, node.start_point[1]
                                 )
@@ -3027,10 +3396,15 @@ class ModuleModel:
                                         line=line_idx + 1,
                                         character=start_char,
                                         end_line=line_idx + 1,
-                                        end_character=min(len(line_text), start_char + len(ts_node_text_fn(type_node))),
+                                        end_character=min(
+                                            len(line_text),
+                                            start_char + len(ts_node_text_fn(type_node)),
+                                        ),
                                         severity=Severity.INFORMATION,
                                         code="BSL223",
-                                        message=("Избегайте вложенных конструкторов в объявлении структуры"),
+                                        message=(
+                                            "Избегайте вложенных конструкторов в объявлении структуры"
+                                        ),
                                     )
                                 )
 
@@ -3151,11 +3525,18 @@ class ModuleModel:
         if {"BSL221", "BSL222"} & enabled_set:
             for idx, line in enumerate(clean_lines):
                 for match in bsl221_nstr_re.finditer(line):
-                    langs = {m.group("lang").casefold() for m in bsl221_lang_re.finditer(match.group("body"))}
+                    langs = {
+                        m.group("lang").casefold()
+                        for m in bsl221_lang_re.finditer(match.group("body"))
+                    }
                     missing = declared_languages - langs
                     if not missing:
                         continue
-                    code = "BSL222" if re.search(r"\b(?:СтрШаблон|StrTemplate)\s*\(", line, re.IGNORECASE) else "BSL221"
+                    code = (
+                        "BSL222"
+                        if re.search(r"\b(?:СтрШаблон|StrTemplate)\s*\(", line, re.IGNORECASE)
+                        else "BSL221"
+                    )
                     if code not in enabled_set:
                         continue
                     diags.append(
@@ -3214,7 +3595,10 @@ class ModuleModel:
                 guarded = False
                 cur = getattr(node, "parent", None)
                 while cur is not None:
-                    if getattr(cur, "type", None) in {"if_statement", "elseif_clause"} and bsl271_platform_guard_re.search(ts_node_text_fn(cur)):
+                    if getattr(cur, "type", None) in {
+                        "if_statement",
+                        "elseif_clause",
+                    } and bsl271_platform_guard_re.search(ts_node_text_fn(cur)):
                         guarded = True
                         break
                     cur = getattr(cur, "parent", None)

@@ -16,7 +16,13 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
     for block in query_blocks:
         block_head = "\n".join(
             head
-            for (_line_no, _content_base, _content, head, _ended_query) in _diag._query_block_content_line_tuples(block)
+            for (
+                _line_no,
+                _content_base,
+                _content,
+                head,
+                _ended_query,
+            ) in _diag._query_block_content_line_tuples(block)
         )
         if re.search(r"\b(?:ИЗ|FROM)\b\s*\n\s*&ВТ_Цены\b", block_head, re.IGNORECASE):
             continue
