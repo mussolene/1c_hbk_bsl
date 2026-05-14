@@ -2215,6 +2215,12 @@ _BSLLS_LSP_HINT_RULE_NAMES: frozenset[str] = frozenset(
         "YoLetterUsage",
     }
 )
+_BSLLS_LSP_WARNING_RULE_NAMES: frozenset[str] = frozenset(
+    {
+        "ExternalAppStarting",
+        "UsingExternalCodeTools",
+    }
+)
 
 
 def lsp_compat_severity(code: str, severity: Severity) -> Severity:
@@ -2227,6 +2233,8 @@ def lsp_compat_severity(code: str, severity: Severity) -> Severity:
     """
     meta = RULE_METADATA.get(code, {})
     rule_name = str(meta.get("name") or code)
+    if severity == Severity.ERROR and rule_name in _BSLLS_LSP_WARNING_RULE_NAMES:
+        return Severity.WARNING
     if severity == Severity.INFORMATION and rule_name in _BSLLS_LSP_HINT_RULE_NAMES:
         return Severity.HINT
     return severity
@@ -3032,7 +3040,8 @@ _RE_BSL266_CANCEL = re.compile(r"^(?:Отказ|Cancel)$", re.IGNORECASE)
 _RE_BSL149_SELECT = re.compile(r"\bВЫБРАТЬ\b|\bSELECT\b", re.IGNORECASE)
 # Modifiers after SELECT that are not field names
 _RE_BSL149_SELECT_MODIFIERS = re.compile(
-    r"^\s*(?:РАЗЛИЧНЫЕ|DISTINCT|ПЕРВЫЕ|TOP)\b(?:\s+\d+)?\s*", re.IGNORECASE
+    r"^\s*(?:РАЗРЕШЕННЫЕ|ALLOWED|РАЗЛИЧНЫЕ|DISTINCT|ПЕРВЫЕ|TOP)\b(?:\s+\d+)?\s*",
+    re.IGNORECASE,
 )
 # Clause keywords that end the SELECT field list (or signal UNION)
 _RE_BSL149_CLAUSE_END = re.compile(
@@ -3084,7 +3093,7 @@ _RE_QUERY_DATASOURCE_SUBQUERY = re.compile(r"\(\s*(?:ВЫБРАТЬ|SELECT)\b", 
 _RE_QUERY_VIRTUAL_TABLE = re.compile(
     r"\b(?:Регистр(?:Сведений|Накопления|Бухгалтерии|Расчета)|"
     r"InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister)"
-    r"\.\w+(?:\.\w+)+\s*\(",
+    r"\.\w+(?:\.\w+)+\s*(?:\(|\b)",
     re.IGNORECASE,
 )
 _RE_QUERY_COLUMN_REF = re.compile(r"\b\w+\.\w+(?:\.\w+)*\b", re.IGNORECASE)

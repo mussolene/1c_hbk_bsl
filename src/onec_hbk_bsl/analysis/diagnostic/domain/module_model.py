@@ -642,7 +642,7 @@ class ModuleModel:
                         end_character=end_col,
                         severity=Severity.WARNING,
                         code="BSL077",
-                        message="Использование ПЕРВЫЕ/TOP без УПОРЯДОЧИТЬ/ORDER BY в запросе",
+                        message="Нужно изменить запрос, добавив упорядочивание",
                     )
                 )
         return diags
@@ -1261,12 +1261,9 @@ class ModuleModel:
                     character=m.start(),
                     end_line=idx + 1,
                     end_character=m.end(),
-                    severity=Severity.WARNING,
+                    severity=Severity.INFORMATION,
                     code="BSL190",
-                    message=(
-                        "ДанныеФормыВЗначение()/FormDataToValue() — медленная операция; "
-                        "работайте с серверными объектами напрямую"
-                    ),
+                    message="Не рекомендуемое использование метода ДанныеФормыВЗначение",
                 )
             )
         return diags
@@ -1749,7 +1746,7 @@ class ModuleModel:
                         ),
                         severity=Severity.WARNING,
                         code="BSL268",
-                        message=f'Использование метода "{name}" снижает производительность поиска',
+                        message=f'Не следует использовать  метод "{name}" и поиск по строке',
                     )
                 )
             return diags
@@ -1772,7 +1769,9 @@ class ModuleModel:
                     end_character=match.end("name"),
                     severity=Severity.WARNING,
                     code="BSL268",
-                    message=f'Использование метода "{match.group("name")}" снижает производительность поиска',
+                    message=(
+                        f'Не следует использовать  метод "{match.group("name")}" и поиск по строке'
+                    ),
                 )
             )
         return diags
@@ -3257,6 +3256,12 @@ class ModuleModel:
             ):
                 continue
             if "Окр(" in line_text and ", 2)" in line_text:
+                continue
+            if re.search(r"'\d{4}-\d{2}-\d{2}'", line_text):
+                continue
+            if re.search(r"\b(?:ПолучитьОбласть|GetArea)\s*\(", line_text, re.IGNORECASE):
+                continue
+            if re.search(r"\+\s*\([^)]*[+*/-][^)]*\)\s*", line_text):
                 continue
             diags.append(
                 Diagnostic(

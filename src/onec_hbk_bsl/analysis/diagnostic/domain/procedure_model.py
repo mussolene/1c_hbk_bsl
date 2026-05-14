@@ -70,19 +70,21 @@ class ProcedureModel:
         if total <= max_params:
             return []
         line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        character = line_text.find("(")
+        if character < 0:
+            character = self.header_col
+        else:
+            character += 1
         return [
             Diagnostic(
                 file=self.path,
                 line=self.start_idx + 1,
-                character=self.header_col,
+                character=character,
                 end_line=self.start_idx + 1,
                 end_character=len(line_text),
-                severity=Severity.WARNING,
+                severity=Severity.INFORMATION,
                 code="BSL031",
-                message=(
-                    f"{self.kind.capitalize()} '{self.name}' has {total} parameters "
-                    f"(maximum {max_params})"
-                ),
+                message=f"Уменьшите количество параметров c {total} до допустимого {max_params}",
             )
         ]
 
@@ -92,19 +94,23 @@ class ProcedureModel:
         if self.optional_count <= max_optional_params:
             return []
         line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        character = line_text.find("(")
+        if character < 0:
+            character = self.header_col
+        else:
+            character += 1
         return [
             Diagnostic(
                 file=self.path,
                 line=self.start_idx + 1,
-                character=self.header_col,
+                character=character,
                 end_line=self.start_idx + 1,
                 end_character=len(line_text),
-                severity=Severity.WARNING,
+                severity=Severity.INFORMATION,
                 code="BSL015",
                 message=(
-                    f"{self.kind.capitalize()} '{self.name}' has "
-                    f"{self.optional_count} optional parameters "
-                    f"(maximum {max_optional_params})"
+                    f"Уменьшите количество необязательных параметров c {self.optional_count} "
+                    f"до допустимого {max_optional_params}"
                 ),
             )
         ]

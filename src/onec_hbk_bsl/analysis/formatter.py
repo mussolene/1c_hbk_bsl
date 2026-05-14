@@ -393,7 +393,19 @@ def _format_bslls_token_stream(
         previous_kind = kind
         previous = token
 
-    return "".join(out).lstrip("\n").rstrip("\n")
+    formatted = "".join(out).lstrip("\n").rstrip("\n")
+    if insert_spaces:
+        unit = " " * indent_size
+        if unit:
+            formatted = re.sub(
+                rf"^({re.escape(unit)}+)({re.escape(unit)})(//\|)",
+                r"\1\3",
+                formatted,
+                flags=re.MULTILINE,
+            )
+    else:
+        formatted = re.sub(r"^(\t+)\t(//\|)", r"\1\2", formatted, flags=re.MULTILINE)
+    return formatted
 
 
 class BslFormatter:

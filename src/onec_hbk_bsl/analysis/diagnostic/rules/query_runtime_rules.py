@@ -31,6 +31,8 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
         paren_depth = 0
         case_depth = 0
         first_content_line = True
+        pending_multiline_alias = False
+        pending_multiline_expression = False
         for (
             line_no,
             _content_base,
@@ -105,6 +107,8 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
                 if paren_depth < 0:
                     paren_depth = 0
                 in_select = False
+                pending_multiline_alias = False
+                pending_multiline_expression = False
                 continue
             if ")" in content and paren_depth > 0:
                 paren_depth -= content.count(")")
@@ -115,7 +119,26 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
                 continue
             if not in_select:
                 continue
+            if pending_multiline_alias:
+                pending_multiline_alias = False
+                pending_multiline_expression = False
+                continue
+            stripped_content = content.strip()
+            if pending_multiline_expression:
+                if _diag._RE_BSL149_HAS_ALIAS.search(stripped_content):
+                    pending_multiline_expression = False
+                    continue
+                if stripped_content.startswith(("+", "-", "*", "/")):
+                    continue
+                pending_multiline_expression = False
+            if re.search(r"\b(?:КАК|AS)\s*$", stripped_content, re.IGNORECASE):
+                pending_multiline_alias = True
+                continue
+            if stripped_content.startswith(("+", "-", "*", "/")):
+                pending_multiline_expression = True
+                continue
             if content.rstrip().endswith(("+", "-", "*", "/")):
+                pending_multiline_expression = True
                 continue
             _diag._bsl149_append_missing_alias_diags(path, idx, line, content, diags)
     return diags
@@ -239,7 +262,9 @@ def run_bsl149_assign_alias_fields_in_query(
     return diags
 
 
-def run_bsl234_query_nested_fields_by_dot(path: str, lines: list[str]) -> list[Any]:
+def run_bsl234_query_nested_fields_by_dot(
+    path: str, lines: list[str], query_blocks: list[Any] | None = None
+) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
     chain_re = re.compile(r"(?<![\w.])([A-Za-zА-Яа-я_]\w*(?:\.[A-Za-zА-Яа-я_]\w*){2,})")
@@ -321,14 +346,31 @@ def run_bsl234_query_nested_fields_by_dot(path: str, lines: list[str]) -> list[A
             )
         )
 
-    for line_no, line in enumerate(lines, start=1):
-        stripped = line.lstrip()
-        if not stripped.startswith("|"):
+    if query_blocks is not None:
+        content_lines = [
+            (line_no, lines[line_no - 1], head)
+            for block in query_blocks
+            for (
+                line_no,
+                _content_base,
+                _content,
+                head,
+                _ended_query,
+            ) in _diag._query_block_content_line_tuples(block)
+        ]
+    else:
+        content_lines = [
+            (line_no, line, line.lstrip()[1:].strip())
+            for line_no, line in enumerate(lines, start=1)
+            if line.lstrip().startswith("|")
+        ]
+
+    for line_no, line, query_text in content_lines:
+        if not query_text:
             in_group_by = False
             in_where = False
             continue
         masked = mask_value_calls(line)
-        query_text = stripped[1:].strip()
         if re.match(r"^(?:ВЫБРАТЬ|SELECT)\b", query_text, re.IGNORECASE):
             in_group_by = False
             in_where = False

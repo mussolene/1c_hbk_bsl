@@ -1797,7 +1797,7 @@ class FileSystemAccessRule(BsllsDiagnosticRule):
                     character=match.start(),
                     end_line=idx,
                     end_character=self._new_end(clean, match.end(1)),
-                    severity=Severity.WARNING,
+                    severity=Severity.ERROR,
                     message="Проверьте обращение к файловой системе",
                 )
         return storage.diagnostics
@@ -4740,7 +4740,14 @@ class QueryRuntimeDiagnosticsRule(BsllsDiagnosticRule):
         )
 
         if self.code == "BSL234":
-            return run_bsl234_query_nested_fields_by_dot(context.path, context.lines)
+            query_blocks = (
+                list(context.snapshot.query_text_blocks) if context.snapshot is not None else None
+            )
+            return run_bsl234_query_nested_fields_by_dot(
+                context.path,
+                context.lines,
+                query_blocks,
+            )
         if self.code == "BSL237":
             return run_bsl237_redundant_access_to_object(context.path, context.lines)
         procs = list(getattr(context.snapshot, "procedures", []) or [])

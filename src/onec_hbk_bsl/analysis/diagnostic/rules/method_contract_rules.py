@@ -313,6 +313,7 @@ def run_bsl215_missing_parameter_description(
             return m.group(1)
 
         documented_entries: list[str] = []
+        stale_reference_entries: list[str] = []
         documented_struct_entries: set[str] = set()
         has_nested_param_fields = False
         first_meaningful_is_params = False
@@ -337,6 +338,12 @@ def run_bsl215_missing_parameter_description(
                 if tail.casefold() == "структура":
                     documented_struct_entries.add(pname.casefold())
                 documented_entries.append(pname)
+            else:
+                ref_match = re.search(
+                    r"\b(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)", cl, re.IGNORECASE
+                )
+                if ref_match:
+                    stale_reference_entries.append(ref_match.group(1).rstrip("."))
         if first_meaningful_is_params:
             documented_entries = []
         elif has_nested_param_fields and documented_struct_entries:
@@ -431,6 +438,7 @@ def run_bsl215_missing_parameter_description(
                 extra.append(pname)
             else:
                 seen_actual_docs.add(pcf)
+        extra.extend(stale_reference_entries)
         if extra and actual_params_cf:
             diags.append(
                 _diag.Diagnostic(
@@ -535,7 +543,7 @@ def run_bsl233_public_methods_description(
                     end_character=col + len(proc.name),
                     severity=_diag.Severity.INFORMATION,
                     code="BSL233",
-                    message=f"Экспортный метод «{proc.name}» в публичном API должен иметь описание в комментарии",
+                    message="Добавьте описание метода программного интерфейса",
                 )
             )
 
