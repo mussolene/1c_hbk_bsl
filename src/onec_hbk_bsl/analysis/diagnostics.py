@@ -2459,25 +2459,36 @@ def _count_mccabe_bool_ops(text: str, paren_depth: int = 0) -> tuple[int, int]:
     return count, sum(1 for item in paren_stack if item)
 
 
-def _count_cognitive_ternary_ops(text: str, control_nesting: int) -> int:
+def _count_cognitive_ternary_ops_with_stack(
+    text: str,
+    control_nesting: int,
+    paren_stack: list[bool],
+) -> int:
     score = 0
-    ternary_depth = 0
-    paren_stack: list[bool] = []
     i = 0
     while i < len(text):
-        if text[i] == "?" and i + 1 < len(text) and text[i + 1] == "(":
+        if text[i] == "?":
+            j = i + 1
+            while j < len(text) and text[j].isspace():
+                j += 1
+            if j >= len(text) or text[j] != "(":
+                i += 1
+                continue
+            ternary_depth = sum(1 for item in paren_stack if item)
             score += 1 + control_nesting + ternary_depth
-            ternary_depth += 1
             paren_stack.append(True)
-            i += 2
+            i = j + 1
             continue
         if text[i] == "(":
             paren_stack.append(False)
         elif text[i] == ")" and paren_stack:
-            if paren_stack.pop():
-                ternary_depth = max(0, ternary_depth - 1)
+            paren_stack.pop()
         i += 1
     return score
+
+
+def _count_cognitive_ternary_ops(text: str, control_nesting: int) -> int:
+    return _count_cognitive_ternary_ops_with_stack(text, control_nesting, [])
 
 
 def _line_has_self_call(line: str, proc_name: str | None) -> bool:
@@ -2512,15 +2523,39 @@ def _count_cognitive_bool_ops(text: str, last_op: str | None = None) -> tuple[in
     """BSLLS/Sonar cognitive complexity counts boolean operator runs, not every token."""
     count = 0
     current = last_op
-    for match in _RE_MCCABE_BOOL.finditer(text):
-        op = match.group(0).casefold()
-        if op in {"and", "и"}:
-            op = "and"
-        else:
-            op = "or"
+    reset_on_close: list[bool] = []
+    token_re = re.compile(r"\?\s*\(|\b(?:Не|Not|И|And|ИЛИ|Or)\b|[()]", re.IGNORECASE)
+    pending_not = False
+    bool_seen_on_line = False
+    for match in token_re.finditer(text):
+        lexeme = match.group(0)
+        folded = lexeme.casefold()
+        if lexeme.startswith("?"):
+            if not bool_seen_on_line:
+                current = None
+            pending_not = False
+            continue
+        if lexeme == "(":
+            is_not_grouping = pending_not and _is_mccabe_grouping_paren(text, match.start())
+            if is_not_grouping:
+                current = None
+            reset_on_close.append(is_not_grouping)
+            pending_not = False
+            continue
+        if lexeme == ")":
+            if reset_on_close and reset_on_close.pop():
+                current = None
+            pending_not = False
+            continue
+        if folded in {"не", "not"}:
+            pending_not = True
+            continue
+        pending_not = False
+        op = "and" if folded in {"and", "и"} else "or"
         if op != current:
             count += 1
             current = op
+        bool_seen_on_line = True
     return count, current
 
 
@@ -5052,6 +5087,7 @@ def _calc_cognitive_complexity(
     nesting = 0
     bool_last_op: str | None = None
     bool_expr_open = False
+    ternary_paren_stack: list[bool] = []
     if string_states is None:
         string_states = _build_line_string_states(lines)
     for i in range(start_idx + 1, min(end_idx, len(lines))):
@@ -5062,6 +5098,7 @@ def _calc_cognitive_complexity(
         if line.lstrip().startswith("|"):
             bool_last_op = None
             bool_expr_open = False
+            ternary_paren_stack.clear()
             continue
         line_no_strings = _mask_strings_and_comments_for_counter(
             line,
@@ -5073,24 +5110,31 @@ def _calc_cognitive_complexity(
             bool_last_op if (bool_expr_open or starts_with_bool) else None,
         )
         complexity += line_bool_count
+        line_has_bool = line_bool_count > 0 or _RE_MCCABE_BOOL.search(line_no_strings) is not None
         opens_control_expr = bool(
             re.search(r"\b(?:Если|If|ИначеЕсли|ElsIf|Пока|While)\b", line_no_strings, re.IGNORECASE)
             and not re.search(r"\b(?:Тогда|Then|Цикл|Do)\b", line_no_strings, re.IGNORECASE)
         )
         opens_assignment_expr = bool(re.search(r"[=+\-*/]\s*$", line_no_strings))
+        line_terminates_expr = bool(
+            re.search(r"(?:;|\b(?:Тогда|Then|Цикл|Do)\b)\s*$", line_no_strings, re.IGNORECASE)
+        )
         bool_expr_open = (
             opens_control_expr
             or opens_assignment_expr
+            or (line_has_bool and not line_terminates_expr)
             or bool(
                 (bool_expr_open or starts_with_bool)
-                and not re.search(
-                    r"(?:;|\b(?:Тогда|Then|Цикл|Do)\b)\s*$", line_no_strings, re.IGNORECASE
-                )
+                and not line_terminates_expr
             )
         )
         if not bool_expr_open:
             bool_last_op = None
-        complexity += _count_cognitive_ternary_ops(line_no_strings, nesting)
+        complexity += _count_cognitive_ternary_ops_with_stack(
+            line_no_strings,
+            nesting,
+            ternary_paren_stack,
+        )
         if _line_has_self_call(line_no_strings, proc_name):
             complexity += 1
         if _CC_OPEN.match(line):
@@ -5157,6 +5201,7 @@ def _calc_complexity_metrics(
     nesting = 0
     bool_last_op: str | None = None
     bool_expr_open = False
+    ternary_paren_stack: list[bool] = []
     mccabe = 1
     paren_depth = 0
     if string_states is None:
@@ -5169,6 +5214,7 @@ def _calc_complexity_metrics(
         if line.lstrip().startswith("|"):
             bool_last_op = None
             bool_expr_open = False
+            ternary_paren_stack.clear()
             paren_depth = 0
             continue
         line_no_strings = _mask_strings_and_comments_for_counter(
@@ -5182,25 +5228,32 @@ def _calc_complexity_metrics(
             bool_last_op if (bool_expr_open or starts_with_bool) else None,
         )
         cognitive += line_bool_count
+        line_has_bool = line_bool_count > 0 or _RE_MCCABE_BOOL.search(line_no_strings) is not None
         opens_control_expr = bool(
             re.search(r"\b(?:Если|If|ИначеЕсли|ElsIf|Пока|While)\b", line_no_strings, re.IGNORECASE)
             and not re.search(r"\b(?:Тогда|Then|Цикл|Do)\b", line_no_strings, re.IGNORECASE)
         )
         opens_assignment_expr = bool(re.search(r"[=+\-*/]\s*$", line_no_strings))
+        line_terminates_expr = bool(
+            re.search(r"(?:;|\b(?:Тогда|Then|Цикл|Do)\b)\s*$", line_no_strings, re.IGNORECASE)
+        )
         bool_expr_open = (
             opens_control_expr
             or opens_assignment_expr
+            or (line_has_bool and not line_terminates_expr)
             or bool(
                 (bool_expr_open or starts_with_bool)
-                and not re.search(
-                    r"(?:;|\b(?:Тогда|Then|Цикл|Do)\b)\s*$", line_no_strings, re.IGNORECASE
-                )
+                and not line_terminates_expr
             )
         )
         if not bool_expr_open:
             bool_last_op = None
         ternary_count = len(_RE_MCCABE_TERNARY.findall(line_no_strings))
-        cognitive += _count_cognitive_ternary_ops(line_no_strings, nesting)
+        cognitive += _count_cognitive_ternary_ops_with_stack(
+            line_no_strings,
+            nesting,
+            ternary_paren_stack,
+        )
         if _line_has_self_call(line_no_strings, proc_name):
             cognitive += 1
         if _CC_OPEN.match(line):

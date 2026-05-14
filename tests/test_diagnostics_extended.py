@@ -1508,6 +1508,48 @@ class TestBsl011CognitiveComplexity:
         assert len(bsl011) == 1
         assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 6 до 5'
 
+    def test_ternary_with_space_counts_with_current_nesting(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Сложная(А, Б)
+                Если А Тогда
+                    Если Б Тогда
+                        Результат = ? (А, 1, 0);
+                    КонецЕсли;
+                КонецЕсли;
+                Возврат Результат;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=5, select={"BSL011"})
+        bsl011 = [d for d in diags if d.code == "BSL011"]
+        assert len(bsl011) == 1
+        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 6 до 5'
+
+    def test_multiline_same_boolean_run_not_counted_twice(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Простая(А, Б, В)
+                Результат = А И Б
+                    И НЕ В;
+                Возврат Результат;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=1, select={"BSL011"})
+        assert "BSL011" not in _codes(diags)
+
+    def test_multiline_nested_ternary_keeps_ternary_nesting(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Сложная(А, Б, В)
+                Если А Тогда
+                    Результат = ?(А, 1,
+                        ?(Б, 2, ?(В, 3, 0)));
+                КонецЕсли;
+                Возврат Результат;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=7, select={"BSL011"})
+        bsl011 = [d for d in diags if d.code == "BSL011"]
+        assert len(bsl011) == 1
+        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 10 до 7'
+
     def test_try_does_not_count_but_except_counts_structurally(self, tmp_path: Path) -> None:
         content = """\
             Функция Сложная()
