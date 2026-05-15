@@ -191,6 +191,7 @@ _RE_BSL216_ANY_KEYWORD = re.compile(
     re.IGNORECASE,
 )
 _COMPARISON_OPS = ("<=", ">=", "<>", "=", "<", ">")
+_RE_BSL216_COMPARISON_OP = re.compile(r"<=|>=|<>|(?<![<>!])=(?!=)|<|>")
 _BINARY_LHS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
@@ -1436,7 +1437,7 @@ class DocumentSnapshot:
             comment_pos = comment_starts[idx]
             if comment_pos is not None:
                 clean = clean[:comment_pos]
-            has_comparison = any(op in clean for op in _COMPARISON_OPS)
+            has_comparison = "=" in clean or "<" in clean or ">" in clean
             has_arithmetic_ops = any(op in line for op in "+-*/%")
             code_no_comments = code_lines_wo_comments[idx]
             has_comma = "," in code_no_comments
@@ -1470,39 +1471,21 @@ class DocumentSnapshot:
         clean: str,
     ) -> list[LineDiagnosticFact]:
         facts: list[LineDiagnosticFact] = []
-        pos = 0
-        seen_ops: set[tuple[int, str]] = set()
-        while pos < len(clean):
-            op = None
-            for candidate in _COMPARISON_OPS:
-                if clean.startswith(candidate, pos):
-                    op = candidate
-                    break
-            if op is None:
-                pos += 1
-                continue
-            start = pos
-            end = pos + len(op)
-            if op == "=" and (
-                (start > 0 and clean[start - 1] in "<>!")
-                or (end < len(clean) and clean[end] == "=")
-            ):
-                pos += 1
-                continue
+        for match in _RE_BSL216_COMPARISON_OP.finditer(clean):
+            op = match.group(0)
+            start = match.start()
+            end = match.end()
             left_missing = start > 0 and clean[start - 1] not in " \t"
             right_missing = end < len(clean) and clean[end] not in " \t"
-            if left_missing or right_missing:
-                key = (start, op)
-                if key not in seen_ops:
-                    seen_ops.add(key)
-                    if left_missing and right_missing:
-                        msg = f"Слева и справа от '{op}' не хватает пробела"
-                    elif left_missing:
-                        msg = f"Слева от '{op}' не хватает пробела"
-                    else:
-                        msg = f"Справа от '{op}' не хватает пробела"
-                    facts.append(LineDiagnosticFact(line_idx, start, end, msg))
-            pos = end
+            if not left_missing and not right_missing:
+                continue
+            if left_missing and right_missing:
+                msg = f"Слева и справа от '{op}' не хватает пробела"
+            elif left_missing:
+                msg = f"Слева от '{op}' не хватает пробела"
+            else:
+                msg = f"Справа от '{op}' не хватает пробела"
+            facts.append(LineDiagnosticFact(line_idx, start, end, msg))
         return facts
 
     def _missing_arithmetic_space_facts(
