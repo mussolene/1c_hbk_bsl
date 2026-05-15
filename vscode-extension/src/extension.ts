@@ -240,21 +240,29 @@ function registerBslStructureProviders(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.languages.registerDocumentSymbolProvider(VSCODE_BSL_DOCUMENT_SELECTOR, {
       provideDocumentSymbols(document) {
-        return parseBslStructure(document.getText()).map(toDocumentSymbol);
+        return provideFastBslDocumentSymbols(document);
       },
     }),
     vscode.languages.registerFoldingRangeProvider(VSCODE_BSL_DOCUMENT_SELECTOR, {
       provideFoldingRanges(document) {
-        return parseBslFoldingRanges(document.getText()).map(
-          (item) =>
-            new vscode.FoldingRange(
-              item.startLine,
-              item.endLine,
-              item.kind === "region" ? vscode.FoldingRangeKind.Region : undefined,
-            ),
-        );
+        return provideFastBslFoldingRanges(document);
       },
     }),
+  );
+}
+
+function provideFastBslDocumentSymbols(document: vscode.TextDocument): vscode.DocumentSymbol[] {
+  return parseBslStructure(document.getText()).map(toDocumentSymbol);
+}
+
+function provideFastBslFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
+  return parseBslFoldingRanges(document.getText()).map(
+    (item) =>
+      new vscode.FoldingRange(
+        item.startLine,
+        item.endLine,
+        item.kind === "region" ? vscode.FoldingRangeKind.Region : undefined,
+      ),
   );
 }
 
@@ -558,6 +566,14 @@ function buildClientOptions(
     documentSelector: LSP_BSL_DOCUMENT_SELECTOR,
     outputChannel,
     revealOutputChannelOn: RevealOutputChannelOn.Error,
+    middleware: {
+      provideDocumentSymbols(document) {
+        return provideFastBslDocumentSymbols(document);
+      },
+      provideFoldingRanges(document) {
+        return provideFastBslFoldingRanges(document);
+      },
+    },
     initializationFailedHandler: (error) => {
       const text = error instanceof Error ? error.stack ?? error.message : String(error);
       logLine(`LSP initialization failed:\n${text}`);
