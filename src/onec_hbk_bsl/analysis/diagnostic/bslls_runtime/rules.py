@@ -4847,7 +4847,8 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                     file=context.path,
                     line=fact.line_idx + 1,
                     character=fact.character,
-                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx) + 1,
+                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx)
+                    + 1,
                     end_character=fact.end_character,
                     severity=Severity.ERROR,
                     code=code,
@@ -4862,7 +4863,8 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                     file=context.path,
                     line=fact.line_idx + 1,
                     character=fact.character,
-                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx) + 1,
+                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx)
+                    + 1,
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
@@ -5068,7 +5070,8 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                     file=context.path,
                     line=fact.line_idx + 1,
                     character=fact.character,
-                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx) + 1,
+                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx)
+                    + 1,
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,

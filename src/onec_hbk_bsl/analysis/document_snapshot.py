@@ -148,9 +148,7 @@ _RE_COMMENTED_CODE = re.compile(
     r")",
     re.IGNORECASE,
 )
-_RE_COMMENTED_QUERY_LINE = re.compile(
-    r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|INTO)\b"
-)
+_RE_COMMENTED_QUERY_LINE = re.compile(r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|INTO)\b")
 _RE_COMMENTED_EXAMPLE_MARKER = re.compile(
     r"^(?:Пример|Example)\s*:",
     re.IGNORECASE | re.UNICODE,
@@ -1446,9 +1444,7 @@ class DocumentSnapshot:
             if has_comparison:
                 facts.extend(self._missing_comparison_space_facts(idx, clean))
             if has_arithmetic_ops:
-                facts.extend(
-                    self._missing_arithmetic_space_facts(idx, line, in_str_start)
-                )
+                facts.extend(self._missing_arithmetic_space_facts(idx, line, in_str_start))
             if has_comma:
                 facts.extend(self._missing_comma_space_facts(idx, code_no_comments))
             facts.extend(
@@ -1526,7 +1522,9 @@ class DocumentSnapshot:
         if extra_comma_cols:
             comma_cols = sorted(set(comma_cols) | extra_comma_cols)
         return [
-            LineDiagnosticFact(line_idx, comma_col, comma_col + 1, "Справа от ',' не хватает пробела")
+            LineDiagnosticFact(
+                line_idx, comma_col, comma_col + 1, "Справа от ',' не хватает пробела"
+            )
             for comma_col in comma_cols
         ]
 
@@ -1649,7 +1647,9 @@ class DocumentSnapshot:
             line,
             start,
             token_end,
-            in_str_at_start=False if line[start:token_end] in ",);" else self.line_string_states[line_idx],
+            in_str_at_start=False
+            if line[start:token_end] in ",);"
+            else self.line_string_states[line_idx],
         )
         if in_comment or in_string:
             return None
@@ -1719,9 +1719,7 @@ class DocumentSnapshot:
             line_is_comment = line.lstrip().startswith("//")
             if line_is_comment:
                 comment_text = line.lstrip()[2:].strip()
-            is_query_comment = bool(
-                comment_text and _RE_COMMENTED_QUERY_LINE.match(comment_text)
-            )
+            is_query_comment = bool(comment_text and _RE_COMMENTED_QUERY_LINE.match(comment_text))
             if line_is_comment:
                 if group_start is None:
                     group_start = idx

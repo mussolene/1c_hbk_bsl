@@ -453,7 +453,7 @@ class TestIncrementalIndexerExtended:
         indexer = IncrementalIndexer(index=symbol_index, quiet=True)
 
         assert indexer.index_metadata(str(tmp_path))["objects"] == 1
-        obj_xml.write_text("<Catalog changed=\"true\"/>", encoding="utf-8")
+        obj_xml.write_text('<Catalog changed="true"/>', encoding="utf-8")
         assert indexer.index_metadata(str(tmp_path))["objects"] == 1
 
         assert calls == 2

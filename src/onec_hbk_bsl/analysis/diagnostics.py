@@ -2345,6 +2345,7 @@ _RE_SELF_ASSIGN = re.compile(
     re.IGNORECASE,
 )
 
+
 def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool = False) -> str:
     if not in_string_at_start and '"' not in line and "//" not in line:
         return line

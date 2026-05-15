@@ -1976,9 +1976,7 @@ class TestBsl019CyclomaticComplexity:
         diags = _check(content, tmp_path, max_mccabe_complexity=10)
         assert "BSL019" not in _codes(diags)
 
-    def test_function_call_parentheses_do_not_duplicate_boolean_cost(
-        self, tmp_path: Path
-    ) -> None:
+    def test_function_call_parentheses_do_not_duplicate_boolean_cost(self, tmp_path: Path) -> None:
         content = """\
             Функция Проверка(А, Б)
                 Если Проверить(А И Б) Тогда

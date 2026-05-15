@@ -193,10 +193,7 @@ class IncrementalIndexer:
         fingerprint = self._metadata_fingerprint(config_root)
         if not force:
             cached_state = self.index.get_metadata_state(config_root)
-            if (
-                cached_state is not None
-                and cached_state.get("fingerprint") == fingerprint
-            ):
+            if cached_state is not None and cached_state.get("fingerprint") == fingerprint:
                 logger.debug("Metadata index is up-to-date for %s", config_root)
                 return {
                     "objects": int(cached_state.get("object_count") or 0),
