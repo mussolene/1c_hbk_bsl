@@ -1,5 +1,6 @@
 .vscode/**
 .vscode-test/**
+.agent/**
 src/**
 .gitignore
 tsconfig.json
@@ -12,6 +13,7 @@ package-lock.json
 *.sqlite-journal
 **/*.map
 **/*.ts
+*.vsix
 # Do not use !out/** here — it re-included out/**/*.map (source maps) into the VSIX.
 # README.md, LICENSE, icon.png, syntaxes/, snippets/, language-configuration.json, bin/ — not listed = included
 # Dependencies are bundled into out/extension.js (webpack); do not ship node_modules

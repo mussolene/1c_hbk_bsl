@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 import spellchecker
-from PyInstaller.utils.hooks import collect_data_files, copy_metadata
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 ROOT = Path(SPECPATH).resolve().parent
 SRC_MAIN = ROOT / "src" / "onec_hbk_bsl" / "__main__.py"
@@ -47,6 +47,7 @@ hiddenimports: list = [
     "onec_hbk_bsl.bslls_typo_data",
     "spellchecker",
 ]
+hiddenimports += collect_submodules("onec_hbk_bsl.analysis.diagnostic")
 
 excludes = [
     "setuptools_scm",
