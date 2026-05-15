@@ -540,9 +540,7 @@ class TestHandlerFunctions:
         on_did_change(ls, params)
         assert ls._docs["file:///test.bsl"] == "new content"
 
-    def test_document_symbols_use_open_document_without_index(
-        self, tmp_path, monkeypatch
-    ) -> None:
+    def test_document_symbols_use_open_document_without_index(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
         from onec_hbk_bsl.lsp.server import on_did_open, on_document_symbol

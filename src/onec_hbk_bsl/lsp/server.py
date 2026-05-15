@@ -1231,7 +1231,9 @@ def _open_document_symbols(
 
 def _document_symbol_from_row(row: Any) -> DocumentSymbol:
     """Convert an indexed row or Symbol dataclass to an LSP DocumentSymbol."""
-    get = row.get if isinstance(row, dict) else lambda name, default=None: getattr(row, name, default)
+    get = (
+        row.get if isinstance(row, dict) else lambda name, default=None: getattr(row, name, default)
+    )
     line = max(0, int(get("line", 1)) - 1)
     end_line = max(line, int(get("end_line", line + 1)) - 1)
     character = int(get("character", 0))
