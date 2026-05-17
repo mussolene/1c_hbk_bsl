@@ -7,6 +7,7 @@ so only modified .bsl/.os files are re-parsed on each run.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import subprocess
@@ -25,6 +26,7 @@ from onec_hbk_bsl.indexer.metadata_parser import (
     find_config_root,
     find_edt_configuration_marker,
 )
+from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -159,7 +161,9 @@ class IncrementalIndexer:
 
         return result
 
-    def index_metadata(self, workspace: str, config_root: str | None = None) -> dict:
+    def index_metadata(
+        self, workspace: str, config_root: str | None = None, *, force: bool = False
+    ) -> dict:
         """
         Find and index 1C configuration metadata (XML export) within *workspace*.
 
@@ -167,10 +171,10 @@ class IncrementalIndexer:
             Dict with ``objects`` and ``members`` counts, or ``{"skipped": True}`` if no config found.
         """
         workspace = str(Path(workspace).resolve())
-        config_root = (
-            str(Path(config_root).resolve()) if config_root else find_config_root(workspace)
+        resolved_config_root = (
+            Path(config_root).resolve() if config_root else find_config_root(workspace)
         )
-        if config_root is None:
+        if resolved_config_root is None:
             edt_mdo = find_edt_configuration_marker(workspace)
             if edt_mdo is not None:
                 logger.debug(
@@ -185,10 +189,29 @@ class IncrementalIndexer:
             logger.debug("No 1C config root found in %s — skipping metadata indexing", workspace)
             return {"skipped": True}
 
+        config_root = str(resolved_config_root)
+        fingerprint = self._metadata_fingerprint(config_root)
+        if not force:
+            cached_state = self.index.get_metadata_state(config_root)
+            if cached_state is not None and cached_state.get("fingerprint") == fingerprint:
+                logger.debug("Metadata index is up-to-date for %s", config_root)
+                return {
+                    "objects": int(cached_state.get("object_count") or 0),
+                    "members": int(cached_state.get("member_count") or 0),
+                    "skipped": True,
+                    "reason": "metadata_unchanged",
+                }
+
         logger.info("Indexing 1C metadata from %s", config_root)
         try:
             meta_objects = crawl_config(config_root)
             total_members = self.index.upsert_metadata(meta_objects)
+            self.index.save_metadata_state(
+                config_root=config_root,
+                fingerprint=fingerprint,
+                object_count=len(meta_objects),
+                member_count=total_members,
+            )
             logger.info(
                 "Metadata indexed: %d objects, %d members",
                 len(meta_objects),
@@ -198,6 +221,51 @@ class IncrementalIndexer:
         except Exception as exc:
             logger.error("Metadata indexing failed: %s", exc)
             return {"objects": 0, "members": 0, "error": str(exc)}
+
+    @staticmethod
+    def _metadata_fingerprint(config_root: str) -> str:
+        """
+        Return a cheap fingerprint for Designer XML metadata inputs.
+
+        Uses relative XML paths plus size and nanosecond mtime. This avoids parsing
+        10k+ XML files on every LSP/index warm path while still invalidating when
+        the exported metadata tree changes.
+        """
+        root = Path(config_root)
+        digest = hashlib.blake2b(digest_size=20)
+
+        config_xml = root / "Configuration.xml"
+        IncrementalIndexer._fingerprint_file(digest, root, config_xml)
+
+        for folder_name in FOLDER_TO_KIND:
+            folder = root / folder_name
+            if not folder.is_dir():
+                continue
+            for xml_file in sorted(folder.glob("*.xml")):
+                IncrementalIndexer._fingerprint_file(digest, root, xml_file)
+                forms_dir = folder / xml_file.stem / "Forms"
+                if not forms_dir.is_dir():
+                    continue
+                for form_xml in sorted(forms_dir.glob("*/Ext/Form.xml")):
+                    IncrementalIndexer._fingerprint_file(digest, root, form_xml)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _fingerprint_file(digest: Any, root: Path, path: Path) -> None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return
+        try:
+            rel = path.relative_to(root).as_posix()
+        except ValueError:
+            rel = str(path)
+        digest.update(rel.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        digest.update(str(stat.st_size).encode("ascii"))
+        digest.update(b":")
+        digest.update(str(stat.st_mtime_ns).encode("ascii"))
+        digest.update(b"\n")
 
     def _start_metadata_indexing(self, workspace: str) -> None:
         """Start metadata indexing with single-flight + pending coalescing."""

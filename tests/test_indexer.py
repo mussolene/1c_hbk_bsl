@@ -379,6 +379,85 @@ class TestIncrementalIndexerExtended:
 
         assert find_config_root(tmp_path) == real
 
+    def test_metadata_indexing_skips_unchanged_fingerprint(
+        self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.indexer import incremental
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.metadata_parser import MetaMember, MetaObject
+
+        config = tmp_path / "config"
+        catalog_dir = config / "Catalogs"
+        catalog_dir.mkdir(parents=True)
+        (config / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (catalog_dir / "Контрагенты.xml").write_text("<Catalog/>", encoding="utf-8")
+
+        calls = 0
+
+        def fake_crawl_config(config_root: str) -> list[MetaObject]:
+            nonlocal calls
+            calls += 1
+            return [
+                MetaObject(
+                    name="Контрагенты",
+                    kind="Catalog",
+                    file_path=str(Path(config_root) / "Catalogs" / "Контрагенты.xml"),
+                    members=[
+                        MetaMember(
+                            name="ИНН",
+                            kind="attribute",
+                            parent_name="Контрагенты",
+                            parent_kind="Catalog",
+                        )
+                    ],
+                )
+            ]
+
+        monkeypatch.setattr(incremental, "crawl_config", fake_crawl_config)
+        indexer = IncrementalIndexer(index=symbol_index, quiet=True)
+
+        cold = indexer.index_metadata(str(tmp_path))
+        warm = indexer.index_metadata(str(tmp_path))
+
+        assert cold == {"objects": 1, "members": 1}
+        assert warm == {
+            "objects": 1,
+            "members": 1,
+            "skipped": True,
+            "reason": "metadata_unchanged",
+        }
+        assert calls == 1
+
+    def test_metadata_indexing_reindexes_when_fingerprint_changes(
+        self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.indexer import incremental
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+        from onec_hbk_bsl.indexer.metadata_parser import MetaObject
+
+        config = tmp_path / "config"
+        catalog_dir = config / "Catalogs"
+        catalog_dir.mkdir(parents=True)
+        (config / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        obj_xml = catalog_dir / "Контрагенты.xml"
+        obj_xml.write_text("<Catalog/>", encoding="utf-8")
+
+        calls = 0
+
+        def fake_crawl_config(_config_root: str) -> list[MetaObject]:
+            nonlocal calls
+            calls += 1
+            return [MetaObject(name=f"Контрагенты{calls}", kind="Catalog")]
+
+        monkeypatch.setattr(incremental, "crawl_config", fake_crawl_config)
+        indexer = IncrementalIndexer(index=symbol_index, quiet=True)
+
+        assert indexer.index_metadata(str(tmp_path))["objects"] == 1
+        obj_xml.write_text('<Catalog changed="true"/>', encoding="utf-8")
+        assert indexer.index_metadata(str(tmp_path))["objects"] == 1
+
+        assert calls == 2
+
     def test_get_current_commit_non_git_dir(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 

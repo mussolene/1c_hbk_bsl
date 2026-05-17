@@ -540,6 +540,64 @@ class TestHandlerFunctions:
         on_did_change(ls, params)
         assert ls._docs["file:///test.bsl"] == "new content"
 
+    def test_document_symbols_use_open_document_without_index(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_did_open, on_document_symbol
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        uri = (tmp_path / "unsaved.bsl").as_uri()
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.text_document.text = (
+            "Процедура ОткрытаяПроцедура(Параметр) Экспорт\n"
+            "КонецПроцедуры\n"
+            "\n"
+            "Функция ОткрытаяФункция()\n"
+            "    Возврат 1;\n"
+            "КонецФункции\n"
+        )
+        on_did_open(ls, params)
+
+        symbol_params = MagicMock()
+        symbol_params.text_document.uri = uri
+        symbols = on_document_symbol(ls, symbol_params)
+
+        assert [symbol.name for symbol in symbols] == [
+            "ОткрытаяПроцедура",
+            "ОткрытаяФункция",
+        ]
+        assert symbols[0].detail == "Процедура ОткрытаяПроцедура(Параметр) Экспорт"
+        assert symbols[0].range.start.line == 0
+        assert symbols[1].range.start.line == 3
+
+    def test_document_symbols_reflect_unsaved_changes(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_did_change, on_did_open, on_document_symbol
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        uri = (tmp_path / "changed.bsl").as_uri()
+        open_params = MagicMock()
+        open_params.text_document.uri = uri
+        open_params.text_document.text = "Процедура СтароеИмя()\nКонецПроцедуры\n"
+        on_did_open(ls, open_params)
+
+        change_params = MagicMock()
+        change_params.text_document.uri = uri
+        change = MagicMock()
+        change.text = "Процедура НовоеИмя()\nКонецПроцедуры\n"
+        change_params.content_changes = [change]
+        on_did_change(ls, change_params)
+
+        symbol_params = MagicMock()
+        symbol_params.text_document.uri = uri
+        symbols = on_document_symbol(ls, symbol_params)
+
+        assert [symbol.name for symbol in symbols] == ["НовоеИмя"]
+
     def test_on_did_save_publishes_diagnostics(self, tmp_path, monkeypatch) -> None:
         import threading
         from unittest.mock import MagicMock

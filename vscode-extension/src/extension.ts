@@ -37,6 +37,7 @@ import {
   findExecutableOnPath,
   isExecutable,
 } from "./binaryResolution";
+import { parseBslFoldingRanges, parseBslStructure, type BslStructureItem } from "./bslStructure";
 
 /** Shared log channel (also passed to LanguageClient for stderr/LSP trace). */
 let logChannel: vscode.OutputChannel | undefined;
@@ -150,6 +151,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   logLine("Extension activating…");
 
   const brand = displayName(context);
+  registerBslStructureProviders(context);
 
   // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -212,6 +214,91 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   updateStatusBar();
   const interval = setInterval(updateStatusBar, 30_000);
   context.subscriptions.push({ dispose: () => clearInterval(interval) });
+}
+
+// ---------------------------------------------------------------------------
+// Fast editor-local structure providers
+// ---------------------------------------------------------------------------
+
+const VSCODE_BSL_DOCUMENT_SELECTOR: vscode.DocumentFilter[] = [
+  { scheme: "file", language: "bsl" },
+  { scheme: "file", language: "1c-bsl" },
+  { scheme: "file", language: "1c" },
+  { scheme: "file", pattern: "**/*.bsl" },
+  { scheme: "file", pattern: "**/*.os" },
+];
+
+const LSP_BSL_DOCUMENT_SELECTOR: LanguageClientOptions["documentSelector"] = [
+  { scheme: "file", language: "bsl" },
+  { scheme: "file", language: "1c-bsl" },
+  { scheme: "file", language: "1c" },
+  { scheme: "file", pattern: "**/*.bsl" },
+  { scheme: "file", pattern: "**/*.os" },
+];
+
+function registerBslStructureProviders(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.languages.registerDocumentSymbolProvider(VSCODE_BSL_DOCUMENT_SELECTOR, {
+      provideDocumentSymbols(document) {
+        return provideFastBslDocumentSymbols(document);
+      },
+    }),
+    vscode.languages.registerFoldingRangeProvider(VSCODE_BSL_DOCUMENT_SELECTOR, {
+      provideFoldingRanges(document) {
+        return provideFastBslFoldingRanges(document);
+      },
+    }),
+  );
+}
+
+function provideFastBslDocumentSymbols(document: vscode.TextDocument): vscode.DocumentSymbol[] {
+  return parseBslStructure(document.getText()).map(toDocumentSymbol);
+}
+
+function provideFastBslFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
+  return parseBslFoldingRanges(document.getText()).map(
+    (item) =>
+      new vscode.FoldingRange(
+        item.startLine,
+        item.endLine,
+        item.kind === "region" ? vscode.FoldingRangeKind.Region : undefined,
+      ),
+  );
+}
+
+function toDocumentSymbol(item: BslStructureItem): vscode.DocumentSymbol {
+  const range = new vscode.Range(
+    item.startLine,
+    item.startCharacter,
+    item.endLine,
+    item.endCharacter,
+  );
+  const selectionEnd = item.selectionStartCharacter + item.name.length;
+  const selectionRange = new vscode.Range(
+    item.startLine,
+    item.selectionStartCharacter,
+    item.startLine,
+    selectionEnd,
+  );
+  const symbol = new vscode.DocumentSymbol(
+    item.name,
+    item.detail,
+    toSymbolKind(item.kind),
+    range,
+    selectionRange,
+  );
+  symbol.children.push(...item.children.map(toDocumentSymbol));
+  return symbol;
+}
+
+function toSymbolKind(kind: BslStructureItem["kind"]): vscode.SymbolKind {
+  if (kind === "function") {
+    return vscode.SymbolKind.Function;
+  }
+  if (kind === "region") {
+    return vscode.SymbolKind.Namespace;
+  }
+  return vscode.SymbolKind.Method;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,15 +563,17 @@ function buildClientOptions(
 ): LanguageClientOptions {
   return {
     // Include common 1C extension language ids so LSP binds even if another ext. set the mode.
-    documentSelector: [
-      { scheme: "file", language: "bsl" },
-      { scheme: "file", language: "1c-bsl" },
-      { scheme: "file", language: "1c" },
-      { scheme: "file", pattern: "**/*.bsl" },
-      { scheme: "file", pattern: "**/*.os" },
-    ],
+    documentSelector: LSP_BSL_DOCUMENT_SELECTOR,
     outputChannel,
     revealOutputChannelOn: RevealOutputChannelOn.Error,
+    middleware: {
+      provideDocumentSymbols(document) {
+        return provideFastBslDocumentSymbols(document);
+      },
+      provideFoldingRanges(document) {
+        return provideFastBslFoldingRanges(document);
+      },
+    },
     initializationFailedHandler: (error) => {
       const text = error instanceof Error ? error.stack ?? error.message : String(error);
       logLine(`LSP initialization failed:\n${text}`);

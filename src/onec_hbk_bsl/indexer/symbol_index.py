@@ -124,6 +124,15 @@ CREATE TABLE IF NOT EXISTS meta_members (
 
 CREATE INDEX IF NOT EXISTS idx_meta_members_object ON meta_members(object_id);
 CREATE INDEX IF NOT EXISTS idx_meta_members_name ON meta_members(name_lower);
+
+CREATE TABLE IF NOT EXISTS metadata_state (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    config_root  TEXT NOT NULL DEFAULT '',
+    fingerprint  TEXT NOT NULL DEFAULT '',
+    object_count INTEGER NOT NULL DEFAULT 0,
+    member_count INTEGER NOT NULL DEFAULT 0,
+    indexed_at   REAL NOT NULL
+);
 """
 
 # Recreated after bulk index (must match SCHEMA_SQL trigger bodies).
@@ -280,6 +289,14 @@ class SymbolIndex:
             );
             CREATE INDEX IF NOT EXISTS idx_meta_members_object ON meta_members(object_id);
             CREATE INDEX IF NOT EXISTS idx_meta_members_name ON meta_members(name_lower);
+            CREATE TABLE IF NOT EXISTS metadata_state (
+                id           INTEGER PRIMARY KEY CHECK (id = 1),
+                config_root  TEXT NOT NULL DEFAULT '',
+                fingerprint  TEXT NOT NULL DEFAULT '',
+                object_count INTEGER NOT NULL DEFAULT 0,
+                member_count INTEGER NOT NULL DEFAULT 0,
+                indexed_at   REAL NOT NULL
+            );
         """)
 
     def _migrate_background(self) -> None:
@@ -867,6 +884,45 @@ class SymbolIndex:
                     total_members += len(obj.members)
 
         return total_members
+
+    def get_metadata_state(self, config_root: str) -> dict[str, Any] | None:
+        """Return cached metadata crawl state for *config_root*, if present."""
+        conn = self._conn()
+        row = conn.execute(
+            """
+            SELECT config_root, fingerprint, object_count, member_count, indexed_at
+            FROM metadata_state
+            WHERE id = 1 AND config_root = ?
+            """,
+            (config_root,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def save_metadata_state(
+        self,
+        *,
+        config_root: str,
+        fingerprint: str,
+        object_count: int,
+        member_count: int,
+    ) -> None:
+        """Persist metadata crawl fingerprint and counts."""
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO metadata_state
+                    (id, config_root, fingerprint, object_count, member_count, indexed_at)
+                VALUES (1, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    config_root = excluded.config_root,
+                    fingerprint = excluded.fingerprint,
+                    object_count = excluded.object_count,
+                    member_count = excluded.member_count,
+                    indexed_at = excluded.indexed_at
+                """,
+                (config_root, fingerprint, object_count, member_count, time.time()),
+            )
 
     # ------------------------------------------------------------------
     # Metadata read operations

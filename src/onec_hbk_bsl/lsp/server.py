@@ -170,6 +170,7 @@ from onec_hbk_bsl.analysis.formatter import (
 )
 from onec_hbk_bsl.analysis.lsp_positions import utf16_len
 from onec_hbk_bsl.analysis.platform_api import PlatformApi, get_platform_api
+from onec_hbk_bsl.analysis.symbols import extract_symbols
 from onec_hbk_bsl.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
 from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
@@ -1193,26 +1194,61 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
 def on_document_symbol(ls: BslLanguageServer, params: DocumentSymbolParams) -> list[DocumentSymbol]:
     """Return all symbols defined in the current file."""
     path = _uri_to_path(params.text_document.uri)
-    rows = ls.symbol_index.get_file_symbols(path)
+    content = ls._doc_get(params.text_document.uri)
+    if content is not None:
+        symbols = _open_document_symbols(ls, params.text_document.uri, path, content)
+        if symbols is not None:
+            return symbols
 
-    result: list[DocumentSymbol] = []
-    for row in rows:
-        line = max(0, row["line"] - 1)
-        end_line = max(line, row["end_line"] - 1)
-        sym_range = Range(
-            start=Position(line=line, character=row["character"]),
-            end=Position(line=end_line, character=row["end_character"]),
-        )
-        result.append(
-            DocumentSymbol(
-                name=row["name"],
-                kind=_KIND_MAP.get(row["kind"], SymbolKind.Function),
-                range=sym_range,
-                selection_range=sym_range,
-                detail=row.get("signature") or "",
-            )
-        )
-    return result
+    rows = ls.symbol_index.get_file_symbols(path)
+    return [_document_symbol_from_row(row) for row in rows]
+
+
+def _open_document_symbols(
+    ls: BslLanguageServer,
+    uri: str,
+    path: str,
+    content: str,
+) -> list[DocumentSymbol] | None:
+    """Return symbols for the current in-memory document version.
+
+    VS Code asks ``textDocument/documentSymbol`` for Outline, breadcrumbs, and
+    "Go to Symbol in Editor".  Those views must reflect unsaved edits, so the
+    open document is authoritative; the SQLite index is only a fallback for
+    unopened files or a still-warming large-document cache.
+    """
+    context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+        source_path=path,
+    )
+    if context is None:
+        return None
+    return [_document_symbol_from_row(symbol) for symbol in extract_symbols(context.tree, path)]
+
+
+def _document_symbol_from_row(row: Any) -> DocumentSymbol:
+    """Convert an indexed row or Symbol dataclass to an LSP DocumentSymbol."""
+    get = (
+        row.get if isinstance(row, dict) else lambda name, default=None: getattr(row, name, default)
+    )
+    line = max(0, int(get("line", 1)) - 1)
+    end_line = max(line, int(get("end_line", line + 1)) - 1)
+    character = int(get("character", 0))
+    end_character = int(get("end_character", character + len(str(get("name", "")))))
+    sym_range = Range(
+        start=Position(line=line, character=character),
+        end=Position(line=end_line, character=end_character),
+    )
+    return DocumentSymbol(
+        name=str(get("name", "")),
+        kind=_KIND_MAP.get(str(get("kind", "")), SymbolKind.Function),
+        range=sym_range,
+        selection_range=sym_range,
+        detail=str(get("signature", "") or ""),
+    )
 
 
 # ---------------------------------------------------------------------------

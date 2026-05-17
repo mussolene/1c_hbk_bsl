@@ -148,9 +148,7 @@ _RE_COMMENTED_CODE = re.compile(
     r")",
     re.IGNORECASE,
 )
-_RE_COMMENTED_QUERY_LINE = re.compile(
-    r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|INTO)\b"
-)
+_RE_COMMENTED_QUERY_LINE = re.compile(r"^(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|ПОМЕСТИТЬ|INTO)\b")
 _RE_COMMENTED_EXAMPLE_MARKER = re.compile(
     r"^(?:Пример|Example)\s*:",
     re.IGNORECASE | re.UNICODE,
@@ -191,6 +189,7 @@ _RE_BSL216_ANY_KEYWORD = re.compile(
     re.IGNORECASE,
 )
 _COMPARISON_OPS = ("<=", ">=", "<>", "=", "<", ">")
+_RE_BSL216_COMPARISON_OP = re.compile(r"<=|>=|<>|(?<![<>!])=(?!=)|<|>")
 _BINARY_LHS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
@@ -1436,7 +1435,7 @@ class DocumentSnapshot:
             comment_pos = comment_starts[idx]
             if comment_pos is not None:
                 clean = clean[:comment_pos]
-            has_comparison = any(op in clean for op in _COMPARISON_OPS)
+            has_comparison = "=" in clean or "<" in clean or ">" in clean
             has_arithmetic_ops = any(op in line for op in "+-*/%")
             code_no_comments = code_lines_wo_comments[idx]
             has_comma = "," in code_no_comments
@@ -1445,9 +1444,7 @@ class DocumentSnapshot:
             if has_comparison:
                 facts.extend(self._missing_comparison_space_facts(idx, clean))
             if has_arithmetic_ops:
-                facts.extend(
-                    self._missing_arithmetic_space_facts(idx, line, in_str_start)
-                )
+                facts.extend(self._missing_arithmetic_space_facts(idx, line, in_str_start))
             if has_comma:
                 facts.extend(self._missing_comma_space_facts(idx, code_no_comments))
             facts.extend(
@@ -1470,39 +1467,21 @@ class DocumentSnapshot:
         clean: str,
     ) -> list[LineDiagnosticFact]:
         facts: list[LineDiagnosticFact] = []
-        pos = 0
-        seen_ops: set[tuple[int, str]] = set()
-        while pos < len(clean):
-            op = None
-            for candidate in _COMPARISON_OPS:
-                if clean.startswith(candidate, pos):
-                    op = candidate
-                    break
-            if op is None:
-                pos += 1
-                continue
-            start = pos
-            end = pos + len(op)
-            if op == "=" and (
-                (start > 0 and clean[start - 1] in "<>!")
-                or (end < len(clean) and clean[end] == "=")
-            ):
-                pos += 1
-                continue
+        for match in _RE_BSL216_COMPARISON_OP.finditer(clean):
+            op = match.group(0)
+            start = match.start()
+            end = match.end()
             left_missing = start > 0 and clean[start - 1] not in " \t"
             right_missing = end < len(clean) and clean[end] not in " \t"
-            if left_missing or right_missing:
-                key = (start, op)
-                if key not in seen_ops:
-                    seen_ops.add(key)
-                    if left_missing and right_missing:
-                        msg = f"Слева и справа от '{op}' не хватает пробела"
-                    elif left_missing:
-                        msg = f"Слева от '{op}' не хватает пробела"
-                    else:
-                        msg = f"Справа от '{op}' не хватает пробела"
-                    facts.append(LineDiagnosticFact(line_idx, start, end, msg))
-            pos = end
+            if not left_missing and not right_missing:
+                continue
+            if left_missing and right_missing:
+                msg = f"Слева и справа от '{op}' не хватает пробела"
+            elif left_missing:
+                msg = f"Слева от '{op}' не хватает пробела"
+            else:
+                msg = f"Справа от '{op}' не хватает пробела"
+            facts.append(LineDiagnosticFact(line_idx, start, end, msg))
         return facts
 
     def _missing_arithmetic_space_facts(
@@ -1543,7 +1522,9 @@ class DocumentSnapshot:
         if extra_comma_cols:
             comma_cols = sorted(set(comma_cols) | extra_comma_cols)
         return [
-            LineDiagnosticFact(line_idx, comma_col, comma_col + 1, "Справа от ',' не хватает пробела")
+            LineDiagnosticFact(
+                line_idx, comma_col, comma_col + 1, "Справа от ',' не хватает пробела"
+            )
             for comma_col in comma_cols
         ]
 
@@ -1666,7 +1647,9 @@ class DocumentSnapshot:
             line,
             start,
             token_end,
-            in_str_at_start=False if line[start:token_end] in ",);" else self.line_string_states[line_idx],
+            in_str_at_start=False
+            if line[start:token_end] in ",);"
+            else self.line_string_states[line_idx],
         )
         if in_comment or in_string:
             return None
@@ -1736,9 +1719,7 @@ class DocumentSnapshot:
             line_is_comment = line.lstrip().startswith("//")
             if line_is_comment:
                 comment_text = line.lstrip()[2:].strip()
-            is_query_comment = bool(
-                comment_text and _RE_COMMENTED_QUERY_LINE.match(comment_text)
-            )
+            is_query_comment = bool(comment_text and _RE_COMMENTED_QUERY_LINE.match(comment_text))
             if line_is_comment:
                 if group_start is None:
                     group_start = idx
