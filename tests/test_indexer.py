@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from onec_hbk_bsl.indexer.metadata_parser import MetaMember, MetaObject
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 # ---------------------------------------------------------------------------
@@ -254,6 +255,30 @@ class TestGetStats:
         assert stats["symbol_count"] == 0
         assert stats["file_count"] == 0
         assert stats["index_size_bytes"] == 0
+
+
+class TestMetadataMembers:
+    def test_get_meta_members_returns_more_than_legacy_page_limit(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        members = [
+            MetaMember(
+                name=f"Реквизит{i:03d}",
+                kind="attribute",
+                parent_name="Контрагенты",
+                parent_kind="Catalog",
+            )
+            for i in range(205)
+        ]
+        symbol_index.upsert_metadata(
+            [MetaObject(name="Контрагенты", kind="Catalog", members=members)]
+        )
+
+        result = symbol_index.get_meta_members("Контрагенты")
+
+        assert len(result) == 205
+        assert result[0]["name"] == "Реквизит000"
+        assert result[-1]["name"] == "Реквизит204"
 
 
 class TestSqliteProfile:
