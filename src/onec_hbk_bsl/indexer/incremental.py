@@ -535,7 +535,7 @@ class IncrementalIndexer:
                 timeout=10,
             )
             return result.stdout.strip() if result.returncode == 0 else None
-        except FileNotFoundError, subprocess.TimeoutExpired:
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             return None
 
 

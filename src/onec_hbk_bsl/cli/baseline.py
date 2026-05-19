@@ -55,7 +55,7 @@ def load_baseline(path: str) -> set[tuple[str, str, int]]:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return {(item["file"], item["code"], item["line"]) for item in data}
-    except FileNotFoundError, json.JSONDecodeError, KeyError, TypeError:
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
         return set()
 
 

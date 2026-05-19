@@ -3305,7 +3305,7 @@ def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[Code
         code = _internal_rule_code_from_lsp_diagnostic(diag)
         try:
             diag_line = int(diag.range.start.line)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
 
         if 0 <= diag_line < len(doc_lines):
@@ -3489,7 +3489,7 @@ def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[Code
     # ── 4. Сгенерировать комментарий к методу ──────────────────────────────
     try:
         cursor_line = int(params.range.start.line)
-    except TypeError, ValueError, AttributeError:
+    except (TypeError, ValueError, AttributeError):
         cursor_line = -1
     if 0 <= cursor_line < len(doc_lines):
         doc_block = _generate_doc_comment(doc_lines[cursor_line], cursor_line, doc_lines)

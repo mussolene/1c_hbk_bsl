@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "tree-sitter>=0.24,<0.26",
     "tree-sitter-bsl>=0.1.6",
@@ -58,7 +58,7 @@ source = ["src/onec_hbk_bsl"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "S", "UP"]

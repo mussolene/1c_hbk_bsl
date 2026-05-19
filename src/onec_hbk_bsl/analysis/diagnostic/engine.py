@@ -186,7 +186,7 @@ class DiagnosticEngine:
         } or {"ru"}
         try:
             _cache_limit = int(os.environ.get("BSL_DIAG_CONTENT_CACHE_LIMIT", "64").strip())
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             _cache_limit = 64
         self._content_diag_cache_limit = max(0, _cache_limit)
         # Cache by path and validate content on reuse; avoids per-call hashing on one-shot files.

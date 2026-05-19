@@ -24,7 +24,7 @@ def _run_git(args: list[str], cwd: str) -> list[str]:
         if result.returncode != 0:
             return []
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    except FileNotFoundError, subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return []
 
 

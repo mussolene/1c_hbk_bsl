@@ -45,7 +45,7 @@ def _version_from_git_describe() -> str:
 def main() -> int:
     try:
         ver = _version_from_scm()
-    except RuntimeError, LookupError:
+    except (RuntimeError, LookupError):
         try:
             ver = _version_from_git_describe()
         except (OSError, subprocess.CalledProcessError) as e:
