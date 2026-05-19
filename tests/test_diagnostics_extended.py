@@ -4177,6 +4177,35 @@ class TestBsl254TransferringParameters:
         )
         assert "BSL254" not in _codes(diags)
 
+    def test_external_caller_uses_snapshot_procedure_cache(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import onec_hbk_bsl.analysis.diagnostics as diagnostics_module
+
+        def fail_legacy_text_parse(_content: str) -> list[object]:
+            raise AssertionError("legacy text procedure discovery should not run")
+
+        monkeypatch.setattr(diagnostics_module, "_find_procedures", fail_legacy_text_parse)
+        diags = self._check_indexed(
+            tmp_path,
+            {
+                "Caller.bsl": """\
+                    &НаКлиенте
+                    Процедура Клиент()
+                        Сервер(Документ);
+                    КонецПроцедуры
+                """,
+                "Server.bsl": """\
+                    &НаСервере
+                    Процедура Сервер(Документ)
+                        Возврат;
+                    КонецПроцедуры
+                """,
+            },
+            target="Server.bsl",
+        )
+        assert _codes(diags) == ["BSL254"]
+
 
 # ---------------------------------------------------------------------------
 # BSL218 — MissingTemporaryFileDeletion

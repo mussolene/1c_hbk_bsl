@@ -27,6 +27,7 @@ from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 BSL_SUFFIXES = frozenset({".bsl", ".os"})
 _CODE_TO_BSLLS_NAME = {code: name for name, code in _BSLLS_NAME_TO_CODE.items()}
+_MIN_BSLLS_JAVA_MAJOR = 17
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +72,99 @@ def resolve_bslls_jar(repo_root: Path) -> Path:
     raise FileNotFoundError(
         "BSLLS exec.jar not found; set BSLLS_JAR, download to ~/.cache/onec-hbk-bsl/bslls, "
         "or build .nosync/bsl-language-server"
+    )
+
+
+def _parse_java_major_version(text: str) -> int | None:
+    marker = 'version "'
+    if marker not in text:
+        return None
+    raw = text.split(marker, 1)[1].split('"', 1)[0]
+    parts = raw.split(".")
+    if len(parts) >= 2 and parts[0] == "1":
+        token = parts[1]
+    else:
+        token = parts[0]
+    digits = "".join(ch for ch in token if ch.isdigit())
+    if not digits:
+        return None
+    return int(digits)
+
+
+def _java_major_version(java_path: Path) -> int | None:
+    proc = subprocess.run(
+        [str(java_path), "-version"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return _parse_java_major_version(proc.stderr + proc.stdout)
+
+
+def _candidate_java_paths() -> list[Path]:
+    candidates: list[Path] = []
+
+    env_java = (os.environ.get("BSLLS_JAVA") or "").strip()
+    if env_java:
+        candidates.append(Path(env_java).expanduser())
+
+    java_home = (os.environ.get("JAVA_HOME") or "").strip()
+    if java_home:
+        candidates.append(Path(java_home).expanduser() / "bin" / "java")
+
+    path_java = shutil.which("java")
+    if path_java:
+        candidates.append(Path(path_java))
+
+    java_home_cmd = shutil.which("/usr/libexec/java_home") or "/usr/libexec/java_home"
+    if Path(java_home_cmd).is_file():
+        proc = subprocess.run(
+            [java_home_cmd, "-v", str(_MIN_BSLLS_JAVA_MAJOR)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        home = proc.stdout.strip()
+        if proc.returncode == 0 and home:
+            candidates.append(Path(home) / "bin" / "java")
+
+    candidates.extend(
+        [
+            Path("/opt/homebrew/opt/openjdk/bin/java"),
+            Path("/opt/homebrew/bin/java"),
+            Path("/usr/local/opt/openjdk/bin/java"),
+            Path("/usr/local/bin/java"),
+        ]
+    )
+
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser()
+        try:
+            key = resolved.resolve()
+        except OSError:
+            key = resolved
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(resolved)
+    return unique
+
+
+def resolve_bslls_java() -> Path:
+    checked: list[str] = []
+    for candidate in _candidate_java_paths():
+        if not candidate.is_file():
+            checked.append(f"{candidate}: missing")
+            continue
+        major = _java_major_version(candidate)
+        checked.append(f"{candidate}: {major or 'unknown'}")
+        if major is not None and major >= _MIN_BSLLS_JAVA_MAJOR:
+            return candidate.resolve()
+    raise RuntimeError(
+        "BSLLS requires Java 17+; set BSLLS_JAVA or JAVA_HOME to a modern JDK. "
+        f"Checked: {', '.join(checked)}"
     )
 
 
@@ -431,6 +525,7 @@ def _run_bslls_analyze(
     files: list[Path],
     config_path: Path | None,
 ) -> list[NormalizedDiagnostic]:
+    java_path = resolve_bslls_java()
     with tempfile.TemporaryDirectory(prefix="bslls-parity-diag-") as tmp:
         tmp_root = Path(tmp)
         src_root = tmp_root / "src"
@@ -456,7 +551,7 @@ def _run_bslls_analyze(
             )
 
         cmd = [
-            "java",
+            str(java_path),
             "-jar",
             str(jar_path),
             "analyze",
@@ -487,12 +582,13 @@ def _run_bslls_format(
     workspace_root: Path,
     files: list[Path],
 ) -> dict[str, str]:
+    java_path = resolve_bslls_java()
     with tempfile.TemporaryDirectory(prefix="bslls-parity-format-") as tmp:
         tmp_root = Path(tmp)
         for path in files:
             _copy_file_preserving_rel(path, workspace_root, tmp_root)
         subprocess.run(
-            ["java", "-jar", str(jar_path), "format", "-s", str(tmp_root), "-q"],
+            [str(java_path), "-jar", str(jar_path), "format", "-s", str(tmp_root), "-q"],
             check=True,
             capture_output=True,
             text=True,

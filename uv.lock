@@ -481,6 +481,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "setuptools-scm" },
 ]
 
 [package.metadata]
@@ -497,7 +498,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "setuptools-scm", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "tree-sitter", specifier = ">=0.24,<0.26" },
-    { name = "tree-sitter-bsl", specifier = ">=0.1.6" },
+    { name = "tree-sitter-bsl", git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=57320c14389f281e632d2f8fb83ae41a33147d2e" },
     { name = "watchfiles", specifier = ">=0.24" },
 ]
 provides-extras = ["dev", "build"]
@@ -507,6 +508,7 @@ dev = [
     { name = "pytest", specifier = ">=9.0" },
     { name = "pytest-cov", specifier = ">=7.0" },
     { name = "ruff", specifier = ">=0.9" },
+    { name = "setuptools-scm", specifier = ">=8" },
 ]
 
 [[package]]
@@ -1040,19 +1042,8 @@ wheels = [
 
 [[package]]
 name = "tree-sitter-bsl"
-version = "0.1.6"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/64/2c/0906c7a938b41459b34b2078bc4c72ef6a0ad0a26a3b1ebc93f6a018d68a/tree_sitter_bsl-0.1.6.tar.gz", hash = "sha256:053dfccc6317ee75255a8e36622910a03b42ce2eeeb37cddb611554fd77f41a1", size = 61758, upload-time = "2026-03-10T21:51:07.28Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/60/51f245b1751d8f06370009a6e9dcb81df9e19ab0c166e39445a41b99a89f/tree_sitter_bsl-0.1.6-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:79fff9e2d44bdf8cb725e63cea15c1263f29c1b490333bb0da649b7832f5c8c1", size = 29521, upload-time = "2026-03-10T21:50:56.045Z" },
-    { url = "https://files.pythonhosted.org/packages/03/d3/68eb0e4235bbafee3635f19536d2bcc27a0b1d3228dbcab05a5c745aaa2e/tree_sitter_bsl-0.1.6-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:e0a0b7a5be33374fa6b09cda736bd868621fc38f1294e36beb2b2b06114a5de1", size = 31477, upload-time = "2026-03-10T21:50:57.638Z" },
-    { url = "https://files.pythonhosted.org/packages/58/6e/073677fcfef132adcb80e02c15950cfd584ee1e6a95d5f2c17ff71dfd15a/tree_sitter_bsl-0.1.6-cp310-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:d4da1dbb0e517256fc9037dec5b97eb21fe06381a8d174eb436db1157d63ac13", size = 38733, upload-time = "2026-03-10T21:50:59.254Z" },
-    { url = "https://files.pythonhosted.org/packages/41/85/ed836b6be68cfe3a86d2a6b1e06d33632e2c4258004937b43362ad6477ce/tree_sitter_bsl-0.1.6-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1c6958b9377c24e8183b41edb328cf4d221e37ab9403b9ea886381a65bea8099", size = 39558, upload-time = "2026-03-10T21:51:00.357Z" },
-    { url = "https://files.pythonhosted.org/packages/58/d8/23cd398e26e09b4e766a3866dbc0663bb372791fa4861584b954b24c539d/tree_sitter_bsl-0.1.6-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:8ccce439728d16a5daffe74c73958a8a507a6ae0911d81fe3a53b73dcbf5412e", size = 39251, upload-time = "2026-03-10T21:51:01.448Z" },
-    { url = "https://files.pythonhosted.org/packages/38/14/7fd81e18e829663d174a0a9565f3e7e7814a948c4f2b279cc0eb4f2b033e/tree_sitter_bsl-0.1.6-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:2639b66a06ac685e5d8530cffc4cd80270c839a3954cc80d46b7fbf041ff3459", size = 38709, upload-time = "2026-03-10T21:51:02.719Z" },
-    { url = "https://files.pythonhosted.org/packages/02/0c/269adf5ddbd563dadb72b2d4170c9747e3d6156229cf5350a6836e3cfa96/tree_sitter_bsl-0.1.6-cp310-abi3-win_amd64.whl", hash = "sha256:93cea344182d58d0b92e18b2e038e2c13f095cc0509f0c50134e02d56490433f", size = 33109, upload-time = "2026-03-10T21:51:03.78Z" },
-    { url = "https://files.pythonhosted.org/packages/b0/02/a3afde83d34ab9999d2824d17804d9c33a4cedb21c24ce29b38977155bff/tree_sitter_bsl-0.1.6-cp310-abi3-win_arm64.whl", hash = "sha256:a27c7d367f9a70eb9e14547e438316a85c59bcdbb3ed4f8201d8f29d8f0619b3", size = 31850, upload-time = "2026-03-10T21:51:05.372Z" },
-]
+version = "0.1.7"
+source = { git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=57320c14389f281e632d2f8fb83ae41a33147d2e#57320c14389f281e632d2f8fb83ae41a33147d2e" }
 
 [[package]]
 name = "typing-extensions"

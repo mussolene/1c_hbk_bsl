@@ -2877,7 +2877,11 @@ def _parse_procs_cached(
     if path in cache:
         return cache[path]
     lines = _load_file_lines_cached(path, file_lines_cache) or []
-    cache[path] = _find_procedures("\n".join(lines))
+    content = "\n".join(lines)
+    try:
+        cache[path] = list(build_document_snapshot(path, content=content).procedures)
+    except Exception:
+        cache[path] = _find_procedures(content)
     return cache[path]
 
 

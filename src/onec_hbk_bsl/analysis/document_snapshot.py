@@ -995,6 +995,7 @@ def _find_regions_from_tree(tree: Any) -> list[RegionInfo]:
 
     opens: list[tuple[int, str]] = []
     closes: list[int] = []
+    result: list[RegionInfo] = []
 
     def visit(node: Any) -> None:
         if getattr(node, "type", None) == "preprocessor":
@@ -1012,6 +1013,12 @@ def _find_regions_from_tree(tree: Any) -> list[RegionInfo]:
                     if seen_keyword and child_type == "identifier":
                         region_name = _ts_node_text(child)
                         break
+                if "PREPROC_ENDREGION_KEYWORD" in child_types:
+                    end_idx = node.end_point[0] if getattr(node, "end_point", None) else start_idx + 1
+                    result.append(RegionInfo(name=region_name, start_idx=start_idx, end_idx=end_idx))
+                    for child in getattr(node, "children", []) or []:
+                        visit(child)
+                    return
                 opens.append((start_idx, region_name))
                 return
 
@@ -1028,7 +1035,6 @@ def _find_regions_from_tree(tree: Any) -> list[RegionInfo]:
     events.extend((idx, "close", "") for idx in closes)
     events.sort(key=lambda item: (item[0], 0 if item[1] == "open" else 1))
     stack: list[tuple[str, int]] = []
-    result: list[RegionInfo] = []
     for idx, kind, name in events:
         if kind == "open":
             stack.append((name, idx))

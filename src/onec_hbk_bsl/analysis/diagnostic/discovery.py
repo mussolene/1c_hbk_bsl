@@ -107,6 +107,7 @@ def find_regions_from_tree(tree: Any) -> list[Any]:
 
     opens: list[tuple[int, str]] = []
     closes: list[int] = []
+    result: list[Any] = []
 
     def visit(node: Any) -> None:
         if getattr(node, "type", None) == "preprocessor":
@@ -122,6 +123,12 @@ def find_regions_from_tree(tree: Any) -> list[Any]:
                     if seen_keyword and getattr(c, "type", None) == "identifier":
                         region_name = _diag._ts_node_text(c)
                         break
+                if "PREPROC_ENDREGION_KEYWORD" in child_types:
+                    end_idx = node.end_point[0] if getattr(node, "end_point", None) else start_idx + 1
+                    result.append(_diag._RegionInfo(name=region_name, start_idx=start_idx, end_idx=end_idx))
+                    for child in getattr(node, "children", []):
+                        visit(child)
+                    return
                 opens.append((start_idx, region_name))
                 return
             if "PREPROC_ENDREGION_KEYWORD" in child_types:
@@ -134,7 +141,6 @@ def find_regions_from_tree(tree: Any) -> list[Any]:
 
     closes_sorted = sorted(closes)
     used_closes: set[int] = set()
-    result: list[Any] = []
     for start_idx, name in sorted(opens, key=lambda x: x[0]):
         end_idx = start_idx + 1
         for c in closes_sorted:

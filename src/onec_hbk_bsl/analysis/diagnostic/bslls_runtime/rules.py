@@ -2362,8 +2362,12 @@ class NumberOfValuesInStructureConstructorRule(BsllsDiagnosticRule):
         ]
         if not meaningful:
             return 0
-        comma_count = sum(1 for child in meaningful if getattr(child, "type", None) == ",")
-        return comma_count + 1
+        separator_count = sum(
+            1
+            for child in meaningful
+            if getattr(child, "type", None) in {",", "omitted_argument"}
+        )
+        return separator_count + 1
 
 
 class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
@@ -2738,11 +2742,13 @@ class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
             return []
 
         before_sub = children[:first_sub_index]
-        executable_nodes = [node for node in before_sub if self._is_executable_body_node(node)]
-        if not executable_nodes:
+        executable_spans = [
+            span for node in before_sub if (span := self._executable_body_span(node)) is not None
+        ]
+        if not executable_spans:
             return []
 
-        start_node = executable_nodes[0]
+        start_node, _ = executable_spans[0]
         end_node = self._end_node(before_sub, start_node)
         storage = DiagnosticStorage(context.path)
         _add_node_range(
@@ -2765,20 +2771,46 @@ class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
 
     @classmethod
     def _is_executable_body_node(cls, node: Any) -> bool:
+        return cls._executable_body_span(node) is not None
+
+    @classmethod
+    def _executable_body_span(cls, node: Any) -> tuple[Any, Any] | None:
         node_type = getattr(node, "type", None)
         if node_type in cls._ignored_before_body_types:
-            return False
+            return None
         if node_type in {"ERROR", "error"}:
             text = _ts_node_text(node).strip()
             first = text.split(None, 1)[0].rstrip(";,.")
             if first and "ё" in first.casefold() and first.replace("_", "").isalnum():
-                return False
+                return None
         if node_type != "preprocessor":
-            return True
-        return False
+            return node, node
+
+        skipped_preprocessor_parts = {
+            "PREPROC_REGION_KEYWORD",
+            "PREPROC_ENDREGION_KEYWORD",
+            "PREPROC_IF_KEYWORD",
+            "PREPROC_ELSIF_KEYWORD",
+            "PREPROC_ELSE_KEYWORD",
+            "PREPROC_ENDIF_KEYWORD",
+            "THEN_KEYWORD",
+            "identifier",
+            "expression",
+        }
+        for child in _ts_children(node):
+            if getattr(child, "type", None) in skipped_preprocessor_parts:
+                continue
+            if cls._executable_body_span(child) is not None:
+                return child, node
+        return None
 
     @classmethod
     def _end_node(cls, before_sub: list[Any], start_node: Any) -> Any:
+        for node in before_sub:
+            span = cls._executable_body_span(node)
+            if span is not None and span[0] is start_node:
+                start_node = node
+                break
         try:
             start_index = before_sub.index(start_node)
         except ValueError:
@@ -3375,6 +3407,10 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
             if child_type in {"(", ")", "line_comment", "comment"}:
                 continue
             if child_type == ",":
+                params.append(current)
+                current = None
+                continue
+            if child_type == "omitted_argument":
                 params.append(current)
                 current = None
                 continue

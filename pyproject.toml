@@ -11,7 +11,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "tree-sitter>=0.24,<0.26",
-    "tree-sitter-bsl>=0.1.6",
+    "tree-sitter-bsl @ git+https://github.com/mussolene/tree-sitter-bsl.git@57320c14389f281e632d2f8fb83ae41a33147d2e",
     "watchfiles>=0.24",
     "mcp>=1.27,<2",
     "pygls>=1.3",
@@ -85,4 +85,5 @@ dev = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
     "ruff>=0.9",
+    "setuptools-scm>=8",
 ]

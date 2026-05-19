@@ -1,59 +1,51 @@
-## OACS Repo Workflow
+## OACS / ACS Repository Workflow
 
-For substantial features, refactors, bug fixes, release work, and documentation
-changes in this repository, use OACS/ACS as the durable project memory,
-context, and evidence surface.
+For substantial features, refactors, bug fixes, investigations, and release
+work, use OACS/ACS as the governed local context, evidence, and checkpoint
+layer. Do not create a parallel private task-artifact tree unless the user asks
+for one.
 
 Required sequence:
 
-1. State the task scope and explicit acceptance criteria (`AC1`, `AC2`, ...)
-   before implementation.
-2. Export repo-local ACS state before using ACS:
-   `export OACS_DB="$PWD/.agent/oacs/oacs.db" OACS_PASSPHRASE="<local-passphrase>"`.
-3. Query durable memory first, then build fresh context:
-   `acs memory query --query "<task intent>" --scope project --json` and
-   `acs context build --intent "<task intent>" --scope project --json`.
-4. Treat command outputs, Docker checks, BSLLS oracle results, and runtime
-   checks as evidence with `acs run` or `acs tool ingest-result`.
-5. If evidence should become durable project knowledge, distill it into memory
-   with `acs memory propose`, `acs memory commit`, and `acs memory sharpen`.
-6. Run a fresh check against the current repository state and rerun relevant
-   checks after fixes.
-7. Before every commit, check staged changes and unpushed history for
-   non-project information and sensitive data: no local host paths, `.env`,
-   OACS DB files, credentials, tokens, license data, platform archives, local
-   volumes, or unrelated artifacts.
-8. If checks do not pass, explain the problem, apply the smallest safe fix, and
-   rerun the checks.
+1. State task scope and explicit acceptance criteria (`AC1`, `AC2`, ...).
+2. Ask the reference context gate before building context:
+   `acs context gate --intent repo_development --scope project --task "<task>" --json`.
+   Treat `decision=build` as the signal to continue with context build; treat
+   `decision=skip` as permission to proceed from visible files and user
+   instructions.
+3. Build or inspect repository context through OACS only when the gate says
+   `build` or prior project memory/evidence clearly matters:
+   `acs context build --intent repo_development --scope project --json`.
+4. Run external tools normally. OACS does not schedule tools; it records their
+   canonical results as governed evidence.
+5. Treat command outputs, external retrieval, CI results, package publication,
+   deployment results, and manual verification as evidence:
+   `acs tool ingest-result ...`.
+6. Inspect important evidence with `acs evidence inspect <ev_...> --json`.
+7. If evidence should become durable project knowledge, distill it into memory
+   and attach the evidence ref with the memory lifecycle commands.
+8. Record a checkpoint for each completed iteration with outcome, evidence
+   refs, and next step:
+   `acs checkpoint add ... --evidence <ev_...> --json`.
+9. Run current verification and a leak/secret check before claiming completion.
 
 Hard rules:
 
 - Do not claim completion unless every acceptance criterion is `PASS`.
-- Current code and current command results are the source of truth, not prior
-  chat claims.
-- Use floating context by default. Do not replay, paste, ingest, or forward the
-  full chat transcript as task context. Keep only a compact OACS capsule:
-  current objective, constraints, decisions, touched files, evidence ids or
-  artifact paths, open risks, and next action.
-- After chat compaction, interruption, resume, or subagent handoff, rebuild
-  context from ACS memory/context plus current repository state. Treat chat
-  summaries as hints only until confirmed by ACS or fresh repo/runtime checks.
-- Subagents receive bounded OACS capsules, not raw conversation history. They
-  should return compact findings/evidence suitable for ACS ingestion.
-- Fixes should be the smallest defensible diff.
-- For long iterative work, do not rely only on chat context or compaction
-  summaries. Query ACS at task start, record compact ACS evidence and memory
-  after significant repo/runtime decisions, and query ACS plus current
-  repo/runtime state after any context compaction or resume before continuing.
-- OACS is not the runtime orchestrator. It records memory, context, and
-  evidence around commands executed by the agent through normal shell, Docker,
-  git, and test tools.
-- Treat old `repo-task-proof-loop`, vendored proof-loop skill, and
-  `.agent/tasks/<TASK_ID>` workflow instructions as stale compatibility
-  artifacts, not active policy.
-- Keep secrets out of OACS: no credentials, license data, platform archives,
-  full help dumps, or local-only sensitive paths.
-- Keep this root `AGENTS.md` lean. Put expanded guidance in docs instead of
-  recreating a parallel task-artifact system.
+- Do not claim completion unless current verification, OACS evidence, and an
+  OACS checkpoint exist for the iteration.
+- Verifiers judge current files and current command results, not chat claims.
+- OACS is not the tool orchestrator; it is the governed memory/context/evidence
+  layer.
+- Do not prepend OACS context unconditionally. Use `acs context gate` or an
+  equivalent explicit decision before context build.
+- Standalone tool-result evidence does not enter `ContextCapsule.evidence_refs`
+  by itself. It is projected only through included memories that reference it.
+- Preserve attribution when distilling memory: user instructions, agent
+  decisions, tool observations, project policies, human approvals, derived
+  memory, and system policy are different roles.
+- Do not read, print, or commit `.agent/oacs/key.json`,
+  `.agent/oacs/unlocked.key`, `.agent/oacs`, `.oacs`, local databases,
+  passphrases, or private agent state.
 
 See `docs/oacs-development.md` for repository-specific command examples.
