@@ -154,6 +154,12 @@ def _rule_filter_codes(rules: list[str]) -> set[str]:
     }
 
 
+def _unknown_rule_filter_tokens(rules: list[str]) -> list[str]:
+    from onec_hbk_bsl.analysis.diagnostics import resolve_rule_token_to_code
+
+    return [token for token in _rule_filter_tokens(rules) if not resolve_rule_token_to_code(token)]
+
+
 def _row_rule_code(row: Any) -> str | None:
     from onec_hbk_bsl.analysis.diagnostics import resolve_rule_token_to_code
 
@@ -196,7 +202,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Print full JSON report")
     args = parser.parse_args()
     if args.rule:
-        unknown_rules = sorted(set(_rule_filter_tokens(args.rule)) - _rule_filter_codes(args.rule))
+        unknown_rules = sorted(set(_unknown_rule_filter_tokens(args.rule)))
         if unknown_rules:
             parser.error(f"unknown --rule value(s): {', '.join(unknown_rules)}")
 

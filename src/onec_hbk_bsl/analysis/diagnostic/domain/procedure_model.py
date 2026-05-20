@@ -207,6 +207,7 @@ class ProcedureModel:
         if len(returns) <= max_returns:
             return []
         line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        kind_ru = "Функция" if self.kind == "function" else "Процедура"
         return [
             Diagnostic(
                 file=self.path,
@@ -217,8 +218,8 @@ class ProcedureModel:
                 severity=Severity.WARNING,
                 code="BSL008",
                 message=(
-                    f"{self.kind.capitalize()} '{self.name}' has {len(returns)} "
-                    f"return statements (maximum {max_returns})"
+                    f"{kind_ru} '{self.name}' содержит {len(returns)} операторов Возврат "
+                    f"(максимум {max_returns})"
                 ),
             )
         ]
@@ -264,6 +265,7 @@ class ProcedureModel:
         if has_code:
             return []
         header = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        kind_ru = "Функция" if self.kind == "function" else "Процедура"
         return [
             Diagnostic(
                 file=self.path,
@@ -273,10 +275,7 @@ class ProcedureModel:
                 end_character=len(header),
                 severity=Severity.WARNING,
                 code="BSL042",
-                message=(
-                    f"Exported {self.kind} '{self.name}' has no body. "
-                    "Either implement it or remove the Export keyword."
-                ),
+                message=f"Экспортная {kind_ru.lower()} '{self.name}' не содержит тела",
             )
         ]
 
@@ -466,7 +465,7 @@ class ProcedureModel:
                     end_character=len(header_line.rstrip()),
                     severity=Severity.WARNING,
                     code="BSL062",
-                    message=(f"Parameter '{param_name}' is never used in the method body."),
+                    message=f"Параметр '{param_name}' не используется в теле метода",
                 )
             )
         return diags
@@ -573,10 +572,7 @@ class ProcedureModel:
                     end_character=len(line),
                     severity=Severity.INFORMATION,
                     code="BSL028",
-                    message=(
-                        "Potentially risky call outside Try/Except — "
-                        "consider wrapping in error handling."
-                    ),
+                    message="Потенциально опасный вызов вне блока Попытка/Исключение",
                 )
             )
         return diags

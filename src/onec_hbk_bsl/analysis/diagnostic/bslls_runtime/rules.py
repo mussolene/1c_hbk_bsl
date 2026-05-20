@@ -5172,10 +5172,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                         end_character=len(line),
                         severity=Severity.WARNING,
                         code="BSL052",
-                        message=(
-                            f"Condition is always '{literal}' — "
-                            "this If branch either always or never executes."
-                        ),
+                        message=f"Условие всегда равно '{literal}'",
                     )
                 )
             return diags

@@ -1683,7 +1683,7 @@ class DocumentSnapshot:
                     line_idx=idx,
                     character=match.start(),
                     end_character=match.end(),
-                    message=f"Possible hardcoded credential: {match.group()!r}",
+                    message=f"Возможное хранение секрета в коде: {match.group()!r}",
                 )
             )
         self._hardcoded_credential_facts = facts
@@ -1910,7 +1910,7 @@ class DocumentSnapshot:
                     character=proc.header_col,
                     end_character=len(line_text),
                     message=(
-                        f"Export modifier is not allowed in command/form modules "
+                        f"Модификатор Экспорт запрещен в модулях команд и форм "
                         f"({proc.kind} '{proc.name}')"
                     ),
                 )

@@ -300,11 +300,7 @@ def diagnostics_bsl004_from_tree(path: str, root: Any) -> list[Any]:
                             end_character=0,
                             severity=Severity.WARNING,
                             code="BSL004",
-                            message=(
-                                "Empty exception handler: Except block contains no statements. "
-                                "Add error handling or at least a comment explaining why "
-                                "it is intentionally empty."
-                            ),
+                            message="Наполните блок кодом или удалите его",
                         )
                     )
                     return

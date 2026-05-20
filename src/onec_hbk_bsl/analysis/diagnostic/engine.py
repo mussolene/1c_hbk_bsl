@@ -254,7 +254,7 @@ class DiagnosticEngine:
                     end_character=0,
                     severity=Severity.ERROR,
                     code="BSL001",
-                    message=f"Failed to parse content: {exc}",
+                    message=f"Не удалось разобрать содержимое: {exc}",
                 )
             ]
         diagnostics = self._run_rules(path, content, tree, symbol_index=symbol_index)
@@ -313,7 +313,7 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
-                        message=f"Cannot read file: {exc}",
+                        message=f"Не удалось прочитать файл: {exc}",
                     )
                 ]
 
@@ -329,7 +329,7 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
-                        message=f"Failed to parse file: {exc}",
+                        message=f"Не удалось разобрать файл: {exc}",
                     )
                 ]
         else:
@@ -345,7 +345,7 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
-                        message=f"Cannot read file: {exc}",
+                        message=f"Не удалось прочитать файл: {exc}",
                     )
                 ]
         return self._run_rules(path, content, tree, symbol_index=symbol_index)
