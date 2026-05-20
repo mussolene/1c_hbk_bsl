@@ -309,6 +309,62 @@ class TestBsl237RedundantAccessToObjectParity:
         diags = DiagnosticEngine(select={"BSL237"}).check_file(str(path))
         assert "BSL237" not in _codes(diags)
 
+    def test_direct_this_object_method_call_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Сформировать()
+                Макет = ЭтотОбъект.ПолучитьМакет("СхемаВыгрузки");
+            КонецПроцедуры
+        """
+        path = tmp_path / "Reports" / "Тест" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL237"}).check_file(str(path))
+        assert "BSL237" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
+# BSL265 — UselessTernaryOperator
+# ---------------------------------------------------------------------------
+
+
+class TestBsl265UselessTernaryOperatorParity:
+    def test_boolean_literal_branch_with_boolean_member_is_reported(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Проверить()
+                УсловиеВыполнено = ?(НастройкиКС.Безусловно, Истина, ДанныеКС.ТипПлательщика1);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL265"})
+        bsl265 = [d for d in diags if d.code == "BSL265"]
+        assert len(bsl265) == 1
+        assert bsl265[0].line == 2
+
+    def test_boolean_literal_branch_with_boolean_call_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Проверить()
+                Если ?(СтрНайти(Узел.Обязательность, "О") <> 0,
+                    РегламентированнаяОтчетность.ИмеютсяАналогичныеСоседниеУзлыКлюч(Узел), Истина) Тогда
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL265"})
+        assert "BSL265" in _codes(diags)
+
+    def test_boolean_literal_branch_with_non_boolean_value_is_clean(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Проверить()
+                А = ?(Б = 1, True, 1);
+                Б = ?(Б = 0, 0, False);
+                БулевоЗначение = ?(ЗначениеЗаполнено(СсылкаНаСправочник), СсылкаНаСправочник.БулевоПоле, Ложь);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL265"})
+        assert "BSL265" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL175 / BSL176 / BSL177 / BSL179 / BSL195 — deprecated API parity

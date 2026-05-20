@@ -1579,11 +1579,26 @@ class UselessTernaryOperatorRule(BsllsDiagnosticRule):
     _boolean_operand_re = re.compile(
         r"^\s*(?:Истина|True|Ложь|False)\s*$", re.IGNORECASE | re.UNICODE
     )
+    _simple_member_re = re.compile(r"^\s*[\wА-Яа-яЁё]+(?:\.[\wА-Яа-яЁё]+)+\s*$", re.UNICODE)
+    _boolean_expr_re = re.compile(
+        r"(<>\s*0|=\s*(?:Истина|True|Ложь|False)\b|"
+        r"\b(?:И|And|ИЛИ|Or|НЕ|Not)\b|"
+        r"(?:^|\.)\s*(?:Имеется|Имеются|Есть|Заполнено|Пустая|Пустой|Is|Has)\w*\s*\()",
+        re.IGNORECASE | re.UNICODE,
+    )
     _comment_re = re.compile(r"^\s*//")
 
     @classmethod
     def _is_boolean_operand(cls, text: str) -> bool:
         return bool(cls._boolean_operand_re.match(text))
+
+    @classmethod
+    def _is_boolean_expression(cls, text: str) -> bool:
+        return bool(cls._boolean_expr_re.search(text))
+
+    @classmethod
+    def _is_simple_member_access(cls, text: str) -> bool:
+        return bool(cls._simple_member_re.match(text))
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
@@ -1600,10 +1615,20 @@ class UselessTernaryOperatorRule(BsllsDiagnosticRule):
             if len(parts) < 3:
                 continue
             condition_is_bool = self._is_boolean_operand(parts[0])
-            both_branches_bool = self._is_boolean_operand(parts[1]) and self._is_boolean_operand(
-                parts[2]
-            )
-            if condition_is_bool or both_branches_bool:
+            then_is_bool = self._is_boolean_operand(parts[1])
+            else_is_bool = self._is_boolean_operand(parts[2])
+            both_branches_bool = then_is_bool and else_is_bool
+            one_boolean_branch_with_boolean_value = (
+                then_is_bool
+                and (
+                    self._is_boolean_expression(parts[2])
+                    or (
+                        self._is_simple_member_access(parts[0])
+                        and self._is_simple_member_access(parts[2])
+                    )
+                )
+            ) or (else_is_bool and self._is_boolean_expression(parts[1]))
+            if condition_is_bool or both_branches_bool or one_boolean_branch_with_boolean_value:
                 storage.add_range(
                     code=self.code,
                     line=span.line,

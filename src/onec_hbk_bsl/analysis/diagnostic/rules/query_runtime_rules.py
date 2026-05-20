@@ -554,6 +554,9 @@ def run_bsl237_redundant_access_to_object(path: str, lines: list[str]) -> list[A
             clean = clean[:comment_pos]
         for pattern in patterns:
             for match in pattern.finditer(clean):
+                tail = clean[match.end() :]
+                if re.match(r"\s*\w+\s*\(", tail, re.IGNORECASE | re.UNICODE):
+                    continue
                 diags.append(
                     _diag.Diagnostic(
                         file=path,
