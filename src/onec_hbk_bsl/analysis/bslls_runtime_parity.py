@@ -353,12 +353,23 @@ def diff_diagnostics(
     ours: list[NormalizedDiagnostic],
     bslls: list[NormalizedDiagnostic],
 ) -> dict[str, Any]:
-    ours_by_key = {
-        (d.file, d.line, d.character, d.end_line, d.end_character, d.code): d for d in ours
-    }
-    bslls_by_key = {
-        (d.file, d.line, d.character, d.end_line, d.end_character, d.code): d for d in bslls
-    }
+    def identity_key(
+        diag: NormalizedDiagnostic,
+    ) -> tuple[str, int, int, int, int, str] | tuple[str, int, int, int, int, str, str]:
+        base = (
+            diag.file,
+            diag.line,
+            diag.character,
+            diag.end_line,
+            diag.end_character,
+            diag.code,
+        )
+        if diag.code == "Typo":
+            return (*base, diag.message_norm)
+        return base
+
+    ours_by_key = {identity_key(d): d for d in ours}
+    bslls_by_key = {identity_key(d): d for d in bslls}
     ours_keys = set(ours_by_key)
     bslls_keys = set(bslls_by_key)
 

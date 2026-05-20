@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from onec_hbk_bsl.analysis.bsl_typo.lexicon import CODE_TOKEN_EXACT_IGNORE
+from onec_hbk_bsl.analysis.bsl_typo.lexicon import CODE_TOKEN_EXACT_IGNORE, SOURCE_TYPO_TOKENS
 from onec_hbk_bsl.analysis.bsl_typo.models import SpellCandidate
 from onec_hbk_bsl.analysis.bsl_typo.tokenization import contains_cyrillic_letter
 
@@ -79,6 +79,7 @@ def collect_spell_candidates(*, tree: Any) -> list[SpellCandidate]:
             )
 
     candidates.extend(_collect_forced_method_candidates(source_bytes))
+    candidates.extend(_collect_forced_source_token_candidates(source_bytes))
     return candidates
 
 
@@ -163,6 +164,38 @@ def _collect_forced_method_candidates(source_bytes: bytes) -> list[SpellCandidat
                 kind="method",
             )
         )
+    return result
+
+
+def _collect_forced_source_token_candidates(source_bytes: bytes) -> list[SpellCandidate]:
+    source_text = source_bytes.decode("utf-8", errors="replace")
+    result: list[SpellCandidate] = []
+    for token in SOURCE_TYPO_TOKENS:
+        token_re = re.compile(
+            rf"^\s*(?:Перем|Var)\s+(?P<name>[A-Za-zА-Яа-яЁё_]*{re.escape(token)})\b",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        for match in token_re.finditer(source_text):
+            start = match.start("name")
+            end = match.end("name")
+            line, character = _line_char_from_byte_offset(
+                source_bytes,
+                len(source_text[:start].encode("utf-8")),
+            )
+            end_line, end_character = _line_char_from_byte_offset(
+                source_bytes,
+                len(source_text[:end].encode("utf-8")),
+            )
+            result.append(
+                SpellCandidate(
+                    text=match.group("name"),
+                    line=line,
+                    character=character,
+                    end_line=end_line,
+                    end_character=end_character,
+                    kind="code",
+                )
+            )
     return result
 
 

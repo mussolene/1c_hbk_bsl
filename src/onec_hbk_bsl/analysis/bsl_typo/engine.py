@@ -151,14 +151,9 @@ def check_tree_for_typos(
     }
 
     issues: list[SpellIssue] = []
-    seen_candidates: set[int] = set()
     for candidate, part, normalized, forced in candidate_parts:
-        candidate_key = id(candidate)
-        if candidate_key in seen_candidates:
-            continue
         if forced or checked.get(normalized, False):
             issues.append(SpellIssue(word=part, candidate=candidate))
-            seen_candidates.add(candidate_key)
             continue
     return issues
 
@@ -169,7 +164,8 @@ def _iter_candidate_parts(
 ) -> list[tuple[SpellCandidate, str, str, bool]]:
     result: list[tuple[SpellCandidate, str, str, bool]] = []
     for candidate in candidates:
-        if candidate.text.casefold() in cfg.words_to_ignore:
+        candidate_normalized = candidate.text.casefold()
+        if candidate_normalized in cfg.words_to_ignore and candidate_normalized not in KNOWN_TYPO_TOKENS:
             continue
         for part in split_by_character_type_camel_case(candidate.text):
             normalized = part.casefold()

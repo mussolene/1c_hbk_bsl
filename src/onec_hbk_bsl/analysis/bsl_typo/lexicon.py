@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-CODE_TOKEN_EXACT_IGNORE = frozenset({"знач", "перем"})
+CODE_TOKEN_EXACT_IGNORE = frozenset(
+    {
+        "знач",
+        "перем",
+        "произв",
+    }
+)
 
 # Stable BSL/domain vocabulary that is valid in business code but is often
 # absent from generic Russian spell dictionaries.
@@ -10,11 +16,9 @@ DOMAIN_TOKEN_IGNORE = frozenset(
         "наим",
         "исх",
         "физ",
-        "снилс",
         "снилc",
         "автозаполнение",
         "гражд",
-        "колво",
         "корр",
         "пров",
         "иностр",
@@ -22,6 +26,7 @@ DOMAIN_TOKEN_IGNORE = frozenset(
         "человеко",
         "гражданско",
         "cумма",
+        "cумму",
         "таб",
         "орг",
         "предст",
@@ -66,6 +71,10 @@ DOMAIN_TOKEN_IGNORE = frozenset(
         "нулевка",
         "салатовый",
         "субконто",
+        "произв",
+        "посл",
+        "стат",
+        "декапитализировать",
     }
 )
 
@@ -96,13 +105,14 @@ KNOWN_TYPO_TOKENS = frozenset(
         "минморфлота",
         "росприроднадзора",
         "физлица",
-        "юрлица",
-        "декапитализировать",
-        "субконто",
         "штрихкода",
+        "штрихкодом",
         "многострочность",
         "возр",
         "неотрицательность",
         "гггг",
+        "расшифровкиформулы",
     }
 )
+
+SOURCE_TYPO_TOKENS = frozenset({"расшифровкиформулы"})
