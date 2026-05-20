@@ -77,6 +77,8 @@ def test_bsl148_anchor_points_to_function_identifier(tmp_path: Path) -> None:
         "Функция Тест(Флаг)\n"
         "    Если Флаг Тогда\n"
         "        Возврат 1;\n"
+        "    ИначеЕсли Не Флаг Тогда\n"
+        "        Возврат 0;\n"
         "    КонецЕсли;\n"
         "КонецФункции\n"
     )
@@ -89,6 +91,22 @@ def test_bsl148_anchor_points_to_function_identifier(tmp_path: Path) -> None:
     assert diags[0].line == 1
     assert diags[0].character == 8
     assert diags[0].end_character > diags[0].character
+
+
+def test_bsl148_simple_trailing_if_without_else_is_not_reported(tmp_path: Path) -> None:
+    content = (
+        "Функция Тест(Флаг)\n"
+        "    Если Флаг Тогда\n"
+        "        Возврат 1;\n"
+        "    КонецЕсли;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "simple_trailing_if.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert diags == []
 
 
 def test_bsl148_try_except_with_guaranteed_returns_is_not_reported(tmp_path: Path) -> None:

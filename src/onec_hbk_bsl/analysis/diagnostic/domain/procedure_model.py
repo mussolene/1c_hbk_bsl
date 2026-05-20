@@ -370,6 +370,7 @@ class ProcedureModel:
         while block_start > 0 and bsl215_comment_line_re.match(lines[block_start - 1]):
             block_start -= 1
         comment_block = lines[block_start : block_end + 1]
+        legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", self.path))
         if any(re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block):
             return []
         if len(comment_block) == 1:
@@ -401,22 +402,33 @@ class ProcedureModel:
                 type_text = type_text.rstrip()
                 if type_text.endswith(","):
                     return True
+                if legacy_doc_path and type_text.endswith("-"):
+                    type_text = type_text[:-1].rstrip()
                 if type_text.endswith(":"):
                     type_text = type_text[:-1].rstrip()
                 elif type_text.rstrip() != type_text.rstrip(".;"):
                     return False
                 if re.fullmatch(
-                    r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)",
+                    r"(?:Массив|Array)\s+(?:Из|Of)\s+[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*",
                     type_text,
                     re.IGNORECASE,
                 ):
-                    return True
+                    return legacy_doc_path or bool(
+                        re.fullmatch(
+                            r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)",
+                            type_text,
+                            re.IGNORECASE,
+                        )
+                    )
                 if re.search(r"\b(?:или|or|элементов|element)\b", type_text, re.IGNORECASE):
                     return False
                 if re.search(r"[A-Za-zА-ЯЁа-яё0-9_]\s+[A-Za-zА-ЯЁа-яё0-9_]", type_text):
                     return False
                 type_name = r"[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*"
-                return bool(re.fullmatch(rf"{type_name}(?:\s*,\s*{type_name})*", type_text))
+                return bool(
+                    re.fullmatch(rf"{type_name}(?:\s*,\s*{type_name})*", type_text)
+                    or (legacy_doc_path and re.fullmatch(r"[a-zа-яё]+", type_text))
+                )
 
             for cl in return_section_lines:
                 stripped = cl.strip()
@@ -427,7 +439,7 @@ class ProcedureModel:
                 if re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE):
                     has_valid_return_entry = True
                     break
-                entry = re.match(r"^\s*//[ ]{1,4}(?P<text>\S.*)$", cl)
+                entry = re.match(r"^\s*//[ \t]{1,4}(?P<text>\S.*)$", cl)
                 if not entry:
                     continue
                 text = entry.group("text").strip()
@@ -813,6 +825,44 @@ class ProcedureModel:
                 return False
             return False
 
+        def add_month_numeric_arg_spans(code: str) -> list[tuple[int, int, str]]:
+            spans: list[tuple[int, int, str]] = []
+            if not re.search(r"\b(?:Новый|New)\s+(?:Структура|Structure)\b", code, re.IGNORECASE):
+                return spans
+            for call in re.finditer(r"\b(?:ДобавитьМесяц|AddMonth)\s*\(", code, re.IGNORECASE):
+                open_paren = call.end() - 1
+                depth = 0
+                close_paren = -1
+                for pos in range(open_paren, len(code)):
+                    if code[pos] == "(":
+                        depth += 1
+                    elif code[pos] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            close_paren = pos
+                            break
+                if close_paren < 0:
+                    continue
+                args = split_top_level_args(code[open_paren + 1 : close_paren])
+                if len(args) < 2:
+                    continue
+                arg_start, arg_end, arg_text = args[1]
+                if _BSL029_SIMPLE_NUMBER_RE.fullmatch(arg_text) is None:
+                    continue
+                value = arg_text.strip()
+                if value.startswith("-"):
+                    continue
+                leading = len(arg_text) - len(arg_text.lstrip())
+                trailing = len(arg_text.rstrip())
+                spans.append(
+                    (
+                        open_paren + 1 + arg_start + leading,
+                        open_paren + 1 + arg_start + trailing,
+                        value,
+                    )
+                )
+            return spans
+
         query_line_indices: set[int] = set()
         if snapshot is not None:
             for block in getattr(snapshot, "query_text_blocks", []) or []:
@@ -859,6 +909,52 @@ class ProcedureModel:
                 continue
             if simple_assign_re.match(code_part):
                 continue
+            if ".ШиринаКолонки" in code_part and re.search(
+                r"\.\s*ШиринаКолонки\s*=\s*-?[0-9]+(?:\.[0-9]+)?\s*;?\s*$",
+                code_part,
+                re.IGNORECASE,
+            ):
+                for area_match in re.finditer(
+                    r"\.\s*Область\s*\(\s*\d+\s*,\s*(?P<value>\d+)\s*\)",
+                    code_part,
+                    re.IGNORECASE,
+                ):
+                    if area_match.group("value") == "1":
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=i + 1,
+                            character=area_match.start("value"),
+                            end_line=i + 1,
+                            end_character=area_match.end("value"),
+                            severity=Severity.INFORMATION,
+                            code="BSL029",
+                            message=(
+                                "Создайте константу с понятным названием, "
+                                f'присвойте ей значение "{area_match.group("value")}" и используйте '
+                                "эту константу вместо магического числа."
+                            ),
+                        )
+                    )
+                continue
+            for start, end, value in add_month_numeric_arg_spans(code_part):
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=i + 1,
+                        character=start,
+                        end_line=i + 1,
+                        end_character=end,
+                        severity=Severity.INFORMATION,
+                        code="BSL029",
+                        message=(
+                            "Создайте константу с понятным названием, "
+                            f'присвойте ей значение "{value}" и используйте '
+                            "эту константу вместо магического числа."
+                        ),
+                    )
+                )
             code_part = _BSL029_CONTAINER_NEW_RE.sub(
                 "Новый Структура()",
                 code_part,

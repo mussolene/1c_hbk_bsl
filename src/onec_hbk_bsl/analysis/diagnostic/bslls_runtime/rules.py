@@ -3495,6 +3495,16 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
             name in cls._error_info_names for name in call_names_cf
         ):
             return True
+        if check_assignment and any(name in cls._detail_error_names for name in call_names_cf):
+            for ident in cls._identifiers(expr):
+                assignment_expr = cls._first_assignment_expr(block_roots, ident)
+                if assignment_expr is None:
+                    continue
+                assigned_call_names = [
+                    cls._method_name(call).casefold() for call in cls._method_calls(assignment_expr)
+                ]
+                if any(name in cls._error_info_names for name in assigned_call_names):
+                    return True
         if any(
             name in cls._simple_error_names or name in cls._brief_error_names
             for name in call_names_cf
@@ -3546,6 +3556,17 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
         return (
             text if text and re.fullmatch(r"[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*", text) else None
         )
+
+    @staticmethod
+    def _identifiers(expr: Any) -> list[str]:
+        result: list[str] = []
+        for node in _ts_walk(expr):
+            if getattr(node, "type", None) not in {"identifier", "member"}:
+                continue
+            text = _ts_node_text(node).strip()
+            if re.fullmatch(r"[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*", text):
+                result.append(text)
+        return result
 
     @staticmethod
     def _first_assignment_expr(block_roots: list[Any], var_name: str) -> Any | None:
@@ -3760,11 +3781,12 @@ class WrongUseFunctionProceedWithCallRule(BsllsDiagnosticRule):
 class TryNumberRule(BsllsDiagnosticRule):
     code = "BSL255"
     message = "Не следует использовать исключения для приведения значения к типу"
+    _NUMBER_CALL_RE = re.compile(r"\b(?:Число|Number)\s*\(", re.IGNORECASE)
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
-            return []
+            return self._regex_fallback(context)
         global_calls, call_starts, _proc_nodes, try_nodes = (
             WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
         )
@@ -3787,6 +3809,55 @@ class TryNumberRule(BsllsDiagnosticRule):
                     character=int(call["character"]),
                     end_line=line,
                     end_character=_point_char(context.lines, call["node"].end_point),
+                )
+        existing = {(d.line, d.character) for d in storage.diagnostics}
+        for diag in self._regex_fallback(context):
+            if (diag.line, diag.character) not in existing:
+                storage.diagnostics.append(diag)
+        return storage.diagnostics
+
+    @classmethod
+    def _regex_fallback(cls, context: BsllsDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        try_depth = 0
+        in_try_body_stack: list[bool] = []
+        for line_idx, line in enumerate(context.lines):
+            code = line.split("//", 1)[0].rstrip()
+            if re.match(r"^\s*(?:Попытка|Try)\b", code, re.IGNORECASE):
+                try_depth += 1
+                in_try_body_stack.append(True)
+                continue
+            if try_depth and re.match(r"^\s*(?:Исключение|Except)\b", code, re.IGNORECASE):
+                in_try_body_stack[-1] = False
+                continue
+            if re.match(r"^\s*(?:КонецПопытки|EndTry)\b", code, re.IGNORECASE):
+                if try_depth:
+                    try_depth -= 1
+                    in_try_body_stack.pop()
+                continue
+            if not try_depth or not any(in_try_body_stack):
+                continue
+            for match in cls._NUMBER_CALL_RE.finditer(code):
+                open_paren = match.end() - 1
+                depth = 0
+                end = len(code.rstrip().rstrip(";"))
+                for pos in range(open_paren, len(code)):
+                    char = code[pos]
+                    if char == "(":
+                        depth += 1
+                    elif char == ")":
+                        depth -= 1
+                        if depth == 0:
+                            end = pos + 1
+                            break
+                storage.add_range(
+                    code=cls.code,
+                    message=cls.message,
+                    severity=Severity.WARNING,
+                    line=line_idx,
+                    character=match.start(),
+                    end_line=line_idx,
+                    end_character=end,
                 )
         return storage.diagnostics
 

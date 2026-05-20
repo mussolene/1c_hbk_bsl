@@ -46,6 +46,8 @@ def _field_should_be_skipped(field_text: str) -> bool:
     stripped = field_text.strip().rstrip(";")
     if not stripped or stripped == "*" or re.match(r"^\w+\.\*$", stripped, re.UNICODE):
         return True
+    if '""' in stripped:
+        return True
     return bool(re.search(r"\b(?:ВЫБОР|CASE)\b", stripped, re.IGNORECASE))
 
 

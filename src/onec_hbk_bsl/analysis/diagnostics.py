@@ -305,7 +305,10 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL173",
         "BSL171",
         "BSL204",
+        "BSL004",
+        "BSL255",
         "BSL179",
+        "BSL181",
         "BSL253",
         "BSL260",
         "BSL265",
@@ -3482,8 +3485,10 @@ def _bsl208_word_is_standard_tech_name(word: str) -> bool:
 _RE_STMT_NO_SEMI = re.compile(
     r"^\s*(?:"
     r"(?:\w+(?:\.\w+)*)\s*\([^)]*\)"  # method call
+    r"|(?:\w+(?:\.\w+)*)\s*\(.*\)"  # method call with nested calls
     r"|(?:\w+(?:\.\w+)*)\s*=\s*\S.*"  # assignment with RHS
     r"|(?:Возврат|Return)\s+\S.*"  # return with value
+    r"|(?:Продолжить|Continue|Прервать|Break)"  # control statement
     r")\s*$",
     re.IGNORECASE,
 )

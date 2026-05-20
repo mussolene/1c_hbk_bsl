@@ -130,6 +130,8 @@ def run_bsl220_235_269_query_text_diagnostics(
             if "BSL220" in enabled:
                 multi_match = re.search(r'"{4,}', content)
                 if multi_match:
+                    if _query_block_has_escaped_empty_comparison_tail(content):
+                        continue
                     run = multi_match.group(0)
                     if len(run) == 4:
                         continue
@@ -203,6 +205,8 @@ def run_bsl220_235_269_query_text_diagnostics(
                 if "BSL220" in enabled:
                     multi_match = re.search(r'"{4,}', content)
                     if multi_match:
+                        if _query_block_has_escaped_empty_comparison_tail(content):
+                            continue
                         run = multi_match.group(0)
                         if len(run) == 4:
                             continue

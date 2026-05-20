@@ -206,6 +206,10 @@ class ModuleModel:
             return code
 
         def missing_semicolon_anchor(code_part: str) -> tuple[int, int]:
+            if re.match(r"^\s*(?:И|Или|AND|OR)\b", code_part, re.IGNORECASE):
+                string_matches = list(double_quoted_string_re.finditer(code_part))
+                if string_matches and string_matches[-1].end() == len(code_part.rstrip()):
+                    return string_matches[-1].start(), string_matches[-1].end()
             m_return = re.match(r"^(\s*(?:Возврат|Return)\s+)\S", code_part, re.IGNORECASE)
             if m_return:
                 if code_part.rstrip().endswith(")"):
@@ -292,7 +296,11 @@ class ModuleModel:
                     continuation_re.match(next_sig) or continuation_prefix_re.match(next_sig)
                 ):
                     continue
-                if stmt_no_semi_re.match(code_part):
+                if stmt_no_semi_re.match(code_part) or (
+                    continuation_prefix_re.match(code_part)
+                    and next_sig is not None
+                    and terminal_end_kw_re.match(next_sig)
+                ):
                     col, end_col = missing_semicolon_anchor(code_part)
                     diags.append(
                         Diagnostic(
@@ -327,7 +335,7 @@ class ModuleModel:
             code_masked = code_without_comments_and_strings(code_part)
             if code_masked.count("(") > code_masked.count(")"):
                 continue
-            if not stmt_no_semi_re.match(code_part):
+            if not stmt_no_semi_re.match(code_part) and not continuation_prefix_re.match(code_part):
                 continue
             next_sig = None
             for j in range(idx + 1, len(lines)):
@@ -467,6 +475,8 @@ class ModuleModel:
                     continue
                 line_idx = node.start_point[0]
                 line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                if "|" not in line_text and line_text.count('"') >= 4:
+                    continue
                 prev_line = lines[line_idx - 1] if line_idx > 0 else ""
                 if re.search(r"\+\s*\"", line_text) or re.search(r"\"\s*\+", line_text):
                     continue
@@ -507,10 +517,13 @@ class ModuleModel:
                     and (
                         re.search(r"\+\s*\"", lines[diag.line - 1])
                         or re.search(r"\"\s*\+", lines[diag.line - 1])
+                        or ("|" not in lines[diag.line - 1] and lines[diag.line - 1].count('"') >= 4)
                     )
                 )
             ]
         for idx, line in enumerate(lines):
+            if "|" not in line and line.count('"') >= 4:
+                continue
             if re.search(r"\+\s*\"", line) or re.search(r"\"\s*\+", line):
                 continue
             match = adjacent_literals_re.search(line)
@@ -1264,34 +1277,63 @@ class ModuleModel:
                     )
                 )
             if "BSL181" in enabled_set:
-                seen_inserts: set[tuple[str, str, str]] = set()
+                seen_inserts: dict[tuple[str, str], str] = {}
+                control_depth = 0
                 for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
                     line = clean_lines[idx]
+                    stripped_line = line.strip()
+                    if re.match(
+                        r"^(?:КонецЕсли|EndIf|КонецПопытки|EndTry|КонецЦикла|EndDo)\b",
+                        stripped_line,
+                        re.IGNORECASE,
+                    ):
+                        control_depth = max(0, control_depth - 1)
                     for match in re.finditer(
-                        r"\b(?P<target>\w+)\.(?P<method>Добавить|Add|Вставить|Insert)\s*\((?P<arg>[^)]*)\)",
+                        r"(?<!\.)\b(?P<target>\w+)\.(?P<method>Вставить|Insert)\s*\("
+                        r"(?P<arg>\"[^\"]*\"|(?:КодСимвола|CharCode)\s*\([^)]*\))\s*(?:,|\))",
                         line,
                         re.IGNORECASE,
                     ):
-                        key = (
-                            match.group("target").casefold(),
-                            match.group("method").casefold(),
-                            re.sub(r"\s+", "", match.group("arg")).casefold(),
-                        )
-                        if key in seen_inserts:
+                        target = match.group("target")
+                        arg = match.group("arg").strip()
+                        arg_key = re.sub(r"\s+", "", arg).casefold()
+                        if not (
+                            re.fullmatch(r'"[^"]*"', arg)
+                            or re.fullmatch(
+                                r"(?:КодСимвола|CharCode)\s*\(\s*\"[^\"]*\"\s*\)",
+                                arg,
+                                re.IGNORECASE,
+                            )
+                        ):
+                            continue
+                        key = (target.casefold(), arg_key)
+                        if control_depth == 0 and key in seen_inserts:
+                            end_character = match.end()
+                            close_pos = line.find(")", match.end())
+                            if close_pos >= 0:
+                                end_character = close_pos + 1
                             diags.append(
                                 Diagnostic(
                                     file=self.path,
                                     line=idx + 1,
                                     character=match.start("target"),
                                     end_line=idx + 1,
-                                    end_character=match.end("arg"),
+                                    end_character=end_character,
                                     severity=Severity.WARNING,
                                     code="BSL181",
-                                    message="Обнаружена дублирующаяся вставка в коллекцию",
+                                    message=(
+                                        f"Проверьте повторную вставку {arg} в коллекцию {target}"
+                                    ),
                                 )
                             )
-                        else:
-                            seen_inserts.add(key)
+                        elif control_depth == 0:
+                            seen_inserts[key] = arg
+                    if re.match(
+                        r"^(?:Если|If|ИначеЕсли|ElseIf|ElsIf|Попытка|Try|Для|For|Пока|While)\b",
+                        stripped_line,
+                        re.IGNORECASE,
+                    ):
+                        control_depth += 1
             if "BSL260" in enabled_set:
                 for idx, _raw_line in enumerate(lines):
                     line = clean_lines[idx]
@@ -2128,6 +2170,8 @@ class ModuleModel:
                 var_name = m_for.group(1)
                 var_cf = var_name.casefold()
                 if var_cf in param_cf or var_cf in emitted_loop_vars:
+                    continue
+                if any(header < abs_line for header in loop_headers_by_var.get(var_cf, set())):
                     continue
                 used = False
                 for abs_idx in range(abs_line + 1, min(proc.end_idx, len(lines))):

@@ -199,6 +199,20 @@ def _if_always_returns(if_node: Any, *, loops_executed_at_least_once: bool = Tru
     )
 
 
+def _if_has_elseif(if_node: Any) -> bool:
+    return any(
+        getattr(child, "type", None) == "elseif_clause"
+        for child in getattr(if_node, "children", []) or []
+    )
+
+
+def _if_has_else(if_node: Any) -> bool:
+    return any(
+        getattr(child, "type", None) == "else_clause"
+        for child in getattr(if_node, "children", []) or []
+    )
+
+
 def _if_may_exit_to_successor_without_return(
     if_node: Any, *, loops_executed_at_least_once: bool = True
 ) -> bool:
@@ -244,6 +258,17 @@ def implicit_exit_reachable(
         if t == "preprocessor":
             return walk(i + 1)
         if t == "if_statement":
+            if (
+                at_top_level
+                and i + 1 >= len(stmts)
+                and _if_may_exit_to_successor_without_return(
+                    s,
+                    loops_executed_at_least_once=loops_executed_at_least_once,
+                )
+                and not _if_has_elseif(s)
+                and not _if_has_else(s)
+            ):
+                return False
             if _if_may_exit_to_successor_without_return(
                 s,
                 loops_executed_at_least_once=loops_executed_at_least_once,

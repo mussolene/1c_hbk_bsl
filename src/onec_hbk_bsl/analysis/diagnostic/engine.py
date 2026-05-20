@@ -73,7 +73,6 @@ class DiagnosticEngine:
             "BSL169",
             "BSL170",
             "BSL174",
-            "BSL181",
             "BSL182",
             "BSL187",
             "BSL188",
@@ -409,10 +408,31 @@ class DiagnosticEngine:
         if _str_ranges:
             _line_starts = line_start_offsets(content)
             _str_range_starts = [start for start, _ in _str_ranges]
+
+            def bsl030_string_overlap_allowed(diag: Diagnostic) -> bool:
+                if diag.code != "BSL030" or not (1 <= diag.line <= len(lines)):
+                    return False
+                line = lines[diag.line - 1]
+                if not re.match(r"^\s*(?:И|Или|AND|OR)\b", line, re.IGNORECASE):
+                    return False
+                for next_line in lines[diag.line :]:
+                    stripped = next_line.strip()
+                    if not stripped or stripped.startswith("//"):
+                        continue
+                    return bool(
+                        re.match(
+                            r"^\s*(?:КонецФункции|EndFunction|КонецПроцедуры|EndProcedure)\b",
+                            next_line,
+                            re.IGNORECASE,
+                        )
+                    )
+                return False
+
             diagnostics = [
                 d
                 for d in diagnostics
                 if d.code in _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL
+                or bsl030_string_overlap_allowed(d)
                 or not diagnostic_overlaps_string_literal(
                     content,
                     line=d.line,
@@ -593,9 +613,12 @@ class DiagnosticEngine:
         elseif_re = re.compile(r"^\s*(?:ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE)
         else_re = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
         endif_re = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
+        try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+        endtry_re = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 
         stack: list[dict[str, Any]] = []
         result: set[int] = set()
+        try_depth = 0
 
         def current_exits() -> bool:
             return bool(stack and stack[-1]["current_exit"])
@@ -605,6 +628,13 @@ class DiagnosticEngine:
             if not stripped or stripped.startswith("//"):
                 continue
 
+            if try_re.match(line):
+                try_depth += 1
+                continue
+            if endtry_re.match(line):
+                try_depth = max(0, try_depth - 1)
+                continue
+
             if if_start_re.match(line):
                 stack.append({"branches": [], "current_exit": False, "has_else": False})
                 continue
@@ -612,7 +642,7 @@ class DiagnosticEngine:
             if not stack:
                 continue
 
-            if _RE_UNCONDITIONAL_EXIT.match(line) and ";" in line:
+            if try_depth == 0 and _RE_UNCONDITIONAL_EXIT.match(line) and ";" in line:
                 stack[-1]["current_exit"] = True
                 continue
 

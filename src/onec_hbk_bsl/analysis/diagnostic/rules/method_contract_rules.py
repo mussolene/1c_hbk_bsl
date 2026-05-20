@@ -264,6 +264,7 @@ def run_bsl215_missing_parameter_description(
 ) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
+    legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", path))
     for proc in procs:
         block_end = proc.start_idx - 1
         while block_end >= 0 and (
@@ -344,14 +345,26 @@ def run_bsl215_missing_parameter_description(
             type_text = type_text.rstrip()
             if type_text.endswith(","):
                 type_text = type_text[:-1].rstrip()
+            if legacy_doc_path and type_text.endswith("-"):
+                type_text = type_text[:-1].rstrip()
             if type_text.endswith(":"):
                 type_text = type_text[:-1].rstrip()
             elif type_text.rstrip() != type_text.rstrip(".;"):
                 return False
-            if re.fullmatch(
-                r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)", type_text, re.IGNORECASE
-            ):
+            if type_text.casefold() in {"структура", "structure"}:
                 return True
+            if re.fullmatch(
+                r"(?:Массив|Array)\s+(?:Из|Of)\s+[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*",
+                type_text,
+                re.IGNORECASE,
+            ):
+                return legacy_doc_path or bool(
+                    re.fullmatch(
+                        r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)",
+                        type_text,
+                        re.IGNORECASE,
+                    )
+                )
             if re.search(r"\b(?:или|or|элементов|element)\b", type_text, re.IGNORECASE):
                 return False
             if re.search(r"[A-Za-zА-ЯЁа-яё0-9_]\s+[A-Za-zА-ЯЁа-яё0-9_]", type_text):
@@ -373,11 +386,15 @@ def run_bsl215_missing_parameter_description(
             if re.match(r"^\s*//\s+\*", cl):
                 continue
             m = re.match(
-                r"^\s*//(?P<indent>[ ]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                r"^\s*//(?P<indent>[ \t]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
                 cl,
                 re.UNICODE,
             )
-            if m and _has_bslls_type_description(m.group("tail")):
+            if (
+                m
+                and not m.group("indent").startswith("\t")
+                and _has_bslls_type_description(m.group("tail"))
+            ):
                 raw_param_entries.append((len(m.group("indent")), m.group("name"), m.group("tail")))
         param_entry_indent = min((indent for indent, _name, _tail in raw_param_entries), default=0)
 
@@ -386,11 +403,13 @@ def run_bsl215_missing_parameter_description(
             entry_indent: int = param_entry_indent,
         ) -> tuple[str, bool, str | None] | None:
             m = re.match(
-                r"^\s*//(?P<indent>[ ]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                r"^\s*//(?P<indent>[ \t]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
                 line,
                 re.UNICODE,
             )
             if not m:
+                return None
+            if m.group("indent").startswith("\t"):
                 return None
             if entry_indent and len(m.group("indent")) != entry_indent:
                 return None
@@ -430,6 +449,16 @@ def run_bsl215_missing_parameter_description(
                 documented_entries.append(pname)
 
         documented_cf = {p.casefold(): p for p in documented_entries}
+        for actual_param in proc.params:
+            if actual_param.casefold() in documented_cf:
+                continue
+            if legacy_doc_path and any(
+                re.search(r"^\s*// [ \t]*" + re.escape(actual_param) + r"\s*-", cl, re.IGNORECASE)
+                and not re.search(r"\s-\s*(?:см\.|see)\s+\S+[.;]\s*$", cl, re.IGNORECASE)
+                for cl in comment_block[params_section_start + 1 :]
+            ):
+                documented_entries.append(actual_param)
+                documented_cf[actual_param.casefold()] = actual_param
         force_all_params_missing = bool(
             proc.params
             and any(re.search(r"\(\s*пример\s+см\.", cl, re.IGNORECASE) for cl in comment_block)
@@ -467,6 +496,20 @@ def run_bsl215_missing_parameter_description(
             and "," not in raw_param_entries[0][2]
             and not re.match(r"^\s*(?:см\.|see)\s+", raw_param_entries[0][2], re.IGNORECASE)
             and not raw_param_entries[0][2].strip().endswith(":")
+            and (
+                not legacy_doc_path
+                or raw_param_entries[0][2].strip().casefold()
+                not in {
+                    "дата",
+                    "date",
+                    "строка",
+                    "string",
+                    "число",
+                    "number",
+                    "булево",
+                    "boolean",
+                }
+            )
         ):
             missing_params = list(proc.params)
             documented_cf = {}
