@@ -251,9 +251,7 @@ class TestBsl215MissingParameterDescriptionParity:
             (4, 17, 28, 'Необходимо добавить описание параметра "Ограничение"'),
         ]
 
-    def test_param_see_reference_without_terminal_dot_is_documented(
-        self, tmp_path: Path
-    ) -> None:
+    def test_param_see_reference_without_terminal_dot_is_documented(self, tmp_path: Path) -> None:
         content = """\
             // Описание метода.
             // Параметры:
@@ -328,9 +326,7 @@ class TestBsl237RedundantAccessToObjectParity:
 
 
 class TestBsl265UselessTernaryOperatorParity:
-    def test_boolean_literal_branch_with_boolean_member_is_reported(
-        self, tmp_path: Path
-    ) -> None:
+    def test_boolean_literal_branch_with_boolean_member_is_reported(self, tmp_path: Path) -> None:
         content = """\
             Процедура Проверить()
                 УсловиеВыполнено = ?(НастройкиКС.Безусловно, Истина, ДанныеКС.ТипПлательщика1);
@@ -352,9 +348,7 @@ class TestBsl265UselessTernaryOperatorParity:
         diags = _check(content, tmp_path, select={"BSL265"})
         assert "BSL265" in _codes(diags)
 
-    def test_boolean_literal_branch_with_non_boolean_value_is_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_boolean_literal_branch_with_non_boolean_value_is_clean(self, tmp_path: Path) -> None:
         content = """\
             Процедура Проверить()
                 А = ?(Б = 1, True, 1);
@@ -3419,8 +3413,8 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         )
         content = (
             "Процедура Тест()\n"
-            "    Текст = \"Ошибка Физлицам\n"
-            "        |продолжение\";\n"
+            '    Текст = "Ошибка Физлицам\n'
+            '        |продолжение";\n'
             "КонецПроцедуры\n"
         )
         path = tmp_path / "TypoMultilineString.bsl"
@@ -4104,9 +4098,7 @@ class TestBsl234QueryNestedFieldsByDot:
         assert diags[0].line == 3
         assert diags[0].character == 4
 
-    def test_business_process_metadata_source_is_not_nested_field(
-        self, tmp_path: Path
-    ) -> None:
+    def test_business_process_metadata_source_is_not_nested_field(self, tmp_path: Path) -> None:
         content = """\
             Запрос.Текст =
             "ВЫБРАТЬ
@@ -4217,7 +4209,11 @@ class TestBsl055ConsecutiveBlankLines:
         content = "А = 1;\n\n\n"
         bsl_file = tmp_path / "test.bsl"
         bsl_file.write_text(content, encoding="utf-8")
-        diags = [d for d in DiagnosticEngine(select={"BSL055"}).check_file(str(bsl_file)) if d.code == "BSL055"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL055"}).check_file(str(bsl_file))
+            if d.code == "BSL055"
+        ]
         assert len(diags) == 1
         assert diags[0].line == 2
         assert diags[0].end_line == 4
@@ -4979,9 +4975,7 @@ class TestBsl065MissingReturnedValueDescription:
         diags = _check(content, tmp_path, select={"BSL065"})
         assert "BSL065" not in _codes(diags)
 
-    def test_function_with_structured_return_description_no_warning(
-        self, tmp_path: Path
-    ) -> None:
+    def test_function_with_structured_return_description_no_warning(self, tmp_path: Path) -> None:
         content = """\
             // Описание функции
             // Возвращаемое значение:
@@ -5866,9 +5860,7 @@ class TestBsl230PairingBrokenTransaction:
 class TestBsl268UsingFindElementByString:
     def test_string_argument_range_covers_whole_call(self, tmp_path: Path) -> None:
         content = (
-            "Процедура Тест()\n"
-            '    Код = Справочники.Коды.НайтиПоКоду("1010836");\n'
-            "КонецПроцедуры\n"
+            'Процедура Тест()\n    Код = Справочники.Коды.НайтиПоКоду("1010836");\nКонецПроцедуры\n'
         )
         path = tmp_path / "FindByCode.bsl"
         path.write_text(content, encoding="utf-8")

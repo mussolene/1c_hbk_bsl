@@ -517,7 +517,9 @@ class ModuleModel:
                     and (
                         re.search(r"\+\s*\"", lines[diag.line - 1])
                         or re.search(r"\"\s*\+", lines[diag.line - 1])
-                        or ("|" not in lines[diag.line - 1] and lines[diag.line - 1].count('"') >= 4)
+                        or (
+                            "|" not in lines[diag.line - 1] and lines[diag.line - 1].count('"') >= 4
+                        )
                     )
                 )
             ]

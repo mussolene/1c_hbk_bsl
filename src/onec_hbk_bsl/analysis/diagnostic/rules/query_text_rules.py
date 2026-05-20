@@ -99,10 +99,9 @@ def run_bsl220_235_269_query_text_diagnostics(
             and not has_escaped_empty_query_string
             and not _query_block_has_escaped_empty_comparison_tail(last_content)
         ):
-            has_legacy_parse_error = (
-                not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
-                or _has_plain_tail_parse_error(content_lines)
-            )
+            has_legacy_parse_error = not _diag._query_has_balanced_parens(
+                [head for _, _, _, head, _ in content_lines]
+            ) or _has_plain_tail_parse_error(content_lines)
             sdbl_diag = _bsl235_diag_from_sdbl_tree(path, block)
             if has_legacy_parse_error and sdbl_diag is not None:
                 diags.append(sdbl_diag)

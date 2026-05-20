@@ -64,7 +64,11 @@ def _query_block_has_dynamic_tail(lines: list[str], block: Any) -> bool:
 def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[Any] | None:
     tree = getattr(block, "sdbl_tree", None)
     root = getattr(tree, "root_node", None)
-    if root is None or getattr(block, "sdbl_has_errors", False) or _query_block_has_dynamic_tail(lines, block):
+    if (
+        root is None
+        or getattr(block, "sdbl_has_errors", False)
+        or _query_block_has_dynamic_tail(lines, block)
+    ):
         return None
 
     _diag = _diag_module()

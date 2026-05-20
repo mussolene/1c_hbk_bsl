@@ -85,7 +85,9 @@ def collect_spell_candidates(*, tree: Any) -> list[SpellCandidate]:
 
 def _node_text(node: Any) -> str:
     raw = node.text
-    return raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    return (
+        raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    )
 
 
 def _append_candidate(

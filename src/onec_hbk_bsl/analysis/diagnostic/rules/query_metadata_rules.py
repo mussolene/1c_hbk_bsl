@@ -143,10 +143,9 @@ def run_bsl174_187_236_238_query_metadata_pool(
                         part.casefold() in {"ссылка", "reference", "ref"} for part in parts[1:]
                     ):
                         continue
-                    if (
-                        parts[0].casefold() in (simple_table_aliases | tabular_section_aliases)
-                        and parts[1].casefold() in {"ссылка", "reference", "ref"}
-                    ):
+                    if parts[0].casefold() in (
+                        simple_table_aliases | tabular_section_aliases
+                    ) and parts[1].casefold() in {"ссылка", "reference", "ref"}:
                         continue
                     col = content_base + match.start()
                     diags.append(

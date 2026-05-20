@@ -146,8 +146,7 @@ def check_tree_for_typos(
     }
     checker = spell_fn or default_spell_fn
     checked = {
-        normalized: checker(original)
-        for normalized, original in sorted(words_to_check.items())
+        normalized: checker(original) for normalized, original in sorted(words_to_check.items())
     }
 
     issues: list[SpellIssue] = []
@@ -165,14 +164,22 @@ def _iter_candidate_parts(
     result: list[tuple[SpellCandidate, str, str, bool]] = []
     for candidate in candidates:
         candidate_normalized = candidate.text.casefold()
-        if candidate_normalized in cfg.words_to_ignore and candidate_normalized not in KNOWN_TYPO_TOKENS:
+        if (
+            candidate_normalized in cfg.words_to_ignore
+            and candidate_normalized not in KNOWN_TYPO_TOKENS
+        ):
             continue
         for part in split_by_character_type_camel_case(candidate.text):
             normalized = part.casefold()
             forced = normalized in KNOWN_TYPO_TOKENS
             if candidate.kind == "method" and not forced:
                 continue
-            if forced and candidate.kind == "string" and normalized == "субконто" and "\n" in candidate.text:
+            if (
+                forced
+                and candidate.kind == "string"
+                and normalized == "субконто"
+                and "\n" in candidate.text
+            ):
                 continue
             if not forced and normalized in cfg.words_to_ignore:
                 continue
