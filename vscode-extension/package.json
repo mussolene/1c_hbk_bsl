@@ -161,7 +161,7 @@
     },
     "configurationDefaults": {
       "[bsl]": {
-        "editor.formatOnSave": true,
+        "editor.formatOnSave": false,
         "editor.formatOnType": true,
         "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
         "editor.semanticHighlighting.enabled": true,
