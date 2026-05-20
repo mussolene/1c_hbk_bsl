@@ -329,6 +329,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL258",
         "BSL262",
         "BSL267",
+        "BSL268",
         "BSL272",
     }
 )
@@ -1548,7 +1549,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL235": {
         "name": "QueryParseError",
         "description": "Embedded query text has a syntax error",
-        "severity": "ERROR",
+        "severity": "WARNING",
         "sonar_type": "BUG",
         "sonar_severity": "BLOCKER",
         "tags": ["query", "correctness"],
@@ -2098,7 +2099,7 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
     "BSL232": "Защищённый модуль — исходный текст недоступен",
     "BSL233": "Экспортный метод без документирующего комментария",
     "BSL234": "Обращение к вложенным полям через точку в тексте запроса",
-    "BSL235": "Синтаксическая ошибка в тексте встроенного запроса",
+    "BSL235": "Текст запроса должен быть корректным и открываться конструктором запросов",
     "BSL236": "Запрос обращается к несуществующим метаданным",
     "BSL237": "Избыточное обращение к объекту — промежуточный результат не используется",
     "BSL238": "Избыточное использование .Ссылка",

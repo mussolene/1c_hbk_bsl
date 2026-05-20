@@ -205,11 +205,22 @@ class ModuleModel:
             code = single_quoted_string_re.sub("''", code)
             return code
 
-        def missing_semicolon_anchor(code_part: str) -> int:
+        def missing_semicolon_anchor(code_part: str) -> tuple[int, int]:
             m_return = re.match(r"^(\s*(?:Возврат|Return)\s+)\S", code_part, re.IGNORECASE)
             if m_return:
-                return m_return.end(1)
-            return max(0, len(code_part) - 1)
+                if code_part.rstrip().endswith(")"):
+                    end = len(code_part.rstrip())
+                    return end - 1, end
+                m_last_return_token = re.search(r"[A-Za-zА-Яа-яЁё_]\w*$", code_part, re.IGNORECASE)
+                if m_last_return_token is not None:
+                    return m_last_return_token.start(), m_last_return_token.end()
+                start = m_return.end(1)
+                return start, len(code_part)
+            m_last_token = re.search(r"[A-Za-zА-Яа-яЁё_]\w*$", code_part, re.IGNORECASE)
+            if m_last_token is not None:
+                return m_last_token.start(), m_last_token.end()
+            col = max(0, len(code_part) - 1)
+            return col, col + 1
 
         header_continuation_lines: set[int] = set()
         for proc in procs:
@@ -282,14 +293,14 @@ class ModuleModel:
                 ):
                     continue
                 if stmt_no_semi_re.match(code_part):
-                    col = missing_semicolon_anchor(code_part)
+                    col, end_col = missing_semicolon_anchor(code_part)
                     diags.append(
                         Diagnostic(
                             file=self.path,
                             line=i + 1,
                             character=col,
                             end_line=i + 1,
-                            end_character=col + 1,
+                            end_character=end_col,
                             severity=Severity.INFORMATION,
                             code="BSL030",
                             message=("Пропущена точка с запятой в конце выражения"),
@@ -331,14 +342,14 @@ class ModuleModel:
                 continue
             if idx + 1 in seen_lines:
                 continue
-            col = missing_semicolon_anchor(code_part)
+            col, end_col = missing_semicolon_anchor(code_part)
             diags.append(
                 Diagnostic(
                     file=self.path,
                     line=idx + 1,
                     character=col,
                     end_line=idx + 1,
-                    end_character=col + 1,
+                    end_character=end_col,
                     severity=Severity.INFORMATION,
                     code="BSL030",
                     message="Пропущена точка с запятой в конце выражения",
@@ -718,6 +729,7 @@ class ModuleModel:
         ts_method_call_arg_exprs_fn,
         utf8_byte_offset_to_lsp_character_fn,
         method_name_re,
+        find_matching_paren_fn,
         line_comment_re,
         mask_double_quoted_strings_preserve_len_fn,
     ) -> list[Diagnostic]:
@@ -761,9 +773,12 @@ class ModuleModel:
                         character=utf8_byte_offset_to_lsp_character_fn(
                             line_text, ident.start_point[1]
                         ),
-                        end_line=line_idx + 1,
+                        end_line=node.end_point[0] + 1,
                         end_character=utf8_byte_offset_to_lsp_character_fn(
-                            line_text, ident.end_point[1]
+                            lines[node.end_point[0]]
+                            if 0 <= node.end_point[0] < len(lines)
+                            else line_text,
+                            node.end_point[1],
                         ),
                         severity=Severity.WARNING,
                         code="BSL268",
@@ -781,13 +796,19 @@ class ModuleModel:
             match = method_name_re.search(clean)
             if match is None:
                 continue
+            end = match.end("name")
+            open_idx = match.end()
+            if open_idx < len(clean) and clean[open_idx] == "(":
+                close_idx = find_matching_paren_fn(clean, open_idx)
+                if close_idx > match.end():
+                    end = close_idx + 1
             diags.append(
                 Diagnostic(
                     file=self.path,
                     line=idx + 1,
                     character=match.start("name"),
                     end_line=idx + 1,
-                    end_character=match.end("name"),
+                    end_character=end,
                     severity=Severity.WARNING,
                     code="BSL268",
                     message=(
@@ -1556,7 +1577,7 @@ class ModuleModel:
                     self.path,
                     lines,
                     tree if tree_ok else None,
-                    typed_nodes.get("method_call"),
+                    typed_nodes.get("method_call") or None,
                 )
             )
         return diags
@@ -2146,24 +2167,41 @@ class ModuleModel:
                 line: str,
                 emitted_lines_local: set[int] = emitted_lines,
                 proc_end_idx: int = proc.end_idx,
+                extend_to_block_end: bool = False,
             ) -> None:
                 if abs_idx in emitted_lines_local or abs_idx in end_line_idxs:
                     return
                 next_indent = len(line) - len(line.lstrip())
                 end_abs = abs_idx
-                for tail_abs in range(abs_idx + 1, min(proc_end_idx, len(lines))):
-                    tail = lines[tail_abs]
-                    stripped_tail = tail.strip()
-                    if not stripped_tail or stripped_tail.startswith("//"):
-                        continue
-                    end_abs = tail_abs
+                first_stripped = line.strip()
+                if extend_to_block_end or re.match(
+                    r"^(?:Возврат|Return)\b", first_stripped, re.IGNORECASE
+                ):
+                    for tail_abs in range(abs_idx + 1, min(proc_end_idx, len(lines))):
+                        tail = lines[tail_abs]
+                        stripped_tail = tail.strip()
+                        if not stripped_tail or stripped_tail.startswith("//"):
+                            continue
+                        end_abs = tail_abs
+                end_text = lines[end_abs].rstrip()
+                end_character = len(end_text)
+                if (
+                    end_abs == abs_idx
+                    and end_text.endswith(";")
+                    and (
+                        re.match(r"^\s*(?:Возврат|Return)\b", end_text, re.IGNORECASE)
+                        or "=" in end_text
+                    )
+                ):
+                    end_character -= 1
+
                 diags.append(
                     Diagnostic(
                         file=self.path,
                         line=abs_idx + 1,
                         character=next_indent,
                         end_line=end_abs + 1,
-                        end_character=len(lines[end_abs].rstrip()),
+                        end_character=end_character,
                         severity=Severity.ERROR,
                         code="BSL051",
                         message="Исправьте алгоритм, т.к. этот код никогда не будет исполнен",
@@ -2201,7 +2239,7 @@ class ModuleModel:
                                     re_bsl051_delimiter_fallback.match(next_line)
                                 )
                             if not is_block_delimiter:
-                                emit_unreachable(next_abs, next_line)
+                                emit_unreachable(next_abs, next_line, extend_to_block_end=True)
                         break
                     i = j
                     continue
@@ -2335,6 +2373,7 @@ class ModuleModel:
         bsl223_structure_names: set[str],
         bsl249_style_constructor_names: set[str],
         split_top_level_args_fn,
+        find_matching_paren_fn,
     ) -> list[Diagnostic]:
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
@@ -2499,13 +2538,19 @@ class ModuleModel:
                     ):
                         if m.group("name").casefold() not in bsl249_style_constructor_names:
                             continue
+                        end_character = m.end("name")
+                        open_idx = line.find("(", m.end("name"))
+                        if open_idx >= 0:
+                            close_idx = find_matching_paren_fn(line, open_idx)
+                            if close_idx > open_idx:
+                                end_character = close_idx + 1
                         diags.append(
                             Diagnostic(
                                 file=self.path,
                                 line=idx + 1,
                                 character=m.start(),
                                 end_line=idx + 1,
-                                end_character=m.end("name"),
+                                end_character=end_character,
                                 severity=Severity.ERROR,
                                 code="BSL249",
                                 message=(

@@ -60,6 +60,44 @@ def run_bsl174_187_236_238_query_metadata_pool(
             continue
         query_text = "\n".join(head for _ln, _base, _content, head, _end in query_lines)
         left_join_aliases: set[str] = set()
+        simple_table_aliases: set[str] = set()
+        tabular_section_aliases: set[str] = set()
+        prepass_in_from = False
+        tabular_section_roots = {
+            "бизнеспроцесс",
+            "businessprocess",
+            "документ",
+            "document",
+            "справочник",
+            "catalog",
+        }
+        for _line_no, _content_base, _content, head, _ended in query_lines:
+            if re.match(r"^(?:ИЗ|FROM)\b", head, re.IGNORECASE):
+                prepass_in_from = True
+            elif re.match(
+                r"^(?:ГДЕ|WHERE|СГРУППИРОВАТЬ\s+ПО|GROUP\s+BY|УПОРЯДОЧИТЬ\s+ПО|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|;)\b",
+                head,
+                re.IGNORECASE,
+            ):
+                prepass_in_from = False
+            if not prepass_in_from:
+                continue
+            alias_match = re.match(
+                r"^\s*(?:(?:(?:ЛЕВОЕ|ПРАВОЕ|ПОЛНОЕ|ВНУТРЕННЕЕ)\s+)?(?:СОЕДИНЕНИЕ|JOIN)\s+)?"
+                r"([A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)\s+"
+                r"(?:КАК|AS)\s+([A-Za-zА-Яа-яЁё_]\w*)\b",
+                head,
+                re.IGNORECASE,
+            )
+            if alias_match:
+                source = alias_match.group(1)
+                alias = alias_match.group(2).casefold()
+                source_parts = source.split(".")
+                if len(source_parts) == 1 and source.casefold() == alias:
+                    simple_table_aliases.add(alias)
+                elif len(source_parts) >= 3 and source_parts[0].casefold() in tabular_section_roots:
+                    tabular_section_aliases.add(alias)
+
         for line_no, content_base, _content, head, _ended in query_lines:
             if "BSL236" in enabled_set:
                 for match in re.finditer(
@@ -94,7 +132,22 @@ def run_bsl174_187_236_238_query_metadata_pool(
                             )
                         )
             if "BSL238" in enabled_set:
-                for match in re.finditer(r"\.(?:Ссылка|Ref)\.", head, re.IGNORECASE):
+                for match in re.finditer(
+                    r"\b[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)+",
+                    head,
+                    re.IGNORECASE,
+                ):
+                    chain = match.group(0)
+                    parts = chain.split(".")
+                    if len(parts) < 3 or not any(
+                        part.casefold() in {"ссылка", "reference", "ref"} for part in parts[1:]
+                    ):
+                        continue
+                    if (
+                        parts[0].casefold() in (simple_table_aliases | tabular_section_aliases)
+                        and parts[1].casefold() in {"ссылка", "reference", "ref"}
+                    ):
+                        continue
                     col = content_base + match.start()
                     diags.append(
                         _diag.Diagnostic(
@@ -102,10 +155,10 @@ def run_bsl174_187_236_238_query_metadata_pool(
                             line=line_no,
                             character=col,
                             end_line=line_no,
-                            end_character=col + len(match.group(0)),
-                            severity=_diag.Severity.INFORMATION,
+                            end_character=col + len(chain),
+                            severity=_diag.Severity.WARNING,
                             code="BSL238",
-                            message="Избыточное использование .Ссылка в запросе",
+                            message='Избавьтесь от получения поля "Ссылка" в запросе.',
                         )
                     )
             if "BSL187" in enabled_set:

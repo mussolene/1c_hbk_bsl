@@ -57,6 +57,8 @@ def _path_is_bsl272_server_only_module(path: str) -> bool:
             _xml_bool_tag(raw, "ClientManagedApplication")
             or _xml_bool_tag(raw, "ClientOrdinaryApplication")
         )
+    if re.search(r"(?:^|/)f\d+_module\.bsl$", normalized):
+        return True
     return normalized.endswith(
         (
             "objectmodule.bsl",
@@ -1409,7 +1411,7 @@ class ConsecutiveEmptyLinesRule(BsllsDiagnosticRule):
                 self._add_issue(storage, run_start, run_start + blank_run - 1)
             blank_run = 0
         if blank_run > 1:
-            self._add_issue(storage, run_start, run_start + blank_run - 1)
+            self._add_issue(storage, run_start, run_start + blank_run)
         if len(context.lines) >= 2 and blank_flags[-1] and not blank_flags[-2]:
             self._add_issue(storage, len(context.lines) - 1, len(context.lines))
         return storage.diagnostics
@@ -2158,12 +2160,15 @@ class UsingExternalCodeToolsRule(BsllsDiagnosticRule):
             clean = _code_mask_without_strings_and_comments(code_part)
             for match in _BSL267_EXTERNAL_CODE_TOOLS_RE.finditer(clean):
                 open_paren = clean.find("(", match.start())
+                end_line, end_character = _multi_line_call_end(context.lines, idx, open_paren)
+                if end_line == idx:
+                    end_character = _call_chain_end(clean, open_paren)
                 storage.add_range(
                     code=self.code,
                     line=idx,
                     character=match.start(1),
-                    end_line=idx,
-                    end_character=_call_chain_end(clean, open_paren),
+                    end_line=end_line,
+                    end_character=end_character,
                     severity=Severity.ERROR,
                     message="Запрещено использование возможности выполнения внешнего кода",
                 )
@@ -2640,10 +2645,12 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
         for proc_node in proc_nodes:
             calls = _calls_in_node(proc_node, global_calls, call_starts)
             if calls:
-                self._check_calls(storage, calls)
+                self._check_calls(storage, calls, context.lines)
         return storage.diagnostics
 
-    def _check_calls(self, storage: DiagnosticStorage, calls: list[dict[str, Any]]) -> None:
+    def _check_calls(
+        self, storage: DiagnosticStorage, calls: list[dict[str, Any]], lines: list[str]
+    ) -> None:
         for allowed_names, pair_names in self._pair_specs:
             begin_stack: list[dict[str, Any]] = []
             for call in calls:
@@ -2655,26 +2662,33 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
                 elif begin_stack:
                     begin_stack.pop()
                 else:
-                    self._add_call(storage, call, pair_names[name_cf])
+                    self._add_call(storage, call, pair_names[name_cf], lines)
             for call in begin_stack:
                 name_cf = str(call["name"]).casefold()
-                self._add_call(storage, call, pair_names[name_cf])
+                self._add_call(storage, call, pair_names[name_cf], lines)
 
     def _add_call(
         self,
         storage: DiagnosticStorage,
         call: dict[str, Any],
         pair_name: str,
+        lines: list[str],
     ) -> None:
         method_name = str(call["name"])
+        line_idx = int(call["line"]) - 1
+        end_character = int(call["end_character"])
+        line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+        leading = line_text[: int(call["character"])]
+        if "\t" in leading and line_text[end_character : end_character + 2] == "()":
+            end_character += 2
         storage.add_range(
             code=self.code,
             message=f'Отсутствует парный вызов "{pair_name}" для метода "{method_name}"',
             severity=Severity.ERROR,
-            line=int(call["line"]) - 1,
+            line=line_idx,
             character=int(call["character"]),
-            end_line=int(call["line"]) - 1,
-            end_character=int(call["end_character"]),
+            end_line=line_idx,
+            end_character=end_character,
         )
 
 
@@ -4568,6 +4582,7 @@ def _run_bsl268_using_find_element_by_string(
         ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
         utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
         method_name_re=_diag._RE_BSL268_FIND_BY_STRING,
+        find_matching_paren_fn=_diag._find_matching_paren,
         line_comment_re=_diag._RE_LINE_COMMENT,
         mask_double_quoted_strings_preserve_len_fn=_diag._mask_double_quoted_strings_preserve_len,
     )
@@ -4658,6 +4673,7 @@ class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
                     bsl223_structure_names=_diag._BSL223_STRUCTURE_NAMES,
                     bsl249_style_constructor_names=_diag._BSL249_STYLE_CONSTRUCTOR_NAMES,
                     split_top_level_args_fn=_diag._split_top_level_args,
+                    find_matching_paren_fn=_diag._find_matching_paren,
                 )
                 if diag.code == code
             ]
@@ -5148,32 +5164,9 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 re_bsl051_delimiter_fallback=_diag._RE_BSL051_DELIMITER_FALLBACK,
             )
         if code == "BSL052":
-            root = getattr(context.tree, "root_node", None)
-            tree_is_ts = root is not None and isinstance(
-                getattr(root, "text", None), (bytes, bytearray)
-            )
-            if not tree_is_ts or root is None or _diag.tree_has_errors(root):
-                return []
-            pairs: list[tuple[int, str]] = []
-            _diag._bsl052_collect_literal_if_nodes(root, pairs)
-            diags = []
-            for line_idx, literal in pairs:
-                if line_idx >= len(context.lines):
-                    continue
-                line = context.lines[line_idx]
-                diags.append(
-                    Diagnostic(
-                        file=context.path,
-                        line=line_idx + 1,
-                        character=len(line) - len(line.lstrip()),
-                        end_line=line_idx + 1,
-                        end_character=len(line),
-                        severity=Severity.WARNING,
-                        code="BSL052",
-                        message=f"Условие всегда равно '{literal}'",
-                    )
-                )
-            return diags
+            # BSLLS BSL052 is IdenticalExpressions. Literal-only conditions are a
+            # different heuristic and produce false positives under this rule id.
+            return []
         if code == "BSL054":
             clean_lines = snapshot.code_lines_without_comments
             return model.validate_module_level_export_variables(

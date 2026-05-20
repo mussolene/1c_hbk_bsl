@@ -195,6 +195,10 @@ def run_bsl212_missed_required_parameter(
         callee = proc_by_name.get(call.callee_name.casefold())
         if callee is None:
             continue
+        line_text = lines[call.caller_line - 1] if 0 <= call.caller_line - 1 < len(lines) else ""
+        before_call = line_text[: call.caller_character].rstrip()
+        if before_call.endswith("."):
+            continue
         required_params = [p for p in callee.params if p not in callee.optional_params]
         if not required_params:
             continue
@@ -217,7 +221,6 @@ def run_bsl212_missed_required_parameter(
 
         if not missed:
             continue
-        line_text = lines[call.caller_line - 1] if 0 <= call.caller_line - 1 < len(lines) else ""
         diags.append(
             _diag.Diagnostic(
                 file=path,
@@ -274,6 +277,8 @@ def run_bsl215_missing_parameter_description(
                 break
         if params_section_start is None and len(comment_block) == 1:
             text = re.sub(r"^\s*//\s*", "", comment_block[0]).strip()
+            if re.match(r"^(?:Конец|End)\b", text, re.IGNORECASE):
+                continue
             if text and text[0].islower():
                 continue
 
@@ -300,28 +305,7 @@ def run_bsl215_missing_parameter_description(
             )
             continue
 
-        def _valid_param_entry(line: str) -> str | None:
-            m = re.match(r"^\s*//\s{1,4}(\w+)\s*-\s*(?P<tail>.+?)\s*$", line, re.UNICODE)
-            if not m:
-                return None
-            tail = m.group("tail")
-            type_part = tail.split("-", 1)[0].strip()
-            if "," in type_part or "(" in type_part or ")" in type_part:
-                return None
-            if " " in type_part and "-" not in tail:
-                return None
-            return m.group(1)
-
-        documented_entries: list[str] = []
-        stale_reference_entries: list[str] = []
-        documented_struct_entries: set[str] = set()
-        has_nested_param_fields = False
-        first_meaningful_is_params = False
-        for cl in comment_block:
-            if cl.strip() in {"//", ""}:
-                continue
-            first_meaningful_is_params = bool(_diag._RE_BSL215_PARAMS_SECTION.match(cl))
-            break
+        raw_param_entries: list[tuple[int, str, str]] = []
         for cl in comment_block[params_section_start + 1 :]:
             stripped = cl.strip()
             if stripped == "//" or (
@@ -330,46 +314,63 @@ def run_bsl215_missing_parameter_description(
             ):
                 break
             if re.match(r"^\s*//\s+\*", cl):
-                has_nested_param_fields = True
                 continue
-            pname = _valid_param_entry(cl)
-            if pname:
-                tail = cl.split("-", 1)[1].split("-", 1)[0].strip() if "-" in cl else ""
-                if tail.casefold() == "структура":
-                    documented_struct_entries.add(pname.casefold())
-                documented_entries.append(pname)
-            else:
-                ref_match = re.search(
-                    r"\b(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)", cl, re.IGNORECASE
+            m = re.match(
+                r"^\s*//(?P<indent>\s{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                cl,
+                re.UNICODE,
+            )
+            if m:
+                raw_param_entries.append(
+                    (len(m.group("indent")), m.group("name"), m.group("tail"))
                 )
-                if ref_match:
-                    stale_reference_entries.append(ref_match.group(1).rstrip("."))
-        if first_meaningful_is_params:
-            documented_entries = []
-        elif has_nested_param_fields and documented_struct_entries:
-            documented_entries = []
-        elif has_nested_param_fields:
-            documented_entries = [
-                p for p in documented_entries if p.casefold() not in documented_struct_entries
-            ]
+        param_entry_indent = min((indent for indent, _name, _tail in raw_param_entries), default=0)
+
+        def _param_entry(
+            line: str,
+            entry_indent: int = param_entry_indent,
+        ) -> tuple[str, bool, str | None] | None:
+            m = re.match(
+                r"^\s*//(?P<indent>\s{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                line,
+                re.UNICODE,
+            )
+            if not m:
+                return None
+            if entry_indent and len(m.group("indent")) != entry_indent:
+                return None
+            tail = m.group("tail")
+            reference_match = re.match(
+                r"^\s*(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)[.;]?\s*$",
+                tail,
+                re.IGNORECASE,
+            )
+            if reference_match is not None and tail.rstrip().endswith((".", ";")):
+                return reference_match.group(1).rstrip(".;"), True, reference_match.group(1).rstrip(
+                    ".;"
+                )
+            return m.group("name"), True, None
+
+        documented_entries: list[str] = []
+        empty_description_entries: set[str] = set()
+        stale_reference_entries: list[str] = []
+        for cl in comment_block[params_section_start + 1 :]:
+            stripped = cl.strip()
+            if stripped == "//" or (
+                re.match(r"^\s*//\s*\w[\w\s]*:\s*$", cl)
+                and not _diag._RE_BSL215_PARAM_ENTRY.match(cl)
+            ):
+                break
+            if re.match(r"^\s*//\s+\*", cl):
+                continue
+            entry = _param_entry(cl)
+            if entry:
+                pname, has_type_description, stale_reference = entry
+                if not has_type_description:
+                    empty_description_entries.add(pname.casefold())
+                documented_entries.append(pname)
 
         documented_cf = {p.casefold(): p for p in documented_entries}
-
-        has_structured_return_fields = False
-        returns_section_start = None
-        for ci, cl in enumerate(comment_block):
-            if re.match(
-                r"^\s*//\s*(?:Возвращаемое\s+значение|Returns)\s*:?\s*$",
-                cl,
-                re.IGNORECASE,
-            ):
-                returns_section_start = ci
-                break
-        if returns_section_start is not None:
-            has_structured_return_fields = any(
-                re.match(r"^\s*//\s+\*\s+\S", cl)
-                for cl in comment_block[returns_section_start + 1 :]
-            )
 
         param_lines: dict[str, int] = {}
         scan_idx = proc.start_idx
@@ -394,9 +395,6 @@ def run_bsl215_missing_parameter_description(
             scan_idx += 1
 
         missing_params = [pname for pname in proc.params if pname.casefold() not in documented_cf]
-        if not missing_params and documented_entries and has_structured_return_fields:
-            documented_cf = {}
-            missing_params = list(proc.params)
         if missing_params and not documented_cf:
             diags.append(
                 _diag.Diagnostic(
@@ -429,6 +427,27 @@ def run_bsl215_missing_parameter_description(
                         message=f'Необходимо добавить описание параметра "{pname}"',
                     )
                 )
+
+        for pname in proc.params:
+            pcf = pname.casefold()
+            if pcf not in empty_description_entries:
+                continue
+            param_line_idx = param_lines.get(pcf, proc.start_idx)
+            pl = lines[param_line_idx]
+            m = re.search(r"\b" + re.escape(pname) + r"\b", pl, re.IGNORECASE)
+            col = m.start() if m else header_col
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=param_line_idx + 1,
+                    character=col,
+                    end_line=param_line_idx + 1,
+                    end_character=col + len(pname),
+                    severity=_diag.Severity.WARNING,
+                    code="BSL215",
+                    message=f'Необходимо добавить описание параметра "{pname}"',
+                )
+            )
 
         seen_actual_docs: set[str] = set()
         extra: list[str] = []

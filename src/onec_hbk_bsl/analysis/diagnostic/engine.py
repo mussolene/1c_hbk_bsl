@@ -87,7 +87,6 @@ class DiagnosticEngine:
             "BSL231",
             "BSL232",
             "BSL236",
-            "BSL238",
             "BSL241",
             "BSL242",
             "BSL244",

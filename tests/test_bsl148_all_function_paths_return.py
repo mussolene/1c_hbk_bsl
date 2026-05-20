@@ -111,3 +111,92 @@ def test_bsl148_try_except_with_guaranteed_returns_is_not_reported(tmp_path: Pat
         d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
     ]
     assert diags == []
+
+
+def test_bsl148_branch_with_statements_before_return_is_not_reported(tmp_path: Path) -> None:
+    content = (
+        "Функция Тест(Флаг)\n"
+        "    Если Флаг Тогда\n"
+        "        Значение = 1;\n"
+        "        Подготовить(Значение);\n"
+        "        Возврат Значение;\n"
+        "    Иначе\n"
+        "        Возврат 0;\n"
+        "    КонецЕсли;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "branch_statements_before_return.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert diags == []
+
+
+def test_bsl148_branch_with_comments_before_return_is_not_reported(tmp_path: Path) -> None:
+    content = (
+        "Функция Тест(Флаг)\n"
+        "    Если Флаг Тогда\n"
+        "        // пояснение перед возвратом\n"
+        "        Возврат 1;\n"
+        "    Иначе\n"
+        "        Возврат 0;\n"
+        "    КонецЕсли;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "branch_comments_before_return.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert diags == []
+
+
+def test_bsl148_terminal_loop_branch_uses_default_bslls_loop_assumption(
+    tmp_path: Path,
+) -> None:
+    content = (
+        "Функция Найти(Коллекция, Поиск)\n"
+        '    Если ТипЗнч(Поиск) = Тип("Число") Тогда\n'
+        "        Возврат Неопределено;\n"
+        "    Иначе\n"
+        "        Для Каждого Элемент Из Коллекция Цикл\n"
+        "            Если Элемент = Поиск Тогда\n"
+        "                Возврат Элемент;\n"
+        "            КонецЕсли;\n"
+        "        КонецЦикла;\n"
+        "    КонецЕсли;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "terminal_loop_branch_default.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert diags == []
+
+
+def test_bsl148_terminal_loop_branch_can_report_when_loop_assumption_is_disabled(
+    tmp_path: Path,
+) -> None:
+    content = (
+        "Функция Найти(Коллекция, Поиск)\n"
+        '    Если ТипЗнч(Поиск) = Тип("Число") Тогда\n'
+        "        Возврат Неопределено;\n"
+        "    Иначе\n"
+        "        Для Каждого Элемент Из Коллекция Цикл\n"
+        "            Если Элемент = Поиск Тогда\n"
+        "                Возврат Элемент;\n"
+        "            КонецЕсли;\n"
+        "        КонецЦикла;\n"
+        "    КонецЕсли;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "terminal_loop_branch_strict.bsl"
+    path.write_text(content, encoding="utf-8")
+    engine = DiagnosticEngine(
+        select={"BSL148"},
+        bsl148_loops_executed_at_least_once=False,
+    )
+    diags = [d for d in engine.check_file(str(path)) if d.code == "BSL148"]
+    assert [d.line for d in diags] == [1]

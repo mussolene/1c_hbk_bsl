@@ -10,6 +10,47 @@ def _diag_module() -> Any:
     return _diag
 
 
+def _query_block_has_escaped_empty_query_string(
+    content_lines: list[tuple[int, int, str, str, bool]],
+) -> bool:
+    return any('""""' in content for _, _, content, _, _ in content_lines)
+
+
+def _query_block_has_escaped_empty_comparison_tail(last_content: str) -> bool:
+    return bool(re.search(r"(?:=|<>)\s*\"{4}", last_content))
+
+
+def _bsl235_diag_from_sdbl_tree(path: str, block: Any) -> Any | None:
+    if not getattr(block, "sdbl_has_errors", False):
+        return None
+    tree = getattr(block, "sdbl_tree", None)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return None
+
+    start_line, start_char = block.original_lsp_position(root.start_point[0], root.start_point[1])
+    end_line, end_char = block.original_lsp_position(root.end_point[0], root.end_point[1])
+    if (end_line, end_char) <= (start_line, start_char):
+        return None
+
+    _diag = _diag_module()
+    return _diag.Diagnostic(
+        file=path,
+        line=start_line + 1,
+        character=start_char,
+        end_line=end_line + 1,
+        end_character=end_char,
+        severity=_diag.Severity.WARNING,
+        code="BSL235",
+        message="Текст запроса должен быть корректным и открываться конструктором запросов",
+    )
+
+
+def _query_block_has_sdbl_tree(block: Any) -> bool:
+    tree = getattr(block, "sdbl_tree", None)
+    return getattr(tree, "root_node", None) is not None
+
+
 def run_bsl220_235_269_query_text_diagnostics(
     path: str,
     lines: list[str],
@@ -51,32 +92,39 @@ def run_bsl220_235_269_query_text_diagnostics(
         if not content_lines:
             continue
 
-        has_escaped_empty_query_string = any(
-            '""""' in content for _, _, content, _, _ in content_lines
-        )
+        has_escaped_empty_query_string = _query_block_has_escaped_empty_query_string(content_lines)
         last_content = content_lines[-1][2]
         if (
             "BSL235" in enabled
             and not has_escaped_empty_query_string
-            and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
-            and (
+            and not _query_block_has_escaped_empty_comparison_tail(last_content)
+        ):
+            has_legacy_parse_error = (
                 not _diag._query_has_balanced_parens([head for _, _, _, head, _ in content_lines])
                 or _has_plain_tail_parse_error(content_lines)
             )
-        ):
-            line_no, content_base, _content, head, _ = content_lines[-1]
-            diags.append(
-                _diag.Diagnostic(
-                    file=path,
-                    line=line_no,
-                    character=content_base,
-                    end_line=line_no,
-                    end_character=content_base + len(head),
-                    severity=_diag.Severity.ERROR,
-                    code="BSL235",
-                    message="Синтаксическая ошибка в тексте встроенного запроса",
+            sdbl_diag = _bsl235_diag_from_sdbl_tree(path, block)
+            if has_legacy_parse_error and sdbl_diag is not None:
+                diags.append(sdbl_diag)
+            elif _query_block_has_sdbl_tree(block):
+                pass
+            elif has_legacy_parse_error:
+                line_no, content_base, _content, head, _ = content_lines[-1]
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=line_no,
+                        character=content_base,
+                        end_line=line_no,
+                        end_character=content_base + len(head),
+                        severity=_diag.Severity.WARNING,
+                        code="BSL235",
+                        message=(
+                            "Текст запроса должен быть корректным и открываться "
+                            "конструктором запросов"
+                        ),
+                    )
                 )
-            )
 
         for line_no, content_base, content, head, _ended_query in content_lines:
             if "BSL220" in enabled:
@@ -119,14 +167,14 @@ def run_bsl220_235_269_query_text_diagnostics(
             if not content_lines:
                 continue
 
-            has_escaped_empty_query_string = any(
-                '""""' in content for _, _, content, _, _ in content_lines
+            has_escaped_empty_query_string = _query_block_has_escaped_empty_query_string(
+                content_lines
             )
             last_content = content_lines[-1][2]
             if (
                 "BSL235" in enabled
                 and not has_escaped_empty_query_string
-                and not re.search(r"(?:=|<>)\s*\"{4}", last_content)
+                and not _query_block_has_escaped_empty_comparison_tail(last_content)
                 and (
                     not _diag._query_has_balanced_parens(
                         [head for _, _, _, head, _ in content_lines]
@@ -142,9 +190,12 @@ def run_bsl220_235_269_query_text_diagnostics(
                         character=content_base,
                         end_line=line_no,
                         end_character=content_base + len(head),
-                        severity=_diag.Severity.ERROR,
+                        severity=_diag.Severity.WARNING,
                         code="BSL235",
-                        message="Синтаксическая ошибка в тексте встроенного запроса",
+                        message=(
+                            "Текст запроса должен быть корректным и открываться "
+                            "конструктором запросов"
+                        ),
                     )
                 )
 
@@ -360,7 +411,7 @@ def run_bsl206_207_209_query_join_diagnostics(
                     if virtual_match and (
                         join_datasource or has_join_before_query_end(content_lines, pos)
                     ):
-                        end_character = content_base + virtual_match.end()
+                        end_character = content_base + len(head[: virtual_match.end()].rstrip())
                         open_idx = virtual_match.end() - 1
                         if open_idx >= 0 and head[open_idx] == "(":
                             close_idx = _diag._find_matching_paren(head, open_idx)

@@ -100,6 +100,9 @@ _PARITY_TOKEN_SUPPRESS = frozenset(
         "буд",
         "кор",
         "прош",
+        "инфо",
+        "самозанятым",
+        "самозанятых",
         "нулевка",
         "салатовый",
         "субконто",
@@ -532,6 +535,8 @@ def _emit_parts_for_source_text(
     anchor_kind: str = "string",
 ) -> None:
     if not inner:
+        return
+    if anchor_kind == "string" and "\n" in source_text:
         return
     if inner.casefold() in cfg.words_to_ignore:
         return

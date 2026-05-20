@@ -32,9 +32,20 @@ from onec_hbk_bsl.analysis.diagnostic.string_state import (
     span_is_inside_double_quoted_string,
     strip_inline_comment_preserve_strings,
 )
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
 from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
 from onec_hbk_bsl.analysis.semantic import SemanticModel, extract_semantic_model
 from onec_hbk_bsl.analysis.symbols import Symbol
+
+try:
+    import tree_sitter_bsl as _ts_bsl
+    from tree_sitter import Language as _TsLanguage
+    from tree_sitter import Parser as _TsParser
+
+    _SDBL_LANGUAGE = _TsLanguage(_ts_bsl.sdbl_language())
+except Exception:  # pragma: no cover - optional parser dependency fallback
+    _SDBL_LANGUAGE = None
+    _TsParser = None  # type: ignore[assignment]
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 _RE_PROC_HEADER = re.compile(
@@ -103,7 +114,7 @@ _RE_THIS_FORM = re.compile(
     re.IGNORECASE,
 )
 _RE_BSL190_FORM_DATA = re.compile(
-    r"\b(?:ДанныеФормыВЗначение|FormDataToValue)\s*\(",
+    r"\b(?P<name>ДанныеФормыВЗначение|FormDataToValue)\s*\(",
     re.IGNORECASE,
 )
 _RE_VAR_MODULE = re.compile(
@@ -495,6 +506,10 @@ def _arithmetic_missing_space_cols_in_line(line: str, in_str_at_start: bool = Fa
             continue
 
         if ch in "+-*/%":
+            if ch in "+-" and re.search(r"\b(?:Возврат|Return)\s*$", stripped[:i], re.IGNORECASE):
+                prev_non_space = ch
+                i += 1
+                continue
             if ch in "+-" and prev_non_space not in _BINARY_LHS:
                 prev_non_space = ch
                 i += 1
@@ -562,6 +577,26 @@ def _has_preceding_variable_description(lines: list[str], var_line_idx: int) -> 
         return len(stripped) > 3
     if stripped.startswith("//"):
         return len(stripped[2:].strip()) > 0
+    return False
+
+
+def _has_inline_variable_description(line: str) -> bool:
+    comment_pos = line.find("//")
+    if comment_pos < 0:
+        return False
+    return len(line[comment_pos + 2 :].strip()) > 0
+
+
+def _has_previous_inline_variable_description(lines: list[str], var_line_idx: int) -> bool:
+    prev_idx = var_line_idx - 1
+    while prev_idx >= 0:
+        stripped = lines[prev_idx].strip()
+        if not stripped or stripped.startswith("&"):
+            prev_idx -= 1
+            continue
+        if _RE_VAR_MODULE.match(stripped):
+            return _has_inline_variable_description(lines[prev_idx])
+        return False
     return False
 
 
@@ -707,6 +742,10 @@ class ProcInfo:
     optional_count: int
     header_col: int = 0
     optional_params: frozenset[str] = frozenset()
+    params_start_idx: int | None = None
+    params_start_character: int | None = None
+    params_end_idx: int | None = None
+    params_end_character: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -747,6 +786,8 @@ class QueryTextBlockInfo:
     start_idx: int
     block_lines: tuple[str, ...]
     content_lines: tuple[QueryTextLineInfo, ...]
+    sdbl_tree: Any | None = None
+    sdbl_has_errors: bool = False
 
     @property
     def query_text(self) -> str:
@@ -755,6 +796,22 @@ class QueryTextBlockInfo:
     @property
     def head_text(self) -> str:
         return "\n".join(line.head for line in self.content_lines)
+
+    def original_lsp_position(self, row: int, utf8_col: int) -> tuple[int, int]:
+        if row < 0 or row >= len(self.content_lines):
+            return self.start_idx, 0
+        line = self.content_lines[row]
+        character = line.content_base + utf8_byte_offset_to_lsp_character(line.head, utf8_col)
+        return line.line_no - 1, character
+
+
+def _parse_sdbl_query_text(query_text: str) -> tuple[Any | None, bool]:
+    if _SDBL_LANGUAGE is None or _TsParser is None or not query_text.strip():
+        return None, False
+    parser = _TsParser(_SDBL_LANGUAGE)
+    tree = parser.parse(query_text.encode("utf-8"))
+    root = getattr(tree, "root_node", None)
+    return tree, bool(root is not None and tree_has_errors(root))
 
 
 def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
@@ -779,6 +836,16 @@ def _ts_node_text(node: Any) -> str:
     return text.decode("utf-8", errors="replace") if isinstance(text, bytes) else str(text)
 
 
+def _ts_point_to_lsp_character(container_node: Any, point: Any) -> int:
+    node_text = _ts_node_text(container_node)
+    row = point[0]
+    local_row = row - container_node.start_point[0]
+    lines = node_text.splitlines()
+    if local_row < 0 or local_row >= len(lines):
+        return point[1]
+    return utf8_byte_offset_to_lsp_character(lines[local_row], point[1])
+
+
 def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
     name = ""
     params: list[str] = []
@@ -786,6 +853,10 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
     optional_count = 0
     is_export = False
     optional_params_list: list[str] = []
+    params_start_idx: int | None = None
+    params_start_character: int | None = None
+    params_end_idx: int | None = None
+    params_end_character: int | None = None
 
     for child in getattr(node, "children", []) or []:
         child_type = getattr(child, "type", None)
@@ -794,6 +865,19 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
         elif child_type == "EXPORT_KEYWORD":
             is_export = True
         elif child_type == "parameters":
+            open_node = None
+            close_node = None
+            for param_child in getattr(child, "children", []) or []:
+                param_child_type = getattr(param_child, "type", None)
+                if param_child_type == "(":
+                    open_node = param_child
+                elif param_child_type == ")":
+                    close_node = param_child
+            if open_node is not None and close_node is not None:
+                params_start_idx = open_node.end_point[0]
+                params_start_character = _ts_point_to_lsp_character(node, open_node.end_point)
+                params_end_idx = close_node.start_point[0]
+                params_end_character = _ts_point_to_lsp_character(node, close_node.start_point)
             for param in getattr(child, "children", []) or []:
                 if getattr(param, "type", None) != "parameter":
                     continue
@@ -842,6 +926,10 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
         optional_count=optional_count,
         header_col=node.start_point[1],
         optional_params=frozenset(optional_params_list),
+        params_start_idx=params_start_idx,
+        params_start_character=params_start_character,
+        params_end_idx=params_end_idx,
+        params_end_character=params_end_character,
     )
 
 
@@ -904,6 +992,15 @@ def _line_index_for_offset(line_breaks: list[int], offset: int) -> int:
     return bisect_left(line_breaks, offset)
 
 
+def _lsp_point_for_offset(content: str, line_breaks: list[int], offset: int) -> tuple[int, int]:
+    line_idx = _line_index_for_offset(line_breaks, offset)
+    line_start = 0 if line_idx == 0 else line_breaks[line_idx - 1] + 1
+    line_end = line_breaks[line_idx] if line_idx < len(line_breaks) else len(content)
+    line_text = content[line_start:line_end].rstrip("\r")
+    character = utf16_len(line_text[: max(0, offset - line_start)])
+    return line_idx, character
+
+
 def _find_procedures(content: str) -> list[ProcInfo]:
     line_breaks = _line_break_positions(content)
     ends = [
@@ -926,6 +1023,12 @@ def _find_procedures(content: str) -> list[ProcInfo]:
         val_params = [param[0] for param in parsed if param[1]]
         optional_count = sum(1 for param in parsed if param[2])
         optional_params = frozenset(param[0] for param in parsed if param[2])
+        params_start_idx, params_start_character = _lsp_point_for_offset(
+            content, line_breaks, match.start("params")
+        )
+        params_end_idx, params_end_character = _lsp_point_for_offset(
+            content, line_breaks, match.end("params")
+        )
 
         end_idx = start_idx + 5
         end_pos = bisect_right(ends, start_idx)
@@ -944,6 +1047,10 @@ def _find_procedures(content: str) -> list[ProcInfo]:
                 optional_count=optional_count,
                 header_col=header_col,
                 optional_params=optional_params,
+                params_start_idx=params_start_idx,
+                params_start_character=params_start_character,
+                params_end_idx=params_end_idx,
+                params_end_character=params_end_character,
             )
         )
     return result
@@ -1108,8 +1215,10 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
                 quote_pos = raw_line.find('"')
                 if quote_pos < 0:
                     continue
-                content_base = quote_pos + 1
-                raw_content = raw_line[content_base:]
+                after_quote = raw_line[quote_pos + 1 :]
+                leading_ws = len(after_quote) - len(after_quote.lstrip())
+                content_base = quote_pos + 1 + leading_ws
+                raw_content = after_quote.lstrip()
             else:
                 pipe_pos = raw_line.find("|")
                 if pipe_pos < 0:
@@ -1119,7 +1228,7 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
                 content_base = pipe_pos + 1 + leading_ws
                 raw_content = after_pipe.lstrip()
 
-            content = _RE_QUERY_INLINE_COMMENT.sub("", raw_content).rstrip().lstrip()
+            content = _RE_QUERY_INLINE_COMMENT.sub("", raw_content).rstrip()
             if not content:
                 continue
 
@@ -1143,11 +1252,15 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
             if ended_query:
                 break
 
+        sdbl_text = "\n".join(line.head for line in content_lines)
+        sdbl_tree, sdbl_has_errors = _parse_sdbl_query_text(sdbl_text)
         result.append(
             QueryTextBlockInfo(
                 start_idx=i,
                 block_lines=tuple(block_lines),
                 content_lines=tuple(content_lines),
+                sdbl_tree=sdbl_tree,
+                sdbl_has_errors=sdbl_has_errors,
             )
         )
         i = j
@@ -1357,7 +1470,7 @@ class DocumentSnapshot:
         for raw in raw_line_source:
             raw_no_lf = raw.rstrip("\n")
             raw_no_eol = raw_no_lf.rstrip("\r")
-            if raw_no_lf.endswith("\r"):
+            if raw_no_lf.endswith("\r") and raw_no_eol.lstrip().startswith("//"):
                 visible_len = len(raw_no_eol.rstrip("\t"))
             else:
                 visible_len = len(raw_no_eol.rstrip())
@@ -1978,8 +2091,8 @@ class DocumentSnapshot:
             facts.append(
                 LineDiagnosticFact(
                     line_idx=idx,
-                    character=match.start(),
-                    end_character=match.end(),
+                    character=match.start("name"),
+                    end_character=match.end("name"),
                     message="Не рекомендуемое использование метода ДанныеФормыВЗначение",
                 )
             )
@@ -2040,7 +2153,12 @@ class DocumentSnapshot:
             if not code_part.strip():
                 continue
             match = _RE_VAR_MODULE.match(code_part)
-            if match is None or _has_preceding_variable_description(self.lines, idx):
+            if (
+                match is None
+                or _has_preceding_variable_description(self.lines, idx)
+                or _has_inline_variable_description(self.lines[idx])
+                or _has_previous_inline_variable_description(self.lines, idx)
+            ):
                 continue
             facts.append(
                 LineDiagnosticFact(
@@ -2146,55 +2264,35 @@ class DocumentSnapshot:
 
         facts: list[LineDiagnosticFact] = []
         for block in self.query_text_blocks:
-            start_idx = block.start_idx
-            block_lines = list(block.block_lines)
-            query_text = block.query_text
-            top_matches = list(_RE_QUERY_TOP.finditer(query_text))
-            if not top_matches:
-                continue
-            has_union = bool(_RE_QUERY_UNION.search(query_text))
-            has_where = bool(_RE_QUERY_WHERE.search(query_text))
-            if not has_union and _RE_QUERY_ORDER_BY.search(query_text):
-                continue
+            packages: list[list[QueryTextLineInfo]] = [[]]
+            for line in block.content_lines:
+                if line.head.strip() == ";":
+                    packages.append([])
+                    continue
+                packages[-1].append(line)
 
-            for top_match in top_matches:
-                top_limit = top_match.group(1)
-                if not has_union:
-                    next_union = _RE_QUERY_UNION.search(query_text, top_match.end())
-                    segment_end = next_union.start() if next_union else len(query_text)
-                    segment_text = query_text[top_match.start() : segment_end]
-                    if _RE_QUERY_ORDER_BY.search(segment_text):
-                        continue
-                if not has_union and top_limit in {"0", "1"} and has_where:
+            for package_lines in packages:
+                if not package_lines:
+                    continue
+                package_text = "\n".join(line.head for line in package_lines)
+                has_union = bool(_RE_QUERY_UNION.search(package_text))
+                if not has_union and _RE_QUERY_ORDER_BY.search(package_text):
                     continue
 
-                rel_pos = top_match.start()
-                passed = 0
-                line_idx = start_idx
-                col = 0
-                end_col = 0
-                for offset, raw_line in enumerate(block_lines):
-                    line_len = len(raw_line)
-                    if rel_pos <= passed + line_len:
-                        line_idx = start_idx + offset
-                        col = max(0, rel_pos - passed)
-                        local_match = _RE_QUERY_TOP.search(raw_line[col:])
-                        if local_match is not None:
-                            col += local_match.start()
-                            end_col = col + (local_match.end() - local_match.start())
-                        else:
-                            end_col = min(len(raw_line), col + len(top_match.group(0)))
-                        break
-                    passed += line_len + 1
-
-                facts.append(
-                    LineDiagnosticFact(
-                        line_idx=line_idx,
-                        character=col,
-                        end_character=end_col,
-                        message="Нужно изменить запрос, добавив упорядочивание",
-                    )
-                )
+                for line in package_lines:
+                    for top_match in _RE_QUERY_TOP.finditer(line.head):
+                        top_limit = top_match.group(1)
+                        if not has_union and top_limit in {"0", "1"}:
+                            continue
+                        col = line.content_base + top_match.start()
+                        facts.append(
+                            LineDiagnosticFact(
+                                line_idx=line.line_no - 1,
+                                character=col,
+                                end_character=col + (top_match.end() - top_match.start()),
+                                message="Нужно изменить запрос, добавив упорядочивание",
+                            )
+                        )
         self._select_top_without_order_facts = facts
         return facts
 
@@ -2235,7 +2333,7 @@ class DocumentSnapshot:
                 LineDiagnosticFact(
                     line_idx=idx,
                     character=0,
-                    end_character=length,
+                    end_character=reported_length,
                     message=(
                         f"Длина строки {reported_length} превышает максимально допустимую "
                         f"{max_line_length}"

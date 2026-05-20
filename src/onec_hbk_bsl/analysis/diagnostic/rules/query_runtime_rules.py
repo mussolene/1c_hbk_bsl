@@ -10,10 +10,109 @@ def _diag_module() -> Any:
     return _diag
 
 
+def _node_text(node: Any) -> str:
+    text = getattr(node, "text", b"")
+    if isinstance(text, bytes):
+        return text.decode("utf-8", errors="replace")
+    return str(text)
+
+
+def _iter_nodes(node: Any, node_type: str):
+    if getattr(node, "type", None) == node_type:
+        yield node
+    for child in getattr(node, "children", []) or []:
+        yield from _iter_nodes(child, node_type)
+
+
+def _field_has_alias(field_node: Any) -> bool:
+    for child in getattr(field_node, "children", []) or []:
+        if getattr(child, "type", None) != "field_alias":
+            continue
+        child_types = {getattr(grandchild, "type", None) for grandchild in child.children}
+        return "AS_KEYWORD" in child_types and "identifier" in child_types
+    return False
+
+
+def _inside_union_clause(node: Any) -> bool:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) == "union_clause":
+            return True
+        parent = getattr(parent, "parent", None)
+    return False
+
+
+def _field_should_be_skipped(field_text: str) -> bool:
+    stripped = field_text.strip().rstrip(";")
+    if not stripped or stripped == "*" or re.match(r"^\w+\.\*$", stripped, re.UNICODE):
+        return True
+    return bool(re.search(r"\b(?:ВЫБОР|CASE)\b", stripped, re.IGNORECASE))
+
+
+def _query_block_has_dynamic_tail(lines: list[str], block: Any) -> bool:
+    content_lines = list(getattr(block, "content_lines", []) or [])
+    if not content_lines or not getattr(content_lines[-1], "ended_query", False):
+        return False
+    next_idx = content_lines[-1].line_no
+    while next_idx < len(lines) and not lines[next_idx].strip():
+        next_idx += 1
+    return next_idx < len(lines) and lines[next_idx].lstrip().startswith("+")
+
+
+def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[Any] | None:
+    tree = getattr(block, "sdbl_tree", None)
+    root = getattr(tree, "root_node", None)
+    if root is None or getattr(block, "sdbl_has_errors", False) or _query_block_has_dynamic_tail(lines, block):
+        return None
+
+    _diag = _diag_module()
+    diags: list[Any] = []
+    for field_node in _iter_nodes(root, "field"):
+        if _inside_union_clause(field_node):
+            continue
+        if _field_has_alias(field_node):
+            continue
+        field_text = _node_text(field_node)
+        if _field_should_be_skipped(field_text):
+            continue
+        start_line, start_char = block.original_lsp_position(
+            field_node.start_point[0], field_node.start_point[1]
+        )
+        end_line, end_char = block.original_lsp_position(
+            field_node.end_point[0], field_node.end_point[1]
+        )
+        field_for_message = (
+            re.sub(r"\s+", "", field_text.strip())
+            if field_text.strip() and field_text.strip()[0].isdigit()
+            else field_text.strip()
+        )
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line + 1,
+                character=start_char,
+                end_line=end_line + 1,
+                end_character=end_char,
+                severity=_diag.Severity.WARNING,
+                code="BSL149",
+                message=(
+                    f'Полю "{field_for_message}" не назначен псевдоним или пропущено ключевое слово КАК'
+                ),
+            )
+        )
+    return diags
+
+
 def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[Any]) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
     for block in query_blocks:
+        if _query_block_has_dynamic_tail(lines, block):
+            continue
+        sdbl_diags = _run_bsl149_on_sdbl_tree(path, lines, block)
+        if sdbl_diags is not None:
+            diags.extend(sdbl_diags)
+            continue
         block_head = "\n".join(
             head
             for (
@@ -298,6 +397,8 @@ def run_bsl234_query_nested_fields_by_dot(
         "chartofcharacteristictypes",
         "планрасчетавидов",
         "chartofcalculationtypes",
+        "бизнеспроцесс",
+        "businessprocess",
     }
 
     def mask_value_calls(text: str) -> str:

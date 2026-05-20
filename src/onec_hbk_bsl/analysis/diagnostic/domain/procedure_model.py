@@ -37,6 +37,26 @@ _BSL029_SINGLE_QUOTED_STRING_RE = re.compile(r"'[^'\n]*(?:''[^'\n]*)*'")
 _BSL029_DOUBLE_QUOTED_STRING_RE = re.compile(r'"[^"\n]*(?:""[^"\n]*)*"')
 
 
+def _mask_unclosed_double_quoted_tail(text: str) -> str:
+    pos = 0
+    while pos < len(text):
+        if text[pos] != '"':
+            pos += 1
+            continue
+        end = pos + 1
+        while end < len(text):
+            if text[end] == '"':
+                if end + 1 < len(text) and text[end + 1] == '"':
+                    end += 2
+                    continue
+                break
+            end += 1
+        if end >= len(text):
+            return text[:pos] + '"' + (" " * max(0, len(text) - pos - 1))
+        pos = end + 1
+    return text
+
+
 @dataclass(frozen=True, slots=True)
 class ProcedureModel:
     path: str
@@ -49,6 +69,10 @@ class ProcedureModel:
     params: tuple[str, ...]
     optional_count: int
     optional_params: frozenset[str]
+    params_start_idx: int | None = None
+    params_start_character: int | None = None
+    params_end_idx: int | None = None
+    params_end_character: int | None = None
 
     @classmethod
     def from_proc_info(cls, path: str, proc: ProcInfo) -> ProcedureModel:
@@ -63,25 +87,48 @@ class ProcedureModel:
             params=tuple(proc.params),
             optional_count=proc.optional_count,
             optional_params=proc.optional_params,
+            params_start_idx=proc.params_start_idx,
+            params_start_character=proc.params_start_character,
+            params_end_idx=proc.params_end_idx,
+            params_end_character=proc.params_end_character,
         )
 
-    def validate_param_limit(self, lines: list[str], *, max_params: int) -> list[Diagnostic]:
-        total = len(self.params)
-        if total <= max_params:
-            return []
+    def _param_list_range(self, lines: list[str]) -> tuple[int, int, int, int]:
+        if (
+            self.params_start_idx is not None
+            and self.params_start_character is not None
+            and self.params_end_idx is not None
+            and self.params_end_character is not None
+        ):
+            return (
+                self.params_start_idx + 1,
+                self.params_start_character,
+                self.params_end_idx + 1,
+                self.params_end_character,
+            )
         line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
         character = line_text.find("(")
         if character < 0:
             character = self.header_col
         else:
             character += 1
+        end_character = line_text.rfind(")")
+        if end_character < character:
+            end_character = len(line_text.rstrip())
+        return self.start_idx + 1, character, self.start_idx + 1, end_character
+
+    def validate_param_limit(self, lines: list[str], *, max_params: int) -> list[Diagnostic]:
+        total = len(self.params)
+        if total <= max_params:
+            return []
+        line, character, end_line, end_character = self._param_list_range(lines)
         return [
             Diagnostic(
                 file=self.path,
-                line=self.start_idx + 1,
+                line=line,
                 character=character,
-                end_line=self.start_idx + 1,
-                end_character=len(line_text),
+                end_line=end_line,
+                end_character=end_character,
                 severity=Severity.INFORMATION,
                 code="BSL031",
                 message=f"Уменьшите количество параметров c {total} до допустимого {max_params}",
@@ -93,19 +140,14 @@ class ProcedureModel:
     ) -> list[Diagnostic]:
         if self.optional_count <= max_optional_params:
             return []
-        line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
-        character = line_text.find("(")
-        if character < 0:
-            character = self.header_col
-        else:
-            character += 1
+        line, character, end_line, end_character = self._param_list_range(lines)
         return [
             Diagnostic(
                 file=self.path,
-                line=self.start_idx + 1,
+                line=line,
                 character=character,
-                end_line=self.start_idx + 1,
-                end_character=len(line_text),
+                end_line=end_line,
+                end_character=end_character,
                 severity=Severity.INFORMATION,
                 code="BSL015",
                 message=(
@@ -330,6 +372,10 @@ class ProcedureModel:
         comment_block = lines[block_start : block_end + 1]
         if any(re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block):
             return []
+        if len(comment_block) == 1:
+            text = re.sub(r"^\s*//\s*", "", comment_block[0]).strip()
+            if re.match(r"^(?:Конец|End)\b", text, re.IGNORECASE):
+                return []
 
         returns_section_start = None
         for ci, cl in enumerate(comment_block):
@@ -370,7 +416,7 @@ class ProcedureModel:
                     continue
                 if "—" in text and "-" not in text:
                     continue
-                if has_struct_fields and ":" not in first_part and "-" in text:
+                if has_struct_fields and ":" not in first_part and "-" in text and not text.endswith(":"):
                     continue
                 has_valid_return_entry = True
                 break
@@ -767,7 +813,7 @@ class ProcedureModel:
             )
             code_part = _BSL029_SINGLE_QUOTED_STRING_RE.sub(
                 lambda m: "'" + (" " * max(0, len(m.group(0)) - 2)) + "'",
-                code_part,
+                _mask_unclosed_double_quoted_tail(code_part),
             )
             comment_pos = code_part.find("//")
             if comment_pos >= 0:
@@ -855,4 +901,8 @@ class ProcedureModel:
             optional_count=self.optional_count,
             header_col=self.header_col,
             optional_params=self.optional_params,
+            params_start_idx=self.params_start_idx,
+            params_start_character=self.params_start_character,
+            params_end_idx=self.params_end_idx,
+            params_end_character=self.params_end_character,
         )

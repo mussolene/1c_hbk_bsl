@@ -100,31 +100,39 @@ def _collect_if_branches(if_node: Any) -> tuple[list[list[Any]], bool]:
     return branches, has_else
 
 
-def _stmt_list_always_returns(stmts: list[Any]) -> bool:
+def _is_meaningful_stmt(node: Any) -> bool:
+    return getattr(node, "type", None) not in (None, ";", "line_comment", "preprocessor")
+
+
+def _stmt_list_always_returns(
+    stmts: list[Any], *, loops_executed_at_least_once: bool = True
+) -> bool:
     if not stmts:
         return False
-    for st in stmts:
+    meaningful = [st for st in stmts if _is_meaningful_stmt(st)]
+    for index, st in enumerate(meaningful):
         t = getattr(st, "type", None)
         if t in ("return_statement", "rise_error_statement"):
             return True
-        if t == ";":
-            continue
         if t == "if_statement":
-            if not _if_always_returns(st):
-                return False
+            if _if_always_returns(st, loops_executed_at_least_once=loops_executed_at_least_once):
+                return True
             continue
         if t in ("while_statement", "for_statement", "for_each_statement"):
-            if not _loop_body_always_returns(st):
-                return False
+            if t == "while_statement" and _while_literal_true(st):
+                return True
+            if loops_executed_at_least_once and index + 1 >= len(meaningful):
+                return True
+            if _loop_body_always_returns(
+                st, loops_executed_at_least_once=loops_executed_at_least_once
+            ):
+                return True
             continue
         if t == "try_statement":
-            if not _try_always_returns(st):
-                return False
+            if _try_always_returns(st, loops_executed_at_least_once=loops_executed_at_least_once):
+                return True
             continue
-        if t == "preprocessor":
-            continue
-        return False
-    return True
+    return False
 
 
 def _loop_body_stmts(loop_node: Any) -> list[Any]:
@@ -147,11 +155,14 @@ def _loop_body_stmts(loop_node: Any) -> list[Any]:
     return out
 
 
-def _loop_body_always_returns(loop_node: Any) -> bool:
-    return _stmt_list_always_returns(_loop_body_stmts(loop_node))
+def _loop_body_always_returns(loop_node: Any, *, loops_executed_at_least_once: bool = True) -> bool:
+    return _stmt_list_always_returns(
+        _loop_body_stmts(loop_node),
+        loops_executed_at_least_once=loops_executed_at_least_once,
+    )
 
 
-def _try_always_returns(try_node: Any) -> bool:
+def _try_always_returns(try_node: Any, *, loops_executed_at_least_once: bool = True) -> bool:
     parts: list[list[Any]] = []
     cur: list[Any] = []
     for ch in getattr(try_node, "children", []) or []:
@@ -166,21 +177,41 @@ def _try_always_returns(try_node: Any) -> bool:
         parts.append(cur)
     if not parts:
         return False
-    return all(_stmt_list_always_returns(b) for b in parts)
+    return all(
+        _stmt_list_always_returns(
+            b,
+            loops_executed_at_least_once=loops_executed_at_least_once,
+        )
+        for b in parts
+    )
 
 
-def _if_always_returns(if_node: Any) -> bool:
+def _if_always_returns(if_node: Any, *, loops_executed_at_least_once: bool = True) -> bool:
     branches, has_else = _collect_if_branches(if_node)
     if not branches or not has_else:
         return False
-    return all(_stmt_list_always_returns(b) for b in branches)
+    return all(
+        _stmt_list_always_returns(
+            b,
+            loops_executed_at_least_once=loops_executed_at_least_once,
+        )
+        for b in branches
+    )
 
 
-def _if_may_exit_to_successor_without_return(if_node: Any) -> bool:
+def _if_may_exit_to_successor_without_return(
+    if_node: Any, *, loops_executed_at_least_once: bool = True
+) -> bool:
     branches, has_else = _collect_if_branches(if_node)
     if not branches or not has_else:
         return True
-    return any(not _stmt_list_always_returns(b) for b in branches)
+    return any(
+        not _stmt_list_always_returns(
+            b,
+            loops_executed_at_least_once=loops_executed_at_least_once,
+        )
+        for b in branches
+    )
 
 
 def _while_literal_true(while_node: Any) -> bool:
@@ -213,7 +244,10 @@ def implicit_exit_reachable(
         if t == "preprocessor":
             return walk(i + 1)
         if t == "if_statement":
-            if _if_may_exit_to_successor_without_return(s):
+            if _if_may_exit_to_successor_without_return(
+                s,
+                loops_executed_at_least_once=loops_executed_at_least_once,
+            ):
                 return walk(i + 1)
             return False
         if t in ("while_statement", "for_statement", "for_each_statement"):
@@ -228,7 +262,10 @@ def implicit_exit_reachable(
                 return False
             if loops_executed_at_least_once and at_top_level:
                 return walk(i + 1)
-            if not _loop_body_always_returns(s):
+            if not _loop_body_always_returns(
+                s,
+                loops_executed_at_least_once=loops_executed_at_least_once,
+            ):
                 return True
             return walk(i + 1)
         if t == "try_statement":
