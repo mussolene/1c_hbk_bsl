@@ -157,9 +157,12 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                         character=start_char,
                         end_line=proc.start_idx + 1,
                         end_character=end_char,
-                        severity=_diag.Severity.INFORMATION,
+                        severity=_diag.Severity.ERROR,
                         code="BSL194",
-                        message="Функция всегда возвращает одно и то же примитивное значение",
+                        message=(
+                            "Проверьте правильность возврата одного и того же "
+                            "примитивного значения в функции"
+                        ),
                     )
                 )
 
@@ -843,6 +846,12 @@ def run_bsl224_nested_function_in_parameters(
             if exact_start >= 0
             else _diag.utf8_byte_offset_to_lsp_character(start_line_text, anchor.start_point[1])
         )
+        call_kind = (
+            "конструктора"
+            if name.casefold()
+            in {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
+            else "метода"
+        )
 
         diags.append(
             _diag.Diagnostic(
@@ -855,7 +864,7 @@ def run_bsl224_nested_function_in_parameters(
                 else _diag.utf8_byte_offset_to_lsp_character(end_line_text, name_node.end_point[1]),
                 severity=_diag.Severity.INFORMATION,
                 code="BSL224",
-                message=f'Уберите инициализацию параметров метода "{name}" вложенными методами',
+                message=f'Уберите инициализацию параметров {call_kind} "{name}" вложенными методами',
             )
         )
         seen.add((start_line_idx, start_char))

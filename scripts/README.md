@@ -42,16 +42,20 @@ python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 
 ## BSLLS oracle / parity
 
-Источник правды для сравнения с Java BSLLS — контейнер `1c-develop`, а не
-локальный Java/JAR на машине разработчика.
+Источник правды для сравнения с Java BSLLS — локальный BSLLS resolver из
+`onec_hbk_bsl.analysis.bslls_runtime_parity`. Он находит `BSLLS_JAR`,
+кэшированный `~/.cache/onec-hbk-bsl/bslls/*-exec.jar` или локальную сборку
+`.nosync/bsl-language-server`, а Java выбирает через `BSLLS_JAVA` / `JAVA_HOME`
+/ системный Java 17+.
 
 ```bash
-PYTHONPATH=src python3 scripts/bslls_oracle_parity.py tests/fixtures \
-  --output-dir .agent/reports/bslls-oracle/fixtures
+acs run --label "largest3 local bslls parity" -- uv run python scripts/largest3_sharded_parity.py
 ```
 
-Скрипт запускает `onec-agent bslls` в образе
-`ghcr.io/mussolene/1c-developer:8.5.1.1302`, читает `bsl-json.json`, запускает
-локальные диагностики и пишет `parity.json` с категориями:
+Низкоуровневые функции для произвольных корпусов:
+`resolve_bslls_jar`, `capture_bslls_baseline`, `compare_with_bslls_baseline`,
+`compare_with_bslls` в `onec_hbk_bsl.analysis.bslls_runtime_parity`.
+
+Отчеты parity используют категории:
 `only_ours`, `only_bslls`, `message_mismatch`, `severity_mismatch`,
 `anchor_mismatch`.

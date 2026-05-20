@@ -3224,6 +3224,15 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         diags = _check(content, tmp_path, select={"BSL208"})
         assert "BSL208" not in _codes(diags)
 
+    def test_cyrillic_property_after_dot_is_not_latin(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Объект.П = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208", "BSL256"})
+        assert "BSL208" not in _codes(diags)
+
     def test_bslls_typo_sample_with_mocked_spellchecker(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -3850,6 +3859,62 @@ class TestBsl040UsingThisForm:
         plain.parent.mkdir(parents=True)
         plain.write_text("// ok\n", encoding="utf-8")
         assert not path_is_likely_form_module_bsl(str(plain))
+
+
+# ---------------------------------------------------------------------------
+# BSL194 / BSL224 / BSL227 — BSLLS message and severity parity
+# ---------------------------------------------------------------------------
+
+
+class TestMethodAndStatementMessageParity:
+    def test_bsl194_severity_and_message_match_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Если Истина Тогда
+                    Возврат Истина;
+                КонецЕсли;
+                Возврат Истина;
+            КонецФункции
+        """
+
+        bsl194 = [d for d in _check(content, tmp_path, select={"BSL194"}) if d.code == "BSL194"]
+
+        assert len(bsl194) == 1
+        assert bsl194[0].severity is Severity.ERROR
+        assert (
+            bsl194[0].message
+            == "Проверьте правильность возврата одного и того же примитивного значения в функции"
+        )
+
+    def test_bsl224_constructor_message_matches_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ОбработкаКоманды(ПараметрыВыполненияКоманды)
+                ИсточникКоманды = ПараметрыВыполненияКоманды.Источник;
+                ПараметрыФормы = Новый Структура("Отбор", Новый Структура(
+                    "Организация, ПодразделениеОрганизации",
+                    ИсточникКоманды.Объект.Владелец,
+                    ИсточникКоманды.Параметры.Ключ));
+            КонецПроцедуры
+        """
+
+        bsl224 = [d for d in _check(content, tmp_path, select={"BSL224"}) if d.code == "BSL224"]
+
+        assert len(bsl224) == 1
+        assert bsl224[0].message == (
+            'Уберите инициализацию параметров конструктора "Структура" вложенными методами'
+        )
+
+    def test_bsl227_message_matches_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = 1; Б = 2;
+            КонецПроцедуры
+        """
+
+        bsl227 = [d for d in _check(content, tmp_path, select={"BSL227"}) if d.code == "BSL227"]
+
+        assert len(bsl227) == 1
+        assert bsl227[0].message == "Перенесите выражение на новую строку"
 
 
 # ---------------------------------------------------------------------------

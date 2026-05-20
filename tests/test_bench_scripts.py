@@ -31,18 +31,6 @@ def test_bench_profile_path_for_run_cache_modes() -> None:
     assert bench_profile._path_for_run(base, 2, "miss") != base
 
 
-def test_bslls_oracle_parity_rule_filter_accepts_code_and_name() -> None:
-    bslls_oracle_parity = _load_script_module("bslls_oracle_parity")
-
-    by_code = bslls_oracle_parity._rule_filter_codes(["BSL265"])
-    by_name = bslls_oracle_parity._rule_filter_codes(["UselessTernaryOperator"])
-    unknown = bslls_oracle_parity._unknown_rule_filter_tokens(["BSL265,UselessTernaryOperator"])
-
-    assert by_code == {"BSL265"}
-    assert by_name == {"BSL265"}
-    assert unknown == []
-
-
 def test_bsl_diagnostic_messages_are_not_english_fallbacks() -> None:
     root = Path(__file__).resolve().parents[1] / "src" / "onec_hbk_bsl" / "analysis"
     offenders: list[str] = []

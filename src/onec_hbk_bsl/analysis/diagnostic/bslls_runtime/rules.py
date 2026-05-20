@@ -3177,7 +3177,7 @@ class AssignAliasFieldsInQueryRule(BsllsDiagnosticRule):
 
 class OneStatementPerLineRule(BsllsDiagnosticRule):
     code = "BSL227"
-    message = "Несколько операторов на одной строке — разместите каждый на отдельной строке"
+    message = "Перенесите выражение на новую строку"
     _then_re = re.compile(r"\b(?:тогда|then)\b", re.IGNORECASE)
     _end_if_re = re.compile(r"^(?:конецесли|endif)\s*;?\s*$", re.IGNORECASE)
 

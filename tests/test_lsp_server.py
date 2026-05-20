@@ -1085,6 +1085,47 @@ class TestFormatting:
         result = on_formatting(ls, params)
         assert result == []
 
+    def test_format_on_save_recovers_multiline_query_string_indent(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_formatting
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls._docs["file:///test.bsl"] = (
+            "// &НаСервере\n"
+            "Процедура ДобавитьВычисляемоеПолеОбработкаПриглашений(СхемаКомпоновкиДанных)\n"
+            "\t\n"
+            "\tВыражениеПоля =\n"
+            '\t\t"\tВЫБОР\n'
+            "\t\t\t|\t\tКОГДА Экстраверт = Истина ТОГДА\n"
+            '\t\t\t\t|\t\t\t""Автоматически""\n'
+            "\t\t\t\t|\t\tИНАЧЕ\n"
+            '\t\t\t\t|\t\t\t""Контрагентом вручную""\n'
+            '\t\t\t\t|\tКОНЕЦ";\n'
+            "\t\t\n"
+            "\t\tВычисляемоеПоле = СхемаКомпоновкиДанных.ВычисляемыеПоля.Добавить();\n"
+            '\t\tВычисляемоеПоле.ПутьКДанным = "ОбработкаПриглашений";\n'
+            "\t\tВычисляемоеПоле.Выражение = ВыражениеПоля;\n"
+            "\t\t\n"
+            "\tКонецПроцедуры\n"
+        )
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.options.tab_size = 4
+        params.options.insert_spaces = False
+
+        result = on_formatting(ls, params)
+
+        assert result is not None
+        assert len(result) == 1
+        assert "\n\t\t\t|\t\tКОГДА" not in result[0].new_text
+        assert "\n\t\t|\t\tКОГДА" in result[0].new_text
+        assert "\n\t\tВычисляемоеПоле =" not in result[0].new_text
+        assert "\n\tВычисляемоеПоле =" in result[0].new_text
+        assert result[0].new_text.endswith("КонецПроцедуры")
+
     def test_range_formatting(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 

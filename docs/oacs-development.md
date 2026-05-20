@@ -78,7 +78,7 @@ Use `acs run` when ACS should execute and record a command:
 ```bash
 acs run --label "ruff" -- ruff check src tests
 acs run --label "pytest" -- env PYTHONPATH=src ./.venv/bin/python -m pytest -q
-acs run --label "bslls parity" -- python3 scripts/bslls_oracle_parity.py tests/fixtures
+acs run --label "bslls parity" -- uv run python scripts/largest3_sharded_parity.py
 ```
 
 Use `acs tool ingest-result` when a tool has already run and you need to record
@@ -110,7 +110,7 @@ When evidence should become reusable project knowledge:
 
 ```bash
 MEM_ID=$(acs memory propose --type procedure --depth 2 --scope project \
-  --text "BSLLS oracle runs through scripts/bslls_oracle_parity.py and the 1c-develop container." \
+  --text "BSLLS parity runs through the local resolver helpers in onec_hbk_bsl.analysis.bslls_runtime_parity under acs run." \
   --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 acs memory commit "$MEM_ID" --json
 acs memory sharpen "$MEM_ID" <ev_...> --json
@@ -126,7 +126,12 @@ Before claiming completion, record current verification:
 ```bash
 acs run --label "lint" -- ruff check src tests
 acs run --label "tests" -- env PYTHONPATH=src ./.venv/bin/python -m pytest -q
-acs run --label "oracle smoke" -- python3 scripts/bslls_oracle_parity.py tests/fixtures --reuse-oracle
+acs run --label "bslls resolver smoke" -- uv run python - <<'PY'
+from pathlib import Path
+from onec_hbk_bsl.analysis.bslls_runtime_parity import resolve_bslls_jar, resolve_bslls_java
+print(resolve_bslls_jar(Path.cwd()))
+print(resolve_bslls_java())
+PY
 ```
 
 If a check fails, apply the smallest safe fix and rerun the failing check.
