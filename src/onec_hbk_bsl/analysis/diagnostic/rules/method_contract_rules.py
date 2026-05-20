@@ -48,14 +48,33 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
             )
 
         def param_list_span(
-            proc_start_idx: int, fallback_start: int, fallback_end: int
-        ) -> tuple[int, int]:
+            current_proc: _ProcInfo,
+            proc_start_idx: int,
+            fallback_start: int,
+            fallback_end: int,
+        ) -> tuple[int, int, int, int]:
+            params_start_idx = getattr(current_proc, "params_start_idx", None)
+            params_start_character = getattr(current_proc, "params_start_character", None)
+            params_end_idx = getattr(current_proc, "params_end_idx", None)
+            params_end_character = getattr(current_proc, "params_end_character", None)
+            if (
+                params_start_idx is not None
+                and params_start_character is not None
+                and params_end_idx is not None
+                and params_end_character is not None
+            ):
+                return (
+                    params_start_idx + 1,
+                    params_start_character,
+                    params_end_idx + 1,
+                    params_end_character,
+                )
             header_line = lines[proc_start_idx] if 0 <= proc_start_idx < len(lines) else ""
             open_paren = header_line.find("(")
             close_paren = header_line.rfind(")")
             if open_paren >= 0 and close_paren > open_paren:
-                return open_paren + 1, close_paren
-            return fallback_start, fallback_end
+                return proc_start_idx + 1, open_paren + 1, proc_start_idx + 1, close_paren
+            return proc_start_idx + 1, fallback_start, proc_start_idx + 1, fallback_end
 
         if "BSL228" in enabled and proc.optional_params:
             seen_optional = False
@@ -64,13 +83,15 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                     seen_optional = True
                     continue
                 if seen_optional:
-                    param_start, param_end = param_list_span(proc.start_idx, start_char, end_char)
+                    start_line, param_start, end_line, param_end = param_list_span(
+                        proc, proc.start_idx, start_char, end_char
+                    )
                     diags.append(
                         _diag.Diagnostic(
                             file=path,
-                            line=proc.start_idx + 1,
+                            line=start_line,
                             character=param_start,
-                            end_line=proc.start_idx + 1,
+                            end_line=end_line,
                             end_character=param_end,
                             severity=_diag.Severity.WARNING,
                             code="BSL228",
@@ -260,6 +281,11 @@ def run_bsl215_missing_parameter_description(
         re_separator = re.compile(r"^\s*/{10,}\s*$")
         if any(re_separator.match(cl) for cl in comment_block):
             continue
+        if any(
+            re.match(r"^\s*//\s*ВозвращаемоеЗначение\s*:?\s*$", cl, re.IGNORECASE)
+            for cl in comment_block
+        ):
+            continue
 
         re_see_link = re.compile(r"^\s*//\s*(?:См\.|See)\s+\S", re.IGNORECASE)
         if any(re_see_link.match(cl) for cl in comment_block):
@@ -305,6 +331,37 @@ def run_bsl215_missing_parameter_description(
             )
             continue
 
+        def _has_bslls_type_description(tail: str) -> bool:
+            if re.match(
+                r"^\s*(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)[.;]?\s*$",
+                tail,
+                re.IGNORECASE,
+            ):
+                return True
+            type_text = tail.split(" - ", 1)[0].strip()
+            if not type_text or "\t" in type_text:
+                return False
+            type_text = type_text.rstrip()
+            if type_text.endswith(","):
+                type_text = type_text[:-1].rstrip()
+            if type_text.endswith(":"):
+                type_text = type_text[:-1].rstrip()
+            elif type_text.rstrip() != type_text.rstrip(".;"):
+                return False
+            if re.fullmatch(
+                r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)", type_text, re.IGNORECASE
+            ):
+                return True
+            if re.search(r"\b(?:или|or|элементов|element)\b", type_text, re.IGNORECASE):
+                return False
+            if re.search(r"[A-Za-zА-ЯЁа-яё0-9_]\s+[A-Za-zА-ЯЁа-яё0-9_]", type_text):
+                return False
+            type_name = r"[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*"
+            return bool(
+                re.fullmatch(rf"{type_name}(?:\s*,\s*{type_name})*", type_text)
+                or re.fullmatch(r"[a-zа-яё]+", type_text)
+            )
+
         raw_param_entries: list[tuple[int, str, str]] = []
         for cl in comment_block[params_section_start + 1 :]:
             stripped = cl.strip()
@@ -316,14 +373,12 @@ def run_bsl215_missing_parameter_description(
             if re.match(r"^\s*//\s+\*", cl):
                 continue
             m = re.match(
-                r"^\s*//(?P<indent>\s{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                r"^\s*//(?P<indent>[ ]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
                 cl,
                 re.UNICODE,
             )
-            if m:
-                raw_param_entries.append(
-                    (len(m.group("indent")), m.group("name"), m.group("tail"))
-                )
+            if m and _has_bslls_type_description(m.group("tail")):
+                raw_param_entries.append((len(m.group("indent")), m.group("name"), m.group("tail")))
         param_entry_indent = min((indent for indent, _name, _tail in raw_param_entries), default=0)
 
         def _param_entry(
@@ -331,7 +386,7 @@ def run_bsl215_missing_parameter_description(
             entry_indent: int = param_entry_indent,
         ) -> tuple[str, bool, str | None] | None:
             m = re.match(
-                r"^\s*//(?P<indent>\s{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                r"^\s*//(?P<indent>[ ]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
                 line,
                 re.UNICODE,
             )
@@ -340,14 +395,18 @@ def run_bsl215_missing_parameter_description(
             if entry_indent and len(m.group("indent")) != entry_indent:
                 return None
             tail = m.group("tail")
+            if not _has_bslls_type_description(tail):
+                return None
             reference_match = re.match(
                 r"^\s*(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)[.;]?\s*$",
                 tail,
                 re.IGNORECASE,
             )
             if reference_match is not None and tail.rstrip().endswith((".", ";")):
-                return reference_match.group(1).rstrip(".;"), True, reference_match.group(1).rstrip(
-                    ".;"
+                return (
+                    reference_match.group(1).rstrip(".;"),
+                    True,
+                    reference_match.group(1).rstrip(".;"),
                 )
             return m.group("name"), True, None
 
@@ -371,6 +430,10 @@ def run_bsl215_missing_parameter_description(
                 documented_entries.append(pname)
 
         documented_cf = {p.casefold(): p for p in documented_entries}
+        force_all_params_missing = bool(
+            proc.params
+            and any(re.search(r"\(\s*пример\s+см\.", cl, re.IGNORECASE) for cl in comment_block)
+        )
 
         param_lines: dict[str, int] = {}
         scan_idx = proc.start_idx
@@ -395,6 +458,21 @@ def run_bsl215_missing_parameter_description(
             scan_idx += 1
 
         missing_params = [pname for pname in proc.params if pname.casefold() not in documented_cf]
+        if (
+            not missing_params
+            and len(proc.params) == 1
+            and len(documented_entries) == 1
+            and raw_param_entries
+            and " - " not in raw_param_entries[0][2]
+            and "," not in raw_param_entries[0][2]
+            and not re.match(r"^\s*(?:см\.|see)\s+", raw_param_entries[0][2], re.IGNORECASE)
+            and not raw_param_entries[0][2].strip().endswith(":")
+        ):
+            missing_params = list(proc.params)
+            documented_cf = {}
+        if force_all_params_missing:
+            missing_params = list(proc.params)
+            documented_cf = {}
         if missing_params and not documented_cf:
             diags.append(
                 _diag.Diagnostic(
@@ -415,6 +493,8 @@ def run_bsl215_missing_parameter_description(
                 pl = lines[param_line_idx]
                 m = re.search(r"\b" + re.escape(pname) + r"\b", pl, re.IGNORECASE)
                 col = m.start() if m else header_col
+                if param_line_idx != proc.start_idx and pl.startswith("\t\t") and col > 0:
+                    col -= 1
                 diags.append(
                     _diag.Diagnostic(
                         file=path,

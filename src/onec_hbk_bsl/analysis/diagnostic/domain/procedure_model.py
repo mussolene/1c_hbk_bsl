@@ -393,6 +393,31 @@ class ProcedureModel:
             has_struct_fields = any(
                 re.match(r"^\s*//\s+\*\s+\S", rcl) for rcl in return_section_lines
             )
+
+            def has_bslls_return_type_description(text: str) -> bool:
+                type_text = text.split(" - ", 1)[0].strip()
+                if not type_text or "\t" in type_text:
+                    return False
+                type_text = type_text.rstrip()
+                if type_text.endswith(","):
+                    return True
+                if type_text.endswith(":"):
+                    type_text = type_text[:-1].rstrip()
+                elif type_text.rstrip() != type_text.rstrip(".;"):
+                    return False
+                if re.fullmatch(
+                    r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)",
+                    type_text,
+                    re.IGNORECASE,
+                ):
+                    return True
+                if re.search(r"\b(?:или|or|элементов|element)\b", type_text, re.IGNORECASE):
+                    return False
+                if re.search(r"[A-Za-zА-ЯЁа-яё0-9_]\s+[A-Za-zА-ЯЁа-яё0-9_]", type_text):
+                    return False
+                type_name = r"[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*"
+                return bool(re.fullmatch(rf"{type_name}(?:\s*,\s*{type_name})*", type_text))
+
             for cl in return_section_lines:
                 stripped = cl.strip()
                 if stripped == "//":
@@ -402,7 +427,7 @@ class ProcedureModel:
                 if re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE):
                     has_valid_return_entry = True
                     break
-                entry = re.match(r"^\s*//\s{1,4}(?P<text>\S.*)$", cl)
+                entry = re.match(r"^\s*//[ ]{1,4}(?P<text>\S.*)$", cl)
                 if not entry:
                     continue
                 text = entry.group("text").strip()
@@ -416,7 +441,14 @@ class ProcedureModel:
                     continue
                 if "—" in text and "-" not in text:
                     continue
-                if has_struct_fields and ":" not in first_part and "-" in text and not text.endswith(":"):
+                if (
+                    has_struct_fields
+                    and ":" not in first_part
+                    and "-" in text
+                    and not text.endswith(":")
+                ):
+                    continue
+                if not has_bslls_return_type_description(text):
                     continue
                 has_valid_return_entry = True
                 break

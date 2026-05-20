@@ -264,6 +264,17 @@ class TestBsl215MissingParameterDescriptionParity:
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert diags == []
 
+    def test_tab_indented_param_description_matches_bslls_as_missing(self, tmp_path: Path) -> None:
+        content = """\
+            // Описание метода.
+            // Параметры:
+            //\tПараметр - Строка - описание
+            Процедура Пример(Параметр)
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
+        assert [d.message for d in diags] == ["Необходимо добавить описание всех параметров метода"]
+
 
 # ---------------------------------------------------------------------------
 # BSL237 — RedundantAccessToObject
@@ -1320,6 +1331,15 @@ class TestBsl228OrderOfParams:
         assert bsl228[0].message == "Переместите необязательные параметры после обязательных"
         assert bsl228[0].character == line.index("(") + 1
         assert bsl228[0].end_character == line.rindex(")")
+
+    def test_string_default_value_does_not_filter_diagnostic(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(Парам1 = "значение", Парам2)
+                Возврат Парам2;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL228"})
+        assert [d.code for d in diags] == ["BSL228"]
 
 
 # ---------------------------------------------------------------------------
