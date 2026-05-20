@@ -2363,9 +2363,7 @@ class NumberOfValuesInStructureConstructorRule(BsllsDiagnosticRule):
         if not meaningful:
             return 0
         separator_count = sum(
-            1
-            for child in meaningful
-            if getattr(child, "type", None) in {",", "omitted_argument"}
+            1 for child in meaningful if getattr(child, "type", None) in {",", "omitted_argument"}
         )
         return separator_count + 1
 

@@ -124,8 +124,12 @@ def find_regions_from_tree(tree: Any) -> list[Any]:
                         region_name = _diag._ts_node_text(c)
                         break
                 if "PREPROC_ENDREGION_KEYWORD" in child_types:
-                    end_idx = node.end_point[0] if getattr(node, "end_point", None) else start_idx + 1
-                    result.append(_diag._RegionInfo(name=region_name, start_idx=start_idx, end_idx=end_idx))
+                    end_idx = (
+                        node.end_point[0] if getattr(node, "end_point", None) else start_idx + 1
+                    )
+                    result.append(
+                        _diag._RegionInfo(name=region_name, start_idx=start_idx, end_idx=end_idx)
+                    )
                     for child in getattr(node, "children", []):
                         visit(child)
                     return
