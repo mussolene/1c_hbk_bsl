@@ -212,19 +212,26 @@ def run_bsl212_missed_required_parameter(
     proc_by_name = {proc.name.casefold(): proc for proc in procs}
     if not proc_by_name or not calls:
         return []
+    required_params_by_name = {
+        name: tuple(param for param in proc.params if param not in proc.optional_params)
+        for name, proc in proc_by_name.items()
+    }
 
     diags: list[Any] = []
     line_starts = _diag.line_start_offsets(content)
     for call in calls:
-        callee = proc_by_name.get(call.callee_name.casefold())
+        callee_name = call.callee_name.casefold()
+        callee = proc_by_name.get(callee_name)
         if callee is None:
             continue
         line_text = lines[call.caller_line - 1] if 0 <= call.caller_line - 1 < len(lines) else ""
         before_call = line_text[: call.caller_character].rstrip()
         if before_call.endswith("."):
             continue
-        required_params = [p for p in callee.params if p not in callee.optional_params]
+        required_params = required_params_by_name.get(callee_name, ())
         if not required_params:
+            continue
+        if call.callee_args_count >= len(callee.params):
             continue
         arg_presence = _diag._extract_call_argument_presence(
             content,

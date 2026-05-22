@@ -2010,7 +2010,8 @@ class ModuleModel:
             for i in range(proc.start_idx, proc.end_idx + 1):
                 inside_proc.add(i)
 
-        code_lines = snapshot.code_lines_without_comments if snapshot is not None else lines
+        lines_are_masked = snapshot is not None
+        code_lines = snapshot.counter_lines if snapshot is not None else lines
 
         def read_words_ignoring_member_access(code_fragment: str) -> set[str]:
             reads: set[str] = set()
@@ -2023,8 +2024,11 @@ class ModuleModel:
         def read_names_by_line(raw_line: str) -> set[str]:
             if not raw_line.strip():
                 return set()
-            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
-            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
+            if lines_are_masked:
+                code_clean = raw_line
+            else:
+                code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
+                code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
             match = bsl007_simple_assign_at_start_re.match(code_clean)
             if match:
                 tail = code_clean[match.end() :]
