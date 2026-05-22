@@ -264,6 +264,32 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
 )
 BSL_RUNTIME_RULE_CODES: frozenset[str] = frozenset(rule.code for rule in _RULES)
 
+_QUERY_TEXT_191_201_CODES: tuple[str, ...] = ("BSL191", "BSL201")
+_QUERY_TEXT_220_235_269_CODES: tuple[str, ...] = ("BSL220", "BSL235", "BSL269")
+_QUERY_JOIN_CODES: tuple[str, ...] = ("BSL206", "BSL207", "BSL209")
+_QUERY_METADATA_CODES: tuple[str, ...] = ("BSL174", "BSL187", "BSL236", "BSL238")
+_METADATA_POOL_CODES: tuple[str, ...] = (
+    "BSL189",
+    "BSL211",
+    "BSL213",
+    "BSL214",
+    "BSL231",
+    "BSL232",
+    "BSL241",
+    "BSL242",
+    "BSL246",
+    "BSL274",
+)
+_METADATA_RUNTIME_CODES: tuple[str, ...] = ("BSL244", "BSL253", "BSL261")
+_AGGREGATED_RULE_CODES: frozenset[str] = frozenset(
+    _QUERY_TEXT_191_201_CODES
+    + _QUERY_TEXT_220_235_269_CODES
+    + _QUERY_JOIN_CODES
+    + _QUERY_METADATA_CODES
+    + _METADATA_POOL_CODES
+    + _METADATA_RUNTIME_CODES
+)
+
 
 def append_bslls_runtime_rule_tasks(
     rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]],
@@ -288,6 +314,122 @@ def append_bslls_runtime_rule_tasks(
         global_method_calls_from_nodes=engine._global_method_calls_from_nodes,
         diagnostics_engine=engine,
     )
+
+    def enabled_codes(codes: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(code for code in codes if engine._rule_enabled(code))
+
+    def add_task(codes: tuple[str, ...], fn: Callable[[], list[Diagnostic]]) -> None:
+        if codes:
+            rule_tasks.append(("+".join(codes), fn))
+
+    def add_aggregated_query_tasks() -> None:
+        query_text_191_201 = enabled_codes(_QUERY_TEXT_191_201_CODES)
+        query_text_220_235_269 = enabled_codes(_QUERY_TEXT_220_235_269_CODES)
+        query_join = enabled_codes(_QUERY_JOIN_CODES)
+        query_metadata = enabled_codes(_QUERY_METADATA_CODES)
+        metadata_pool = enabled_codes(_METADATA_POOL_CODES)
+        metadata_runtime = enabled_codes(_METADATA_RUNTIME_CODES)
+
+        if query_text_191_201 or query_text_220_235_269 or query_join or query_metadata:
+            # Materialise the shared query view once for all query-family diagnostics.
+            query_blocks = context.query_text_blocks
+
+        if query_text_191_201:
+            from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
+                run_bsl191_201_query_text_diagnostics,
+            )
+
+            add_task(
+                query_text_191_201,
+                lambda codes=query_text_191_201: run_bsl191_201_query_text_diagnostics(
+                    context.path,
+                    context.lines,
+                    codes,
+                    engine._rule_enabled,
+                    query_blocks,
+                ),
+            )
+        if query_text_220_235_269:
+            from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
+                run_bsl220_235_269_query_text_diagnostics,
+            )
+
+            add_task(
+                query_text_220_235_269,
+                lambda codes=query_text_220_235_269: run_bsl220_235_269_query_text_diagnostics(
+                    context.path,
+                    context.lines,
+                    codes,
+                    engine._rule_enabled,
+                    query_blocks,
+                ),
+            )
+        if query_join:
+            from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
+                run_bsl206_207_209_query_join_diagnostics,
+            )
+
+            add_task(
+                query_join,
+                lambda codes=query_join: run_bsl206_207_209_query_join_diagnostics(
+                    context.path,
+                    context.lines,
+                    codes,
+                    engine._rule_enabled,
+                    query_blocks,
+                ),
+            )
+        if query_metadata:
+            from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
+                run_bsl174_187_236_238_query_metadata_pool,
+            )
+
+            add_task(
+                query_metadata,
+                lambda codes=query_metadata: run_bsl174_187_236_238_query_metadata_pool(
+                    context.path,
+                    context.lines,
+                    codes,
+                    query_blocks,
+                    context.lines,
+                ),
+            )
+        if metadata_runtime:
+            from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
+                run_bsl244_253_261_runtime_pool,
+            )
+
+            add_task(
+                metadata_runtime,
+                lambda codes=metadata_runtime: run_bsl244_253_261_runtime_pool(
+                    context.path,
+                    context.lines,
+                    context.procedures,
+                    codes,
+                    context.lines,
+                ),
+            )
+        if metadata_pool:
+            from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
+                run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
+            )
+
+            add_task(
+                metadata_pool,
+                lambda codes=metadata_pool: (
+                    run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
+                        context.path,
+                        context.lines,
+                        context.procedures,
+                        codes,
+                        context.lines,
+                    )
+                ),
+            )
+
+    add_aggregated_query_tasks()
     for rule in _RULES:
+        if rule.code in _AGGREGATED_RULE_CODES:
+            continue
         if engine._rule_enabled(rule.code):
             rule_tasks.append((rule.code, lambda rule=rule: rule.run(context)))

@@ -69,6 +69,10 @@ def _execute_sequential(tasks: list[tuple[str, Callable[[], list[Any]]]]) -> lis
     return out
 
 
+def _requires_sequential_lane(code: str) -> bool:
+    return any(part in _SEQUENTIAL_RULE_CODES for part in code.split("+"))
+
+
 def execute_diagnostic_rule_tasks(
     tasks: list[tuple[str, Callable[[], list[Any]]]],
 ) -> list[Any]:
@@ -85,7 +89,7 @@ def execute_diagnostic_rule_tasks(
     parallel_tasks: list[tuple[int, str, Callable[[], list[Any]]]] = []
     sequential_tasks: list[tuple[int, str, Callable[[], list[Any]]]] = []
     for index, (code, fn) in enumerate(tasks):
-        target = sequential_tasks if code in _SEQUENTIAL_RULE_CODES else parallel_tasks
+        target = sequential_tasks if _requires_sequential_lane(code) else parallel_tasks
         target.append((index, code, fn))
 
     results_by_index: dict[int, list[Any]] = {}
