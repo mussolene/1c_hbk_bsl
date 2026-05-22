@@ -45,6 +45,17 @@ class TestBsl001SyntaxErrors:
             assert err.severity == Severity.ERROR
             assert err.line >= 1
 
+    def test_round_with_precision_has_no_syntax_error(self, tmp_path: Path) -> None:
+        bsl_file = tmp_path / "round.bsl"
+        bsl_file.write_text(
+            "Процедура П()\n"
+            "\tНомерПериода = Окр((ДеньГода(ДатаВПериоде) - 2) / 10, 0);\n"
+            "КонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        issues = DiagnosticEngine(select={"BSL001"}).check_file(str(bsl_file))
+        assert not [d for d in issues if d.code == "BSL001"]
+
     def test_unreadable_file_produces_bsl001(self, tmp_path: Path) -> None:
         """DiagnosticEngine on a missing file returns a BSL001 error."""
         engine = DiagnosticEngine()

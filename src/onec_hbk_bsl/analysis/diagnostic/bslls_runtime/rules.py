@@ -1168,15 +1168,30 @@ class DoubleNegativesRule(BsllsDiagnosticRule):
                 end_node=end,
             )
 
-        for node in _ts_walk(root):
-            if getattr(node, "type", None) == "binary_expression":
-                nodes = self._binary_diagnostic_nodes(node)
-                if nodes is not None:
-                    add(*nodes)
-            elif getattr(node, "type", None) == "unary_expression":
-                nodes = self._nested_unary_diagnostic_nodes(node)
-                if nodes is not None:
-                    add(*nodes)
+        if context.ts_nodes_for_types is not None:
+            nodes_by_type = context.ts_nodes_for_types(
+                context.tree,
+                {"binary_expression", "unary_expression"},
+            )
+            binary_nodes = nodes_by_type["binary_expression"]
+            unary_nodes = nodes_by_type["unary_expression"]
+        else:
+            walked_nodes = list(_ts_walk(root))
+            binary_nodes = [
+                node for node in walked_nodes if getattr(node, "type", None) == "binary_expression"
+            ]
+            unary_nodes = [
+                node for node in walked_nodes if getattr(node, "type", None) == "unary_expression"
+            ]
+
+        for node in binary_nodes:
+            nodes = self._binary_diagnostic_nodes(node)
+            if nodes is not None:
+                add(*nodes)
+        for node in unary_nodes:
+            nodes = self._nested_unary_diagnostic_nodes(node)
+            if nodes is not None:
+                add(*nodes)
         return storage.diagnostics
 
 
@@ -2831,6 +2846,7 @@ class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
             "PREPROC_ELSE_KEYWORD",
             "PREPROC_ENDIF_KEYWORD",
             "THEN_KEYWORD",
+            "annotation",
             "identifier",
             "expression",
         }

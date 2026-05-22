@@ -117,6 +117,22 @@ def spellcheck_typo_diagnostics(
 ) -> list[dict[str, Any]]:
     cfg = cfg or load_typo_config_ru()
     issues = check_tree_for_typos(tree=tree, cfg=cfg, spell_fn=spell_fn)
+    return spellcheck_candidate_diagnostics(path=path, issues=issues, cfg=cfg)
+
+
+def spellcheck_candidate_diagnostics(
+    *,
+    path: str,
+    candidates: list[SpellCandidate] | None = None,
+    issues: list[SpellIssue] | None = None,
+    cfg: BslTypoConfig | None = None,
+    spell_fn: SpellFn | None = None,
+) -> list[dict[str, Any]]:
+    cfg = cfg or load_typo_config_ru()
+    if issues is None:
+        if candidates is None:
+            candidates = []
+        issues = check_candidates_for_typos(candidates=candidates, cfg=cfg, spell_fn=spell_fn)
     return [
         {
             "file": path,
@@ -138,6 +154,15 @@ def check_tree_for_typos(
     spell_fn: SpellFn | None = None,
 ) -> list[SpellIssue]:
     candidates = collect_spell_candidates(tree=tree)
+    return check_candidates_for_typos(candidates=candidates, cfg=cfg, spell_fn=spell_fn)
+
+
+def check_candidates_for_typos(
+    *,
+    candidates: list[SpellCandidate],
+    cfg: BslTypoConfig,
+    spell_fn: SpellFn | None = None,
+) -> list[SpellIssue]:
     candidate_parts = list(_iter_candidate_parts(candidates, cfg))
     words_to_check = {
         normalized: part

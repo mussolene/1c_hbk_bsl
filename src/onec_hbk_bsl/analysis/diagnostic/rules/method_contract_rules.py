@@ -782,9 +782,6 @@ def run_bsl224_nested_function_in_parameters(
 ) -> list[Any]:
     _diag = _diag_module()
     root = getattr(tree, "root_node", None)
-    if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
-        return []
-
     allowed_names = {"нстр", "nstr", "предопределенноезначение", "predefinedvalue"}
     diags: list[Any] = []
     seen: set[tuple[int, int]] = set()
@@ -820,71 +817,76 @@ def run_bsl224_nested_function_in_parameters(
                     return True
         return False
 
-    if nodes_by_type is None:
-        candidate_nodes = _diag._ts_walk(root)
-    else:
-        candidate_nodes = (
-            nodes_by_type.get("call_expression", [])
-            + nodes_by_type.get("method_call", [])
-            + nodes_by_type.get("new_expression", [])
-        )
-
-    for node in candidate_nodes:
-        node_type = getattr(node, "type", None)
-        if node_type not in {"call_expression", "method_call", "new_expression"}:
-            continue
-        if (
-            node_type == "method_call"
-            and getattr(getattr(node, "parent", None), "type", None) == "call_expression"
-        ):
-            continue
-        if node.start_point[0] == node.end_point[0]:
-            continue
-
-        name, anchor, args, call_node, name_node = call_name_and_args(node)
-        if anchor is None or args is None or call_node is None or name_node is None:
-            continue
-
-        exprs = arg_expr_nodes(args)
-        if not exprs:
-            continue
-        if not any(expr.start_point[0] != expr.end_point[0] for expr in exprs):
-            continue
-        if not contains_forbidden_nested_call(args):
-            continue
-
-        start_line_idx = anchor.start_point[0]
-        end_line_idx = name_node.end_point[0]
-        start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
-        end_line_text = lines[end_line_idx] if end_line_idx < len(lines) else ""
-        exact_start = start_line_text.find(name)
-        start_char = (
-            exact_start
-            if exact_start >= 0
-            else _diag.utf8_byte_offset_to_lsp_character(start_line_text, anchor.start_point[1])
-        )
-        call_kind = (
-            "конструктора"
-            if name.casefold()
-            in {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
-            else "метода"
-        )
-
-        diags.append(
-            _diag.Diagnostic(
-                file=path,
-                line=start_line_idx + 1,
-                character=start_char,
-                end_line=end_line_idx + 1,
-                end_character=start_char + len(name)
-                if start_line_idx == end_line_idx
-                else _diag.utf8_byte_offset_to_lsp_character(end_line_text, name_node.end_point[1]),
-                severity=_diag.Severity.INFORMATION,
-                code="BSL224",
-                message=f'Уберите инициализацию параметров {call_kind} "{name}" вложенными методами',
+    if root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray)):
+        if nodes_by_type is None:
+            candidate_nodes = _diag._ts_walk(root)
+        else:
+            candidate_nodes = (
+                nodes_by_type.get("call_expression", [])
+                + nodes_by_type.get("method_call", [])
+                + nodes_by_type.get("new_expression", [])
             )
-        )
-        seen.add((start_line_idx, start_char))
+
+        for node in candidate_nodes:
+            node_type = getattr(node, "type", None)
+            if node_type not in {"call_expression", "method_call", "new_expression"}:
+                continue
+            if (
+                node_type == "method_call"
+                and getattr(getattr(node, "parent", None), "type", None) == "call_expression"
+            ):
+                continue
+            if node.start_point[0] == node.end_point[0]:
+                continue
+
+            name, anchor, args, call_node, name_node = call_name_and_args(node)
+            if anchor is None or args is None or call_node is None or name_node is None:
+                continue
+
+            exprs = arg_expr_nodes(args)
+            if not exprs:
+                continue
+            if not any(expr.start_point[0] != expr.end_point[0] for expr in exprs):
+                continue
+            if not contains_forbidden_nested_call(args):
+                continue
+
+            start_line_idx = anchor.start_point[0]
+            end_line_idx = name_node.end_point[0]
+            start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
+            end_line_text = lines[end_line_idx] if end_line_idx < len(lines) else ""
+            exact_start = start_line_text.find(name)
+            start_char = (
+                exact_start
+                if exact_start >= 0
+                else _diag.utf8_byte_offset_to_lsp_character(start_line_text, anchor.start_point[1])
+            )
+            call_kind = (
+                "конструктора"
+                if name.casefold()
+                in {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
+                else "метода"
+            )
+
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=start_line_idx + 1,
+                    character=start_char,
+                    end_line=end_line_idx + 1,
+                    end_character=start_char + len(name)
+                    if start_line_idx == end_line_idx
+                    else _diag.utf8_byte_offset_to_lsp_character(
+                        end_line_text, name_node.end_point[1]
+                    ),
+                    severity=_diag.Severity.INFORMATION,
+                    code="BSL224",
+                    message=(
+                        f'Уберите инициализацию параметров {call_kind} "{name}" вложенными методами'
+                    ),
+                )
+            )
+            seen.add((start_line_idx, start_char))
 
     fallback_names = {"стрзаменить", "strreplace", "вставить", "insert"}
     call_start_re = re.compile(r"(?:(?P<dot>\.)\s*)?(?P<name>[A-Za-zА-Яа-яЁё_]\w*)\s*\(")

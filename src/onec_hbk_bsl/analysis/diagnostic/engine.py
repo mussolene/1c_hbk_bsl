@@ -24,9 +24,12 @@ _HOT_TS_NODE_TYPES: frozenset[str] = frozenset(
     {
         "ERROR",
         "assignment_statement",
+        "binary_expression",
+        "call_expression",
         "for_each_statement",
         "function_definition",
         "if_statement",
+        "identifier",
         "method_call",
         "new_expression",
         "preprocessor",
@@ -34,6 +37,7 @@ _HOT_TS_NODE_TYPES: frozenset[str] = frozenset(
         "ternary_expression",
         "try_statement",
         "unary_expression",
+        "var_definition",
     }
 )
 

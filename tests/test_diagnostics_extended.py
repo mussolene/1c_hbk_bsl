@@ -4335,6 +4335,18 @@ class TestBsl149AssignAliasFieldsInQueryFixture:
         diags = _check(content, tmp_path, select={"BSL149"})
         assert "BSL149" not in _codes(diags)
 
+    def test_multiline_expression_alias_after_operator_continuation(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   ПОДСТРОКА(Т.Версия, 7, 4)
+            |   + ПОДСТРОКА(Т.Версия, 4, 2)
+            |   + ПОДСТРОКА(Т.Версия, 1, 2) КАК ВерсияСортировка
+            |ИЗ
+            |   Справочник.Шаблоны КАК Т";
+        """
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL235 — QueryParseError

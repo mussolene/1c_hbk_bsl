@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import multiprocessing as mp
+import os
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from typing import Any
 
+from onec_hbk_bsl.analysis.bsl_typo.candidates import collect_spell_candidates
+from onec_hbk_bsl.analysis.bsl_typo.models import SpellCandidate
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     AssignAliasFieldsInQueryRule,
@@ -78,7 +84,8 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     WrongUseOfRollbackTransactionMethodRule,
     YoLetterUsageRule,
 )
-from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
+from onec_hbk_bsl.analysis.diagnostic.execution import make_diagnostic_rule_task
+from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 
 _RULES: tuple[BsllsDiagnosticRule, ...] = (
     CoreDiagnosticsRule("BSL001"),
@@ -289,6 +296,318 @@ _AGGREGATED_RULE_CODES: frozenset[str] = frozenset(
     + _METADATA_POOL_CODES
     + _METADATA_RUNTIME_CODES
 )
+_PROCESS_TYPO_MIN_LINES = 5_000
+_PROCESS_TYPO_MIN_CANDIDATES = 200
+_PROCESS_HEAVY_GROUP_MIN_LINES = 5_000
+_PROCESS_FORK_RULE_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("BSL224",),
+    ("BSL197",),
+    ("BSL060",),
+    ("BSL263",),
+    ("BSL005",),
+    ("BSL039",),
+    ("BSL171",),
+    ("BSL271",),
+    ("BSL020",),
+    ("BSL029",),
+    ("BSL007",),
+    ("BSL153",),
+    ("BSL148",),
+    ("BSL212",),
+    ("BSL001",),
+    ("BSL210",),
+    ("BSL227", "BSL265"),
+    ("BSL173", "BSL186", "BSL181"),
+    ("BSL030", "BSL183", "BSL243"),
+    ("BSL230", "BSL202", "BSL218", "BSL223"),
+    ("BSL035", "BSL027", "BSL267", "BSL066"),
+    ("BSL180", "BSL200", "BSL178", "BSL279"),
+    ("BSL097", "BSL250", "BSL205", "BSL185"),
+)
+_PROCESS_FORK_PREWARM_TS_NODE_TYPES: frozenset[str] = frozenset(
+    {
+        "call_expression",
+        "function_definition",
+        "if_statement",
+        "method_call",
+        "new_expression",
+        "procedure_definition",
+        "try_statement",
+    }
+)
+_PROCESS_FACT_GROUP_011_175: tuple[str, ...] = ("BSL011", "BSL175")
+_PROCESS_CORE_FACT_CODES: tuple[str, ...] = (
+    "BSL011",
+    "BSL012",
+    "BSL013",
+    "BSL014",
+    "BSL016",
+    "BSL017",
+    "BSL019",
+    "BSL022",
+    "BSL026",
+    "BSL036",
+    "BSL040",
+    "BSL077",
+    "BSL131",
+    "BSL190",
+    "BSL204",
+    "BSL216",
+    "BSL219",
+)
+_PROCESS_CORE_FACT_CODE_SET: frozenset[str] = frozenset(_PROCESS_CORE_FACT_CODES)
+_FORK_CONTEXT: BsllsDocumentContext | None = None
+_FORK_RULE_BY_CODE: dict[str, BsllsDiagnosticRule] = {}
+
+
+def _parallel_rule_tasks_enabled() -> bool:
+    value = os.environ.get("BSL_DIAG_PARALLEL_RULES", "1").strip().casefold()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _process_rule_tasks_enabled() -> bool:
+    value = os.environ.get("BSL_DIAG_PROCESS_RULES", "1").strip().casefold()
+    return _parallel_rule_tasks_enabled() and value not in {"0", "false", "no", "off"}
+
+
+def _process_rule_workers(group_count: int) -> int:
+    try:
+        configured = int(os.environ.get("BSL_DIAG_PARALLEL_WORKERS", "0") or "0")
+    except ValueError:
+        configured = 0
+    if configured <= 0:
+        configured = min(8, (os.cpu_count() or 2))
+    return max(1, min(configured, group_count))
+
+
+def _run_forked_runtime_rule_group(codes: tuple[str, ...]) -> list[Diagnostic]:
+    if _FORK_CONTEXT is None:
+        return []
+    out: list[Diagnostic] = []
+    for code in codes:
+        rule = _FORK_RULE_BY_CODE.get(code)
+        if rule is not None:
+            out.extend(rule.run(_FORK_CONTEXT))
+    return out
+
+
+def _run_forked_runtime_rule_groups(
+    *,
+    context: BsllsDocumentContext,
+    rule_by_code: dict[str, BsllsDiagnosticRule],
+    groups: tuple[tuple[str, ...], ...],
+) -> list[Diagnostic]:
+    if not groups:
+        return []
+    if "fork" not in mp.get_all_start_methods():
+        return [
+            diag
+            for group in groups
+            for diag in _run_runtime_rule_group_local(context, rule_by_code, group)
+        ]
+
+    if context.ts_nodes_for_types is not None:
+        context.ts_nodes_for_types(context.tree, set(_PROCESS_FORK_PREWARM_TS_NODE_TYPES))
+
+    global _FORK_CONTEXT, _FORK_RULE_BY_CODE
+    _FORK_CONTEXT = context
+    _FORK_RULE_BY_CODE = rule_by_code
+    try:
+        workers = _process_rule_workers(len(groups))
+        with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("fork")) as pool:
+            future_to_group = {
+                pool.submit(_run_forked_runtime_rule_group, group): group for group in groups
+            }
+            out: list[Diagnostic] = []
+            for future, group in future_to_group.items():
+                try:
+                    out.extend(future.result())
+                except Exception:
+                    out.extend(_run_runtime_rule_group_local(context, rule_by_code, group))
+            return out
+    finally:
+        _FORK_CONTEXT = None
+        _FORK_RULE_BY_CODE = {}
+
+
+def _run_runtime_rule_group_local(
+    context: BsllsDocumentContext,
+    rule_by_code: dict[str, BsllsDiagnosticRule],
+    codes: tuple[str, ...],
+) -> list[Diagnostic]:
+    out: list[Diagnostic] = []
+    for code in codes:
+        rule = rule_by_code.get(code)
+        if rule is not None:
+            out.extend(rule.run(context))
+    return out
+
+
+def _run_bsl011_175_snapshot_facts(
+    *,
+    path: str,
+    lines: list[str],
+    procs: list[Any],
+    complexity_metrics: list[tuple[int, int]],
+    symbols: list[Any],
+    calls: list[Any],
+    enabled_codes: tuple[str, ...],
+    max_cognitive_complexity: int,
+) -> list[Diagnostic]:
+    from onec_hbk_bsl.analysis import diagnostics as _diag
+    from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel, ProcedureModel
+
+    enabled = set(enabled_codes)
+    out: list[Diagnostic] = []
+    if "BSL011" in enabled:
+        for proc, (cognitive, _mccabe) in zip(procs, complexity_metrics, strict=False):
+            proc_model = ProcedureModel.from_proc_info(path, proc)
+            out.extend(
+                proc_model.validate_cognitive_complexity(
+                    cognitive_complexity=cognitive,
+                    max_cognitive_complexity=max_cognitive_complexity,
+                    proc_name_span=_diag._proc_name_span,
+                    lines=lines,
+                )
+            )
+    if "BSL175" in enabled:
+        model = ModuleModel(path=path)
+        out.extend(
+            diag
+            for diag in model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
+                lines=lines,
+                symbols=symbols,
+                calls=calls,
+                enabled_codes=("BSL175",),
+                line_comment_re=_diag._RE_LINE_COMMENT,
+                bsl176_deprecated_doc_re=_diag._RE_BSL176_DEPRECATED_DOC,
+                mask_double_quoted_strings_preserve_len_fn=(
+                    _diag._mask_double_quoted_strings_preserve_len
+                ),
+                bsl175_attribute_re=_diag._RE_BSL175_ATTRIBUTE,
+                bsl175_attr_replacements=_diag._BSL175_ATTR_REPLACEMENTS,
+                bsl175_method_replacements=_diag._BSL175_METHOD_REPLACEMENTS,
+                bsl175_child_form_items_re=_diag._RE_BSL175_CHILD_FORM_ITEMS,
+                bsl175_enum_replacements=_diag._BSL175_ENUM_REPLACEMENTS,
+                bsl175_enum_name_re=_diag._RE_BSL175_ENUM_NAME,
+                bsl175_global_method_re=_diag._RE_BSL175_GLOBAL_METHOD,
+                bsl175_global_methods=_diag._BSL175_GLOBAL_METHODS,
+            )
+            if diag.code == "BSL175"
+        )
+    return out
+
+
+def _chunk_spell_candidates(
+    candidates: list[SpellCandidate],
+    chunk_count: int,
+) -> list[list[SpellCandidate]]:
+    if chunk_count <= 1:
+        return [candidates]
+    size = max(1, (len(candidates) + chunk_count - 1) // chunk_count)
+    return [candidates[index : index + size] for index in range(0, len(candidates), size)]
+
+
+def _run_bsl256_typo_candidates(path: str, candidates: list[SpellCandidate]) -> list[Diagnostic]:
+    from onec_hbk_bsl.analysis.bsl_typo.engine import spellcheck_candidate_diagnostics
+
+    rows = spellcheck_candidate_diagnostics(path=path, candidates=candidates)
+    return [
+        Diagnostic(
+            file=d["file"],
+            line=d["line"],
+            character=d["character"],
+            end_line=d["end_line"],
+            end_character=d["end_character"],
+            severity=Severity.INFORMATION,
+            code=d["code"],
+            message=d["message"],
+        )
+        for d in rows
+    ]
+
+
+def _same_line_fact_diagnostic(
+    *,
+    path: str,
+    fact: Any,
+    code: str,
+    severity: Severity,
+) -> Diagnostic:
+    line_idx = int(fact.line_idx)
+    end_line_idx = fact.end_line_idx
+    return Diagnostic(
+        file=path,
+        line=line_idx + 1,
+        character=int(fact.character),
+        end_line=(int(end_line_idx) if end_line_idx is not None else line_idx) + 1,
+        end_character=int(fact.end_character),
+        severity=severity,
+        code=code,
+        message=str(fact.message),
+    )
+
+
+def _run_core_fact_rule(
+    *,
+    code: str,
+    path: str,
+    lines: list[str],
+    procs: list[Any],
+    complexity_metrics: list[tuple[int, int]],
+    facts: list[Any],
+    max_cognitive_complexity: int,
+    max_mccabe_complexity: int,
+) -> list[Diagnostic]:
+    if code in {"BSL011", "BSL019"}:
+        from onec_hbk_bsl.analysis import diagnostics as _diag
+        from onec_hbk_bsl.analysis.diagnostic.domain import ProcedureModel
+
+        diags: list[Diagnostic] = []
+        for proc, (cognitive, mccabe) in zip(procs, complexity_metrics, strict=False):
+            proc_model = ProcedureModel.from_proc_info(path, proc)
+            if code == "BSL011":
+                diags.extend(
+                    proc_model.validate_cognitive_complexity(
+                        cognitive_complexity=cognitive,
+                        max_cognitive_complexity=max_cognitive_complexity,
+                        proc_name_span=_diag._proc_name_span,
+                        lines=lines,
+                    )
+                )
+            else:
+                diags.extend(
+                    proc_model.validate_mccabe_complexity(
+                        mccabe_complexity=mccabe,
+                        max_mccabe_complexity=max_mccabe_complexity,
+                        proc_name_span=_diag._proc_name_span,
+                        lines=lines,
+                    )
+                )
+        return diags
+
+    severity_by_code = {
+        "BSL012": Severity.ERROR,
+        "BSL013": Severity.INFORMATION,
+        "BSL014": Severity.INFORMATION,
+        "BSL016": Severity.INFORMATION,
+        "BSL017": Severity.WARNING,
+        "BSL022": Severity.WARNING,
+        "BSL026": Severity.INFORMATION,
+        "BSL036": Severity.INFORMATION,
+        "BSL040": Severity.INFORMATION,
+        "BSL077": Severity.WARNING,
+        "BSL131": Severity.INFORMATION,
+        "BSL190": Severity.INFORMATION,
+        "BSL204": Severity.ERROR,
+        "BSL216": Severity.INFORMATION,
+        "BSL219": Severity.INFORMATION,
+    }
+    severity = severity_by_code.get(code, Severity.INFORMATION)
+    return [
+        _same_line_fact_diagnostic(path=path, fact=fact, code=code, severity=severity)
+        for fact in facts
+    ]
 
 
 def append_bslls_runtime_rule_tasks(
@@ -428,8 +747,142 @@ def append_bslls_runtime_rule_tasks(
             )
 
     add_aggregated_query_tasks()
+    coarse_parallelized: set[str] = set()
+    fact_group_011_175 = tuple(
+        code
+        for code in enabled_codes(_PROCESS_FACT_GROUP_011_175)
+        if snapshot is not None and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES
+    )
+    if fact_group_011_175 and snapshot is not None:
+        rule_tasks.append(
+            make_diagnostic_rule_task(
+                "+".join(fact_group_011_175),
+                partial(
+                    _run_bsl011_175_snapshot_facts,
+                    path=path,
+                    lines=lines,
+                    procs=context.procedures,
+                    complexity_metrics=list(
+                        snapshot.complexity_metrics_for_procs(context.procedures)
+                    ),
+                    symbols=list(snapshot.symbols),
+                    calls=list(snapshot.calls),
+                    enabled_codes=fact_group_011_175,
+                    max_cognitive_complexity=engine.max_cognitive_complexity,
+                ),
+                process_safe=True,
+            )
+        )
+        coarse_parallelized.update(fact_group_011_175)
+
+    core_fact_parallelized: set[str] = set()
+    if snapshot is not None:
+        enabled_core_fact_codes = tuple(
+            code
+            for code in enabled_codes(_PROCESS_CORE_FACT_CODES)
+            if code not in coarse_parallelized
+        )
+        if enabled_core_fact_codes:
+            complexity_metrics: list[tuple[int, int]] = []
+            if "BSL011" in enabled_core_fact_codes or "BSL019" in enabled_core_fact_codes:
+                complexity_metrics = list(snapshot.complexity_metrics_for_procs(context.procedures))
+            facts_by_code: dict[str, list[Any]] = {
+                "BSL012": list(snapshot.hardcoded_credential_facts),
+                "BSL013": list(snapshot.commented_code_facts),
+                "BSL014": list(snapshot.line_too_long_facts(engine.max_line_length)),
+                "BSL016": list(snapshot.non_standard_region_facts),
+                "BSL017": list(snapshot.command_or_form_export_facts),
+                "BSL022": list(snapshot.deprecated_warning_facts),
+                "BSL026": list(snapshot.empty_region_facts),
+                "BSL036": list(snapshot.complex_condition_facts(engine.max_bool_ops)),
+                "BSL040": list(snapshot.this_form_usage_facts),
+                "BSL077": list(snapshot.select_top_without_order_facts),
+                "BSL131": list(snapshot.duplicate_region_facts),
+                "BSL190": list(snapshot.form_data_to_value_facts),
+                "BSL204": list(snapshot.invalid_character_facts),
+                "BSL216": list(snapshot.missing_space_facts),
+                "BSL219": list(snapshot.module_variable_description_facts),
+            }
+            for code in enabled_core_fact_codes:
+                rule_tasks.append(
+                    make_diagnostic_rule_task(
+                        code,
+                        partial(
+                            _run_core_fact_rule,
+                            code=code,
+                            path=context.path,
+                            lines=context.lines,
+                            procs=context.procedures,
+                            complexity_metrics=complexity_metrics,
+                            facts=facts_by_code.get(code, []),
+                            max_cognitive_complexity=engine.max_cognitive_complexity,
+                            max_mccabe_complexity=engine.max_mccabe_complexity,
+                        ),
+                        process_safe=True,
+                    )
+                )
+                core_fact_parallelized.add(code)
+
+    typo_parallelized = False
+    if engine._rule_enabled("BSL256") and len(lines) >= _PROCESS_TYPO_MIN_LINES:
+        root = getattr(tree, "root_node", None)
+        if root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            typo_candidates = collect_spell_candidates(tree=tree)
+            if len(typo_candidates) >= _PROCESS_TYPO_MIN_CANDIDATES:
+                worker_count = min(8, max(1, len(typo_candidates) // _PROCESS_TYPO_MIN_CANDIDATES))
+                for shard_index, shard in enumerate(
+                    _chunk_spell_candidates(typo_candidates, worker_count)
+                ):
+                    rule_tasks.append(
+                        make_diagnostic_rule_task(
+                            f"BSL256:{shard_index}",
+                            partial(_run_bsl256_typo_candidates, path, shard),
+                            process_safe=True,
+                        )
+                    )
+                typo_parallelized = True
+
+    fork_parallelized: set[str] = set()
+    if _process_rule_tasks_enabled() and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES:
+        rule_by_code = {rule.code: rule for rule in _RULES}
+        fork_groups: list[tuple[str, ...]] = []
+        for group in _PROCESS_FORK_RULE_GROUPS:
+            enabled_group = tuple(
+                code
+                for code in group
+                if code not in _AGGREGATED_RULE_CODES
+                and code not in coarse_parallelized
+                and code not in core_fact_parallelized
+                and not (code == "BSL256" and typo_parallelized)
+                and engine._rule_enabled(code)
+                and code in rule_by_code
+            )
+            if enabled_group:
+                fork_groups.append(enabled_group)
+                fork_parallelized.update(enabled_group)
+        if fork_groups:
+            rule_tasks.append(
+                make_diagnostic_rule_task(
+                    "fork:" + "+".join(sorted(fork_parallelized)),
+                    partial(
+                        _run_forked_runtime_rule_groups,
+                        context=context,
+                        rule_by_code=rule_by_code,
+                        groups=tuple(fork_groups),
+                    ),
+                )
+            )
+
     for rule in _RULES:
         if rule.code in _AGGREGATED_RULE_CODES:
+            continue
+        if rule.code in coarse_parallelized:
+            continue
+        if rule.code in core_fact_parallelized:
+            continue
+        if rule.code in fork_parallelized:
+            continue
+        if rule.code == "BSL256" and typo_parallelized:
             continue
         if engine._rule_enabled(rule.code):
             rule_tasks.append((rule.code, lambda rule=rule: rule.run(context)))

@@ -138,13 +138,14 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
         first_content_line = True
         pending_multiline_alias = False
         pending_multiline_expression = False
-        for (
+        content_tuples = list(_diag._query_block_content_line_tuples(block))
+        for tuple_idx, (
             line_no,
             _content_base,
             _content,
             head,
             _ended_query,
-        ) in _diag._query_block_content_line_tuples(block):
+        ) in enumerate(content_tuples):
             idx = line_no - 1
             line = lines[idx]
             content = head
@@ -243,6 +244,14 @@ def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[
                 pending_multiline_expression = True
                 continue
             if content.rstrip().endswith(("+", "-", "*", "/")):
+                pending_multiline_expression = True
+                continue
+            next_tuple = (
+                content_tuples[tuple_idx + 1] if tuple_idx + 1 < len(content_tuples) else None
+            )
+            if next_tuple is not None and str(next_tuple[3]).strip().startswith(
+                ("+", "-", "*", "/")
+            ):
                 pending_multiline_expression = True
                 continue
             _diag._bsl149_append_missing_alias_diags(path, idx, line, content, diags)
@@ -359,6 +368,8 @@ def run_bsl149_assign_alias_fields_in_query(
             in_select = False
             continue
         if not in_select:
+            continue
+        if content.lstrip().startswith(("+", "-", "*", "/")):
             continue
         if content.rstrip().endswith(("+", "-", "*", "/")):
             continue

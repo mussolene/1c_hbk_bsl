@@ -19,6 +19,16 @@ def test_bsl155_skips_only_var_before_proc(tmp_path: Path) -> None:
     assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
 
 
+def test_bsl155_skips_annotation_before_first_proc(tmp_path: Path) -> None:
+    p = tmp_path / "m.bsl"
+    p.write_text(
+        "#Область Обработчики\n\n&НаСервере\nПроцедура П() Экспорт\nКонецПроцедуры\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL155"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
+
+
 def test_bsl155_fires_executable_before_proc(tmp_path: Path) -> None:
     p = tmp_path / "m.bsl"
     p.write_text(

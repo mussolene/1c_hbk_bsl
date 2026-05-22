@@ -2360,7 +2360,9 @@ class ModuleModel:
                 re.IGNORECASE,
             ):
                 continue
-            if "Окр(" in line_text and ", 2)" in line_text:
+            if re.search(r"\b(?:Окр|Round)\s*\(", line_text, re.IGNORECASE) and re.search(
+                r",\s*\d+\s*\)", line_text
+            ):
                 continue
             if re.search(r"'\d{4}-\d{2}-\d{2}'", line_text):
                 continue
