@@ -46,6 +46,24 @@ def _bsl235_diag_from_sdbl_tree(path: str, block: Any) -> Any | None:
     )
 
 
+def _bsl235_diag_for_query_block(
+    path: str, content_lines: list[tuple[int, int, str, str, bool]]
+) -> Any:
+    _diag = _diag_module()
+    first_line_no, first_content_base, _first_content, _first_head, _ = content_lines[0]
+    last_line_no, last_content_base, _last_content, last_head, _ = content_lines[-1]
+    return _diag.Diagnostic(
+        file=path,
+        line=first_line_no,
+        character=first_content_base,
+        end_line=last_line_no,
+        end_character=last_content_base + len(last_head),
+        severity=_diag.Severity.WARNING,
+        code="BSL235",
+        message="Текст запроса должен быть корректным и открываться конструктором запросов",
+    )
+
+
 def _query_block_has_sdbl_tree(block: Any) -> bool:
     tree = getattr(block, "sdbl_tree", None)
     return getattr(tree, "root_node", None) is not None
@@ -104,26 +122,11 @@ def run_bsl220_235_269_query_text_diagnostics(
             ) or _has_plain_tail_parse_error(content_lines)
             sdbl_diag = _bsl235_diag_from_sdbl_tree(path, block)
             if has_legacy_parse_error and sdbl_diag is not None:
-                diags.append(sdbl_diag)
+                diags.append(_bsl235_diag_for_query_block(path, content_lines))
             elif _query_block_has_sdbl_tree(block):
                 pass
             elif has_legacy_parse_error:
-                line_no, content_base, _content, head, _ = content_lines[-1]
-                diags.append(
-                    _diag.Diagnostic(
-                        file=path,
-                        line=line_no,
-                        character=content_base,
-                        end_line=line_no,
-                        end_character=content_base + len(head),
-                        severity=_diag.Severity.WARNING,
-                        code="BSL235",
-                        message=(
-                            "Текст запроса должен быть корректным и открываться "
-                            "конструктором запросов"
-                        ),
-                    )
-                )
+                diags.append(_bsl235_diag_for_query_block(path, content_lines))
 
         for line_no, content_base, content, head, _ended_query in content_lines:
             if "BSL220" in enabled:

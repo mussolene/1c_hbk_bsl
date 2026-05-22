@@ -3396,6 +3396,9 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
+        content_cf = context.content.casefold()
+        if not any(name in content_cf for name in self._target_names):
+            return []
         global_calls, call_starts, _proc_nodes, try_nodes = (
             WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
         )
@@ -3651,6 +3654,9 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
+        content_cf = context.content.casefold()
+        if not any(name in content_cf for name in _BSL277_ROLLBACK_NAMES):
+            return []
         global_calls, call_starts, _proc_nodes, try_nodes = self._runtime_context(context)
         storage = DiagnosticStorage(context.path)
         rollback_in_except_ids: set[int] = set()
@@ -3762,6 +3768,9 @@ class WrongUseFunctionProceedWithCallRule(BsllsDiagnosticRule):
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
+        content_cf = context.content.casefold()
+        if not any(name in content_cf for name in _BSL276_PROCEED_NAMES):
+            return []
         global_calls, _call_starts, _proc_nodes, _try_nodes = (
             WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
         )
@@ -3809,37 +3818,65 @@ class TryNumberRule(BsllsDiagnosticRule):
     _NUMBER_CALL_RE = re.compile(r"\b(?:Число|Number)\s*\(", re.IGNORECASE)
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        if self._NUMBER_CALL_RE.search(context.content) is None:
+            return []
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return self._regex_fallback(context)
-        global_calls, call_starts, _proc_nodes, try_nodes = (
-            WrongUseOfRollbackTransactionMethodRule._runtime_context(context)
-        )
+        try_nodes = self._try_nodes(context)
         storage = DiagnosticStorage(context.path)
         seen: set[int] = set()
 
         for try_node in try_nodes:
-            for call in self._try_code_block_calls(try_node, global_calls, call_starts):
-                if id(call["node"]) in seen:
+            for call_node in self._try_code_block_method_calls(try_node):
+                if id(call_node) in seen:
                     continue
-                if str(call["name"]).casefold() not in _BSL255_NUMBER_NAMES:
+                if self._method_name(call_node).casefold() not in _BSL255_NUMBER_NAMES:
                     continue
-                seen.add(id(call["node"]))
-                line = int(call["line"]) - 1
-                storage.add_range(
+                seen.add(id(call_node))
+                _add_node_range(
+                    storage,
                     code=self.code,
                     message=self.message,
                     severity=Severity.WARNING,
-                    line=line,
-                    character=int(call["character"]),
-                    end_line=line,
-                    end_character=_point_char(context.lines, call["node"].end_point),
+                    lines=context.lines,
+                    start_node=call_node,
+                    end_node=call_node,
                 )
         existing = {(d.line, d.character) for d in storage.diagnostics}
         for diag in self._regex_fallback(context):
             if (diag.line, diag.character) not in existing:
                 storage.diagnostics.append(diag)
         return storage.diagnostics
+
+    @staticmethod
+    def _try_nodes(context: BsllsDocumentContext) -> list[Any]:
+        if context.ts_nodes_for_types:
+            return context.ts_nodes_for_types(context.tree, {"try_statement"})["try_statement"]
+        root = getattr(context.tree, "root_node", None)
+        return [node for node in _ts_walk(root) if getattr(node, "type", None) == "try_statement"]
+
+    @staticmethod
+    def _try_code_block_method_calls(try_node: Any) -> list[Any]:
+        calls: list[Any] = []
+        for child in _ts_children(try_node):
+            child_type = getattr(child, "type", None)
+            if child_type == "EXCEPT_KEYWORD":
+                break
+            if child_type in {"TRY_KEYWORD", "ENDTRY_KEYWORD"}:
+                continue
+            calls.extend(
+                node for node in _ts_walk(child) if getattr(node, "type", None) == "method_call"
+            )
+        return calls
+
+    @staticmethod
+    def _method_name(node: Any) -> str:
+        ident = next(
+            (child for child in _ts_children(node) if getattr(child, "type", None) == "identifier"),
+            None,
+        )
+        return _ts_node_text(ident) if ident is not None else ""
 
     @classmethod
     def _regex_fallback(cls, context: BsllsDocumentContext) -> list[Diagnostic]:
@@ -5151,6 +5188,11 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return diags
         if code == "BSL029":
             diags = []
+            query_line_indices: set[int] = set()
+            if snapshot is not None:
+                for block in getattr(snapshot, "query_text_blocks", []) or []:
+                    for query_line in getattr(block, "content_lines", []) or []:
+                        query_line_indices.add(int(query_line.line_no) - 1)
             for proc in procs:
                 proc_model = ProcedureModel.from_proc_info(context.path, proc)
                 diags.extend(
@@ -5160,6 +5202,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                         any_digit_re=_diag._RE_BSL029_ANY_DIGIT,
                         simple_assign_re=_diag._RE_BSL029_SIMPLE_ASSIGN,
                         ternary_re=_diag._RE_BSL029_TERNARY,
+                        query_line_indices=query_line_indices,
                     )
                 )
             return diags

@@ -9,9 +9,10 @@ derived snapshot object so those layers can share one parsed view of a file.
 from __future__ import annotations
 
 import re
+import threading
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -1313,6 +1314,12 @@ class DocumentSnapshot:
     _select_top_without_order_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
+    _cache_lock: threading.RLock = field(
+        default_factory=threading.RLock,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     @property
     def root_node(self) -> Any | None:
@@ -1495,24 +1502,25 @@ class DocumentSnapshot:
         root = self.root_node
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
             return {node_type: [] for node_type in node_types}
-        if self._ts_node_groups is None:
-            collected_types = set(node_types) | set(hot_node_types)
-            grouped = {node_type: [] for node_type in collected_types}
-            for node in walker(root):
-                node_type = getattr(node, "type", None)
-                if node_type in grouped:
-                    grouped[node_type].append(node)
-            self._ts_node_groups = grouped
-        else:
-            missing = (set(node_types) | set(hot_node_types)) - set(self._ts_node_groups)
-            if missing:
-                for node_type in missing:
-                    self._ts_node_groups[node_type] = []
+        with self._cache_lock:
+            if self._ts_node_groups is None:
+                collected_types = set(node_types) | set(hot_node_types)
+                grouped = {node_type: [] for node_type in collected_types}
                 for node in walker(root):
                     node_type = getattr(node, "type", None)
-                    if node_type in missing:
-                        self._ts_node_groups[node_type].append(node)
-        return {node_type: self._ts_node_groups.get(node_type, []) for node_type in node_types}
+                    if node_type in grouped:
+                        grouped[node_type].append(node)
+                self._ts_node_groups = grouped
+            else:
+                missing = (set(node_types) | set(hot_node_types)) - set(self._ts_node_groups)
+                if missing:
+                    for node_type in missing:
+                        self._ts_node_groups[node_type] = []
+                    for node in walker(root):
+                        node_type = getattr(node, "type", None)
+                        if node_type in missing:
+                            self._ts_node_groups[node_type].append(node)
+            return {node_type: self._ts_node_groups.get(node_type, []) for node_type in node_types}
 
     def complexity_metrics_for_procs(
         self,

@@ -283,14 +283,7 @@ def append_bslls_runtime_rule_tasks(
         snapshot=snapshot,
         max_bool_ops=int(getattr(engine, "max_bool_ops", 3)),
         bsl036_enabled=bool(engine._rule_enabled("BSL036")),
-        runtime_call_context=(
-            engine._runtime_call_context(tree, lines)
-            if engine._rule_enabled("BSL255")
-            or engine._rule_enabled("BSL276")
-            or engine._rule_enabled("BSL277")
-            or engine._rule_enabled("BSL262")
-            else None
-        ),
+        runtime_call_context=None,
         ts_nodes_for_types=engine._ts_nodes_for_types,
         global_method_calls_from_nodes=engine._global_method_calls_from_nodes,
         diagnostics_engine=engine,
