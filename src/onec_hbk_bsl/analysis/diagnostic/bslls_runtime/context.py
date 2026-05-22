@@ -72,6 +72,25 @@ class BsllsDocumentContext:
         return [ProcedureModel.from_proc_info(self.path, proc) for proc in self.procedures]
 
     @cached_property
+    def _procedure_model_by_span(self) -> dict[tuple[int, int, str], ProcedureModel]:
+        return {
+            (model.start_idx, model.end_idx, model.name.casefold()): model
+            for model in self.procedure_models
+        }
+
+    def procedure_model_from_proc_info(self, path: str, proc: Any) -> ProcedureModel:
+        if path == self.path:
+            key = (
+                int(getattr(proc, "start_idx", -1)),
+                int(getattr(proc, "end_idx", -1)),
+                str(getattr(proc, "name", "")).casefold(),
+            )
+            cached = self._procedure_model_by_span.get(key)
+            if cached is not None:
+                return cached
+        return ProcedureModel.from_proc_info(path, proc)
+
+    @cached_property
     def string_states(self) -> list[bool]:
         if self.analysis is not None:
             return self.analysis.line_string_states

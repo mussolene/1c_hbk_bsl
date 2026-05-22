@@ -50,7 +50,13 @@ def _picked_files(root: Path, *, limit: int | None, largest: int | None) -> list
     return files
 
 
-def _run_ours(root: Path, files: list[Path], *, parallel: bool) -> int:
+def _run_ours(
+    root: Path,
+    files: list[Path],
+    *,
+    parallel: bool,
+    index_current_files: bool,
+) -> int:
     os.environ["BSL_DIAG_PARALLEL_RULES"] = "1" if parallel else "0"
     os.environ["BSL_DIAG_PROCESS_RULES"] = "1" if parallel else "0"
     os.environ.setdefault("BSL_DIAG_PARALLEL_WORKERS", "8")
@@ -62,8 +68,9 @@ def _run_ours(root: Path, files: list[Path], *, parallel: bool) -> int:
         idx = SymbolIndex(db_path=str(Path(tmp) / "index.sqlite"))
         indexer = IncrementalIndexer(index=idx, quiet=True)
         indexer.index_metadata(str(root))
-        for path in files:
-            indexer.index_file(str(path))
+        if index_current_files:
+            for path in files:
+                indexer.index_file(str(path))
         engine = DiagnosticEngine(symbol_index=idx)
         for path in files:
             content = path.read_text(encoding="utf-8", errors="ignore")
@@ -100,9 +107,19 @@ def child_main(args: argparse.Namespace) -> int:
     children_before = resource.getrusage(resource.RUSAGE_CHILDREN)
     started = time.perf_counter()
     if args.mode == "ours-seq":
-        diagnostics = _run_ours(root, files, parallel=False)
+        diagnostics = _run_ours(
+            root,
+            files,
+            parallel=False,
+            index_current_files=args.index_current_files,
+        )
     elif args.mode == "ours-par":
-        diagnostics = _run_ours(root, files, parallel=True)
+        diagnostics = _run_ours(
+            root,
+            files,
+            parallel=True,
+            index_current_files=args.index_current_files,
+        )
     elif args.mode == "bslls":
         diagnostics = _run_bslls(root, files)
     else:
@@ -136,7 +153,14 @@ def child_main(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_child(root: Path, mode: str, *, limit: int | None, largest: int | None) -> dict[str, Any]:
+def _run_child(
+    root: Path,
+    mode: str,
+    *,
+    limit: int | None,
+    largest: int | None,
+    index_current_files: bool,
+) -> dict[str, Any]:
     cmd = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -150,6 +174,8 @@ def _run_child(root: Path, mode: str, *, limit: int | None, largest: int | None)
         cmd.extend(["--limit", str(limit)])
     if largest is not None:
         cmd.extend(["--largest", str(largest)])
+    if index_current_files:
+        cmd.append("--index-current-files")
     proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
@@ -183,9 +209,18 @@ def _parity_summary(root: Path, *, limit: int | None, largest: int | None) -> di
 def parent_main(args: argparse.Namespace) -> int:
     roots = [Path(item).expanduser().resolve() for item in args.roots]
     report: dict[str, Any] = {"perf": [], "parity": []}
+    modes = (args.mode,) if args.mode else ("ours-seq", "ours-par", "bslls")
     for root in roots:
-        for mode in ("ours-seq", "ours-par", "bslls"):
-            report["perf"].append(_run_child(root, mode, limit=args.limit, largest=args.largest))
+        for mode in modes:
+            report["perf"].append(
+                _run_child(
+                    root,
+                    mode,
+                    limit=args.limit,
+                    largest=args.largest,
+                    index_current_files=args.index_current_files,
+                )
+            )
         if not args.no_parity:
             report["parity"].append(_parity_summary(root, limit=args.limit, largest=args.largest))
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
@@ -201,6 +236,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--largest", type=int)
     parser.add_argument("--no-parity", action="store_true")
+    parser.add_argument(
+        "--index-current-files",
+        action="store_true",
+        help="Include current measured files in SymbolIndex before diagnostics.",
+    )
     args = parser.parse_args(argv)
     if args.child:
         if not args.root or not args.mode:

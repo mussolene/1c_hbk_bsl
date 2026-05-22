@@ -45,9 +45,14 @@ def _make_instrumented_executor(
 ) -> Any:
     """Возвращает инструментированную версию _execute_diagnostic_rule_tasks."""
 
-    def _instrumented(tasks: list[tuple[str, Any]]) -> list[Any]:
+    def _instrumented(tasks: list[Any]) -> list[Any]:
         out: list[Any] = []
-        for code, fn in tasks:
+        for task in tasks:
+            if hasattr(task, "code") and hasattr(task, "fn"):
+                code = task.code
+                fn = task.fn
+            else:
+                code, fn = task
             t0 = time.perf_counter()
             result = fn()
             elapsed = time.perf_counter() - t0

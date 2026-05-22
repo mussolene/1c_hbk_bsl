@@ -970,6 +970,14 @@ def run_bsl224_nested_function_in_parameters(
     for line_idx, line in enumerate(lines):
         if line.lstrip().startswith("//"):
             continue
+        line_folded = line.casefold()
+        if not (
+            "стрзаменить" in line_folded
+            or "strreplace" in line_folded
+            or "вставить" in line_folded
+            or "insert" in line_folded
+        ):
+            continue
         for match in call_start_re.finditer(line):
             name = match.group("name")
             if name.casefold() not in fallback_names:

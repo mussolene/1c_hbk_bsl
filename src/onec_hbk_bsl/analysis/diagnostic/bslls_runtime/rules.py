@@ -9,7 +9,7 @@ from typing import Any
 import onec_hbk_bsl.analysis.diagnostics as _diag
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.storage import DiagnosticStorage
-from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel, ProcedureModel
+from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     _xml_bool_tag,
@@ -125,15 +125,27 @@ def _ts_children(node: Any) -> list[Any]:
     return list(getattr(node, "children", []) or [])
 
 
-def _structural_node_key(node: Any) -> tuple[Any, ...]:
+def _structural_node_key(
+    node: Any,
+    cache: dict[int, tuple[Any, ...]] | None = None,
+) -> tuple[Any, ...]:
+    if cache is not None:
+        node_id = id(node)
+        cached = cache.get(node_id)
+        if cached is not None:
+            return cached
     children = _ts_children(node)
     node_type = getattr(node, "type", "")
     if not children:
         text = _ts_node_text(node)
         if node_type == "identifier" or node_type.endswith("_KEYWORD") or node_type == "operator":
             text = text.casefold()
-        return (node_type, text)
-    return (node_type, tuple(_structural_node_key(child) for child in children))
+        key = (node_type, text)
+    else:
+        key = (node_type, tuple(_structural_node_key(child, cache) for child in children))
+    if cache is not None:
+        cache[node_id] = key
+    return key
 
 
 def _point_char(lines: list[str], point: Any) -> int:
@@ -4121,15 +4133,16 @@ class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
         if not isinstance(root, (bytes, bytearray)):
             return []
         storage = DiagnosticStorage(context.path)
+        key_cache: dict[int, tuple[Any, ...]] = {}
         for node in context.ts_nodes_for_types(context.tree, {"if_statement"})["if_statement"]:
             expressions = self._branch_expressions_with_ranges(node)
             reported: set[tuple[Any, ...]] = set()
             for index, (expression, start_node, end_node) in enumerate(expressions[:-1]):
-                key = _structural_node_key(expression)
+                key = _structural_node_key(expression, key_cache)
                 if key in reported:
                     continue
                 if any(
-                    _structural_node_key(candidate) == key
+                    _structural_node_key(candidate, key_cache) == key
                     for candidate, _, _ in expressions[index + 1 :]
                 ):
                     _add_node_range(
@@ -4202,14 +4215,18 @@ class IfElseDuplicatedCodeBlockRule(BsllsDiagnosticRule):
         if not isinstance(root, (bytes, bytearray)):
             return []
         storage = DiagnosticStorage(context.path)
+        key_cache: dict[int, tuple[Any, ...]] = {}
         for node in context.ts_nodes_for_types(context.tree, {"if_statement"})["if_statement"]:
             blocks = self._branch_blocks(node)
             reported: set[tuple[Any, ...]] = set()
             for index, block in enumerate(blocks[:-1]):
-                key = self._block_key(block)
+                key = self._block_key(block, key_cache)
                 if not key or key in reported:
                     continue
-                if any(self._block_key(candidate) == key for candidate in blocks[index + 1 :]):
+                if any(
+                    self._block_key(candidate, key_cache) == key
+                    for candidate in blocks[index + 1 :]
+                ):
                     _add_node_range(
                         storage,
                         code=self.code,
@@ -4270,8 +4287,11 @@ class IfElseDuplicatedCodeBlockRule(BsllsDiagnosticRule):
         return getattr(node, "type", None) not in {"line_comment", "comment"}
 
     @staticmethod
-    def _block_key(block: tuple[Any, ...]) -> tuple[Any, ...]:
-        return tuple(_structural_node_key(node) for node in block)
+    def _block_key(
+        block: tuple[Any, ...],
+        key_cache: dict[int, tuple[Any, ...]],
+    ) -> tuple[Any, ...]:
+        return tuple(_structural_node_key(node, key_cache) for node in block)
 
 
 class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
@@ -4981,7 +5001,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return model.validate_bsl002_method_size(
                 lines=context.lines,
                 procs=procs,
-                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
                 max_proc_lines=engine.max_proc_lines,
                 mask_strings_and_comments_for_counter_fn=(
                     _diag._mask_strings_and_comments_for_counter
@@ -4994,7 +5014,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 procs=procs,
                 regions=regions,
                 api_region_names=_diag._API_REGION_NAMES,
-                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
                 proc_name_span_fn=_diag._proc_name_span,
             )
         if code == "BSL004":
@@ -5017,8 +5037,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             )
         if code == "BSL008":
             diags: list[Diagnostic] = []
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_max_returns(
                         context.lines,
@@ -5034,8 +5053,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL011":
             diags = []
             metrics = engine._complexity_metrics_for_procs(context.lines, procs)
-            for proc, (cc, _mc) in zip(procs, metrics, strict=False):
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model, (cc, _mc) in zip(context.procedure_models, metrics, strict=False):
                 diags.extend(
                     proc_model.validate_cognitive_complexity(
                         cognitive_complexity=cc,
@@ -5094,8 +5112,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             ]
         if code == "BSL015":
             diags = []
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_optional_param_limit(
                         context.lines,
@@ -5136,8 +5153,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL019":
             diags = []
             metrics = engine._complexity_metrics_for_procs(context.lines, procs)
-            for proc, (_cog, cc) in zip(procs, metrics, strict=False):
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model, (_cog, cc) in zip(context.procedure_models, metrics, strict=False):
                 diags.extend(
                     proc_model.validate_mccabe_complexity(
                         mccabe_complexity=cc,
@@ -5188,8 +5204,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             ]
         if code == "BSL028":
             diags = []
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_missing_try_catch(
                         context.lines,
@@ -5202,8 +5217,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL029":
             diags = []
             query_line_indices = set(snapshot.query_line_indices) if snapshot is not None else set()
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_magic_numbers(
                         context.lines,
@@ -5225,16 +5239,14 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             )
         if code == "BSL031":
             diags = []
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_param_limit(context.lines, max_params=engine.max_params)
                 )
             return diags
         if code == "BSL032":
             diags = []
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_function_has_return(
                         context.lines,
@@ -5248,8 +5260,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             if _diag._ts_tree_ok_for_rules(context.tree):
                 loop_lines = _diag.loop_body_line_indices_0(context.tree.root_node)
             diags = []
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_query_in_loop(
                         context.lines,
@@ -5305,7 +5316,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return model.validate_bsl042_empty_export_method(
                 lines=context.lines,
                 procs=procs,
-                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
                 blank_or_comment_re=_diag._RE_BLANK_OR_COMMENT,
             )
         if code == "BSL051":
@@ -5344,7 +5355,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 collect_identifier_casefolds_in_proc_body_fn=(
                     _diag._collect_identifier_casefolds_in_proc_body
                 ),
-                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
                 bsl062_skip_standard_command_params=_diag._BSL062_SKIP_STANDARD_COMMAND_PARAMS,
                 is_typical_client_command_handler_fn=_diag._is_typical_client_command_handler,
                 is_client_notify_completion_export_handler_fn=(
@@ -5355,14 +5366,13 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return model.validate_bsl064_procedure_returns_value(
                 lines=context.lines,
                 procs=procs,
-                procedure_model_from_proc_info_fn=ProcedureModel.from_proc_info,
+                procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
                 return_value_re=_diag._RE_RETURN_VALUE,
                 proc_header_re=_diag._RE_PROC_HEADER,
             )
         if code == "BSL065":
             diags = []
-            for proc in procs:
-                proc_model = ProcedureModel.from_proc_info(context.path, proc)
+            for proc_model in context.procedure_models:
                 diags.extend(
                     proc_model.validate_missing_export_comment(
                         context.lines,
