@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
+from onec_hbk_bsl.analysis.diagnostics import RULE_DESCRIPTIONS_RU, RULE_METADATA
 
 # ---------------------------------------------------------------------------
 # BSL rule descriptions in Russian
@@ -316,12 +316,16 @@ def translate_message(code: str, original_message: str) -> str:
     Для неизвестных пытается вернуть понятную русскую формулировку
     на основе метаданных правила.
     """
+    title = RULE_DESCRIPTIONS_RU.get(code)
     info = DIAGNOSTICS_RU.get(code)
-    if not info:
+    if not title and not info:
         return _fallback_ru_message(code, original_message)
 
-    title = info["title"]
-    hint = info.get("hint", "")
+    if title:
+        hint = ""
+    else:
+        title = info["title"] if info else code
+        hint = info.get("hint", "") if info else ""
 
     # Извлекаем «специфическое» значение из английского сообщения
     # (имя переменной, длину метода и т.п.), если оно есть.
@@ -339,14 +343,10 @@ def translate_message(code: str, original_message: str) -> str:
 
 
 def localize_rule_title(code: str) -> str:
-    """Русский заголовок правила для UI/CodeAction (best-effort)."""
-    info = DIAGNOSTICS_RU.get(code)
-    if info and info.get("title"):
-        return info["title"]
-    md = RULE_METADATA.get(code, {})
-    desc = str(md.get("description", "")).strip()
-    if desc:
-        return _localize_generic_text(desc)
+    """Русский заголовок правила для UI/CodeAction из canonical BSLLS ru-locale."""
+    title = RULE_DESCRIPTIONS_RU.get(code)
+    if title:
+        return title
     return code
 
 
@@ -399,6 +399,9 @@ def _extract_specific(code: str, message: str) -> str:
 
 
 def _fallback_ru_message(code: str, original_message: str) -> str:
+    title = RULE_DESCRIPTIONS_RU.get(code)
+    if title:
+        return title
     md = RULE_METADATA.get(code, {})
     desc = str(md.get("description", "")).strip()
     if desc:
