@@ -272,6 +272,57 @@ class TestPublishDiagnostics:
         assert report.kind == "full"
         assert isinstance(report.items, (list, tuple))
 
+    def test_large_pull_diagnostics_returns_immediately_and_refreshes(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DocumentDiagnosticParams, TextDocumentIdentifier
+
+        from onec_hbk_bsl.lsp import server as srv
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _path_to_uri, on_document_diagnostic
+
+        captured: dict[str, object] = {}
+
+        class _CapturedThread:
+            def __init__(self, target, args=(), kwargs=None, daemon=None, name=None):
+                captured["target"] = target
+                captured["args"] = args
+                captured["kwargs"] = kwargs or {}
+
+            def start(self):
+                captured["started"] = True
+
+        monkeypatch.setattr(srv, "_ASYNC_PULL_DIAGNOSTICS_MIN_BYTES", 1)
+        monkeypatch.setattr(srv.threading, "Thread", _CapturedThread)
+        monkeypatch.setattr(srv, "_build_lsp_diagnostics_inner", MagicMock(return_value=[]))
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        bsl = tmp_path / "large.bsl"
+        content = "Процедура Тест()\nКонецПроцедуры\n"
+        bsl.write_text(content, encoding="utf-8")
+        uri = _path_to_uri(str(bsl))
+
+        ls = BslLanguageServer()
+        ls.client_pull_diagnostics = True
+        ls.client_diagnostic_refresh = True
+        ls.workspace_diagnostic_refresh = MagicMock()  # type: ignore[method-assign]
+        ls._docs[uri] = content
+
+        params = DocumentDiagnosticParams(text_document=TextDocumentIdentifier(uri=uri))
+        report = on_document_diagnostic(ls, params)
+
+        assert report.items == []
+        assert captured["started"] is True
+        srv._build_lsp_diagnostics_inner.assert_not_called()
+
+        target = captured["target"]
+        assert callable(target)
+        target()
+
+        srv._build_lsp_diagnostics_inner.assert_called_once()
+        ls.workspace_diagnostic_refresh.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # Utility functions
@@ -623,6 +674,65 @@ class TestHandlerFunctions:
         params.text = None
         on_did_save(ls, params)
         ls.text_document_publish_diagnostics.assert_called()
+
+    def test_on_did_save_pull_diagnostics_skips_direct_index_file(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import _path_to_uri, on_did_save
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        ls.indexer.index_file = MagicMock()  # type: ignore[method-assign]
+        bsl = tmp_path / "module.bsl"
+        bsl.write_text("А = 1;\n", encoding="utf-8")
+        params = MagicMock()
+        params.text_document.uri = _path_to_uri(str(bsl))
+        params.text = "А = 2;\n"
+
+        on_did_save(ls, params)
+
+        ls.indexer.index_file.assert_not_called()
+        ls.text_document_publish_diagnostics.assert_not_called()
+        assert ls._docs[params.text_document.uri] == "А = 2;\n"
+
+    def test_pull_diagnostics_indexes_from_snapshot_once_without_index_file(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DocumentDiagnosticParams, TextDocumentIdentifier
+
+        from onec_hbk_bsl.lsp.server import _path_to_uri, on_document_diagnostic
+
+        class _SyncThread:
+            def __init__(self, target, args=(), kwargs=None, daemon=None, name=None):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        monkeypatch.setattr(threading, "Thread", _SyncThread)
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        ls.indexer.index_file = MagicMock()  # type: ignore[method-assign]
+        ls.indexer.index_snapshot = MagicMock(return_value={"symbols": 1, "calls": 0})  # type: ignore[method-assign]
+        bsl = tmp_path / "module.bsl"
+        content = "Процедура Тест()\nКонецПроцедуры\n"
+        bsl.write_text(content, encoding="utf-8")
+        uri = _path_to_uri(str(bsl))
+        ls._docs[uri] = content
+        params = DocumentDiagnosticParams(text_document=TextDocumentIdentifier(uri=uri))
+
+        on_document_diagnostic(ls, params)
+        on_document_diagnostic(ls, params)
+
+        ls.indexer.index_file.assert_not_called()
+        ls.indexer.index_snapshot.assert_called_once()
 
     def test_on_did_close_cleans_document_state_and_cancels_timer(
         self, tmp_path, monkeypatch

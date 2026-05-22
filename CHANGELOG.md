@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- LSP для больших файлов в VS Code теперь отвечает на первый pull diagnostics быстро:
+  полный анализ выполняется в фоне и обновляет Problems через `workspace/diagnostic/refresh`.
+- Индекс открытого файла в LSP обновляется из уже построенного `DocumentSnapshot`,
+  без повторного чтения и парсинга текущего файла на сохранении.
+
 ## [0.7.29] - 2026-05-14
 
 ### Changed

@@ -318,6 +318,7 @@ class BslLanguageServer(LanguageServer):
         self._shutdown_event = threading.Event()
         # Set in initialize from ClientCapabilities.text_document.diagnostic (LSP 3.17 pull).
         self.client_pull_diagnostics: bool = False
+        self.client_diagnostic_refresh: bool = False
         atexit.register(self.close)
 
     def close(self) -> None:
@@ -479,6 +480,9 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
     caps = params.capabilities
     td = caps.text_document if caps else None
     ls.client_pull_diagnostics = bool(td is not None and td.diagnostic is not None)
+    ws = caps.workspace if caps else None
+    ws_diags = getattr(ws, "diagnostics", None) if ws is not None else None
+    ls.client_diagnostic_refresh = bool(getattr(ws_diags, "refresh_support", False))
 
     workspace_root = None
     if params.workspace_folders:
@@ -522,6 +526,8 @@ _DIAG_DEBOUNCE_SECS = 0.6  # fallback default; adaptive debounce used when timin
 _DIAG_DEBOUNCE_MIN = 0.3
 _DIAG_DEBOUNCE_MAX = 3.0
 _SYNC_LOCAL_SCOPE_PARSE_MAX_BYTES = 1_000_000
+_ASYNC_PULL_DIAGNOSTICS_MIN_BYTES = 1_000_000
+_BACKGROUND_LOCAL_SCOPE_PARSE_MAX_BYTES = 4_000_000
 
 
 def _allow_sync_local_scope_parse(content: str) -> bool:
@@ -571,7 +577,7 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
 
 @server.feature(TEXT_DOCUMENT_DID_SAVE, SaveOptions(include_text=True))
 def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> None:
-    """Re-index file and publish diagnostics on save."""
+    """Handle save without duplicating pull-diagnostic work for open documents."""
     uri = params.text_document.uri
     path = _uri_to_path(uri)
 
@@ -582,12 +588,15 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
     if old_timer is not None:
         old_timer.cancel()
 
+    if ls.client_pull_diagnostics:
+        logger.debug("LSP: save %s handled by pull diagnostics; skip direct index_file", path)
+        return
+
     # Re-index and run diagnostics in background
     def _run() -> None:
         result = ls.indexer.index_file(path)
         logger.debug("LSP: re-indexed %s: %s", path, result)
-        if not ls.client_pull_diagnostics:
-            _publish_diagnostics(ls, uri, path)
+        _publish_diagnostics(ls, uri, path)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -606,6 +615,35 @@ def on_did_close(ls: BslLanguageServer, params: DidCloseTextDocumentParams) -> N
 
 def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
     """Run the diagnostic engine and return LSP diagnostics (shared by push and pull)."""
+    content_for_hash = ls._doc_get(uri)
+    if content_for_hash is None:
+        try:
+            content_for_hash = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            content_for_hash = None
+
+    if content_for_hash is not None:
+        content_hash = hash(content_for_hash)
+        action, run = ls.doc_state.begin_diag_run(uri, content_hash)
+        if action == "cached":
+            cached = ls.doc_state.get_diag_cache(uri)
+            if cached is not None and cached[0] == content_hash:
+                return cached[1]
+        if action == "wait" and run is not None:
+            run.event.wait()
+            if run.error is not None:
+                return [_lsp_failure_diagnostic(f"Diagnostics failed: {run.error}")]
+            return run.diagnostics or []
+        if action == "run" and run is not None:
+            try:
+                diagnostics = _build_lsp_diagnostics_inner(ls, uri, path)
+            except Exception as exc:
+                logger.exception("LSP: diagnostics failed for %s", path)
+                ls.doc_state.finish_diag_run(uri, run, error=exc)
+                return [_lsp_failure_diagnostic(f"Diagnostics failed: {exc}")]
+            ls.doc_state.finish_diag_run(uri, run, diagnostics=diagnostics)
+            return diagnostics
+
     try:
         return _build_lsp_diagnostics_inner(ls, uri, path)
     except Exception as exc:
@@ -639,9 +677,11 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
         _chash = None
 
     _t0 = _time.perf_counter()
+    context_for_index: _LspDocumentContext | None = None
     if cached is not None:
         context = _get_lsp_document_context(ls, uri, cached, source_path=path)
         if context is not None:
+            context_for_index = context
             issues = ls.diagnostics_engine.check_snapshot(
                 context.snapshot,
                 symbol_index=ls.symbol_index,
@@ -660,6 +700,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
             source_path=path,
         )
         if context is not None:
+            context_for_index = context
             issues = ls.diagnostics_engine.check_snapshot(
                 context.snapshot,
                 symbol_index=ls.symbol_index,
@@ -758,14 +799,95 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
     # Store result in cache for next identical-content request.
     if _chash is not None:
         ls.doc_state.set_diag_cache(uri, _chash, lsp_diags)
+        if context_for_index is not None:
+            _schedule_snapshot_index(ls, uri, path, _chash, context_for_index.snapshot)
 
     return lsp_diags
+
+
+def _schedule_snapshot_index(
+    ls: BslLanguageServer,
+    uri: str,
+    path: str,
+    content_hash: int,
+    snapshot: DocumentSnapshot,
+) -> None:
+    """Refresh the open-file index from an existing snapshot, without reparsing."""
+    if not ls.doc_state.mark_snapshot_indexed(uri, content_hash):
+        return
+
+    def _run() -> None:
+        result = ls.indexer.index_snapshot(path, snapshot)
+        logger.debug("LSP: snapshot-indexed %s: %s", path, result)
+
+    threading.Thread(target=_run, daemon=True, name="bsl-lsp-snapshot-index").start()
 
 
 def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
     """Push diagnostics (clients without textDocument/diagnostic pull support)."""
     lsp_diags = _build_lsp_diagnostics(ls, uri, path)
     ls.text_document_publish_diagnostics(PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags))
+
+
+def _content_for_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> str | None:
+    """Return current document content for diagnostics cache decisions."""
+    content = ls._doc_get(uri)
+    if content is not None:
+        return content
+    try:
+        return Path(path).read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return None
+
+
+def _maybe_start_async_pull_diagnostics(
+    ls: BslLanguageServer,
+    uri: str,
+    path: str,
+) -> list[LspDiagnostic] | None:
+    """Start expensive pull diagnostics in background for very large documents.
+
+    VS Code supports ``workspace/diagnostic/refresh``; using it keeps the editor
+    responsive on first open while preserving full diagnostics once the worker
+    completes.
+    """
+    if not (ls.client_pull_diagnostics and ls.client_diagnostic_refresh):
+        return None
+    content = _content_for_lsp_diagnostics(ls, uri, path)
+    if content is None:
+        return None
+    if len(content.encode("utf-8", errors="ignore")) < _ASYNC_PULL_DIAGNOSTICS_MIN_BYTES:
+        return None
+
+    content_hash = hash(content)
+    cached = ls.doc_state.get_diag_cache(uri)
+    if cached is not None and cached[0] == content_hash:
+        return cached[1]
+
+    action, run = ls.doc_state.begin_diag_run(uri, content_hash)
+    if action == "cached":
+        cached = ls.doc_state.get_diag_cache(uri)
+        return cached[1] if cached is not None and cached[0] == content_hash else []
+    if action == "wait":
+        return []
+    if run is None:
+        return None
+
+    def _run() -> None:
+        try:
+            diagnostics = _build_lsp_diagnostics_inner(ls, uri, path)
+        except Exception as exc:
+            logger.exception("LSP: async diagnostics failed for %s", path)
+            ls.doc_state.finish_diag_run(uri, run, error=exc)
+            return
+        ls.doc_state.finish_diag_run(uri, run, diagnostics=diagnostics)
+        try:
+            ls.workspace_diagnostic_refresh()
+        except Exception:
+            logger.debug("LSP: workspace/diagnostic/refresh failed", exc_info=True)
+
+    threading.Thread(target=_run, daemon=True, name="bsl-lsp-diagnostics").start()
+    return []
 
 
 @server.feature(
@@ -778,6 +900,9 @@ def on_document_diagnostic(
     """Pull diagnostics (LSP 3.17). Used by VS Code / Cursor instead of push."""
     uri = params.text_document.uri
     path = _uri_to_path(uri)
+    async_items = _maybe_start_async_pull_diagnostics(ls, uri, path)
+    if async_items is not None:
+        return RelatedFullDocumentDiagnosticReport(items=async_items)
     items = _build_lsp_diagnostics(ls, uri, path)
     return RelatedFullDocumentDiagnosticReport(items=items)
 
@@ -2302,6 +2427,9 @@ def _clear_local_scope_cache(ls: BslLanguageServer, uri: str) -> None:
 def _schedule_local_scope_cache(ls: BslLanguageServer, uri: str, content: str) -> None:
     """Build local scope data in the background for large documents only."""
     if _allow_sync_local_scope_parse(content):
+        _clear_local_scope_cache(ls, uri)
+        return
+    if len(content.encode("utf-8", errors="ignore")) > _BACKGROUND_LOCAL_SCOPE_PARSE_MAX_BYTES:
         _clear_local_scope_cache(ls, uri)
         return
 

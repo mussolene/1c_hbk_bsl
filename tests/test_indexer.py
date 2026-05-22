@@ -342,6 +342,24 @@ class TestIncrementalIndexer:
 
         assert "error" in result
 
+    def test_index_snapshot_populates_index_without_reading_file(
+        self, symbol_index: SymbolIndex, tmp_path: Path
+    ) -> None:
+        from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        path = tmp_path / "open.bsl"
+        content = "Процедура ИзПамяти() Экспорт\nКонецПроцедуры\n"
+        snapshot = build_document_snapshot(path=str(path), content=content)
+        indexer = IncrementalIndexer(index=symbol_index)
+
+        result = indexer.index_snapshot(str(path), snapshot)
+
+        assert "error" not in result
+        assert result["symbols"] == 1
+        symbols = symbol_index.get_file_symbols(str(path))
+        assert [symbol["name"] for symbol in symbols] == ["ИзПамяти"]
+
 
 # ---------------------------------------------------------------------------
 # IncrementalIndexer extended tests

@@ -364,6 +364,23 @@ class IncrementalIndexer:
             logger.error("Failed to index %s: %s", path, exc)
             return {"symbols": 0, "calls": 0, "error": str(exc)}
 
+    def index_snapshot(self, path: str, snapshot: Any) -> dict:
+        """
+        Upsert index data from an already parsed document snapshot.
+
+        This is the LSP hot path: diagnostics already materialize a DocumentSnapshot,
+        so re-reading and re-parsing the same open file on save wastes time.
+        """
+        try:
+            semantic = extract_semantic_model(snapshot.tree, file_path=path)
+            sym_dicts = [_symbol_to_dict(s) for s in semantic.symbols]
+            call_dicts = [_call_to_dict(c) for c in semantic.calls]
+            self.index.upsert_file(path, sym_dicts, call_dicts)
+            return {"symbols": len(sym_dicts), "calls": len(call_dicts)}
+        except Exception as exc:
+            logger.error("Failed to index snapshot %s: %s", path, exc)
+            return {"symbols": 0, "calls": 0, "error": str(exc)}
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
