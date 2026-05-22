@@ -8,15 +8,26 @@ RE_HAS_DIGIT = re.compile(r"\d")
 
 
 def _is_latin_letter(ch: str) -> bool:
-    if not ch.isalpha():
-        return False
-    return "LATIN" in unicodedata.name(ch, "")
+    code = ord(ch)
+    return ch.isalpha() and (
+        0x0041 <= code <= 0x024F
+        or 0x1E00 <= code <= 0x1EFF
+        or 0x2C60 <= code <= 0x2C7F
+        or 0xA720 <= code <= 0xA7FF
+        or 0xAB30 <= code <= 0xAB6F
+        or 0xFF00 <= code <= 0xFFEF
+    )
 
 
 def _is_cyrillic_letter(ch: str) -> bool:
-    if not ch.isalpha():
-        return False
-    return "CYRILLIC" in unicodedata.name(ch, "")
+    code = ord(ch)
+    return ch.isalpha() and (
+        0x0400 <= code <= 0x052F
+        or 0x1C80 <= code <= 0x1C8F
+        or 0x2DE0 <= code <= 0x2DFF
+        or 0xA640 <= code <= 0xA69F
+        or 0x1E030 <= code <= 0x1E08F
+    )
 
 
 def contains_latin_letter(text: str) -> bool:

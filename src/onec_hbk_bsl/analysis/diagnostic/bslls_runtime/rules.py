@@ -4433,8 +4433,17 @@ class MethodContractDiagnosticsRule(BsllsDiagnosticRule):
         if code == "BSL215":
             return run_bsl215_missing_parameter_description(context.path, context.lines, procs)
         if code == "BSL224":
+            nodes_by_type = None
+            if context.ts_nodes_for_types is not None:
+                nodes_by_type = context.ts_nodes_for_types(
+                    context.tree,
+                    {"call_expression", "method_call", "new_expression"},
+                )
             return run_bsl224_nested_function_in_parameters(
-                context.path, context.lines, context.tree
+                context.path,
+                context.lines,
+                context.tree,
+                nodes_by_type,
             )
         if code == "BSL233":
             return run_bsl233_public_methods_description(context.path, context.lines, procs)

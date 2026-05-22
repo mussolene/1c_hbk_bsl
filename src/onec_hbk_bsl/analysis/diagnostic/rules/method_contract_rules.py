@@ -771,6 +771,7 @@ def run_bsl224_nested_function_in_parameters(
     path: str,
     lines: list[str],
     tree: Any,
+    nodes_by_type: dict[str, list[Any]] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     root = getattr(tree, "root_node", None)
@@ -812,7 +813,16 @@ def run_bsl224_nested_function_in_parameters(
                     return True
         return False
 
-    for node in _diag._ts_walk(root):
+    if nodes_by_type is None:
+        candidate_nodes = _diag._ts_walk(root)
+    else:
+        candidate_nodes = (
+            nodes_by_type.get("call_expression", [])
+            + nodes_by_type.get("method_call", [])
+            + nodes_by_type.get("new_expression", [])
+        )
+
+    for node in candidate_nodes:
         node_type = getattr(node, "type", None)
         if node_type not in {"call_expression", "method_call", "new_expression"}:
             continue

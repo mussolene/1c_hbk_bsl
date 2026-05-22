@@ -20,13 +20,25 @@ def _tree_error_cache_key(node: Any) -> tuple[int, int, int] | None:
 def tree_has_errors(node: Any) -> bool:
     """True when a tree-sitter subtree contains ERROR or missing nodes."""
 
+    is_missing = getattr(node, "is_missing", False)
+    if is_missing:
+        return True
+
+    is_error = getattr(node, "is_error", False)
+    if is_error:
+        return True
+
+    has_error = getattr(node, "has_error", None)
+    if isinstance(has_error, bool):
+        return has_error
+
     key = _tree_error_cache_key(node)
     if key is not None:
         cached = _tree_error_cache.get(key)
         if cached is not None:
             return cached
 
-    if node.type in ("ERROR", "error") or getattr(node, "is_missing", False):
+    if node.type in ("ERROR", "error"):
         result = True
     else:
         result = any(tree_has_errors(child) for child in node.children)

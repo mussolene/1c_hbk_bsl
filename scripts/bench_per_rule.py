@@ -26,13 +26,17 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import onec_hbk_bsl.analysis.diagnostics as _diag_module  # noqa: E402
+import onec_hbk_bsl.analysis.diagnostic.pipeline as _pipeline_module  # noqa: E402
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine  # noqa: E402
 
 FIXTURE_DIR = Path(__file__).parent.parent / "tests" / "fixtures"
 SIZES = [100, 500, 1000, 3000, 5000]
 DEFAULT_RUNS = 3
 DEFAULT_TOP = 10
+
+
+def _path_for_run(path_str: str, run_idx: int) -> str:
+    return f"{path_str}::bench-per-rule-{run_idx}"
 
 
 def _make_instrumented_executor(
@@ -71,21 +75,21 @@ def run_per_rule(size: int, runs: int) -> tuple[dict[str, float], dict[str, int]
     rule_times: dict[str, float] = {}
     rule_calls: dict[str, int] = {}
 
-    original = _diag_module._execute_diagnostic_rule_tasks
-    _diag_module._execute_diagnostic_rule_tasks = _make_instrumented_executor(
+    original = _pipeline_module.execute_diagnostic_rule_tasks
+    _pipeline_module.execute_diagnostic_rule_tasks = _make_instrumented_executor(
         rule_times, rule_calls
     )
     try:
         engine = DiagnosticEngine()
         # warm-up: не засчитываем
-        engine.check_content(path_str, content)
+        engine.check_content(_path_for_run(path_str, -1), content)
         rule_times.clear()
         rule_calls.clear()
 
-        for _ in range(runs):
-            engine.check_content(path_str, content)
+        for run_idx in range(runs):
+            engine.check_content(_path_for_run(path_str, run_idx), content)
     finally:
-        _diag_module._execute_diagnostic_rule_tasks = original
+        _pipeline_module.execute_diagnostic_rule_tasks = original
 
     return rule_times, rule_calls, n_lines
 
