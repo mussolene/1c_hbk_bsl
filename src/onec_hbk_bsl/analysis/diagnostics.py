@@ -3186,8 +3186,11 @@ def _snapshot_query_blocks(lines: list[str], query_blocks: list[QueryTextBlockIn
 
 def _query_block_content_line_tuples(
     block: QueryTextBlockInfo,
-) -> list[tuple[int, int, str, str, bool]]:
-    return [
+) -> tuple[tuple[int, int, str, str, bool], ...]:
+    cached = getattr(block, "content_line_tuples", None)
+    if cached is not None:
+        return cached
+    return tuple(
         (
             line.line_no,
             line.content_base,
@@ -3196,7 +3199,7 @@ def _query_block_content_line_tuples(
             line.ended_query,
         )
         for line in block.content_lines
-    ]
+    )
 
 
 def _find_matching_paren(text: str, open_idx: int) -> int:

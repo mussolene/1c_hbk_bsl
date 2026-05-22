@@ -73,6 +73,10 @@ def test_snapshot_collects_embedded_query_blocks(tmp_path: Path) -> None:
     assert block.content_lines[0].line_no == 3
     assert block.content_lines[1].head == "Поле"
     assert block.content_lines[2].head == "ИЗ Справочник.Номенклатура"
+    assert block.content_line_tuples[1] == (4, 9, "Поле", "Поле", False)
+    assert snapshot.query_line_indices == frozenset({2, 3, 4, 5})
+    assert snapshot.query_content_line_tuples is snapshot.query_content_line_tuples
+    assert snapshot.query_content_line_tuples[2][3] == "ИЗ Справочник.Номенклатура"
 
 
 def test_procedure_name_extractors_handle_async_declarations(tmp_path: Path) -> None:

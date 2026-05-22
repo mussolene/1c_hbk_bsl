@@ -865,11 +865,11 @@ class ProcedureModel:
             return spans
 
         if query_line_indices is None:
-            query_line_indices = set()
-            if snapshot is not None:
-                for block in getattr(snapshot, "query_text_blocks", []) or []:
-                    for query_line in getattr(block, "content_lines", []) or []:
-                        query_line_indices.add(int(query_line.line_no) - 1)
+            query_line_indices = (
+                set(getattr(snapshot, "query_line_indices", frozenset()))
+                if snapshot is not None
+                else set()
+            )
 
         for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
             line = lines[i]

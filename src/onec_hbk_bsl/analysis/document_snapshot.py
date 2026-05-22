@@ -780,6 +780,9 @@ class QueryTextLineInfo:
     ended_query: bool
 
 
+QueryContentLineTuple = tuple[int, int, str, str, bool]
+
+
 @dataclass(frozen=True)
 class QueryTextBlockInfo:
     """Embedded query string block with pre-split logical lines."""
@@ -789,6 +792,7 @@ class QueryTextBlockInfo:
     content_lines: tuple[QueryTextLineInfo, ...]
     sdbl_tree: Any | None = None
     sdbl_has_errors: bool = False
+    content_line_tuples: tuple[QueryContentLineTuple, ...] = ()
 
     @property
     def query_text(self) -> str:
@@ -1253,15 +1257,27 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
             if ended_query:
                 break
 
-        sdbl_text = "\n".join(line.head for line in content_lines)
+        content_lines_tuple = tuple(content_lines)
+        content_line_tuples = tuple(
+            (
+                line.line_no,
+                line.content_base,
+                line.content,
+                line.head,
+                line.ended_query,
+            )
+            for line in content_lines_tuple
+        )
+        sdbl_text = "\n".join(line.head for line in content_lines_tuple)
         sdbl_tree, sdbl_has_errors = _parse_sdbl_query_text(sdbl_text)
         result.append(
             QueryTextBlockInfo(
                 start_idx=i,
                 block_lines=tuple(block_lines),
-                content_lines=tuple(content_lines),
+                content_lines=content_lines_tuple,
                 sdbl_tree=sdbl_tree,
                 sdbl_has_errors=sdbl_has_errors,
+                content_line_tuples=content_line_tuples,
             )
         )
         i = j
@@ -1284,6 +1300,8 @@ class DocumentSnapshot:
     _calls: list[Call] | None = None
     _semantic_model: SemanticModel | None = None
     _query_blocks: list[QueryTextBlockInfo] | None = None
+    _query_line_indices: frozenset[int] | None = None
+    _query_content_line_tuples: tuple[QueryContentLineTuple, ...] | None = None
     _line_string_states: list[bool] | None = None
     _comment_starts: list[int | None] | None = None
     _masked_lines: list[str] | None = None
@@ -1401,6 +1419,24 @@ class DocumentSnapshot:
         if self._query_blocks is None:
             self._query_blocks = _build_query_text_blocks(self.lines)
         return self._query_blocks
+
+    @property
+    def query_line_indices(self) -> frozenset[int]:
+        """Zero-based source line indices that belong to embedded query text."""
+        if self._query_line_indices is None:
+            self._query_line_indices = frozenset(
+                line.line_no - 1 for block in self.query_text_blocks for line in block.content_lines
+            )
+        return self._query_line_indices
+
+    @property
+    def query_content_line_tuples(self) -> tuple[QueryContentLineTuple, ...]:
+        """Flat cached query content lines as ``(line_no, base, content, head, ended)``."""
+        if self._query_content_line_tuples is None:
+            self._query_content_line_tuples = tuple(
+                item for block in self.query_text_blocks for item in block.content_line_tuples
+            )
+        return self._query_content_line_tuples
 
     @property
     def line_string_states(self) -> list[bool]:

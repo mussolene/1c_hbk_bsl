@@ -3196,7 +3196,7 @@ class AssignAliasFieldsInQueryRule(BsllsDiagnosticRule):
             run_bsl149_assign_alias_fields_in_query,
         )
 
-        query_blocks = context.snapshot.query_text_blocks if context.snapshot is not None else None
+        query_blocks = context.query_text_blocks if context.snapshot is not None else None
         return run_bsl149_assign_alias_fields_in_query(context.path, context.lines, query_blocks)
 
 
@@ -4337,7 +4337,7 @@ class QueryJoinDiagnosticsRule(BsllsDiagnosticRule):
             run_bsl206_207_209_query_join_diagnostics,
         )
 
-        query_blocks = list(getattr(context.snapshot, "query_text_blocks", []) or [])
+        query_blocks = context.query_text_blocks
         return run_bsl206_207_209_query_join_diagnostics(
             context.path,
             context.lines,
@@ -4357,7 +4357,7 @@ class QueryTextDiagnosticsRule(BsllsDiagnosticRule):
             run_bsl220_235_269_query_text_diagnostics,
         )
 
-        query_blocks = list(getattr(context.snapshot, "query_text_blocks", []) or [])
+        query_blocks = context.query_text_blocks
         if self.code in {"BSL191", "BSL201"}:
             return run_bsl191_201_query_text_diagnostics(
                 context.path,
@@ -4509,9 +4509,8 @@ class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
         )
 
         code = self.code
-        snapshot = context.snapshot
         procs = context.procedures
-        query_blocks = list(getattr(snapshot, "query_text_blocks", []) or [])
+        query_blocks = context.query_text_blocks
 
         if code in {"BSL174", "BSL187", "BSL236", "BSL238"}:
             return run_bsl174_187_236_238_query_metadata_pool(
@@ -4882,9 +4881,7 @@ class QueryRuntimeDiagnosticsRule(BsllsDiagnosticRule):
         )
 
         if self.code == "BSL234":
-            query_blocks = (
-                list(context.snapshot.query_text_blocks) if context.snapshot is not None else None
-            )
+            query_blocks = context.query_text_blocks if context.snapshot is not None else None
             return run_bsl234_query_nested_fields_by_dot(
                 context.path,
                 context.lines,
@@ -5188,11 +5185,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return diags
         if code == "BSL029":
             diags = []
-            query_line_indices: set[int] = set()
-            if snapshot is not None:
-                for block in getattr(snapshot, "query_text_blocks", []) or []:
-                    for query_line in getattr(block, "content_lines", []) or []:
-                        query_line_indices.add(int(query_line.line_no) - 1)
+            query_line_indices = set(snapshot.query_line_indices) if snapshot is not None else set()
             for proc in procs:
                 proc_model = ProcedureModel.from_proc_info(context.path, proc)
                 diags.extend(
