@@ -51,6 +51,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
 from onec_hbk_bsl.cli.config import _EMPTY, BslConfig
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_description
 
 console = Console(stderr=True)
 
@@ -266,7 +267,7 @@ def list_rules(tag: str | None = None) -> None:
             f"[{sev_colors.get(sev, 'white')}]{sev}[/]",
             fixable,
             ", ".join(tags),
-            meta["description"],
+            localize_rule_description(code),
         )
         shown += 1
 
@@ -482,7 +483,7 @@ def _print_sarif(diagnostics: list[Diagnostic], project_root: str | None = None)
                 {
                     "id": d.code,
                     "name": meta.get("name", d.code),
-                    "shortDescription": {"text": meta.get("description", d.code)},
+                    "shortDescription": {"text": localize_rule_description(d.code)},
                     "defaultConfiguration": {"level": _SARIF_LEVEL.get(d.severity, "warning")},
                     "properties": {"tags": meta.get("tags", [])},
                 }

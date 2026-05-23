@@ -211,6 +211,7 @@ class TestPublishDiagnostics:
         assert "boom" in d0.message
         data = d0.data
         assert isinstance(data, dict) and data.get("bsl") == "BSL-LSP-ERR"
+        assert data.get("rule_description") == "Ошибка выполнения диагностики"
 
     def test_publish_diagnostics_unused_separate_source_and_information(
         self, tmp_path: Path, monkeypatch
@@ -251,6 +252,9 @@ class TestPublishDiagnostics:
         assert dead[0].source == "onec-hbk-bsl · BSL-DEAD"
         assert dead[0].severity == DiagnosticSeverity.Warning
         assert dead[0].tags and DiagnosticTag.Unnecessary in dead[0].tags
+        dead_data = dead[0].data
+        assert isinstance(dead_data, dict)
+        assert dead_data.get("rule_description") == "Неиспользуемая функция или метод"
         lint_sources = {d.source for d in params.diagnostics if not _is_dead(d)}
         assert all(s.startswith("onec-hbk-bsl · BSL") for s in lint_sources)
 
@@ -271,6 +275,32 @@ class TestPublishDiagnostics:
         report = on_document_diagnostic(ls, params)
         assert report.kind == "full"
         assert isinstance(report.items, (list, tuple))
+
+    def test_document_diagnostic_data_contains_russian_rule_description(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        bsl = tmp_path / "localized-description.bsl"
+        content = "Процедура Тест()\n\tА = 1\nКонецПроцедуры\n"
+        bsl.write_text(content, encoding="utf-8")
+
+        from lsprotocol.types import DocumentDiagnosticParams, TextDocumentIdentifier
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _path_to_uri, on_document_diagnostic
+
+        ls = BslLanguageServer()
+        uri = _path_to_uri(str(bsl))
+        ls._docs[uri] = content
+        params = DocumentDiagnosticParams(text_document=TextDocumentIdentifier(uri=uri))
+        report = on_document_diagnostic(ls, params)
+
+        descriptions = {
+            d.data["bsl"]: d.data["rule_description"]
+            for d in report.items
+            if isinstance(getattr(d, "data", None), dict) and "rule_description" in d.data
+        }
+        assert descriptions["BSL007"] == "Неиспользуемая локальная переменная"
+        assert descriptions["BSL030"] == 'Выражение должно заканчиваться символом ";"'
 
     def test_large_pull_diagnostics_returns_immediately_and_refreshes(
         self, tmp_path: Path, monkeypatch

@@ -5,7 +5,11 @@ from onec_hbk_bsl.analysis.diagnostics import (
     RULE_DESCRIPTIONS_RU,
     RULE_METADATA,
 )
-from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_title, translate_message
+from onec_hbk_bsl.lsp.diagnostics_ru import (
+    localize_rule_description,
+    localize_rule_title,
+    translate_message,
+)
 
 
 def test_all_bslls_rules_have_ru_titles() -> None:
@@ -34,6 +38,17 @@ def test_metadata_descriptions_use_bslls_english_titles() -> None:
     }
     for code, title in expected.items():
         assert RULE_METADATA[code]["description"] == title
+
+
+def test_public_rule_descriptions_are_localized_for_ui() -> None:
+    expected = {
+        "BSL022": "Использование модальных окон",
+        "BSL025": "Пустой оператор",
+        "BSL065": "Отсутствует описание возвращаемого значения функции",
+        "BSL174": "Запрет незаполненных значений у измерений регистров",
+    }
+    for code, title in expected.items():
+        assert localize_rule_description(code) == title
 
 
 def test_metadata_sonar_type_and_severity_follow_bslls() -> None:

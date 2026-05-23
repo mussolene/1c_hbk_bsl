@@ -61,6 +61,7 @@ from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.metadata_registry import defs_snapshot
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_description
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -764,7 +765,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
                 {
                     "code": code,
                     "name": meta["name"],
-                    "description": meta["description"],
+                    "description": localize_rule_description(code),
                     "severity": meta["severity"],
                     "sonar_type": meta["sonar_type"],
                     "sonar_severity": meta["sonar_severity"],

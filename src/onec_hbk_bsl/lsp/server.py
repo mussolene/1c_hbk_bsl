@@ -182,7 +182,11 @@ from onec_hbk_bsl.indexer.metadata_registry import (
     METADATA_ROOT_NAME_CF,
 )
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_title, translate_message
+from onec_hbk_bsl.lsp.diagnostics_ru import (
+    localize_rule_description,
+    localize_rule_title,
+    translate_message,
+)
 from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -274,7 +278,7 @@ def _lsp_failure_diagnostic(message: str) -> LspDiagnostic:
         code_description=code_desc,
         message=message,
         source=_lsp_diagnostic_source("BSL-LSP-ERR"),
-        data={"bsl": "BSL-LSP-ERR"},
+        data={"bsl": "BSL-LSP-ERR", "rule_description": "Ошибка выполнения диагностики"},
     )
 
 
@@ -768,7 +772,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
                 message=msg,
                 source=_lsp_diagnostic_source(code),
                 related_information=related,
-                data={"bsl": code},
+                data={"bsl": code, "rule_description": localize_rule_description(code)},
             )
         )
 
@@ -790,7 +794,10 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
                     message=f"Неиспользуемая функция или метод: «{name}»",
                     source=_lsp_diagnostic_source("BSL-DEAD"),
                     tags=[DiagnosticTag.Unnecessary],
-                    data={"bsl": "BSL-DEAD"},
+                    data={
+                        "bsl": "BSL-DEAD",
+                        "rule_description": "Неиспользуемая функция или метод",
+                    },
                 )
             )
     except Exception as exc:
