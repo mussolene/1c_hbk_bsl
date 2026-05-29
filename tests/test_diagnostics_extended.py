@@ -2844,6 +2844,26 @@ class TestBsl024SpaceAtStartComment:
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" in _codes(diags)
 
+    def test_inline_comment_function_like_text_reports(self, tmp_path: Path) -> None:
+        content = "КонецФункции //НоваяТаблицаЗначений()\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" in _codes(diags)
+
+    def test_comment_text_starting_with_function_word_reports(self, tmp_path: Path) -> None:
+        content = "//Функция документа входит в коллекцию\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" in _codes(diags)
+
+    def test_commented_return_reports(self, tmp_path: Path) -> None:
+        content = "\t//Возврат Истина;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" in _codes(diags)
+
+    def test_string_literal_after_empty_string_is_not_comment(self, tmp_path: Path) -> None:
+        content = 'Текст = "Начало\\n|\" + ?(Шаблон = \"\", \"\\t//Возврат Истина;\", Шаблон) + \"\";\n'
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL200 — IncorrectLineBreak

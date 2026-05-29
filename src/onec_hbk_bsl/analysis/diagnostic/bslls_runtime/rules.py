@@ -339,6 +339,9 @@ def _single_line_call_end(line: str, open_paren: int) -> int:
             pos += 1
             continue
         if char == '"':
+            if pos + 1 < len(line) and line[pos + 1] == '"':
+                pos += 2
+                continue
             in_string = True
             pos += 1
             continue
@@ -419,8 +422,9 @@ _BSL024_GOOD_STRICT_RE = re.compile(
 )
 _BSL024_COMMENTED_CODE_RE = re.compile(
     r"^\s*//\s*(?:"
-    r"(?:Процедура|Функция|КонецПроцедуры|КонецФункции|Перем"
-    r"|Function|Procedure|EndProcedure|EndFunction|Var)\b"
+    r"(?:Процедура|Функция|Function|Procedure)\s+\w+\s*\("
+    r"|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\s*;?\s*$"
+    r"|(?:Перем|Var)\s+\w+"
     r"|(?:ВЫБРАТЬ|SELECT)\b"
     r"|(?:Если|If|ИначеЕсли|ElseIf|ElsIf|КонецЕсли|EndIf)\b"
     r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\("
@@ -670,9 +674,11 @@ _BSL255_NUMBER_NAMES = frozenset({"число", "number"})
 _BSL060_MESSAGE = "Использование двойных отрицаний усложняет понимание кода"
 
 
-def bsl024_find_report_comment_col(line: str) -> int | None:
-    col = _comment_start_outside_string(line)
-    if col < 0:
+def bsl024_find_report_comment_col(
+    line: str, comment_start: int | None = None, *, comment_start_known: bool = False
+) -> int | None:
+    col = comment_start if comment_start_known else _comment_start_outside_string(line)
+    if col is None or col < 0:
         return None
     comment_text = line[col:]
     if _BSL024_GOOD_STRICT_RE.match(comment_text):
@@ -686,9 +692,14 @@ def bsl024_find_report_comment_col(line: str) -> int | None:
         or re.match(r"//\s*bsl-disable\b", comment_text, re.IGNORECASE)
     ):
         return None
-    if _BSL024_COMMENTED_CODE_RE.match(comment_text):
+    is_full_line_comment = col == len(line) - len(line.lstrip())
+    if (
+        is_full_line_comment
+        and not re.match(r"//\s*(?:Возврат|Return)\b", comment_text, re.IGNORECASE)
+        and _BSL024_COMMENTED_CODE_RE.match(comment_text)
+    ):
         return None
-    if col == len(line) - len(line.lstrip()) and rest.startswith("&"):
+    if is_full_line_comment and rest.startswith("&"):
         return None
     return col
 
@@ -1356,7 +1367,12 @@ class SpaceAtStartCommentRule(BsllsDiagnosticRule):
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
-            col = bsl024_find_report_comment_col(line)
+            comment_start = None
+            if idx < len(context.comment_starts):
+                comment_start = context.comment_starts[idx]
+            col = bsl024_find_report_comment_col(
+                line, comment_start, comment_start_known=True
+            )
             if col is None:
                 continue
             storage.add_range(
