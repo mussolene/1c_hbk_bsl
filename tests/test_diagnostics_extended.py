@@ -1332,6 +1332,33 @@ class TestTailParityBatches:
         assert len(diags) == 1
         assert "Документ.РасходнаяНакладная" in diags[0].message
 
+    def test_bsl236_skips_single_part_query_sources(self, tmp_path: Path) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "DataProcessors").mkdir(exist_ok=True)
+        (tmp_path / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   НастройкиЭДО.Ссылка
+                    |ИЗ
+                    |   НастройкиЭДО КАК НастройкиЭДО";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert diags == []
+
     def test_bsl236_does_not_treat_section_after_commented_from_source_as_metadata(
         self, tmp_path: Path
     ) -> None:

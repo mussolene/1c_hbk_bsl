@@ -96,11 +96,7 @@ def _missing_metadata_name(
     if not parts:
         return None
     if len(parts) == 1:
-        if source.casefold() == "вт" or source.casefold().startswith("вт_"):
-            return None
-        if source.casefold() in temp_table_names:
-            return None
-        return source if source.casefold() not in meta_names else None
+        return None
     root = parts[0].casefold()
     if root not in _QUERY_METADATA_ROOTS:
         return None
