@@ -3542,7 +3542,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
     def test_intentional_mixed_script_reports_bsl208(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
-                ИмяName = 1;
+                ИмяNameПользователь = 1;
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL208", "BSL256"})

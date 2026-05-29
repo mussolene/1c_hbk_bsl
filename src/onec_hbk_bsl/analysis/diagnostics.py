@@ -3332,132 +3332,35 @@ def _compile_call_pattern(proc_name: str) -> re.Pattern[str]:
     return re.compile(r"(?<![.\w])" + re.escape(proc_name) + r"\s*\(", re.IGNORECASE)
 
 
-# Standard technology acronyms used in 1C BSL identifiers — mixing Cyrillic base with a
-# Latin acronym (e.g. HTTPЗапрос, JSONЗапись, XMLЧтение) is the accepted 1C platform
-# convention, not a coding error.  BSLLS skips these implicitly via its built-in type
-# knowledge.  We replicate the same skip with a set of known acronyms: if every
-# contiguous Latin run inside a mixed-script identifier is one of these, the identifier
-# is a well-known platform / technology name and should not be flagged as BSL208.
-_BSL208_TECH_ACRONYMS: frozenset[str] = frozenset(
-    {
-        # Network protocols & data formats
-        "HTTP",
-        "HTTPS",
-        "FTP",
-        "SFTP",
-        "FTPS",
-        "SMTP",
-        "POP",
-        "IMAP",
-        "TCP",
-        "UDP",
-        "IP",
-        "TLS",
-        "SSL",
-        "URL",
-        "URI",
-        "UUID",
-        "GUID",
-        "REST",
-        "SOAP",
-        "WSDL",
-        "API",
-        # Data formats
-        "JSON",
-        "XML",
-        "HTML",
-        "XHTML",
-        "XDTO",
-        "XSL",
-        "XSLT",
-        "CSV",
-        "ZIP",
-        "PDF",
-        "XLS",
-        "XLSX",
-        "DOCX",
-        "ODT",
-        "SQL",
-        # Platform integration
-        "COM",
-        "OLE",
-        "DLL",
-        "EXE",
-        "ADO",
-        "ODP",
-        "BASE64",
-        "PKCS",
-        "PKCS7",
-        "X509",
-        "CNS",
-        "ASCII",
-        "EMAIL",
-        "REPLYTO",
-        "TO",
-        # Misc abbreviations accepted in 1C names
-        "ODATA",
-        # Embedded canonical BSL keyword fragments inside identifiers
-        "ELSIF",
-        "ELSE",
-        "TRY",
-        "EXCEPT",
-        "ENDTRY",
-        "ENDIF",
-    }
+# BSLLS allowTrailingPartsInAnotherLanguage=true (default).
+_RE_BSL208_TRAILING_LANG = re.compile(
+    r"^(?:[A-Z][A-Za-z]+[A-Za-z1-9_]*[А-ЯЁ][А-Яа-яЁё]+[А-Яа-я1-9Ёё_]*"
+    r"|[А-ЯЁ][А-Яа-яЁё]+[А-Яа-я1-9Ёё_]*[A-Z][A-Za-z]+[A-Za-z1-9_]*)$",
+    re.UNICODE,
 )
 
-_RE_LATIN_RUNS = re.compile(r"[a-zA-Z]+[0-9]*")
-
-# BSLLS allowTrailingPartsInAnotherLanguage=true (default):
-# Words like ЮрФизЛицоID, СтавкаНДСID, МинДлинаИННпоXSD, СоздатьObjectID are allowed because
-# the Latin part is only a trailing (or leading) suffix on an otherwise single-language root.
-# Pattern: [Latin+][Cyrillic+] OR [Cyrillic+][Latin+], no interleaving.
-_RE_BSL208_TRAILING_LANG = re.compile(
-    # BSLLS allowTrailingPartsInAnotherLanguage=true: skip only ALL-CAPS abbreviation
-    # suffixes/prefixes (e.g. ЮрФизЛицоID, МинДлинаИННпоXSD, HTMLОтчёт).
-    # Mixed-script words like ИмяName (both parts are full words) are still flagged.
-    r"^(?:[A-Z]{2,}[А-ЯЁ][А-Яа-яЁё]+[А-Яа-я0-9Ёё_]*"  # ALL-CAPS prefix + Cyrillic
-    r"|[А-ЯЁ][А-Яа-яЁё]+[А-Яа-я0-9Ёё_]*[A-Z]{2,})$",  # Cyrillic + ALL-CAPS suffix
-    re.UNICODE,
+_BSL208_EXCLUDE_WORDS: frozenset[str] = frozenset(
+    {
+        "чтениеxml",
+        "чтениеjson",
+        "записьxml",
+        "записьjson",
+        "comобъект",
+        "фабрикаxdto",
+        "объектxdto",
+        "соединениеftp",
+        "httpсоединение",
+        "httpзапрос",
+        "httpсервисответ",
+        "smsсообщение",
+        "wsпрокси",
+    }
 )
 
 
 def _bsl208_word_is_standard_tech_name(word: str) -> bool:
-    """True when all Latin substrings in *word* are known technology acronyms.
-
-    Examples that return True (skip BSL208):
-        HTTPЗапрос, JSONВЗначение, ЧтениеZIP, COMОбъект, XMLЧтение, SQLЗапрос
-
-    Examples that return False (flag BSL208):
-        МойHTMLParserКласс  — "Parser" is not a tech acronym
-        userIDПоле          — "user" is not a tech acronym
-    """
-    if (
-        "_" in word
-        and _RE_BSL208_HAS_LATIN.search(word)
-        and _RE_BSL208_HAS_CYRILLIC.search(word)
-    ):
-        return False
-    latin_runs = list(_RE_LATIN_RUNS.finditer(word))
-    if not latin_runs:
-        return False
-    # Keep skip conservative: embedded mixed-case tech fragments are usually
-    # reported by BSLLS, but prefix/suffix fragments like Base64... and CNs...
-    # are treated as platform-style names.
-    for m in latin_runs:
-        run = m.group()
-        upper = run.upper()
-        if upper not in _BSL208_TECH_ACRONYMS:
-            return False
-        at_edge = m.start() == 0 or m.end() == len(word)
-        if not at_edge and m.start() > 0 and m.end() < len(word):
-            before = word[m.start() - 1]
-            after = word[m.end()]
-            if _RE_BSL208_HAS_CYRILLIC.search(before) and _RE_BSL208_HAS_CYRILLIC.search(after):
-                return False
-        if run != upper and not at_edge:
-            return False
-    return True
+    """True for the default BSLLS LatinAndCyrillicSymbolInWord excludeWords list."""
+    return word.casefold() in _BSL208_EXCLUDE_WORDS
 
 
 # Statements that MUST end with ;  — simplified: lines inside procs that look
