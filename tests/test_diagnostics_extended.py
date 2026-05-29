@@ -1150,8 +1150,8 @@ class TestTailParityBatches:
                     Запрос.Текст = "ВЫБРАТЬ
                     |  Левое.Тест КАК Поле,
                     |  Левое.Ссылка.Код КАК Код
-                    |ИЗ НесуществующийСправочник КАК Основание
-                    |    ЛЕВОЕ СОЕДИНЕНИЕ НесуществующийСправочник КАК Левое
+                    |ИЗ Справочник.НесуществующийСправочник КАК Основание
+                    |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.НесуществующийСправочник КАК Левое
                     |    ПО Истина";
                 КонецПроцедуры
 
@@ -5559,6 +5559,25 @@ class TestBsl065MissingReturnedValueDescription:
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
         assert "BSL065" not in _codes(diags)
+
+    def test_legacy_return_description_structure_space_before_colon_is_invalid(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "ObjectModule.bsl"
+        content = """\
+            // Описание функции
+            //
+            // Возвращаемое значение:
+            //  Структура :
+            //   * Имя - Строка - имя
+            //
+            Функция Тест() Экспорт
+                Возврат Новый Структура;
+            КонецФункции
+        """
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
+        assert "BSL065" in _codes(diags)
 
     def test_legacy_return_description_array_of_custom_type_with_period_is_invalid(
         self, tmp_path: Path

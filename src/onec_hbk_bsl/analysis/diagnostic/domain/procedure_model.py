@@ -412,6 +412,8 @@ class ProcedureModel:
                 if legacy_doc_path and type_text.endswith("-"):
                     type_text = type_text[:-1].rstrip()
                 if type_text.endswith(":"):
+                    if re.search(r"\s+:$", type_text):
+                        return False
                     type_text = type_text[:-1].rstrip()
                 elif type_text.rstrip() != type_text.rstrip(".;"):
                     return False
