@@ -1678,8 +1678,22 @@ class ModuleModel:
                         if re_bsl208_has_latin.search(part)
                         and not re_bsl208_has_cyrillic.search(part)
                     ]
-                    if not mixed_parts and any(not part.isupper() for part in latin_parts):
-                        continue
+                    if not mixed_parts and latin_parts:
+                        cyrillic_parts = [
+                            part
+                            for part in parts
+                            if re_bsl208_has_cyrillic.search(part)
+                            and not re_bsl208_has_latin.search(part)
+                        ]
+                        has_numeric_contract_part = any(
+                            re_bsl208_has_latin.search(part) and re.search(r"\d{3,}", part)
+                            for part in latin_parts
+                        ) or any(part.isdigit() for part in parts)
+                        has_xdto_bridge = "XDTO" in {part.upper() for part in latin_parts} and bool(
+                            cyrillic_parts
+                        )
+                        if not (has_numeric_contract_part or has_xdto_bridge):
+                            continue
                 if bsl208_word_is_standard_tech_name_fn(word):
                     continue
                 before = clean[match.start() - 1] if match.start() > 0 else ""

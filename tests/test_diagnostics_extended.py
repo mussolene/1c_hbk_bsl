@@ -3411,14 +3411,42 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         diags = _check(content, tmp_path, select={"BSL208"})
         assert "BSL208" not in _codes(diags)
 
+    def test_underscore_separated_versioned_latin_words_match_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Заполнить_AddressInfo970(Контент)
+                TaxRate_ЭтоЗначение_0 = Истина;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208"})
+        assert len([diag for diag in diags if diag.code == "BSL208"]) == 2
+
+    def test_underscore_separated_short_numeric_latin_suffix_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Заполнить_ProformaInvoice29(Контент)
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208"})
+        assert "BSL208" not in _codes(diags)
+
     def test_underscore_separated_tech_acronyms_match_bslls(self, tmp_path: Path) -> None:
         content = """\
             Функция XML_В_ОбъектXDTO(ДокументXML)
+                XML_В_XDTO = ДокументXML;
                 Возврат ДокументXML;
             КонецФункции
         """
         diags = _check(content, tmp_path, select={"BSL208"})
-        assert "BSL208" in _codes(diags)
+        assert len([diag for diag in diags if diag.code == "BSL208"]) == 2
+
+    def test_underscore_separated_tech_acronym_prefix_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Функция XML_КодЕдиницыИзмерения(КодЕдиницыИзмерения)
+                Возврат КодЕдиницыИзмерения;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL208"})
+        assert "BSL208" not in _codes(diags)
 
     def test_homoglyphs_with_cyrillic_ve_and_en_report_bsl208(self, tmp_path: Path) -> None:
         content = """\
