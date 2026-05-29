@@ -1187,6 +1187,77 @@ class TestTailParityBatches:
         assert len(diags) == 1
         assert "Документ.АктСверкиВзаиморасчетов" in diags[0].message
 
+    def test_bsl236_does_not_use_unrelated_workspace_configuration_roots(self, tmp_path: Path) -> None:
+        workspace = tmp_path
+        (workspace / ".git").mkdir()
+        extension_root = workspace / "src" / "extension"
+        spec_root = workspace / "spec" / "xunit-db-src"
+        path = extension_root / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (extension_root / "Configuration.xml").parent.mkdir(parents=True, exist_ok=True)
+        (extension_root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (extension_root / "DataProcessors").mkdir(exist_ok=True)
+        (extension_root / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        (spec_root / "Configuration.xml").parent.mkdir(parents=True, exist_ok=True)
+        (spec_root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (spec_root / "Catalogs").mkdir(exist_ok=True)
+        (spec_root / "Catalogs" / "ТестЭДО_ЮрФизЛица.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>ТестЭДО_ЮрФизЛица</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ИЗ
+                    |   Справочник.ТестЭДО_ЮрФизЛица КАК Таблица";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert len(diags) == 1
+        assert "Справочник.ТестЭДО_ЮрФизЛица" in diags[0].message
+
+    def test_bsl236_reports_missing_metadata_type_references(self, tmp_path: Path) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "DataProcessors").mkdir(exist_ok=True)
+        (tmp_path / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   ВЫРАЗИТЬ(Данные.Ссылка КАК Документ.СчетФактура).Дата КАК Дата,
+                    |   ВЫБОР КОГДА Данные.Единица ССЫЛКА Справочник.ЕдиницыИзмерения ТОГДА 1 ИНАЧЕ 0 КОНЕЦ КАК ЭтоЕдиница
+                    |ИЗ
+                    |   ВТ_Данные КАК Данные";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert {diag.message for diag in diags} == {
+            'Исправьте обращение к несуществующему метаданному "Документ.СчетФактура" в запросе',
+            'Исправьте обращение к несуществующему метаданному "Справочник.ЕдиницыИзмерения" в запросе',
+        }
+
     def test_bsl236_skips_temp_tables_declared_by_place_into(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
         path.parent.mkdir(parents=True)

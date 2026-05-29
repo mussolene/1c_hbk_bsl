@@ -42,6 +42,9 @@ _QUERY_METADATA_ROOTS: frozenset[str] = frozenset(
         "dataprocessor",
     }
 )
+_QUERY_METADATA_ROOT_PATTERN = "|".join(
+    re.escape(root) for root in sorted(_QUERY_METADATA_ROOTS, key=len, reverse=True)
+)
 
 _QUERY_SOURCE_RE = re.compile(
     r"\b(?:ИЗ|FROM|СОЕДИНЕНИЕ|JOIN)\s+"
@@ -50,6 +53,14 @@ _QUERY_SOURCE_RE = re.compile(
 )
 _QUERY_TEMP_TABLE_RE = re.compile(
     r"\b(?:ПОМЕСТИТЬ|INTO)\s+([A-Za-zА-Яа-яЁё_]\w*)",
+    re.IGNORECASE,
+)
+_QUERY_METADATA_TYPE_REF_RE = re.compile(
+    r"\b(?:ССЫЛКА|REFS?)\s+"
+    rf"(({_QUERY_METADATA_ROOT_PATTERN})\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)"
+    r"|"
+    r"\b(?:КАК|AS)\s+"
+    rf"(({_QUERY_METADATA_ROOT_PATTERN})\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)\s*\)",
     re.IGNORECASE,
 )
 _QUERY_SECTION_KEYWORDS: frozenset[str] = frozenset(
@@ -203,6 +214,12 @@ def run_bsl174_187_236_238_query_metadata_pool(
                 source_matches: list[tuple[str, int]] = []
                 for match in _QUERY_SOURCE_RE.finditer(head):
                     source_matches.append((match.group(1), match.start(1)))
+                for match in _QUERY_METADATA_TYPE_REF_RE.finditer(head):
+                    source = match.group(1) or match.group(3)
+                    if source is None:
+                        continue
+                    source_start = match.start(1) if match.group(1) else match.start(3)
+                    source_matches.append((source, source_start))
                 if bsl236_pending_from:
                     source_match = re.match(
                         r"^\s*([A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)",

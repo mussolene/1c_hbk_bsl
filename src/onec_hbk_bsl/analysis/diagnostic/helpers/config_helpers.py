@@ -90,7 +90,10 @@ def _vcs_root_for_config(config_root: Path) -> Path:
 def workspace_metadata_name_index_cached(config_root: str) -> frozenset[str]:
     root = Path(config_root).resolve()
     workspace_root = _vcs_root_for_config(root)
-    config_roots = [path.parent for path in workspace_root.rglob("Configuration.xml")]
+    search_root = root
+    if root.parent != workspace_root and workspace_root in root.parents:
+        search_root = root.parent
+    config_roots = [path.parent for path in search_root.rglob("Configuration.xml")]
     if not config_roots:
         config_roots = [root]
 
