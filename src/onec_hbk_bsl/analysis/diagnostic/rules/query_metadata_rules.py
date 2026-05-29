@@ -4,11 +4,99 @@ import re
 from pathlib import Path
 from typing import Any
 
+_QUERY_METADATA_ROOTS: frozenset[str] = frozenset(
+    {
+        "бизнеспроцесс",
+        "businessprocess",
+        "документ",
+        "document",
+        "журналдокументов",
+        "documentjournal",
+        "справочник",
+        "catalog",
+        "планвидовхарактеристик",
+        "chartofcharacteristictypes",
+        "плансчетов",
+        "chartofaccounts",
+        "планвидоврасчета",
+        "chartofcalculationtypes",
+        "регистрсведений",
+        "informationregister",
+        "регистрнакопления",
+        "accumulationregister",
+        "регистрбухгалтерии",
+        "accountingregister",
+        "регистррасчета",
+        "calculationregister",
+        "задача",
+        "task",
+        "планобмена",
+        "exchangeplan",
+        "внешнийисточникданных",
+        "externaldatasource",
+        "константа",
+        "constant",
+        "отчет",
+        "report",
+        "обработка",
+        "dataprocessor",
+    }
+)
+
+_QUERY_SOURCE_RE = re.compile(
+    r"\b(?:ИЗ|FROM|СОЕДИНЕНИЕ|JOIN)\s+"
+    r"([A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)",
+    re.IGNORECASE,
+)
+_QUERY_TEMP_TABLE_RE = re.compile(
+    r"\b(?:ПОМЕСТИТЬ|INTO)\s+([A-Za-zА-Яа-яЁё_]\w*)",
+    re.IGNORECASE,
+)
+_QUERY_SECTION_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "где",
+        "where",
+        "сгруппировать",
+        "group",
+        "упорядочить",
+        "order",
+        "имеющие",
+        "having",
+        "объединить",
+        "union",
+        "итоги",
+        "totals",
+    }
+)
+
 
 def _diag_module() -> Any:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
     return _diag
+
+
+def _missing_metadata_name(
+    source: str,
+    meta_names: set[str],
+    temp_table_names: set[str],
+) -> str | None:
+    parts = source.split(".")
+    if not parts:
+        return None
+    if len(parts) == 1:
+        if source.casefold() == "вт" or source.casefold().startswith("вт_"):
+            return None
+        if source.casefold() in temp_table_names:
+            return None
+        return source if source.casefold() not in meta_names else None
+    root = parts[0].casefold()
+    if root not in _QUERY_METADATA_ROOTS:
+        return None
+    object_name = parts[1]
+    if object_name.casefold() in meta_names:
+        return None
+    return ".".join(parts[:2])
 
 
 def run_bsl174_187_236_238_query_metadata_pool(
@@ -24,7 +112,7 @@ def run_bsl174_187_236_238_query_metadata_pool(
     root = _diag._config_root_for_file(path)
     meta_names: set[str] = set()
     if "BSL236" in enabled_set and root is not None:
-        meta_names = set(_diag._metadata_name_index_cached(root))
+        meta_names = set(_diag._workspace_metadata_name_index_cached(root))
 
     object_xml = _diag._current_object_xml_path(path)
     if "BSL174" in enabled_set and object_xml is not None:
@@ -48,17 +136,27 @@ def run_bsl174_187_236_238_query_metadata_pool(
                 )
 
     if query_blocks is None:
-        blocks = (
+        all_query_lines = [
             list(_diag._iter_query_text_content_lines(start_idx, block_lines))
             for start_idx, block_lines in _diag._iter_query_text_blocks(cleaned_lines or lines)
-        )
+        ]
     else:
-        blocks = (_diag._query_block_content_line_tuples(block) for block in query_blocks)
+        all_query_lines = [
+            _diag._query_block_content_line_tuples(block) for block in query_blocks
+        ]
 
-    for query_lines in blocks:
+    temp_table_names: set[str] = set()
+    if "BSL236" in enabled_set:
+        for query_lines in all_query_lines:
+            for _line_no, _content_base, _content, head, _ended in query_lines:
+                for match in _QUERY_TEMP_TABLE_RE.finditer(head):
+                    temp_table_names.add(match.group(1).casefold())
+
+    for query_lines in all_query_lines:
         if not query_lines:
             continue
         query_text = "\n".join(head for _ln, _base, _content, head, _end in query_lines)
+        bsl236_pending_from = False
         left_join_aliases: set[str] = set()
         simple_table_aliases: set[str] = set()
         tabular_section_aliases: set[str] = set()
@@ -99,14 +197,30 @@ def run_bsl174_187_236_238_query_metadata_pool(
                     tabular_section_aliases.add(alias)
 
         for line_no, content_base, _content, head, _ended in query_lines:
+            if 0 < line_no <= len(lines) and lines[line_no - 1].lstrip().startswith("//"):
+                continue
             if "BSL236" in enabled_set:
-                for match in re.finditer(
-                    r"\b(?:ИЗ|FROM|СОЕДИНЕНИЕ|JOIN)\s+([A-Za-zА-Яа-яЁё_][\w]*)",
-                    head,
-                    re.IGNORECASE,
-                ):
-                    name = match.group(1)
-                    if name.casefold() in {
+                source_matches: list[tuple[str, int]] = []
+                for match in _QUERY_SOURCE_RE.finditer(head):
+                    source_matches.append((match.group(1), match.start(1)))
+                if bsl236_pending_from:
+                    source_match = re.match(
+                        r"^\s*([A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)",
+                        head,
+                        re.IGNORECASE,
+                    )
+                    if (
+                        source_match is not None
+                        and source_match.group(1).casefold() not in _QUERY_SECTION_KEYWORDS
+                    ):
+                        source_matches.append((source_match.group(1), source_match.start(1)))
+                        bsl236_pending_from = False
+                    elif head.strip():
+                        bsl236_pending_from = False
+                if re.match(r"^(?:ИЗ|FROM)\s*$", head, re.IGNORECASE):
+                    bsl236_pending_from = True
+                for source, source_start in source_matches:
+                    if source.casefold() in {
                         "выбрать",
                         "select",
                         "как",
@@ -117,18 +231,22 @@ def run_bsl174_187_236_238_query_metadata_pool(
                         "внутреннее",
                     }:
                         continue
-                    if meta_names and name.casefold() not in meta_names:
-                        col = content_base + match.start(1)
+                    missing_name = _missing_metadata_name(source, meta_names, temp_table_names)
+                    if meta_names and missing_name is not None:
+                        col = content_base + source_start
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
                                 line=line_no,
                                 character=col,
                                 end_line=line_no,
-                                end_character=col + len(name),
+                                end_character=col + len(missing_name),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL236",
-                                message=f"Запрос обращается к несуществующим метаданным {name}",
+                                message=(
+                                    "Исправьте обращение к несуществующему метаданному "
+                                    f'"{missing_name}" в запросе'
+                                ),
                             )
                         )
             if "BSL238" in enabled_set:

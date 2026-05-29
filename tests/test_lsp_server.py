@@ -78,6 +78,8 @@ class TestBslLanguageServerInit:
             default_disabled_codes=ls.diagnostics_engine.DEFAULT_DISABLED,
         )
         assert ls.diagnostics_engine._select == set(expected)
+        assert "BSL156" in ls.diagnostics_engine._select
+        assert "BSL236" in ls.diagnostics_engine._select
 
     def test_server_has_empty_docs_cache(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))

@@ -1660,11 +1660,27 @@ class ModuleModel:
                 continue
             for match in re_bsl208_word.finditer(clean):
                 word = match.group()
-                if bsl208_word_is_standard_tech_name_fn(word):
-                    continue
                 if len(word) >= 4 and re_bsl208_trailing_lang.match(word):
                     continue
                 if not (re_bsl208_has_latin.search(word) and re_bsl208_has_cyrillic.search(word)):
+                    continue
+                if "_" in word:
+                    parts = [part for part in word.split("_") if part]
+                    mixed_parts = [
+                        part
+                        for part in parts
+                        if re_bsl208_has_latin.search(part)
+                        and re_bsl208_has_cyrillic.search(part)
+                    ]
+                    latin_parts = [
+                        part
+                        for part in parts
+                        if re_bsl208_has_latin.search(part)
+                        and not re_bsl208_has_cyrillic.search(part)
+                    ]
+                    if not mixed_parts and any(not part.isupper() for part in latin_parts):
+                        continue
+                if bsl208_word_is_standard_tech_name_fn(word):
                     continue
                 before = clean[match.start() - 1] if match.start() > 0 else ""
                 after = clean[match.end()] if match.end() < len(clean) else ""

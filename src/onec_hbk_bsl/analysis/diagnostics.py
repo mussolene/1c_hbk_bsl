@@ -181,6 +181,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     metadata_name_index_cached as _metadata_name_index_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    workspace_metadata_name_index_cached as _workspace_metadata_name_index_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     current_form_xml_path as _current_form_xml_path,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
@@ -3429,6 +3432,12 @@ def _bsl208_word_is_standard_tech_name(word: str) -> bool:
         МойHTMLParserКласс  — "Parser" is not a tech acronym
         userIDПоле          — "user" is not a tech acronym
     """
+    if (
+        "_" in word
+        and _RE_BSL208_HAS_LATIN.search(word)
+        and _RE_BSL208_HAS_CYRILLIC.search(word)
+    ):
+        return False
     latin_runs = list(_RE_LATIN_RUNS.finditer(word))
     if not latin_runs:
         return False

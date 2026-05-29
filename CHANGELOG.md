@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Описания диагностических правил в публичных UI/JSON surfaces теперь
   локализуются на русский: LSP `Diagnostic.data.rule_description`, `--list-rules`,
   SARIF `shortDescription` и MCP `bsl_list_rules`.
+- Дефолтный набор диагностик теперь включает BSLLS `CodeOutOfRegion` (`BSL156`)
+  и `QueryToMissingMetadata` (`BSL236`), что совпадает с локальным BSLLS oracle
+  на больших реальных корпусах.
 - LSP для больших файлов в VS Code теперь отвечает на первый pull diagnostics быстро:
   полный анализ выполняется в фоне и обновляет Problems через `workspace/diagnostic/refresh`.
 - Индекс открытого файла в LSP обновляется из уже построенного `DocumentSnapshot`,

@@ -79,6 +79,27 @@ def metadata_name_index_cached(config_root: str) -> frozenset[str]:
     return frozenset(names)
 
 
+def _vcs_root_for_config(config_root: Path) -> Path:
+    for parent in (config_root, *config_root.parents):
+        if (parent / ".git").exists():
+            return parent
+    return config_root
+
+
+@functools.lru_cache(maxsize=16)
+def workspace_metadata_name_index_cached(config_root: str) -> frozenset[str]:
+    root = Path(config_root).resolve()
+    workspace_root = _vcs_root_for_config(root)
+    config_roots = [path.parent for path in workspace_root.rglob("Configuration.xml")]
+    if not config_roots:
+        config_roots = [root]
+
+    names: set[str] = set()
+    for cfg_root in config_roots:
+        names.update(metadata_name_index_cached(str(cfg_root)))
+    return frozenset(names)
+
+
 @functools.lru_cache(maxsize=4096)
 def read_text_cached(path: str) -> str:
     try:

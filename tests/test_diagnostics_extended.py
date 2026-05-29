@@ -1078,6 +1078,180 @@ class TestTailParityBatches:
         ).check_file(str(path))
         assert {"BSL187", "BSL236", "BSL238", "BSL244", "BSL261"} <= set(_codes(diags))
 
+    def test_bsl236_uses_full_metadata_source_name(self, tmp_path: Path) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "DataProcessors").mkdir(exist_ok=True)
+        (tmp_path / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос = Новый Запрос;
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ИЗ
+                    |   Документ.АктСверкиВзаиморасчетов КАК Таблица";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert len(diags) == 1
+        assert diags[0].line == 6
+        assert diags[0].character == 8
+        assert diags[0].end_character == 8 + len("Документ.АктСверкиВзаиморасчетов")
+        assert (
+            diags[0].message
+            == 'Исправьте обращение к несуществующему метаданному "Документ.АктСверкиВзаиморасчетов" в запросе'
+        )
+
+    def test_bsl236_known_dotted_metadata_source_is_clean(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "Catalogs").mkdir(exist_ok=True)
+        (tmp_path / "Catalogs" / "Тест.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>Тест</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос = Новый Запрос;
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ИЗ
+                    |   Справочник.Тест КАК Таблица";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert diags == []
+
+    def test_bsl236_uses_workspace_metadata_roots(self, tmp_path: Path) -> None:
+        workspace = tmp_path
+        (workspace / ".git").mkdir()
+        extension_root = workspace / "src" / "extension"
+        framework_root = workspace / "src" / "framework"
+        path = extension_root / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (extension_root / "Configuration.xml").parent.mkdir(parents=True, exist_ok=True)
+        (extension_root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (extension_root / "DataProcessors").mkdir(exist_ok=True)
+        (extension_root / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        (framework_root / "Configuration.xml").parent.mkdir(parents=True, exist_ok=True)
+        (framework_root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (framework_root / "Documents").mkdir(exist_ok=True)
+        (framework_root / "Documents" / "РеализацияТоваровУслуг.xml").write_text(
+            "<MetaDataObject><Document><Properties><Name>РеализацияТоваровУслуг</Name></Properties></Document></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос = Новый Запрос;
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ИЗ
+                    |   Документ.РеализацияТоваровУслуг КАК Таблица
+                    |ОБЪЕДИНИТЬ ВСЕ
+                    |ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ИЗ
+                    |   Документ.АктСверкиВзаиморасчетов КАК Таблица";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert len(diags) == 1
+        assert "Документ.АктСверкиВзаиморасчетов" in diags[0].message
+
+    def test_bsl236_skips_temp_tables_declared_by_place_into(self, tmp_path: Path) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "DataProcessors").mkdir(exist_ok=True)
+        (tmp_path / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ПОМЕСТИТЬ ТаблицаДокумента
+                    |ИЗ
+                    |   Документ.РасходнаяНакладная КАК Таблица";
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   ТаблицаДокумента.Ссылка
+                    |ИЗ
+                    |   ТаблицаДокумента КАК ТаблицаДокумента";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert len(diags) == 1
+        assert "Документ.РасходнаяНакладная" in diags[0].message
+
+    def test_bsl236_does_not_treat_section_after_commented_from_source_as_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "DataProcessors").mkdir(exist_ok=True)
+        (tmp_path / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Данные.Ссылка
+                    |ИЗ
+                    |   //Документ.ТестовыйДокумент КАК Данные
+                    |
+                    |ГДЕ
+                    |   Данные.Ссылка = &Ссылка";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+
+        assert diags == []
+
     def test_bsl238_skips_full_metadata_crawl(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -3228,6 +3402,24 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         diags = _check(content, tmp_path, select={"BSL208"})
         assert "BSL208" not in _codes(diags)
 
+    def test_underscore_separated_latin_words_are_not_mixed_script(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Заполнить_AcceptanceCertificateBuyerContent(Контент)
+                Свойства_AcceptanceCertificate = Контент.Свойства();
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL208"})
+        assert "BSL208" not in _codes(diags)
+
+    def test_underscore_separated_tech_acronyms_match_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Функция XML_В_ОбъектXDTO(ДокументXML)
+                Возврат ДокументXML;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL208"})
+        assert "BSL208" in _codes(diags)
+
     def test_homoglyphs_with_cyrillic_ve_and_en_report_bsl208(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -3385,7 +3577,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         assert diags[0].line == 2
         assert diags[0].message == 'Возможная опечатка в "Поздниее"'
 
-    def test_bslls_typo_skips_exception_fragment_and_reports_next(
+    def test_bslls_typo_forces_reference_fragment_and_reports_next(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         monkeypatch.setattr(
@@ -3401,8 +3593,10 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
             if d.code == "BSL256"
         ]
-        assert len(diags) == 1
-        assert diags[0].message == 'Возможная опечатка в "Атмена"'
+        assert {d.message for d in diags} == {
+            'Возможная опечатка в "Атмена"',
+            'Возможная опечатка в "Сис"',
+        }
 
     def test_bslls_typo_skips_multiline_string_tokens(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -3492,7 +3686,46 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             if d.code == "BSL256"
         ]
         messages = {d.message for d in diags}
-        assert messages == {'Возможная опечатка в "Физлица"'}
+        assert messages == {'Возможная опечатка в "Кор"', 'Возможная опечатка в "Физлица"'}
+
+    def test_bslls_typo_skips_generic_domain_terms(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Тест()\n"
+            '    Сообщить("ТестЭДО Тов Нал Прокси Токен Маппинг Парсинг Прослеживаемости");\n'
+            "КонецПроцедуры\n"
+        )
+        path = tmp_path / "TypoGenericDomainTerms.bsl"
+        path.write_text(content, encoding="utf-8")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+            if d.code == "BSL256"
+        ]
+        assert not diags
+
+    def test_bslls_typo_reports_reference_short_fragments(self, tmp_path: Path) -> None:
+        content = (
+            "Функция ТипПрото_Информация()\n"
+            '    Сообщить("Кор Рег Деб Сис Дис");\n'
+            "КонецФункции\n"
+        )
+        path = tmp_path / "TypoReferenceShortFragments.bsl"
+        path.write_text(content, encoding="utf-8")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+            if d.code == "BSL256"
+        ]
+        messages = {d.message for d in diags}
+        assert messages == {
+            'Возможная опечатка в "Деб"',
+            'Возможная опечатка в "Прото"',
+            'Возможная опечатка в "Рег"',
+            'Возможная опечатка в "Сис"',
+            'Возможная опечатка в "Кор"',
+        }
 
     def test_bslls_typo_anchor_not_shifted_on_crlf_lines(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setattr(
