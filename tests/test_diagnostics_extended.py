@@ -143,6 +143,16 @@ class TestBsl215MissingParameterDescriptionParity:
         diags = _check(content, tmp_path, select={"BSL215"})
         assert "BSL215" in _codes(diags)
 
+    def test_blank_line_breaks_method_description(self, tmp_path: Path) -> None:
+        content = """\
+            // XML: служебные методы
+
+            Процедура Обработать(Параметр)
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL215"})
+        assert "BSL215" not in _codes(diags)
+
     def test_missing_single_param_message_matches_bslls_style(self, tmp_path: Path) -> None:
         content = """\
             // Описание метода.

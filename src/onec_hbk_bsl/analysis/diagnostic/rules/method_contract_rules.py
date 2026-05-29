@@ -277,9 +277,7 @@ def run_bsl215_missing_parameter_description(
     legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", path))
     for proc in procs:
         block_end = proc.start_idx - 1
-        while block_end >= 0 and (
-            lines[block_end].strip() == "" or _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end])
-        ):
+        while block_end >= 0 and _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end]):
             block_end -= 1
         if block_end < 0 or not _diag._RE_BSL215_COMMENT_LINE.match(lines[block_end]):
             continue
