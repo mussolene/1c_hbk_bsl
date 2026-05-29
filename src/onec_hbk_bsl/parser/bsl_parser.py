@@ -226,6 +226,14 @@ class BslParser:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
+            if node.type in ("ERROR", "error") and self._is_date_literal_error(node):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
+            if node.type in ("ERROR", "error") and self._is_valid_function_header_cascade(node):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
             errors.append(
                 {
                     "line": node.start_point[0] + 1,
@@ -353,6 +361,15 @@ class BslParser:
         if parent is not None and parent.type in ("access", "property_access"):
             return children[0].type.endswith("_KEYWORD")
 
+        # Case A2: property assignment/read with a keyword-like property name.
+        # tree-sitter-bsl may parse ``Контент.Function = ...`` or
+        # ``Объект.Функция;`` as a call_expression with ``.`` before ERROR.
+        if parent is not None and parent.type == "call_expression":
+            siblings = list(parent.children)
+            idx = next((i for i, child in enumerate(siblings) if child.id == node.id), -1)
+            if idx > 0 and siblings[idx - 1].type == "." and children[0].type.endswith("_KEYWORD"):
+                return True
+
         # Case B: '.' followed immediately by *_KEYWORD among direct children
         for i in range(len(children) - 1):
             if children[i].type == "." and children[i + 1].type.endswith("_KEYWORD"):
@@ -406,6 +423,85 @@ class BslParser:
         ):
             return True
         return any(cls._node_contains_keyword_property_error(child) for child in node.children)
+
+    @staticmethod
+    def _source_line_for_node(node: Any) -> str:
+        current = node
+        while getattr(current, "parent", None) is not None:
+            current = current.parent
+        raw = current.text if isinstance(current.text, bytes) else b""
+        lines = raw.decode("utf-8", errors="replace").splitlines()
+        row = int(getattr(node, "start_point", (0, 0))[0])
+        if 0 <= row < len(lines):
+            return lines[row]
+        return ""
+
+    @classmethod
+    def _is_date_literal_error(cls, node: Any) -> bool:
+        """tree-sitter-bsl currently emits ERROR nodes inside valid BSL date literals."""
+        text = node.text if isinstance(node.text, bytes) else b""
+        stripped = text.strip()
+        if re.search(rb"'\d{4}(?:\.\d{2}){0,2}$", stripped):
+            return True
+        if stripped.startswith(b"');"):
+            return True
+        if stripped == b"'" and re.match(rb"'\d", cls._previous_sibling_text(node).strip()):
+            return True
+        current = node
+        while getattr(current, "parent", None) is not None:
+            current = current.parent
+        raw = current.text if isinstance(current.text, bytes) else b""
+        lines = raw.splitlines()
+        row = int(getattr(node, "start_point", (0, 0))[0])
+        if not (0 <= row < len(lines)):
+            return False
+        start_col = int(getattr(node, "start_point", (0, 0))[1])
+        end_col = int(getattr(node, "end_point", (0, 0))[1])
+        date_literal_re = re.compile(
+            rb"'\d{4}(?:\.\d{2}(?:\.\d{2}(?:\.\d{2}(?:\.\d{2}(?:\.\d{2})?)?)?)?)?'"
+        )
+        return any(
+            match.start() <= start_col and end_col <= match.end()
+            for match in date_literal_re.finditer(lines[row])
+        )
+
+    @staticmethod
+    def _previous_sibling_text(node: Any) -> bytes:
+        parent = getattr(node, "parent", None)
+        if parent is None:
+            return b""
+        children = list(parent.children)
+        idx = next((i for i, child in enumerate(children) if child.id == node.id), -1)
+        if idx <= 0:
+            return b""
+        text = children[idx - 1].text
+        return text if isinstance(text, bytes) else b""
+
+    @classmethod
+    def _is_valid_function_header_cascade(cls, node: Any) -> bool:
+        """Suppress parser cascades after a valid function/procedure declaration header."""
+        parent = getattr(node, "parent", None)
+        if parent is None or parent.type not in ("function_definition", "procedure_definition"):
+            return False
+        text = node.text if isinstance(node.text, bytes) else b""
+        stripped = text.strip()
+        if stripped == b";":
+            return any(
+                child.id != node.id
+                and child.type in ("ERROR", "error")
+                and cls._is_valid_function_header_cascade(child)
+                for child in parent.children
+            )
+        if not stripped.startswith(b"("):
+            return False
+        line = cls._source_line_for_node(node)
+        return bool(
+            re.match(
+                r"^\s*(?:Процедура|Procedure|Функция|Function)\s+\w+\s*\([^)]*\)\s*(?:Экспорт|Export)?\s*$",
+                line,
+                re.IGNORECASE,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------

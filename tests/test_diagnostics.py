@@ -56,6 +56,32 @@ class TestBsl001SyntaxErrors:
         issues = DiagnosticEngine(select={"BSL001"}).check_file(str(bsl_file))
         assert not [d for d in issues if d.code == "BSL001"]
 
+    def test_keyword_property_and_date_literal_have_no_syntax_error(self, tmp_path: Path) -> None:
+        bsl_file = tmp_path / "keyword_property.bsl"
+        bsl_file.write_text(
+            "Функция Тест()\n"
+            "\tКонтент = Новый Структура;\n"
+            "\tКонтент.Function = ФункцияДокумента();\n"
+            "\tИмя = Контент.Функция;\n"
+            "\tДата = '2023.12.19';\n"
+            "\tВозврат Контент;\n"
+            "КонецФункции\n",
+            encoding="utf-8",
+        )
+        issues = DiagnosticEngine(select={"BSL001"}).check_file(str(bsl_file))
+        assert not [d for d in issues if d.code == "BSL001"]
+
+    def test_long_valid_function_header_has_no_syntax_error(self, tmp_path: Path) -> None:
+        bsl_file = tmp_path / "long_header.bsl"
+        bsl_file.write_text(
+            "Функция XML_УПД_970_ЭтоСпособПодтвержденияПолномочийЭлектроннойДоверенностью(ConfirmCredentials)\n"
+            "\tВозврат (ConfirmCredentials = \"3\");\n"
+            "КонецФункции\n",
+            encoding="utf-8",
+        )
+        issues = DiagnosticEngine(select={"BSL001"}).check_file(str(bsl_file))
+        assert not [d for d in issues if d.code == "BSL001"]
+
     def test_unreadable_file_produces_bsl001(self, tmp_path: Path) -> None:
         """DiagnosticEngine on a missing file returns a BSL001 error."""
         engine = DiagnosticEngine()
