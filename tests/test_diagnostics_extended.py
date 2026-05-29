@@ -1965,6 +1965,30 @@ class TestBsl007UnusedLocalVariableParity:
         assert len(diags) == 1
         assert "ИмяСобытия" in diags[0].message
 
+    def test_object_module_is_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                НеИспользуется = 1;
+            КонецПроцедуры
+        """
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL007"}).check_file(str(path))
+        assert "BSL007" not in _codes(diags)
+
+    def test_manager_module_is_checked(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                НеИспользуется = 1;
+            КонецПроцедуры
+        """
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ManagerModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL007"}).check_file(str(path))
+        assert "BSL007" in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL008 — TooManyReturnStatements

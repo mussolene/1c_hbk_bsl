@@ -10,6 +10,39 @@ from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
 
+def _path_matches_bsl007_module_types(path: str) -> bool:
+    """Mirror BSLLS module metadata for UnusedLocalVariable."""
+    low = path.replace("\\", "/").lower()
+    if low.endswith(
+        (
+            "commandmodule.bsl",
+            "managermodule.bsl",
+            "sessionmodule.bsl",
+            "valuemanagermodule.bsl",
+        )
+    ):
+        return True
+    if "/commonmodules/" in low and low.endswith("/ext/module.bsl"):
+        return True
+
+    if "/forms/" in low and low.endswith("/module.bsl"):
+        return False
+    if low.endswith(
+        (
+            "objectmodule.bsl",
+            "recordsetmodule.bsl",
+            "managedapplicationmodule.bsl",
+            "ordinaryapplicationmodule.bsl",
+            "externalconnectionmodule.bsl",
+        )
+    ):
+        return False
+    if low.endswith("/ext/module.bsl"):
+        return False
+
+    return low.endswith(".bsl")
+
+
 @dataclass(frozen=True, slots=True)
 class ModuleModel:
     path: str
@@ -2030,6 +2063,9 @@ class ModuleModel:
         compiler_directive_re,
         module_assign_re,
     ) -> list[Diagnostic]:
+        if not _path_matches_bsl007_module_types(self.path):
+            return []
+
         re_for_index_header = re.compile(
             r"^\s*(?:Для\s+(?:каждого\s+)?|For\s+(?:Each\s+)?)(\w+)\s*(?:=|\b(?:Из|In)\b)",
             re.IGNORECASE,
