@@ -5490,6 +5490,56 @@ class TestBsl065MissingReturnedValueDescription:
         diags = _check(content, tmp_path, select={"BSL065"})
         assert "BSL065" not in _codes(diags)
 
+    def test_legacy_return_description_with_tabs_is_valid(self, tmp_path: Path) -> None:
+        path = tmp_path / "ObjectModule.bsl"
+        content = """\
+            // Описание функции
+            //
+            // Возвращаемое значение:
+            //\t Массив\t- Массив строк
+            //
+            Функция Тест() Экспорт
+                Возврат Новый Массив;
+            КонецФункции
+        """
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
+        assert "BSL065" not in _codes(diags)
+
+    def test_legacy_return_description_dash_bullet_is_valid(self, tmp_path: Path) -> None:
+        path = tmp_path / "ObjectModule.bsl"
+        content = """\
+            // Описание функции
+            //
+            // Возвращаемое значение:
+            //   - Структура
+            //
+            Функция Тест() Экспорт
+                Возврат Новый Структура;
+            КонецФункции
+        """
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
+        assert "BSL065" not in _codes(diags)
+
+    def test_legacy_return_description_array_of_custom_type_with_period_is_invalid(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "ObjectModule.bsl"
+        content = """\
+            // Описание функции
+            //
+            // Возвращаемое значение:
+            //  Массив из НовыйОшибкаВалидации.
+            //
+            Функция Тест() Экспорт
+                Возврат Новый Массив;
+            КонецФункции
+        """
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
+        assert "BSL065" in _codes(diags)
+
     def test_procedure_with_return_description_reports_removal(self, tmp_path: Path) -> None:
         content = """\
             // Описание процедуры

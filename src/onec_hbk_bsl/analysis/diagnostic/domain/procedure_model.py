@@ -370,7 +370,12 @@ class ProcedureModel:
         while block_start > 0 and bsl215_comment_line_re.match(lines[block_start - 1]):
             block_start -= 1
         comment_block = lines[block_start : block_end + 1]
-        legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", self.path))
+        legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", str(self.path)))
+        if legacy_doc_path:
+            comment_block = [
+                re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ")
+                for cl in comment_block
+            ]
         if any(re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block):
             return []
         if len(comment_block) == 1:
@@ -396,6 +401,8 @@ class ProcedureModel:
             )
 
             def has_bslls_return_type_description(text: str) -> bool:
+                if legacy_doc_path:
+                    text = re.sub(r"^\s*-\s*", "", text)
                 type_text = text.split(" - ", 1)[0].strip()
                 if not type_text or "\t" in type_text:
                     return False
