@@ -289,6 +289,8 @@ def run_bsl215_missing_parameter_description(
             block_start -= 1
 
         comment_block = lines[block_start : block_end + 1]
+        if legacy_doc_path:
+            comment_block = [re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ") for cl in comment_block]
         re_separator = re.compile(r"^\s*/{10,}\s*$")
         if any(re_separator.match(cl) for cl in comment_block):
             continue
@@ -312,6 +314,15 @@ def run_bsl215_missing_parameter_description(
             if _diag._RE_BSL215_PARAMS_SECTION.match(cl):
                 params_section_start = ci
                 break
+        if params_section_start is None and any(
+            re.match(
+                r"^\s*//\s*(?:Состав\s+структуры)\s*:?\s*$",
+                cl,
+                re.IGNORECASE,
+            )
+            for cl in comment_block
+        ):
+            continue
         if params_section_start is None and len(comment_block) == 1:
             text = re.sub(r"^\s*//\s*", "", comment_block[0]).strip()
             if re.match(r"^(?:Конец|End)\b", text, re.IGNORECASE):
@@ -343,13 +354,15 @@ def run_bsl215_missing_parameter_description(
             continue
 
         def _has_bslls_type_description(tail: str) -> bool:
+            if legacy_doc_path:
+                tail = re.sub(r"\t+", " ", tail)
             if re.match(
                 r"^\s*(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)[.;]?\s*$",
                 tail,
                 re.IGNORECASE,
             ):
                 return True
-            type_text = tail.split(" - ", 1)[0].strip()
+            type_text = re.split(r"\s+-\s+", tail, maxsplit=1)[0].strip()
             if not type_text or "\t" in type_text:
                 return False
             type_text = type_text.rstrip()
@@ -402,7 +415,7 @@ def run_bsl215_missing_parameter_description(
             )
             if (
                 m
-                and not m.group("indent").startswith("\t")
+                and (legacy_doc_path or not m.group("indent").startswith("\t"))
                 and _has_bslls_type_description(m.group("tail"))
             ):
                 raw_param_entries.append((len(m.group("indent")), m.group("name"), m.group("tail")))
@@ -419,7 +432,7 @@ def run_bsl215_missing_parameter_description(
             )
             if not m:
                 return None
-            if m.group("indent").startswith("\t"):
+            if m.group("indent").startswith("\t") and not legacy_doc_path:
                 return None
             if entry_indent and len(m.group("indent")) != entry_indent:
                 return None

@@ -273,6 +273,47 @@ class TestBsl215MissingParameterDescriptionParity:
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert [d.message for d in diags] == ["Необходимо добавить описание всех параметров метода"]
 
+    def test_legacy_object_module_tab_indented_params_are_documented(self, tmp_path: Path) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                // Параметры:
+                //\t Параметр - Строка\t- описание
+                Функция Пример(Параметр) Экспорт
+                КонецФункции
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [d for d in DiagnosticEngine(select={"BSL215"}).check_file(str(path)) if d.code == "BSL215"]
+
+        assert diags == []
+
+    def test_return_only_doc_block_still_requires_parameter_section(self, tmp_path: Path) -> None:
+        content = """\
+            // Возвращаемое значение:
+            //   Строка - результат.
+            Функция Пример(Параметр)
+            КонецФункции
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
+        assert [d.message for d in diags] == ["Необходимо добавить описание всех параметров метода"]
+
+    def test_structure_composition_doc_block_does_not_require_parameter_section(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            // Состав структуры:
+            //   Поле - Строка - значение.
+            Функция Пример(Параметр)
+            КонецФункции
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
+        assert diags == []
+
 
 # ---------------------------------------------------------------------------
 # BSL237 — RedundantAccessToObject
