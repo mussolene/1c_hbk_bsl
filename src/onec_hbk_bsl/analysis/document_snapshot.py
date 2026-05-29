@@ -1187,11 +1187,16 @@ def _build_query_text_blocks(lines: list[str]) -> list[QueryTextBlockInfo]:
     i = 0
     while i < len(lines):
         line = lines[i]
+        stripped_line = line.lstrip()
+        if stripped_line.startswith("//"):
+            i += 1
+            continue
         starts_query = bool(_RE_QUERY_TEXT_START.search(line))
         if not starts_query and '"' in line:
             j_probe = i + 1
             while j_probe < len(lines) and (
                 not lines[j_probe].strip() or lines[j_probe].lstrip().startswith("|")
+                or lines[j_probe].lstrip().startswith("//")
             ):
                 if re.match(r"^\s*\|\s*(?:ВЫБРАТЬ|SELECT)\b", lines[j_probe], re.IGNORECASE):
                     starts_query = True

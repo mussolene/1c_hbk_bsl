@@ -4482,6 +4482,30 @@ class TestBsl234QueryNestedFieldsByDot:
         diags = [d for d in _check(content, tmp_path, select={"BSL234"}) if d.code == "BSL234"]
         assert diags == []
 
+    def test_query_after_opening_quote_comment_reports_nested_field(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Результат = "
+            // Комментарий перед запросом
+            |ВЫБРАТЬ
+            |   Таблица.Ссылка.Код КАК Код
+            |ИЗ Справочник.Номенклатура КАК Таблица";
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL234"}) if d.code == "BSL234"]
+        assert [(d.line, d.character) for d in diags] == [(4, 4)]
+
+    def test_fully_commented_query_is_ignored(self, tmp_path: Path) -> None:
+        content = """\
+            // Запрос = Новый Запрос(
+            // "ВЫБРАТЬ
+            // |   Таблица.Ссылка.Код КАК Код
+            // |ИЗ Справочник.Номенклатура КАК Таблица"
+            // );
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL234"}) if d.code == "BSL234"]
+        assert diags == []
+
 
 # ---------------------------------------------------------------------------
 # BSL258 — UnionAll

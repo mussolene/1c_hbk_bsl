@@ -79,6 +79,37 @@ def test_snapshot_collects_embedded_query_blocks(tmp_path: Path) -> None:
     assert snapshot.query_content_line_tuples[2][3] == "ИЗ Справочник.Номенклатура"
 
 
+def test_snapshot_collects_query_after_opening_quote_comments(tmp_path: Path) -> None:
+    content = """\
+Процедура Тест()
+    Результат = "
+    // Комментарий перед текстом запроса
+    |ВЫБРАТЬ
+    |    Таблица.Ссылка.Код КАК Код
+    |ИЗ Справочник.Номенклатура КАК Таблица";
+КонецПроцедуры
+"""
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+
+    assert len(snapshot.query_text_blocks) == 1
+    assert [line.line_no for line in snapshot.query_text_blocks[0].content_lines] == [4, 5, 6]
+
+
+def test_snapshot_ignores_fully_commented_query_blocks(tmp_path: Path) -> None:
+    content = """\
+Процедура Тест()
+    // Запрос = Новый Запрос(
+    // "ВЫБРАТЬ
+    // |    Таблица.Ссылка.Код КАК Код
+    // |ИЗ Справочник.Номенклатура КАК Таблица"
+    // );
+КонецПроцедуры
+"""
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+
+    assert snapshot.query_text_blocks == []
+
+
 def test_procedure_name_extractors_handle_async_declarations(tmp_path: Path) -> None:
     content = """\
 Асинх Функция ПолучитьАсинх(Парам = Неопределено) Экспорт
