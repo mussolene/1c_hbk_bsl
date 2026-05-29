@@ -412,7 +412,7 @@ class TestBsl265UselessTernaryOperatorParity:
 
 
 # ---------------------------------------------------------------------------
-# BSL175 / BSL176 / BSL177 / BSL179 / BSL195 — deprecated API parity
+# BSL175 / BSL176 / BSL177 / BSL178 / BSL179 / BSL195 — deprecated API parity
 # ---------------------------------------------------------------------------
 
 
@@ -456,6 +456,44 @@ class TestDeprecatedApiParityBatch:
         bsl177 = [d for d in diags if d.code == "BSL177"]
         assert len(bsl177) == 1
         assert "ClientApplication.GetShortCaption" in bsl177[0].message
+
+    def test_bsl178_skips_before_platform_8317_compatibility(self, tmp_path: Path) -> None:
+        (tmp_path / "Configuration.xml").write_text(
+            "<Configuration><CompatibilityMode>Version8_3_14</CompatibilityMode></Configuration>",
+            encoding="utf-8",
+        )
+        path = tmp_path / "ObjectModule.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Текст = ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL178"}).check_file(str(path))
+        assert "BSL178" not in _codes(diags)
+
+    def test_bsl178_reports_on_platform_8317_compatibility(self, tmp_path: Path) -> None:
+        (tmp_path / "Configuration.xml").write_text(
+            "<Configuration><CompatibilityMode>Version8_3_17</CompatibilityMode></Configuration>",
+            encoding="utf-8",
+        )
+        path = tmp_path / "ObjectModule.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Текст = ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL178"}).check_file(str(path))
+        assert "BSL178" in _codes(diags)
 
     def test_bsl179_managed_form_type(self, tmp_path: Path) -> None:
         content = """\

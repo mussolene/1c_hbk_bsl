@@ -4,12 +4,17 @@ import re
 from bisect import bisect_left
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.storage import DiagnosticStorage
 from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    config_root_for_file,
+    read_text_cached,
+)
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     _xml_bool_tag,
@@ -441,6 +446,13 @@ _BSL178_DEPRECATED_METHOD_RE = re.compile(
     r")\s*\(",
     re.IGNORECASE,
 )
+_BSL178_MIN_COMPATIBILITY = (8, 3, 17)
+_CONFIG_COMPATIBILITY_RE = re.compile(
+    r"<(?:ConfigurationExtensionCompatibilityMode|CompatibilityMode)>\s*"
+    r"Version(?P<major>\d+)_(?P<minor>\d+)_(?P<patch>\d+)\s*"
+    r"</(?:ConfigurationExtensionCompatibilityMode|CompatibilityMode)>",
+    re.IGNORECASE,
+)
 _BSL097_DEPRECATED_CURRENT_DATE_RE = re.compile(
     r"(?<!\.)(?<!\w)\b(ТекущаяДата|CurrentDate)\s*\(",
     re.IGNORECASE,
@@ -480,6 +492,25 @@ _BSL179_MANAGED_FORM_RE = re.compile(
     r"\b(?:Тип|Type)\s*\(\s*(\"(?:УправляемаяФорма|ManagedForm)\")\s*\)",
     re.IGNORECASE | re.UNICODE,
 )
+
+
+@lru_cache(maxsize=128)
+def _bsl178_applicable_for_path(path: str) -> bool:
+    config_root = config_root_for_file(path)
+    if config_root is None:
+        return True
+    raw = read_text_cached(str(Path(config_root) / "Configuration.xml"))
+    match = _CONFIG_COMPATIBILITY_RE.search(raw)
+    if match is None:
+        return True
+    version = (
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("patch")),
+    )
+    return version >= _BSL178_MIN_COMPATIBILITY
+
+
 _BSL180_DISABLE_SAFE_MODE_RE = re.compile(
     r"(?<!\.)(?<!\w)\b("
     r"УстановитьБезопасныйРежим|SetSafeMode|"
@@ -1710,6 +1741,8 @@ class DeprecatedMethods8317Rule(BsllsDiagnosticRule):
     code = "BSL178"
 
     def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+        if not _bsl178_applicable_for_path(context.path):
+            return []
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
