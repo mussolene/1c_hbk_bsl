@@ -2901,6 +2901,16 @@ class TestBsl024SpaceAtStartComment:
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" in _codes(diags)
 
+    def test_commented_query_string_open_no_bsl024(self, tmp_path: Path) -> None:
+        content = '//"ВЫБРАТЬ РАЗРЕШЕННЫЕ ПЕРВЫЕ 1\nА = 1;\n'
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
+    def test_commented_call_close_no_bsl024(self, tmp_path: Path) -> None:
+        content = "//);\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" not in _codes(diags)
+
     def test_inline_comment_without_space_reports(self, tmp_path: Path) -> None:
         content = "Перем1 = 7; //И это плохо\n"
         diags = _check(content, tmp_path, select={"BSL024"})

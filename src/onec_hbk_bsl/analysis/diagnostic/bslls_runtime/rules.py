@@ -730,6 +730,11 @@ def bsl024_find_report_comment_col(
         and _BSL024_COMMENTED_CODE_RE.match(comment_text)
     ):
         return None
+    if is_full_line_comment and (
+        re.match(r'//\s*"\s*(?:ВЫБРАТЬ|SELECT)\b', comment_text, re.IGNORECASE)
+        or re.match(r"//\s*\)\s*;?\s*$", comment_text)
+    ):
+        return None
     if is_full_line_comment and rest.startswith("&"):
         return None
     return col
