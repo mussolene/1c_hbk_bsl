@@ -19,6 +19,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
     Severity,
     path_is_likely_form_module_bsl,
 )
+from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
@@ -2920,6 +2921,15 @@ class TestBsl024SpaceAtStartComment:
         content = "КонецФункции //НоваяТаблицаЗначений()\n"
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" in _codes(diags)
+
+    def test_url_string_with_stale_multiline_state_no_bsl024(self, tmp_path: Path) -> None:
+        content = 'Ссылка = "https://support.example/path";\n'
+        path = tmp_path / "ObjectModule.bsl"
+        path.write_text(content, encoding="utf-8")
+        snapshot = build_document_snapshot(str(path), content=content)
+        snapshot._line_string_states = [True]
+        diags = DiagnosticEngine(select={"BSL024"}).check_snapshot(snapshot)
+        assert "BSL024" not in _codes(diags)
 
     def test_comment_text_starting_with_function_word_reports(self, tmp_path: Path) -> None:
         content = "//Функция документа входит в коллекцию\n"

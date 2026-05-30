@@ -16,6 +16,11 @@ def comment_start_outside_double_quotes(line: str, in_str_at_start: bool = False
             i += 1
             continue
         if not in_str and ch == "/" and line[i + 1] == "/":
+            if in_str_at_start and span_is_inside_double_quoted_string(
+                line, i, i + 2, in_str_at_start=False
+            ):
+                i += 1
+                continue
             return i
         i += 1
     return None
