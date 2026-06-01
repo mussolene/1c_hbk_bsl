@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import multiprocessing
 import os
 import sys
 from pathlib import Path
@@ -467,6 +468,8 @@ def _parse_codes(raw: str | None) -> set[str] | None:
 
 
 def main() -> None:
+    multiprocessing.freeze_support()
+
     if len(sys.argv) > 1 and sys.argv[1] == "format":
         parser = argparse.ArgumentParser(
             prog="onec-hbk-bsl format",

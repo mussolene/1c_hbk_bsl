@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.48] - 2026-06-02
+
+### Fixed
+
+- Исправлен сбой LSP-диагностик в PyInstaller onefile-сборке на Linux:
+  multiprocessing child process теперь обслуживается через
+  `multiprocessing.freeze_support()` до разбора CLI-аргументов, поэтому
+  служебные аргументы forkserver больше не попадают в обычный `argparse`.
+
 ### Changed
 
 - Описания диагностических правил в публичных UI/JSON surfaces теперь

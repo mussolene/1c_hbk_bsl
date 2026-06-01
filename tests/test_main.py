@@ -45,6 +45,16 @@ class TestParseCodes:
 # ---------------------------------------------------------------------------
 
 
+def test_main_calls_multiprocessing_freeze_support_before_argparse() -> None:
+    with (
+        patch("multiprocessing.freeze_support") as freeze_support,
+        patch("sys.argv", ["onec-hbk-bsl", "--list-rules"]),
+    ):
+        main()
+
+    freeze_support.assert_called_once_with()
+
+
 class TestMainCheckNewFlags:
     def test_exit_zero_flag(self, tmp_path: Path) -> None:
         (tmp_path / "dirty.bsl").write_text('Пароль = "секрет123";\n', encoding="utf-8")
