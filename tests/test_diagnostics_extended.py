@@ -299,7 +299,11 @@ class TestBsl215MissingParameterDescriptionParity:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL215"}).check_file(str(path)) if d.code == "BSL215"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL215"}).check_file(str(path))
+            if d.code == "BSL215"
+        ]
 
         assert diags == []
 
@@ -1192,7 +1196,11 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert len(diags) == 1
         assert diags[0].line == 6
@@ -1227,7 +1235,11 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert diags == []
 
@@ -1272,12 +1284,18 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert len(diags) == 1
         assert "Документ.АктСверкиВзаиморасчетов" in diags[0].message
 
-    def test_bsl236_does_not_use_unrelated_workspace_configuration_roots(self, tmp_path: Path) -> None:
+    def test_bsl236_does_not_use_unrelated_workspace_configuration_roots(
+        self, tmp_path: Path
+    ) -> None:
         workspace = tmp_path
         (workspace / ".git").mkdir()
         extension_root = workspace / "src" / "extension"
@@ -1312,7 +1330,11 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert len(diags) == 1
         assert "Справочник.ТестЭДО_ЮрФизЛица" in diags[0].message
@@ -1341,7 +1363,11 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert {diag.message for diag in diags} == {
             'Исправьте обращение к несуществующему метаданному "Документ.СчетФактура" в запросе',
@@ -1376,7 +1402,11 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert len(diags) == 1
         assert "Документ.РасходнаяНакладная" in diags[0].message
@@ -1404,7 +1434,11 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert diags == []
 
@@ -1436,7 +1470,11 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
 
-        diags = [d for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path)) if d.code == "BSL236"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
 
         assert diags == []
 
@@ -2952,7 +2990,7 @@ class TestBsl024SpaceAtStartComment:
         assert "BSL024" in _codes(diags)
 
     def test_string_literal_after_empty_string_is_not_comment(self, tmp_path: Path) -> None:
-        content = 'Текст = "Начало\\n|\" + ?(Шаблон = \"\", \"\\t//Возврат Истина;\", Шаблон) + \"\";\n'
+        content = 'Текст = "Начало\\n|" + ?(Шаблон = "", "\\t//Возврат Истина;", Шаблон) + "";\n'
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" not in _codes(diags)
 
@@ -3985,9 +4023,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
 
     def test_bslls_typo_reports_reference_short_fragments(self, tmp_path: Path) -> None:
         content = (
-            "Функция ТипПрото_Информация()\n"
-            '    Сообщить("Кор Рег Деб Сис Дис");\n'
-            "КонецФункции\n"
+            'Функция ТипПрото_Информация()\n    Сообщить("Кор Рег Деб Сис Дис");\nКонецФункции\n'
         )
         path = tmp_path / "TypoReferenceShortFragments.bsl"
         path.write_text(content, encoding="utf-8")
@@ -4621,9 +4657,7 @@ class TestBsl234QueryNestedFieldsByDot:
         diags = [d for d in _check(content, tmp_path, select={"BSL234"}) if d.code == "BSL234"]
         assert diags == []
 
-    def test_query_after_opening_quote_comment_reports_nested_field(
-        self, tmp_path: Path
-    ) -> None:
+    def test_query_after_opening_quote_comment_reports_nested_field(self, tmp_path: Path) -> None:
         content = """\
             Результат = "
             // Комментарий перед запросом

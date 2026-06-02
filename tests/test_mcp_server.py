@@ -312,6 +312,58 @@ class TestBsl1cHelpTools:
         assert res2["cached"] is True
         assert res2["text"] == "HELLO_TOPIC"
 
+    def test_1c_help_search_error_explains_endpoint(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            raise OSError("Cannot assign requested address")
+
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+        monkeypatch.setattr(mcp_module, "_ONEC_HELP_MCP_BASE", "http://example/mcp")
+
+        app = _make_app(tmp_path)
+        tools = _tool_fns(app)
+        result = tools["bsl_1c_help_search_keyword"].fn(query="тест", limit=2)
+
+        assert result["cached"] is False
+        assert result["results"] == []
+        assert result["error"] == "Cannot assign requested address"
+        assert result["help_mcp_base"] == "http://example/mcp"
+        assert "ONEC_HELP_MCP_BASE" in result["setup_hint"]
+
+    def test_1c_help_topic_error_explains_endpoint(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        mcp_module._help_keyword_cache.clear()
+        mcp_module._help_topic_cache.clear()
+
+        def fake_post(
+            tool_name: str,
+            arguments: dict[str, object],
+            timeout: float = 5.0,
+        ):
+            raise OSError("Cannot assign requested address")
+
+        monkeypatch.setattr(mcp_module, "_post_1c_help_tool", fake_post)
+        monkeypatch.setattr(mcp_module, "_ONEC_HELP_MCP_BASE", "http://example/mcp")
+
+        app = _make_app(tmp_path)
+        tools = _tool_fns(app)
+        result = tools["bsl_1c_help_get_topic"].fn(path="docs/some_topic")
+
+        assert result["cached"] is False
+        assert result["text"] == ""
+        assert result["error"] == "Cannot assign requested address"
+        assert result["help_mcp_base"] == "http://example/mcp"
+        assert "ONEC_HELP_MCP_BASE" in result["setup_hint"]
+
     def test_1c_help_keyword_cache_is_bounded(self, tmp_path, monkeypatch) -> None:
         from onec_hbk_bsl.mcp_bridge import server as mcp_module
 

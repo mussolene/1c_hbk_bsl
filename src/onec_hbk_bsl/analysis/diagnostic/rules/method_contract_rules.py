@@ -288,7 +288,9 @@ def run_bsl215_missing_parameter_description(
 
         comment_block = lines[block_start : block_end + 1]
         if legacy_doc_path:
-            comment_block = [re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ") for cl in comment_block]
+            comment_block = [
+                re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ") for cl in comment_block
+            ]
         re_separator = re.compile(r"^\s*/{10,}\s*$")
         if any(re_separator.match(cl) for cl in comment_block):
             continue

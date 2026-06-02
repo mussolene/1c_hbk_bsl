@@ -210,6 +210,18 @@ onec-hbk-bsl --index /path/to/1c-project
 
 При первом запуске сервер автоматически индексирует воркспейс в фоне если индекс пустой.
 
+Постоянная установка Python-пакета:
+
+```bash
+uv tool install -U onec-hbk-bsl
+# или
+pipx install onec-hbk-bsl
+```
+
+После установки используйте стабильный shim `onec-hbk-bsl` из `PATH`. Если MCP-клиент
+не видит команду, укажите полный путь из `command -v onec-hbk-bsl` (Linux/macOS) или
+`Get-Command onec-hbk-bsl` (Windows PowerShell).
+
 **stdio-режим** для Claude Desktop (рекомендуется):
 ```bash
 onec-hbk-bsl --mcp --stdio --workspace /path/to/1c-project
@@ -237,6 +249,27 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 ```
 
 Инструменты MCP (имена как в сервере): `bsl_contract_version`, `bsl_status`, `bsl_find_symbol`, `bsl_file_symbols`, `bsl_callers`, `bsl_callees`, `bsl_diagnostics`, `bsl_definition`, `bsl_check_file`, `bsl_list_rules`, `bsl_index_file`, `bsl_hover`, `bsl_references`, `bsl_read_file`, `bsl_search`, `bsl_format`, `bsl_rename`, `bsl_fix`, `bsl_workspace_scan`, `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index`, `bsl_1c_help_search_keyword`, `bsl_1c_help_get_topic` (последние два — при настроенном внешнем MCP **1c-help**).
+
+`bsl_1c_help_search_keyword` и `bsl_1c_help_get_topic` не читают справку 1С напрямую.
+Они проксируют отдельный HTTP MCP-сервер **1c-help**. По умолчанию используется
+`http://localhost:8050/mcp`; если сервер запущен на другом адресе или внутри другого
+контейнера/хоста, передайте endpoint через переменную окружения `ONEC_HELP_MCP_BASE`.
+Например:
+
+```json
+{
+  "mcpServers": {
+    "onec-hbk-bsl": {
+      "command": "onec-hbk-bsl",
+      "args": ["--mcp", "--stdio", "--workspace", "/path/to/1c-project"],
+      "env": {
+        "INDEX_DB_PATH": "/path/to/1c-project/onec-hbk-bsl_index.sqlite",
+        "ONEC_HELP_MCP_BASE": "http://127.0.0.1:8050/mcp"
+      }
+    }
+  }
+}
+```
 
 Для нескольких воркспейсов указывайте `workspace_root` (и при необходимости `config_root` для метаданных) в аргументах инструментов. Подробнее: [docs/Production-Notes.md](docs/Production-Notes.md).
 

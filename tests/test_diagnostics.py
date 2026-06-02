@@ -75,7 +75,7 @@ class TestBsl001SyntaxErrors:
         bsl_file = tmp_path / "long_header.bsl"
         bsl_file.write_text(
             "Функция XML_УПД_970_ЭтоСпособПодтвержденияПолномочийЭлектроннойДоверенностью(ConfirmCredentials)\n"
-            "\tВозврат (ConfirmCredentials = \"3\");\n"
+            '\tВозврат (ConfirmCredentials = "3");\n'
             "КонецФункции\n",
             encoding="utf-8",
         )

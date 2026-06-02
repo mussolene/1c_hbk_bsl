@@ -148,9 +148,7 @@ def run_bsl174_187_236_238_query_metadata_pool(
             for start_idx, block_lines in _diag._iter_query_text_blocks(cleaned_lines or lines)
         ]
     else:
-        all_query_lines = [
-            _diag._query_block_content_line_tuples(block) for block in query_blocks
-        ]
+        all_query_lines = [_diag._query_block_content_line_tuples(block) for block in query_blocks]
 
     temp_table_names: set[str] = set()
     if "BSL236" in enabled_set:

@@ -373,8 +373,7 @@ class ProcedureModel:
         legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", str(self.path)))
         if legacy_doc_path:
             comment_block = [
-                re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ")
-                for cl in comment_block
+                re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ") for cl in comment_block
             ]
         if any(re.match(r"^\s*//\s*(?:См\.|See)\s+\S", cl, re.IGNORECASE) for cl in comment_block):
             return []

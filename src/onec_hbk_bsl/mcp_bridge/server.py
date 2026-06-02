@@ -103,6 +103,11 @@ _ONEC_HELP_HEADERS = {
     "Accept": "application/json, text/event-stream",
     "Content-Type": "application/json",
 }
+_ONEC_HELP_SETUP_HINT = (
+    "The bsl_1c_help_* tools proxy an optional external 1c-help HTTP MCP server. "
+    "Start that server and set ONEC_HELP_MCP_BASE to its /mcp endpoint if it is not "
+    "available at http://localhost:8050/mcp."
+)
 
 
 def _read_positive_env_int(name: str, default: int) -> int:
@@ -207,6 +212,15 @@ def _post_1c_help_tool(
         if isinstance(content, list):
             return [c for c in content if isinstance(c, dict)]
     return []
+
+
+def _onec_help_error_payload(exc: Exception) -> dict[str, object]:
+    return {
+        "error": str(exc),
+        "help_mcp_base": _ONEC_HELP_MCP_BASE,
+        "setup_hint": _ONEC_HELP_SETUP_HINT,
+        "cached": False,
+    }
 
 
 def _get_index(workspace_root: str | None = None) -> SymbolIndex:
@@ -901,8 +915,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
                 "query": query,
                 "limit": int(limit),
                 "results": [],
-                "error": str(exc),
-                "cached": False,
+                **_onec_help_error_payload(exc),
             }
 
         # Make ordering deterministic for assistant consumption.
@@ -939,7 +952,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
                 text = str(content[0].get("text", ""))
         except Exception as exc:  # noqa: BLE001
             logger.warning("1c-help MCP get_topic failed: %s", exc)
-            return {"path": path, "text": "", "error": str(exc), "cached": False}
+            return {"path": path, "text": "", **_onec_help_error_payload(exc)}
 
         _lru_cache_put(
             _help_topic_cache,

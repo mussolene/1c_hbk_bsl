@@ -1406,9 +1406,7 @@ class SpaceAtStartCommentRule(BsllsDiagnosticRule):
             comment_start = None
             if idx < len(context.comment_starts):
                 comment_start = context.comment_starts[idx]
-            col = bsl024_find_report_comment_col(
-                line, comment_start, comment_start_known=True
-            )
+            col = bsl024_find_report_comment_col(line, comment_start, comment_start_known=True)
             if col is None:
                 continue
             storage.add_range(
