@@ -1865,7 +1865,11 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
 
     # Workspace symbols (procedures/functions from the index)
     if prefix:
-        ws_symbols = ls.symbol_index.find_symbol(prefix, limit=30, fuzzy=True)
+        try:
+            ws_symbols = ls.symbol_index.find_symbol(prefix, limit=30, fuzzy=True)
+        except Exception:  # noqa: BLE001
+            logger.debug("Completion workspace symbol lookup failed", exc_info=True)
+            ws_symbols = []
         seen: set[str] = {c.label for c in items}  # type: ignore[attr-defined]
         for sym in ws_symbols:
             if sym["name"] in seen:

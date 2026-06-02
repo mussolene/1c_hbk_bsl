@@ -1117,6 +1117,26 @@ class TestHandlerFunctions:
         # Should return a CompletionList (may be empty if no platform funcs match)
         assert result is not None
 
+    def test_on_completion_ignores_workspace_index_failure(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_completion
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.symbol_index.find_symbol = MagicMock(  # type: ignore[method-assign]
+            side_effect=RuntimeError("index unavailable")
+        )
+        ls._docs["file:///test.bsl"] = "Сообщить\n"
+        params = MagicMock()
+        params.text_document.uri = "file:///test.bsl"
+        params.position.line = 0
+        params.position.character = 8
+
+        result = on_completion(ls, params)
+
+        assert result is not None
+        assert result.items is not None
+
     def test_on_completion_dot_access(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
