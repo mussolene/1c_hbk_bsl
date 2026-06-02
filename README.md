@@ -248,28 +248,12 @@ onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
 }
 ```
 
-Инструменты MCP (имена как в сервере): `bsl_contract_version`, `bsl_status`, `bsl_find_symbol`, `bsl_file_symbols`, `bsl_callers`, `bsl_callees`, `bsl_diagnostics`, `bsl_definition`, `bsl_check_file`, `bsl_list_rules`, `bsl_index_file`, `bsl_hover`, `bsl_references`, `bsl_read_file`, `bsl_search`, `bsl_format`, `bsl_rename`, `bsl_fix`, `bsl_workspace_scan`, `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index`, `bsl_1c_help_search_keyword`, `bsl_1c_help_get_topic` (последние два — при настроенном внешнем MCP **1c-help**).
+Инструменты MCP (имена как в сервере): `bsl_contract_version`, `bsl_status`, `bsl_find_symbol`, `bsl_file_symbols`, `bsl_callers`, `bsl_callees`, `bsl_diagnostics`, `bsl_definition`, `bsl_check_file`, `bsl_list_rules`, `bsl_index_file`, `bsl_hover`, `bsl_references`, `bsl_read_file`, `bsl_search`, `bsl_format`, `bsl_rename`, `bsl_fix`, `bsl_workspace_scan`, `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index`.
 
-`bsl_1c_help_search_keyword` и `bsl_1c_help_get_topic` не читают справку 1С напрямую.
-Они проксируют отдельный HTTP MCP-сервер **1c-help**. По умолчанию используется
-`http://localhost:8050/mcp`; если сервер запущен на другом адресе или внутри другого
-контейнера/хоста, передайте endpoint через переменную окружения `ONEC_HELP_MCP_BASE`.
-Например:
-
-```json
-{
-  "mcpServers": {
-    "onec-hbk-bsl": {
-      "command": "onec-hbk-bsl",
-      "args": ["--mcp", "--stdio", "--workspace", "/path/to/1c-project"],
-      "env": {
-        "INDEX_DB_PATH": "/path/to/1c-project/onec-hbk-bsl_index.sqlite",
-        "ONEC_HELP_MCP_BASE": "http://127.0.0.1:8050/mcp"
-      }
-    }
-  }
-}
-```
+MCP `onec-hbk-bsl` — это проектное рабочее пространство для агентов вокруг BSL-кода:
+индексация, навигация, диагностики, форматирование, автофиксы и метаданные конфигурации.
+Внешние справочные MCP не проксируются через этот сервер. Если агенту нужна отдельная
+справка 1С, подключайте соответствующий соседний MCP-сервер справки самостоятельно.
 
 Для нескольких воркспейсов указывайте `workspace_root` (и при необходимости `config_root` для метаданных) в аргументах инструментов. Подробнее: [docs/Production-Notes.md](docs/Production-Notes.md).
 

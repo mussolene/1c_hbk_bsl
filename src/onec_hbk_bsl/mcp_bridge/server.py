@@ -25,21 +25,18 @@ bsl_meta_index      — trigger metadata re-indexing from XML config export (+ k
 
 Contract
 --------
-Responses are **assistant-oriented context** (summaries, snippets, navigation, optional
-1c-help proxy text). They are **not** a substitute for the tree-sitter CST used inside
+Responses are **assistant-oriented context** (summaries, snippets, navigation). They are
+**not** a substitute for the tree-sitter CST used inside
 the analyzer for diagnostics and formatting; do not treat MCP payloads as an alternate
 “code model” for rule correctness.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
 import threading
-import time
-import urllib.request
 from collections import OrderedDict
 from pathlib import Path
 from typing import Annotated
@@ -91,136 +88,6 @@ _indexer: IncrementalIndexer | None = None
 
 # tree_sitter.Parser is not thread-safe — one BslParser per thread (free-threading safe).
 _parser_tls = threading.local()
-
-# ---------------------------------------------------------------------------
-# Optional 1c-help MCP proxy (for AI context / snippets)
-# ---------------------------------------------------------------------------
-
-# Optional 1c-help MCP HTTP endpoint (developer-generated docs; see DATA_SOURCES.md).
-# We proxy "search_1c_help_keyword" and "get_1c_help_topic" tools.
-_ONEC_HELP_MCP_BASE = os.environ.get("ONEC_HELP_MCP_BASE", "http://localhost:8050/mcp")
-_ONEC_HELP_HEADERS = {
-    "Accept": "application/json, text/event-stream",
-    "Content-Type": "application/json",
-}
-_ONEC_HELP_SETUP_HINT = (
-    "The bsl_1c_help_* tools proxy an optional external 1c-help HTTP MCP server. "
-    "Start that server and set ONEC_HELP_MCP_BASE to its /mcp endpoint if it is not "
-    "available at http://localhost:8050/mcp."
-)
-
-
-def _read_positive_env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        logger.warning("Invalid %s=%r — using default %d", name, raw, default)
-        return default
-    if value < 1:
-        logger.warning("Invalid %s=%r (<1) — using default %d", name, raw, default)
-        return default
-    return value
-
-
-_HELP_KEYWORD_CACHE_LIMIT = _read_positive_env_int("MCP_HELP_KEYWORD_CACHE_LIMIT", 256)
-_HELP_TOPIC_CACHE_LIMIT = _read_positive_env_int("MCP_HELP_TOPIC_CACHE_LIMIT", 256)
-_HELP_KEYWORD_CACHE_TTL_SEC = _read_positive_env_int("MCP_HELP_KEYWORD_CACHE_TTL_SEC", 900)
-_HELP_TOPIC_CACHE_TTL_SEC = _read_positive_env_int("MCP_HELP_TOPIC_CACHE_TTL_SEC", 900)
-_HELP_KEYWORD_CACHE_BYTES_LIMIT = _read_positive_env_int(
-    "MCP_HELP_KEYWORD_CACHE_BYTES_LIMIT", 2 * 1024 * 1024
-)
-_HELP_TOPIC_CACHE_BYTES_LIMIT = _read_positive_env_int(
-    "MCP_HELP_TOPIC_CACHE_BYTES_LIMIT", 2 * 1024 * 1024
-)
-_help_cache_lock = threading.RLock()
-_help_keyword_cache: OrderedDict[tuple[str, int], tuple[float, int, list[dict]]] = OrderedDict()
-_help_topic_cache: OrderedDict[str, tuple[float, int, str]] = OrderedDict()
-
-
-def _cache_item_size(key: object, value: object) -> int:
-    try:
-        key_size = len(json.dumps(key, ensure_ascii=False).encode("utf-8"))
-        value_size = len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
-        return key_size + value_size
-    except Exception:
-        return len(str(key)) + len(str(value))
-
-
-def _cache_total_size(cache: OrderedDict) -> int:
-    return sum(int(item[1]) for item in cache.values())
-
-
-def _lru_cache_get(cache: OrderedDict, key: object) -> object | None:
-    with _help_cache_lock:
-        item = cache.get(key)
-        if item is None:
-            return None
-        expires_at, _, value = item
-        if expires_at <= time.monotonic():
-            cache.pop(key, None)
-            return None
-        if value is not None:
-            cache.move_to_end(key)
-        return value
-
-
-def _lru_cache_put(
-    cache: OrderedDict,
-    key: object,
-    value: object,
-    limit: int,
-    ttl_sec: int,
-    bytes_limit: int,
-) -> None:
-    with _help_cache_lock:
-        item_size = _cache_item_size(key, value)
-        if bytes_limit > 0 and item_size > bytes_limit:
-            return
-        cache[key] = (time.monotonic() + ttl_sec, item_size, value)
-        cache.move_to_end(key)
-        while len(cache) > limit or _cache_total_size(cache) > bytes_limit:
-            cache.popitem(last=False)
-
-
-def _post_1c_help_tool(
-    tool_name: str, arguments: dict[str, object], timeout: float = 5.0
-) -> list[dict]:
-    """Call 1c-help MCP tool and return the parsed `content` list (best-effort)."""
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {"name": tool_name, "arguments": arguments},
-    }
-    req = urllib.request.Request(  # noqa: S310
-        _ONEC_HELP_MCP_BASE,
-        data=json.dumps(payload).encode(),
-        headers=dict(_ONEC_HELP_HEADERS),
-        method="POST",
-    )
-    # 1c-help MCP uses SSE-like responses (lines starting with "data: ").
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
-        raw = resp.read().decode("utf-8", errors="replace")
-    for line in raw.splitlines():
-        if not line.startswith("data: "):
-            continue
-        parsed = json.loads(line[6:])
-        content = parsed.get("result", {}).get("content", [])
-        if isinstance(content, list):
-            return [c for c in content if isinstance(c, dict)]
-    return []
-
-
-def _onec_help_error_payload(exc: Exception) -> dict[str, object]:
-    return {
-        "error": str(exc),
-        "help_mcp_base": _ONEC_HELP_MCP_BASE,
-        "setup_hint": _ONEC_HELP_SETUP_HINT,
-        "cached": False,
-    }
 
 
 def _get_index(workspace_root: str | None = None) -> SymbolIndex:
@@ -885,84 +752,6 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             }
 
         return {"found": False, "symbol_name": symbol_name}
-
-    # ------------------------------------------------------------------
-    # bsl_1c_help (proxy for 1c-help MCP)
-    # ------------------------------------------------------------------
-
-    @mcp.tool(
-        description=(
-            "Search 1C help content by keyword (proxy to 1c-help MCP). "
-            "Returns a deterministic sorted list of snippets for assistant context."
-        )
-    )
-    def bsl_1c_help_search_keyword(
-        query: Annotated[str, "Search query"],
-        limit: Annotated[int, "Max number of results (default 3)"] = 3,
-    ) -> dict:
-        cache_key = (query, int(limit))
-        cached = _lru_cache_get(_help_keyword_cache, cache_key)
-        if cached is not None:
-            return {"query": query, "limit": int(limit), "results": cached, "cached": True}
-
-        try:
-            raw_results = _post_1c_help_tool(
-                "search_1c_help_keyword", {"query": query, "limit": int(limit)}
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("1c-help MCP keyword search failed: %s", exc)
-            return {
-                "query": query,
-                "limit": int(limit),
-                "results": [],
-                **_onec_help_error_payload(exc),
-            }
-
-        # Make ordering deterministic for assistant consumption.
-        results = sorted(
-            raw_results,
-            key=lambda r: (str(r.get("path", "")), str(r.get("text", ""))),
-        )
-        _lru_cache_put(
-            _help_keyword_cache,
-            cache_key,
-            results,
-            _HELP_KEYWORD_CACHE_LIMIT,
-            _HELP_KEYWORD_CACHE_TTL_SEC,
-            _HELP_KEYWORD_CACHE_BYTES_LIMIT,
-        )
-        return {"query": query, "limit": int(limit), "results": results, "cached": False}
-
-    @mcp.tool(
-        description=(
-            "Get a full 1C help topic by path (proxy to 1c-help MCP). "
-            "Returns extracted text suitable for assistant context."
-        )
-    )
-    def bsl_1c_help_get_topic(path: Annotated[str, "Topic path (as used by 1c-help)"]) -> dict:
-        cached = _lru_cache_get(_help_topic_cache, path)
-        if cached is not None:
-            return {"path": path, "text": cached, "cached": True}
-
-        try:
-            content = _post_1c_help_tool("get_1c_help_topic", {"path": path})
-            text = ""
-            if content:
-                # 1c-help returns a list; we take the first item.
-                text = str(content[0].get("text", ""))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("1c-help MCP get_topic failed: %s", exc)
-            return {"path": path, "text": "", **_onec_help_error_payload(exc)}
-
-        _lru_cache_put(
-            _help_topic_cache,
-            path,
-            text,
-            _HELP_TOPIC_CACHE_LIMIT,
-            _HELP_TOPIC_CACHE_TTL_SEC,
-            _HELP_TOPIC_CACHE_BYTES_LIMIT,
-        )
-        return {"path": path, "text": text, "cached": False}
 
     # ------------------------------------------------------------------
     # bsl_references
