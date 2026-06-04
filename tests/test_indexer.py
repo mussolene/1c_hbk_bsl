@@ -257,6 +257,32 @@ class TestGetStats:
         assert stats["index_size_bytes"] == 0
 
 
+class TestCorruptDatabaseRecovery:
+    def test_constructor_recreates_invalid_database_file(self, tmp_path: Path) -> None:
+        db = tmp_path / "invalid.sqlite"
+        db.write_text("not a sqlite database", encoding="utf-8")
+
+        idx = SymbolIndex(str(db))
+
+        assert idx.find_symbol("ЛюбойСимвол") == []
+        assert idx.has_metadata() is False
+        stats = idx.get_stats()
+        assert stats["symbol_count"] == 0
+        assert stats["call_count"] == 0
+
+    def test_reads_recover_when_database_becomes_invalid(self, tmp_path: Path) -> None:
+        db = tmp_path / "invalid-later.sqlite"
+        idx = SymbolIndex(str(db))
+        idx.close()
+        db.write_text("not a sqlite database", encoding="utf-8")
+
+        assert idx.find_symbol("ЛюбойСимвол") == []
+        assert idx.has_metadata() is False
+        stats = idx.get_stats()
+        assert stats["symbol_count"] == 0
+        assert stats["meta_object_count"] == 0
+
+
 class TestMetadataMembers:
     def test_get_meta_members_returns_more_than_legacy_page_limit(
         self, symbol_index: SymbolIndex

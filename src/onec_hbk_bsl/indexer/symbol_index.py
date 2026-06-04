@@ -153,6 +153,11 @@ CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
 END;
 """
 
+CORRUPT_DB_ERROR_FRAGMENTS = (
+    "file is not a database",
+    "database disk image is malformed",
+)
+
 
 class SymbolIndex:
     """
@@ -177,19 +182,13 @@ class SymbolIndex:
         # avoid test isolation issues with the thread-local pool.
         self._mem_conn: sqlite3.Connection | None = None
         try:
-            conn = self._conn()
-            conn.executescript(SCHEMA_SQL)
-            self._migrate_sync(conn)
-            conn.commit()
-        except sqlite3.OperationalError:
-            # Fallback for restricted/unstable filesystems where on-disk DB is not writable.
-            if self.db_path != ":memory:":
-                self.db_path = ":memory:"
-                self._mem_conn = None
-                conn = self._conn()
-                conn.executescript(SCHEMA_SQL)
-                self._migrate_sync(conn)
-                conn.commit()
+            self._initialize_schema()
+        except sqlite3.DatabaseError as exc:
+            if self.db_path != ":memory:" and self._is_corrupt_db_error(exc):
+                self._recover_corrupt_database()
+                self._initialize_schema()
+            elif self.db_path != ":memory:" and isinstance(exc, sqlite3.OperationalError):
+                self._fallback_to_memory()
             else:
                 raise
         # Heavy data migrations (index build / data population) run in background
@@ -336,6 +335,77 @@ class SymbolIndex:
             conn.execute("ANALYZE calls")
         except Exception:
             pass  # Non-fatal; will retry next startup
+
+    def _initialize_schema(self) -> None:
+        conn = self._conn()
+        conn.executescript(SCHEMA_SQL)
+        self._migrate_sync(conn)
+        conn.commit()
+
+    def _fallback_to_memory(self) -> None:
+        self.close()
+        self.db_path = ":memory:"
+        self._mem_conn = None
+        self._initialize_schema()
+
+    @staticmethod
+    def _is_corrupt_db_error(exc: sqlite3.DatabaseError) -> bool:
+        message = str(exc).casefold()
+        return any(fragment in message for fragment in CORRUPT_DB_ERROR_FRAGMENTS)
+
+    def _recover_corrupt_database(self) -> None:
+        """Quarantine an unusable cache DB so the index can be rebuilt."""
+        self.close()
+        timestamp = int(time.time())
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(f"{self.db_path}{suffix}")
+            if not path.exists():
+                continue
+            target = path.with_name(f"{path.name}.corrupt.{timestamp}")
+            try:
+                path.replace(target)
+            except OSError:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+
+    def _handle_read_database_error(self, exc: sqlite3.DatabaseError) -> bool:
+        if not self._is_corrupt_db_error(exc):
+            return False
+        if self.db_path != ":memory:":
+            self._recover_corrupt_database()
+            try:
+                self._initialize_schema()
+            except sqlite3.DatabaseError:
+                self._fallback_to_memory()
+        return True
+
+    def _read_list(self, query) -> list[dict[str, Any]]:
+        try:
+            rows = query(self._conn())
+        except sqlite3.DatabaseError as exc:
+            if not self._handle_read_database_error(exc):
+                raise
+            return []
+        return [dict(row) for row in rows]
+
+    def _read_optional_row(self, query) -> sqlite3.Row | None:
+        try:
+            return query(self._conn())
+        except sqlite3.DatabaseError as exc:
+            if not self._handle_read_database_error(exc):
+                raise
+            return None
+
+    def _read_int(self, query) -> int:
+        try:
+            row = query(self._conn())
+        except sqlite3.DatabaseError as exc:
+            if not self._handle_read_database_error(exc):
+                raise
+            return 0
+        return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
     # Connection management
@@ -630,8 +700,6 @@ class SymbolIndex:
         Returns:
             List of symbol dicts with all columns from the ``symbols`` table.
         """
-        conn = self._conn()
-
         if fuzzy:
             fts_query = name.strip() + "*"
             sql = """
@@ -649,7 +717,7 @@ class SymbolIndex:
                 "file_like": f"%{file_filter}%" if file_filter else None,
                 "limit": limit,
             }
-            rows = conn.execute(sql, params).fetchall()
+            return self._read_list(lambda conn: conn.execute(sql, params).fetchall())
         else:
             # Use pre-computed name_lower for index-assisted case-insensitive lookup.
             # No ORDER BY — avoids temp B-tree sort on large result sets (e.g. Записать: 3000+ rows).
@@ -660,60 +728,56 @@ class SymbolIndex:
                   AND (:file_filter IS NULL OR file_path LIKE :file_like)
                 LIMIT :limit
             """
-            rows = conn.execute(
-                sql,
-                {
-                    "name_lower": name.casefold(),
-                    "file_filter": file_filter,
-                    "file_like": f"%{file_filter}%" if file_filter else None,
-                    "limit": limit,
-                },
-            ).fetchall()
-
-        return [dict(row) for row in rows]
+            params = {
+                "name_lower": name.casefold(),
+                "file_filter": file_filter,
+                "file_like": f"%{file_filter}%" if file_filter else None,
+                "limit": limit,
+            }
+            return self._read_list(lambda conn: conn.execute(sql, params).fetchall())
 
     def find_callers_count(self, callee_name: str) -> int:
         """Return the total number of call sites for *callee_name* (fast COUNT query)."""
-        conn = self._conn()
-        row = conn.execute(
-            "SELECT COUNT(*) FROM calls WHERE callee_name_lower = ?",
-            (callee_name.casefold(),),
-        ).fetchone()
-        return int(row[0]) if row else 0
+        return self._read_int(
+            lambda conn: conn.execute(
+                "SELECT COUNT(*) FROM calls WHERE callee_name_lower = ?",
+                (callee_name.casefold(),),
+            ).fetchone()
+        )
 
     def find_callers_count_non_recursive(self, callee_name: str) -> int:
         """Count call sites for *callee_name*, excluding recursive self-calls."""
-        conn = self._conn()
         name_lo = callee_name.casefold()
-        row = conn.execute(
-            """
-            SELECT COUNT(*) FROM calls
-            WHERE callee_name_lower = ?
-              AND (caller_name IS NULL OR LOWER(caller_name) != ?)
-            """,
-            (name_lo, name_lo),
-        ).fetchone()
-        return int(row[0]) if row else 0
+        return self._read_int(
+            lambda conn: conn.execute(
+                """
+                SELECT COUNT(*) FROM calls
+                WHERE callee_name_lower = ?
+                  AND (caller_name IS NULL OR LOWER(caller_name) != ?)
+                """,
+                (name_lo, name_lo),
+            ).fetchone()
+        )
 
     def find_unused_symbols(self, file_path: str) -> list[dict[str, Any]]:
         """Return non-export procedures/functions in *file_path* with zero non-recursive callers."""
-        conn = self._conn()
-        rows = conn.execute(
-            """
-            SELECT s.* FROM symbols s
-            WHERE s.file_path = ?
-              AND s.kind IN ('procedure', 'function')
-              AND s.is_export = 0
-              AND NOT EXISTS (
-                  SELECT 1 FROM calls c
-                  WHERE c.callee_name_lower = s.name_lower
-                    AND (c.caller_name IS NULL OR LOWER(c.caller_name) != s.name_lower)
-              )
-            ORDER BY s.line
-            """,
-            (file_path,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return self._read_list(
+            lambda conn: conn.execute(
+                """
+                SELECT s.* FROM symbols s
+                WHERE s.file_path = ?
+                  AND s.kind IN ('procedure', 'function')
+                  AND s.is_export = 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM calls c
+                      WHERE c.callee_name_lower = s.name_lower
+                        AND (c.caller_name IS NULL OR LOWER(c.caller_name) != s.name_lower)
+                  )
+                ORDER BY s.line
+                """,
+                (file_path,),
+            ).fetchall()
+        )
 
     def find_callers(self, callee_name: str, limit: int = 50) -> list[dict[str, Any]]:
         """
@@ -721,20 +785,20 @@ class SymbolIndex:
 
         Returns dicts with: caller_file, caller_line, caller_name, callee_name.
         """
-        conn = self._conn()
-        rows = conn.execute(
-            """
-            SELECT c.caller_file, c.caller_line, c.caller_character, c.caller_name, c.callee_name,
-                   s.signature as caller_signature
-            FROM calls c
-            LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower AND s.file_path = c.caller_file
-            WHERE c.callee_name_lower = ?
-            ORDER BY c.caller_file, c.caller_line
-            LIMIT ?
-            """,
-            (callee_name.casefold(), limit),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        return self._read_list(
+            lambda conn: conn.execute(
+                """
+                SELECT c.caller_file, c.caller_line, c.caller_character, c.caller_name, c.callee_name,
+                       s.signature as caller_signature
+                FROM calls c
+                LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower AND s.file_path = c.caller_file
+                WHERE c.callee_name_lower = ?
+                ORDER BY c.caller_file, c.caller_line
+                LIMIT ?
+                """,
+                (callee_name.casefold(), limit),
+            ).fetchall()
+        )
 
     def find_callees(
         self,
@@ -751,35 +815,38 @@ class SymbolIndex:
 
         Returns dicts with: caller_file, caller_line, callee_name + resolved definition.
         """
-        conn = self._conn()
         if caller_name is not None:
-            rows = conn.execute(
-                """
-                SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
-                       s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
-                FROM calls c
-                LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
-                WHERE c.caller_file = ?
-                  AND c.caller_name = ?
-                ORDER BY c.caller_line
-                """,
-                (caller_file, caller_name),
-            ).fetchall()
+            return self._read_list(
+                lambda conn: conn.execute(
+                    """
+                    SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
+                           s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
+                    FROM calls c
+                    LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
+                    WHERE c.caller_file = ?
+                      AND c.caller_name = ?
+                    ORDER BY c.caller_line
+                    """,
+                    (caller_file, caller_name),
+                ).fetchall()
+            )
         elif caller_line is not None:
-            rows = conn.execute(
-                """
-                SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
-                       s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
-                FROM calls c
-                LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
-                WHERE c.caller_file = ?
-                  AND c.caller_line BETWEEN ? AND ?
-                ORDER BY c.caller_line
-                """,
-                (caller_file, caller_line - 15, caller_line + 15),
-            ).fetchall()
-        else:
-            rows = conn.execute(
+            return self._read_list(
+                lambda conn: conn.execute(
+                    """
+                    SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
+                           s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
+                    FROM calls c
+                    LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower
+                    WHERE c.caller_file = ?
+                      AND c.caller_line BETWEEN ? AND ?
+                    ORDER BY c.caller_line
+                    """,
+                    (caller_file, caller_line - 15, caller_line + 15),
+                ).fetchall()
+            )
+        return self._read_list(
+            lambda conn: conn.execute(
                 """
                 SELECT c.callee_name, c.caller_line, c.caller_character, c.callee_args_count,
                        s.file_path as callee_file, s.line as callee_line, s.signature as callee_sig
@@ -790,35 +857,36 @@ class SymbolIndex:
                 """,
                 (caller_file,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        )
 
     def get_file_symbols(self, file_path: str) -> list[dict[str, Any]]:
         """Return all symbols defined in a file, ordered by line."""
-        conn = self._conn()
-        rows = conn.execute(
-            "SELECT * FROM symbols WHERE file_path = ? ORDER BY line",
-            (file_path,),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        return self._read_list(
+            lambda conn: conn.execute(
+                "SELECT * FROM symbols WHERE file_path = ? ORDER BY line",
+                (file_path,),
+            ).fetchall()
+        )
 
     def get_last_commit(self) -> str | None:
         """Return the last indexed commit hash, or None if not yet indexed."""
-        conn = self._conn()
-        row = conn.execute("SELECT commit_hash FROM git_state WHERE id = 1").fetchone()
+        row = self._read_optional_row(
+            lambda conn: conn.execute("SELECT commit_hash FROM git_state WHERE id = 1").fetchone()
+        )
         return row["commit_hash"] if row else None
 
     def get_module_exports(self, module_name: str) -> list[dict]:
         """Return exported symbols from the file whose stem matches *module_name* (case-insensitive)."""
-        conn = self._conn()
         name_lo = module_name.casefold()
-        rows = conn.execute(
-            "SELECT * FROM symbols WHERE is_export=1 "
-            "AND (LOWER(REPLACE(REPLACE(file_path,'\\\\','/'),'.bsl','')) LIKE ? "
-            " OR  LOWER(REPLACE(REPLACE(file_path,'\\\\','/'),'.os',''))  LIKE ?) "
-            "ORDER BY name_lower LIMIT 100",
-            (f"%/{name_lo}", f"%/{name_lo}"),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return self._read_list(
+            lambda conn: conn.execute(
+                "SELECT * FROM symbols WHERE is_export=1 "
+                "AND (LOWER(REPLACE(REPLACE(file_path,'\\\\','/'),'.bsl','')) LIKE ? "
+                " OR  LOWER(REPLACE(REPLACE(file_path,'\\\\','/'),'.os',''))  LIKE ?) "
+                "ORDER BY name_lower LIMIT 100",
+                (f"%/{name_lo}", f"%/{name_lo}"),
+            ).fetchall()
+        )
 
     # ------------------------------------------------------------------
     # Metadata write operations
@@ -887,15 +955,16 @@ class SymbolIndex:
 
     def get_metadata_state(self, config_root: str) -> dict[str, Any] | None:
         """Return cached metadata crawl state for *config_root*, if present."""
-        conn = self._conn()
-        row = conn.execute(
-            """
-            SELECT config_root, fingerprint, object_count, member_count, indexed_at
-            FROM metadata_state
-            WHERE id = 1 AND config_root = ?
-            """,
-            (config_root,),
-        ).fetchone()
+        row = self._read_optional_row(
+            lambda conn: conn.execute(
+                """
+                SELECT config_root, fingerprint, object_count, member_count, indexed_at
+                FROM metadata_state
+                WHERE id = 1 AND config_root = ?
+                """,
+                (config_root,),
+            ).fetchone()
+        )
         return dict(row) if row else None
 
     def save_metadata_state(
@@ -939,13 +1008,13 @@ class SymbolIndex:
         Returns:
             List of member dicts with keys: name, kind, type_info, synonym_ru, object_name, object_kind.
         """
-        conn = self._conn()
         name_lo = object_name.casefold()
-
-        obj_row = conn.execute(
-            "SELECT id, name, kind, synonym_ru FROM meta_objects WHERE name_lower = ? LIMIT 1",
-            (name_lo,),
-        ).fetchone()
+        obj_row = self._read_optional_row(
+            lambda conn: conn.execute(
+                "SELECT id, name, kind, synonym_ru FROM meta_objects WHERE name_lower = ? LIMIT 1",
+                (name_lo,),
+            ).fetchone()
+        )
         if obj_row is None:
             return []
 
@@ -955,37 +1024,42 @@ class SymbolIndex:
 
         if member_prefix:
             prefix_lo = member_prefix.casefold()
-            rows = conn.execute(
-                "SELECT name, kind, type_info, synonym_ru FROM meta_members "
-                "WHERE object_id = ? AND name_lower LIKE ? ORDER BY name_lower",
-                (obj_id, f"{prefix_lo}%"),
-            ).fetchall()
+            rows = self._read_list(
+                lambda conn: conn.execute(
+                    "SELECT name, kind, type_info, synonym_ru FROM meta_members "
+                    "WHERE object_id = ? AND name_lower LIKE ? ORDER BY name_lower",
+                    (obj_id, f"{prefix_lo}%"),
+                ).fetchall()
+            )
         else:
-            rows = conn.execute(
-                "SELECT name, kind, type_info, synonym_ru FROM meta_members "
-                "WHERE object_id = ? ORDER BY name_lower",
-                (obj_id,),
-            ).fetchall()
+            rows = self._read_list(
+                lambda conn: conn.execute(
+                    "SELECT name, kind, type_info, synonym_ru FROM meta_members "
+                    "WHERE object_id = ? ORDER BY name_lower",
+                    (obj_id,),
+                ).fetchall()
+            )
 
         return [
             {
-                "name": row["name"],
-                "kind": row["kind"],
-                "type_info": row["type_info"],
-                "synonym_ru": row["synonym_ru"],
+                "name": member["name"],
+                "kind": member["kind"],
+                "type_info": member["type_info"],
+                "synonym_ru": member["synonym_ru"],
                 "object_name": obj_name,
                 "object_kind": obj_kind,
             }
-            for row in rows
+            for member in rows
         ]
 
     def find_meta_object(self, object_name: str) -> dict[str, Any] | None:
         """Return metadata object info by name, or None if not found."""
-        conn = self._conn()
-        row = conn.execute(
-            "SELECT name, kind, synonym_ru, collection FROM meta_objects WHERE name_lower = ? LIMIT 1",
-            (object_name.casefold(),),
-        ).fetchone()
+        row = self._read_optional_row(
+            lambda conn: conn.execute(
+                "SELECT name, kind, synonym_ru, collection FROM meta_objects WHERE name_lower = ? LIMIT 1",
+                (object_name.casefold(),),
+            ).fetchone()
+        )
         return dict(row) if row else None
 
     def find_meta_objects_by_collection(
@@ -998,47 +1072,70 @@ class SymbolIndex:
             collection: Russian collection name (e.g. 'Справочники', 'Документы').
             prefix: If provided, filter by name prefix.
         """
-        conn = self._conn()
         if prefix:
             prefix_lo = prefix.casefold()
-            rows = conn.execute(
-                "SELECT name, kind, synonym_ru FROM meta_objects "
-                "WHERE collection = ? AND name_lower LIKE ? ORDER BY name_lower LIMIT 100",
-                (collection, f"{prefix_lo}%"),
-            ).fetchall()
+            return self._read_list(
+                lambda conn: conn.execute(
+                    "SELECT name, kind, synonym_ru FROM meta_objects "
+                    "WHERE collection = ? AND name_lower LIKE ? ORDER BY name_lower LIMIT 100",
+                    (collection, f"{prefix_lo}%"),
+                ).fetchall()
+            )
         else:
-            rows = conn.execute(
-                "SELECT name, kind, synonym_ru FROM meta_objects "
-                "WHERE collection = ? ORDER BY name_lower LIMIT 100",
-                (collection,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+            return self._read_list(
+                lambda conn: conn.execute(
+                    "SELECT name, kind, synonym_ru FROM meta_objects "
+                    "WHERE collection = ? ORDER BY name_lower LIMIT 100",
+                    (collection,),
+                ).fetchall()
+            )
 
     def has_metadata(self) -> bool:
         """Return True if any metadata objects are indexed."""
-        conn = self._conn()
-        row = conn.execute("SELECT COUNT(*) FROM meta_objects").fetchone()
-        return bool(row and row[0] > 0)
+        return (
+            self._read_int(
+                lambda conn: conn.execute("SELECT COUNT(*) FROM meta_objects").fetchone()
+            )
+            > 0
+        )
 
     def get_stats(self) -> dict[str, Any]:
         """Return index statistics."""
-        conn = self._conn()
-        symbol_count = conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
-        file_count = conn.execute("SELECT COUNT(DISTINCT file_path) FROM symbols").fetchone()[0]
-        call_count = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
-        meta_count = conn.execute("SELECT COUNT(*) FROM meta_objects").fetchone()[0]
-        last_commit = self.get_last_commit()
-        row = conn.execute(
-            "SELECT indexed_at, workspace_root FROM git_state WHERE id = 1"
-        ).fetchone()
-        stats = {
-            "symbol_count": symbol_count,
-            "file_count": file_count,
-            "call_count": call_count,
-            "meta_object_count": meta_count,
-            "last_commit": last_commit,
-            "indexed_at": row["indexed_at"] if row else None,
-            "workspace_root": row["workspace_root"] if row else None,
-        }
+
+        def _read_stats(conn: sqlite3.Connection) -> dict[str, Any]:
+            symbol_count = conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
+            file_count = conn.execute("SELECT COUNT(DISTINCT file_path) FROM symbols").fetchone()[0]
+            call_count = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
+            meta_count = conn.execute("SELECT COUNT(*) FROM meta_objects").fetchone()[0]
+            last_commit_row = conn.execute(
+                "SELECT commit_hash FROM git_state WHERE id = 1"
+            ).fetchone()
+            row = conn.execute(
+                "SELECT indexed_at, workspace_root FROM git_state WHERE id = 1"
+            ).fetchone()
+            return {
+                "symbol_count": symbol_count,
+                "file_count": file_count,
+                "call_count": call_count,
+                "meta_object_count": meta_count,
+                "last_commit": last_commit_row["commit_hash"] if last_commit_row else None,
+                "indexed_at": row["indexed_at"] if row else None,
+                "workspace_root": row["workspace_root"] if row else None,
+            }
+
+        try:
+            stats = _read_stats(self._conn())
+        except sqlite3.DatabaseError as exc:
+            if not self._handle_read_database_error(exc):
+                raise
+            stats = {
+                "symbol_count": 0,
+                "file_count": 0,
+                "call_count": 0,
+                "meta_object_count": 0,
+                "last_commit": None,
+                "indexed_at": None,
+                "workspace_root": None,
+            }
         stats.update(self._index_size_stats())
         return stats
