@@ -3323,7 +3323,7 @@ class TestBsl030HeaderSemicolon:
     def test_multiline_comparison_operator_is_single_statement(self, tmp_path: Path) -> None:
         content = (
             "Функция Тест()\n"
-            "    ЕстьТип = Метаданные.ОпределяемыеТипы.Найти(\"ПрисоединенныйФайл\")\n"
+            '    ЕстьТип = Метаданные.ОпределяемыеТипы.Найти("ПрисоединенныйФайл")\n'
             "        <> Неопределено;\n"
             "    Возврат ЕстьТип;\n"
             "КонецФункции\n"

@@ -184,9 +184,7 @@ def _diagnostics_bsl030_semicolon_presence(context: BsllsDocumentContext) -> lis
         anchor = _bsl030_anchor_node(node)
         start_line = int(anchor.start_point[0]) + 1
         end_line = int(anchor.end_point[0]) + 1
-        if not (1 <= start_line <= len(context.lines)) or not (
-            1 <= end_line <= len(context.lines)
-        ):
+        if not (1 <= start_line <= len(context.lines)) or not (1 <= end_line <= len(context.lines)):
             continue
         character = utf8_byte_offset_to_lsp_character(
             context.lines[start_line - 1], int(anchor.start_point[1])
