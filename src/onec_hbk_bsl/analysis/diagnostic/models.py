@@ -36,9 +36,13 @@ class Diagnostic:
             "message": self.message,
         }
         if include_rule_name:
-            from onec_hbk_bsl.analysis.diagnostics import display_name_for_rule_code
+            from onec_hbk_bsl.analysis.diagnostics import (
+                bslls_message_for_rule_code,
+                display_name_for_rule_code,
+            )
 
             d["rule_name"] = display_name_for_rule_code(self.code)
+            d["rule_message"] = bslls_message_for_rule_code(self.code)
         return d
 
     def __str__(self) -> str:

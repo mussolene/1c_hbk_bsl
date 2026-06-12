@@ -4,6 +4,9 @@ from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
     RULE_DESCRIPTIONS_RU,
     RULE_METADATA,
+    Diagnostic,
+    Severity,
+    bslls_message_for_rule_code,
 )
 from onec_hbk_bsl.lsp.diagnostics_ru import (
     localize_rule_description,
@@ -49,6 +52,24 @@ def test_public_rule_descriptions_are_localized_for_ui() -> None:
     }
     for code, title in expected.items():
         assert localize_rule_description(code) == title
+
+
+def test_structured_diagnostics_include_bslls_rule_message() -> None:
+    diag = Diagnostic(
+        file="m.bsl",
+        line=1,
+        character=0,
+        end_line=1,
+        end_character=1,
+        severity=Severity.ERROR,
+        code="BSL159",
+        message="local occurrence detail",
+    )
+
+    assert bslls_message_for_rule_code("BSL159") == "Общий модуль недопустимого типа"
+    assert diag.to_dict(include_rule_name=True)["rule_message"] == (
+        "Общий модуль недопустимого типа"
+    )
 
 
 def test_metadata_sonar_type_and_severity_follow_bslls() -> None:

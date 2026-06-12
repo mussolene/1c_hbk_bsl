@@ -514,10 +514,7 @@ def run_bsl159_common_module_invalid_type(path: str, lines: list[str]) -> list[A
             end_character=c1,
             severity=Severity.ERROR,
             code="BSL159",
-            message=(
-                "У общего модуля не задан контекст выполнения в метаданных "
-                "(BSLLS CommonModuleInvalidType)."
-            ),
+            message="Общий модуль недопустимого типа",
         )
     ]
 

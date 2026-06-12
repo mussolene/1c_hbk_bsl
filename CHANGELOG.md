@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.54] - 2026-06-12
+
+### Changed
+
+- Structured diagnostic output now includes canonical BSLLS `rule_message`
+  alongside occurrence-specific `message`, so agents and report consumers can
+  distinguish the rule wording from local details.
+- `CommonModuleInvalidType` (`BSL159`) now reports the BSLLS message
+  `Общий модуль недопустимого типа` instead of the misleading local wording
+  about a missing execution context.
+
 ## [0.7.53] - 2026-06-12
 
 ### Added

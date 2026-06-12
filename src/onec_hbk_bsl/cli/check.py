@@ -48,6 +48,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
     Diagnostic,
     DiagnosticEngine,
     Severity,
+    bslls_message_for_rule_code,
 )
 from onec_hbk_bsl.cli.config import _EMPTY, BslConfig
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
@@ -547,6 +548,7 @@ def _print_sonarqube(diagnostics: list[Diagnostic], project_root: str | None = N
             "ruleId": d.code,
             "severity": sonar_sev,
             "type": sonar_type,
+            "ruleMessage": bslls_message_for_rule_code(d.code),
             "primaryLocation": {
                 "message": d.message,
                 "filePath": file_path,
@@ -581,6 +583,7 @@ def _print_sarif(diagnostics: list[Diagnostic], project_root: str | None = None)
                     "id": d.code,
                     "name": meta.get("name", d.code),
                     "shortDescription": {"text": localize_rule_description(d.code)},
+                    "fullDescription": {"text": bslls_message_for_rule_code(d.code)},
                     "defaultConfiguration": {"level": _SARIF_LEVEL.get(d.severity, "warning")},
                     "properties": {"tags": meta.get("tags", [])},
                 }
@@ -601,6 +604,7 @@ def _print_sarif(diagnostics: list[Diagnostic], project_root: str | None = None)
                 "ruleId": d.code,
                 "level": _SARIF_LEVEL.get(d.severity, "warning"),
                 "message": {"text": d.message},
+                "properties": {"ruleMessage": bslls_message_for_rule_code(d.code)},
                 "locations": [
                     {
                         "physicalLocation": {
