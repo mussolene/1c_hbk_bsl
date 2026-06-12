@@ -3,9 +3,9 @@ requires = ["setuptools>=77", "wheel", "setuptools-scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "onec-hbk-bsl"
+name = "onec-hbk-bsl-core"
 dynamic = ["version"]
-description = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
+description = "1C Enterprise BSL core formatter, diagnostics, LSP server, and CLI"
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,7 +13,6 @@ dependencies = [
     "tree-sitter>=0.24,<0.26",
     "tree-sitter-bsl>=0.1.6,<0.2",
     "watchfiles>=0.24",
-    "mcp>=1.27,<2",
     "pygls>=1.3",
     "rich>=13.0",
     "pyspellchecker>=0.8.1",
@@ -22,7 +21,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=1.27,<2",
+]
+all = [
+    "mcp>=1.27,<2",
+]
 dev = [
+    "mcp>=1.27,<2",
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.9",
@@ -82,6 +88,7 @@ quote-style = "double"
 
 [dependency-groups]
 dev = [
+    "mcp>=1.27,<2",
     "pytest>=9.0",
     "pytest-cov>=7.0",
     "ruff>=0.9",

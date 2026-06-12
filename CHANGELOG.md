@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Разделены PyPI-дистрибутивы: `onec-hbk-bsl-core` содержит slim-реализацию
+  без MCP-зависимостей по умолчанию, а `onec-hbk-bsl` стал полным
+  backwards-compatible метапакетом поверх `onec-hbk-bsl-core[mcp]`.
+- `onec-hbk-bsl mcp` без MCP-зависимостей теперь завершается понятной
+  подсказкой по установке вместо низкоуровневого `ModuleNotFoundError`.
+
 ## [0.7.55] - 2026-06-12
 
 ### Changed

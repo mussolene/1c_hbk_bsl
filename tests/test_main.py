@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from onec_hbk_bsl.__main__ import _normalize_argv, _parse_codes, main
+from onec_hbk_bsl.__main__ import _normalize_argv, _parse_codes, _run_mcp, main
 
 # ---------------------------------------------------------------------------
 # _parse_codes
@@ -57,6 +57,27 @@ def test_main_calls_multiprocessing_freeze_support_before_argparse() -> None:
         main()
 
     freeze_support.assert_called_once_with()
+
+
+def test_run_mcp_without_optional_dependency_exits_cleanly(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if name == "onec_hbk_bsl.mcp_bridge.server":
+            raise ModuleNotFoundError("No module named 'mcp'", name="mcp")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=fake_import):
+        with pytest.raises(SystemExit) as exc_info:
+            _run_mcp(8051, stdio=True, workspace=str(tmp_path))
+
+    assert exc_info.value.code == 2
+    assert "MCP support is not installed" in capsys.readouterr().err
 
 
 class TestMainCheckNewFlags:

@@ -51,6 +51,27 @@ onec-hbk-bsl format . --check
     sarif_file: bsl-results.sarif
 ```
 
+### MCP
+
+Обычная установка `onec-hbk-bsl` остается полной и включает MCP-зависимости для
+обратной совместимости. Для продуктовых пайплайнов, где нужны только formatter,
+diagnostics или Python API, используйте slim-пакет `onec-hbk-bsl-core`.
+
+```bash
+pip install onec-hbk-bsl
+# slim-вариант без MCP:
+pip install onec-hbk-bsl-core
+
+onec-hbk-bsl mcp --stdio --workspace /path/to/project
+```
+
+Пакеты публикуются как два PyPI-дистрибутива:
+
+| Пакет | Назначение |
+|---|---|
+| `onec-hbk-bsl-core` | Реализация: formatter, diagnostics, Python API, CLI и LSP |
+| `onec-hbk-bsl` | Полный backwards-compatible метапакет поверх `onec-hbk-bsl-core[mcp]` |
+
 ## Что Входит
 
 | Поверхность | Назначение |
@@ -58,7 +79,7 @@ onec-hbk-bsl format . --check
 | VS Code / Cursor | Диагностики, навигация, hover, completion, rename, formatting, inlay hints |
 | CLI | `check`, `format`, SARIF/JSON/text output, baseline для постепенного внедрения |
 | LSP | Сервер для редакторов и локальных интеграций |
-| MCP | Поиск символов, граф вызовов, диагностики, форматирование и метаданные для AI-агентов |
+| MCP | Входит в полный метапакет `onec-hbk-bsl`; для прямой установки core доступен extra `onec-hbk-bsl-core[mcp]` |
 | Python API | `check_files(...)` и диагностический движок для встраивания |
 
 `onec-hbk-bsl` не запускает Java-анализатор в рантайме. Совместимость с

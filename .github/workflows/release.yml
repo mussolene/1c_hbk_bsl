@@ -191,6 +191,7 @@ jobs:
         run: |
           pip install build twine
           python -m build
+          python -m build packages/onec-hbk-bsl --outdir dist
           python -m twine check dist/*
 
       - name: Upload wheel artifact

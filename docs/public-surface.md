@@ -87,6 +87,26 @@ These are stable integration points:
 - `mcp --workspace PATH`
 - `index PATH`
 
+Python packaging is split into two PyPI distributions:
+
+- `onec-hbk-bsl-core`: implementation package containing formatter,
+  diagnostics, Python API, CLI, and LSP, without MCP dependencies by default.
+- `onec-hbk-bsl`: full backwards-compatible meta package depending on
+  `onec-hbk-bsl-core[mcp]`.
+
+Use `onec-hbk-bsl-core` directly for formatter, diagnostics, CLI, LSP, and
+Python API usage without pulling the Python MCP SDK. The default
+`onec-hbk-bsl` package keeps the full historical surface including MCP.
+
+```bash
+pip install onec-hbk-bsl
+pip install onec-hbk-bsl-core
+pip install "onec-hbk-bsl-core[mcp]"
+```
+
+Running `onec-hbk-bsl mcp` from a slim core installation without MCP should exit with a clear
+installation hint rather than an import traceback.
+
 ### Removed Non-Product Switches
 
 These switches are intentionally not part of the product CLI. They either

@@ -451,10 +451,9 @@ wheels = [
 ]
 
 [[package]]
-name = "onec-hbk-bsl"
+name = "onec-hbk-bsl-core"
 source = { editable = "." }
 dependencies = [
-    { name = "mcp" },
     { name = "pygls" },
     { name = "pymorphy3" },
     { name = "pymorphy3-dicts-ru" },
@@ -466,18 +465,26 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "mcp" },
+]
 build = [
     { name = "pyinstaller" },
 ]
 dev = [
+    { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "setuptools-scm" },
 ]
+mcp = [
+    { name = "mcp" },
+]
 
 [package.dev-dependencies]
 dev = [
+    { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -486,7 +493,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcp", specifier = ">=1.27,<2" },
+    { name = "mcp", marker = "extra == 'all'", specifier = ">=1.27,<2" },
+    { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.27,<2" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.27,<2" },
     { name = "pygls", specifier = ">=1.3" },
     { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.0" },
     { name = "pymorphy3", specifier = ">=2.0" },
@@ -501,10 +510,11 @@ requires-dist = [
     { name = "tree-sitter-bsl", git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=57320c14389f281e632d2f8fb83ae41a33147d2e" },
     { name = "watchfiles", specifier = ">=0.24" },
 ]
-provides-extras = ["dev", "build"]
+provides-extras = ["mcp", "all", "dev", "build"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mcp", specifier = ">=1.27,<2" },
     { name = "pytest", specifier = ">=9.0" },
     { name = "pytest-cov", specifier = ">=7.0" },
     { name = "ruff", specifier = ">=0.9" },

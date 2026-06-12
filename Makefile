@@ -147,7 +147,7 @@ parity-largest-3:
 
 # Пакет для дистрибуции с версией из установленного пакета (setuptools-scm / git)
 dist: build
-	@VERSION=$$($(PYTHON3) -c "import importlib.metadata; print(importlib.metadata.version('onec-hbk-bsl'))"); \
+	@VERSION=$$($(PYTHON3) -c "import importlib.metadata; print(importlib.metadata.version('onec-hbk-bsl-core'))"); \
 	ARCHIVE=$(DIST_DIR)/onec-hbk-bsl-$$VERSION-$(PLATFORM).tar.gz; \
 	tar -czf $$ARCHIVE -C $(DIST_DIR) $(BIN_NAME)$(BIN_SUFFIX); \
 	echo "✓ Архив: $$ARCHIVE"; \

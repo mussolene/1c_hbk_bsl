@@ -27,7 +27,7 @@ datas: list = [(str(ROOT / "data"), "data")]
 datas += copy_metadata("mcp")
 # Keep project metadata available in the bundle; runtime version lookup itself
 # falls back to generated _version.py when frozen.
-datas += copy_metadata("onec-hbk-bsl")
+datas += copy_metadata("onec-hbk-bsl-core")
 # Typo parity uses importlib.resources against this package at runtime.
 datas += collect_data_files("onec_hbk_bsl.bslls_typo_data")
 # pyspellchecker loads bundled resources/*.json.gz at runtime via pkgutil.get_data.

@@ -131,7 +131,18 @@ def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
     os.environ.setdefault("INDEX_DB_PATH", db_path)
     os.environ.setdefault("WORKSPACE_ROOT", workspace)
 
-    from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
+    try:
+        from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
+    except ModuleNotFoundError as exc:
+        if exc.name == "mcp":
+            print(
+                "MCP support is not installed. Install it with: "
+                "pip install onec-hbk-bsl or "
+                'pip install "onec-hbk-bsl-core[mcp]"',
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from None
+        raise
 
     _autoindex_if_empty(workspace, db_path)
 
