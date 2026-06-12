@@ -79,7 +79,7 @@ jobs:
         run: mv dist/${{ env.BINARY_NAME }}${{ matrix.ext }} dist/${{ matrix.asset }}
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: binary-${{ matrix.target }}
           path: dist/${{ matrix.asset }}
@@ -138,7 +138,7 @@ jobs:
         run: env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm run compile
 
       - name: Download binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: binary-${{ matrix.target }}
           path: vscode-extension/bin/
@@ -168,7 +168,7 @@ jobs:
             --out onec-hbk-bsl-${{ steps.version.outputs.version }}-${{ matrix.target }}.vsix
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: vsix-${{ matrix.target }}
           path: vscode-extension/onec-hbk-bsl-${{ steps.version.outputs.version }}-${{ matrix.target }}.vsix
@@ -194,7 +194,7 @@ jobs:
           python -m twine check dist/*
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: python-dist
           path: dist/
@@ -212,7 +212,7 @@ jobs:
 
     steps:
       - name: Download Python distribution
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: python-dist
           path: dist/
@@ -239,7 +239,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts/
 
