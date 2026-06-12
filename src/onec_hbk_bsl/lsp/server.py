@@ -20,7 +20,7 @@ Capabilities implemented:
   - textDocument/codeAction
 
 Run with:
-    onec-hbk-bsl --lsp
+    onec-hbk-bsl lsp
 """
 
 from __future__ import annotations

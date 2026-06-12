@@ -4,7 +4,7 @@
 Provides:
   - MCP server (bsl_find_symbol, bsl_callers, bsl_callees, bsl_diagnostics, …)
   - LSP server for VSCode/Cursor (go-to-definition, hover, completions, diagnostics)
-  - CLI linter (ruff-style output, --check mode)
+  - CLI linter (``check`` command)
   - Incremental symbol indexing backed by SQLite
 
 Runtime uses a generated version module instead of importing setuptools-scm on

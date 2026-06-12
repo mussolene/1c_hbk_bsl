@@ -8,7 +8,7 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 
 1. **MCP server** (Python MCP SDK) — инструменты для ассистентов (поиск символов, диагностики, метаданные, и др.)
 2. **LSP server** (pygls) — VS Code / Cursor: определение, ссылки, переименование, дополнение, подсказки сигнатур, форматирование, диагностики
-3. **CLI** — `onec-hbk-bsl --check`, `--index`, и т.д.
+3. **CLI** — `onec-hbk-bsl check`, `index`, и т.д.
 
 ## Component Diagram
 
@@ -17,7 +17,7 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │                      onec-hbk-bsl process                    │
 │                                                              │
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────────┐ │
-│  │  --mcp   │   │  --lsp   │   │  --check / --index       │ │
+│  │   mcp    │   │   lsp    │   │   check / index          │ │
 │  │   MCP    │   │  pygls   │   │  CLI (rich output)       │ │
 │  │ HTTP/SSE │   │  stdio   │   │                          │ │
 │  └────┬─────┘   └────┬─────┘   └────────────┬─────────────┘ │

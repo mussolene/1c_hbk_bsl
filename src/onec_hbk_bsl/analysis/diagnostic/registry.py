@@ -69,8 +69,6 @@ def infer_rule_invoke(code: str, meta: dict[str, Any] | None) -> RuleInvokeInfo:
 
     tags = frozenset((meta or {}).get("tags") or [])
     name = str((meta or {}).get("name", ""))
-    sonar = str((meta or {}).get("sonar_type", ""))
-
     if "syntax" in tags or name == "ParseError":
         return RuleInvokeInfo(RulePhase.CST, "tags")
     if (
@@ -86,7 +84,7 @@ def infer_rule_invoke(code: str, meta: dict[str, Any] | None) -> RuleInvokeInfo:
         return RuleInvokeInfo(RulePhase.PROC, "tags")
     if "api" in tags or "region" in name.lower() or "Region" in name:
         return RuleInvokeInfo(RulePhase.REGION, "tags")
-    if "security" in tags or "vulnerability" in sonar.lower():
+    if "security" in tags:
         return RuleInvokeInfo(RulePhase.LINE, "tags")
     if "convention" in tags or name in ("LineLength", "TrailingSpaces"):
         return RuleInvokeInfo(RulePhase.LINE, "tags")

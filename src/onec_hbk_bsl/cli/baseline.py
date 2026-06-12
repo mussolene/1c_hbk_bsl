@@ -10,19 +10,19 @@ Workflow
 
    .. code-block:: bash
 
-       onec-hbk-bsl --check . --update-baseline bsl-baseline.json
+       onec-hbk-bsl check . --update-baseline bsl-baseline.json
 
 2. On subsequent runs, only issues *not* in the baseline are reported:
 
    .. code-block:: bash
 
-       onec-hbk-bsl --check . --baseline bsl-baseline.json
+       onec-hbk-bsl check . --baseline bsl-baseline.json
 
 3. After fixing issues, update the baseline to shrink it:
 
    .. code-block:: bash
 
-       onec-hbk-bsl --check . --update-baseline bsl-baseline.json
+       onec-hbk-bsl check . --update-baseline bsl-baseline.json
 
 Baseline key
 ------------

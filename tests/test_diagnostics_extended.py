@@ -2638,7 +2638,7 @@ class TestRuleMetadata:
     def test_metadata_has_required_fields(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
 
-        required = {"name", "description", "severity", "sonar_type", "sonar_severity"}
+        required = {"name", "description", "severity"}
         for code, meta in RULE_METADATA.items():
             missing = required - set(meta.keys())
             assert not missing, f"{code} is missing fields: {missing}"

@@ -1,134 +1,95 @@
-# 1C HBK BSL — расширение для VS Code / Cursor
+# 1C HBK BSL для VS Code / Cursor
 
-Расширение подключает [LSP-сервер `onec-hbk-bsl`](https://github.com/mussolene/1c_hbk_bsl) к редактору: подсветка синтаксиса BSL, диагностики, переход к определению, hover, дополнения, форматирование, переименование и семантические токены для кода **1С:Предприятие** (модули `.bsl`, OneScript `.os`).
+Расширение подключает `onec-hbk-bsl` к редактору для проектов 1С:
+диагностики, навигация по BSL-коду, hover, completion, rename, formatting,
+semantic tokens и inlay hints.
 
-**Лицензия:** см. [LICENSE](./LICENSE) (MIT).
+## Быстрый Старт
 
----
+1. Установите расширение `mussolene.1c-hbk-bsl`.
+2. Откройте проект с `.bsl` / `.os`.
+3. Дождитесь запуска сервера: диагностики появятся в Problems.
+
+Рекомендуемые настройки:
+
+```json
+{
+  "[bsl]": {
+    "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": false
+  }
+}
+```
 
 ## Возможности
 
-| Возможность | Описание |
-|-------------|----------|
-| Диагностики | BSLLS-совместимый публичный набор правил BSL001…BSL280; `select` / `ignore` только фильтруют этот набор |
-| Навигация | Переход к определению, поиск символов, вызовы |
-| Форматирование | BSLLS-ориентированный встроенный форматтер; format on save для `[bsl]` по умолчанию выключен |
-| Отступ по Enter | При **`editor.formatOnType`** (включено по умолчанию для `[bsl]`) сервер делает **только правку ведущих пробелов/табов** новой строки по контексту (`Если`/`Пока`/`Для` и т.д.) — остальной текст не трогает |
-| Inlay hints | Имена параметров на вызовах |
-| Семантика | Дополнительная подсветка поверх TextMate |
+| Возможность | Что делает |
+|---|---|
+| Diagnostics | Показывает ошибки и предупреждения в Problems |
+| Navigation | Definition, references, workspace symbols, call hierarchy |
+| Editing | Formatting, on-type indentation, rename, quick fixes |
+| Assistance | Hover, completion, signature help, inlay hints |
+| Highlighting | TextMate grammar + semantic tokens |
 
-Для bundled/downloaded варианта Python в рантайме **не нужен** — в работе участвует нативный бинарник `onec-hbk-bsl` (PyInstaller и т.п.). Если расширение подхватило `onec-hbk-bsl` из `PATH`, его окружение обслуживает пользователь: это может быть `uv tool`, `pipx`, venv или другой установленный способ запуска.
-
-Расширение не запускает Java/BSLLS и не переключает сервер в legacy/compat режимы. Диагностики и форматирование идут через один стандартный режим `onec-hbk-bsl`, который выравнивается по BSLLS oracle/fixture-прогонам; настройки расширения могут только отключать диагностики целиком или сужать список правил.
-
----
-
-## Откуда берётся сервер (`onec-hbk-bsl`)
-
-Порядок поиска бинарника (как в коде расширения):
-
-1. **`onecHbkBsl.serverPath`** — явный путь к исполняемому файлу, если нужно закрепить конкретную сборку.
-2. **Установленный `onec-hbk-bsl` из системного `PATH`** — `uv tool`, `pipx`, Homebrew/ручная установка, если команда реально доступна и исполняема.
-3. **`bin/` внутри расширения** — если VSIX собран с вложенным бинарником под вашу платформу (релизы GitHub Actions делают именно так).
-4. **Кэш после скачивания** — глобальное хранилище расширения.
-5. **Предложение скачать** с GitHub Releases — если ничего не найдено (тег релиза = `v` + `version` из `package.json` расширения, см. `src/extension.ts`).
-
-Имеет смысл держать **`serverPath`** пустым или значением по умолчанию `onec-hbk-bsl`, если вы хотите использовать уже установленную команду из `PATH`, готовый VSIX с бинарником в `bin/` или соглашаетесь на скачивание. Чтобы жестко закрепить конкретный бинарник, укажите полный путь в **`serverPath`**.
-
-### Скорость и удобство
-
-Для разработки и частых перезапусков LSP удобнее держать `onec-hbk-bsl` установленным в `PATH` (`uv tool`, `pipx`, venv/bin в PATH, Homebrew/ручная установка): расширение подхватит его автоматически, без пересборки VSIX и без скачивания бинарника. Такой вариант обычно быстрее на холодном старте, чем PyInstaller onefile, потому что не тратит время на распаковку frozen-приложения.
-
-Для обычной установки расширения без настройки удобнее bundled/downloaded бинарник: Python и окружение пользователя не нужны, версия сервера совпадает с версией VSIX, запуск воспроизводимее. Текущий известный риск onefile-сборки: после корректного LSP shutdown PyInstaller может печатать в stderr `ValueError: I/O operation on closed file`; протокол при этом завершается с кодом `0`, но шум в stderr остаётся отдельной задачей на исправление.
-
-### Команды расширения и CLI в обычном терминале
-
-Расширение **не добавляет** `onec-hbk-bsl` в системный `PATH`. Если команда уже есть в `PATH`, расширение использует найденный полный путь; команды палитры (**Reindex Workspace** и т.д.) вызывают LSP или подставляют этот полный путь / путь к бинарнику из `bin/` расширения / кэша.
-
-Если вы вручную запускаете индексацию в zsh/bash, варианты:
-
-- полный путь к бинарнику из установки расширения, например  
-  `~/.vscode/extensions/mussolene.1c-hbk-bsl-<версия>/bin/onec-hbk-bsl --index …`  
-  (в Cursor путь к папке расширений может отличаться);
-- или установка в окружение: `uv tool install onec-hbk-bsl` / `pip install onec-hbk-bsl` и затем `onec-hbk-bsl` в `PATH`.
-
----
+Сервер работает как отдельный исполняемый файл `onec-hbk-bsl`. Расширение может
+использовать бинарник из `PATH`, вложенный бинарник из VSIX или скачанный
+релизный бинарник.
 
 ## Настройки
 
-Основные ключи (полный список — в `package.json` → `contributes.configuration`):
-
 | Ключ | Назначение |
-|------|------------|
-| `onecHbkBsl.serverPath` | Путь к `onec-hbk-bsl` или `onec-hbk-bsl.exe`; пусто/`onec-hbk-bsl` = искать в `PATH`, затем bundled/cache/download |
-| `onecHbkBsl.useDocker` / `dockerContainer` | Запуск LSP через уже поднятый контейнер вместо локального бинарника |
-| `onecHbkBsl.indexDbPath` | Путь к SQLite-индексу (пусто = по умолчанию) |
-| `onecHbkBsl.logLevel` | Уровень логов LSP |
-| `onecHbkBsl.diagnostics.enabled` | Включить диагностики при вводе |
-| `onecHbkBsl.diagnostics.select` / `ignore` | Список кодов правил |
-| `onecHbkBsl.format.indentSize` | Отступ при форматировании |
+|---|---|
+| `onecHbkBsl.serverPath` | Явный путь к `onec-hbk-bsl`; пусто/`onec-hbk-bsl` = искать автоматически |
+| `onecHbkBsl.indexDbPath` | Явный путь к SQLite-индексу |
+| `onecHbkBsl.logLevel` | Уровень логов сервера |
+| `onecHbkBsl.diagnostics.enabled` | Включить диагностики |
+| `onecHbkBsl.diagnostics.select` | Запускать только указанные правила |
+| `onecHbkBsl.diagnostics.ignore` | Игнорировать указанные правила |
+| `onecHbkBsl.format.indentSize` | Логический размер отступа |
+| `onecHbkBsl.inlayHints.enabled` | Включить inlay hints |
+| `onecHbkBsl.semanticTokens.enabled` | Включить semantic tokens |
+| `onecHbkBsl.useDocker` | Запускать LSP через уже поднятый Docker-контейнер |
+| `onecHbkBsl.dockerContainer` | Имя контейнера для Docker LSP |
 
-Для `[bsl]` расширение по умолчанию оставляет `editor.formatOnSave: false`, чтобы сохранение конфигураций и vendor-модулей не вносило незапланированные изменения форматирования. Ручное форматирование и выбор `mussolene.1c-hbk-bsl` как formatter доступны, а `editor.formatOnType` остается включенным для автоотступа на Enter.
+## Конфигурация Проекта
 
-### Docker LSP
+Основной проектный конфиг сервера: `onec-hbk-bsl.toml`.
 
-Если включить `onecHbkBsl.useDocker`, расширение запускает сервер командой `docker exec -i ... <container> onec-hbk-bsl --lsp`. Контейнер должен быть уже запущен и видеть workspace тем же путём, который открыт в редакторе, либо через корректно смонтированные тома. В контейнер передаются те же настройки, что и локальному бинарнику: `LOG_LEVEL`, при необходимости `INDEX_DB_PATH`, `BSL_SELECT`, `BSL_IGNORE`.
+```toml
+ignore = ["BSL012"]
+exclude = ["vendor", "*.gen.bsl"]
 
-Docker-режим нужен для воспроизводимых рабочих мест и CI-like окружений. Он не меняет режим диагностик и форматирования.
-
-Стандартный **`editor.formatOnType`** для `bsl` не запускает полное форматирование файла при каждом символе: у сервера единственный триггер — перевод строки (`\n`), и ответ — одна правка **только отступа** текущей строки. Если отключите `editor.formatOnType`, отступ после Enter будет считаться только эвристикой редактора (`language-configuration.json`), без уточнения от LSP.
-
-### `language-configuration.json`: автоотступ редактора без LSP
-
-В VS Code это **декларативные regex** ([документация](https://code.visualstudio.com/api/language-extensions/language-configuration-guide#indentation-rules)): при вводе/переносе строк редактор подстраивает отступ, если строка совпала с `increaseIndentPattern` (следующая строка глубже) или `decreaseIndentPattern` (текущая — меньше). Для JS/TS в примерах Microsoft чаще смотрят на незакрытые `{` `(` `[`; у BSL блоки — ключевые слова (`Если`…`Тогда`, `КонецЕсли`, `#Область` и т.д.), поэтому паттерны другие.
-
-У многих **грамматик BSL для VS Code** в типичной поставке в `language-configuration.json` часто **только folding**, без `indentationRules` — автоотступ при Enter там в основном даёт редактор (копирование отступа, `editor.autoIndent`) и/или языковой сервер, а не отдельный богатый JSON.
-
-В нашем расширении regex дополняют типичный стиль 1С: многострочное условие с **`Тогда`** на отдельной строке и конец **`Цикл`** на отдельной строке, плюс **`#Область`** / **`#КонецОбласти`**. Это **не заменяет** семантику `_indent_at` в LSP при включённом `formatOnType`, но улучшает поведение, если LSP недоступен или отключён format on type.
-
----
-
-## Разработчикам и публикации VSIX
-
-### Упаковывать ли бинарник в VSIX?
-
-| Подход | Плюсы | Минусы |
-|--------|--------|--------|
-| **Бинарник внутри VSIX** (по платформам: `darwin-arm64`, `linux-x64`, …) | Работает сразу после установки, без сети и без настройки; предсказуемая версия сервера. | Нужно собирать отдельный VSIX на целевую ОС; размер пакета больше. |
-| **Только скачивание с Releases** | Меньший универсальный пакет. | Первый запуск требует сети; возможны лимиты GitHub; версия должна совпадать с расширением. |
-
-Для публикации в Marketplace основной путь — **платформенные VSIX с вложенным бинарником**. Скачивание с релиза остается резервным сценарием для пакетов без бинарника; приоритет у явного пути и вложенного `bin/`.
-
-### Сборка расширения
-
-Из каталога `vscode-extension/`:
-
-```bash
-npm ci
-npm run compile    # webpack → out/extension.js
+[per-file-ignores]
+"legacy/*.bsl" = ["BSL002", "BSL011"]
 ```
 
-Упаковка VSIX (локально) **с тем же бинарником, что только что собрали** — из корня репозитория (PyInstaller → `vscode-extension/bin/` → webpack → vsce):
+Настройки расширения управляют поведением редактора и запуском сервера.
+Настройки проекта управляют анализом кода.
+
+## Docker LSP
+
+Если включить `onecHbkBsl.useDocker`, расширение запускает:
 
 ```bash
-# один раз: зависимости расширения
-cd vscode-extension && npm ci && cd ..
-
-# свежий бинарник + VSIX (не вызывайте vsce без sync — попадёт старый bin/)
-make vsix
+docker exec -i -e LOG_LEVEL=... <container> onec-hbk-bsl lsp
 ```
 
-Или вручную: `make extension-bin` (или `make build` и `make sync-extension-bin`), затем `cd vscode-extension && npm run compile && npx @vscode/vsce package --no-dependencies -o onec-hbk-bsl-local.vsix`.
+Контейнер должен быть уже запущен и видеть workspace по тому же пути, который
+открыт в редакторе. В контейнер также передаются `INDEX_DB_PATH`, `BSL_SELECT`
+и `BSL_IGNORE`, если они заданы.
 
-Проверка типов без бандла:
+## Команды
 
-```bash
-npx tsc --noEmit -p ./
-```
+Command Palette:
 
----
+- `1C HBK BSL: Reindex Workspace`
+- `1C HBK BSL: Reindex Current File`
+- `1C HBK BSL: Show Index Status`
+- `1C HBK BSL: Show Server Log`
 
 ## Репозиторий
 
-Исходный код сервера, индексатор и CI:  
-<https://github.com/mussolene/1c_hbk_bsl>
+Исходный код и документация: <https://github.com/mussolene/1c_hbk_bsl>

@@ -122,7 +122,7 @@ class TestBslListRulesTool:
     def test_all_rules_have_required_fields(self) -> None:
         from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
 
-        required = {"name", "description", "severity", "sonar_type", "sonar_severity"}
+        required = {"name", "description", "severity"}
         for code, meta in RULE_METADATA.items():
             missing = required - meta.keys()
             assert not missing, f"{code} missing fields: {missing}"

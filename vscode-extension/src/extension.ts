@@ -512,14 +512,14 @@ function buildServerOptions(
 
   if (useDocker) {
     const envArgs = dockerExecEnvArgs(env);
-    const runArgs = ["exec", "-i", ...envArgs, containerName, "onec-hbk-bsl", "--lsp"];
+    const runArgs = ["exec", "-i", ...envArgs, containerName, "onec-hbk-bsl", "lsp"];
     const debugArgs = [
       "exec",
       "-i",
       ...envArgs,
       containerName,
       "onec-hbk-bsl",
-      "--lsp",
+      "lsp",
       "--log-level",
       "debug",
     ];
@@ -539,7 +539,7 @@ function buildServerOptions(
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const srv: Executable = {
     command: binaryPath,
-    args: ["--lsp"],
+    args: ["lsp"],
     transport: TransportKind.stdio,
     options: {
       env,
@@ -549,7 +549,7 @@ function buildServerOptions(
   };
   return {
     run: srv,
-    debug: { ...srv, args: ["--lsp", "--log-level", "debug"] },
+    debug: { ...srv, args: ["lsp", "--log-level", "debug"] },
   };
 }
 
@@ -617,7 +617,7 @@ async function reindexWorkspace(): Promise<void> {
       return;
     }
     const terminal = vscode.window.createTerminal(`${displayName(ctx)} Reindex`);
-    terminal.sendText(`${shellQuotePath(bin)} --index ${shellQuotePath(root)} --force`);
+    terminal.sendText(`${shellQuotePath(bin)} index ${shellQuotePath(root)} --force`);
     terminal.show();
     vscode.window.showInformationMessage(
       `${msgPrefix(ctx)} Started in terminal — full path to binary (not system PATH).`,

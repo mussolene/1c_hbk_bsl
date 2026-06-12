@@ -14,7 +14,7 @@ select              list[str]   — run only these rule codes
 ignore              list[str]   — always-skip rule codes
 exclude             list[str]   — glob patterns for excluded paths
 per-file-ignores    dict        — {"pattern": ["BSL001"]}
-format              str         — text | json | sonarqube | sarif
+format              str         — text | json | sarif
 jobs                int         — 0 = auto
 exit-zero           bool        — never return exit code 1
 baseline            str         — path to baseline JSON
@@ -112,7 +112,13 @@ class BslConfig:
 
     @property
     def format(self) -> str | None:
-        return self._data.get("format")
+        value = self._data.get("format")
+        if value is None:
+            return None
+        value = str(value)
+        if value not in {"text", "json", "sarif"}:
+            raise ValueError(f"Unsupported format in config: {value!r}. Use text, json, or sarif.")
+        return value
 
     @property
     def jobs(self) -> int | None:

@@ -1,55 +1,28 @@
 # 1C HBK BSL
 
-Языковой сервер, линтер и MCP-сервер для **1C Enterprise / BSL** (язык 1С:Предприятие).
+Инструменты для разработки на **1C Enterprise / BSL**: расширение VS Code /
+Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для AI-агентов.
 
 [![CI](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml)
 [![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/mussolene.1c-hbk-bsl)](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl)
 [![PyPI](https://img.shields.io/pypi/v/onec-hbk-bsl)](https://pypi.org/project/onec-hbk-bsl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
-
-## Возможности
-
-| Функция | Описание |
-|---|---|
-| **Подсветка синтаксиса** | TextMate-грамматика: процедуры, функции, директивы `&НаКлиенте`, аннотации, встроенные запросы |
-| **Диагностики в реальном времени** | Ошибки и предупреждения по мере ввода (дебаунс 0.6 с); реестр кодов BSL001–BSL280, часть правил выключена по умолчанию (см. `--list-rules`) |
-| **Переход к определению** | `F12` — перейти к объявлению функции / процедуры / переменной |
-| **Поиск использований** | `Shift+F12` — все места вызова символа по всему воркспейсу |
-| **Граф вызовов** | `Shift+Alt+H` — иерархия входящих и исходящих вызовов |
-| **Hover-документация** | Сигнатура + doc-комментарий при наведении на имя символа |
-| **Автодополнение** | 500+ глобальных функций платформы + символы воркспейса |
-| **Переименование** | `F2` — безопасное переименование символа во всём воркспейсе |
-| **Форматирование** | `Shift+Alt+F` / Format on Save |
-| **Семантические токены** | Расширенная подсветка поверх TextMate-грамматики |
-| **Inlay Hints** | Подсказки имён параметров в вызовах функций |
-| **Snippets** | 219 сниппетов: процедуры, функции, все типы метаданных 1С (RU + EN) |
-| **MCP-сервер** | Поиск символов, граф вызовов, диагностики для AI-агентов (Claude и др.) |
-| **CLI-линтер** | `onec-hbk-bsl --check` для использования в CI |
-| **Инкрементальная индексация** | SQLite-индекс, обновляется только при изменении файлов |
-
-**BSLLS-паритет:** диагностики и форматирование ориентированы на поведение BSL Language Server. В рантайме не запускается Java/BSLLS и нет альтернативных legacy/compat режимов: `select` / `ignore` только фильтруют стандартный BSLLS-совместимый набор.
-
-**Производительность:** ~600 файлов/сек · <100 мс запуска · ~80 МБ RAM
-
----
-
-## Быстрый старт
+## Быстрый Гид
 
 ### VS Code / Cursor
 
 1. Установите расширение `mussolene.1c-hbk-bsl`.
-2. Откройте репозиторий с `.bsl` / `.os` файлами.
-3. Дождитесь запуска LSP: в панели **Problems** появятся диагностики `onec-hbk-bsl · BSL…`, а `Format Document` будет использовать BSLLS-ориентированный форматтер.
+2. Откройте проект с файлами `.bsl` / `.os`.
+3. Диагностики появятся в Problems, навигация и форматирование заработают через LSP.
 
-Минимальные настройки для обычной работы:
+Рекомендуемые настройки проекта:
 
 ```json
 {
   "[bsl]": {
-    "editor.formatOnSave": true,
     "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
+    "editor.formatOnSave": true,
     "editor.tabSize": 4,
     "editor.insertSpaces": false
   }
@@ -60,313 +33,126 @@
 
 ```bash
 uv tool install onec-hbk-bsl
-onec-hbk-bsl --check /path/to/1c-project
-onec-hbk-bsl --check /path/to/1c-project --format sarif > bsl-results.sarif
+onec-hbk-bsl check .
+onec-hbk-bsl check . --format sarif > bsl-results.sarif
+onec-hbk-bsl format . --check
 ```
 
-Для быстрого локального advisory-прогона по измененным файлам используйте git diff или файл
-со списком путей. JSON выводится в stdout и содержит `file`, `line`, `code`, `rule_name`,
-`severity` и `message`; human-output уходит отдельно.
+Для GitHub Code Scanning загрузите SARIF:
+
+```yaml
+- name: 1C HBK BSL
+  run: |
+    pip install onec-hbk-bsl
+    onec-hbk-bsl check . --format sarif > bsl-results.sarif
+
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: bsl-results.sarif
+```
+
+## Что Входит
+
+| Поверхность | Назначение |
+|---|---|
+| VS Code / Cursor | Диагностики, навигация, hover, completion, rename, formatting, inlay hints |
+| CLI | `check`, `format`, SARIF/JSON/text output, baseline для постепенного внедрения |
+| LSP | Сервер для редакторов и локальных интеграций |
+| MCP | Поиск символов, граф вызовов, диагностики, форматирование и метаданные для AI-агентов |
+| Python API | `check_files(...)` и диагностический движок для встраивания |
+
+`onec-hbk-bsl` не запускает Java-анализатор в рантайме. Совместимость с
+существующими BSL-практиками поддерживается там, где она полезна: например,
+комментарии `// BSLLS-off/on` в коде учитываются как suppression comments.
+
+## Конфигурация
+
+Основной конфиг проекта: `onec-hbk-bsl.toml`.
+
+```toml
+# onec-hbk-bsl.toml
+ignore = ["BSL012"]
+exclude = ["vendor", "build", "*.gen.bsl"]
+format = "text"
+jobs = 0
+
+[per-file-ignores]
+"legacy/*.bsl" = ["BSL002", "BSL011"]
+```
+
+Также поддерживается секция `[tool."onec-hbk-bsl"]` в `pyproject.toml`.
+Явные CLI-флаги имеют приоритет над конфигом.
+
+Подавление в коде:
+
+```bsl
+Пароль = "dev_only";  // noqa: BSL012
+// BSLLS:MethodSize-off
+```
+
+## Основные Команды
 
 ```bash
-onec-hbk-bsl --check . --diff --since origin/main --format json --exit-zero
-onec-hbk-bsl --check --paths-from files.txt --format json --jobs 1
-git diff --name-only -z origin/main -- '*.bsl' '*.os' > files.txt
-onec-hbk-bsl --check --paths-from0 files.txt --format json
-onec-hbk-bsl --check . --diff --since origin/main --changed-lines-only --format json
+# Линтинг
+onec-hbk-bsl check .
+onec-hbk-bsl check . --select BSL001,BSL012
+onec-hbk-bsl check . --ignore BSL014
+
+# CI / отчеты
+onec-hbk-bsl check . --format json
+onec-hbk-bsl check . --format sarif > bsl-results.sarif
+onec-hbk-bsl check . --exit-zero
+
+# Gradual adoption
+onec-hbk-bsl check . --update-baseline bsl-baseline.json
+onec-hbk-bsl check . --baseline bsl-baseline.json
+
+# Форматирование
+onec-hbk-bsl format .
+onec-hbk-bsl format . --check
+
+# Серверы и индекс
+onec-hbk-bsl lsp
+onec-hbk-bsl mcp --stdio --workspace /path/to/project
+onec-hbk-bsl index /path/to/project
 ```
 
-Python API для такого же сценария:
+Полная классификация публичных, CI и внутренних команд: [docs/public-surface.md](docs/public-surface.md).
+
+## Python API
 
 ```python
 from onec_hbk_bsl import check_files
 
 diagnostics = check_files(["src/Модуль.bsl"], jobs=1)
+for diagnostic in diagnostics:
+    print(diagnostic.code, diagnostic.file, diagnostic.line)
 ```
 
-Для split-фрагментов можно точечно убрать шум правил, которым нужен полный модуль:
-
-```bash
-onec-hbk-bsl --check . --diff --split-fragment '*split*' --format json
-```
-
-`--split-fragment` подавляет только `BSL017` (`CommandModuleExportMethods`),
-`BSL040` (`UsingThisForm`) и `BSL156` (`CodeOutOfRegion`) для совпавших путей;
-остальные правила продолжают работать.
-
-По умолчанию CLI использует тот же BSLLS-совместимый набор правил. Для узких прогонов задавайте фильтры:
-
-```bash
-BSL_SELECT=BSL001,BSL011 onec-hbk-bsl --check .
-BSL_IGNORE=BSL012 onec-hbk-bsl --check .
-```
-
-Конфигурация проекта читается из `onec-hbk-bsl.toml` или секции `[tool."onec-hbk-bsl"]` в `pyproject.toml`; явные CLI/env параметры имеют приоритет.
-
-### Docker LSP
-
-```json
-{
-  "onecHbkBsl.useDocker": true,
-  "onecHbkBsl.dockerContainer": "onec-hbk-bsl-default"
-}
-```
-
-Контейнер должен быть заранее запущен и видеть workspace по тому же пути, что открыт в редакторе.
-
----
-
-## Установка в VSCode
-
-Установите расширение из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl):
-
-```
-ext install mussolene.1c-hbk-bsl
-```
-
-При первом открытии `.bsl` файла расширение найдёт установленный или вложенный серверный бинарник; если подходящего бинарника нет, предложит скачать его из GitHub Releases.
-
-Для ручной настройки добавьте в `.vscode/settings.json`:
-
-```json
-{
-  "[bsl]": {
-    "editor.formatOnSave": true,
-    "editor.defaultFormatter": "mussolene.1c-hbk-bsl",
-    "editor.tabSize": 4,
-    "editor.insertSpaces": false
-  },
-  "onecHbkBsl.indexDbPath": "/path/to/custom/onec-hbk-bsl_index.sqlite"
-}
-```
-
-По умолчанию путь к БД не задаётся: индекс лежит в `.git/onec-hbk-bsl_index.sqlite` (внутри репозитория git не попадает в коммиты) или в `~/.cache/onec-hbk-bsl/<хэш>/`, если папка не в git. Ранее использовалось имя `bsl_index.sqlite` — оно по-прежнему подхватывается, если файл уже есть.
-
----
-
-## CLI
-
-```bash
-pip install onec-hbk-bsl
-# или
-uv tool install onec-hbk-bsl
-
-# Линтинг проекта
-onec-hbk-bsl --check /path/to/1c-project
-
-# Форматирование проекта
-onec-hbk-bsl format /path/to/1c-project
-onec-hbk-bsl format /path/to/1c-project --check
-
-# MCP-сервер для Claude
-onec-hbk-bsl --mcp --port 8051
-
-# LSP-сервер для VSCode/Cursor
-onec-hbk-bsl --lsp
-
-# Предварительная индексация большого репозитория
-onec-hbk-bsl --index /path/to/1c-project
-```
-
----
-
-## Настройки VSCode
-
-| Параметр | По умолчанию | Описание |
-|---|---|---|
-| `onecHbkBsl.serverPath` | `onec-hbk-bsl` | Путь к бинарнику сервера; значение по умолчанию ищет установленный `onec-hbk-bsl` в системном `PATH`, затем использует бинарник из VSIX / кэша / скачивания |
-| `onecHbkBsl.indexDbPath` | *(пусто)* → `.git/onec-hbk-bsl_index.sqlite` или `~/.cache/onec-hbk-bsl/…` | Явный путь к SQLite-индексу (необязательно) |
-| `onecHbkBsl.logLevel` | `info` | Уровень логирования |
-| `onecHbkBsl.diagnostics.enabled` | `true` | Диагностики в реальном времени |
-| `onecHbkBsl.diagnostics.select` | `[]` | Запустить только указанные правила |
-| `onecHbkBsl.diagnostics.ignore` | `[]` | Игнорировать указанные правила |
-| `onecHbkBsl.format.indentSize` | `4` | Размер отступа |
-| `onecHbkBsl.inlayHints.enabled` | `true` | Подсказки имён параметров |
-| `onecHbkBsl.semanticTokens.enabled` | `true` | Семантическая подсветка |
-| `onecHbkBsl.useDocker` | `false` | Запускать `onec-hbk-bsl` в Docker вместо локального бинарника |
-| `onecHbkBsl.dockerContainer` | `onec-hbk-bsl-default` | Имя контейнера при `useDocker: true` |
-
-При **Docker** (`useDocker: true`) LSP запускается как `docker exec` с теми же переменными окружения, что и у локального бинарника: `LOG_LEVEL` (из `logLevel`), при необходимости `INDEX_DB_PATH`, `BSL_SELECT` и `BSL_IGNORE` из настроек выше. Контейнер должен быть **уже запущен**; путь к индексу на хосте должен быть доступен процессу внутри контейнера (смонтируйте том при подготовке образа/compose).
-
-**Команды палитры** (Command Palette): `1C HBK BSL: Reindex Workspace`, `Reindex Current File`, `Show Index Status`, `Show Server Log` — см. [docs/Production-Notes.md](docs/Production-Notes.md).
-
-**Панель Problems:** включите группировку по **источнику** — каждое правило отображается отдельной группой вида `onec-hbk-bsl · BSL001` (внутренний код правила); неиспользуемые процедуры/функции после индексации — `onec-hbk-bsl · BSL-DEAD` (подсветка «лишнего» кода в редакторе сохраняется).
-
----
-
-## Правила диагностик
-
-В реестре объявлены коды **BSL001–BSL280**. Публичный набор диагностик соответствует BSLLS-поведению по умолчанию; полный список с уровнями: `onec-hbk-bsl --list-rules`.
-
-**Политика по умолчанию:** запускается BSLLS-совместимый набор. Настройки `onecHbkBsl.diagnostics.select` / `ignore` и переменные `BSL_SELECT` / `BSL_IGNORE` фильтруют правила из этого набора; альтернативных legacy/compat режимов нет.
-
-Source of truth для имени правила и базового уровня severity — `RULE_METADATA` в
-`src/onec_hbk_bsl/analysis/diagnostics.py`; поле `name` хранит BSLLS rule name,
-а JSON CLI дополнительно выводит его как `rule_name`. LSP может применять только
-совместимое отображение через `lsp_compat_severity`, когда BSLLS показывает
-информационные code smells как hints.
-
-### Что считается совместимостью с BSLLS
-
-- Имена диагностик, уровни, anchors и сообщения выравниваются по BSLLS там, где правило реализовано.
-- Счетчики `MethodSize`, `CognitiveComplexity` и `CyclomaticComplexity` следуют BSLLS-семантике: многострочные сигнатуры не входят в тело метода, comment-only границы тела не расширяют `MethodSize`, булевы операторы в строках и query-тексте не добавляют сложность BSL-коду.
-- Форматирование использует BSLLS-ориентированное поведение по умолчанию: табы для `[bsl]`, отступ 4, нормализация пробелов вокруг типовых токенов и безопасное on-type форматирование только для отступа новой строки.
-- Если нужен меньший набор правил, используйте `select` / `ignore`; это фильтр поверх стандартного набора, а не переключение на другой режим.
-
-Примеры (не исчерпывающий список):
-
-| Код | Уровень | Название | Описание |
-|---|---|---|---|
-| BSL001 | ERR | ParseError | Синтаксическая ошибка (tree-sitter) |
-| BSL002 | WRN | MethodSize | Метод длиннее 200 строк |
-| BSL004 | WRN | EmptyCodeBlock | Пустой блок `Исключение` |
-| BSL005 | WRN | UsingHardcodeNetworkAddress | Захардкоженный IP / URL |
-| BSL011 | WRN | CognitiveComplexity | Когнитивная сложность > 15 |
-| BSL012 | WRN | UsingHardcodeSecretInformation | Захардкоженный пароль / токен |
-| BSL019 | WRN | CyclomaticComplexity | Цикломатическая сложность > 20 |
-| BSL033 | ERR | CreateQueryInCycle | Запрос внутри цикла |
-| BSL-DEAD | INF | *(индекс)* | Неиспользуемая неэкспортная процедура/функция (нет вызовов в проекте) |
-| BSL050 | WRN | LargeTransaction | `НачатьТранзакцию` без Зафиксировать/Отменить |
-| BSL051 | WRN | UnreachableCode | Код после безусловного `Возврат` |
-| BSL053 | WRN | ExecuteExternalCode | `Выполнить()` — динамическое исполнение кода |
-| BSL280 | WRN | *(метаданные)* | Обращение к несуществующему объекту метаданных (при проиндексированной конфигурации) — см. [docs/metadata_registry.md](docs/metadata_registry.md) |
-
-Разработчикам правил: политика CST, чеклист и матрица CST/regex — [docs/cst_policy.md](docs/cst_policy.md). Классификация способа вызова правил (фазы, эвристика, `last_metrics["rule_invoke"]`) — [docs/diagnostics_rule_invoke.md](docs/diagnostics_rule_invoke.md).
-
-### Подавление в коде
-
-```bsl
-Пароль = "dev_only";  // noqa: BSL012
-Пароль = "dev_only";  // noqa  ← все правила на этой строке
-```
-
----
-
-## MCP-сервер для AI-агентов
-
-При первом запуске сервер автоматически индексирует воркспейс в фоне если индекс пустой.
-
-Постоянная установка Python-пакета:
-
-```bash
-uv tool install -U onec-hbk-bsl
-# или
-pipx install onec-hbk-bsl
-```
-
-После установки используйте стабильный shim `onec-hbk-bsl` из `PATH`. Если MCP-клиент
-не видит команду, укажите полный путь из `command -v onec-hbk-bsl` (Linux/macOS) или
-`Get-Command onec-hbk-bsl` (Windows PowerShell).
-
-**stdio-режим** для Claude Desktop (рекомендуется):
-```bash
-onec-hbk-bsl --mcp --stdio --workspace /path/to/1c-project
-```
-
-**HTTP-режим** для удалённого доступа:
-```bash
-onec-hbk-bsl --mcp --port 8051 --workspace /path/to/1c-project
-```
-
-Конфигурация `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "onec-hbk-bsl": {
-      "command": "onec-hbk-bsl",
-      "args": ["--mcp", "--stdio", "--workspace", "/path/to/1c-project"],
-      "env": {
-        "INDEX_DB_PATH": "/path/to/1c-project/onec-hbk-bsl_index.sqlite"
-      }
-    }
-  }
-}
-```
-
-Инструменты MCP (имена как в сервере): `bsl_contract_version`, `bsl_status`, `bsl_find_symbol`, `bsl_file_symbols`, `bsl_callers`, `bsl_callees`, `bsl_diagnostics`, `bsl_definition`, `bsl_check_file`, `bsl_list_rules`, `bsl_index_file`, `bsl_hover`, `bsl_references`, `bsl_read_file`, `bsl_search`, `bsl_format`, `bsl_rename`, `bsl_fix`, `bsl_workspace_scan`, `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index`.
-
-MCP `onec-hbk-bsl` — это проектное рабочее пространство для агентов вокруг BSL-кода:
-индексация, навигация, диагностики, форматирование, автофиксы и метаданные конфигурации.
-Внешние справочные MCP не проксируются через этот сервер. Если агенту нужна отдельная
-справка 1С, подключайте соответствующий соседний MCP-сервер справки самостоятельно.
-
-Для нескольких воркспейсов указывайте `workspace_root` (и при необходимости `config_root` для метаданных) в аргументах инструментов. Подробнее: [docs/Production-Notes.md](docs/Production-Notes.md).
-
----
-
-## GitHub Actions / CI
-
-```yaml
-- name: 1C HBK BSL Lint
-  run: |
-    pip install onec-hbk-bsl
-    onec-hbk-bsl --check . --format sarif > bsl-results.sarif
-
-- name: Upload SARIF
-  uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: bsl-results.sarif
-```
-
----
-
-Подробный обзор компонентов и потоков данных: [docs/architecture.md](docs/architecture.md). Эксплуатация и паритет LSP/MCP: [docs/Production-Notes.md](docs/Production-Notes.md).
-
-## Архитектура
-
-```
-1c_hbk_bsl/
-├── src/onec_hbk_bsl/
-│   ├── parser/       # tree-sitter BSL
-│   ├── analysis/     # символы, граф вызовов, диагностики
-│   ├── indexer/      # инкрементальный SQLite-индекс (FTS5)
-│   ├── lsp/          # pygls LSP-сервер
-│   ├── mcp_bridge/   # MCP-сервер (Python MCP SDK)
-│   └── cli/          # CLI-интерфейс
-└── vscode-extension/
-    ├── src/          # TypeScript LanguageClient
-    ├── syntaxes/     # TextMate грамматика
-    └── snippets/     # 219 сниппетов
-```
-
-**Бинарник** собирается через [PyInstaller](https://pyinstaller.org/) (onefile), ~30–35 МБ, не требует установленного Python.
-
----
+## Документация
+
+| Документ | Для чего |
+|---|---|
+| [docs/public-surface.md](docs/public-surface.md) | Публичный контракт CLI, API, VS Code и MCP |
+| [docs/architecture.md](docs/architecture.md) | Архитектура сервера, индекса и анализатора |
+| [docs/Production-Notes.md](docs/Production-Notes.md) | Эксплуатация, релизы, проверки |
+| [docs/metadata_registry.md](docs/metadata_registry.md) | Метаданные конфигураций 1С |
+| [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md) | Лицензии и источники данных |
 
 ## Разработка
 
 ```bash
 git clone https://github.com/mussolene/1c_hbk_bsl
 cd 1c_hbk_bsl
-make install    # установить зависимости
-make test       # запустить тесты
-make lint       # ruff check
-make build      # собрать бинарник (PyInstaller) → dist/onec-hbk-bsl
-make extension-bin   # make build + копия в vscode-extension/bin/ (для локального VSIX)
-make vsix       # extension-bin + сборка расширения + VSIX с актуальным бинарником
-make lsp        # запустить LSP-сервер из исходников
+make install
+make lint
+make test
+make build
 ```
 
-Локальная упаковка расширения: не вызывайте `vsce package` без синхронизации `dist/` → `vscode-extension/bin/`, иначе в VSIX попадёт старый (или пустой) бинарник — см. **`make vsix`** или **`make sync-extension-bin`**.
-
----
+Для локальной сборки VSIX используйте `make vsix`, чтобы в расширение попал
+актуальный бинарник.
 
 ## Лицензия
 
 MIT © 2024 1C HBK BSL Contributors
-
-Полный перечень зависимостей и заметки по лицензированию: [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md). Источники данных `data/`: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Аудит секретов: [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).
-
----
-
-## Используемые проекты
-
-| Проект | Лицензия | Использование |
-|--------|----------|---------------|
-| [vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl) | MIT | Данные Platform API (`bslGlobals.json`) — глобальные функции, типы, перечисления |
-| [tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl) | MIT | Парсер / грамматика BSL для синтаксического анализа |
-| [pygls](https://github.com/openlawlibrary/pygls) | Apache 2.0 | LSP-сервер (Python Language Server Protocol framework) |
-| [lsprotocol](https://github.com/microsoft/lsprotocol) | MIT | LSP-типы (Python) |
-| [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | MIT | MCP-сервер |
-| [bsl-language-server](https://github.com/1c-syntax/bsl-language-server) | LGPL v3 | Справочник диагностик BSL (коды BSL*) — код не используется |

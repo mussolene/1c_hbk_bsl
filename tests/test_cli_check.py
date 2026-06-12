@@ -4,8 +4,8 @@ Tests for CLI check module: format output, rule listing, file collection.
 
 from __future__ import annotations
 
-import importlib
 import json
+from importlib import import_module
 from pathlib import Path
 
 import pytest
@@ -16,12 +16,9 @@ from onec_hbk_bsl.cli.check import (
     _collect_files,
     _print_json,
     _print_sarif,
-    _print_sonarqube,
-    _print_stats,
     _run_checks,
     check,
     check_files,
-    filter_diagnostics_by_changed_lines,
     list_rules,
     read_paths_from_file,
 )
@@ -160,46 +157,6 @@ class TestPrintJson:
 
 
 # ---------------------------------------------------------------------------
-# _print_sonarqube
-# ---------------------------------------------------------------------------
-
-
-class TestPrintSonarqube:
-    def test_outputs_valid_sonarqube_format(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
-    ) -> None:
-        diag = _make_diag(str(tmp_path / "src" / "a.bsl"))
-        _print_sonarqube([diag], project_root=None)
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert "issues" in data
-        assert len(data["issues"]) == 1
-        issue = data["issues"][0]
-        assert issue["engineId"] == "onec-hbk-bsl"
-        assert issue["ruleId"] == "BSL009"
-        assert "primaryLocation" in issue
-
-    def test_sonar_root_makes_relative_path(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
-    ) -> None:
-        src = tmp_path / "src"
-        src.mkdir()
-        diag = _make_diag(str(src / "module.bsl"))
-        _print_sonarqube([diag], project_root=str(tmp_path))
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        loc = data["issues"][0]["primaryLocation"]
-        assert "module.bsl" in loc["filePath"]
-        assert not loc["filePath"].startswith("/")
-
-    def test_empty_list_outputs_empty_issues(self, capsys: pytest.CaptureFixture) -> None:
-        _print_sonarqube([], project_root=None)
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["issues"] == []
-
-
-# ---------------------------------------------------------------------------
 # check() integration
 # ---------------------------------------------------------------------------
 
@@ -228,13 +185,10 @@ class TestCheckIntegration:
         assert isinstance(data, list)
         assert rc == 1
 
-    def test_sonarqube_format(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    def test_sonarqube_format_is_not_public_check_format(self, tmp_path: Path) -> None:
         _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
-        rc = check([str(tmp_path)], format="sonarqube", select={"BSL012"})
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert "issues" in data
-        assert rc == 1
+        with pytest.raises(ValueError, match="Unsupported output format"):
+            check([str(tmp_path)], format="sonarqube", select={"BSL012"})
 
 
 # ---------------------------------------------------------------------------
@@ -306,15 +260,15 @@ class TestCheckNewFeatures:
         diags = check_files([str(f)], select={"BSL009"}, jobs=1)
         assert [d.code for d in diags] == ["BSL009"]
 
-    def test_check_files_quick_profile_does_not_open_symbol_index(
+    def test_check_files_does_not_open_symbol_index_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         f = _write_bsl(tmp_path, "модуль.bsl", "А = А;\n")
 
         def fail_symbol_index(*args: object, **kwargs: object) -> object:
-            raise AssertionError("quick profile must not open SymbolIndex")
+            raise AssertionError("default check_files must not open SymbolIndex")
 
-        check_module = importlib.import_module("onec_hbk_bsl.cli.check")
+        check_module = import_module("onec_hbk_bsl.cli.check")
         monkeypatch.setattr(check_module, "SymbolIndex", fail_symbol_index)
         diags = check_files([str(f)], select={"BSL009"}, jobs=1)
         assert [d.code for d in diags] == ["BSL009"]
@@ -323,52 +277,6 @@ class TestCheckNewFeatures:
         p = tmp_path / "files.txt"
         p.write_text("src/ОбщийМодуль.bsl\n", encoding="utf-8")
         assert read_paths_from_file(str(p)) == ["src/ОбщийМодуль.bsl"]
-
-    def test_read_paths_from0_file_utf8(self, tmp_path: Path) -> None:
-        p = tmp_path / "files0.txt"
-        p.write_bytes("src/ОбщийМодуль.bsl\0src/a.os\0".encode())
-        assert read_paths_from_file(str(p), nul=True) == ["src/ОбщийМодуль.bsl", "src/a.os"]
-
-    def test_changed_line_filter_keeps_only_matching_lines(self, tmp_path: Path) -> None:
-        file_path = str(tmp_path / "a.bsl")
-        diags = [
-            _make_diag(file_path, line=1, code="BSL009"),
-            _make_diag(file_path, line=4, code="BSL012"),
-        ]
-        filtered = filter_diagnostics_by_changed_lines(diags, {file_path: [(3, 5)]})
-        assert [d.code for d in filtered] == ["BSL012"]
-
-    def test_check_files_changed_line_ranges(self, tmp_path: Path) -> None:
-        f = _write_bsl(tmp_path, "a.bsl", "А = А;\nБ = Б;\n")
-        diags = check_files(
-            [str(f)],
-            select={"BSL009"},
-            jobs=1,
-            changed_line_ranges={str(f): [(2, 2)]},
-        )
-        assert len(diags) == 1
-        assert diags[0].line == 2
-
-    def test_split_fragment_suppresses_only_fragment_noise(self, tmp_path: Path) -> None:
-        split_dir = tmp_path / "split"
-        split_dir.mkdir()
-        f = _write_bsl(split_dir, "frag.bsl", "Процедура П() Экспорт\nКонецПроцедуры\n")
-        without_profile = check_files([str(f)], select={"BSL156"}, jobs=1)
-        with_profile = check_files(
-            [str(f)],
-            select={"BSL156"},
-            jobs=1,
-            split_fragment_patterns=["*split*"],
-        )
-        assert [d.code for d in without_profile] == ["BSL156"]
-        assert with_profile == []
-
-    def test_fragment_profile_suppresses_fragment_noise_for_all_input_files(
-        self, tmp_path: Path
-    ) -> None:
-        f = _write_bsl(tmp_path, "frag.bsl", "Процедура П() Экспорт\nКонецПроцедуры\n")
-        diags = check_files([str(f)], select={"BSL156"}, jobs=1, profile="fragment")
-        assert diags == []
 
     def test_exit_zero_suppresses_exit_1(self, tmp_path: Path) -> None:
         _write_bsl(tmp_path, "dirty.bsl", 'Пароль = "секрет123";\n')
@@ -438,68 +346,6 @@ class TestCheckNewFeatures:
         cfg = BslConfig({"max-line-length": 10})
         rc = check([str(tmp_path)], format="text", select={"BSL001"}, config=cfg)
         assert rc == 1
-
-
-# ---------------------------------------------------------------------------
-# _print_stats
-# ---------------------------------------------------------------------------
-
-
-class TestPrintStats:
-    def test_stats_valid_json(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        diag = _make_diag(str(tmp_path / "a.bsl"))
-        _print_stats([diag], file_count=5)
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["total"] == 1
-        assert data["files_checked"] == 5
-        assert "by_severity" in data
-        assert "by_rule" in data
-
-    def test_stats_empty(self, capsys: pytest.CaptureFixture) -> None:
-        _print_stats([], file_count=10)
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["total"] == 0
-        assert data["files_checked"] == 10
-
-    def test_stats_counts_by_rule(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        diags = [
-            _make_diag(str(tmp_path / "a.bsl"), code="BSL009"),
-            _make_diag(str(tmp_path / "a.bsl"), code="BSL009"),
-            _make_diag(str(tmp_path / "a.bsl"), code="BSL012"),
-        ]
-        _print_stats(diags, file_count=1)
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["by_rule"]["BSL009"] == 2
-        assert data["by_rule"]["BSL012"] == 1
-
-
-class TestCheckStats:
-    def test_stats_flag_outputs_json(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
-        check([str(tmp_path)], format="text", select={"BSL012"}, stats=True)
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert "total" in data
-        assert data["total"] >= 1
-
-
-class TestShowFix:
-    def test_show_fix_outputs_hint(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
-        check([str(tmp_path)], format="text", select={"BSL012"}, show_fix=True)
-        captured = capsys.readouterr()
-        # Should print something to stderr (text output goes there via rich)
-        # The fix hint line should be present
-        assert "BSL012" in captured.err or "BSL012" in captured.out
-
-    def test_no_show_fix_no_hint(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-        _write_bsl(tmp_path, "f.bsl", 'Пароль = "секрет123";\n')
-        check([str(tmp_path)], format="text", select={"BSL012"}, show_fix=False)
-        # Should not crash
-        capsys.readouterr()
 
 
 # ---------------------------------------------------------------------------

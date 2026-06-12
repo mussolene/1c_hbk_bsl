@@ -13,7 +13,7 @@ Usage
 -----
 From the CLI (--fix flag)::
 
-    onec-hbk-bsl --check . --fix
+    onec-hbk-bsl check . --fix
 
 Programmatic::
 

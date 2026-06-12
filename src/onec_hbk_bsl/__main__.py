@@ -2,24 +2,22 @@
 Entry point for onec-hbk-bsl CLI.
 
 Usage:
-    onec-hbk-bsl --lsp                              Start LSP server on stdio
-    onec-hbk-bsl --mcp [--port 8051]               Start MCP HTTP server
-    onec-hbk-bsl --mcp --stdio                     Start MCP server over stdio (Claude Desktop)
-    onec-hbk-bsl --mcp --workspace /path/to/proj   Serve specific workspace (auto-indexes if empty)
-    onec-hbk-bsl --check [PATH ...]                 Run linter (ruff-style output)
+    onec-hbk-bsl lsp                                Start LSP server on stdio
+    onec-hbk-bsl mcp [--port 8051]                 Start MCP HTTP server
+    onec-hbk-bsl mcp --stdio                       Start MCP server over stdio
+    onec-hbk-bsl mcp --workspace /path/to/proj     Serve specific workspace
+    onec-hbk-bsl check [PATH ...]                  Run linter
     onec-hbk-bsl format [PATH ...]                  Format BSL files in-place
-    onec-hbk-bsl --check [PATH] --diff              Check only git-changed BSL files
-    onec-hbk-bsl --index [PATH]                     Force full reindex of workspace
-    onec-hbk-bsl --list-rules                       Show all available rules
-    onec-hbk-bsl --watch [PATH ...]                 Watch for changes and re-lint
-    onec-hbk-bsl --init                             Generate starter onec-hbk-bsl.toml
+    onec-hbk-bsl check [PATH] --diff               Check only git-changed BSL files
+    onec-hbk-bsl index [PATH]                      Reindex workspace
+    onec-hbk-bsl rules                              Show all available rules
+    onec-hbk-bsl init                               Generate starter onec-hbk-bsl.toml
 
 Check mode flags:
     --select BSL001,BSL002         Run only these rules
     --ignore BSL002                Skip these rules
-    --format text|json|sonarqube|sarif  Output format (default: text)
+    --format text|json|sarif       Output format (default: text)
     --jobs N                       Parallel workers (0 = auto, 1 = serial)
-    --sonar-root PATH              Project root for SonarQube/SARIF relative paths
     --exit-zero                    Always exit 0 (don't fail CI on issues)
     --baseline FILE                Suppress issues listed in baseline
     --update-baseline FILE         Save current issues as new baseline, exit 0
@@ -150,46 +148,30 @@ def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
 def _run_check(
     paths: list[str],
     fmt: str,
-    check_profile: str,
     select: set[str] | None,
     ignore: set[str] | None,
     jobs: int,
-    sonar_root: str | None,
     exit_zero: bool,
     baseline: str | None,
     update_baseline: str | None,
-    stats: bool,
-    show_fix: bool,
     diff: bool,
     since: str | None,
     fix: bool,
     paths_from: str | None,
-    paths_from0: str | None,
-    changed_lines_only: bool,
-    split_fragments: list[str] | None,
 ) -> int:
     from onec_hbk_bsl.cli.check import check, read_paths_from_file
     from onec_hbk_bsl.cli.config import load_config
 
-    if paths_from and paths_from0:
-        print("--paths-from and --paths-from0 are mutually exclusive", file=sys.stderr)
-        return 2
-    if changed_lines_only and not diff:
-        print("--changed-lines-only requires --diff", file=sys.stderr)
-        return 2
     if paths_from:
         paths.extend(read_paths_from_file(paths_from))
-    if paths_from0:
-        paths.extend(read_paths_from_file(paths_from0, nul=True))
 
     # Load config from the first checked path (or cwd)
     search_from = paths[0] if paths else os.getcwd()
     cfg = load_config(search_from)
-    changed_line_ranges = None
 
     # --diff: resolve paths to git-changed BSL files
     if diff:
-        from onec_hbk_bsl.cli.git_utils import git_changed_files, git_changed_line_ranges
+        from onec_hbk_bsl.cli.git_utils import git_changed_files
 
         workspace = paths[0] if len(paths) == 1 and os.path.isdir(paths[0]) else search_from
         git_paths = git_changed_files(workspace, since=since)
@@ -199,26 +181,18 @@ def _run_check(
             logging.getLogger(__name__).info("--diff: no changed BSL files found")
             return 0
         paths = git_paths
-        if changed_lines_only:
-            changed_line_ranges = git_changed_line_ranges(workspace, since=since)
 
     return check(
         paths,
         format=fmt,
-        profile=check_profile,
         select=select,
         ignore=ignore,
         jobs=jobs,
-        sonar_root=sonar_root,
         exit_zero=exit_zero,
         baseline=baseline,
         update_baseline=update_baseline,
         config=cfg,
-        stats=stats,
-        show_fix=show_fix,
         fix=fix,
-        changed_line_ranges=changed_line_ranges,
-        split_fragment_patterns=split_fragments,
     )
 
 
@@ -284,64 +258,6 @@ def _run_format(
     return 0
 
 
-def _run_watch(
-    paths: list[str],
-    fmt: str,
-    select: set[str] | None,
-    ignore: set[str] | None,
-    jobs: int,
-    sonar_root: str | None,
-    exit_zero: bool,
-) -> None:
-    """Watch paths for BSL file changes and re-run checks on each save."""
-    from rich.console import Console
-
-    from onec_hbk_bsl.cli.check import (
-        _print_json,
-        _print_sarif,
-        _print_sonarqube,
-        _print_summary,
-        _print_text,
-        _run_checks,
-    )
-    from onec_hbk_bsl.cli.config import load_config
-    from onec_hbk_bsl.indexer.watcher import FileWatcher
-
-    _console = Console(stderr=True)
-    search_from = paths[0] if paths else os.getcwd()
-    cfg = load_config(search_from)
-    workspace = (
-        paths[0]
-        if len(paths) == 1 and os.path.isdir(paths[0])
-        else os.path.commonpath(paths)
-        if paths
-        else os.getcwd()
-    )
-
-    _console.print(
-        f"[bold green]Watching[/bold green] {workspace} for BSL changes (Ctrl+C to stop)"
-    )
-
-    def _on_change(changed: list[str]) -> None:
-        _console.print(f"\n[dim]Changed:[/dim] {', '.join(os.path.basename(f) for f in changed)}")
-        diags, _ = _run_checks(sorted(changed), select=select, ignore=ignore, jobs=jobs, config=cfg)
-        if fmt == "json":
-            _print_json(diags)
-        elif fmt == "sonarqube":
-            _print_sonarqube(diags, sonar_root)
-        elif fmt == "sarif":
-            _print_sarif(diags, sonar_root)
-        else:
-            _print_text(diags)
-            if diags:
-                _print_summary(diags, len(changed))
-            else:
-                _console.print(f"[green]Clean.[/green] ({len(changed)} file(s))")
-
-    watcher = FileWatcher()
-    watcher.watch(workspace, _on_change)
-
-
 def _run_init(target_dir: str) -> None:
     """Write a starter onec-hbk-bsl.toml to *target_dir*."""
     from rich.console import Console
@@ -360,7 +276,7 @@ def _run_init(target_dir: str) -> None:
 # Rules to run (empty = all rules)
 # select = ["BSL001", "BSL002"]
 
-# Diagnostics always use the BSLLS-compatible default rule set.
+# Diagnostics use the product default rule set.
 
 # Rules to always skip
 ignore = []
@@ -376,7 +292,7 @@ exclude = [
 # [per-file-ignores]
 # "legacy_*.bsl" = ["BSL012", "BSL035"]
 
-# Output format: text | json | sonarqube | sarif  (default: text)
+# Output format: text | json | sarif  (default: text)
 # format = "text"
 
 # Parallel workers (0 = auto, 1 = serial)
@@ -414,71 +330,6 @@ def _run_index(workspace: str, force: bool) -> None:
     indexer.index_workspace(workspace, force=force)
 
 
-def _run_bench(workspace: str) -> int:
-    """
-    Run lightweight cold/warm indexing + diagnostics benchmark.
-
-    Output is JSON to stdout so it can be captured in CI and compared across commits.
-    """
-    import json
-    import time
-
-    from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
-    from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
-    from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
-
-    workspace = os.path.abspath(workspace)
-    db_path = resolve_index_db_path(workspace)
-
-    # Pick a representative file for diagnostics timing.
-    files = IncrementalIndexer._find_all_bsl_files(workspace)
-    sample_file = files[0] if files else None
-
-    # Cold index (force full reindex).
-    if db_path != ":memory:":
-        try:
-            if os.path.exists(db_path) and os.path.isfile(db_path):
-                os.remove(db_path)
-        except OSError:
-            # Non-fatal: benchmark still continues with existing db state.
-            pass
-
-    indexer = IncrementalIndexer(db_path=db_path)
-    t0 = time.perf_counter()
-    cold_result = indexer.index_workspace(workspace, force=True)
-    cold_wall_s = time.perf_counter() - t0
-
-    # Warm index (incremental check; should be near-instant if HEAD unchanged).
-    t1 = time.perf_counter()
-    warm_result = indexer.index_workspace(workspace, force=False)
-    warm_wall_s = time.perf_counter() - t1
-
-    # Diagnostics on sample file.
-    diag_payload: dict[str, object] = {"sample_file": sample_file}
-    if sample_file:
-        engine = DiagnosticEngine()
-        t2 = time.perf_counter()
-        _ = engine.check_file(sample_file)
-        diag_wall_s = time.perf_counter() - t2
-        diag_payload.update(
-            {
-                "diag_wall_s": diag_wall_s,
-                "diagnostics_metrics": engine.last_metrics,
-            }
-        )
-
-    payload = {
-        "workspace": workspace,
-        "db_path": db_path,
-        "cold_index": {"wall_s": cold_wall_s, **cold_result},
-        "warm_index": {"wall_s": warm_wall_s, **warm_result},
-        "diagnostics_bench": diag_payload,
-        "timestamp": time.time(),
-    }
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
-    return 0
-
-
 def _parse_codes(raw: str | None) -> set[str] | None:
     """Parse comma-separated rule tokens (``BSL###`` or BSLLS names), or return None."""
     if not raw:
@@ -489,40 +340,277 @@ def _parse_codes(raw: str | None) -> set[str] | None:
     return normalize_rule_code_set(parts)
 
 
+_COMMAND_ALIASES = {
+    "--check": "check",
+    "--lsp": "lsp",
+    "--mcp": "mcp",
+    "--index": "index",
+    "--list-rules": "rules",
+    "--init": "init",
+}
+_COMMANDS = {"check", "format", "lsp", "mcp", "index", "rules", "init"}
+
+
+def _normalize_argv(argv: list[str]) -> list[str]:
+    """Accept legacy mode flags as aliases for the product subcommands."""
+    if not argv:
+        return argv
+    leading_global_options: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--log-level" and index + 1 < len(argv):
+            leading_global_options.extend(argv[index : index + 2])
+            index += 2
+            continue
+        if arg.startswith("--log-level="):
+            leading_global_options.append(arg)
+            index += 1
+            continue
+        alias = _COMMAND_ALIASES.get(arg)
+        if alias is not None:
+            return [alias, *leading_global_options, *argv[index + 1 :]]
+        if arg in _COMMANDS and leading_global_options:
+            return [arg, *leading_global_options, *argv[index + 1 :]]
+        return argv
+    return argv
+
+
 def main() -> None:
     multiprocessing.freeze_support()
 
-    if len(sys.argv) > 1 and sys.argv[1] == "format":
-        parser = argparse.ArgumentParser(
-            prog="onec-hbk-bsl format",
-            description="Format BSL files using the BSLLS-aligned formatter",
+    parser = argparse.ArgumentParser(
+        prog="onec-hbk-bsl",
+        description="BSL (1C Enterprise) analyzer, formatter, LSP server, and MCP server",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  onec-hbk-bsl check .                                Check current directory
+  onec-hbk-bsl check . --format sarif > results.sarif
+  onec-hbk-bsl format .                               Format BSL files in-place
+  onec-hbk-bsl format . --check                       Check formatting without writing
+  onec-hbk-bsl rules                                  Show all available rules
+  onec-hbk-bsl mcp --stdio --workspace /project       Start MCP server for agents
+        """,
+    )
+    parser.add_argument("--version", action="version", version=f"onec-hbk-bsl {__version__}")
+
+    log_parent = argparse.ArgumentParser(add_help=False)
+    log_parent.add_argument(
+        "--log-level",
+        default=os.environ.get("LOG_LEVEL", "warning"),
+        choices=["debug", "info", "warning", "error"],
+        help="Logging verbosity (default: warning)",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
+
+    check_parser = subparsers.add_parser(
+        "check",
+        parents=[log_parent],
+        help="Run diagnostics",
+        description="Run diagnostics on BSL files",
+    )
+    check_parser.add_argument("paths", metavar="PATH", nargs="*", help="Files or directories to check")
+    check_parser.add_argument(
+        "--format",
+        choices=["text", "json", "sarif"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    check_parser.add_argument(
+        "--select",
+        metavar="CODES",
+        default=None,
+        help="Comma-separated rule codes to enable exclusively",
+    )
+    check_parser.add_argument(
+        "--ignore",
+        metavar="CODES",
+        default=None,
+        help="Comma-separated rule codes to skip",
+    )
+    check_parser.add_argument(
+        "--jobs",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of parallel worker threads (0 = auto, 1 = serial; default: 0)",
+    )
+    check_parser.add_argument(
+        "--exit-zero",
+        action="store_true",
+        default=False,
+        help="Always exit 0 even if issues are found",
+    )
+    check_parser.add_argument(
+        "--baseline",
+        metavar="FILE",
+        default=None,
+        help="Suppress issues listed in baseline",
+    )
+    check_parser.add_argument(
+        "--update-baseline",
+        metavar="FILE",
+        default=None,
+        help="Save all found issues as a new baseline, then exit 0",
+    )
+    check_parser.add_argument(
+        "--diff",
+        action="store_true",
+        default=False,
+        help="Only check BSL files changed since HEAD or --since REF",
+    )
+    check_parser.add_argument(
+        "--since",
+        metavar="REF",
+        default=None,
+        help="Git ref to diff against when using --diff (default: HEAD)",
+    )
+    check_parser.add_argument(
+        "--paths-from",
+        metavar="FILE",
+        default=None,
+        help="Read additional newline-delimited paths from FILE ('-' reads stdin)",
+    )
+    check_parser.add_argument(
+        "--fix",
+        action="store_true",
+        default=False,
+        help="Auto-fix supported issues in-place",
+    )
+
+    format_parser = subparsers.add_parser(
+        "format",
+        parents=[log_parent],
+        help="Format BSL files",
+        description="Format BSL files using the built-in formatter",
+    )
+    format_parser.add_argument("paths", metavar="PATH", nargs="*", help="Files or directories to format")
+    format_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Only check whether files are already formatted",
+    )
+    format_parser.add_argument(
+        "--indent-size",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Indent width when spaces are requested (default: 4)",
+    )
+    format_parser.add_argument(
+        "--insert-spaces",
+        action="store_true",
+        default=None,
+        help="Indent with spaces instead of tabs",
+    )
+
+    subparsers.add_parser(
+        "lsp",
+        parents=[log_parent],
+        help="Start LSP server on stdio",
+    )
+
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        parents=[log_parent],
+        help="Start MCP server",
+    )
+    mcp_parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MCP_PORT", "8051")),
+        help="Port for MCP HTTP server (default: 8051)",
+    )
+    mcp_parser.add_argument(
+        "--stdio",
+        action="store_true",
+        help="Run MCP server over stdio instead of HTTP",
+    )
+    mcp_parser.add_argument(
+        "--workspace",
+        metavar="PATH",
+        default=os.environ.get("WORKSPACE_ROOT", os.getcwd()),
+        help="Workspace root to index and serve (default: $WORKSPACE_ROOT or cwd)",
+    )
+
+    index_parser = subparsers.add_parser(
+        "index",
+        parents=[log_parent],
+        help="Index or reindex workspace",
+    )
+    index_parser.add_argument(
+        "path",
+        metavar="PATH",
+        nargs="?",
+        default=os.getcwd(),
+        help="Workspace to index (default: current directory)",
+    )
+    index_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force full reindex even if incremental is possible",
+    )
+
+    rules_parser = subparsers.add_parser(
+        "rules",
+        parents=[log_parent],
+        help="Show available diagnostic rules",
+    )
+    rules_parser.add_argument(
+        "--tag",
+        metavar="TAG",
+        default=None,
+        help="Filter output to rules with this tag (e.g. security, performance)",
+    )
+
+    subparsers.add_parser("init", parents=[log_parent], help="Generate a starter onec-hbk-bsl.toml")
+
+    args = parser.parse_args(_normalize_argv(sys.argv[1:]))
+
+    if args.command == "rules":
+        _setup_logging(args.log_level, use_rich=True)
+        from onec_hbk_bsl.cli.check import list_rules
+
+        list_rules(tag=args.tag)
+        return
+
+    if args.command == "init":
+        _setup_logging(args.log_level, use_rich=True)
+        _run_init(os.getcwd())
+        return
+
+    if args.command == "lsp":
+        _run_lsp(args.log_level)
+        return
+
+    if args.command == "mcp":
+        _setup_logging(args.log_level, use_rich=False)
+        _run_mcp(args.port, stdio=args.stdio, workspace=os.path.abspath(args.workspace))
+        return
+
+    if args.command == "check":
+        _setup_logging(args.log_level, use_rich=True)
+        paths = args.paths if args.paths or args.paths_from else [os.getcwd()]
+        sys.exit(
+            _run_check(
+                paths,
+                fmt=args.format,
+                select=_parse_codes(args.select),
+                ignore=_parse_codes(args.ignore),
+                jobs=args.jobs,
+                exit_zero=args.exit_zero,
+                baseline=args.baseline,
+                update_baseline=args.update_baseline,
+                diff=args.diff,
+                since=args.since,
+                fix=args.fix,
+                paths_from=args.paths_from,
+            )
         )
-        parser.add_argument("paths", nargs="*", help="Files or directories to format")
-        parser.add_argument(
-            "--check",
-            action="store_true",
-            help="Only check whether files are already formatted",
-        )
-        parser.add_argument(
-            "--indent-size",
-            type=int,
-            default=4,
-            metavar="N",
-            help="Indent width when spaces are requested (default: 4)",
-        )
-        parser.add_argument(
-            "--insert-spaces",
-            action="store_true",
-            default=None,
-            help="Indent with spaces instead of BSLLS-default tabs",
-        )
-        parser.add_argument(
-            "--log-level",
-            default=os.environ.get("LOG_LEVEL", "warning"),
-            choices=["debug", "info", "warning", "error"],
-            help="Logging verbosity (default: warning)",
-        )
-        args = parser.parse_args(sys.argv[2:])
+
+    if args.command == "format":
         _setup_logging(args.log_level, use_rich=True)
         sys.exit(
             _run_format(
@@ -533,325 +621,9 @@ def main() -> None:
             )
         )
 
-    parser = argparse.ArgumentParser(
-        prog="onec-hbk-bsl",
-        usage=(
-            "onec-hbk-bsl format [PATH ...] [--check] [--indent-size N] [--insert-spaces]\n"
-            "       onec-hbk-bsl [--version] [--log-level {debug,info,warning,error}]\n"
-            "                    (--lsp | --mcp | --watch [PATH ...] | --check [PATH ...] |\n"
-            "                     --index [PATH] | --bench [PATH] | --list-rules | --init)\n"
-            "                    [options]"
-        ),
-        description="BSL (1C Enterprise) analyzer — MCP server, LSP server, and CLI linter",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  onec-hbk-bsl format .                               Format BSL files in-place
-  onec-hbk-bsl format . --check                       Check formatting without writing
-  onec-hbk-bsl --check .                              Check current directory
-  onec-hbk-bsl --check src/ --select BSL001,MethodSize
-  onec-hbk-bsl --check . --ignore BSL014 --format json > issues.json
-  onec-hbk-bsl --check --paths-from files.txt --format json --check-profile quick
-  onec-hbk-bsl --check . --diff --since origin/main --check-profile fragment --format json
-  onec-hbk-bsl --check . --format sonarqube --sonar-root /project > sonar.json
-  onec-hbk-bsl --check . --format sarif > results.sarif
-  onec-hbk-bsl --check . --jobs 8                     Use 8 parallel workers
-  onec-hbk-bsl --check . --exit-zero                  Never fail CI
-  onec-hbk-bsl --check . --diff --since origin/main --changed-lines-only --format json
-  onec-hbk-bsl --check . --update-baseline baseline.json  Save known issues
-  onec-hbk-bsl --check . --baseline baseline.json     Only report new issues
-  onec-hbk-bsl --list-rules                           Show all available rules
-  onec-hbk-bsl --mcp --port 8051                     Start MCP server for Claude
-        """,
-    )
-    parser.add_argument("--version", action="version", version=f"onec-hbk-bsl {__version__}")
-    parser.add_argument(
-        "--log-level",
-        default=os.environ.get("LOG_LEVEL", "warning"),
-        choices=["debug", "info", "warning", "error"],
-        help="Logging verbosity (default: warning)",
-    )
-
-    mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument("--lsp", action="store_true", help="Start LSP server on stdio")
-    mode_group.add_argument("--mcp", action="store_true", help="Start MCP HTTP server")
-    mode_group.add_argument(
-        "--watch",
-        metavar="PATH",
-        nargs="*",
-        help="Watch PATH(s) for BSL file changes and re-run linter on each save",
-    )
-    mode_group.add_argument(
-        "--check",
-        metavar="PATH",
-        nargs="*",
-        help="Run linter on PATH(s) (current dir if omitted)",
-    )
-    mode_group.add_argument(
-        "--index",
-        metavar="PATH",
-        nargs="?",
-        const=os.getcwd(),
-        help="Index/reindex workspace (current dir if omitted)",
-    )
-    mode_group.add_argument(
-        "--bench",
-        metavar="PATH",
-        nargs="?",
-        const=os.getcwd(),
-        help="Run indexing+diagnostics benchmarks and print JSON",
-    )
-    mode_group.add_argument(
-        "--list-rules",
-        action="store_true",
-        help="Show all available diagnostic rules with descriptions",
-    )
-    mode_group.add_argument(
-        "--init",
-        action="store_true",
-        help="Generate a starter onec-hbk-bsl.toml in the current directory",
-    )
-
-    # MCP options
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.environ.get("MCP_PORT", "8051")),
-        help="Port for MCP HTTP server (default: 8051)",
-    )
-    parser.add_argument(
-        "--stdio",
-        action="store_true",
-        help="Run MCP server over stdio instead of HTTP (for Claude Desktop / local agents)",
-    )
-    parser.add_argument(
-        "--workspace",
-        metavar="PATH",
-        default=os.environ.get("WORKSPACE_ROOT", os.getcwd()),
-        help="Workspace root to index and serve (default: $WORKSPACE_ROOT or cwd)",
-    )
-
-    # Check options
-    parser.add_argument(
-        "--format",
-        choices=["text", "compact", "json", "sonarqube", "sarif"],
-        default="text",
-        help="Output format for --check (default: text)",
-    )
-    parser.add_argument(
-        "--check-profile",
-        choices=["quick", "full", "fragment"],
-        default="quick",
-        help=(
-            "Diagnostic profile for --check: quick=no-index advisory (default), "
-            "full=enable workspace symbol index, fragment=quick plus split-fragment "
-            "noise suppression"
-        ),
-    )
-    parser.add_argument(
-        "--select",
-        metavar="CODES",
-        default=None,
-        help=(
-            "Comma-separated rule codes to enable exclusively "
-            "(e.g. BSL001,BSL002). When set, only listed rules run."
-        ),
-    )
-    parser.add_argument(
-        "--ignore",
-        metavar="CODES",
-        default=None,
-        help=(
-            "Comma-separated rule codes to skip (e.g. BSL002,BSL014). "
-            "Inline suppression: add  // noqa: BSL002  or  // bsl-disable: BSL002  "
-            "at the end of any source line."
-        ),
-    )
-    parser.add_argument(
-        "--jobs",
-        type=int,
-        default=0,
-        metavar="N",
-        help="Number of parallel worker threads (0 = auto, 1 = serial; default: 0)",
-    )
-    parser.add_argument(
-        "--sonar-root",
-        metavar="PATH",
-        default=None,
-        help="Project root directory for SonarQube/SARIF relative path calculation",
-    )
-    parser.add_argument(
-        "--exit-zero",
-        action="store_true",
-        default=False,
-        help="Always exit 0 even if issues are found (useful for CI metric collection)",
-    )
-    parser.add_argument(
-        "--baseline",
-        metavar="FILE",
-        default=None,
-        help="Path to baseline JSON — issues present in baseline are suppressed",
-    )
-    parser.add_argument(
-        "--update-baseline",
-        metavar="FILE",
-        default=None,
-        help="Save all found issues as a new baseline, then exit 0",
-    )
-    parser.add_argument(
-        "--stats",
-        action="store_true",
-        default=False,
-        help="Print a machine-readable JSON stats summary to stdout after checking",
-    )
-    parser.add_argument(
-        "--show-fix",
-        action="store_true",
-        default=False,
-        help="Show actionable fix hints below each issue in text output",
-    )
-    parser.add_argument(
-        "--diff",
-        action="store_true",
-        default=False,
-        help=(
-            "Only check BSL files changed since HEAD (or --since REF). "
-            "Requires git. Useful in pre-commit hooks and PR pipelines."
-        ),
-    )
-    parser.add_argument(
-        "--since",
-        metavar="REF",
-        default=None,
-        help=(
-            "Git ref to diff against when using --diff "
-            "(e.g. HEAD~1, main, origin/main). Default: HEAD."
-        ),
-    )
-    parser.add_argument(
-        "--paths-from",
-        metavar="FILE",
-        default=None,
-        help="Read additional newline-delimited paths from FILE ('-' reads stdin)",
-    )
-    parser.add_argument(
-        "--paths-from0",
-        metavar="FILE",
-        default=None,
-        help="Read additional NUL-delimited paths from FILE ('-' reads stdin)",
-    )
-    parser.add_argument(
-        "--changed-lines-only",
-        action="store_true",
-        default=False,
-        help="With --diff, report only diagnostics whose start line is in changed diff ranges",
-    )
-    parser.add_argument(
-        "--split-fragment",
-        action="append",
-        default=None,
-        metavar="PATTERN",
-        help=(
-            "Treat matching paths as split fragments and suppress fragment-noisy rules "
-            "BSL017, BSL040, BSL156 for those files only. Can be passed multiple times."
-        ),
-    )
-
-    parser.add_argument(
-        "--fix",
-        action="store_true",
-        default=False,
-        help=(
-            "Auto-fix supported issues in-place. "
-            "Supported rules: BSL009, BSL055, BSL060. "
-            "Remaining unfixable issues are still reported."
-        ),
-    )
-    # Index options
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force full reindex even if incremental is possible (--index mode)",
-    )
-
-    # List-rules filter
-    parser.add_argument(
-        "--tag",
-        metavar="TAG",
-        default=None,
-        help="Filter --list-rules output to rules with this tag (e.g. security, performance)",
-    )
-
-    args = parser.parse_args()
-
-    if args.list_rules:
+    if args.command == "index":
         _setup_logging(args.log_level, use_rich=True)
-        from onec_hbk_bsl.cli.check import list_rules
-
-        list_rules(tag=args.tag)
-        return
-
-    if args.init:
-        _setup_logging(args.log_level, use_rich=True)
-        _run_init(os.getcwd())
-        return
-
-    if args.lsp:
-        _run_lsp(args.log_level)
-        return
-
-    elif args.mcp:
-        _setup_logging(args.log_level, use_rich=False)
-        _run_mcp(args.port, stdio=args.stdio, workspace=os.path.abspath(args.workspace))
-        return
-
-    elif getattr(args, "bench", None) is not None:
-        _setup_logging(args.log_level, use_rich=True)
-        sys.exit(_run_bench(args.bench))
-
-    elif args.check is not None:
-        _setup_logging(args.log_level, use_rich=True)
-        paths = args.check if args.check or args.paths_from or args.paths_from0 else [os.getcwd()]
-        sys.exit(
-            _run_check(
-                paths,
-                fmt=args.format,
-                check_profile=args.check_profile,
-                select=_parse_codes(args.select),
-                ignore=_parse_codes(args.ignore),
-                jobs=args.jobs,
-                sonar_root=args.sonar_root,
-                exit_zero=args.exit_zero,
-                baseline=args.baseline,
-                update_baseline=args.update_baseline,
-                stats=args.stats,
-                show_fix=args.show_fix,
-                diff=args.diff,
-                since=args.since,
-                fix=args.fix,
-                paths_from=args.paths_from,
-                paths_from0=args.paths_from0,
-                changed_lines_only=args.changed_lines_only,
-                split_fragments=args.split_fragment,
-            )
-        )
-
-    elif args.watch is not None:
-        _setup_logging(args.log_level, use_rich=True)
-        watch_paths = args.watch if args.watch else [os.getcwd()]
-        _run_watch(
-            watch_paths,
-            fmt=args.format,
-            select=_parse_codes(args.select),
-            ignore=_parse_codes(args.ignore),
-            jobs=args.jobs,
-            sonar_root=args.sonar_root,
-            exit_zero=args.exit_zero,
-        )
-
-    elif args.index is not None:
-        _setup_logging(args.log_level, use_rich=True)
-        _run_index(args.index, force=args.force)
+        _run_index(args.path, force=args.force)
 
 
 if __name__ == "__main__":

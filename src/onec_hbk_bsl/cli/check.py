@@ -4,24 +4,14 @@ BSL lint CLI — ruff-style output with parallel processing.
 Formats
 -------
 text       — path:line:col: SEVERITY CODE message  (default, like ruff/flake8)
-compact    — path:line:col: CODE (minimal, good for grep/awk pipelines)
 json       — structured JSON array
-sonarqube  — SonarQube Generic Issue Import Format (for sonar-scanner)
 sarif      — SARIF 2.1.0 (GitHub Code Scanning / GitLab SAST)
-
-SonarQube integration
----------------------
-Pass the output of ``--format sonarqube`` to sonar-scanner via::
-
-    sonar.externalIssuesReportPaths=bsl-issues.json
-
-Use ``--sonar-root`` to produce project-relative file paths required by SonarQube.
 
 SARIF / GitHub Code Scanning
 -----------------------------
 Upload the SARIF file to GitHub via the Code Scanning API or workflow action::
 
-    onec-hbk-bsl --check . --format sarif > bsl-results.sarif
+    onec-hbk-bsl check . --format sarif > bsl-results.sarif
 
 Exit codes
 ----------
@@ -65,14 +55,6 @@ _SEV_STYLE = {
     Severity.HINT: ("H", "dim"),
 }
 
-# SonarQube severity mapping
-_SONAR_SEVERITY = {
-    Severity.ERROR: "BLOCKER",
-    Severity.WARNING: "MAJOR",
-    Severity.INFORMATION: "MINOR",
-    Severity.HINT: "INFO",
-}
-
 # SARIF level mapping
 _SARIF_LEVEL = {
     Severity.ERROR: "error",
@@ -82,82 +64,29 @@ _SARIF_LEVEL = {
 }
 
 BSL_EXTENSIONS = {".bsl", ".os"}
-SPLIT_FRAGMENT_NOISE_RULES = frozenset({"BSL017", "BSL040", "BSL156"})
-CHECK_PROFILES = frozenset({"quick", "full", "fragment"})
 
 
-def _validate_check_profile(profile: str) -> str:
-    normalized = (profile or "quick").strip().lower()
-    if normalized not in CHECK_PROFILES:
-        raise ValueError(f"Unknown check profile: {profile!r}")
-    return normalized
-
-
-def read_paths_from_file(path: str, *, nul: bool = False) -> list[str]:
-    """Read newline- or NUL-delimited paths from *path*; ``-`` reads stdin."""
-    if nul:
-        raw = sys.stdin.buffer.read() if path == "-" else Path(path).read_bytes()
-        return [item.decode("utf-8") for item in raw.split(b"\0") if item]
+def read_paths_from_file(path: str) -> list[str]:
+    """Read newline-delimited paths from *path*; ``-`` reads stdin."""
     text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
     return [line for line in text.splitlines() if line]
-
-
-def filter_diagnostics_by_changed_lines(
-    diagnostics: list[Diagnostic],
-    changed_line_ranges: dict[str, list[tuple[int, int]]],
-) -> list[Diagnostic]:
-    """Keep diagnostics whose start line intersects configured changed line ranges."""
-    if not changed_line_ranges:
-        return []
-
-    normalized = {str(Path(path).resolve()): ranges for path, ranges in changed_line_ranges.items()}
-    out: list[Diagnostic] = []
-    for diag in diagnostics:
-        ranges = normalized.get(str(Path(diag.file).resolve()))
-        if ranges and any(start <= diag.line <= end for start, end in ranges):
-            out.append(diag)
-    return out
-
-
-def _split_fragment_file_ignores(patterns: list[str] | None) -> dict[str, set[str]]:
-    return {pattern: set(SPLIT_FRAGMENT_NOISE_RULES) for pattern in (patterns or [])}
-
-
-def _matches_extra_file_ignores(
-    file_path: str, extra_file_ignores: dict[str, set[str]]
-) -> set[str]:
-    import fnmatch
-
-    p = Path(file_path)
-    result: set[str] = set()
-    for pattern, codes in extra_file_ignores.items():
-        if fnmatch.fnmatch(str(p), pattern) or fnmatch.fnmatch(p.name, pattern):
-            result.update(codes)
-    return result
 
 
 def check_files(
     paths: list[str],
     *,
-    profile: str = "quick",
     use_index: bool | None = None,
     jobs: int = 1,
     select: set[str] | None = None,
     ignore: set[str] | None = None,
     config: BslConfig | None = None,
-    changed_line_ranges: dict[str, list[tuple[int, int]]] | None = None,
-    split_fragment_patterns: list[str] | None = None,
 ) -> list[Diagnostic]:
     """
     Public API: run diagnostics only on the provided BSL/OS files.
 
     ``paths`` is treated as a file list. Directories are ignored here; use the
     CLI ``check()`` helper when recursive directory collection is desired.
-    ``profile="quick"`` is no-index and optimized for changed-file advisory
-    checks. ``profile="full"`` enables the workspace symbol index. ``profile=
-    "fragment"`` is no-index and suppresses module-level split-fragment noise.
     """
-    effective_profile = _validate_check_profile(profile)
     cfg = config or _EMPTY
     files = [
         str(Path(raw).resolve())
@@ -169,11 +98,6 @@ def check_files(
     if not files:
         return []
 
-    effective_use_index = use_index if use_index is not None else effective_profile == "full"
-    effective_split_patterns = split_fragment_patterns
-    if effective_profile == "fragment" and effective_split_patterns is None:
-        effective_split_patterns = ["*"]
-
     diagnostics, error_occurred = _run_checks(
         sorted(files),
         select=select,
@@ -181,45 +105,35 @@ def check_files(
         jobs=jobs,
         config=cfg,
         show_progress=False,
-        extra_file_ignores=_split_fragment_file_ignores(effective_split_patterns),
-        use_index=effective_use_index,
+        use_index=bool(use_index),
     )
     if error_occurred:
         raise RuntimeError("One or more files failed diagnostics")
-    if changed_line_ranges is not None:
-        diagnostics = filter_diagnostics_by_changed_lines(diagnostics, changed_line_ranges)
     return diagnostics
 
 
 def check(
     paths: list[str],
     format: str = "text",
-    profile: str = "quick",
     use_index: bool | None = None,
     select: set[str] | None = None,
     ignore: set[str] | None = None,
     jobs: int = 0,
-    sonar_root: str | None = None,
     exit_zero: bool = False,
     baseline: str | None = None,
     update_baseline: str | None = None,
     config: BslConfig | None = None,
-    stats: bool = False,
-    show_fix: bool = False,
     fix: bool = False,
-    changed_line_ranges: dict[str, list[tuple[int, int]]] | None = None,
-    split_fragment_patterns: list[str] | None = None,
 ) -> int:
     """
     Run BSL lint rules on all .bsl/.os files under *paths*.
 
     Args:
         paths:           Files or directories to check.
-        format:          Output format: ``text``, ``json``, ``sonarqube``, or ``sarif``.
+        format:          Output format: ``text``, ``json``, or ``sarif``.
         select:          If provided, run only these rule codes.
         ignore:          Rule codes to skip.
         jobs:            Worker threads (0 = auto-detect, 1 = serial).
-        sonar_root:      Project root for SonarQube relative path calculation.
         exit_zero:       Always return 0 (never fail even if issues found).
         baseline:        Path to baseline JSON — suppress known issues.
         update_baseline: Write all found issues to this path, then exit 0.
@@ -230,7 +144,8 @@ def check(
         Exit code: 0 = clean, 1 = issues found, 2 = error.
     """
     cfg = config or _EMPTY
-    effective_profile = _validate_check_profile(profile)
+    if format not in {"text", "json", "sarif"}:
+        raise ValueError(f"Unsupported output format: {format!r}. Use text, json, or sarif.")
 
     # Merge config defaults with explicit flags (CLI wins over config)
     effective_format = format if format != "text" or cfg.format is None else cfg.format
@@ -243,19 +158,13 @@ def check(
         console.print("[yellow]No .bsl/.os files found.[/yellow]")
         return 0
 
-    effective_use_index = use_index if use_index is not None else effective_profile == "full"
-    effective_split_patterns = split_fragment_patterns
-    if effective_profile == "fragment" and effective_split_patterns is None:
-        effective_split_patterns = ["*"]
-
     all_diagnostics, error_occurred = _run_checks(
         sorted(all_files),
         select=select,
         ignore=ignore,
         jobs=effective_jobs,
         config=cfg,
-        extra_file_ignores=_split_fragment_file_ignores(effective_split_patterns),
-        use_index=effective_use_index,
+        use_index=bool(use_index),
     )
 
     if error_occurred:
@@ -264,9 +173,6 @@ def check(
     # --fix: apply in-place auto-fixes before reporting
     if fix:
         all_diagnostics = _apply_fixes_to_files(all_diagnostics)
-
-    if changed_line_ranges is not None:
-        all_diagnostics = filter_diagnostics_by_changed_lines(all_diagnostics, changed_line_ranges)
 
     # --update-baseline: save & exit 0
     if update_baseline:
@@ -290,23 +196,14 @@ def check(
 
     if effective_format == "json":
         _print_json(all_diagnostics)
-    elif effective_format == "sonarqube":
-        _print_sonarqube(all_diagnostics, sonar_root)
     elif effective_format == "sarif":
-        _print_sarif(all_diagnostics, sonar_root)
-    elif effective_format == "compact":
-        _print_compact(all_diagnostics)
-        if not all_diagnostics:
-            return 0
+        _print_sarif(all_diagnostics)
     else:
-        _print_text(all_diagnostics, show_fix=show_fix)
+        _print_text(all_diagnostics)
         if not all_diagnostics:
             console.print(f"[green]All clean.[/green] Checked {len(all_files)} file(s).")
             return 0
         _print_summary(all_diagnostics, len(all_files))
-
-    if stats:
-        _print_stats(all_diagnostics, len(all_files))
 
     if effective_exit_zero:
         return 0
@@ -415,7 +312,6 @@ def _run_checks(
     jobs: int,
     config: BslConfig | None = None,
     show_progress: bool = True,
-    extra_file_ignores: dict[str, set[str]] | None = None,
     use_index: bool = False,
 ) -> tuple[list[Diagnostic], bool]:
     """Run checks in parallel (or serial if jobs=1). Returns (diagnostics, error_flag)."""
@@ -430,7 +326,6 @@ def _run_checks(
 
     cfg = config or _EMPTY
     engine_kw = cfg.engine_kwargs()
-    extra_file_ignores = extra_file_ignores or {}
 
     shared_symbol_index: SymbolIndex | None = None
     if use_index:
@@ -475,7 +370,6 @@ def _run_checks(
             for fp in files:
                 try:
                     per_file_extra = cfg.get_file_ignores(fp)
-                    per_file_extra |= _matches_extra_file_ignores(fp, extra_file_ignores)
                     result = (
                         _make_engine(per_file_extra).check_file(fp)
                         if per_file_extra
@@ -491,7 +385,6 @@ def _run_checks(
 
             def _check_one(fp: str) -> list[Diagnostic]:
                 per_file_extra = cfg.get_file_ignores(fp)
-                per_file_extra |= _matches_extra_file_ignores(fp, extra_file_ignores)
                 return _make_engine(per_file_extra).check_file(fp)
 
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -522,26 +415,11 @@ def _run_checks(
 # ---------------------------------------------------------------------------
 
 
-def _print_text(diagnostics: list[Diagnostic], show_fix: bool = False) -> None:
+def _print_text(diagnostics: list[Diagnostic]) -> None:
     """Print ruff/flake8-style text output to stderr."""
-    from onec_hbk_bsl.analysis.diagnostics import RULE_FIX_HINTS
-
     for d in diagnostics:
         abbr, style = _SEV_STYLE.get(d.severity, ("?", "white"))
         line_str = f"{d.file}:{d.line}:{d.character}: {abbr} {d.code} {d.message}"
-        text = Text(line_str)
-        offset = len(d.file) + len(str(d.line)) + len(str(d.character)) + 4
-        text.stylize(style, offset)
-        console.print(text, highlight=False)
-        if show_fix and d.code in RULE_FIX_HINTS:
-            console.print(f"  [dim]fix:[/dim] {RULE_FIX_HINTS[d.code]}", highlight=False)
-
-
-def _print_compact(diagnostics: list[Diagnostic]) -> None:
-    """Print compact output (file:line:col: CODE) to stderr — good for grep/awk pipelines."""
-    for d in diagnostics:
-        _, style = _SEV_STYLE.get(d.severity, ("?", "white"))
-        line_str = f"{d.file}:{d.line}:{d.character}: {d.code}"
         text = Text(line_str)
         offset = len(d.file) + len(str(d.line)) + len(str(d.character)) + 4
         text.stylize(style, offset)
@@ -552,50 +430,6 @@ def _print_json(diagnostics: list[Diagnostic]) -> None:
     """Print JSON array of diagnostic dicts to stdout."""
     data = [d.to_dict(include_rule_name=True) for d in diagnostics]
     print(json.dumps(data, indent=2, ensure_ascii=False))
-
-
-def _print_sonarqube(diagnostics: list[Diagnostic], project_root: str | None = None) -> None:
-    """
-    Print SonarQube Generic Issue Import Format JSON to stdout.
-
-    See: https://docs.sonarqube.org/latest/analyzing-source-code/importing-external-issues/
-    """
-    issues = []
-    for d in diagnostics:
-        meta = RULE_METADATA.get(d.code, {})
-
-        # Resolve file path — SonarQube requires project-relative paths
-        file_path = d.file
-        if project_root:
-            try:
-                file_path = str(Path(d.file).relative_to(project_root))
-            except ValueError:
-                pass  # keep absolute if not under project_root
-
-        # Map severity
-        sonar_sev = meta.get("sonar_severity") or _SONAR_SEVERITY.get(d.severity, "MAJOR")
-        sonar_type = meta.get("sonar_type", "CODE_SMELL")
-
-        issue: dict = {
-            "engineId": "onec-hbk-bsl",
-            "ruleId": d.code,
-            "severity": sonar_sev,
-            "type": sonar_type,
-            "ruleMessage": bslls_message_for_rule_code(d.code),
-            "primaryLocation": {
-                "message": d.message,
-                "filePath": file_path,
-                "textRange": {
-                    "startLine": d.line,
-                    "endLine": max(d.line, d.end_line),
-                    "startColumn": d.character,
-                    "endColumn": d.end_character,
-                },
-            },
-        }
-        issues.append(issue)
-
-    print(json.dumps({"issues": issues}, indent=2, ensure_ascii=False))
 
 
 def _print_sarif(diagnostics: list[Diagnostic], project_root: str | None = None) -> None:
@@ -672,28 +506,6 @@ def _print_sarif(diagnostics: list[Diagnostic], project_root: str | None = None)
         ],
     }
     print(json.dumps(sarif, indent=2, ensure_ascii=False))
-
-
-def _print_stats(diagnostics: list[Diagnostic], file_count: int) -> None:
-    """
-    Print a machine-readable JSON stats summary to stdout.
-
-    Useful for dashboards, trend tracking, and CI metric collection::
-
-        onec-hbk-bsl --check . --stats | jq .total
-    """
-    from collections import Counter
-
-    by_code: dict[str, int] = Counter(d.code for d in diagnostics)  # type: ignore[assignment]
-    by_severity: dict[str, int] = Counter(d.severity.name for d in diagnostics)  # type: ignore[assignment]
-
-    summary: dict[str, Any] = {
-        "total": len(diagnostics),
-        "files_checked": file_count,
-        "by_severity": dict(by_severity),
-        "by_rule": dict(sorted(by_code.items())),
-    }
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
 def _print_summary(diagnostics: list[Diagnostic], file_count: int) -> None:

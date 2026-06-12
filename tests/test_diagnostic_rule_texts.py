@@ -73,18 +73,6 @@ def test_structured_diagnostics_include_bslls_rule_message() -> None:
     )
 
 
-def test_metadata_sonar_type_and_severity_follow_bslls() -> None:
-    expected = {
-        "BSL001": ("ERROR", "CRITICAL"),
-        "BSL022": ("CODE_SMELL", "MAJOR"),
-        "BSL164": ("SECURITY_HOTSPOT", "MAJOR"),
-        "BSL174": ("CODE_SMELL", "MAJOR"),
-    }
-    for code, (sonar_type, sonar_severity) in expected.items():
-        assert RULE_METADATA[code]["sonar_type"] == sonar_type
-        assert RULE_METADATA[code]["sonar_severity"] == sonar_severity
-
-
 def test_lsp_compat_severity_documents_bslls_facing_source_of_truth() -> None:
     expected = {
         "BSL156": Severity.HINT,  # CodeOutOfRegion

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from onec_hbk_bsl.__main__ import _parse_codes, main
+from onec_hbk_bsl.__main__ import _normalize_argv, _parse_codes, main
 
 # ---------------------------------------------------------------------------
 # _parse_codes
@@ -48,7 +48,7 @@ class TestParseCodes:
 def test_main_calls_multiprocessing_freeze_support_before_argparse() -> None:
     with (
         patch("multiprocessing.freeze_support") as freeze_support,
-        patch("sys.argv", ["onec-hbk-bsl", "--list-rules"]),
+        patch("sys.argv", ["onec-hbk-bsl", "rules"]),
     ):
         main()
 
@@ -62,7 +62,7 @@ class TestMainCheckNewFlags:
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--select",
                 "BSL012",
@@ -79,7 +79,7 @@ class TestMainCheckNewFlags:
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--format",
                 "sarif",
@@ -102,7 +102,7 @@ class TestMainCheckNewFlags:
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--select",
                 "BSL012",
@@ -123,7 +123,7 @@ class TestMainCheckNewFlags:
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--select",
                 "BSL012",
@@ -138,7 +138,7 @@ class TestMainCheckNewFlags:
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--select",
                 "BSL012",
@@ -154,14 +154,14 @@ class TestMainCheckNewFlags:
 class TestMainCheck:
     def test_check_mode_clean_exits_0(self, tmp_path: Path) -> None:
         (tmp_path / "ok.bsl").write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
-        with patch("sys.argv", ["onec-hbk-bsl", "--check", str(tmp_path), "--select", "BSL001"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "check", str(tmp_path), "--select", "BSL001"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
         assert exc_info.value.code == 0
 
     def test_check_mode_dirty_exits_1(self, tmp_path: Path) -> None:
         (tmp_path / "dirty.bsl").write_text('Пароль = "секрет123";\n', encoding="utf-8")
-        with patch("sys.argv", ["onec-hbk-bsl", "--check", str(tmp_path), "--select", "BSL012"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "check", str(tmp_path), "--select", "BSL012"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
         assert exc_info.value.code == 1
@@ -170,7 +170,7 @@ class TestMainCheck:
         (tmp_path / "ok.bsl").write_text("А = 1;\n", encoding="utf-8")
         with patch(
             "sys.argv",
-            ["onec-hbk-bsl", "--check", str(tmp_path), "--format", "json", "--select", "BSL001"],
+            ["onec-hbk-bsl", "check", str(tmp_path), "--format", "json", "--select", "BSL001"],
         ):
             with pytest.raises(SystemExit):
                 main()
@@ -181,15 +181,13 @@ class TestMainCheck:
         data = json.loads(captured.out)
         assert isinstance(data, list)
 
-    def test_check_with_sonarqube_format(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture
-    ) -> None:
+    def test_check_rejects_removed_sonarqube_format(self, tmp_path: Path) -> None:
         (tmp_path / "ok.bsl").write_text("А = 1;\n", encoding="utf-8")
         with patch(
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--format",
                 "sonarqube",
@@ -197,17 +195,13 @@ class TestMainCheck:
                 "BSL001",
             ],
         ):
-            with pytest.raises(SystemExit):
+            with pytest.raises(SystemExit) as exc_info:
                 main()
-        import json
-
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert "issues" in data
+        assert exc_info.value.code == 2
 
     def test_check_no_path_uses_cwd(self, tmp_path: Path) -> None:
-        """--check with no paths should use cwd (returns 0 if cwd has no BSL files)."""
-        with patch("sys.argv", ["onec-hbk-bsl", "--check"]):
+        """check with no paths should use cwd (returns 0 if cwd has no BSL files)."""
+        with patch("sys.argv", ["onec-hbk-bsl", "check"]):
             with patch("os.getcwd", return_value=str(tmp_path)):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -217,7 +211,7 @@ class TestMainCheck:
         (tmp_path / "t.bsl").write_text("А = А;\n", encoding="utf-8")
         with patch(
             "sys.argv",
-            ["onec-hbk-bsl", "--check", str(tmp_path), "--select", "BSL009"],
+            ["onec-hbk-bsl", "check", str(tmp_path), "--select", "BSL009"],
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -227,7 +221,7 @@ class TestMainCheck:
         (tmp_path / "t.bsl").write_text('Пароль = "секрет123";\n', encoding="utf-8")
         with patch(
             "sys.argv",
-            ["onec-hbk-bsl", "--check", str(tmp_path), "--ignore", "BSL012"],
+            ["onec-hbk-bsl", "check", str(tmp_path), "--ignore", "BSL012"],
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -267,7 +261,8 @@ class TestMainFormat:
                 main()
         assert exc_info.value.code == 0
         out = capsys.readouterr().out
-        assert "onec-hbk-bsl format [PATH ...]" in out
+        assert "COMMAND" in out
+        assert "format" in out
 
     def test_format_subcommand_check_clean_exits_zero(self, tmp_path: Path) -> None:
         path = tmp_path / "clean.bsl"
@@ -285,12 +280,12 @@ class TestMainFormat:
 
 class TestMainListRules:
     def test_list_rules_does_not_exit(self) -> None:
-        with patch("sys.argv", ["onec-hbk-bsl", "--list-rules"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "rules"]):
             # Should return normally (no sys.exit called)
             main()
 
     def test_list_rules_with_tag_filter(self) -> None:
-        with patch("sys.argv", ["onec-hbk-bsl", "--list-rules", "--tag", "security"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "rules", "--tag", "security"]):
             # Should return normally and show only security rules
             main()
 
@@ -315,7 +310,7 @@ class TestMainVersion:
 
 class TestMainInit:
     def test_init_creates_config_file(self, tmp_path: Path) -> None:
-        with patch("sys.argv", ["onec-hbk-bsl", "--init"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "init"]):
             with patch("os.getcwd", return_value=str(tmp_path)):
                 main()
         assert (tmp_path / "onec-hbk-bsl.toml").exists()
@@ -323,25 +318,75 @@ class TestMainInit:
     def test_init_does_not_overwrite_existing(self, tmp_path: Path) -> None:
         existing = tmp_path / "onec-hbk-bsl.toml"
         existing.write_text("# custom\n")
-        with patch("sys.argv", ["onec-hbk-bsl", "--init"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "init"]):
             with patch("os.getcwd", return_value=str(tmp_path)):
                 main()
         assert existing.read_text() == "# custom\n"
 
 
 # ---------------------------------------------------------------------------
-# main() — compact format
+# main() — compatibility aliases and removed flags
 # ---------------------------------------------------------------------------
 
 
-class TestMainCompactFormat:
-    def test_compact_format_output(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+class TestMainCompatibilityAliases:
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (["--check", "."], ["check", "."]),
+            (["--lsp"], ["lsp"]),
+            (["--mcp", "--stdio"], ["mcp", "--stdio"]),
+            (["--index", ".", "--force"], ["index", ".", "--force"]),
+            (["--list-rules"], ["rules"]),
+            (["--init"], ["init"]),
+            (
+                ["--log-level", "debug", "--check", "."],
+                ["check", "--log-level", "debug", "."],
+            ),
+            (["format", ".", "--check"], ["format", ".", "--check"]),
+        ],
+    )
+    def test_legacy_mode_alias_normalization(
+        self, argv: list[str], expected: list[str]
+    ) -> None:
+        assert _normalize_argv(argv) == expected
+
+    def test_legacy_check_alias_still_runs(self, tmp_path: Path) -> None:
+        (tmp_path / "ok.bsl").write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
+        with patch("sys.argv", ["onec-hbk-bsl", "--check", str(tmp_path), "--select", "BSL001"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 0
+
+    def test_legacy_rules_alias_still_runs(self) -> None:
+        with patch("sys.argv", ["onec-hbk-bsl", "--list-rules", "--tag", "security"]):
+            main()
+
+    def test_legacy_init_alias_still_runs(self, tmp_path: Path) -> None:
+        with patch("sys.argv", ["onec-hbk-bsl", "--init"]):
+            with patch("os.getcwd", return_value=str(tmp_path)):
+                main()
+        assert (tmp_path / "onec-hbk-bsl.toml").exists()
+
+    def test_global_log_level_before_legacy_alias_still_parses(self, tmp_path: Path) -> None:
+        (tmp_path / "ok.bsl").write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
+        with patch(
+            "sys.argv",
+            ["onec-hbk-bsl", "--log-level", "debug", "--check", str(tmp_path), "--select", "BSL001"],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 0
+
+
+class TestMainRemovedLegacyFlags:
+    def test_compact_format_is_rejected(self, tmp_path: Path) -> None:
         (tmp_path / "t.bsl").write_text("А = А;\n", encoding="utf-8")
         with patch(
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--format",
                 "compact",
@@ -349,10 +394,27 @@ class TestMainCompactFormat:
                 "BSL009",
             ],
         ):
-            with pytest.raises(SystemExit):
+            with pytest.raises(SystemExit) as exc_info:
                 main()
-        captured = capsys.readouterr()
-        assert "BSL009" in captured.err
+        assert exc_info.value.code == 2
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["onec-hbk-bsl", "check", ".", "--stats"],
+            ["onec-hbk-bsl", "check", ".", "--show-fix"],
+            ["onec-hbk-bsl", "check", ".", "--check-profile", "full"],
+            ["onec-hbk-bsl", "check", ".", "--paths-from0", "paths.txt"],
+            ["onec-hbk-bsl", "check", ".", "--changed-lines-only"],
+            ["onec-hbk-bsl", "check", ".", "--split-fragment", "*"],
+            ["onec-hbk-bsl", "check", ".", "--sonar-root", "."],
+        ],
+    )
+    def test_removed_flags_are_rejected(self, argv: list[str]) -> None:
+        with patch("sys.argv", argv):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 2
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +430,7 @@ class TestMainFixFlag:
             "sys.argv",
             [
                 "onec-hbk-bsl",
-                "--check",
+                "check",
                 str(tmp_path),
                 "--select",
                 "BSL009",
@@ -389,7 +451,7 @@ class TestMainFixFlag:
 class TestMainDiffFlag:
     def test_diff_with_no_changes_exits_0(self, tmp_path: Path) -> None:
         """--diff with no changed BSL files should exit 0 cleanly."""
-        with patch("sys.argv", ["onec-hbk-bsl", "--check", str(tmp_path), "--diff"]):
+        with patch("sys.argv", ["onec-hbk-bsl", "check", str(tmp_path), "--diff"]):
             with patch("onec_hbk_bsl.cli.git_utils.git_changed_files", return_value=[]):
                 with pytest.raises(SystemExit) as exc_info:
                     main()

@@ -624,7 +624,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     # ------------------------------------------------------------------
 
     @mcp.tool(
-        description="Return metadata for BSLLS-compatible public BSL lint rules.",
+        description="Return metadata for public BSL lint rules.",
     )
     def bsl_list_rules(
         tag_filter: Annotated[
@@ -632,11 +632,11 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         ] = None,
     ) -> dict:
         """
-        List all available BSL diagnostic rules with descriptions and SonarQube mapping.
+        List all available BSL diagnostic rules with descriptions.
 
         Returns:
             Dict with ``count`` and ``rules`` list, each having:
-            code, name, description, severity, sonar_type, sonar_severity, tags.
+            code, name, description, severity, tags.
         """
         rules = []
         for code, meta in sorted(RULE_METADATA.items()):
@@ -648,8 +648,6 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
                     "name": meta["name"],
                     "description": localize_rule_description(code),
                     "severity": meta["severity"],
-                    "sonar_type": meta["sonar_type"],
-                    "sonar_severity": meta["sonar_severity"],
                     "tags": meta.get("tags", []),
                 }
             )
