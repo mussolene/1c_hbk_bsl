@@ -103,7 +103,9 @@ _DIFF_HEADER_RE = re.compile(r"^\+\+\+ b/(.*)$")
 _DIFF_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
 
 
-def _parse_unified_diff_changed_ranges(diff_text: str, git_root: str) -> dict[str, list[tuple[int, int]]]:
+def _parse_unified_diff_changed_ranges(
+    diff_text: str, git_root: str
+) -> dict[str, list[tuple[int, int]]]:
     """Parse ``git diff -U0`` output into absolute-path changed line ranges."""
     ranges: dict[str, list[tuple[int, int]]] = {}
     current_file: str | None = None
@@ -128,7 +130,9 @@ def _parse_unified_diff_changed_ranges(diff_text: str, git_root: str) -> dict[st
     return ranges
 
 
-def git_changed_line_ranges(workspace: str, since: str | None = None) -> dict[str, list[tuple[int, int]]]:
+def git_changed_line_ranges(
+    workspace: str, since: str | None = None
+) -> dict[str, list[tuple[int, int]]]:
     """
     Return changed 1-based line ranges for added/modified BSL files.
 

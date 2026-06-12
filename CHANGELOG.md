@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.55] - 2026-06-12
+
+### Changed
+
+- Re-formatted the diagnostic message parity changes with the repository Ruff
+  formatter so the CI format gate passes for the published fix.
+
 ## [0.7.54] - 2026-06-12
 
 ### Changed

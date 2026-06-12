@@ -115,7 +115,9 @@ def _split_fragment_file_ignores(patterns: list[str] | None) -> dict[str, set[st
     return {pattern: set(SPLIT_FRAGMENT_NOISE_RULES) for pattern in (patterns or [])}
 
 
-def _matches_extra_file_ignores(file_path: str, extra_file_ignores: dict[str, set[str]]) -> set[str]:
+def _matches_extra_file_ignores(
+    file_path: str, extra_file_ignores: dict[str, set[str]]
+) -> set[str]:
     import fnmatch
 
     p = Path(file_path)
