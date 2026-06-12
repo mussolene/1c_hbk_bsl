@@ -150,6 +150,7 @@ def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
 def _run_check(
     paths: list[str],
     fmt: str,
+    check_profile: str,
     select: set[str] | None,
     ignore: set[str] | None,
     jobs: int,
@@ -204,6 +205,7 @@ def _run_check(
     return check(
         paths,
         format=fmt,
+        profile=check_profile,
         select=select,
         ignore=ignore,
         jobs=jobs,
@@ -549,11 +551,12 @@ Examples:
   onec-hbk-bsl --check .                              Check current directory
   onec-hbk-bsl --check src/ --select BSL001,MethodSize
   onec-hbk-bsl --check . --ignore BSL014 --format json > issues.json
+  onec-hbk-bsl --check --paths-from files.txt --format json --check-profile quick
+  onec-hbk-bsl --check . --diff --since origin/main --check-profile fragment --format json
   onec-hbk-bsl --check . --format sonarqube --sonar-root /project > sonar.json
   onec-hbk-bsl --check . --format sarif > results.sarif
   onec-hbk-bsl --check . --jobs 8                     Use 8 parallel workers
   onec-hbk-bsl --check . --exit-zero                  Never fail CI
-  onec-hbk-bsl --check --paths-from files.txt --format json
   onec-hbk-bsl --check . --diff --since origin/main --changed-lines-only --format json
   onec-hbk-bsl --check . --update-baseline baseline.json  Save known issues
   onec-hbk-bsl --check . --baseline baseline.json     Only report new issues
@@ -634,6 +637,16 @@ Examples:
         choices=["text", "compact", "json", "sonarqube", "sarif"],
         default="text",
         help="Output format for --check (default: text)",
+    )
+    parser.add_argument(
+        "--check-profile",
+        choices=["quick", "full", "fragment"],
+        default="quick",
+        help=(
+            "Diagnostic profile for --check: quick=no-index advisory (default), "
+            "full=enable workspace symbol index, fragment=quick plus split-fragment "
+            "noise suppression"
+        ),
     )
     parser.add_argument(
         "--select",
@@ -803,6 +816,7 @@ Examples:
             _run_check(
                 paths,
                 fmt=args.format,
+                check_profile=args.check_profile,
                 select=_parse_codes(args.select),
                 ignore=_parse_codes(args.ignore),
                 jobs=args.jobs,

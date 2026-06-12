@@ -83,6 +83,14 @@ _SARIF_LEVEL = {
 
 BSL_EXTENSIONS = {".bsl", ".os"}
 SPLIT_FRAGMENT_NOISE_RULES = frozenset({"BSL017", "BSL040", "BSL156"})
+CHECK_PROFILES = frozenset({"quick", "full", "fragment"})
+
+
+def _validate_check_profile(profile: str) -> str:
+    normalized = (profile or "quick").strip().lower()
+    if normalized not in CHECK_PROFILES:
+        raise ValueError(f"Unknown check profile: {profile!r}")
+    return normalized
 
 
 def read_paths_from_file(path: str, *, nul: bool = False) -> list[str]:
@@ -131,6 +139,8 @@ def _matches_extra_file_ignores(
 def check_files(
     paths: list[str],
     *,
+    profile: str = "quick",
+    use_index: bool | None = None,
     jobs: int = 1,
     select: set[str] | None = None,
     ignore: set[str] | None = None,
@@ -143,7 +153,11 @@ def check_files(
 
     ``paths`` is treated as a file list. Directories are ignored here; use the
     CLI ``check()`` helper when recursive directory collection is desired.
+    ``profile="quick"`` is no-index and optimized for changed-file advisory
+    checks. ``profile="full"`` enables the workspace symbol index. ``profile=
+    "fragment"`` is no-index and suppresses module-level split-fragment noise.
     """
+    effective_profile = _validate_check_profile(profile)
     cfg = config or _EMPTY
     files = [
         str(Path(raw).resolve())
@@ -155,6 +169,11 @@ def check_files(
     if not files:
         return []
 
+    effective_use_index = use_index if use_index is not None else effective_profile == "full"
+    effective_split_patterns = split_fragment_patterns
+    if effective_profile == "fragment" and effective_split_patterns is None:
+        effective_split_patterns = ["*"]
+
     diagnostics, error_occurred = _run_checks(
         sorted(files),
         select=select,
@@ -162,7 +181,8 @@ def check_files(
         jobs=jobs,
         config=cfg,
         show_progress=False,
-        extra_file_ignores=_split_fragment_file_ignores(split_fragment_patterns),
+        extra_file_ignores=_split_fragment_file_ignores(effective_split_patterns),
+        use_index=effective_use_index,
     )
     if error_occurred:
         raise RuntimeError("One or more files failed diagnostics")
@@ -174,6 +194,8 @@ def check_files(
 def check(
     paths: list[str],
     format: str = "text",
+    profile: str = "quick",
+    use_index: bool | None = None,
     select: set[str] | None = None,
     ignore: set[str] | None = None,
     jobs: int = 0,
@@ -208,6 +230,7 @@ def check(
         Exit code: 0 = clean, 1 = issues found, 2 = error.
     """
     cfg = config or _EMPTY
+    effective_profile = _validate_check_profile(profile)
 
     # Merge config defaults with explicit flags (CLI wins over config)
     effective_format = format if format != "text" or cfg.format is None else cfg.format
@@ -220,13 +243,19 @@ def check(
         console.print("[yellow]No .bsl/.os files found.[/yellow]")
         return 0
 
+    effective_use_index = use_index if use_index is not None else effective_profile == "full"
+    effective_split_patterns = split_fragment_patterns
+    if effective_profile == "fragment" and effective_split_patterns is None:
+        effective_split_patterns = ["*"]
+
     all_diagnostics, error_occurred = _run_checks(
         sorted(all_files),
         select=select,
         ignore=ignore,
         jobs=effective_jobs,
         config=cfg,
-        extra_file_ignores=_split_fragment_file_ignores(split_fragment_patterns),
+        extra_file_ignores=_split_fragment_file_ignores(effective_split_patterns),
+        use_index=effective_use_index,
     )
 
     if error_occurred:
@@ -387,6 +416,7 @@ def _run_checks(
     config: BslConfig | None = None,
     show_progress: bool = True,
     extra_file_ignores: dict[str, set[str]] | None = None,
+    use_index: bool = False,
 ) -> tuple[list[Diagnostic], bool]:
     """Run checks in parallel (or serial if jobs=1). Returns (diagnostics, error_flag)."""
     from rich.progress import (
@@ -403,10 +433,11 @@ def _run_checks(
     extra_file_ignores = extra_file_ignores or {}
 
     shared_symbol_index: SymbolIndex | None = None
-    try:
-        shared_symbol_index = SymbolIndex(db_path=resolve_index_db_path(os.getcwd()))
-    except Exception:
-        shared_symbol_index = None
+    if use_index:
+        try:
+            shared_symbol_index = SymbolIndex(db_path=resolve_index_db_path(os.getcwd()))
+        except Exception:
+            shared_symbol_index = None
 
     def _make_engine(extra_ignore: set[str] | None = None) -> DiagnosticEngine:
         effective_ignore = (ignore or set()) | (extra_ignore or set())

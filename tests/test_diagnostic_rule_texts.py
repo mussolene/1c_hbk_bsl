@@ -7,6 +7,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
     Diagnostic,
     Severity,
     bslls_message_for_rule_code,
+    lsp_compat_severity,
 )
 from onec_hbk_bsl.lsp.diagnostics_ru import (
     localize_rule_description,
@@ -82,6 +83,18 @@ def test_metadata_sonar_type_and_severity_follow_bslls() -> None:
     for code, (sonar_type, sonar_severity) in expected.items():
         assert RULE_METADATA[code]["sonar_type"] == sonar_type
         assert RULE_METADATA[code]["sonar_severity"] == sonar_severity
+
+
+def test_lsp_compat_severity_documents_bslls_facing_source_of_truth() -> None:
+    expected = {
+        "BSL156": Severity.HINT,  # CodeOutOfRegion
+        "BSL256": Severity.HINT,  # Typo
+        "BSL200": Severity.HINT,  # IncorrectLineBreak
+        "BSL249": Severity.ERROR,  # StyleElementConstructors
+    }
+    for code, severity in expected.items():
+        metadata_severity = Severity[RULE_METADATA[code]["severity"]]
+        assert lsp_compat_severity(code, metadata_severity) is severity
 
 
 def test_unknown_rule_title_does_not_use_generic_translation_fallback() -> None:

@@ -42,6 +42,7 @@ class NormalizedDiagnostic:
     message_norm: str
     end_line: int = 0
     end_character: int = 0
+    rule_name: str = ""
 
 
 def iter_bsl_files(root: Path) -> list[Path]:
@@ -268,6 +269,10 @@ def _canonical_rule_name_for_ours(code: str) -> str:
     return str(RULE_METADATA.get(code, {}).get("name") or code)
 
 
+def _canonical_code_for_bslls_rule(rule: str) -> str:
+    return _BSLLS_NAME_TO_CODE.get(rule, rule)
+
+
 def normalize_our_diagnostics(
     diagnostics: list[Diagnostic],
     *,
@@ -275,7 +280,7 @@ def normalize_our_diagnostics(
 ) -> list[NormalizedDiagnostic]:
     rows: list[NormalizedDiagnostic] = []
     for d in diagnostics:
-        code = _canonical_rule_name_for_ours(d.code)
+        rule_name = _canonical_rule_name_for_ours(d.code)
         rows.append(
             NormalizedDiagnostic(
                 file=_relative_file(d.file, workspace_root),
@@ -286,8 +291,9 @@ def normalize_our_diagnostics(
                 severity=str(
                     getattr(lsp_compat_severity(d.code, d.severity), "name", d.severity)
                 ).upper(),
-                code=code,
+                code=d.code,
                 code_source=d.code,
+                rule_name=rule_name,
                 message=d.message,
                 message_norm=normalize_message(d.message),
             )
@@ -320,6 +326,7 @@ def normalize_bslls_json_report(
         file_path = _relative_file_many(raw_path, workspace_root, *extra_roots)
         for diag in fileinfo.get("diagnostics", []):
             rule = str(diag.get("code") or "")
+            code = _canonical_code_for_bslls_rule(rule)
             start = diag.get("range", {}).get("start", {})
             message = str(diag.get("message") or "")
             rows.append(
@@ -330,8 +337,9 @@ def normalize_bslls_json_report(
                     end_line=int(diag.get("range", {}).get("end", {}).get("line", 0)) + 1,
                     end_character=int(diag.get("range", {}).get("end", {}).get("character", 0)),
                     severity=str(diag.get("severity") or "").upper(),
-                    code=rule,
+                    code=code,
                     code_source=rule,
+                    rule_name=rule,
                     message=message,
                     message_norm=normalize_message(message),
                 )
@@ -364,7 +372,7 @@ def diff_diagnostics(
             diag.end_character,
             diag.code,
         )
-        if diag.code == "Typo":
+        if diag.code == "BSL256" or diag.rule_name == "Typo":
             return (*base, diag.message_norm)
         return base
 

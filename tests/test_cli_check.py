@@ -4,6 +4,7 @@ Tests for CLI check module: format output, rule listing, file collection.
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
@@ -305,6 +306,19 @@ class TestCheckNewFeatures:
         diags = check_files([str(f)], select={"BSL009"}, jobs=1)
         assert [d.code for d in diags] == ["BSL009"]
 
+    def test_check_files_quick_profile_does_not_open_symbol_index(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        f = _write_bsl(tmp_path, "модуль.bsl", "А = А;\n")
+
+        def fail_symbol_index(*args: object, **kwargs: object) -> object:
+            raise AssertionError("quick profile must not open SymbolIndex")
+
+        check_module = importlib.import_module("onec_hbk_bsl.cli.check")
+        monkeypatch.setattr(check_module, "SymbolIndex", fail_symbol_index)
+        diags = check_files([str(f)], select={"BSL009"}, jobs=1)
+        assert [d.code for d in diags] == ["BSL009"]
+
     def test_read_paths_from_file_utf8(self, tmp_path: Path) -> None:
         p = tmp_path / "files.txt"
         p.write_text("src/ОбщийМодуль.bsl\n", encoding="utf-8")
@@ -348,6 +362,13 @@ class TestCheckNewFeatures:
         )
         assert [d.code for d in without_profile] == ["BSL156"]
         assert with_profile == []
+
+    def test_fragment_profile_suppresses_fragment_noise_for_all_input_files(
+        self, tmp_path: Path
+    ) -> None:
+        f = _write_bsl(tmp_path, "frag.bsl", "Процедура П() Экспорт\nКонецПроцедуры\n")
+        diags = check_files([str(f)], select={"BSL156"}, jobs=1, profile="fragment")
+        assert diags == []
 
     def test_exit_zero_suppresses_exit_1(self, tmp_path: Path) -> None:
         _write_bsl(tmp_path, "dirty.bsl", 'Пароль = "секрет123";\n')
