@@ -11,6 +11,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
     RULE_METADATA,
     DiagnosticEngine,
     normalize_rule_code_set,
+    normalize_rule_code_set_strict,
     resolve_rule_token_to_code,
 )
 
@@ -46,3 +47,14 @@ def test_local_only_rules_are_not_public_or_selectable() -> None:
         "BSL014",
         "BSL278",
     }
+
+
+def test_user_facing_rule_selection_rejects_unknown_tokens() -> None:
+    assert normalize_rule_code_set(["BSL999,LineLength"]) == {"BSL014"}
+
+    try:
+        normalize_rule_code_set_strict(["BSL999,LineLength"], source="test")
+    except ValueError as exc:
+        assert "Unknown diagnostic rule token(s) in test: BSL999" in str(exc)
+    else:
+        raise AssertionError("strict normalization should reject unknown rule tokens")

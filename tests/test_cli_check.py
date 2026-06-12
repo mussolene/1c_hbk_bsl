@@ -339,6 +339,24 @@ class TestCheckNewFeatures:
         rc = check([str(tmp_path)], format="text", select={"BSL012"}, config=cfg)
         assert rc == 0
 
+    def test_config_select_is_used_when_cli_select_is_absent(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"select": ["BSL012"]})
+        rc = check([str(tmp_path)], format="text", config=cfg)
+        assert rc == 1
+
+    def test_config_ignore_is_used_when_cli_ignore_is_absent(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"ignore": ["BSL012"]})
+        rc = check([str(tmp_path)], format="text", select={"BSL012"}, config=cfg)
+        assert rc == 0
+
+    def test_cli_select_overrides_config_select(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"select": ["BSL012"]})
+        rc = check([str(tmp_path)], format="text", select={"BSL001"}, config=cfg)
+        assert rc == 0
+
     def test_config_threshold_applied(self, tmp_path: Path) -> None:
         # Very short max line length — should trigger BSL001
         long_line = "А" * 50 + ";\n"

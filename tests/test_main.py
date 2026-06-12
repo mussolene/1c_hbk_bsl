@@ -39,6 +39,10 @@ class TestParseCodes:
         result = _parse_codes("bsl001,bsl002")
         assert result == {"BSL001", "BSL002"}
 
+    def test_unknown_code_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Unknown diagnostic rule token"):
+            _parse_codes("BSL999")
+
 
 # ---------------------------------------------------------------------------
 # main() — check mode
@@ -228,6 +232,33 @@ class TestMainCheck:
         # With BSL012 ignored this file should be clean (may have other diagnostics)
         # Just verify it runs without crashing
         assert exc_info.value.code in (0, 1)
+
+    def test_check_rejects_unknown_select_flag(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        (tmp_path / "ok.bsl").write_text("А = 1;\n", encoding="utf-8")
+        with patch("sys.argv", ["onec-hbk-bsl", "check", str(tmp_path), "--select", "BSL999"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        captured = capsys.readouterr()
+        assert exc_info.value.code == 2
+        assert "Unknown diagnostic rule token" in captured.err
+
+    def test_check_rejects_unknown_config_rule(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        (tmp_path / "onec-hbk-bsl.toml").write_text('select = ["BSL999"]\n', encoding="utf-8")
+        (tmp_path / "ok.bsl").write_text("А = 1;\n", encoding="utf-8")
+        with patch("sys.argv", ["onec-hbk-bsl", "check", str(tmp_path)]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        captured = capsys.readouterr()
+        assert exc_info.value.code == 2
+        assert "Unknown diagnostic rule token" in captured.err
 
 
 # ---------------------------------------------------------------------------

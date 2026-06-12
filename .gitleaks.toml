@@ -1,5 +1,7 @@
 # Gitleaks: reduce false positives from intentional BSL test fixtures (fake tokens).
-# Run: gitleaks detect --source . --verbose
+# Run against git history: gitleaks detect --source . --redact --verbose
+# Run against the tracked working snapshot:
+#   tmp=$(mktemp -d); git archive HEAD | tar -x -C "$tmp"; gitleaks detect --no-git --source "$tmp" --redact --verbose; rm -rf "$tmp"
 # See: https://github.com/gitleaks/gitleaks
 
 title = "onec-hbk-bsl"

@@ -37,7 +37,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.diagnostics import normalize_rule_code_set
+from onec_hbk_bsl.analysis.diagnostics import normalize_rule_code_set_strict
 
 _CONFIG_SECTION = "onec-hbk-bsl"
 
@@ -57,14 +57,14 @@ class BslConfig:
         v = self._data.get("select")
         if not v:
             return None
-        return normalize_rule_code_set(str(x) for x in v)
+        return normalize_rule_code_set_strict((str(x) for x in v), source="config select")
 
     @property
     def ignore(self) -> set[str] | None:
         v = self._data.get("ignore")
         if not v:
             return None
-        return normalize_rule_code_set(str(x) for x in v)
+        return normalize_rule_code_set_strict((str(x) for x in v), source="config ignore")
 
     # ------------------------------------------------------------------
     # File filtering
@@ -101,7 +101,10 @@ class BslConfig:
         result: set[str] = set()
         for pattern, codes in self.per_file_ignores.items():
             if fnmatch.fnmatch(str(p), pattern) or fnmatch.fnmatch(p.name, pattern):
-                normalized = normalize_rule_code_set(codes)
+                normalized = normalize_rule_code_set_strict(
+                    codes,
+                    source=f"per-file-ignores for {pattern}",
+                )
                 if normalized:
                     result.update(normalized)
         return result

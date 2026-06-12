@@ -4,16 +4,16 @@
   language: python
   types: [file]
   files: '\.(bsl|os)$'
-  entry: onec-hbk-bsl --check
+  entry: onec-hbk-bsl check
   args: []
   pass_filenames: true
 
 - id: onec-hbk-bsl-select
-  name: 1C HBK BSL (critical rules only)
-  description: Run only critical BSL rules (BSL001, BSL012, BSL053)
+  name: 1C HBK BSL (syntax and secrets)
+  description: Run syntax and hardcoded-credential diagnostics (BSL001, BSL012)
   language: python
   types: [file]
   files: '\.(bsl|os)$'
-  entry: onec-hbk-bsl --check
-  args: [--select, "BSL001,BSL012,BSL053"]
+  entry: onec-hbk-bsl check
+  args: [--select, "BSL001,BSL012"]
   pass_filenames: true

@@ -152,6 +152,8 @@ def check(
     effective_jobs = jobs if jobs != 0 else (cfg.jobs if cfg.jobs is not None else 0)
     effective_exit_zero = exit_zero or cfg.exit_zero
     effective_baseline = baseline or cfg.baseline
+    effective_select = select if select is not None else cfg.select
+    effective_ignore = ignore if ignore is not None else cfg.ignore
 
     all_files = _collect_files(paths, cfg)
     if not all_files:
@@ -160,8 +162,8 @@ def check(
 
     all_diagnostics, error_occurred = _run_checks(
         sorted(all_files),
-        select=select,
-        ignore=ignore,
+        select=effective_select,
+        ignore=effective_ignore,
         jobs=effective_jobs,
         config=cfg,
         use_index=bool(use_index),

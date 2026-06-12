@@ -26,4 +26,4 @@ jobs:
           sudo install -m 755 gitleaks /usr/local/bin/gitleaks
 
       - name: Detect secrets
-        run: gitleaks detect --source . --verbose
+        run: gitleaks detect --source . --redact --verbose

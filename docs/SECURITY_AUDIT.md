@@ -4,8 +4,17 @@ This document records automated checks run against this repository. Re-run after
 
 ## Git history — secret scanning (Gitleaks)
 
-- **Tool:** [Gitleaks](https://github.com/gitleaks/gitleaks) `detect --source .` with config [`.gitleaks.toml`](../.gitleaks.toml) (allowlists known test fixtures).
+- **Tool:** [Gitleaks](https://github.com/gitleaks/gitleaks) `detect --source . --redact` with config [`.gitleaks.toml`](../.gitleaks.toml) (allowlists known test fixtures).
 - **Scope:** Full git history (all commits).
+
+For a tracked working-tree snapshot without local `.agent/`, build outputs, or caches:
+
+```bash
+tmp=$(mktemp -d)
+git archive HEAD | tar -x -C "$tmp"
+gitleaks detect --no-git --source "$tmp" --redact --verbose
+rm -rf "$tmp"
+```
 
 ### Findings
 

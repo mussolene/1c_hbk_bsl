@@ -15,6 +15,17 @@ main user-facing story.
 - Public docs should describe `onec-hbk-bsl` behavior directly, not as a wrapper
   around another analyzer.
 
+## Diagnostic Rule Identifiers
+
+- `BSL###` is the stable product code for diagnostics output, `--select`,
+  `--ignore`, `onec-hbk-bsl.toml`, SARIF/JSON, and `// noqa: BSL###`.
+- `BSLLS key` is the compatible diagnostic name from BSL Language Server
+  semantics, such as `LineLength` or `ConsecutiveEmptyLines`.
+- CLI and config accept both forms; output surfaces use `BSL###`.
+- Rule numbering is stable but not continuous. Missing numbers are not valid
+  rule identifiers unless they appear in the generated rule reference.
+- The generated rule reference is [diagnostic-rules.md](diagnostic-rules.md).
+
 ## CLI Classification
 
 ### Core User Commands

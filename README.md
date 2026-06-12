@@ -83,6 +83,18 @@ jobs = 0
 Также поддерживается секция `[tool."onec-hbk-bsl"]` в `pyproject.toml`.
 Явные CLI-флаги имеют приоритет над конфигом.
 
+Идентификаторы правил:
+
+- `BSL###` — стабильный код `onec-hbk-bsl` для вывода, `--select`,
+  `--ignore`, `onec-hbk-bsl.toml` и `// noqa: BSL###`.
+- BSLLS key — совместимое имя диагностики из семантики BSL Language Server,
+  например `LineLength` или `ConsecutiveEmptyLines`.
+- CLI и конфиг принимают оба вида, но выводят `BSL###`.
+- Нумерация не обязана быть сплошной: отсутствующий номер, например `BSL053`,
+  не является правилом, если его нет в справочнике.
+
+Полный справочник: [docs/diagnostic-rules.md](docs/diagnostic-rules.md).
+
 Подавление в коде:
 
 ```bsl

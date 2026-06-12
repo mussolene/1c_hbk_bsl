@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from onec_hbk_bsl.cli.config import _EMPTY, BslConfig, load_config
 
 # ---------------------------------------------------------------------------
@@ -24,6 +26,11 @@ class TestBslConfigSelect:
         cfg = BslConfig({"select": []})
         assert cfg.select is None
 
+    def test_select_rejects_unknown_rule_code(self) -> None:
+        cfg = BslConfig({"select": ["BSL999"]})
+        with pytest.raises(ValueError, match="Unknown diagnostic rule token"):
+            _ = cfg.select
+
 
 class TestBslConfigIgnore:
     def test_ignore_none_when_empty(self) -> None:
@@ -33,6 +40,11 @@ class TestBslConfigIgnore:
     def test_ignore_parsed(self) -> None:
         cfg = BslConfig({"ignore": ["BSL001", "BSL002"]})
         assert cfg.ignore == {"BSL001", "BSL002"}
+
+    def test_ignore_rejects_unknown_rule_code(self) -> None:
+        cfg = BslConfig({"ignore": ["BSL999"]})
+        with pytest.raises(ValueError, match="Unknown diagnostic rule token"):
+            _ = cfg.ignore
 
 
 class TestBslConfigExclude:
@@ -75,6 +87,11 @@ class TestBslConfigPerFileIgnores:
         assert cfg.get_file_ignores("/src/legacy/old.bsl") == {"BSL001", "BSL002"}
         assert cfg.get_file_ignores("/src/special.bsl") == {"BSL003"}
         assert cfg.get_file_ignores("/src/normal.bsl") == set()
+
+    def test_get_file_ignores_rejects_unknown_rule_code(self) -> None:
+        cfg = BslConfig({"per-file-ignores": {"**/legacy/**": ["BSL999"]}})
+        with pytest.raises(ValueError, match="per-file-ignores"):
+            cfg.get_file_ignores("/src/legacy/old.bsl")
 
 
 class TestBslConfigFormat:

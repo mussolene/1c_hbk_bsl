@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
     RULE_DESCRIPTIONS_RU,
@@ -14,6 +17,16 @@ from onec_hbk_bsl.lsp.diagnostics_ru import (
     localize_rule_title,
     translate_message,
 )
+
+
+def _load_rules_doc_builder():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "build_diagnostic_rules_doc.py"
+    spec = importlib.util.spec_from_file_location("build_diagnostic_rules_doc", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_all_bslls_rules_have_ru_titles() -> None:
@@ -87,3 +100,8 @@ def test_lsp_compat_severity_documents_bslls_facing_source_of_truth() -> None:
 
 def test_unknown_rule_title_does_not_use_generic_translation_fallback() -> None:
     assert localize_rule_title("BSL999") == "BSL999"
+
+
+def test_diagnostic_rules_doc_is_generated_from_registry() -> None:
+    doc_path = Path(__file__).resolve().parents[1] / "docs" / "diagnostic-rules.md"
+    assert doc_path.read_text(encoding="utf-8") == _load_rules_doc_builder().build_markdown()

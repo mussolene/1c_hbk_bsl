@@ -273,7 +273,7 @@ def _run_init(target_dir: str) -> None:
 # onec-hbk-bsl.toml — configuration for onec-hbk-bsl
 # See: https://github.com/mussolene/1c_hbk_bsl
 
-# Rules to run (empty = all rules)
+# Rules to add to the product default set
 # select = ["BSL001", "BSL002"]
 
 # Diagnostics use the product default rule set.
@@ -334,10 +334,10 @@ def _parse_codes(raw: str | None) -> set[str] | None:
     """Parse comma-separated rule tokens (``BSL###`` or BSLLS names), or return None."""
     if not raw:
         return None
-    from onec_hbk_bsl.analysis.diagnostics import normalize_rule_code_set
+    from onec_hbk_bsl.analysis.diagnostics import normalize_rule_code_set_strict
 
     parts = [p.strip() for p in raw.split(",") if p.strip()]
-    return normalize_rule_code_set(parts)
+    return normalize_rule_code_set_strict(parts, source="CLI rule filter")
 
 
 _COMMAND_ALIASES = {
@@ -593,12 +593,14 @@ Examples:
     if args.command == "check":
         _setup_logging(args.log_level, use_rich=True)
         paths = args.paths if args.paths or args.paths_from else [os.getcwd()]
-        sys.exit(
-            _run_check(
+        try:
+            select = _parse_codes(args.select)
+            ignore = _parse_codes(args.ignore)
+            code = _run_check(
                 paths,
                 fmt=args.format,
-                select=_parse_codes(args.select),
-                ignore=_parse_codes(args.ignore),
+                select=select,
+                ignore=ignore,
                 jobs=args.jobs,
                 exit_zero=args.exit_zero,
                 baseline=args.baseline,
@@ -608,7 +610,9 @@ Examples:
                 fix=args.fix,
                 paths_from=args.paths_from,
             )
-        )
+        except ValueError as exc:
+            parser.error(str(exc))
+        sys.exit(code)
 
     if args.command == "format":
         _setup_logging(args.log_level, use_rich=True)

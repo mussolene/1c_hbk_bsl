@@ -2314,6 +2314,50 @@ def normalize_rule_code_set(tokens: Iterable[str] | None) -> set[str] | None:
     return out if out else None
 
 
+def unknown_rule_tokens(tokens: Iterable[str] | None) -> list[str]:
+    """Return unknown rule tokens after applying the same splitting as normalization."""
+    if tokens is None:
+        return []
+    unknown: list[str] = []
+    seen: set[str] = set()
+    for raw in tokens:
+        if raw is None:
+            continue
+        s = str(raw).strip()
+        if not s:
+            continue
+        for part in s.replace(",", " ").split():
+            if resolve_rule_token_to_code(part) is not None:
+                continue
+            folded = part.casefold()
+            if folded not in seen:
+                seen.add(folded)
+                unknown.append(part)
+    return unknown
+
+
+def normalize_rule_code_set_strict(
+    tokens: Iterable[str] | None,
+    *,
+    source: str = "rule selection",
+) -> set[str] | None:
+    """
+    Normalize user-facing select/ignore lists and reject unknown rule tokens.
+
+    Internal callers may use :func:`normalize_rule_code_set` when a best-effort filter
+    is more appropriate (for example environment-provided LSP/MCP filters).
+    """
+    materialized = list(tokens) if tokens is not None else None
+    unknown = unknown_rule_tokens(materialized)
+    if unknown:
+        joined = ", ".join(unknown)
+        raise ValueError(
+            f"Unknown diagnostic rule token(s) in {source}: {joined}. "
+            "Use BSL### codes or rule names from `onec-hbk-bsl rules`."
+        )
+    return normalize_rule_code_set(materialized)
+
+
 def display_name_for_rule_code(code: str) -> str:
     """Public rule name for LSP/UI: BSLLS name when known, else RULE_METADATA name, else code."""
     primary = _CODE_TO_PRIMARY_BSLLS_NAME.get(code)
