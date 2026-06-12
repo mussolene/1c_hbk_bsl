@@ -130,6 +130,85 @@ def _ts_children(node: Any) -> list[Any]:
     return list(getattr(node, "children", []) or [])
 
 
+_BSL030_STATEMENT_TYPES = frozenset(
+    {
+        "assignment_statement",
+        "break_statement",
+        "call_statement",
+        "continue_statement",
+        "for_each_statement",
+        "for_statement",
+        "if_statement",
+        "return_statement",
+        "rise_error_statement",
+        "try_statement",
+        "var_statement",
+        "while_statement",
+    }
+)
+
+
+def _bsl030_statement_has_semicolon(node: Any) -> bool:
+    return any(getattr(child, "type", None) == ";" for child in _ts_children(node))
+
+
+def _bsl030_anchor_node(node: Any) -> Any:
+    punctuation = {"(", ")", "[", "]", ",", ".", "=", "+", "-", "*", "/", "%"}
+    leaves: list[Any] = []
+    for child in _ts_walk(node):
+        children = _ts_children(child)
+        if children:
+            continue
+        child_type = str(getattr(child, "type", ""))
+        text = _ts_node_text(child).strip()
+        if not text or child_type in punctuation or text in punctuation or text == ";":
+            continue
+        leaves.append(child)
+    return leaves[-1] if leaves else node
+
+
+def _diagnostics_bsl030_semicolon_presence(context: BsllsDocumentContext) -> list[Diagnostic]:
+    root = getattr(context.tree, "root_node", None)
+    if root is None:
+        return []
+
+    diags: list[Diagnostic] = []
+    for node in _ts_walk(root):
+        if getattr(node, "type", None) not in _BSL030_STATEMENT_TYPES:
+            continue
+        if _bsl030_statement_has_semicolon(node):
+            continue
+        if _diag.tree_has_errors(node):
+            continue
+
+        anchor = _bsl030_anchor_node(node)
+        start_line = int(anchor.start_point[0]) + 1
+        end_line = int(anchor.end_point[0]) + 1
+        if not (1 <= start_line <= len(context.lines)) or not (
+            1 <= end_line <= len(context.lines)
+        ):
+            continue
+        character = utf8_byte_offset_to_lsp_character(
+            context.lines[start_line - 1], int(anchor.start_point[1])
+        )
+        end_character = utf8_byte_offset_to_lsp_character(
+            context.lines[end_line - 1], int(anchor.end_point[1])
+        )
+        diags.append(
+            Diagnostic(
+                file=context.path,
+                line=start_line,
+                character=character,
+                end_line=end_line,
+                end_character=end_character,
+                severity=Severity.INFORMATION,
+                code="BSL030",
+                message="Пропущена точка с запятой в конце выражения",
+            )
+        )
+    return diags
+
+
 def _structural_node_key(
     node: Any,
     cache: dict[int, tuple[Any, ...]] | None = None,
@@ -5282,13 +5361,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 )
             return diags
         if code == "BSL030":
-            return model.validate_statement_missing_semicolon(
-                context.lines,
-                procs=procs,
-                stmt_no_semi_re=_diag._RE_STMT_NO_SEMI,
-                double_quoted_string_re=_diag._RE_DOUBLE_QUOTED_STRING,
-                single_quoted_string_re=_diag._RE_SINGLE_QUOTED_STRING,
-            )
+            return _diagnostics_bsl030_semicolon_presence(context)
         if code == "BSL031":
             diags = []
             for proc_model in context.procedure_models:

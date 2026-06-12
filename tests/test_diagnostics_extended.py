@@ -3320,6 +3320,17 @@ class TestBsl030HeaderSemicolon:
             (3, 12, 34),
         ]
 
+    def test_multiline_comparison_operator_is_single_statement(self, tmp_path: Path) -> None:
+        content = (
+            "Функция Тест()\n"
+            "    ЕстьТип = Метаданные.ОпределяемыеТипы.Найти(\"ПрисоединенныйФайл\")\n"
+            "        <> Неопределено;\n"
+            "    Возврат ЕстьТип;\n"
+            "КонецФункции\n"
+        )
+        diags = [d for d in _check(content, tmp_path, select={"BSL030"}) if d.code == "BSL030"]
+        assert not diags
+
 
 # ---------------------------------------------------------------------------
 # BSL031 — NumberOfParams

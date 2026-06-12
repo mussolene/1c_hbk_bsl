@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `onec-hbk-bsl mcp` без MCP-зависимостей теперь завершается понятной
   подсказкой по установке вместо низкоуровневого `ModuleNotFoundError`.
 
+## [0.8.3] - 2026-06-13
+
+### Fixed
+
+- `SemicolonPresence` (`BSL030`) теперь проверяет statement-узлы CST, как BSLLS,
+  и больше не даёт ложные срабатывания на многострочных выражениях с переносом
+  перед оператором сравнения.
+
 ## [0.7.55] - 2026-06-12
 
 ### Changed
