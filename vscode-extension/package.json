@@ -2,7 +2,7 @@
   "name": "1c-hbk-bsl",
   "displayName": "1C HBK BSL",
   "description": "1C Enterprise BSL: syntax highlighting, diagnostics, go-to-definition, hover, completions, formatting, rename, and more",
-  "version": "0.7.56",
+  "version": "0.8.1",
   "publisher": "mussolene",
   "icon": "icon.png",
   "license": "MIT",
@@ -132,7 +132,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Run only the listed diagnostic rule codes. Empty = all rules."
+          "description": "Run only the listed diagnostic rules. Accepts BSL### codes or BSLLS diagnostic names. Empty = all default-enabled rules."
         },
         "onecHbkBsl.diagnostics.ignore": {
           "type": "array",
@@ -140,7 +140,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Suppress the listed diagnostic rule codes."
+          "description": "Suppress the listed diagnostic rules. Accepts BSL### codes or BSLLS diagnostic names."
         },
         "onecHbkBsl.format.indentSize": {
           "type": "number",

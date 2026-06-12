@@ -139,6 +139,7 @@ Recommended layers:
 
 - `README.md`: quick guide and links.
 - `vscode-extension/README.md`: user-facing extension guide.
+- `docs/diagnostic-rules.md`: generated rule reference for users and integrators.
 - `docs/public-surface.md`: public contract and CLI classification.
 - `docs/architecture.md`: implementation architecture.
 - `docs/Production-Notes.md`: runbook for maintainers.

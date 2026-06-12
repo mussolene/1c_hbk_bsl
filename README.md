@@ -146,6 +146,7 @@ for diagnostic in diagnostics:
 | Документ | Для чего |
 |---|---|
 | [docs/public-surface.md](docs/public-surface.md) | Публичный контракт CLI, API, VS Code и MCP |
+| [docs/diagnostic-rules.md](docs/diagnostic-rules.md) | Справочник правил: `BSL###`, BSLLS key, RU/EN описание, severity и tags |
 | [docs/architecture.md](docs/architecture.md) | Архитектура сервера, индекса и анализатора |
 | [docs/Production-Notes.md](docs/Production-Notes.md) | Эксплуатация, релизы, проверки |
 | [docs/metadata_registry.md](docs/metadata_registry.md) | Метаданные конфигураций 1С |

@@ -10,7 +10,9 @@ This runbook covers production usage of:
 ## Public Compatibility Contract
 - `onec-hbk-bsl` is the product contract: CLI, LSP, MCP, formatter and Python API.
 - The primary project config is `onec-hbk-bsl.toml`; `.bsl-language-server.json` is not a supported runtime config.
-- `BSL_SELECT` / `BSL_IGNORE` and `onecHbkBsl.diagnostics.select` / `ignore` only filter the default rule set.
+- `BSL_SELECT` / `onecHbkBsl.diagnostics.select` select the exact rules to run, including rules disabled by default.
+- `BSL_IGNORE` / `onecHbkBsl.diagnostics.ignore` suppress rules from the default-enabled set.
+- Rule selectors accept stable `BSL###` codes and BSLLS-compatible diagnostic names; the generated reference is [diagnostic-rules.md](diagnostic-rules.md).
 - Source suppressions such as `// noqa: BSL###` and `// BSLLS-off/on` are supported for compatibility with existing BSL codebases.
 - Formatting defaults are tabs for `[bsl]`, logical indent width 4, and safe on-type indentation on newline only.
 - Diagnostics/indexing parser fallbacks are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.

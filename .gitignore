@@ -58,6 +58,7 @@ Thumbs.db
 
 # Vision/planning documents — local only
 docs/VISION.md
+docs/archive/VISION.md
 
 # Logs
 *.log

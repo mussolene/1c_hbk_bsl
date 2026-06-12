@@ -411,7 +411,9 @@ Examples:
         help="Run diagnostics",
         description="Run diagnostics on BSL files",
     )
-    check_parser.add_argument("paths", metavar="PATH", nargs="*", help="Files or directories to check")
+    check_parser.add_argument(
+        "paths", metavar="PATH", nargs="*", help="Files or directories to check"
+    )
     check_parser.add_argument(
         "--format",
         choices=["text", "json", "sarif"],
@@ -486,7 +488,9 @@ Examples:
         help="Format BSL files",
         description="Format BSL files using the built-in formatter",
     )
-    format_parser.add_argument("paths", metavar="PATH", nargs="*", help="Files or directories to format")
+    format_parser.add_argument(
+        "paths", metavar="PATH", nargs="*", help="Files or directories to format"
+    )
     format_parser.add_argument(
         "--check",
         action="store_true",

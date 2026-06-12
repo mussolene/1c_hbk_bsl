@@ -1,6 +1,6 @@
 # Product Readiness And Roadmap (2026-04)
 
-> Статус: исторический документ parity-кампании апреля 2026. Актуальный пользовательский контракт см. в [README.md](../README.md), эксплуатационный release-gate — в [Production-Notes.md](Production-Notes.md).
+> Статус: исторический документ parity-кампании апреля 2026. Актуальный пользовательский контракт см. в [README.md](../../README.md), эксплуатационный release-gate — в [Production-Notes.md](../Production-Notes.md).
 
 ## Текущий статус после 2026-05-05
 

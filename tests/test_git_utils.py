@@ -113,4 +113,3 @@ class TestGitChangedFiles:
 
         diff_call = next(a for a in call_args_list if "diff" in a)
         assert "origin/main" in diff_call
-

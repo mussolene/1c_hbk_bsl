@@ -377,9 +377,7 @@ class TestMainCompatibilityAliases:
             (["format", ".", "--check"], ["format", ".", "--check"]),
         ],
     )
-    def test_legacy_mode_alias_normalization(
-        self, argv: list[str], expected: list[str]
-    ) -> None:
+    def test_legacy_mode_alias_normalization(self, argv: list[str], expected: list[str]) -> None:
         assert _normalize_argv(argv) == expected
 
     def test_legacy_check_alias_still_runs(self, tmp_path: Path) -> None:
@@ -403,7 +401,15 @@ class TestMainCompatibilityAliases:
         (tmp_path / "ok.bsl").write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
         with patch(
             "sys.argv",
-            ["onec-hbk-bsl", "--log-level", "debug", "--check", str(tmp_path), "--select", "BSL001"],
+            [
+                "onec-hbk-bsl",
+                "--log-level",
+                "debug",
+                "--check",
+                str(tmp_path),
+                "--select",
+                "BSL001",
+            ],
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()

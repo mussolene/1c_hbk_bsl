@@ -18,7 +18,6 @@ from pathlib import Path
 
 from onec_hbk_bsl.indexer.metadata_registry import (
     FOLDER_TO_KIND,
-    KIND_TO_COLLECTION,
     xml_root_tags_for_kind,
 )
 
@@ -64,10 +63,6 @@ def _iter_discovery_dirs(path: Path) -> list[Path]:
     except PermissionError:
         return []
 
-
-# Backward-compatible names (used by symbol_index / tests)
-_FOLDER_TO_KIND = FOLDER_TO_KIND
-_KIND_TO_COLLECTION = KIND_TO_COLLECTION
 
 # -----------------------------------------------------------------------
 # Public dataclasses
@@ -437,7 +432,7 @@ def crawl_config(config_root: str | Path) -> list[MetaObject]:
     config_root = Path(config_root)
     objects: list[MetaObject] = []
 
-    for folder_name, kind in _FOLDER_TO_KIND.items():
+    for folder_name, kind in FOLDER_TO_KIND.items():
         folder = config_root / folder_name
         if not folder.exists():
             continue

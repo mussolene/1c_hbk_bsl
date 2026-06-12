@@ -4,9 +4,9 @@
 
 Files under [`data/`](../data/) (including [`data/platform_api/`](../data/platform_api/)) support completions, hovers, and metadata indexing. They must come from **sources you have the right to publish**.
 
-## Documented lineage (repository)
+## Documented lineage
 
-The [README](../README.md) states that global platform API data is aligned with **[vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl)** (MIT), which is a common community source for 1C platform API listings.
+Global platform API data is aligned with **[vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl)** (MIT), which is a common community source for 1C platform API listings. Keep this file and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) as the public provenance trail; the README should stay focused on product usage.
 
 ## Maintainer checklist (NDA / confidentiality)
 

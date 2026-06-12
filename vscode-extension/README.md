@@ -46,8 +46,8 @@ semantic tokens и inlay hints.
 | `onecHbkBsl.indexDbPath` | Явный путь к SQLite-индексу |
 | `onecHbkBsl.logLevel` | Уровень логов сервера |
 | `onecHbkBsl.diagnostics.enabled` | Включить диагностики |
-| `onecHbkBsl.diagnostics.select` | Запускать только указанные правила |
-| `onecHbkBsl.diagnostics.ignore` | Игнорировать указанные правила |
+| `onecHbkBsl.diagnostics.select` | Запускать только указанные правила (`BSL###` или BSLLS key) |
+| `onecHbkBsl.diagnostics.ignore` | Игнорировать указанные правила (`BSL###` или BSLLS key) |
 | `onecHbkBsl.format.indentSize` | Логический размер отступа |
 | `onecHbkBsl.inlayHints.enabled` | Включить inlay hints |
 | `onecHbkBsl.semanticTokens.enabled` | Включить semantic tokens |
@@ -68,6 +68,10 @@ exclude = ["vendor", "*.gen.bsl"]
 
 Настройки расширения управляют поведением редактора и запуском сервера.
 Настройки проекта управляют анализом кода.
+
+Идентификаторы правил принимаются в двух формах: стабильный код `BSL###`
+или совместимое имя BSLLS, например `LineLength`. Полный справочник правил:
+[`docs/diagnostic-rules.md`](../docs/diagnostic-rules.md).
 
 ## Docker LSP
 
