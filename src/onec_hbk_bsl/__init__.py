@@ -22,6 +22,7 @@ from onec_hbk_bsl._version import __version__ as _STATIC_VERSION
 
 __description__ = "1C Enterprise BSL: MCP server, LSP server, and CLI linter"
 __author__ = "1C HBK BSL Contributors"
+__all__ = ["__version__", "check_files"]
 
 
 @functools.lru_cache(maxsize=1)
@@ -41,3 +42,10 @@ def __getattr__(name: str) -> str:
     if name == "__version__":
         return _resolve_version()
     raise AttributeError(name)
+
+
+def check_files(*args, **kwargs):
+    """Run diagnostics for an explicit BSL/OS file list."""
+    from onec_hbk_bsl.cli.check import check_files as _check_files
+
+    return _check_files(*args, **kwargs)

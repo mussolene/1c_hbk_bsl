@@ -64,6 +64,36 @@ onec-hbk-bsl --check /path/to/1c-project
 onec-hbk-bsl --check /path/to/1c-project --format sarif > bsl-results.sarif
 ```
 
+Для быстрого локального advisory-прогона по измененным файлам используйте git diff или файл
+со списком путей. JSON выводится в stdout и содержит `file`, `line`, `code`, `rule_name`,
+`severity` и `message`; human-output уходит отдельно.
+
+```bash
+onec-hbk-bsl --check . --diff --since origin/main --format json --exit-zero
+onec-hbk-bsl --check --paths-from files.txt --format json --jobs 1
+git diff --name-only -z origin/main -- '*.bsl' '*.os' > files.txt
+onec-hbk-bsl --check --paths-from0 files.txt --format json
+onec-hbk-bsl --check . --diff --since origin/main --changed-lines-only --format json
+```
+
+Python API для такого же сценария:
+
+```python
+from onec_hbk_bsl import check_files
+
+diagnostics = check_files(["src/Модуль.bsl"], jobs=1)
+```
+
+Для split-фрагментов можно точечно убрать шум правил, которым нужен полный модуль:
+
+```bash
+onec-hbk-bsl --check . --diff --split-fragment '*split*' --format json
+```
+
+`--split-fragment` подавляет только `BSL017` (`CommandModuleExportMethods`),
+`BSL040` (`UsingThisForm`) и `BSL156` (`CodeOutOfRegion`) для совпавших путей;
+остальные правила продолжают работать.
+
 По умолчанию CLI использует тот же BSLLS-совместимый набор правил. Для узких прогонов задавайте фильтры:
 
 ```bash
@@ -169,6 +199,12 @@ onec-hbk-bsl --index /path/to/1c-project
 В реестре объявлены коды **BSL001–BSL280**. Публичный набор диагностик соответствует BSLLS-поведению по умолчанию; полный список с уровнями: `onec-hbk-bsl --list-rules`.
 
 **Политика по умолчанию:** запускается BSLLS-совместимый набор. Настройки `onecHbkBsl.diagnostics.select` / `ignore` и переменные `BSL_SELECT` / `BSL_IGNORE` фильтруют правила из этого набора; альтернативных legacy/compat режимов нет.
+
+Source of truth для имени правила и базового уровня severity — `RULE_METADATA` в
+`src/onec_hbk_bsl/analysis/diagnostics.py`; поле `name` хранит BSLLS rule name,
+а JSON CLI дополнительно выводит его как `rule_name`. LSP может применять только
+совместимое отображение через `lsp_compat_severity`, когда BSLLS показывает
+информационные code smells как hints.
 
 ### Что считается совместимостью с BSLLS
 

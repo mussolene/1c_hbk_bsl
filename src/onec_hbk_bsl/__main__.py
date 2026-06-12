@@ -162,17 +162,33 @@ def _run_check(
     diff: bool,
     since: str | None,
     fix: bool,
+    paths_from: str | None,
+    paths_from0: str | None,
+    changed_lines_only: bool,
+    split_fragments: list[str] | None,
 ) -> int:
-    from onec_hbk_bsl.cli.check import check
+    from onec_hbk_bsl.cli.check import check, read_paths_from_file
     from onec_hbk_bsl.cli.config import load_config
+
+    if paths_from and paths_from0:
+        print("--paths-from and --paths-from0 are mutually exclusive", file=sys.stderr)
+        return 2
+    if changed_lines_only and not diff:
+        print("--changed-lines-only requires --diff", file=sys.stderr)
+        return 2
+    if paths_from:
+        paths.extend(read_paths_from_file(paths_from))
+    if paths_from0:
+        paths.extend(read_paths_from_file(paths_from0, nul=True))
 
     # Load config from the first checked path (or cwd)
     search_from = paths[0] if paths else os.getcwd()
     cfg = load_config(search_from)
+    changed_line_ranges = None
 
     # --diff: resolve paths to git-changed BSL files
     if diff:
-        from onec_hbk_bsl.cli.git_utils import git_changed_files
+        from onec_hbk_bsl.cli.git_utils import git_changed_files, git_changed_line_ranges
 
         workspace = paths[0] if len(paths) == 1 and os.path.isdir(paths[0]) else search_from
         git_paths = git_changed_files(workspace, since=since)
@@ -182,6 +198,8 @@ def _run_check(
             logging.getLogger(__name__).info("--diff: no changed BSL files found")
             return 0
         paths = git_paths
+        if changed_lines_only:
+            changed_line_ranges = git_changed_line_ranges(workspace, since=since)
 
     return check(
         paths,
@@ -197,6 +215,8 @@ def _run_check(
         stats=stats,
         show_fix=show_fix,
         fix=fix,
+        changed_line_ranges=changed_line_ranges,
+        split_fragment_patterns=split_fragments,
     )
 
 
@@ -533,6 +553,8 @@ Examples:
   onec-hbk-bsl --check . --format sarif > results.sarif
   onec-hbk-bsl --check . --jobs 8                     Use 8 parallel workers
   onec-hbk-bsl --check . --exit-zero                  Never fail CI
+  onec-hbk-bsl --check --paths-from files.txt --format json
+  onec-hbk-bsl --check . --diff --since origin/main --changed-lines-only --format json
   onec-hbk-bsl --check . --update-baseline baseline.json  Save known issues
   onec-hbk-bsl --check . --baseline baseline.json     Only report new issues
   onec-hbk-bsl --list-rules                           Show all available rules
@@ -693,6 +715,34 @@ Examples:
             "(e.g. HEAD~1, main, origin/main). Default: HEAD."
         ),
     )
+    parser.add_argument(
+        "--paths-from",
+        metavar="FILE",
+        default=None,
+        help="Read additional newline-delimited paths from FILE ('-' reads stdin)",
+    )
+    parser.add_argument(
+        "--paths-from0",
+        metavar="FILE",
+        default=None,
+        help="Read additional NUL-delimited paths from FILE ('-' reads stdin)",
+    )
+    parser.add_argument(
+        "--changed-lines-only",
+        action="store_true",
+        default=False,
+        help="With --diff, report only diagnostics whose start line is in changed diff ranges",
+    )
+    parser.add_argument(
+        "--split-fragment",
+        action="append",
+        default=None,
+        metavar="PATTERN",
+        help=(
+            "Treat matching paths as split fragments and suppress fragment-noisy rules "
+            "BSL017, BSL040, BSL156 for those files only. Can be passed multiple times."
+        ),
+    )
 
     parser.add_argument(
         "--fix",
@@ -748,7 +798,7 @@ Examples:
 
     elif args.check is not None:
         _setup_logging(args.log_level, use_rich=True)
-        paths = args.check if args.check else [os.getcwd()]
+        paths = args.check if args.check or args.paths_from or args.paths_from0 else [os.getcwd()]
         sys.exit(
             _run_check(
                 paths,
@@ -765,6 +815,10 @@ Examples:
                 diff=args.diff,
                 since=args.since,
                 fix=args.fix,
+                paths_from=args.paths_from,
+                paths_from0=args.paths_from0,
+                changed_lines_only=args.changed_lines_only,
+                split_fragments=args.split_fragment,
             )
         )
 

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -80,6 +81,91 @@ _SARIF_LEVEL = {
 }
 
 BSL_EXTENSIONS = {".bsl", ".os"}
+SPLIT_FRAGMENT_NOISE_RULES = frozenset({"BSL017", "BSL040", "BSL156"})
+
+
+def read_paths_from_file(path: str, *, nul: bool = False) -> list[str]:
+    """Read newline- or NUL-delimited paths from *path*; ``-`` reads stdin."""
+    if nul:
+        raw = sys.stdin.buffer.read() if path == "-" else Path(path).read_bytes()
+        return [item.decode("utf-8") for item in raw.split(b"\0") if item]
+    text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+    return [line for line in text.splitlines() if line]
+
+
+def filter_diagnostics_by_changed_lines(
+    diagnostics: list[Diagnostic],
+    changed_line_ranges: dict[str, list[tuple[int, int]]],
+) -> list[Diagnostic]:
+    """Keep diagnostics whose start line intersects configured changed line ranges."""
+    if not changed_line_ranges:
+        return []
+
+    normalized = {str(Path(path).resolve()): ranges for path, ranges in changed_line_ranges.items()}
+    out: list[Diagnostic] = []
+    for diag in diagnostics:
+        ranges = normalized.get(str(Path(diag.file).resolve()))
+        if ranges and any(start <= diag.line <= end for start, end in ranges):
+            out.append(diag)
+    return out
+
+
+def _split_fragment_file_ignores(patterns: list[str] | None) -> dict[str, set[str]]:
+    return {pattern: set(SPLIT_FRAGMENT_NOISE_RULES) for pattern in (patterns or [])}
+
+
+def _matches_extra_file_ignores(file_path: str, extra_file_ignores: dict[str, set[str]]) -> set[str]:
+    import fnmatch
+
+    p = Path(file_path)
+    result: set[str] = set()
+    for pattern, codes in extra_file_ignores.items():
+        if fnmatch.fnmatch(str(p), pattern) or fnmatch.fnmatch(p.name, pattern):
+            result.update(codes)
+    return result
+
+
+def check_files(
+    paths: list[str],
+    *,
+    jobs: int = 1,
+    select: set[str] | None = None,
+    ignore: set[str] | None = None,
+    config: BslConfig | None = None,
+    changed_line_ranges: dict[str, list[tuple[int, int]]] | None = None,
+    split_fragment_patterns: list[str] | None = None,
+) -> list[Diagnostic]:
+    """
+    Public API: run diagnostics only on the provided BSL/OS files.
+
+    ``paths`` is treated as a file list. Directories are ignored here; use the
+    CLI ``check()`` helper when recursive directory collection is desired.
+    """
+    cfg = config or _EMPTY
+    files = [
+        str(Path(raw).resolve())
+        for raw in paths
+        if Path(raw).is_file()
+        and Path(raw).suffix.lower() in BSL_EXTENSIONS
+        and not cfg.is_excluded(str(Path(raw).resolve()))
+    ]
+    if not files:
+        return []
+
+    diagnostics, error_occurred = _run_checks(
+        sorted(files),
+        select=select,
+        ignore=ignore,
+        jobs=jobs,
+        config=cfg,
+        show_progress=False,
+        extra_file_ignores=_split_fragment_file_ignores(split_fragment_patterns),
+    )
+    if error_occurred:
+        raise RuntimeError("One or more files failed diagnostics")
+    if changed_line_ranges is not None:
+        diagnostics = filter_diagnostics_by_changed_lines(diagnostics, changed_line_ranges)
+    return diagnostics
 
 
 def check(
@@ -96,6 +182,8 @@ def check(
     stats: bool = False,
     show_fix: bool = False,
     fix: bool = False,
+    changed_line_ranges: dict[str, list[tuple[int, int]]] | None = None,
+    split_fragment_patterns: list[str] | None = None,
 ) -> int:
     """
     Run BSL lint rules on all .bsl/.os files under *paths*.
@@ -135,6 +223,7 @@ def check(
         ignore=ignore,
         jobs=effective_jobs,
         config=cfg,
+        extra_file_ignores=_split_fragment_file_ignores(split_fragment_patterns),
     )
 
     if error_occurred:
@@ -143,6 +232,9 @@ def check(
     # --fix: apply in-place auto-fixes before reporting
     if fix:
         all_diagnostics = _apply_fixes_to_files(all_diagnostics)
+
+    if changed_line_ranges is not None:
+        all_diagnostics = filter_diagnostics_by_changed_lines(all_diagnostics, changed_line_ranges)
 
     # --update-baseline: save & exit 0
     if update_baseline:
@@ -291,6 +383,7 @@ def _run_checks(
     jobs: int,
     config: BslConfig | None = None,
     show_progress: bool = True,
+    extra_file_ignores: dict[str, set[str]] | None = None,
 ) -> tuple[list[Diagnostic], bool]:
     """Run checks in parallel (or serial if jobs=1). Returns (diagnostics, error_flag)."""
     from rich.progress import (
@@ -304,6 +397,7 @@ def _run_checks(
 
     cfg = config or _EMPTY
     engine_kw = cfg.engine_kwargs()
+    extra_file_ignores = extra_file_ignores or {}
 
     shared_symbol_index: SymbolIndex | None = None
     try:
@@ -347,6 +441,7 @@ def _run_checks(
             for fp in files:
                 try:
                     per_file_extra = cfg.get_file_ignores(fp)
+                    per_file_extra |= _matches_extra_file_ignores(fp, extra_file_ignores)
                     result = (
                         _make_engine(per_file_extra).check_file(fp)
                         if per_file_extra
@@ -361,7 +456,9 @@ def _run_checks(
         else:
 
             def _check_one(fp: str) -> list[Diagnostic]:
-                return _make_engine(cfg.get_file_ignores(fp)).check_file(fp)
+                per_file_extra = cfg.get_file_ignores(fp)
+                per_file_extra |= _matches_extra_file_ignores(fp, extra_file_ignores)
+                return _make_engine(per_file_extra).check_file(fp)
 
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = {executor.submit(_check_one, fp): fp for fp in files}
@@ -419,7 +516,7 @@ def _print_compact(diagnostics: list[Diagnostic]) -> None:
 
 def _print_json(diagnostics: list[Diagnostic]) -> None:
     """Print JSON array of diagnostic dicts to stdout."""
-    data = [d.to_dict() for d in diagnostics]
+    data = [d.to_dict(include_rule_name=True) for d in diagnostics]
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
 

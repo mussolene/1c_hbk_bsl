@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.53] - 2026-06-12
+
+### Added
+
+- Быстрый advisory-режим CLI для changed files: `--paths-from`,
+  `--paths-from0`, `--diff --since`, `--changed-lines-only` и
+  `--split-fragment` для точечного подавления split-only шума.
+- Публичный Python API `onec_hbk_bsl.check_files(...)` для диагностики
+  явного списка `.bsl/.os` файлов без обращения к приватному `_run_checks`.
+
+### Changed
+
+- JSON diagnostic output теперь включает `rule_name` рядом с `file`, `line`,
+  `code`, `severity` и `message`.
+- Git diff helpers читают пути как UTF-8 с `core.quotepath=false`, чтобы
+  корректно работать с кириллическими путями.
+- `StyleElementConstructors` (`BSL249`) выровнен с BSLLS metadata как `ERROR`.
+
 ## [0.7.48] - 2026-06-02
 
 ### Fixed

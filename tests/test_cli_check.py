@@ -19,7 +19,10 @@ from onec_hbk_bsl.cli.check import (
     _print_stats,
     _run_checks,
     check,
+    check_files,
+    filter_diagnostics_by_changed_lines,
     list_rules,
+    read_paths_from_file,
 )
 from onec_hbk_bsl.cli.config import BslConfig
 
@@ -152,6 +155,7 @@ class TestPrintJson:
         assert "file" in item
         assert "line" in item
         assert item["line"] == 5
+        assert item["rule_name"] == "SelfAssign"
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +300,55 @@ class TestPrintSarif:
 
 
 class TestCheckNewFeatures:
+    def test_check_files_public_api_accepts_file_list(self, tmp_path: Path) -> None:
+        f = _write_bsl(tmp_path, "модуль.bsl", "А = А;\n")
+        diags = check_files([str(f)], select={"BSL009"}, jobs=1)
+        assert [d.code for d in diags] == ["BSL009"]
+
+    def test_read_paths_from_file_utf8(self, tmp_path: Path) -> None:
+        p = tmp_path / "files.txt"
+        p.write_text("src/ОбщийМодуль.bsl\n", encoding="utf-8")
+        assert read_paths_from_file(str(p)) == ["src/ОбщийМодуль.bsl"]
+
+    def test_read_paths_from0_file_utf8(self, tmp_path: Path) -> None:
+        p = tmp_path / "files0.txt"
+        p.write_bytes("src/ОбщийМодуль.bsl\0src/a.os\0".encode())
+        assert read_paths_from_file(str(p), nul=True) == ["src/ОбщийМодуль.bsl", "src/a.os"]
+
+    def test_changed_line_filter_keeps_only_matching_lines(self, tmp_path: Path) -> None:
+        file_path = str(tmp_path / "a.bsl")
+        diags = [
+            _make_diag(file_path, line=1, code="BSL009"),
+            _make_diag(file_path, line=4, code="BSL012"),
+        ]
+        filtered = filter_diagnostics_by_changed_lines(diags, {file_path: [(3, 5)]})
+        assert [d.code for d in filtered] == ["BSL012"]
+
+    def test_check_files_changed_line_ranges(self, tmp_path: Path) -> None:
+        f = _write_bsl(tmp_path, "a.bsl", "А = А;\nБ = Б;\n")
+        diags = check_files(
+            [str(f)],
+            select={"BSL009"},
+            jobs=1,
+            changed_line_ranges={str(f): [(2, 2)]},
+        )
+        assert len(diags) == 1
+        assert diags[0].line == 2
+
+    def test_split_fragment_suppresses_only_fragment_noise(self, tmp_path: Path) -> None:
+        split_dir = tmp_path / "split"
+        split_dir.mkdir()
+        f = _write_bsl(split_dir, "frag.bsl", "Процедура П() Экспорт\nКонецПроцедуры\n")
+        without_profile = check_files([str(f)], select={"BSL156"}, jobs=1)
+        with_profile = check_files(
+            [str(f)],
+            select={"BSL156"},
+            jobs=1,
+            split_fragment_patterns=["*split*"],
+        )
+        assert [d.code for d in without_profile] == ["BSL156"]
+        assert with_profile == []
+
     def test_exit_zero_suppresses_exit_1(self, tmp_path: Path) -> None:
         _write_bsl(tmp_path, "dirty.bsl", 'Пароль = "секрет123";\n')
         rc = check([str(tmp_path)], format="text", select={"BSL012"}, exit_zero=True)

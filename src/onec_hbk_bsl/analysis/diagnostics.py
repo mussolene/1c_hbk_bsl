@@ -1659,7 +1659,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL249": {
         "name": "StyleElementConstructors",
         "description": "Style element constructor",
-        "severity": "INFORMATION",
+        "severity": "ERROR",
         "sonar_type": "ERROR",
         "sonar_severity": "MINOR",
         "tags": ["ui", "design"],
