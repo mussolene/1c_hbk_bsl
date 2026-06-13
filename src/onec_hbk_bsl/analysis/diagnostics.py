@@ -3121,20 +3121,6 @@ def _bsl208_word_is_standard_tech_name(word: str) -> bool:
     return word.casefold() in _BSL208_EXCLUDE_WORDS
 
 
-# Statements that MUST end with ;  — simplified: lines inside procs that look
-# like assignment, method call, or return, but have no trailing semicolon.
-# Only used as a heuristic; BSL allows some statements without semicolons.
-_RE_STMT_NO_SEMI = re.compile(
-    r"^\s*(?:"
-    r"(?:\w+(?:\.\w+)*)\s*\([^)]*\)"  # method call
-    r"|(?:\w+(?:\.\w+)*)\s*\(.*\)"  # method call with nested calls
-    r"|(?:\w+(?:\.\w+)*)\s*=\s*\S.*"  # assignment with RHS
-    r"|(?:Возврат|Return)\s+\S.*"  # return with value
-    r"|(?:Продолжить|Continue|Прервать|Break)"  # control statement
-    r")\s*$",
-    re.IGNORECASE,
-)
-
 # Empty region: #Область...#КонецОбласти with nothing code-like inside
 _RE_REGION_OPEN_CAP = re.compile(
     r"^\s*#(?:Область|Region)\s+(?P<name>\S+)",
