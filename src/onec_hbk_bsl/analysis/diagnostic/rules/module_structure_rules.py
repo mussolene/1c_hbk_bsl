@@ -57,6 +57,38 @@ _CANONICAL_MODULE_FILE_NAMES = frozenset(
         "OrdinaryApplicationModule.bsl",
     }
 )
+_ROOT_MODULE_FILES = frozenset(
+    {
+        "managedapplicationmodule.bsl",
+        "ordinaryapplicationmodule.bsl",
+        "sessionmodule.bsl",
+        "externalconnectionmodule.bsl",
+    }
+)
+_OBJECT_MODULE_FILES = frozenset(
+    {
+        "objectmodule.bsl",
+        "managermodule.bsl",
+        "recordsetmodule.bsl",
+        "valuemanagermodule.bsl",
+        "botmodule.bsl",
+    }
+)
+_MODULE_TYPE_FOLDERS = frozenset(
+    {
+        "commonmodules",
+        "общиемодули",
+        "httpservices",
+        "httpсервисы",
+        "webservices",
+        "webсервисы",
+        "integrationservices",
+        "сервисыинтеграции",
+    }
+)
+_FORM_FOLDERS = frozenset({"forms", "формы"})
+_COMMAND_FOLDERS = frozenset({"commands", "команды"})
+_EXT_FOLDERS = frozenset({"ext"})
 
 
 def path_matches_bsl154_module_types(path: str) -> bool:
@@ -78,6 +110,28 @@ def _is_split_module_fragment(path: str) -> bool:
         return False
     parent = current.parent
     return any((parent / name).is_file() for name in _CANONICAL_MODULE_FILE_NAMES)
+
+
+def path_has_known_bsl156_module_type(path: str) -> bool:
+    current = Path(path)
+    if current.suffix.lower() != ".bsl":
+        return False
+
+    parts = [part.casefold() for part in current.parts]
+    name = current.name.casefold()
+    parent = current.parent.name.casefold()
+
+    if name in _ROOT_MODULE_FILES and parent in _EXT_FOLDERS:
+        return True
+    if name in _OBJECT_MODULE_FILES and parent in _EXT_FOLDERS:
+        return True
+    if name == "commandmodule.bsl" and parent in _EXT_FOLDERS:
+        return any(part in _COMMAND_FOLDERS for part in parts)
+    if name == "module.bsl" and parent == "form":
+        return "ext" in parts and any(part in _FORM_FOLDERS for part in parts)
+    if name == "module.bsl" and parent in _EXT_FOLDERS:
+        return any(part in _MODULE_TYPE_FOLDERS or part in _FORM_FOLDERS for part in parts)
+    return False
 
 
 def _code_before_line_comment(line: str) -> str:
@@ -209,7 +263,7 @@ def bsl156_diagnostics(
     lines: list[str],
     procedures: list[tuple[int, int, str]],
 ) -> list[tuple[int, int, int, str]]:
-    if _is_split_module_fragment(path):
+    if not path_has_known_bsl156_module_type(path) or _is_split_module_fragment(path):
         return []
 
     intervals = module_region_intervals(lines)

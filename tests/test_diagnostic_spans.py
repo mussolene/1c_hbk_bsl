@@ -162,7 +162,8 @@ def test_bsl156_ignores_utf8_bom_before_regions(tmp_path: Path) -> None:
 #КонецОбласти
 #КонецЕсли
 """
-    path = tmp_path / "Module.bsl"
+    path = tmp_path / "CommonModules" / "ПервыйОбщийМодуль" / "Ext" / "Module.bsl"
+    path.parent.mkdir(parents=True)
     path.write_text(content, encoding="utf-8")
     diags = DiagnosticEngine(select={"BSL156"}).check_file(str(path))
     assert not diags
