@@ -3201,6 +3201,31 @@ class TestBsl027UseGoto:
         diags = _check(content, tmp_path)
         assert "BSL027" not in _codes(diags)
 
+    def test_method_named_goto_is_not_operator(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ПотокЗаписи.Перейти(Позиция);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL027"})
+        assert "BSL027" not in _codes(diags)
+
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = Path(
+            ".agent/tmp/bslls-source/src/test/resources/diagnostics/UsingGotoDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL027"}).check_file(str(fixture))
+            if diag.code == "BSL027"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (9, 4, 9, 14),
+            (23, 8, 23, 22),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL028 — MissingCodeTryCatchEx

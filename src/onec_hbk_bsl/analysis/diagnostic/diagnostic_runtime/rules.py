@@ -1162,26 +1162,33 @@ class CanonicalSpellingKeywordsRule(DiagnosticRuntimeRule):
 
 class UsingGotoRule(DiagnosticRuntimeRule):
     code = "BSL027"
-    _goto_re = re.compile(r"^\s*(?:Перейти|Goto)\s+~", re.IGNORECASE)
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
         storage = DiagnosticStorage(context.path)
-        for idx, line in enumerate(context.lines):
-            if _line_comment(line):
+        for node in _ts_walk(root):
+            if getattr(node, "type", None) != "goto_statement":
                 continue
-            match = self._goto_re.match(_code_mask_without_strings_and_comments(line))
-            if match is None:
-                continue
-            storage.add_range(
+            _add_node_range(
+                storage,
                 code=self.code,
-                line=idx,
-                character=len(line) - len(line.lstrip()),
-                end_line=idx,
-                end_character=match.end(),
-                severity=Severity.WARNING,
                 message='Оператор "Перейти" не должен использоваться',
+                severity=Severity.WARNING,
+                lines=context.lines,
+                start_node=node,
+                end_node=self._goto_target_node(node),
             )
         return storage.diagnostics
+
+    @staticmethod
+    def _goto_target_node(goto_statement: Any) -> Any:
+        children = _ts_children(goto_statement)
+        for child in reversed(children):
+            if getattr(child, "type", None) not in {";", "line_comment", "comment"}:
+                return child
+        return goto_statement
 
 
 class DoubleNegativesRule(DiagnosticRuntimeRule):
