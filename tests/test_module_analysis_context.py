@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.domain import ModuleAnalysisContext, ModuleModel
 from onec_hbk_bsl.analysis.diagnostic.domain.procedure_model import ProcedureModel
 from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
@@ -54,13 +54,13 @@ def test_module_analysis_context_exposes_snapshot_views(tmp_path: Path) -> None:
     assert query_blocks[0] is snapshot.query_text_blocks[0]
 
 
-def test_bslls_context_reuses_procedure_models(tmp_path: Path) -> None:
+def test_diagnostic_context_reuses_procedure_models(tmp_path: Path) -> None:
     content = """\
 Процедура Тест()
 КонецПроцедуры
 """
     snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
-    context = BsllsDocumentContext(
+    context = DiagnosticDocumentContext(
         path=snapshot.path,
         content=snapshot.content,
         lines=snapshot.lines,

@@ -17,8 +17,8 @@ from onec_hbk_bsl.analysis.diagnostic.string_state import (
 
 
 @dataclass(frozen=True)
-class BsllsDocumentContext:
-    """Small BSLLS-style document facade over the current parser snapshot."""
+class DiagnosticDocumentContext:
+    """Small parser-backed document facade over the current parser snapshot."""
 
     path: str
     content: str

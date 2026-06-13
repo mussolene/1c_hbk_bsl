@@ -22,18 +22,18 @@
 | BSLLS name | Local code | Status | BSLLS source | Type | Severity | Params | Local source |
 |---|---:|---|---|---|---|---|---|
 | `AllFunctionPathMustHaveReturn` | `BSL148` | `implemented` | upstream:diagnostics/AllFunctionPathMustHaveReturnDiagnostic.java:61 | CODE_SMELL | MAJOR | loopsExecutedAtLeastOnce, ignoreMissingElseOnExit | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1997 |
-| `AssignAliasFieldsInQuery` | `BSL149` | `implemented` | upstream:diagnostics/AssignAliasFieldsInQueryDiagnostic.java:44 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
-| `BadWords` | `BSL150` | `implemented` | upstream:diagnostics/BadWordsDiagnostic.java:44 | CODE_SMELL | MAJOR | badWords, findInComments | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:664 |
-| `BeginTransactionBeforeTryCatch` | `BSL151` | `implemented` | upstream:diagnostics/BeginTransactionBeforeTryCatchDiagnostic.java:47 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2459 |
+| `AssignAliasFieldsInQuery` | `BSL149` | `implemented` | upstream:diagnostics/AssignAliasFieldsInQueryDiagnostic.java:44 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py |
+| `BadWords` | `BSL150` | `implemented` | upstream:diagnostics/BadWordsDiagnostic.java:44 | CODE_SMELL | MAJOR | badWords, findInComments | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py:664 |
+| `BeginTransactionBeforeTryCatch` | `BSL151` | `implemented` | upstream:diagnostics/BeginTransactionBeforeTryCatchDiagnostic.java:47 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py:2459 |
 | `CachedPublic` | `BSL152` | `implemented` | upstream:diagnostics/CachedPublicDiagnostic.java:52 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3374 |
 | `CanonicalSpellingKeywords` | `BSL153` | `implemented` | upstream:diagnostics/CanonicalSpellingKeywordsDiagnostic.java:53 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4800 |
 | `CodeAfterAsyncCall` | `BSL154` | `implemented` | upstream:diagnostics/CodeAfterAsyncCallDiagnostic.java:59 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3387 |
-| `CodeBlockBeforeSub` | `BSL155` | `implemented` | upstream:diagnostics/CodeBlockBeforeSubDiagnostic.java:39 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
+| `CodeBlockBeforeSub` | `BSL155` | `implemented` | upstream:diagnostics/CodeBlockBeforeSubDiagnostic.java:39 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py |
 | `CodeOutOfRegion` | `BSL156` | `implemented` | upstream:diagnostics/CodeOutOfRegionDiagnostic.java:61 | CODE_SMELL | INFO | checkUnknownModuleType | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3405 |
 | `CognitiveComplexity` | `BSL011` | `implemented` | upstream:diagnostics/CognitiveComplexityDiagnostic.java:52 | CODE_SMELL | CRITICAL | complexityThreshold, checkModuleBody | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1063 |
 | `CommandModuleExportMethods` | `BSL017` | `implemented` | upstream:diagnostics/CommandModuleExportMethodsDiagnostic.java:45 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1254 |
 | `CommentedCode` | `BSL013` | `implemented` | upstream:diagnostics/CommentedCodeDiagnostic.java:61 | CODE_SMELL | MINOR | threshold, exclusionPrefixes | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1117 |
-| `CommitTransactionOutsideTryCatch` | `BSL157` | `implemented` | upstream:diagnostics/CommitTransactionOutsideTryCatchDiagnostic.java:46 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2459 |
+| `CommitTransactionOutsideTryCatch` | `BSL157` | `implemented` | upstream:diagnostics/CommitTransactionOutsideTryCatchDiagnostic.java:46 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py:2459 |
 | `CommonModuleAssign` | `BSL158` | `implemented` | upstream:diagnostics/CommonModuleAssignDiagnostic.java:40 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3414 |
 | `CommonModuleInvalidType` | `BSL159` | `implemented` | upstream:diagnostics/CommonModuleInvalidTypeDiagnostic.java:49 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3423 |
 | `CommonModuleMissingAPI` | `BSL160` | `implemented` | upstream:diagnostics/CommonModuleMissingAPIDiagnostic.java:51 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3432 |
@@ -92,7 +92,7 @@
 | `IfElseDuplicatedCodeBlock` | `BSL197` | `implemented` | upstream:diagnostics/IfElseDuplicatedCodeBlockDiagnostic.java:53 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4218 |
 | `IfElseDuplicatedCondition` | `BSL198` | `implemented` | upstream:diagnostics/IfElseDuplicatedConditionDiagnostic.java:53 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4227 |
 | `IfElseIfEndsWithElse` | `BSL199` | `implemented` | upstream:diagnostics/IfElseIfEndsWithElseDiagnostic.java:39 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4883 |
-| `IncorrectLineBreak` | `BSL200` | `implemented` | upstream:diagnostics/IncorrectLineBreakDiagnostic.java:47 | CODE_SMELL | INFO | checkFirstSymbol, listOfIncorrectFirstSymbol, checkLastSymbol, listOfIncorrectLastSymbol | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
+| `IncorrectLineBreak` | `BSL200` | `implemented` | upstream:diagnostics/IncorrectLineBreakDiagnostic.java:47 | CODE_SMELL | INFO | checkFirstSymbol, listOfIncorrectFirstSymbol, checkLastSymbol, listOfIncorrectLastSymbol | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py |
 | `IncorrectUseLikeInQuery` | `BSL201` | `implemented` | upstream:diagnostics/IncorrectUseLikeInQueryDiagnostic.java:49 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3642 |
 | `IncorrectUseOfStrTemplate` | `BSL202` | `implemented` | upstream:diagnostics/IncorrectUseOfStrTemplateDiagnostic.java:53 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5375 |
 | `InternetAccess` | `BSL203` | `implemented` | upstream:diagnostics/InternetAccessDiagnostic.java:45 | VULNERABILITY | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4511 |
@@ -103,7 +103,7 @@
 | `LatinAndCyrillicSymbolInWord` | `BSL208` | `implemented` | upstream:diagnostics/LatinAndCyrillicSymbolInWordDiagnostic.java:49 | CODE_SMELL | MINOR | excludeWords, allowTrailingPartsInAnotherLanguage | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5259 |
 | `LineLength` | `BSL014` | `implemented` | upstream:diagnostics/LineLengthDiagnostic.java:54 | CODE_SMELL | MINOR | maxLineLength, checkMethodDescription, excludeTrailingComments | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1161 |
 | `LogicalOrInJoinQuerySection` | `BSL209` | `implemented` | upstream:diagnostics/LogicalOrInJoinQuerySectionDiagnostic.java:47 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4166 |
-| `LogicalOrInTheWhereSectionOfQuery` | `BSL210` | `implemented` | upstream:diagnostics/LogicalOrInTheWhereSectionOfQueryDiagnostic.java:47 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
+| `LogicalOrInTheWhereSectionOfQuery` | `BSL210` | `implemented` | upstream:diagnostics/LogicalOrInTheWhereSectionOfQueryDiagnostic.java:47 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py |
 | `MagicDate` | `BSL047` | `implemented` | upstream:diagnostics/MagicDateDiagnostic.java:51 | CODE_SMELL | MINOR | authorizedDates | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2426 |
 | `MagicNumber` | `BSL029` | `implemented` | upstream:diagnostics/MagicNumberDiagnostic.java:47 | CODE_SMELL | MINOR | authorizedNumbers, allowMagicIndexes | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1775 |
 | `MetadataObjectNameLength` | `BSL211` | `implemented` | upstream:diagnostics/MetadataObjectNameLengthDiagnostic.java:46 | ERROR | MAJOR | maxMetadataObjectNameLength | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6083 |
@@ -129,9 +129,9 @@
 | `NonStandardRegion` | `BSL016` | `implemented` | upstream:diagnostics/NonStandardRegionDiagnostic.java:51 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1221 |
 | `NumberOfOptionalParams` | `BSL015` | `implemented` | upstream:diagnostics/NumberOfOptionalParamsDiagnostic.java:41 | CODE_SMELL | MINOR | maxOptionalParamsCount | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1192 |
 | `NumberOfParams` | `BSL031` | `implemented` | upstream:diagnostics/NumberOfParamsDiagnostic.java:41 | CODE_SMELL | MINOR | maxParamsCount | src/onec_hbk_bsl/analysis/diagnostic/engine.py:1921 |
-| `NumberOfValuesInStructureConstructor` | `BSL225` | `implemented` | upstream:diagnostics/NumberOfValuesInStructureConstructorDiagnostic.java:47 | CODE_SMELL | MINOR | maxValuesCount | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2105 |
+| `NumberOfValuesInStructureConstructor` | `BSL225` | `implemented` | upstream:diagnostics/NumberOfValuesInStructureConstructorDiagnostic.java:47 | CODE_SMELL | MINOR | maxValuesCount | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py:2105 |
 | `OSUsersMethod` | `BSL226` | `implemented` | upstream:diagnostics/OSUsersMethodDiagnostic.java:44 | SECURITY_HOTSPOT | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4511 |
-| `OneStatementPerLine` | `BSL227` | `implemented` | upstream:diagnostics/OneStatementPerLineDiagnostic.java:57 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py |
+| `OneStatementPerLine` | `BSL227` | `implemented` | upstream:diagnostics/OneStatementPerLineDiagnostic.java:57 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py |
 | `OrderOfParams` | `BSL228` | `implemented` | upstream:diagnostics/OrderOfParamsDiagnostic.java:43 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3657 |
 | `OrdinaryAppSupport` | `BSL229` | `implemented` | upstream:diagnostics/OrdinaryAppSupportDiagnostic.java:50 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5736 |
 | `PairingBrokenTransaction` | `BSL230` | `implemented` | upstream:diagnostics/PairingBrokenTransactionDiagnostic.java:48 | ERROR | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6158 |
@@ -168,7 +168,7 @@
 | `TransferringParametersBetweenClientAndServer` | `BSL254` | `implemented` | upstream:diagnostics/TransferringParametersBetweenClientAndServerDiagnostic.java:68 | CODE_SMELL | MAJOR | cachedValueNames | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5235 |
 | `TryNumber` | `BSL255` | `implemented` | upstream:diagnostics/TryNumberDiagnostic.java:45 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5244 |
 | `Typo` | `BSL256` | `implemented` | upstream:diagnostics/TypoDiagnostic.java:71 | CODE_SMELL | INFO | minWordLength, userWordsToIgnore, caseInsensitive | src/onec_hbk_bsl/analysis/diagnostic/engine.py:5329 |
-| `UnaryPlusInConcatenation` | `BSL257` | `implemented` | upstream:diagnostics/UnaryPlusInConcatenationDiagnostic.java:44 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2526 |
+| `UnaryPlusInConcatenation` | `BSL257` | `implemented` | upstream:diagnostics/UnaryPlusInConcatenationDiagnostic.java:44 | ERROR | BLOCKER |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py:2526 |
 | `UnionAll` | `BSL258` | `implemented` | upstream:diagnostics/UnionAllDiagnostic.java:45 | CODE_SMELL | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4749 |
 | `UnknownPreprocessorSymbol` | `BSL259` | `implemented` | upstream:diagnostics/UnknownPreprocessorSymbolDiagnostic.java:40 | ERROR | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:3672 |
 | `UnreachableCode` | `BSL051` | `implemented` | upstream:diagnostics/UnreachableCodeDiagnostic.java:56 | ERROR | MINOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2455 |
@@ -177,7 +177,7 @@
 | `UnusedLocalMethod` | `BSL042` | `implemented` | upstream:diagnostics/UnusedLocalMethodDiagnostic.java:59 | CODE_SMELL | MAJOR | attachableMethodPrefixes, checkObjectModule | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2386 |
 | `UnusedLocalVariable` | `BSL007` | `implemented` | upstream:diagnostics/UnusedLocalVariableDiagnostic.java:56 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:826 |
 | `UnusedParameters` | `BSL062` | `implemented` | upstream:diagnostics/UnusedParametersDiagnostic.java:49 | CODE_SMELL | MAJOR |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:2797 |
-| `UsageWriteLogEvent` | `BSL262` | `implemented` | upstream:diagnostics/UsageWriteLogEventDiagnostic.java:50 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/bslls_runtime/rules.py:2470 |
+| `UsageWriteLogEvent` | `BSL262` | `implemented` | upstream:diagnostics/UsageWriteLogEventDiagnostic.java:50 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/diagnostic_runtime/rules.py:2470 |
 | `UseLessForEach` | `BSL263` | `implemented` | upstream:diagnostics/UseLessForEachDiagnostic.java:47 | ERROR | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6195 |
 | `UseSystemInformation` | `BSL264` | `implemented` | upstream:diagnostics/UseSystemInformationDiagnostic.java:45 | SECURITY_HOTSPOT | CRITICAL |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:4511 |
 | `UselessTernaryOperator` | `BSL265` | `implemented` | upstream:diagnostics/UselessTernaryOperatorDiagnostic.java:52 | CODE_SMELL | INFO |  | src/onec_hbk_bsl/analysis/diagnostic/engine.py:6204 |

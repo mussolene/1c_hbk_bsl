@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
-from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
-from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.storage import DiagnosticStorage
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.storage import DiagnosticStorage
 from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     config_root_for_file,
@@ -28,10 +28,10 @@ from onec_hbk_bsl.analysis.diagnostic.string_state import (
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 
 
-class BsllsDiagnosticRule:
+class DiagnosticRuntimeRule:
     code: str
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         raise NotImplementedError
 
 
@@ -167,7 +167,7 @@ def _bsl030_anchor_node(node: Any) -> Any:
     return leaves[-1] if leaves else node
 
 
-def _diagnostics_bsl030_semicolon_presence(context: BsllsDocumentContext) -> list[Diagnostic]:
+def _diagnostics_bsl030_semicolon_presence(context: DiagnosticDocumentContext) -> list[Diagnostic]:
     root = getattr(context.tree, "root_node", None)
     if root is None:
         return []
@@ -294,7 +294,7 @@ def _add_node_start_token_range(
 
 
 def _diagnostics_bsl020_nested_statements(
-    context: BsllsDocumentContext,
+    context: DiagnosticDocumentContext,
 ) -> list[Diagnostic] | None:
     root = getattr(getattr(context.tree, "root_node", None), "text", None)
     if not isinstance(root, (bytes, bytearray)) or not _diag._ts_tree_ok_for_rules(context.tree):
@@ -337,7 +337,7 @@ def _diagnostics_bsl020_nested_statements(
 
 
 def _diagnostics_bsl173_deleting_collection_item(
-    context: BsllsDocumentContext,
+    context: DiagnosticDocumentContext,
 ) -> list[Diagnostic]:
     root = getattr(getattr(context.tree, "root_node", None), "text", None)
     if not isinstance(root, (bytes, bytearray)):
@@ -936,7 +936,7 @@ def _calls_in_node(
     return calls[left:right]
 
 
-def _ternary_spans(context: BsllsDocumentContext) -> list[_TernarySpan]:
+def _ternary_spans(context: DiagnosticDocumentContext) -> list[_TernarySpan]:
     spans: list[_TernarySpan] = []
     pos = 0
     text = context.content
@@ -964,10 +964,10 @@ def _ternary_spans(context: BsllsDocumentContext) -> list[_TernarySpan]:
     return spans
 
 
-class BadWordsRule(BsllsDiagnosticRule):
+class BadWordsRule(DiagnosticRuntimeRule):
     code = "BSL150"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         rx = getattr(context.diagnostics_engine, "_bad_words_re", None)
         if rx is None:
             return []
@@ -988,7 +988,7 @@ class BadWordsRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class CanonicalSpellingKeywordsRule(BsllsDiagnosticRule):
+class CanonicalSpellingKeywordsRule(DiagnosticRuntimeRule):
     code = "BSL153"
     _bool_op_re = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE | re.UNICODE)
     _if_start_re = re.compile(r"^\s*(?:Если|If|ИначеЕсли|ElsIf|ElseIf)\b", re.IGNORECASE)
@@ -1117,7 +1117,7 @@ class CanonicalSpellingKeywordsRule(BsllsDiagnosticRule):
         re.IGNORECASE | re.UNICODE,
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if _path_is_form_module_bsl(context.path):
             return []
         skipped_lines = self._bsl036_condition_lines(context) if context.bsl036_enabled else set()
@@ -1141,7 +1141,7 @@ class CanonicalSpellingKeywordsRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
     @classmethod
-    def _bsl036_condition_lines(cls, context: BsllsDocumentContext) -> set[int]:
+    def _bsl036_condition_lines(cls, context: DiagnosticDocumentContext) -> set[int]:
         skipped: set[int] = set()
         for start, line in enumerate(context.lines):
             if not cls._if_start_re.match(line):
@@ -1160,11 +1160,11 @@ class CanonicalSpellingKeywordsRule(BsllsDiagnosticRule):
         return skipped
 
 
-class UsingGotoRule(BsllsDiagnosticRule):
+class UsingGotoRule(DiagnosticRuntimeRule):
     code = "BSL027"
     _goto_re = re.compile(r"^\s*(?:Перейти|Goto)\s+~", re.IGNORECASE)
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1184,7 +1184,7 @@ class UsingGotoRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class DoubleNegativesRule(BsllsDiagnosticRule):
+class DoubleNegativesRule(DiagnosticRuntimeRule):
     code = "BSL060"
 
     @staticmethod
@@ -1279,7 +1279,7 @@ class DoubleNegativesRule(BsllsDiagnosticRule):
             return None
         return start, operand
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context, "tree", None), "root_node", None)
         if root is None:
             return []
@@ -1333,11 +1333,11 @@ class DoubleNegativesRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class DeprecatedMessageRule(BsllsDiagnosticRule):
+class DeprecatedMessageRule(DiagnosticRuntimeRule):
     code = "BSL041"
     _message_re = re.compile(r"\b(?:Сообщить|Message)\s*\(", re.IGNORECASE)
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1359,7 +1359,7 @@ class DeprecatedMessageRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class UsingHardcodeNetworkAddressRule(BsllsDiagnosticRule):
+class UsingHardcodeNetworkAddressRule(DiagnosticRuntimeRule):
     code = "BSL005"
 
     @staticmethod
@@ -1369,7 +1369,7 @@ class UsingHardcodeNetworkAddressRule(BsllsDiagnosticRule):
         right = min(right_candidates) if right_candidates else len(line)
         return line[left + 1 : right]
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line) or _BSL005_LINE_EXCLUSION_RE.search(line):
@@ -1405,7 +1405,7 @@ class UsingHardcodeNetworkAddressRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class UsingHardcodePathRule(BsllsDiagnosticRule):
+class UsingHardcodePathRule(DiagnosticRuntimeRule):
     code = "BSL006"
 
     @staticmethod
@@ -1422,7 +1422,7 @@ class UsingHardcodePathRule(BsllsDiagnosticRule):
             return True
         return bool(_BSL006_UNIX_STD_ROOT_RE.match(content))
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1442,7 +1442,7 @@ class UsingHardcodePathRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class UsingServiceTagRule(BsllsDiagnosticRule):
+class UsingServiceTagRule(DiagnosticRuntimeRule):
     code = "BSL023"
     _service_tag_re = re.compile(
         r"//\s*("
@@ -1455,7 +1455,7 @@ class UsingServiceTagRule(BsllsDiagnosticRule):
         re.IGNORECASE,
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             comment_start = _comment_start_outside_string(line)
@@ -1476,10 +1476,10 @@ class UsingServiceTagRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class SpaceAtStartCommentRule(BsllsDiagnosticRule):
+class SpaceAtStartCommentRule(DiagnosticRuntimeRule):
     code = "BSL024"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             comment_start = None
@@ -1503,7 +1503,7 @@ class SpaceAtStartCommentRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class EmptyStatementRule(BsllsDiagnosticRule):
+class EmptyStatementRule(DiagnosticRuntimeRule):
     code = "BSL025"
     _compound_semicolon_re = re.compile(
         r"^\s*(?:Если|If|ИначеЕсли|ElsIf|ElseIf|Для(?:\s+Каждого)?|For(?:\s+Each)?|Пока|While)\b.*(?:Тогда|Then|Цикл|Do)\s*;\s*$",
@@ -1514,7 +1514,7 @@ class EmptyStatementRule(BsllsDiagnosticRule):
         re.IGNORECASE,
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1545,10 +1545,10 @@ class EmptyStatementRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class ConsecutiveEmptyLinesRule(BsllsDiagnosticRule):
+class ConsecutiveEmptyLinesRule(DiagnosticRuntimeRule):
     code = "BSL055"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         blank_flags = (
             context.snapshot.blank_line_flags
             if context.snapshot is not None and hasattr(context.snapshot, "blank_line_flags")
@@ -1585,10 +1585,10 @@ class ConsecutiveEmptyLinesRule(BsllsDiagnosticRule):
         )
 
 
-class NestedTernaryOperatorRule(BsllsDiagnosticRule):
+class NestedTernaryOperatorRule(DiagnosticRuntimeRule):
     code = "BSL039"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         ternaries = _ternary_spans(context)
         flagged: dict[int, _TernarySpan] = {}
         for inner in ternaries:
@@ -1623,13 +1623,13 @@ class NestedTernaryOperatorRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class MagicDateRule(BsllsDiagnosticRule):
+class MagicDateRule(DiagnosticRuntimeRule):
     code = "BSL047"
     _authorized = {"00010101", "00010101000000", "000101010000"}
     _date_literal_re = re.compile(r"'([0-9][^']*[0-9])'")
     _string_literal_re = re.compile(r'"([0-9]{8}|[0-9]{14})"')
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if line.lstrip().startswith("//"):
@@ -1730,7 +1730,7 @@ class MagicDateRule(BsllsDiagnosticRule):
         return False
 
 
-class UselessTernaryOperatorRule(BsllsDiagnosticRule):
+class UselessTernaryOperatorRule(DiagnosticRuntimeRule):
     code = "BSL265"
     _boolean_operand_re = re.compile(
         r"^\s*(?:Истина|True|Ложь|False)\s*$", re.IGNORECASE | re.UNICODE
@@ -1756,7 +1756,7 @@ class UselessTernaryOperatorRule(BsllsDiagnosticRule):
     def _is_simple_member_access(cls, text: str) -> bool:
         return bool(cls._simple_member_re.match(text))
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for span in _ternary_spans(context):
             line_text = context.lines[span.line] if span.line < len(context.lines) else ""
@@ -1797,10 +1797,10 @@ class UselessTernaryOperatorRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class DeprecatedFindRule(BsllsDiagnosticRule):
+class DeprecatedFindRule(DiagnosticRuntimeRule):
     code = "BSL066"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1819,10 +1819,10 @@ class DeprecatedFindRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class DeprecatedMethods8317Rule(BsllsDiagnosticRule):
+class DeprecatedMethods8317Rule(DiagnosticRuntimeRule):
     code = "BSL178"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if not _bsl178_applicable_for_path(context.path):
             return []
         storage = DiagnosticStorage(context.path)
@@ -1847,10 +1847,10 @@ class DeprecatedMethods8317Rule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class DeprecatedMethods8310Rule(BsllsDiagnosticRule):
+class DeprecatedMethods8310Rule(DiagnosticRuntimeRule):
     code = "BSL177"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1871,10 +1871,10 @@ class DeprecatedMethods8310Rule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class GetFormMethodRule(BsllsDiagnosticRule):
+class GetFormMethodRule(DiagnosticRuntimeRule):
     code = "BSL195"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1893,10 +1893,10 @@ class GetFormMethodRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class DeprecatedTypeManagedFormRule(BsllsDiagnosticRule):
+class DeprecatedTypeManagedFormRule(DiagnosticRuntimeRule):
     code = "BSL179"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1916,10 +1916,10 @@ class DeprecatedTypeManagedFormRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class DisableSafeModeRule(BsllsDiagnosticRule):
+class DisableSafeModeRule(DiagnosticRuntimeRule):
     code = "BSL180"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1945,10 +1945,10 @@ class DisableSafeModeRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class ExternalAppStartingRule(BsllsDiagnosticRule):
+class ExternalAppStartingRule(DiagnosticRuntimeRule):
     code = "BSL185"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -1967,7 +1967,7 @@ class ExternalAppStartingRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class FileSystemAccessRule(BsllsDiagnosticRule):
+class FileSystemAccessRule(DiagnosticRuntimeRule):
     code = "BSL188"
 
     @staticmethod
@@ -1979,7 +1979,7 @@ class FileSystemAccessRule(BsllsDiagnosticRule):
             return _single_line_call_end(clean, pos)
         return type_end
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -2008,10 +2008,10 @@ class FileSystemAccessRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class InternetAccessRule(BsllsDiagnosticRule):
+class InternetAccessRule(DiagnosticRuntimeRule):
     code = "BSL203"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -2042,10 +2042,10 @@ class InternetAccessRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class UseSystemInformationRule(BsllsDiagnosticRule):
+class UseSystemInformationRule(DiagnosticRuntimeRule):
     code = "BSL264"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -2076,7 +2076,7 @@ class UseSystemInformationRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class IsInRoleMethodRule(BsllsDiagnosticRule):
+class IsInRoleMethodRule(DiagnosticRuntimeRule):
     code = "BSL205"
 
     @staticmethod
@@ -2090,7 +2090,7 @@ class IsInRoleMethodRule(BsllsDiagnosticRule):
         match = _BSL205_PRIVILEGED_MODE_RE.search(expression, start)
         return None if match is None else match.start()
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         is_in_role_vars: set[str] = set()
         privileged_mode_vars: set[str] = set()
@@ -2154,7 +2154,7 @@ class IsInRoleMethodRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class ExecuteExternalCodeRule(BsllsDiagnosticRule):
+class ExecuteExternalCodeRule(DiagnosticRuntimeRule):
     code = "BSL183"
 
     @staticmethod
@@ -2212,7 +2212,7 @@ class ExecuteExternalCodeRule(BsllsDiagnosticRule):
             idx = max(scan, idx + 1)
         return out
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         procs = (
             list(getattr(context.snapshot, "procs", []) or [])
@@ -2243,10 +2243,10 @@ class ExecuteExternalCodeRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class ExecuteExternalCodeInCommonModuleRule(BsllsDiagnosticRule):
+class ExecuteExternalCodeInCommonModuleRule(DiagnosticRuntimeRule):
     code = "BSL184"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if not common_module_execute_external_code_applicable(context.path):
             return []
 
@@ -2270,10 +2270,10 @@ class ExecuteExternalCodeInCommonModuleRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class OSUsersMethodRule(BsllsDiagnosticRule):
+class OSUsersMethodRule(DiagnosticRuntimeRule):
     code = "BSL226"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             clean = _code_mask_without_strings_and_comments(line)
@@ -2290,10 +2290,10 @@ class OSUsersMethodRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class SetPrivilegedModeRule(BsllsDiagnosticRule):
+class SetPrivilegedModeRule(DiagnosticRuntimeRule):
     code = "BSL247"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             clean = _code_mask_without_strings_and_comments(line)
@@ -2313,10 +2313,10 @@ class SetPrivilegedModeRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class TempFilesDirRule(BsllsDiagnosticRule):
+class TempFilesDirRule(DiagnosticRuntimeRule):
     code = "BSL250"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             clean = _code_mask_without_strings_and_comments(line)
@@ -2333,10 +2333,10 @@ class TempFilesDirRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class UsingExternalCodeToolsRule(BsllsDiagnosticRule):
+class UsingExternalCodeToolsRule(DiagnosticRuntimeRule):
     code = "BSL267"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             code_part = _code_before_comment(line)
@@ -2358,7 +2358,7 @@ class UsingExternalCodeToolsRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class UsingSynchronousCallsRule(BsllsDiagnosticRule):
+class UsingSynchronousCallsRule(DiagnosticRuntimeRule):
     code = "BSL272"
 
     @staticmethod
@@ -2381,7 +2381,7 @@ class UsingSynchronousCallsRule(BsllsDiagnosticRule):
         return False
 
     @staticmethod
-    def _server_only_lines(context: BsllsDocumentContext) -> set[int]:
+    def _server_only_lines(context: DiagnosticDocumentContext) -> set[int]:
         procs = (
             list(getattr(context.snapshot, "procs", []) or [])
             if context.snapshot is not None
@@ -2397,7 +2397,7 @@ class UsingSynchronousCallsRule(BsllsDiagnosticRule):
                 )
         return skipped
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if _path_is_bsl272_server_only_module(context.path):
             return []
         storage = DiagnosticStorage(context.path)
@@ -2429,11 +2429,11 @@ class UsingSynchronousCallsRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
+class VirtualTableCallWithoutParametersRule(DiagnosticRuntimeRule):
     code = "BSL273"
     message = "Не следует использовать виртуальные таблицы без параметров"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for line_no, content_base, _content, head, _ended_query in self._content_lines(context):
             for match in _BSL273_VIRTUAL_TABLE_RE.finditer(head):
@@ -2478,7 +2478,7 @@ class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
     @staticmethod
-    def _content_lines(context: BsllsDocumentContext) -> list[tuple[int, int, str, str, bool]]:
+    def _content_lines(context: DiagnosticDocumentContext) -> list[tuple[int, int, str, str, bool]]:
         snapshot = context.snapshot
         if snapshot is not None:
             return [
@@ -2496,13 +2496,13 @@ class VirtualTableCallWithoutParametersRule(BsllsDiagnosticRule):
         ]
 
 
-class NumberOfValuesInStructureConstructorRule(BsllsDiagnosticRule):
+class NumberOfValuesInStructureConstructorRule(DiagnosticRuntimeRule):
     code = "BSL225"
     message = "Уменьшите количество значений свойств, передаваемых в конструктор структуры"
     _type_names = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
     _max_values_count = 3
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -2556,7 +2556,7 @@ class NumberOfValuesInStructureConstructorRule(BsllsDiagnosticRule):
         return separator_count + 1
 
 
-class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
+class MissingTemporaryFileDeletionRule(DiagnosticRuntimeRule):
     code = "BSL218"
     message = "Нужно добавить удаление временного файла после использования"
     _get_temp_names = frozenset({"получитьимявременногофайла", "gettempfilename"})
@@ -2582,7 +2582,7 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
         }
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -2606,7 +2606,7 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
                 self._add_call(storage, context.lines, call_node)
         return storage.diagnostics
 
-    def _global_calls(self, context: BsllsDocumentContext) -> list[dict[str, Any]]:
+    def _global_calls(self, context: DiagnosticDocumentContext) -> list[dict[str, Any]]:
         if context.ts_nodes_for_types and context.global_method_calls_from_nodes:
             nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
             return context.global_method_calls_from_nodes(nodes["method_call"], context.lines)
@@ -2779,7 +2779,7 @@ class MissingTemporaryFileDeletionRule(BsllsDiagnosticRule):
         )
 
 
-class PairingBrokenTransactionRule(BsllsDiagnosticRule):
+class PairingBrokenTransactionRule(DiagnosticRuntimeRule):
     code = "BSL230"
     _begin_names = frozenset({"начатьтранзакцию", "begintransaction"})
     _pair_specs = (
@@ -2817,7 +2817,7 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
         ),
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -2875,7 +2875,7 @@ class PairingBrokenTransactionRule(BsllsDiagnosticRule):
         )
 
 
-class BeginTransactionBeforeTryCatchRule(BsllsDiagnosticRule):
+class BeginTransactionBeforeTryCatchRule(DiagnosticRuntimeRule):
     code = "BSL151"
     message = (
         "Метод 'НачатьТранзакцию' должен быть за пределами блока "
@@ -2884,7 +2884,7 @@ class BeginTransactionBeforeTryCatchRule(BsllsDiagnosticRule):
     _begin_re = re.compile(r"^\s*(?:НачатьТранзакцию|BeginTransaction)\s*\(", re.IGNORECASE)
     _try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         clean_lines = (
             context.snapshot.code_lines_without_comments
             if context.snapshot is not None
@@ -2920,13 +2920,13 @@ class BeginTransactionBeforeTryCatchRule(BsllsDiagnosticRule):
         return None
 
 
-class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
+class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
     code = "BSL155"
     message = "Необходимо разместить тело модуля после определения методов"
     _sub_types = {"procedure_definition", "function_definition"}
     _ignored_before_body_types = {"comment", "line_comment", "var_definition"}
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(context.tree, "root_node", None)
         if root is None:
             return []
@@ -3021,7 +3021,7 @@ class CodeBlockBeforeSubRule(BsllsDiagnosticRule):
         return end_node
 
 
-class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
+class LogicalOrInTheWhereSectionOfQueryRule(DiagnosticRuntimeRule):
     code = "BSL210"
     message = 'Не следует использовать логическое "ИЛИ" в секции "ГДЕ" запроса'
     _or_re = re.compile(r"\b(?:ИЛИ|OR)\b", re.IGNORECASE)
@@ -3049,7 +3049,7 @@ class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
     )
     _union_re = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         in_query = False
         group_depth = 0
@@ -3254,7 +3254,7 @@ class LogicalOrInTheWhereSectionOfQueryRule(BsllsDiagnosticRule):
             pos += 1
 
 
-class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
+class CommitTransactionOutsideTryCatchRule(DiagnosticRuntimeRule):
     code = "BSL157"
     message = (
         "Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке "
@@ -3267,7 +3267,7 @@ class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
     _except_re = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
     _end_try_re = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         clean_lines = (
             context.snapshot.code_lines_without_comments
             if context.snapshot is not None
@@ -3326,10 +3326,10 @@ class CommitTransactionOutsideTryCatchRule(BsllsDiagnosticRule):
         )
 
 
-class IncorrectLineBreakRule(BsllsDiagnosticRule):
+class IncorrectLineBreakRule(DiagnosticRuntimeRule):
     code = "BSL200"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         assert context.snapshot is not None
         return [
             Diagnostic(
@@ -3346,11 +3346,11 @@ class IncorrectLineBreakRule(BsllsDiagnosticRule):
         ]
 
 
-class AssignAliasFieldsInQueryRule(BsllsDiagnosticRule):
+class AssignAliasFieldsInQueryRule(DiagnosticRuntimeRule):
     code = "BSL149"
     message = "Полям запроса следует назначать псевдонимы"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
             run_bsl149_assign_alias_fields_in_query,
         )
@@ -3359,13 +3359,13 @@ class AssignAliasFieldsInQueryRule(BsllsDiagnosticRule):
         return run_bsl149_assign_alias_fields_in_query(context.path, context.lines, query_blocks)
 
 
-class OneStatementPerLineRule(BsllsDiagnosticRule):
+class OneStatementPerLineRule(DiagnosticRuntimeRule):
     code = "BSL227"
     message = "Перенесите выражение на новую строку"
     _then_re = re.compile(r"\b(?:тогда|then)\b", re.IGNORECASE)
     _end_if_re = re.compile(r"^(?:конецесли|endif)\s*;?\s*$", re.IGNORECASE)
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         string_states = (
             context.snapshot.line_string_states
@@ -3443,11 +3443,11 @@ class OneStatementPerLineRule(BsllsDiagnosticRule):
         return spans
 
 
-class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
+class UnaryPlusInConcatenationRule(DiagnosticRuntimeRule):
     code = "BSL257"
     message = "Унарный плюс в конкатенации строк потенциально приводит к ошибке времени выполнения"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         source_bytes = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(source_bytes, (bytes, bytearray)):
             return []
@@ -3501,11 +3501,11 @@ class UnaryPlusInConcatenationRule(BsllsDiagnosticRule):
         )
 
 
-class UnionAllRule(BsllsDiagnosticRule):
+class UnionAllRule(DiagnosticRuntimeRule):
     code = "BSL258"
     message = "Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         in_query = False
         for idx, line in enumerate(context.lines):
@@ -3533,7 +3533,7 @@ class UnionAllRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class UsageWriteLogEventRule(BsllsDiagnosticRule):
+class UsageWriteLogEventRule(DiagnosticRuntimeRule):
     code = "BSL262"
     _target_names = frozenset({"записьжурналарегистрации", "writelogevent"})
     _level_root_names = frozenset({"уровеньжурналарегистрации", "eventloglevel"})
@@ -3551,7 +3551,7 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
         'В тексте комментария нет вызова "ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())"'
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -3805,11 +3805,11 @@ class UsageWriteLogEventRule(BsllsDiagnosticRule):
         )
 
 
-class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
+class WrongUseOfRollbackTransactionMethodRule(DiagnosticRuntimeRule):
     code = "BSL277"
     message = "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -3842,7 +3842,7 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
 
     @staticmethod
     def _runtime_context(
-        context: BsllsDocumentContext,
+        context: DiagnosticDocumentContext,
     ) -> tuple[list[Any], list[int], list[Any], list[Any]]:
         cached = context.runtime_call_context
         if cached is not None:
@@ -3916,14 +3916,14 @@ class WrongUseOfRollbackTransactionMethodRule(BsllsDiagnosticRule):
         )
 
 
-class WrongUseFunctionProceedWithCallRule(BsllsDiagnosticRule):
+class WrongUseFunctionProceedWithCallRule(DiagnosticRuntimeRule):
     code = "BSL276"
     message = (
         "Использовать функцию ПродолжитьВызов() можно только в расширениях "
         "и только в методах с аннотацией &Вместо."
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -3971,12 +3971,12 @@ class WrongUseFunctionProceedWithCallRule(BsllsDiagnosticRule):
         return any(_BSL276_AROUND_ANNOTATION_RE.match(line) for line in annotation_lines)
 
 
-class TryNumberRule(BsllsDiagnosticRule):
+class TryNumberRule(DiagnosticRuntimeRule):
     code = "BSL255"
     message = "Не следует использовать исключения для приведения значения к типу"
     _NUMBER_CALL_RE = re.compile(r"\b(?:Число|Number)\s*\(", re.IGNORECASE)
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if self._NUMBER_CALL_RE.search(context.content) is None:
             return []
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -4009,7 +4009,7 @@ class TryNumberRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
     @staticmethod
-    def _try_nodes(context: BsllsDocumentContext) -> list[Any]:
+    def _try_nodes(context: DiagnosticDocumentContext) -> list[Any]:
         if context.ts_nodes_for_types:
             return context.ts_nodes_for_types(context.tree, {"try_statement"})["try_statement"]
         root = getattr(context.tree, "root_node", None)
@@ -4038,7 +4038,7 @@ class TryNumberRule(BsllsDiagnosticRule):
         return _ts_node_text(ident) if ident is not None else ""
 
     @classmethod
-    def _regex_fallback(cls, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def _regex_fallback(cls, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         try_depth = 0
         in_try_body_stack: list[bool] = []
@@ -4113,11 +4113,11 @@ class TryNumberRule(BsllsDiagnosticRule):
         return calls
 
 
-class UseLessForEachRule(BsllsDiagnosticRule):
+class UseLessForEachRule(DiagnosticRuntimeRule):
     code = "BSL263"
     message = "Итератор не используется в теле цикла"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -4213,14 +4213,14 @@ class UseLessForEachRule(BsllsDiagnosticRule):
         return False
 
 
-class IfElseIfEndsWithElseRule(BsllsDiagnosticRule):
+class IfElseIfEndsWithElseRule(DiagnosticRuntimeRule):
     code = "BSL199"
     message = (
         'Синтаксическая конструкция вида "Если...Тогда...ИначеЕсли..." '
         'должна содержать ветвь "Иначе".'
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -4253,13 +4253,13 @@ class IfElseIfEndsWithElseRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
+class IfElseDuplicatedConditionRule(DiagnosticRuntimeRule):
     code = "BSL198"
     message = (
         'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся условия'
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -4335,13 +4335,13 @@ class IfElseDuplicatedConditionRule(BsllsDiagnosticRule):
         return start_node, end_node
 
 
-class IfElseDuplicatedCodeBlockRule(BsllsDiagnosticRule):
+class IfElseDuplicatedCodeBlockRule(DiagnosticRuntimeRule):
     code = "BSL197"
     message = (
         'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода'
     )
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
@@ -4425,10 +4425,10 @@ class IfElseDuplicatedCodeBlockRule(BsllsDiagnosticRule):
         return tuple(_structural_node_key(node, key_cache) for node in block)
 
 
-class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
+class DeprecatedCurrentDateRule(DiagnosticRuntimeRule):
     code = "BSL097"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -4447,11 +4447,11 @@ class DeprecatedCurrentDateRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class ExtraCommasRule(BsllsDiagnosticRule):
+class ExtraCommasRule(DiagnosticRuntimeRule):
     code = "BSL186"
     _trailing_comma_re = re.compile(r",(?=\s*\))")
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -4473,10 +4473,10 @@ class ExtraCommasRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class YoLetterUsageRule(BsllsDiagnosticRule):
+class YoLetterUsageRule(DiagnosticRuntimeRule):
     code = "BSL279"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
@@ -4495,11 +4495,11 @@ class YoLetterUsageRule(BsllsDiagnosticRule):
         return storage.diagnostics
 
 
-class QueryJoinDiagnosticsRule(BsllsDiagnosticRule):
+class QueryJoinDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
             run_bsl206_207_209_query_join_diagnostics,
         )
@@ -4514,11 +4514,11 @@ class QueryJoinDiagnosticsRule(BsllsDiagnosticRule):
         )
 
 
-class QueryTextDiagnosticsRule(BsllsDiagnosticRule):
+class QueryTextDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
             run_bsl191_201_query_text_diagnostics,
             run_bsl220_235_269_query_text_diagnostics,
@@ -4542,11 +4542,11 @@ class QueryTextDiagnosticsRule(BsllsDiagnosticRule):
         )
 
 
-class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
+class CommonModuleDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
             run_bsl152_cached_public,
             run_bsl154_code_after_async,
@@ -4602,11 +4602,11 @@ class CommonModuleDiagnosticsRule(BsllsDiagnosticRule):
         ]
 
 
-class MethodContractDiagnosticsRule(BsllsDiagnosticRule):
+class MethodContractDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.method_contract_rules import (
             run_bsl192_193_194_228_266_method_contract_diagnostics,
             run_bsl212_missed_required_parameter,
@@ -4664,11 +4664,11 @@ class MethodContractDiagnosticsRule(BsllsDiagnosticRule):
         )
 
 
-class QueryMetadataDiagnosticsRule(BsllsDiagnosticRule):
+class QueryMetadataDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
             run_bsl174_187_236_238_query_metadata_pool,
             run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
@@ -4896,11 +4896,11 @@ def _run_bsl268_using_find_element_by_string(
     )
 
 
-class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
+class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         code = self.code
         engine = context.diagnostics_engine
         snapshot = context.snapshot
@@ -5012,11 +5012,11 @@ class LightPoolDiagnosticsRule(BsllsDiagnosticRule):
         ]
 
 
-class LocalXmlDiagnosticsRule(BsllsDiagnosticRule):
+class LocalXmlDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         procs = list(getattr(context.snapshot, "procedures", []) or [])
         model = context.module_model
         return [
@@ -5036,11 +5036,11 @@ class LocalXmlDiagnosticsRule(BsllsDiagnosticRule):
         ]
 
 
-class QueryRuntimeDiagnosticsRule(BsllsDiagnosticRule):
+class QueryRuntimeDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
             run_bsl234_query_nested_fields_by_dot,
             run_bsl237_redundant_access_to_object,
@@ -5060,10 +5060,10 @@ class QueryRuntimeDiagnosticsRule(BsllsDiagnosticRule):
         return run_bsl245_server_side_export_form_method(context.path, context.lines, procs)
 
 
-class MissingSpaceRuntimeRule(BsllsDiagnosticRule):
+class MissingSpaceRuntimeRule(DiagnosticRuntimeRule):
     code = "BSL216"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         assert context.snapshot is not None
         return [
             Diagnostic(
@@ -5080,10 +5080,10 @@ class MissingSpaceRuntimeRule(BsllsDiagnosticRule):
         ]
 
 
-class TypoRuntimeRule(BsllsDiagnosticRule):
+class TypoRuntimeRule(DiagnosticRuntimeRule):
     code = "BSL256"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if not context.diagnostics_engine._rule_enabled("BSL256"):
             return []
         root = getattr(context.tree, "root_node", None)
@@ -5110,11 +5110,11 @@ class TypoRuntimeRule(BsllsDiagnosticRule):
         ]
 
 
-class CoreDiagnosticsRule(BsllsDiagnosticRule):
+class CoreDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         code = self.code
         engine = context.diagnostics_engine
         snapshot = context.snapshot
@@ -5547,11 +5547,11 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
         )
 
 
-class DeprecatedApiDiagnosticsRule(BsllsDiagnosticRule):
+class DeprecatedApiDiagnosticsRule(DiagnosticRuntimeRule):
     def __init__(self, code: str):
         self.code = code
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         snapshot = context.snapshot
         symbols = list(getattr(snapshot, "symbols", []) or [])
         calls = list(getattr(snapshot, "calls", []) or [])
@@ -5581,10 +5581,10 @@ class DeprecatedApiDiagnosticsRule(BsllsDiagnosticRule):
         ]
 
 
-class FormDataToValueRule(BsllsDiagnosticRule):
+class FormDataToValueRule(DiagnosticRuntimeRule):
     code = "BSL190"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         assert context.snapshot is not None
         return [
             Diagnostic(
@@ -5601,10 +5601,10 @@ class FormDataToValueRule(BsllsDiagnosticRule):
         ]
 
 
-class LatinCyrillicRuntimeRule(BsllsDiagnosticRule):
+class LatinCyrillicRuntimeRule(DiagnosticRuntimeRule):
     code = "BSL208"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         model = context.module_model
         return [
             diag
@@ -5623,10 +5623,10 @@ class LatinCyrillicRuntimeRule(BsllsDiagnosticRule):
         ]
 
 
-class MissingVariablesDescriptionRule(BsllsDiagnosticRule):
+class MissingVariablesDescriptionRule(DiagnosticRuntimeRule):
     code = "BSL219"
 
-    def run(self, context: BsllsDocumentContext) -> list[Diagnostic]:
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         assert context.snapshot is not None
         return [
             Diagnostic(

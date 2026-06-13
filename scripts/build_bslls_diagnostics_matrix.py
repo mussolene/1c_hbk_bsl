@@ -212,15 +212,15 @@ def fallback_bslls_diagnostics(name_to_code: dict[str, str]) -> list[BsllsDiagno
 
 def parse_local_registry() -> tuple[dict[str, dict[str, Any]], dict[str, str], frozenset[str]]:
     sys.path.insert(0, str(REPO_ROOT / "src"))
-    from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.runner import (  # noqa: PLC0415
-        BSL_RUNTIME_RULE_CODES,
+    from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (  # noqa: PLC0415
+        DIAGNOSTIC_RUNTIME_RULE_CODES,
     )
     from onec_hbk_bsl.analysis.diagnostics import (  # noqa: PLC0415
         _BSLLS_NAME_TO_CODE,
         RULE_METADATA,
     )
 
-    return dict(RULE_METADATA), dict(_BSLLS_NAME_TO_CODE), frozenset(BSL_RUNTIME_RULE_CODES)
+    return dict(RULE_METADATA), dict(_BSLLS_NAME_TO_CODE), frozenset(DIAGNOSTIC_RUNTIME_RULE_CODES)
 
 
 def parse_local_registry_from_source() -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
@@ -307,11 +307,11 @@ def find_local_refs(
                     else:
                         refs[code]["code_refs"].append(ref)
         if code in runtime_rule_codes:
-            runner_path = LOCAL_DIAG_PACKAGE / "bslls_runtime" / "runner.py"
+            runner_path = LOCAL_DIAG_PACKAGE / "diagnostic_runtime" / "runner.py"
             refs[code]["registrations"].append(
                 SourceRef(
                     rel(runner_path),
-                    line_of(read_text(runner_path), "BSL_RUNTIME_RULE_CODES"),
+                    line_of(read_text(runner_path), "DIAGNOSTIC_RUNTIME_RULE_CODES"),
                 ).as_dict()
             )
         # De-duplicate noisy references while preserving first useful lines.

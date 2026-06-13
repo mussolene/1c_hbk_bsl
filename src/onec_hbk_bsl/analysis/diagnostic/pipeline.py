@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from onec_hbk_bsl.analysis.diagnostic.bslls_runtime import append_bslls_runtime_rule_tasks
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime import append_diagnostic_runtime_rule_tasks
 from onec_hbk_bsl.analysis.diagnostic.execution import execute_diagnostic_rule_tasks
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
 from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
@@ -60,7 +60,7 @@ class PipelineExecutor:
     def execute(self, engine: Any, frame: AnalysisFrame) -> list[Diagnostic]:
         # Build rule tasks through the runtime dispatcher (single source of truth).
         rule_tasks: list[tuple[str, Any]] = []
-        append_bslls_runtime_rule_tasks(
+        append_diagnostic_runtime_rule_tasks(
             rule_tasks,
             engine=engine,
             path=frame.path,

@@ -9,12 +9,11 @@ from typing import Any
 
 from onec_hbk_bsl.analysis.bsl_typo.candidates import collect_spell_candidates
 from onec_hbk_bsl.analysis.bsl_typo.models import SpellCandidate
-from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.context import BsllsDocumentContext
-from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
     AssignAliasFieldsInQueryRule,
     BadWordsRule,
     BeginTransactionBeforeTryCatchRule,
-    BsllsDiagnosticRule,
     CanonicalSpellingKeywordsRule,
     CodeBlockBeforeSubRule,
     CommitTransactionOutsideTryCatchRule,
@@ -28,6 +27,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
     DeprecatedMethods8310Rule,
     DeprecatedMethods8317Rule,
     DeprecatedTypeManagedFormRule,
+    DiagnosticRuntimeRule,
     DisableSafeModeRule,
     DoubleNegativesRule,
     EmptyStatementRule,
@@ -87,7 +87,7 @@ from onec_hbk_bsl.analysis.diagnostic.bslls_runtime.rules import (
 from onec_hbk_bsl.analysis.diagnostic.execution import make_diagnostic_rule_task
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 
-_RULES: tuple[BsllsDiagnosticRule, ...] = (
+_RULES: tuple[DiagnosticRuntimeRule, ...] = (
     CoreDiagnosticsRule("BSL001"),
     CoreDiagnosticsRule("BSL002"),
     CoreDiagnosticsRule("BSL003"),
@@ -269,7 +269,7 @@ _RULES: tuple[BsllsDiagnosticRule, ...] = (
     UselessTernaryOperatorRule(),
     YoLetterUsageRule(),
 )
-BSL_RUNTIME_RULE_CODES: frozenset[str] = frozenset(rule.code for rule in _RULES)
+DIAGNOSTIC_RUNTIME_RULE_CODES: frozenset[str] = frozenset(rule.code for rule in _RULES)
 
 _QUERY_TEXT_191_201_CODES: tuple[str, ...] = ("BSL191", "BSL201")
 _QUERY_TEXT_220_235_269_CODES: tuple[str, ...] = ("BSL220", "BSL235", "BSL269")
@@ -356,8 +356,8 @@ _PROCESS_CORE_FACT_CODES: tuple[str, ...] = (
     "BSL219",
 )
 _PROCESS_CORE_FACT_CODE_SET: frozenset[str] = frozenset(_PROCESS_CORE_FACT_CODES)
-_FORK_CONTEXT: BsllsDocumentContext | None = None
-_FORK_RULE_BY_CODE: dict[str, BsllsDiagnosticRule] = {}
+_FORK_CONTEXT: DiagnosticDocumentContext | None = None
+_FORK_RULE_BY_CODE: dict[str, DiagnosticRuntimeRule] = {}
 
 
 def _parallel_rule_tasks_enabled() -> bool:
@@ -393,8 +393,8 @@ def _run_forked_runtime_rule_group(codes: tuple[str, ...]) -> list[Diagnostic]:
 
 def _run_forked_runtime_rule_groups(
     *,
-    context: BsllsDocumentContext,
-    rule_by_code: dict[str, BsllsDiagnosticRule],
+    context: DiagnosticDocumentContext,
+    rule_by_code: dict[str, DiagnosticRuntimeRule],
     groups: tuple[tuple[str, ...], ...],
 ) -> list[Diagnostic]:
     if not groups:
@@ -431,8 +431,8 @@ def _run_forked_runtime_rule_groups(
 
 
 def _run_runtime_rule_group_local(
-    context: BsllsDocumentContext,
-    rule_by_code: dict[str, BsllsDiagnosticRule],
+    context: DiagnosticDocumentContext,
+    rule_by_code: dict[str, DiagnosticRuntimeRule],
     codes: tuple[str, ...],
 ) -> list[Diagnostic]:
     out: list[Diagnostic] = []
@@ -610,7 +610,7 @@ def _run_core_fact_rule(
     ]
 
 
-def append_bslls_runtime_rule_tasks(
+def append_diagnostic_runtime_rule_tasks(
     rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]],
     *,
     engine: Any,
@@ -620,7 +620,7 @@ def append_bslls_runtime_rule_tasks(
     tree: Any,
     snapshot: Any | None,
 ) -> None:
-    context = BsllsDocumentContext(
+    context = DiagnosticDocumentContext(
         path=path,
         content=content,
         lines=lines,

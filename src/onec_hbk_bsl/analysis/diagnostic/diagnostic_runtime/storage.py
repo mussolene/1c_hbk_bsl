@@ -7,7 +7,7 @@ from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 
 @dataclass
 class DiagnosticStorage:
-    """Diagnostic collector with BSLLS-like add helpers."""
+    """Diagnostic collector with small compatibility add helpers."""
 
     path: str
     diagnostics: list[Diagnostic] = field(default_factory=list)
