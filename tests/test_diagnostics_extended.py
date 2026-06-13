@@ -3282,6 +3282,121 @@ class TestBsl029MagicNumber:
         diags = _check(content, tmp_path, select={"BSL029"})
         assert "BSL029" not in _codes(diags)
 
+    def test_correspondence_insert_value_in_nested_block_matches_bslls(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = Новый Соответствие;
+                Если Истина Тогда
+                    Результат.Вставить("Код", 2);
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (4, 34, 35),
+        ]
+
+    def test_nested_constructor_numbers_inside_structure_are_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Параметры = Новый Структура("ЦветФона", Новый Цвет(255, 237, 166));
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 55, 58),
+            (2, 60, 63),
+            (2, 65, 68),
+        ]
+
+    def test_loop_bound_expression_reports_magic_number(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(МассивРазрядов)
+                Для Сч = 1 По 3 - МассивРазрядов.Количество() Цикл
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 18, 19),
+        ]
+
+    def test_binary_minus_reports_number_without_sign(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(Значение)
+                Возврат Лев(Значение, СтрДлина(Значение)-2);
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 45, 46),
+        ]
+
+    def test_multiline_string_tail_call_argument_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Предупреждение("Недостаточная длина
+                    |минимум 50 символов", 60);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (3, 31, 33),
+        ]
+
+    def test_query_text_numbers_are_not_reported(self, tmp_path: Path) -> None:
+        content = '''\
+            Процедура Тест()
+                ТекстЗапроса =
+                "ВЫБОР
+                |КОГДА ВЫРАЗИТЬ(Имя КАК СТРОКА(1000)) <> """" ТОГДА Имя
+                |КОНЕЦ";
+            КонецПроцедуры
+        '''
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_simple_numeric_assignment_expression_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Объект[ИмяРеквизита] = 2;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_default_parameter_value_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(
+                КоличествоПараметров = 2)
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_multiline_string_concat_placeholders_are_not_reported(self, tmp_path: Path) -> None:
+        content = '''\
+            Процедура Тест()
+                Текст = "<p>" + Картинка + "</p>
+                    |<p>""" + Значение + """> %3</p>";
+            КонецПроцедуры
+        '''
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_known_correspondence_insert_with_mixed_indent_is_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+\t\tРезультат = Новый Соответствие;
+    Результат.Вставить("Код", 16);
+\t\tВозврат Результат;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
     def test_nested_numeric_inside_ternary_branch_is_reported(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -3303,6 +3418,17 @@ class TestBsl029MagicNumber:
         """
         diags = _check(content, tmp_path, select={"BSL029"})
         assert "BSL029" not in _codes(diags)
+
+    def test_call_argument_after_parenthesized_expression_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(Сумма, НДС, Количество)
+                Возврат Окр((Сумма - НДС) / Количество, 2);
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 44, 45),
+        ]
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(

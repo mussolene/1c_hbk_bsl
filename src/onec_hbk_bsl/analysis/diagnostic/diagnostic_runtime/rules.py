@@ -1623,6 +1623,393 @@ class NestedTernaryOperatorRule(DiagnosticRuntimeRule):
         return storage.diagnostics
 
 
+class MagicNumberRule(DiagnosticRuntimeRule):
+    code = "BSL029"
+    _authorized_numbers = {"0", "1", "-1"}
+    _container_types = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
+    _map_types = {"соответствие", "map"}
+    _insert_methods = {"вставить", "insert"}
+
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if getattr(root, "text", None) is None:
+            return []
+        storage = DiagnosticStorage(context.path)
+        container_assignments = self._container_assignments(root)
+        for number in _ts_walk(root):
+            if getattr(number, "type", None) != "number":
+                continue
+            value = _ts_node_text(number)
+            signed_value = self._signed_value(number, value)
+            if signed_value in self._authorized_numbers:
+                continue
+            if self._inside_single_quoted_literal(context.lines, number):
+                continue
+            if self._ancestor_of_type(number, {"string"}) is not None:
+                continue
+            if self._inside_index_access(number):
+                continue
+            if self._inside_default_parameter(number):
+                continue
+            if self._wrong_error_number(number):
+                self._add_number(storage, context.lines, number, value)
+                continue
+            expression = self._expression_ancestor(number)
+            if expression is None:
+                continue
+            if self._inside_structure_or_correspondence(expression, container_assignments):
+                continue
+            if not self._wrong_expression(expression):
+                continue
+            self._add_number(storage, context.lines, number, value)
+        return storage.diagnostics
+
+    def _add_number(
+        self, storage: DiagnosticStorage, lines: list[str], number: Any, value: str
+    ) -> None:
+        _add_node_range(
+            storage,
+            code=self.code,
+            message=(
+                "Создайте константу с понятным названием, "
+                f'присвойте ей значение "{value}" и используйте '
+                "эту константу вместо магического числа."
+            ),
+            severity=Severity.INFORMATION,
+            lines=lines,
+            start_node=number,
+            end_node=number,
+        )
+
+    @classmethod
+    def _signed_value(cls, number: Any, value: str) -> str:
+        expression = getattr(number, "parent", None)
+        unary = getattr(expression, "parent", None)
+        if getattr(unary, "type", None) != "unary_expression":
+            return value
+        operator = next(
+            (child for child in _ts_children(unary) if getattr(child, "type", None) == "operator"),
+            None,
+        )
+        return f"-{value}" if operator is not None and _ts_node_text(operator) == "-" else value
+
+    @staticmethod
+    def _expression_ancestor(node: Any) -> Any | None:
+        current = getattr(node, "parent", None)
+        while current is not None:
+            if getattr(current, "type", None) == "expression":
+                return current
+            current = getattr(current, "parent", None)
+        return None
+
+    @staticmethod
+    def _inside_default_parameter(node: Any) -> bool:
+        current = getattr(node, "parent", None)
+        while current is not None:
+            if getattr(current, "type", None) == "parameter":
+                return True
+            if getattr(current, "type", None) in {
+                "procedure_definition",
+                "function_definition",
+                "assignment_statement",
+                "call_statement",
+                "if_statement",
+            }:
+                return False
+            current = getattr(current, "parent", None)
+        return False
+
+    @staticmethod
+    def _inside_index_access(node: Any) -> bool:
+        index = MagicNumberRule._ancestor_of_type(node, {"index"})
+        if index is None:
+            return False
+        return MagicNumberRule._index_is_simple_number(index)
+
+    @staticmethod
+    def _index_is_simple_number(index: Any) -> bool:
+        children = [
+            child
+            for child in _ts_children(index)
+            if getattr(child, "type", None) not in {"line_comment", "comment"}
+        ]
+        if len(children) == 1 and getattr(children[0], "type", None) == "const_expression":
+            return any(
+                getattr(child, "type", None) == "number" for child in _ts_children(children[0])
+            )
+        return False
+
+    @classmethod
+    def _wrong_expression(cls, expression: Any) -> bool:
+        if cls._ancestor_of_type(expression, {"return_statement"}) is not None:
+            return True
+        if cls._argument_index(expression) is not None:
+            return True
+        if cls._ancestor_of_type(expression, {"binary_expression"}) is not None:
+            return True
+        return cls._meaningful_expression_child_count(expression) > 1 or cls._has_binary_parent(
+            expression
+        )
+
+    @staticmethod
+    def _meaningful_expression_child_count(expression: Any) -> int:
+        return sum(
+            1
+            for child in _ts_children(expression)
+            if getattr(child, "type", None) not in {";", "line_comment", "comment"}
+        )
+
+    @staticmethod
+    def _has_binary_parent(expression: Any) -> bool:
+        parent = getattr(expression, "parent", None)
+        return getattr(parent, "type", None) == "expression" and any(
+            getattr(child, "type", None) == "operator" for child in _ts_children(parent)
+        )
+
+    @classmethod
+    def _inside_structure_or_correspondence(
+        cls,
+        expression: Any,
+        container_assignments: dict[str, list[tuple[str, Any]]],
+    ) -> bool:
+        if cls._inside_structure_constructor(expression):
+            return True
+        call_expression = cls._call_expression_for_argument(expression)
+        if call_expression is None:
+            return False
+        method_name = cls._method_name(call_expression)
+        if method_name not in cls._insert_methods:
+            return False
+        receiver = cls._call_receiver(call_expression)
+        if receiver is None:
+            return False
+        container = cls._visible_container_assignment(
+            container_assignments.get(receiver.casefold(), []), call_expression
+        )
+        if container is None:
+            return False
+        container_type, _assignment = container
+        arg_index = cls._argument_index(expression)
+        if container_type in cls._map_types:
+            return arg_index in {0, 1} and cls._argument_is_simple_number(expression)
+        return arg_index == 1 and cls._argument_is_simple_number(expression)
+
+    @classmethod
+    def _inside_structure_constructor(cls, expression: Any) -> bool:
+        parent = getattr(expression, "parent", None)
+        if getattr(parent, "type", None) != "arguments":
+            return False
+        new_expression = getattr(parent, "parent", None)
+        if getattr(new_expression, "type", None) != "new_expression":
+            return False
+        type_name = cls._new_expression_type(new_expression)
+        if type_name not in cls._container_types:
+            return False
+        arg_index = cls._argument_index(expression)
+        if arg_index is None:
+            return False
+        if arg_index == 0 and type_name not in {"соответствие", "map"}:
+            return False
+        return cls._argument_is_simple_number(expression)
+
+    @classmethod
+    def _container_assignments(cls, root: Any) -> dict[str, list[tuple[str, Any]]]:
+        assignments: dict[str, list[tuple[str, Any]]] = {}
+        for node in _ts_walk(root):
+            if getattr(node, "type", None) != "assignment_statement":
+                continue
+            children = _ts_children(node)
+            identifier = next(
+                (child for child in children if getattr(child, "type", None) == "identifier"),
+                None,
+            )
+            new_expression = next(
+                (
+                    child
+                    for child in _ts_walk(node)
+                    if getattr(child, "type", None) == "new_expression"
+                ),
+                None,
+            )
+            if identifier is None or new_expression is None:
+                continue
+            type_name = cls._new_expression_type(new_expression)
+            if type_name in cls._container_types or type_name in cls._map_types:
+                assignments.setdefault(_ts_node_text(identifier).casefold(), []).append(
+                    (type_name, node)
+                )
+        return assignments
+
+    @staticmethod
+    def _new_expression_type(new_expression: Any) -> str:
+        identifier = next(
+            (
+                child
+                for child in _ts_children(new_expression)
+                if getattr(child, "type", None) == "identifier"
+            ),
+            None,
+        )
+        return _ts_node_text(identifier).casefold() if identifier is not None else ""
+
+    @staticmethod
+    def _argument_index(expression: Any) -> int | None:
+        parent = getattr(expression, "parent", None)
+        if getattr(parent, "type", None) != "arguments":
+            return None
+        expressions = [
+            child for child in _ts_children(parent) if getattr(child, "type", None) == "expression"
+        ]
+        try:
+            return expressions.index(expression)
+        except ValueError:
+            return None
+
+    @classmethod
+    def _argument_is_simple_number(cls, expression: Any) -> bool:
+        children = [
+            child
+            for child in _ts_children(expression)
+            if getattr(child, "type", None) not in {";", "line_comment", "comment"}
+        ]
+        if len(children) != 1 or getattr(children[0], "type", None) != "const_expression":
+            return False
+        return any(getattr(child, "type", None) == "number" for child in _ts_children(children[0]))
+
+    @staticmethod
+    def _call_expression_for_argument(expression: Any) -> Any | None:
+        args = getattr(expression, "parent", None)
+        method_call = getattr(args, "parent", None)
+        if (
+            getattr(args, "type", None) != "arguments"
+            or getattr(method_call, "type", None) != "method_call"
+        ):
+            return None
+        call_expression = getattr(method_call, "parent", None)
+        return (
+            call_expression if getattr(call_expression, "type", None) == "call_expression" else None
+        )
+
+    @staticmethod
+    def _method_name(call_expression: Any) -> str:
+        method_call = next(
+            (
+                child
+                for child in _ts_children(call_expression)
+                if getattr(child, "type", None) == "method_call"
+            ),
+            None,
+        )
+        if method_call is None:
+            return ""
+        identifier = next(
+            (
+                child
+                for child in _ts_children(method_call)
+                if getattr(child, "type", None) == "identifier"
+            ),
+            None,
+        )
+        return _ts_node_text(identifier).casefold() if identifier is not None else ""
+
+    @staticmethod
+    def _call_receiver(call_expression: Any) -> str | None:
+        access = next(
+            (
+                child
+                for child in _ts_children(call_expression)
+                if getattr(child, "type", None) == "access"
+            ),
+            None,
+        )
+        if access is None:
+            return None
+        identifier = next(
+            (
+                child
+                for child in _ts_children(access)
+                if getattr(child, "type", None) == "identifier"
+            ),
+            None,
+        )
+        return _ts_node_text(identifier) if identifier is not None else None
+
+    @classmethod
+    def _visible_container_assignment(
+        cls, assignments: list[tuple[str, Any]], call_expression: Any
+    ) -> tuple[str, Any] | None:
+        call_statement = cls._ancestor_of_type(call_expression, {"call_statement"})
+        if call_statement is None:
+            return None
+        call_owner = getattr(call_statement, "parent", None)
+        visible: list[tuple[str, Any]] = []
+        for type_name, assignment in assignments:
+            assignment_owner = getattr(assignment, "parent", None)
+            if not cls._same_node_span(call_owner, assignment_owner):
+                continue
+            if getattr(assignment, "start_byte", 0) >= getattr(call_expression, "start_byte", 0):
+                continue
+            visible.append((type_name, assignment))
+        if not visible:
+            return None
+        return max(visible, key=lambda item: getattr(item[1], "start_byte", 0))
+
+    @staticmethod
+    def _same_node_span(left: Any, right: Any) -> bool:
+        return (
+            left is not None
+            and right is not None
+            and getattr(left, "type", None) == getattr(right, "type", None)
+            and getattr(left, "start_byte", None) == getattr(right, "start_byte", None)
+            and getattr(left, "end_byte", None) == getattr(right, "end_byte", None)
+        )
+
+    @staticmethod
+    def _wrong_error_number(number: Any) -> bool:
+        parent = getattr(number, "parent", None)
+        if getattr(parent, "type", None) != "ERROR":
+            return False
+        if MagicNumberRule._ancestor_of_type(number, {"ternary_expression"}) is not None:
+            return True
+        error_text = _ts_node_text(parent).strip()
+        if error_text.startswith(",") and ")" in error_text:
+            return True
+        children = _ts_children(parent)
+        try:
+            index = children.index(number)
+        except ValueError:
+            return False
+        previous_types = [getattr(child, "type", None) for child in children[:index]]
+        next_types = [
+            getattr(child, "type", None)
+            for child in children[index + 1 :]
+            if getattr(child, "type", None) not in {".", "identifier"}
+        ]
+        return "TO_KEYWORD" in previous_types and bool(next_types) and next_types[0] == "operator"
+
+    @staticmethod
+    def _inside_single_quoted_literal(lines: list[str], number: Any) -> bool:
+        line_idx = int(number.start_point[0])
+        col = int(number.start_point[1])
+        if line_idx < 0 or line_idx >= len(lines):
+            return False
+        line = lines[line_idx].encode("utf-8", errors="replace")
+        left = line.rfind(b"'", 0, col + 1)
+        if left < 0:
+            return False
+        right = line.find(b"'", col)
+        return right >= 0
+
+    @staticmethod
+    def _ancestor_of_type(node: Any, types: set[str]) -> Any | None:
+        current = getattr(node, "parent", None)
+        while current is not None:
+            if getattr(current, "type", None) in types:
+                return current
+            current = getattr(current, "parent", None)
+        return None
+
+
 class MagicDateRule(DiagnosticRuntimeRule):
     code = "BSL047"
     _authorized = {"00010101", "00010101000000", "000101010000"}
@@ -5346,21 +5733,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                         try_block_re=engine._RE_TRY_BLOCK,
                         try_close_re=engine._RE_TRY_CLOSE,
                         risky_call_re=engine._RE_RISKY_CALL,
-                    )
-                )
-            return diags
-        if code == "BSL029":
-            diags = []
-            query_line_indices = set(snapshot.query_line_indices) if snapshot is not None else set()
-            for proc_model in context.procedure_models:
-                diags.extend(
-                    proc_model.validate_magic_numbers(
-                        context.lines,
-                        snapshot=snapshot,
-                        any_digit_re=_diag._RE_BSL029_ANY_DIGIT,
-                        simple_assign_re=_diag._RE_BSL029_SIMPLE_ASSIGN,
-                        ternary_re=_diag._RE_BSL029_TERNARY,
-                        query_line_indices=query_line_indices,
                     )
                 )
             return diags
