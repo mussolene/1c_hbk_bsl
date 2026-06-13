@@ -44,10 +44,11 @@ class RulePhase(StrEnum):
 # Rules that are clearly CST+regex or CST-only in the engine — keep tight; rest uses tags.
 _EXPLICIT_PHASE: dict[str, RulePhase] = {
     "BSL001": RulePhase.CST,
-    "BSL004": RulePhase.HYBRID,
+    "BSL004": RulePhase.CST,
     "BSL009": RulePhase.HYBRID,
     "BSL014": RulePhase.LINE,
     "BSL016": RulePhase.REGION,
+    "BSL020": RulePhase.HYBRID,
     "BSL030": RulePhase.CST,
     "BSL033": RulePhase.HYBRID,
     "BSL051": RulePhase.HYBRID,

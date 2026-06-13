@@ -14,7 +14,7 @@ The active context is a compact OACS capsule assembled from:
 - ACS memory query results relevant to the current task.
 - ACS context build output for the current intent.
 - Current repository state from focused commands such as `git status`, `rg`,
-  `sed`, targeted tests, and small BSLLS oracle runs.
+  `sed`, targeted tests, and optional external oracle runs.
 - Compact evidence references: `ev_...` ids, report paths, command labels, and
   summaries, not raw logs unless needed for a specific failure.
 
@@ -78,7 +78,7 @@ Use `acs run` when ACS should execute and record a command:
 ```bash
 acs run --label "ruff" -- ruff check src tests
 acs run --label "pytest" -- env PYTHONPATH=src ./.venv/bin/python -m pytest -q
-acs run --label "bslls parity" -- uv run python scripts/largest3_sharded_parity.py
+acs run --label "targeted diagnostics" -- env PYTHONPATH=src python -m onec_hbk_bsl check tests/fixtures --format json --exit-zero
 ```
 
 Use `acs tool ingest-result` when a tool has already run and you need to record
@@ -110,7 +110,7 @@ When evidence should become reusable project knowledge:
 
 ```bash
 MEM_ID=$(acs memory propose --type procedure --depth 2 --scope project \
-  --text "BSLLS parity runs through the local resolver helpers in onec_hbk_bsl.analysis.bslls_runtime_parity under acs run." \
+  --text "External oracle diagnostics are run outside the product package and recorded as OACS evidence with artifact paths and summaries." \
   --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 acs memory commit "$MEM_ID" --json
 acs memory sharpen "$MEM_ID" <ev_...> --json
@@ -126,12 +126,6 @@ Before claiming completion, record current verification:
 ```bash
 acs run --label "lint" -- ruff check src tests
 acs run --label "tests" -- env PYTHONPATH=src ./.venv/bin/python -m pytest -q
-acs run --label "bslls resolver smoke" -- uv run python - <<'PY'
-from pathlib import Path
-from onec_hbk_bsl.analysis.bslls_runtime_parity import resolve_bslls_jar, resolve_bslls_java
-print(resolve_bslls_jar(Path.cwd()))
-print(resolve_bslls_java())
-PY
 ```
 
 If a check fails, apply the smallest safe fix and rerun the failing check.

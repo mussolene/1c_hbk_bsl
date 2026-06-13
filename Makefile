@@ -1,5 +1,5 @@
 .PHONY: install install-build dev test lint fmt check-all sync-version \
-	build build-fast build-check bench-30 bslls-oracle-fixtures corpus-largest-3-sync parity-largest-3 \
+	build build-fast build-check bench-30 corpus-largest-3-sync \
 	extension-bin sync-extension-bin vsix dist clean docker-build docker-up docker-down
 
 # ── Python runtime ───────────────────────────────────────────────────────────
@@ -129,9 +129,6 @@ build-check: build
 bench-30:
 	$(PYTHON3) scripts/dev_corpus_bench.py $(CONFIG_ROOT) --limit 30
 
-bslls-oracle-fixtures:
-	PYTHONPATH=src $(PYTHON3) scripts/bslls_oracle_parity.py tests/fixtures --output-dir .agent/reports/bslls-oracle/fixtures
-
 corpus-largest-3-sync:
 	rm -rf "$(CORPUS_LARGEST_3)"
 	mkdir -p "$(CORPUS_LARGEST_3)"
@@ -141,9 +138,6 @@ corpus-largest-3-sync:
 		'DataProcessors/ДокументооборотСКонтролирующимиОрганами/Forms/КонтейнерКлиентскихМетодов/Ext/Form/Module.bsl' \
 		"$(CORPUS_LARGEST_3)/"
 	find "$(CORPUS_LARGEST_3)" -type f | sort
-
-parity-largest-3:
-	PYTHONPATH=src $(PYTHON3) scripts/bslls_oracle_parity.py "$(CORPUS_LARGEST_3)" --output-dir .agent/reports/bslls-oracle/largest-3
 
 # Пакет для дистрибуции с версией из установленного пакета (setuptools-scm / git)
 dist: build

@@ -30,6 +30,24 @@ def test_bsl156_proc_inside_region_clean(tmp_path: Path) -> None:
     assert not [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
 
 
+def test_bsl156_split_method_file_next_to_module_is_skipped(tmp_path: Path) -> None:
+    ext = tmp_path / "CommonModules" / "Модуль" / "Ext"
+    ext.mkdir(parents=True)
+    (ext / "Module.bsl").write_text(
+        "#Область ПрограммныйИнтерфейс\nПроцедура П() Экспорт\nКонецПроцедуры\n#КонецОбласти\n",
+        encoding="utf-8",
+    )
+    split = ext / "П.bsl"
+    split.write_text(
+        "Процедура П() Экспорт\nКонецПроцедуры\n",
+        encoding="utf-8",
+    )
+
+    engine = DiagnosticEngine(select={"BSL156"})
+
+    assert not [d for d in engine.check_file(str(split)) if d.code == "BSL156"]
+
+
 def test_bsl156_proc_outside_region(tmp_path: Path) -> None:
     p = tmp_path / "m.bsl"
     p.write_text(

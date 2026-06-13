@@ -40,22 +40,22 @@ python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 
 Это именно исследовательский / development-only прогон, не тестовый fixture pipeline.
 
-## BSLLS oracle / parity
+## Внешние oracle-прогоны
 
-Источник правды для сравнения с Java BSLLS — локальный BSLLS resolver из
-`onec_hbk_bsl.analysis.bslls_runtime_parity`. Он находит `BSLLS_JAR`,
-кэшированный `~/.cache/onec-hbk-bsl/bslls/*-exec.jar` или локальную сборку
-`.nosync/bsl-language-server`, а Java выбирает через `BSLLS_JAVA` / `JAVA_HOME`
-/ системный Java 17+.
+Java BSLLS не является частью продуктового Python-пакета и не запускается через
+`onec_hbk_bsl`. Если нужен разовый внешний oracle-прогон, запускайте BSLLS CLI
+напрямую из локально установленного JDK/exec.jar и сохраняйте результат как
+OACS evidence или обычный артефакт исследования.
+
+Пример формы команды:
 
 ```bash
-acs run --label "largest3 local bslls parity" -- uv run python scripts/largest3_sharded_parity.py
+java -jar /path/to/bsl-language-server-*-exec.jar analyze \
+  -s /path/to/1c/config \
+  -w /path/to/1c/config \
+  -o /tmp/bslls-report \
+  -r json -q
 ```
 
-Низкоуровневые функции для произвольных корпусов:
-`resolve_bslls_jar`, `capture_bslls_baseline`, `compare_with_bslls_baseline`,
-`compare_with_bslls` в `onec_hbk_bsl.analysis.bslls_runtime_parity`.
-
-Отчеты parity используют категории:
-`only_ours`, `only_bslls`, `message_mismatch`, `severity_mismatch`,
-`anchor_mismatch`.
+Сравнение с такими отчётами должно оставаться dev-only исследованием, а не
+публичной runtime-поверхностью пакета.

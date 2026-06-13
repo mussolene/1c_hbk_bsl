@@ -146,16 +146,20 @@ def _bsl004_append_empty_block(
     diags: list[Any],
     anchor_node: Any,
     message: str,
+    *,
+    end_node: Any | None = None,
 ) -> None:
+    lines = _root_source_lines(anchor_node)
     line = anchor_node.start_point[0] + 1
-    character = anchor_node.start_point[1]
+    character = _point_char(lines, anchor_node.start_point)
+    end_character = _point_char(lines, (end_node or anchor_node).end_point)
     diags.append(
         Diagnostic(
             file=path,
             line=line,
             character=character,
             end_line=line,
-            end_character=character + 1,
+            end_character=max(character + 1, end_character),
             severity=Severity.WARNING,
             code="BSL004",
             message=message,
@@ -163,39 +167,18 @@ def _bsl004_append_empty_block(
     )
 
 
-def _bsl004_emit_empty_then_for_elseif_clause(
-    elseif_node: Any, path: str, diags: list[Any], empty_msg: str
-) -> None:
-    ech = list(getattr(elseif_node, "children", []) or [])
-    j = 0
-    if j < len(ech) and getattr(ech[j], "type", None) == "ELSIF_KEYWORD":
-        j += 1
-    else:
-        return
-    if j < len(ech) and getattr(ech[j], "type", None) == "expression":
-        j += 1
-    if j >= len(ech) or getattr(ech[j], "type", None) != "THEN_KEYWORD":
-        return
-    j += 1
-    body = ech[j:]
-    if not ts_clause_body_is_empty(body):
-        return
-    _bsl004_append_empty_block(path, diags, elseif_node, empty_msg)
-
-
 def ts_if_main_then_branch_empty(if_stmt: Any) -> bool:
     """True when the first ``Если`` … ``Тогда`` branch has no executable statements."""
     ch = list(getattr(if_stmt, "children", []) or [])
-    i = 0
-    if i < len(ch) and getattr(ch[i], "type", None) == "IF_KEYWORD":
-        i += 1
-    else:
+    if not ch or getattr(ch[0], "type", None) != "IF_KEYWORD":
         return False
-    if i < len(ch) and getattr(ch[i], "type", None) == "expression":
-        i += 1
-    if i >= len(ch) or getattr(ch[i], "type", None) != "THEN_KEYWORD":
+    then_index = next(
+        (idx for idx, child in enumerate(ch) if getattr(child, "type", None) == "THEN_KEYWORD"),
+        None,
+    )
+    if then_index is None:
         return False
-    i += 1
+    i = then_index + 1
     start = i
     while i < len(ch) and getattr(ch[i], "type", None) not in (
         "elseif_clause",
@@ -209,35 +192,56 @@ def ts_if_main_then_branch_empty(if_stmt: Any) -> bool:
 
 def ts_elseif_then_branch_empty(elseif_node: Any) -> bool:
     """True when an ``ИначеЕсли`` … ``Тогда`` branch has no executable statements."""
-    ech = list(getattr(elseif_node, "children", []) or [])
-    j = 0
-    if j < len(ech) and getattr(ech[j], "type", None) == "ELSIF_KEYWORD":
-        j += 1
-    else:
+    ch = list(getattr(elseif_node, "children", []) or [])
+    if not ch or getattr(ch[0], "type", None) != "ELSIF_KEYWORD":
         return False
-    if j < len(ech) and getattr(ech[j], "type", None) == "expression":
-        j += 1
-    if j >= len(ech) or getattr(ech[j], "type", None) != "THEN_KEYWORD":
+    then_index = next(
+        (idx for idx, child in enumerate(ch) if getattr(child, "type", None) == "THEN_KEYWORD"),
+        None,
+    )
+    if then_index is None:
         return False
-    j += 1
-    body = ech[j:]
+    body = ch[then_index + 1 :]
     return ts_clause_body_is_empty(body)
+
+
+def _bsl004_elseif_internal_body(elseif_node: Any) -> list[Any]:
+    ch = list(getattr(elseif_node, "children", []) or [])
+    for idx, child in enumerate(ch):
+        if getattr(child, "type", None) == "THEN_KEYWORD":
+            return ch[idx + 1 :]
+    return []
+
+
+def _bsl004_elseif_then_node(elseif_node: Any) -> Any:
+    for child in getattr(elseif_node, "children", []) or []:
+        if getattr(child, "type", None) == "THEN_KEYWORD":
+            return child
+    return elseif_node
+
+
+def _bsl004_else_internal_body(else_node: Any) -> list[Any]:
+    ch = list(getattr(else_node, "children", []) or [])
+    if ch and getattr(ch[0], "type", None) == "ELSE_KEYWORD":
+        return ch[1:]
+    return []
 
 
 def _bsl004_emit_empty_then_for_if_statement(
     if_stmt: Any, path: str, diags: list[Any], empty_msg: str
 ) -> None:
     ch = list(getattr(if_stmt, "children", []) or [])
-    i = 0
-    if i < len(ch) and getattr(ch[i], "type", None) == "IF_KEYWORD":
-        i += 1
-    else:
+    if not ch or getattr(ch[0], "type", None) != "IF_KEYWORD":
         return
-    if i < len(ch) and getattr(ch[i], "type", None) == "expression":
-        i += 1
-    if i >= len(ch) or getattr(ch[i], "type", None) != "THEN_KEYWORD":
+
+    then_index = next(
+        (idx for idx, child in enumerate(ch) if getattr(child, "type", None) == "THEN_KEYWORD"),
+        None,
+    )
+    if then_index is None:
         return
-    i += 1
+    then_node = ch[then_index]
+    i = then_index + 1
     start = i
     while i < len(ch) and getattr(ch[i], "type", None) not in (
         "elseif_clause",
@@ -247,10 +251,26 @@ def _bsl004_emit_empty_then_for_if_statement(
         i += 1
     body = ch[start:i]
     if ts_clause_body_is_empty(body):
-        _bsl004_append_empty_block(path, diags, if_stmt, empty_msg)
+        _bsl004_append_empty_block(path, diags, then_node, empty_msg)
+
     while i < len(ch):
-        if getattr(ch[i], "type", None) == "elseif_clause":
-            _bsl004_emit_empty_then_for_elseif_clause(ch[i], path, diags, empty_msg)
+        node = ch[i]
+        nt = getattr(node, "type", None)
+        if nt == "elseif_clause":
+            body = _bsl004_elseif_internal_body(node)
+            j = i + 1
+            if ts_clause_body_is_empty(body):
+                then_node = _bsl004_elseif_then_node(node)
+                _bsl004_append_empty_block(path, diags, then_node, empty_msg)
+            i = j
+            continue
+        if nt == "else_clause":
+            body = _bsl004_else_internal_body(node)
+            j = i + 1
+            if ts_clause_body_is_empty(body):
+                _bsl004_append_empty_block(path, diags, node, empty_msg, end_node=node)
+            i = j
+            continue
         i += 1
 
 
@@ -285,26 +305,7 @@ def diagnostics_bsl004_from_tree(path: str, root: Any) -> list[Any]:
 
     def visit(node: Any) -> None:
         nt = getattr(node, "type", None)
-        if nt == "try_statement":
-            if not _try_except_has_only_comments_or_empty(node):
-                return
-            for c in getattr(node, "children", []) or []:
-                if getattr(c, "type", None) == "EXCEPT_KEYWORD":
-                    line = c.start_point[0] + 1
-                    diags.append(
-                        Diagnostic(
-                            file=path,
-                            line=line,
-                            character=0,
-                            end_line=line,
-                            end_character=0,
-                            severity=Severity.WARNING,
-                            code="BSL004",
-                            message="Наполните блок кодом или удалите его",
-                        )
-                    )
-                    return
-        elif nt == "if_statement":
+        if nt == "if_statement":
             _bsl004_emit_empty_then_for_if_statement(node, path, diags, empty_then_msg)
 
     ts_walk_preorder(root, visit)

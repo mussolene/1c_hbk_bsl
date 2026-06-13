@@ -5,6 +5,7 @@ Module-structure rules: async continuation, code before subroutines, code outsid
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 _BSL154_ASYNC_PIPE = (
     "ПОКАЗАТЬВОПРОС|SHOWQUERYBOX|ПОКАЗАТЬЗНАЧЕНИЕ|SHOWVALUE|"
@@ -43,6 +44,19 @@ _RE_MODULE_VAR = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
 _RE_REGION_OPEN_LINE = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE)
 _RE_REGION_CLOSE_LINE = re.compile(r"^\s*#(?:КонецОбласти|EndRegion)\b", re.IGNORECASE)
 _RE_RAISE_STMT = re.compile(r"^\s*(?:ВызватьИсключение|Raise)\b", re.IGNORECASE)
+_CANONICAL_MODULE_FILE_NAMES = frozenset(
+    {
+        "Module.bsl",
+        "ObjectModule.bsl",
+        "ManagerModule.bsl",
+        "CommandModule.bsl",
+        "RecordSetModule.bsl",
+        "ManagedApplicationModule.bsl",
+        "SessionModule.bsl",
+        "ExternalConnectionModule.bsl",
+        "OrdinaryApplicationModule.bsl",
+    }
+)
 
 
 def path_matches_bsl154_module_types(path: str) -> bool:
@@ -54,6 +68,16 @@ def path_matches_bsl154_module_types(path: str) -> bool:
     if "/forms/" in low and low.endswith("/form/module.bsl"):
         return True
     return False
+
+
+def _is_split_module_fragment(path: str) -> bool:
+    current = Path(path)
+    if current.suffix.lower() != ".bsl":
+        return False
+    if current.name in _CANONICAL_MODULE_FILE_NAMES:
+        return False
+    parent = current.parent
+    return any((parent / name).is_file() for name in _CANONICAL_MODULE_FILE_NAMES)
 
 
 def _code_before_line_comment(line: str) -> str:
@@ -185,6 +209,9 @@ def bsl156_diagnostics(
     lines: list[str],
     procedures: list[tuple[int, int, str]],
 ) -> list[tuple[int, int, int, str]]:
+    if _is_split_module_fragment(path):
+        return []
+
     intervals = module_region_intervals(lines)
     n = len(lines)
     proc_ranges = [(s, e) for s, e, _ in procedures]

@@ -293,10 +293,12 @@ def _add_node_start_token_range(
     )
 
 
-def _diagnostics_bsl020_nested_statements(context: BsllsDocumentContext) -> list[Diagnostic]:
+def _diagnostics_bsl020_nested_statements(
+    context: BsllsDocumentContext,
+) -> list[Diagnostic] | None:
     root = getattr(getattr(context.tree, "root_node", None), "text", None)
-    if not isinstance(root, (bytes, bytearray)):
-        return []
+    if not isinstance(root, (bytes, bytearray)) or not _diag._ts_tree_ok_for_rules(context.tree):
+        return None
 
     control_types = {
         "if_statement",
@@ -5147,7 +5149,11 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
                 proc_name_span_fn=_diag._proc_name_span,
             )
         if code == "BSL004":
-            return model.validate_bsl004_empty_code_block(lines=context.lines)
+            from onec_hbk_bsl.analysis.diagnostic.cst import diagnostics_bsl004_from_tree
+
+            if context.tree is None:
+                return []
+            return diagnostics_bsl004_from_tree(context.path, context.tree.root_node)
         if code == "BSL007":
             return model.validate_bsl007_unused_local_variable(
                 lines=context.lines,
@@ -5294,7 +5300,7 @@ class CoreDiagnosticsRule(BsllsDiagnosticRule):
             return diags
         if code == "BSL020":
             ts_diags = _diagnostics_bsl020_nested_statements(context)
-            if ts_diags:
+            if ts_diags is not None:
                 return ts_diags
             return model.validate_excessive_nesting(
                 context.lines,

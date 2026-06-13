@@ -3976,6 +3976,8 @@ _BSL051_BLOCK_DELIMITER_TYPES = frozenset(
         "ENDIF_KEYWORD",
         "ENDDO_KEYWORD",
         "ENDTRY_KEYWORD",
+        "ENDFUNCTION_KEYWORD",
+        "ENDPROCEDURE_KEYWORD",
         "EXCEPT_KEYWORD",
         "ELSE_KEYWORD",
         "ELSIF_KEYWORD",
@@ -3986,6 +3988,7 @@ _BSL051_BLOCK_DELIMITER_TYPES = frozenset(
 _RE_BSL051_DELIMITER_FALLBACK = re.compile(
     r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo"
     r"|КонецПопытки|EndTry"
+    r"|КонецФункции|EndFunction|КонецПроцедуры|EndProcedure"
     r"|Исключение|Except|Иначе|Else|ИначеЕсли|ElsIf)\b",
     re.IGNORECASE,
 )

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
 from onec_hbk_bsl.analysis.diagnostics import (
     Diagnostic,
     DiagnosticEngine,
@@ -2722,6 +2723,23 @@ class TestBsl019CyclomaticComplexity:
 
 
 class TestBsl020ExcessiveNesting:
+    def test_clean_cst_does_not_fall_back_to_regex(self, tmp_path: Path, monkeypatch) -> None:
+        content = """\
+            Процедура Тест(А)
+                Если А Тогда
+                    А = 1;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+
+        def fail_fallback(*args, **kwargs):
+            raise AssertionError("BSL020 regex fallback must not run after clean CST")
+
+        monkeypatch.setattr(ModuleModel, "validate_excessive_nesting", fail_fallback)
+
+        diags = _check(content, tmp_path, max_nesting_depth=4, select={"BSL020"})
+        assert "BSL020" not in _codes(diags)
+
     def test_deep_nesting_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест(А, Б, В)
@@ -2787,6 +2805,33 @@ class TestBsl020ExcessiveNesting:
         """
         diags = [d for d in _check(content, tmp_path, max_nesting_depth=4) if d.code == "BSL020"]
         assert len(diags) == 1
+
+    def test_regex_fallback_reports_each_overlimit_leaf_sibling(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(А)
+                Если А Тогда
+                    Если А Тогда
+                        Если А Тогда
+                            Если А Тогда
+                                Если А Тогда
+                                КонецЕсли;
+                                Если А Тогда
+                                КонецЕсли;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        path = tmp_path / "t.bsl"
+        path.write_text(content, encoding="utf-8")
+        lines = content.splitlines()
+        diags = ModuleModel(str(path)).validate_excessive_nesting(
+            lines,
+            procs=[],
+            max_nesting_depth=4,
+        )
+        assert [d.line for d in diags] == [6, 8]
 
 
 class TestBsl036IfConditionComplexityParity:
@@ -4246,6 +4291,19 @@ class TestBsl051UnreachableCode:
                 Сообщить("привет");
                 Возврат;
             КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL051"})
+        assert "BSL051" not in _codes(diags)
+
+    def test_return_before_end_function_is_not_unreachable(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Первый()
+                Возврат 1;
+            КонецФункции
+
+            Функция Второй()
+                Возврат 2;
+            КонецФункции
         """
         diags = _check(content, tmp_path, select={"BSL051"})
         assert "BSL051" not in _codes(diags)

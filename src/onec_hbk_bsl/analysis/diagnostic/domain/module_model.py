@@ -175,17 +175,16 @@ class ModuleModel:
             for i in range(start_idx, min(end_idx, len(lines))):
                 line = lines[i]
                 if re_nest_close.match(line):
-                    was_over_limit = nesting > max_nesting_depth
-                    nesting = max(0, nesting - 1)
-                    if was_over_limit and nesting <= max_nesting_depth:
+                    if pending is not None and nesting == pending[3]:
                         flush_pending()
+                    nesting = max(0, nesting - 1)
                     continue
                 if re_nest_open.match(line):
                     nesting += 1
                     if nesting > max_nesting_depth:
                         start_col = len(line) - len(line.lstrip())
                         keyword_len = len(line.lstrip().split(None, 1)[0])
-                        if pending is None or nesting >= pending[3]:
+                        if pending is None or nesting > pending[3]:
                             pending = (i + 1, start_col, start_col + keyword_len, nesting)
             flush_pending()
 

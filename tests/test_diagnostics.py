@@ -202,6 +202,69 @@ class TestBsl004EmptyExceptHandler:
         assert bsl004[0].character == content.splitlines()[2].index("Тогда")
         assert bsl004[0].end_character == bsl004[0].character + len("Тогда")
 
+    def test_bsl004_reports_parenthesized_multiline_if_with_comment_only_body(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+Процедура Тест()
+    Если (Элемент.Ключ = "Totals")
+        Или (Элемент.Ключ = "TotalSum") Тогда
+        // Не заполняем
+    Иначе
+        Сообщить("OK");
+    КонецЕсли;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        bsl004 = [d for d in issues if d.code == "BSL004"]
+        assert len(bsl004) == 1
+        assert bsl004[0].line == 3
+        assert bsl004[0].character == content.splitlines()[2].index("Тогда")
+
+    def test_bsl004_reports_empty_elseif_branch(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если А Тогда
+        Сообщить("A");
+    ИначеЕсли Б Тогда
+        // TODO
+    Иначе
+        Сообщить("C");
+    КонецЕсли;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        bsl004 = [d for d in issues if d.code == "BSL004"]
+        assert len(bsl004) == 1
+        assert bsl004[0].line == 4
+
+    def test_bsl004_reports_empty_else_branch(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если А Тогда
+        Сообщить("A");
+    Иначе
+        // TODO
+    КонецЕсли;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        bsl004 = [d for d in issues if d.code == "BSL004"]
+        assert len(bsl004) == 1
+        assert bsl004[0].line == 4
+
 
 # ---------------------------------------------------------------------------
 # No issues on clean file
