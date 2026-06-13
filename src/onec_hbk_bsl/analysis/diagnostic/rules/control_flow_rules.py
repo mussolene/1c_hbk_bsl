@@ -163,19 +163,19 @@ def _loop_body_always_returns(loop_node: Any, *, loops_executed_at_least_once: b
 
 
 def _try_always_returns(try_node: Any, *, loops_executed_at_least_once: bool = True) -> bool:
-    parts: list[list[Any]] = []
-    cur: list[Any] = []
+    parts: list[list[Any]] = [[], []]
+    current_part = 0
     for ch in getattr(try_node, "children", []) or []:
         t = getattr(ch, "type", None)
-        if t in ("TRY_KEYWORD", "EXCEPT_KEYWORD", "ENDTRY_KEYWORD"):
-            if cur:
-                parts.append(cur)
-                cur = []
+        if t == "TRY_KEYWORD":
             continue
-        cur.append(ch)
-    if cur:
-        parts.append(cur)
-    if not parts:
+        if t == "EXCEPT_KEYWORD":
+            current_part = 1
+            continue
+        if t in ("ENDTRY_KEYWORD", ";"):
+            continue
+        parts[current_part].append(ch)
+    if not parts[0] or not parts[1]:
         return False
     return all(
         _stmt_list_always_returns(
@@ -294,7 +294,10 @@ def implicit_exit_reachable(
                 return True
             return walk(i + 1)
         if t == "try_statement":
-            if not _try_always_returns(s):
+            if not _try_always_returns(
+                s,
+                loops_executed_at_least_once=loops_executed_at_least_once,
+            ):
                 return True
             return False
         return walk(i + 1)
@@ -348,35 +351,30 @@ def bsl148_function_name_spans(
         if getattr(node, "type", None) == "function_definition":
             if not _fn_subtree_has_parse_error(node) and _fn_has_return(node):
                 body = _function_body_children(node)
-                # BSLLS is conservative for complex try/catch control-flow in this
-                # diagnostic; skip top-level try bodies to avoid large FP drift.
-                if not any(getattr(ch, "type", None) == "try_statement" for ch in body):
-                    if implicit_exit_reachable(
-                        body,
-                        loops_executed_at_least_once=loops_executed_at_least_once,
-                        at_top_level=True,
-                    ):
-                        ident = _identifier_span(node)
-                        if ident is not None:
-                            # Tree root text can be degraded for very large files in some
-                            # parser states; use function-local header text for stable
-                            # byte->LSP conversion of identifier anchor.
-                            raw_fn_text = getattr(node, "text", b"")
-                            if isinstance(raw_fn_text, bytes):
-                                fn_header = raw_fn_text.decode(
-                                    "utf-8", errors="replace"
-                                ).splitlines()
-                                line_text = fn_header[0] if fn_header else ""
-                            else:
-                                fn_header = str(raw_fn_text or "").splitlines()
-                                line_text = fn_header[0] if fn_header else ""
-                            out.append(
-                                (
-                                    ident.line0 + 1,
-                                    utf8_byte_offset_to_lsp_character(line_text, ident.col0),
-                                    utf8_byte_offset_to_lsp_character(line_text, ident.col1),
-                                )
+                if implicit_exit_reachable(
+                    body,
+                    loops_executed_at_least_once=loops_executed_at_least_once,
+                    at_top_level=True,
+                ):
+                    ident = _identifier_span(node)
+                    if ident is not None:
+                        # Tree root text can be degraded for very large files in some
+                        # parser states; use function-local header text for stable
+                        # byte->LSP conversion of identifier anchor.
+                        raw_fn_text = getattr(node, "text", b"")
+                        if isinstance(raw_fn_text, bytes):
+                            fn_header = raw_fn_text.decode("utf-8", errors="replace").splitlines()
+                            line_text = fn_header[0] if fn_header else ""
+                        else:
+                            fn_header = str(raw_fn_text or "").splitlines()
+                            line_text = fn_header[0] if fn_header else ""
+                        out.append(
+                            (
+                                ident.line0 + 1,
+                                utf8_byte_offset_to_lsp_character(line_text, ident.col0),
+                                utf8_byte_offset_to_lsp_character(line_text, ident.col1),
                             )
+                        )
         for child in getattr(node, "children", []) or []:
             scan(child)
 

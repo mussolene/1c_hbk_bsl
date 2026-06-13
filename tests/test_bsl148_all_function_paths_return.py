@@ -131,6 +131,24 @@ def test_bsl148_try_except_with_guaranteed_returns_is_not_reported(tmp_path: Pat
     assert diags == []
 
 
+def test_bsl148_try_except_missing_except_return_is_reported(tmp_path: Path) -> None:
+    content = (
+        "Функция Тест()\n"
+        "    Попытка\n"
+        "        Возврат 1;\n"
+        "    Исключение\n"
+        "        Сообщить(ОписаниеОшибки());\n"
+        "    КонецПопытки;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "try_except_missing_except_return.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert [d.line for d in diags] == [1]
+
+
 def test_bsl148_branch_with_statements_before_return_is_not_reported(tmp_path: Path) -> None:
     content = (
         "Функция Тест(Флаг)\n"
