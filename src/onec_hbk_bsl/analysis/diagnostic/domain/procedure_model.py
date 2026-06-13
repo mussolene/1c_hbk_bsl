@@ -572,59 +572,6 @@ class ProcedureModel:
             )
         ]
 
-    def validate_missing_try_catch(
-        self,
-        lines: list[str],
-        *,
-        try_block_re,
-        try_close_re,
-        risky_call_re,
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        in_try = False
-        for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
-            line = lines[i]
-            if try_block_re.match(line):
-                in_try = True
-            elif re.match(r"^\s*(?:Исключение|Except)\b", line, re.IGNORECASE) and in_try:
-                j = i + 1
-                while j < min(self.end_idx, len(lines)):
-                    stripped = lines[j].strip()
-                    if not stripped or stripped.startswith("//"):
-                        j += 1
-                        continue
-                    break
-                if j < len(lines) and try_close_re.match(lines[j]):
-                    diags.append(
-                        Diagnostic(
-                            file=self.path,
-                            line=i + 1,
-                            character=len(line) - len(line.lstrip()),
-                            end_line=i + 1,
-                            end_character=len(line.rstrip()),
-                            severity=Severity.ERROR,
-                            code="BSL028",
-                            message='Отсутствует код в блоке "Исключение"',
-                        )
-                    )
-            elif try_close_re.match(line) and in_try:
-                in_try = False
-            if in_try or not risky_call_re.match(line):
-                continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=i + 1,
-                    character=len(line) - len(line.lstrip()),
-                    end_line=i + 1,
-                    end_character=len(line),
-                    severity=Severity.INFORMATION,
-                    code="BSL028",
-                    message="Потенциально опасный вызов вне блока Попытка/Исключение",
-                )
-            )
-        return diags
-
     def validate_query_in_loop(
         self,
         lines: list[str],

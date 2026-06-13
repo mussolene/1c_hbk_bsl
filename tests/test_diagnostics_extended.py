@@ -3203,6 +3203,85 @@ class TestBsl027UseGoto:
 
 
 # ---------------------------------------------------------------------------
+# BSL028 — MissingCodeTryCatchEx
+# ---------------------------------------------------------------------------
+
+
+class TestBsl028MissingCodeTryCatchEx:
+    def test_empty_except_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    Действие();
+                Исключение
+
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL028"})
+        bsl028 = [d for d in diags if d.code == "BSL028"]
+        assert [(d.line, d.character, d.end_character, d.severity) for d in bsl028] == [
+            (4, 4, 14, Severity.ERROR),
+        ]
+
+    def test_comment_only_except_detected_by_default(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Попытка
+                    Действие();
+                Исключение
+                    // Только комментарий
+                КонецПопытки;
+                Возврат 1;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL028"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL028"] == [
+            (4, 4, 14),
+        ]
+
+    def test_non_empty_except_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    Действие();
+                Исключение
+                    ОбработатьОшибку(ОписаниеОшибки());
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL028"})
+        assert "BSL028" not in _codes(diags)
+
+    def test_risky_call_outside_try_is_not_bsl028(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Выполнить("Сообщить(1)");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL028"})
+        assert "BSL028" not in _codes(diags)
+
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = Path(
+            ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
+            "MissingCodeTryCatchExDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL028"}).check_file(str(fixture))
+            if diag.code == "BSL028"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (24, 4, 24, 14),
+            (33, 4, 33, 14),
+            (51, 8, 51, 18),
+        ]
+
+
+# ---------------------------------------------------------------------------
 # BSL029 — MagicNumber
 # ---------------------------------------------------------------------------
 

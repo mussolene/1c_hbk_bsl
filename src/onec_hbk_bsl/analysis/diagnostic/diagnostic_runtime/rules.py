@@ -1545,6 +1545,58 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
         return storage.diagnostics
 
 
+class MissingCodeTryCatchRule(DiagnosticRuntimeRule):
+    code = "BSL028"
+    message = 'Конструкция "Попытка...Исключение...КонецПопытки" не содержит кода в исключении'
+
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
+        storage = DiagnosticStorage(context.path)
+        for try_statement in _ts_walk(root):
+            if getattr(try_statement, "type", None) != "try_statement":
+                continue
+            except_keyword = self._except_keyword(try_statement)
+            if except_keyword is None:
+                continue
+            if self._except_has_code(try_statement, except_keyword):
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self.message,
+                severity=Severity.ERROR,
+                lines=context.lines,
+                start_node=except_keyword,
+                end_node=except_keyword,
+            )
+        return storage.diagnostics
+
+    @staticmethod
+    def _except_keyword(try_statement: Any) -> Any | None:
+        return next(
+            (
+                child
+                for child in _ts_children(try_statement)
+                if getattr(child, "type", None) == "EXCEPT_KEYWORD"
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _except_has_code(try_statement: Any, except_keyword: Any) -> bool:
+        except_start = getattr(except_keyword, "end_byte", 0)
+        for child in _ts_children(try_statement):
+            child_type = getattr(child, "type", None)
+            if getattr(child, "start_byte", 0) < except_start:
+                continue
+            if child_type in {"EXCEPT_KEYWORD", "ENDTRY_KEYWORD", ";", "line_comment", "comment"}:
+                continue
+            return True
+        return False
+
+
 class ConsecutiveEmptyLinesRule(DiagnosticRuntimeRule):
     code = "BSL055"
 
@@ -5724,18 +5776,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 )
                 for fact in snapshot.empty_region_facts
             ]
-        if code == "BSL028":
-            diags = []
-            for proc_model in context.procedure_models:
-                diags.extend(
-                    proc_model.validate_missing_try_catch(
-                        context.lines,
-                        try_block_re=engine._RE_TRY_BLOCK,
-                        try_close_re=engine._RE_TRY_CLOSE,
-                        risky_call_re=engine._RE_RISKY_CALL,
-                    )
-                )
-            return diags
         if code == "BSL030":
             return _diagnostics_bsl030_semicolon_presence(context)
         if code == "BSL031":
