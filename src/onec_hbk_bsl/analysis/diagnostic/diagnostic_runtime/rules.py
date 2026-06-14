@@ -2597,7 +2597,7 @@ class ExternalAppStartingRule(DiagnosticRuntimeRule):
 class FileSystemAccessRule(DiagnosticRuntimeRule):
     code = "BSL188"
     message = "Проверьте обращение к файловой системе"
-    severity = Severity.ERROR
+    severity = Severity.WARNING
     new_type_names = _BSL188_FILESYSTEM_NEW_NAMES
     global_method_names = _BSL188_FILESYSTEM_METHOD_NAMES
 

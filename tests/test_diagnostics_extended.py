@@ -558,9 +558,9 @@ class TestSecurityApiParityBatch:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL188"}) if d.code == "BSL188"]
         assert [(d.line, d.character, d.severity.name) for d in diags] == [
-            (2, 8, "ERROR"),
-            (3, 13, "ERROR"),
-            (4, 14, "ERROR"),
+            (2, 8, "WARNING"),
+            (3, 13, "WARNING"),
+            (4, 14, "WARNING"),
         ]
 
     def test_bsl203_internet_access_uses_cst_constructors(self, tmp_path: Path) -> None:
