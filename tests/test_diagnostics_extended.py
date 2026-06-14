@@ -1767,6 +1767,78 @@ class TestBsl204InvalidCharacterInFile:
         assert bsl204[0].end_character == content.splitlines()[1].rindex('"') + 1
 
 
+class TestBsl217MissingTempStorageDeletion:
+    def test_missing_delete_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Адрес)
+                Данные = ПолучитьИзВременногоХранилища(Адрес);
+                Использовать(Данные);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL217"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL217"] == [
+            (2, 13, 49),
+        ]
+
+    def test_delete_same_address_suppresses_diagnostic(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Адрес)
+                Данные = ПолучитьИзВременногоХранилища(Адрес);
+                Использовать(Данные);
+                УдалитьИзВременногоХранилища(Адрес);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL217"})
+        assert "BSL217" not in _codes(diags)
+
+    def test_delete_other_address_does_not_suppress_diagnostic(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Адрес, ДругойАдрес)
+                Данные = ПолучитьИзВременногоХранилища(Адрес);
+                УдалитьИзВременногоХранилища(ДругойАдрес);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL217"})
+        assert "BSL217" in _codes(diags)
+
+    def test_enabled_by_default(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Адрес)
+                Данные = ПолучитьИзВременногоХранилища(Адрес);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL217" in _codes(diags)
+
+    def test_put_to_temp_storage_is_not_bsl217(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Данные, УникальныйИдентификатор)
+                Адрес = ПоместитьВоВременноеХранилище(Данные, УникальныйИдентификатор);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL217"})
+        assert "BSL217" not in _codes(diags)
+
+    def test_matches_bslls_fixture(self) -> None:
+        fixture = Path(
+            ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
+            "MissingTempStorageDeletionDiagnostic.bsl"
+        )
+        if not fixture.exists():
+            pytest.skip("BSLLS fixture is not available")
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL217"}).check_file(str(fixture))
+            if diag.code == "BSL217"
+        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 24, 4, 77),
+            (14, 24, 14, 77),
+            (22, 24, 22, 77),
+            (34, 24, 34, 77),
+        ]
+
+
 class TestBsl228OrderOfParams:
     def test_reports_parameter_list_range(self, tmp_path: Path) -> None:
         content = """\

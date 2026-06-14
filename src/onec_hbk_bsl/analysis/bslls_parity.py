@@ -30,7 +30,6 @@ BSLLS_DEFAULT_DISABLED_NAMES = frozenset(
         "FunctionNameStartsWithGet",
         "FunctionOutParameter",
         "InternetAccess",
-        "MissingTempStorageDeletion",
         "TernaryOperatorUsage",
         "TooManyReturns",
         "UseSystemInformation",

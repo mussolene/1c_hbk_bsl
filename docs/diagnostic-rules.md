@@ -137,7 +137,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL214` | `MissingEventSubscriptionHandler` | No | ERROR | Отсутствует обработчик подписки на событие | Event subscription handler missing | correctness, events |
 | `BSL215` | `MissingParameterDescription` | Yes | INFORMATION | Отсутствует описание параметров метода | Method parameters description are missing | documentation, api |
 | `BSL216` | `MissingSpace` | Yes | INFORMATION | Пропущены пробелы слева или справа от операторов `+ - * / = % < > <> <= >=`, от ключевых слов, а так же справа от `,` и `;` | Missing spaces to the left or right of operators + - * / = % < > <> <= >=, keywords, and also to the right of , and ; | style, convention |
-| `BSL217` | `MissingTempStorageDeletion` | No | WARNING | Отсутствует удаление данных из временного хранилища после использования | Missing temporary storage data deletion after using | resource-management, memory |
+| `BSL217` | `MissingTempStorageDeletion` | Yes | WARNING | Отсутствует удаление данных из временного хранилища после использования | Missing temporary storage data deletion after using | resource-management, memory |
 | `BSL218` | `MissingTemporaryFileDeletion` | Yes | WARNING | Отсутствует удаление временного файла после использования | Missing temporary file deletion after using | resource-management |
 | `BSL219` | `MissingVariablesDescription` | Yes | INFORMATION | Все объявления переменных должны иметь описание | All variables declarations must have a description | documentation, convention |
 | `BSL220` | `MultilineStringInQuery` | Yes | INFORMATION | Многострочный литерал в запросе | Multi-line literal in query | query, style |

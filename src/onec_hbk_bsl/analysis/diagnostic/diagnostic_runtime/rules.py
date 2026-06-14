@@ -3002,6 +3002,86 @@ class NumberOfValuesInStructureConstructorRule(DiagnosticRuntimeRule):
         return separator_count + 1
 
 
+class MissingTempStorageDeletionRule(DiagnosticRuntimeRule):
+    code = "BSL217"
+    message = (
+        "Нужно добавить удаление данных из временного хранилища после использования, вызвав "
+        '"УдалитьИзВременногоХранилища"'
+    )
+    _get_names = {"получитьизвременногохранилища", "getfromtempstorage"}
+    _delete_names = {"удалитьизвременногохранилища", "deletefromtempstorage"}
+
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
+        storage = DiagnosticStorage(context.path)
+        calls = self._global_method_calls(context)
+        for call in calls:
+            if call["name"].casefold() not in self._get_names:
+                continue
+            arg_key = self._first_arg_key(call["node"])
+            if arg_key is None:
+                continue
+            if self._has_later_delete(call, calls, arg_key):
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self.message,
+                severity=Severity.WARNING,
+                lines=context.lines,
+                start_node=call["node"],
+                end_node=call["node"],
+            )
+        return storage.diagnostics
+
+    @classmethod
+    def _global_method_calls(cls, context: DiagnosticDocumentContext) -> list[dict[str, Any]]:
+        if context.ts_nodes_for_types and context.global_method_calls_from_nodes:
+            nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
+            return context.global_method_calls_from_nodes(nodes["method_call"], context.lines)
+        return _diag._ts_global_method_calls(context.tree.root_node, context.lines)
+
+    @classmethod
+    def _has_later_delete(
+        cls, source_call: dict[str, Any], calls: list[dict[str, Any]], arg_key: str
+    ) -> bool:
+        source_scope = cls._scope_key(source_call["node"])
+        source_line = int(source_call["line"])
+        for candidate in calls:
+            if int(candidate["line"]) <= source_line:
+                continue
+            if candidate["name"].casefold() not in cls._delete_names:
+                continue
+            if cls._scope_key(candidate["node"]) != source_scope:
+                continue
+            if cls._first_arg_key(candidate["node"]) == arg_key:
+                return True
+        return False
+
+    @staticmethod
+    def _first_arg_key(method_call: Any) -> str | None:
+        args = _diag._ts_method_call_arg_exprs(method_call)
+        if not args:
+            return None
+        return "".join(_ts_node_text(args[0]).split()).casefold()
+
+    @staticmethod
+    def _scope_key(node: Any) -> tuple[str, int, int] | None:
+        current = getattr(node, "parent", None)
+        while current is not None:
+            node_type = getattr(current, "type", None)
+            if node_type in {"procedure_definition", "function_definition"}:
+                return (
+                    node_type,
+                    int(getattr(current, "start_byte", 0)),
+                    int(getattr(current, "end_byte", 0)),
+                )
+            current = getattr(current, "parent", None)
+        return None
+
+
 class MissingTemporaryFileDeletionRule(DiagnosticRuntimeRule):
     code = "BSL218"
     message = "Нужно добавить удаление временного файла после использования"
@@ -5169,31 +5249,6 @@ def _run_bsl171_crazy_multiline_string(
     )
 
 
-def _run_bsl217_missing_temp_storage_deletion(
-    path: str,
-    lines: list[str],
-    tree: Any | None,
-    method_call_nodes: list[Any] | None = None,
-) -> list[Diagnostic]:
-    model = ModuleModel(path=path)
-    return model.validate_bsl217_missing_temp_storage_deletion(
-        lines=lines,
-        tree=tree,
-        method_call_nodes=method_call_nodes,
-        global_method_calls_from_nodes_fn=_diag._global_method_calls_from_nodes,
-        ts_global_method_calls_fn=_diag._ts_global_method_calls,
-        bsl217_get_from_temp_storage_names=_diag._BSL217_GET_FROM_TEMP_STORAGE_NAMES,
-        ts_method_identifier_span_fn=_diag._ts_method_identifier_span,
-        ts_assignment_lvalue_text_fn=_diag._ts_assignment_lvalue_text,
-        ts_bsl218_skip_error_ancestor_fn=_diag._ts_bsl218_skip_error_ancestor,
-        ts_bsl218_code_block_roots_fn=_diag._ts_bsl218_code_block_roots,
-        bsl217_delete_from_temp_storage_names=_diag._BSL217_DELETE_FROM_TEMP_STORAGE_NAMES,
-        ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
-        ts_node_text_fn=_diag._ts_node_text,
-        rule_descriptions_ru=_diag.RULE_DESCRIPTIONS_RU,
-    )
-
-
 def _run_bsl248_several_compiler_directives(
     path: str,
     lines: list[str],
@@ -5386,10 +5441,10 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                 )
                 for fact in snapshot.invalid_character_facts
             ]
-        if code in {"BSL171", "BSL217", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
+        if code in {"BSL171", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
             return [
                 diag
-                for diag in model.validate_bsl171_217_248_251_252_259_268_light_pool(
+                for diag in model.validate_bsl171_248_251_252_259_268_light_pool(
                     lines=context.lines,
                     tree=context.tree,
                     procs=procs,
@@ -5397,7 +5452,6 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                     rule_enabled_fn=engine._rule_enabled,
                     ts_nodes_for_types_fn=engine._ts_nodes_for_types,
                     rule_bsl171_fn=_run_bsl171_crazy_multiline_string,
-                    rule_bsl217_fn=_run_bsl217_missing_temp_storage_deletion,
                     rule_bsl248_fn=_run_bsl248_several_compiler_directives,
                     rule_bsl251_fn=_run_bsl251_ternary_operator_usage,
                     rule_bsl252_fn=_run_bsl252_this_object_assign,
