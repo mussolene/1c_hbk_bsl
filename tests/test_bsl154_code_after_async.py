@@ -37,11 +37,40 @@ def test_bsl154_fires_when_code_follows_async(tmp_path: Path) -> None:
     assert "ПоказатьВопрос" in p.read_text(encoding="utf-8")
 
 
+def test_bsl154_fires_when_parent_block_has_following_code(tmp_path: Path) -> None:
+    p = _form_module_path(tmp_path)
+    p.parent.mkdir(parents=True)
+    p.write_text(
+        "Процедура ПриОткрытии()\n"
+        "    Если Истина Тогда\n"
+        '        ПоказатьВопрос("?");\n'
+        "    КонецЕсли;\n"
+        "    x = 1;\n"
+        "КонецПроцедуры\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL154"})
+    diags = [d for d in engine.check_file(str(p)) if d.code == "BSL154"]
+    assert len(diags) == 1
+    assert diags[0].line == 3
+
+
 def test_bsl154_skips_when_return_follows(tmp_path: Path) -> None:
     p = _form_module_path(tmp_path)
     p.parent.mkdir(parents=True)
     p.write_text(
         'Процедура П()\n    ПоказатьВопрос("?");\n    Возврат;\nКонецПроцедуры\n',
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL154"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL154"]
+
+
+def test_bsl154_skips_object_method_call(tmp_path: Path) -> None:
+    p = _form_module_path(tmp_path)
+    p.parent.mkdir(parents=True)
+    p.write_text(
+        'Процедура П()\n    Диалог.ПоказатьВопрос("?");\n    x = 1;\nКонецПроцедуры\n',
         encoding="utf-8",
     )
     engine = DiagnosticEngine(select={"BSL154"})

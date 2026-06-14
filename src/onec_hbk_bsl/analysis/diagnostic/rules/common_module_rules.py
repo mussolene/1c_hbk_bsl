@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
-    bsl154_code_after_async_spans,
+    bsl154_code_after_async_spans_cst,
     bsl156_diagnostics,
 )
 
@@ -433,11 +433,10 @@ def run_bsl152_cached_public(
     return diags
 
 
-def run_bsl154_code_after_async(path: str, lines: list[str], procs: list[_ProcInfo]) -> list[Any]:
+def run_bsl154_code_after_async(path: str, tree: object | None) -> list[Any]:
     Diagnostic, Severity = _diag_types()
-    proc_tuples = [(p.start_idx, p.end_idx) for p in procs]
     diags: list[Any] = []
-    for line_1, c0, c1, method in bsl154_code_after_async_spans(path, lines, proc_tuples):
+    for line_1, c0, c1, method in bsl154_code_after_async_spans_cst(path, tree):
         diags.append(
             Diagnostic(
                 file=path,

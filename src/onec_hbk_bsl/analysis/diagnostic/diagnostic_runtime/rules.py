@@ -5320,7 +5320,7 @@ class CommonModuleDiagnosticsRule(DiagnosticRuntimeRule):
         if code == "BSL152":
             return run_bsl152_cached_public(context.path, context.lines, regions, procs)
         if code == "BSL154":
-            return run_bsl154_code_after_async(context.path, context.lines, procs)
+            return run_bsl154_code_after_async(context.path, context.tree)
         if code == "BSL156":
             return run_bsl156_code_out_of_region(context.path, context.lines, procs)
         if code == "BSL158":

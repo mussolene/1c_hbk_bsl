@@ -26,18 +26,8 @@ _BSL154_ASYNC_PIPE = (
     "НАЧАТЬЗАПРОСРАЗРЕШЕНИЯПОЛЬЗОВАТЕЛЯ|BEGINREQUESTINGUSERPERMISSION|"
     "НАЧАТЬЗАПУСКПРИЛОЖЕНИЯ|BEGINRUNNINGAPPLICATION"
 )
-_ASYNC_ALT = "|".join(
-    re.escape(n)
-    for n in sorted(
-        {x.strip() for x in _BSL154_ASYNC_PIPE.split("|") if x.strip()},
-        key=len,
-        reverse=True,
-    )
-)
-_RE_BSL154_ASYNC = re.compile(rf"\b(?:{_ASYNC_ALT})\s*\(", re.IGNORECASE)
-_RE_RETURN_OR_BREAK = re.compile(
-    r"^\s*(?:Возврат|Return|Прервать|Break)\b",
-    re.IGNORECASE,
+_BSL154_ASYNC_NAMES = frozenset(
+    x.casefold() for x in _BSL154_ASYNC_PIPE.split("|") if x.strip()
 )
 _RE_COMPILER = re.compile(r"^\s*&\w", re.IGNORECASE)
 _RE_MODULE_VAR = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
@@ -102,6 +92,110 @@ def path_matches_bsl154_module_types(path: str) -> bool:
     return False
 
 
+_BSL154_STATEMENT_TYPES = frozenset(
+    {
+        "assignment_statement",
+        "break_statement",
+        "call_statement",
+        "continue_statement",
+        "for_each_statement",
+        "for_statement",
+        "if_statement",
+        "return_statement",
+        "rise_error_statement",
+        "try_statement",
+        "var_statement",
+        "while_statement",
+    }
+)
+
+
+def _node_text(node: object) -> str:
+    text = getattr(node, "text", None)
+    if text is None:
+        return ""
+    return text.decode("utf-8", errors="replace") if isinstance(text, bytes) else str(text)
+
+
+def _node_children(node: object) -> list[object]:
+    return list(getattr(node, "children", []) or [])
+
+
+def _walk(node: object):
+    yield node
+    for child in _node_children(node):
+        yield from _walk(child)
+
+
+def _nearest_ancestor(node: object, types: frozenset[str]) -> object | None:
+    current = getattr(node, "parent", None)
+    while current is not None:
+        if getattr(current, "type", None) in types:
+            return current
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _bsl154_method_name(method_call: object) -> str:
+    for child in _node_children(method_call):
+        if getattr(child, "type", None) == "identifier":
+            return _node_text(child)
+    return ""
+
+
+def _bsl154_next_statement(statement: object) -> object | None:
+    parent = getattr(statement, "parent", None)
+    if parent is None:
+        return None
+    seen_current = False
+    for child in _node_children(parent):
+        if child == statement:
+            seen_current = True
+            continue
+        if not seen_current:
+            continue
+        if getattr(child, "type", None) in _BSL154_STATEMENT_TYPES:
+            return child
+    return None
+
+
+def _bsl154_has_blocking_followup(statement: object) -> bool:
+    current = statement
+    while current is not None:
+        next_statement = _bsl154_next_statement(current)
+        if next_statement is not None:
+            return getattr(next_statement, "type", None) not in {"return_statement", "break_statement"}
+        current = _nearest_ancestor(current, _BSL154_STATEMENT_TYPES)
+    return False
+
+
+def bsl154_code_after_async_spans_cst(
+    path: str,
+    tree: object | None,
+) -> list[tuple[int, int, int, str]]:
+    if not path_matches_bsl154_module_types(path):
+        return []
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+
+    out: list[tuple[int, int, int, str]] = []
+    for node in _walk(root):
+        if getattr(node, "type", None) != "method_call":
+            continue
+        method = _bsl154_method_name(node)
+        if not method or method.casefold() not in _BSL154_ASYNC_NAMES:
+            continue
+        if _nearest_ancestor(node, frozenset({"procedure_definition", "function_definition"})) is None:
+            continue
+        statement = _nearest_ancestor(node, _BSL154_STATEMENT_TYPES)
+        if statement is None or not _bsl154_has_blocking_followup(statement):
+            continue
+        start = getattr(node, "start_point", (0, 0))
+        out.append((int(start[0]) + 1, int(start[1]), int(start[1]) + len(method), method))
+    return out
+
+
 def _is_split_module_fragment(path: str) -> bool:
     current = Path(path)
     if current.suffix.lower() != ".bsl":
@@ -132,65 +226,6 @@ def path_has_known_bsl156_module_type(path: str) -> bool:
     if name == "module.bsl" and parent in _EXT_FOLDERS:
         return any(part in _MODULE_TYPE_FOLDERS or part in _FORM_FOLDERS for part in parts)
     return False
-
-
-def _code_before_line_comment(line: str) -> str:
-    if "//" not in line:
-        return line
-    return line.split("//", 1)[0]
-
-
-def _first_sig_line_after(
-    lines: list[str], start_after: int, body_end_exclusive: int
-) -> tuple[int, str] | None:
-    j = start_after
-    while j < body_end_exclusive and j < len(lines):
-        raw = lines[j]
-        s = _code_before_line_comment(raw).strip()
-        if not s:
-            j += 1
-            continue
-        if s.startswith("#"):
-            j += 1
-            continue
-        return j, raw
-    return None
-
-
-def _has_blocking_followup(lines: list[str], async_line: int, proc_end_idx: int) -> bool:
-    first = _first_sig_line_after(lines, async_line + 1, proc_end_idx)
-    if first is None:
-        return False
-    _li, raw = first
-    stmt = _code_before_line_comment(raw).strip()
-    if _RE_RETURN_OR_BREAK.match(stmt):
-        return False
-    return True
-
-
-def bsl154_code_after_async_spans(
-    path: str,
-    lines: list[str],
-    procedures: list[tuple[int, int]],
-) -> list[tuple[int, int, int, str]]:
-    if not path_matches_bsl154_module_types(path):
-        return []
-    out: list[tuple[int, int, int, str]] = []
-    for start_idx, end_idx in procedures:
-        body_start = start_idx + 1
-        body_end_excl = end_idx
-        if body_end_excl <= body_start:
-            continue
-        for li in range(body_start, body_end_excl):
-            code_part = _code_before_line_comment(lines[li])
-            for m in _RE_BSL154_ASYNC.finditer(code_part):
-                raw_m = m.group(0)
-                method = raw_m[:-1].strip() if raw_m.endswith("(") else raw_m.strip()
-                if not _has_blocking_followup(lines, li, end_idx):
-                    continue
-                c1 = m.start() + len(method)
-                out.append((li + 1, m.start(), c1, method))
-    return out
 
 
 def _raw_without_bom(line: str) -> str:
