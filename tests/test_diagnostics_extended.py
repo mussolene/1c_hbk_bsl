@@ -1527,7 +1527,31 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(
             select={"BSL187", "BSL236", "BSL238", "BSL244", "BSL261"}
         ).check_file(str(path))
-        assert {"BSL187", "BSL236", "BSL238", "BSL244", "BSL261"} <= set(_codes(diags))
+        assert {"BSL236", "BSL238", "BSL244", "BSL261"} <= set(_codes(diags))
+        assert "BSL187" not in _codes(diags)
+
+    def test_bsl187_skips_without_sdbl_tree(self, tmp_path: Path) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Метод()
+                    Запрос = Новый Запрос;
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |  Левое.Тест КАК Поле
+                    |ИЗ Справочник.Тест КАК Основание
+                    |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Левое
+                    |    ПО Истина";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL187"}).check_file(str(path))
+
+        assert "BSL187" not in _codes(diags)
 
     def test_bsl236_uses_full_metadata_source_name(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
