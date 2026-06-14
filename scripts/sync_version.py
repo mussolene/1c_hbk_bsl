@@ -8,10 +8,12 @@ Run from the repo root after tagging, or in CI on a tag checkout.
 Usage::
 
     python3 scripts/sync_version.py
+    python3 scripts/sync_version.py --runtime-only
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -42,7 +44,18 @@ def _version_from_git_describe() -> str:
     return out
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--runtime-only",
+        action="store_true",
+        help="Only refresh src/onec_hbk_bsl/_version.py; do not touch VS Code manifests.",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = _parse_args()
     try:
         ver = _version_from_scm()
     except (RuntimeError, LookupError):
@@ -52,18 +65,21 @@ def main() -> int:
             print("setuptools-scm failed and git describe failed:", e, file=sys.stderr)
             return 1
 
+    PY_VERSION.write_text(
+        f'"""Generated version metadata for runtime use."""\n\n__version__ = "{ver}"\n',
+        encoding="utf-8",
+    )
+    print(f"src/onec_hbk_bsl/_version.py: updated to {ver!r}")
+
+    if args.runtime_only:
+        return 0
+
     pkg_path = EXT / "package.json"
     pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
     old = pkg.get("version")
     pkg["version"] = ver
     pkg_path.write_text(json.dumps(pkg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"vscode-extension/package.json: {old!r} → {ver!r}")
-
-    PY_VERSION.write_text(
-        f'"""Generated version metadata for runtime use."""\n\n__version__ = "{ver}"\n',
-        encoding="utf-8",
-    )
-    print(f"src/onec_hbk_bsl/_version.py: updated to {ver!r}")
 
     r = subprocess.run(
         ["npm", "install", "--package-lock-only", "--ignore-scripts"],

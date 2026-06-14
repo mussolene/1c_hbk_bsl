@@ -93,7 +93,7 @@
         "onecHbkBsl.serverPath": {
           "type": "string",
           "default": "onec-hbk-bsl",
-          "description": "Path to the onec-hbk-bsl executable. Default placeholder means: use installed onec-hbk-bsl from PATH when available, otherwise use bundled/downloaded binary."
+          "description": "Path to the onec-hbk-bsl executable. Default placeholder means: use the bundled/downloaded binary when available; PATH is used only when no bundled runtime exists."
         },
         "onecHbkBsl.useDocker": {
           "type": "boolean",

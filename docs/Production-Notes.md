@@ -26,8 +26,8 @@ This runbook covers production usage of:
   - `onCommand:onecHbkBsl.showStatus`
 - Server binary resolution order:
   1. `onecHbkBsl.serverPath` (explicit filesystem path; default placeholder does not override)
-  2. installed `onec-hbk-bsl` found on system `PATH`
-  3. bundled extension binary
+  2. bundled extension binary
+  3. installed `onec-hbk-bsl` found on system `PATH`
   4. previously downloaded binary in extension global storage
   5. release download fallback (if supported for platform)
 

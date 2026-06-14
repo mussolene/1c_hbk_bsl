@@ -59,6 +59,9 @@ jobs:
       - name: Install dependencies
         run: uv pip install -e ".[dev,build]" --system
 
+      - name: Sync runtime version from Git
+        run: python scripts/sync_version.py --runtime-only
+
       - name: Build onefile binary
         run: |
           python -m PyInstaller --clean --noconfirm \
@@ -68,7 +71,8 @@ jobs:
 
       - name: Smoke test binary
         run: |
-          ./dist/onec-hbk-bsl --version
+          ./dist/onec-hbk-bsl --version | tee version.txt
+          grep -F "onec-hbk-bsl $(python -m setuptools_scm)" version.txt
           ./dist/onec-hbk-bsl --help | head -n 5
 
   lint-ts:

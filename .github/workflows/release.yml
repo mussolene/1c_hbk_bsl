@@ -59,6 +59,9 @@ jobs:
       - name: Install dependencies (PyInstaller + project)
         run: uv pip install -e ".[dev,build]" --system
 
+      - name: Sync runtime version from Git
+        run: python scripts/sync_version.py --runtime-only
+
       - name: Cache PyInstaller work directory
         uses: actions/cache@v4
         with:
@@ -73,6 +76,12 @@ jobs:
             --workpath build/pyinstaller \
             --distpath dist \
             packaging/onec-hbk-bsl.spec
+
+      - name: Smoke test binary version
+        shell: bash
+        run: |
+          dist/${{ env.BINARY_NAME }}${{ matrix.ext }} --version | tee version.txt
+          grep -F "onec-hbk-bsl ${GITHUB_REF_NAME#v}" version.txt
 
       - name: Rename asset
         shell: bash
@@ -190,6 +199,8 @@ jobs:
       - name: Build wheel and sdist
         run: |
           pip install build twine
+          pip install setuptools-scm
+          python scripts/sync_version.py --runtime-only
           python -m build
           python -m build packages/onec-hbk-bsl --outdir dist
           python -m twine check dist/*

@@ -3,8 +3,8 @@
  *
  * Launch strategy (in order):
  *   1. Path explicitly set in onecHbkBsl.serverPath (if not a bare placeholder)
- *   2. Installed onec-hbk-bsl found on system PATH
- *   3. Binary bundled in extension's bin/ directory
+ *   2. Binary bundled in extension's bin/ directory
+ *   3. Installed onec-hbk-bsl found on system PATH
  *   4. Previously downloaded binary in global storage
  *   5. Prompt to download from GitHub Releases (first activation only)
  *
@@ -319,7 +319,7 @@ export async function deactivate(): Promise<void> {
 
 /**
  * Resolve path to the onec-hbk-bsl binary using the priority chain:
- *   settings → PATH → bundled → cached download → prompt to download.
+ *   settings → bundled → PATH → cached download → prompt to download.
  */
 async function resolveBinaryPath(ctx: vscode.ExtensionContext): Promise<string | null> {
   const releaseTag = readExtensionReleaseTag(ctx.extensionPath);
@@ -336,16 +336,17 @@ async function resolveBinaryPath(ctx: vscode.ExtensionContext): Promise<string |
     );
   }
 
-  // 2. Installed executable on PATH (pipx/uv tool/brew/local install).
-  const fromPath = findExecutableOnPath(SERVER_COMMAND);
-  if (fromPath) {
-    return fromPath;
-  }
-
-  // 3. Bundled binary alongside the extension
+  // 2. Bundled binary alongside the extension. Platform VSIX builds should be
+  // self-contained and must not accidentally pick up an older PATH install.
   const bundled = path.join(ctx.extensionPath, "bin", BINARY_NAME);
   if (fs.existsSync(bundled) && isExecutable(bundled)) {
     return bundled;
+  }
+
+  // 3. Installed executable on PATH (pipx/uv tool/brew/local install).
+  const fromPath = findExecutableOnPath(SERVER_COMMAND);
+  if (fromPath) {
+    return fromPath;
   }
 
   // 4. Previously downloaded into global storage
