@@ -369,6 +369,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         "tasks",
         "задачи",
     }
+    bsl189_storage_member_kinds = {"attribute", "tabular_section"}
 
     if object_xml is not None:
         if "BSL189" in enabled_set:
@@ -387,6 +388,11 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                 )
             if meta_obj is not None:
                 for member in meta_obj.members:
+                    if (
+                        member.kind not in bsl189_storage_member_kinds
+                        or member.parent_kind == "Enum"
+                    ):
+                        continue
                     check_name = member.name.split(".")[-1]
                     if check_name.casefold() in forbidden_names:
                         diags.append(

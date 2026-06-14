@@ -1133,6 +1133,84 @@ class TestTailParityBatches:
         diags_app = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags_app)
 
+    def test_bsl189_reports_storage_attribute_but_skips_tabular_section_attribute(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        obj_dir = root / "DataProcessors" / "Обработка" / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "DataProcessors" / "Обработка.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                    <DataProcessor>
+                        <Properties><Name>Обработка</Name></Properties>
+                        <ChildObjects>
+                            <Attribute><Properties><Name>Документ</Name></Properties></Attribute>
+                            <TabularSection>
+                                <Properties><Name>Строки</Name></Properties>
+                                <ChildObjects>
+                                    <Attribute>
+                                        <Properties><Name>Справочник</Name></Properties>
+                                    </Attribute>
+                                </ChildObjects>
+                            </TabularSection>
+                        </ChildObjects>
+                    </DataProcessor>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path = obj_dir / "Module.bsl"
+        module_path.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL189"}).check_file(str(module_path))
+            if d.code == "BSL189"
+        ]
+
+        assert len(diags) == 1
+        assert diags[0].message == "Запрещенное имя реквизита или части Документ"
+
+    def test_bsl189_reports_tabular_section_name(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        obj_dir = root / "DataProcessors" / "Обработка" / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "DataProcessors" / "Обработка.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                    <DataProcessor>
+                        <Properties><Name>Обработка</Name></Properties>
+                        <ChildObjects>
+                            <TabularSection>
+                                <Properties><Name>Документы</Name></Properties>
+                            </TabularSection>
+                        </ChildObjects>
+                    </DataProcessor>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path = obj_dir / "Module.bsl"
+        module_path.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL189"}).check_file(str(module_path))
+            if d.code == "BSL189"
+        ]
+
+        assert len(diags) == 1
+        assert diags[0].message == "Запрещенное имя реквизита или части Документы"
+
     def test_common_module_cross_reference_tail_pool(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)

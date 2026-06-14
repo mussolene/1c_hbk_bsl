@@ -80,7 +80,6 @@ class DiagnosticEngine:
             "BSL182",
             "BSL187",
             "BSL188",
-            "BSL189",
             "BSL203",
             "BSL211",
             "BSL232",

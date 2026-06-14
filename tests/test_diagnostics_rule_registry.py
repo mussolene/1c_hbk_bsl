@@ -45,6 +45,7 @@ def test_server_side_export_form_method_is_not_bslls_default_disabled() -> None:
 
 def test_high_value_zero_noise_rules_are_default_enabled() -> None:
     for code in (
+        "BSL189",
         "BSL196",
         "BSL213",
         "BSL214",
