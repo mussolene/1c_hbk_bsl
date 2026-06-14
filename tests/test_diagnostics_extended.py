@@ -543,6 +543,56 @@ class TestSecurityApiParityBatch:
         diags = _check(content, tmp_path, select={"BSL180"})
         assert _codes(diags) == ["BSL180"]
 
+    def test_bsl188_file_system_access_uses_cst_calls_and_constructors(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Метод()
+                Ф = Новый Файл("a.txt");
+                Данные = Новый("ДвоичныеДанные", "a.txt");
+                Каталог = КаталогВременныхФайлов();
+                Объект.КаталогВременныхФайлов();
+                Текст = "Новый Файл(""a.txt"")";
+                // УдалитьФайлы("a.txt");
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL188"}) if d.code == "BSL188"]
+        assert [(d.line, d.character, d.severity.name) for d in diags] == [
+            (2, 8, "ERROR"),
+            (3, 13, "ERROR"),
+            (4, 14, "ERROR"),
+        ]
+
+    def test_bsl203_internet_access_uses_cst_constructors(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Метод()
+                Соединение = Новый HTTPСоединение("example.org");
+                Запрос = Новый("HTTPЗапрос", "/");
+                Текст = "Новый HTTPСоединение(""example.org"")";
+                // Новый ИнтернетПрокси;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL203"}) if d.code == "BSL203"]
+        assert [(d.line, d.character, d.severity.name) for d in diags] == [
+            (2, 17, "WARNING"),
+            (3, 13, "WARNING"),
+        ]
+
+    def test_bsl264_system_information_uses_cst_constructors(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Метод()
+                Инфо = Новый СистемнаяИнформация;
+                Info = New("SystemInfo");
+                Текст = "Новый СистемнаяИнформация";
+                // Новый СистемнаяИнформация;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL264"}) if d.code == "BSL264"]
+        assert [(d.line, d.character, d.severity.name) for d in diags] == [
+            (2, 11, "ERROR"),
+            (3, 11, "ERROR"),
+        ]
+
     def test_bsl183_execute_external_code_matches_bslls_fixture(self, tmp_path: Path) -> None:
         content = """
             &НаКлиенте

@@ -605,66 +605,142 @@ _BSL185_EXTERNAL_APP_RE = re.compile(
     r")\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
-_BSL188_FILESYSTEM_METHOD_RE = re.compile(
-    r"\b("
-    r"ЗначениеВФайл|ValueToFile|КопироватьФайл|FileCopy|ОбъединитьФайлы|MergeFiles|"
-    r"ПереместитьФайл|MoveFile|РазделитьФайл|SplitFile|СоздатьКаталог|CreateDirectory|"
-    r"УдалитьФайлы|DeleteFiles|КаталогПрограммы|BinDir|КаталогВременныхФайлов|TempFilesDir|"
-    r"КаталогДокументов|DocumentsDir|РабочийКаталогДанныхПользователя|UserDataWorkDir|"
-    r"НачатьПодключениеРасширенияРаботыСФайлами|BeginAttachingFileSystemExtension|"
-    r"НачатьУстановкуРасширенияРаботыСФайлами|BeginInstallFileSystemExtension|"
-    r"УстановитьРасширениеРаботыСФайлами|InstallFileSystemExtension|"
-    r"УстановитьРасширениеРаботыСФайламиАсинх|InstallFileSystemExtensionAsync|"
-    r"ПодключитьРасширениеРаботыСФайламиАсинх|AttachFileSystemExtensionAsync|"
-    r"КаталогВременныхФайловАсинх|TempFilesDirAsync|КаталогДокументовАсинх|DocumentsDirAsync|"
-    r"НачатьПолучениеКаталогаВременныхФайлов|BeginGettingTempFilesDir|"
-    r"НачатьПолучениеКаталогаДокументов|BeginGettingDocumentsDir|"
-    r"НачатьПолучениеРабочегоКаталогаДанныхПользователя|BeginGettingUserDataWorkDir|"
-    r"РабочийКаталогДанныхПользователяАсинх|UserDataWorkDirAsync|"
-    r"КопироватьФайлАсинх|CopyFileAsync|НайтиФайлыАсинх|FindFilesAsync|"
-    r"НачатьКопированиеФайла|BeginCopyingFile|НачатьПеремещениеФайла|BeginMovingFile|"
-    r"НачатьПоискФайлов|BeginFindingFiles|НачатьСозданиеДвоичныхДанныхИзФайла|"
-    r"BeginCreateBinaryDataFromFile|НачатьСозданиеКаталога|BeginCreatingDirectory|"
-    r"НачатьУдалениеФайлов|BeginDeletingFiles|ПереместитьФайлАсинх|MoveFileAsync|"
-    r"СоздатьДвоичныеДанныеИзФайлаАсинх|CreateBinaryDataFromFileAsync|"
-    r"СоздатьКаталогАсинх|CreateDirectoryAsync|УдалитьФайлыАсинх|DeleteFilesAsync"
-    r")\s*\(",
-    re.IGNORECASE | re.UNICODE,
+_BSL188_FILESYSTEM_METHOD_NAMES = frozenset(
+    name.casefold()
+    for name in (
+        "ЗначениеВФайл",
+        "ValueToFile",
+        "КопироватьФайл",
+        "FileCopy",
+        "ОбъединитьФайлы",
+        "MergeFiles",
+        "ПереместитьФайл",
+        "MoveFile",
+        "РазделитьФайл",
+        "SplitFile",
+        "СоздатьКаталог",
+        "CreateDirectory",
+        "УдалитьФайлы",
+        "DeleteFiles",
+        "КаталогПрограммы",
+        "BinDir",
+        "КаталогВременныхФайлов",
+        "TempFilesDir",
+        "КаталогДокументов",
+        "DocumentsDir",
+        "РабочийКаталогДанныхПользователя",
+        "UserDataWorkDir",
+        "НачатьПодключениеРасширенияРаботыСФайлами",
+        "BeginAttachingFileSystemExtension",
+        "НачатьУстановкуРасширенияРаботыСФайлами",
+        "BeginInstallFileSystemExtension",
+        "УстановитьРасширениеРаботыСФайлами",
+        "InstallFileSystemExtension",
+        "УстановитьРасширениеРаботыСФайламиАсинх",
+        "InstallFileSystemExtensionAsync",
+        "ПодключитьРасширениеРаботыСФайламиАсинх",
+        "AttachFileSystemExtensionAsync",
+        "КаталогВременныхФайловАсинх",
+        "TempFilesDirAsync",
+        "КаталогДокументовАсинх",
+        "DocumentsDirAsync",
+        "НачатьПолучениеКаталогаВременныхФайлов",
+        "BeginGettingTempFilesDir",
+        "НачатьПолучениеКаталогаДокументов",
+        "BeginGettingDocumentsDir",
+        "НачатьПолучениеРабочегоКаталогаДанныхПользователя",
+        "BeginGettingUserDataWorkDir",
+        "РабочийКаталогДанныхПользователяАсинх",
+        "UserDataWorkDirAsync",
+        "КопироватьФайлАсинх",
+        "CopyFileAsync",
+        "НайтиФайлыАсинх",
+        "FindFilesAsync",
+        "НачатьКопированиеФайла",
+        "BeginCopyingFile",
+        "НачатьПеремещениеФайла",
+        "BeginMovingFile",
+        "НачатьПоискФайлов",
+        "BeginFindingFiles",
+        "НачатьСозданиеДвоичныхДанныхИзФайла",
+        "BeginCreateBinaryDataFromFile",
+        "НачатьСозданиеКаталога",
+        "BeginCreatingDirectory",
+        "НачатьУдалениеФайлов",
+        "BeginDeletingFiles",
+        "ПереместитьФайлАсинх",
+        "MoveFileAsync",
+        "СоздатьДвоичныеДанныеИзФайлаАсинх",
+        "CreateBinaryDataFromFileAsync",
+        "СоздатьКаталогАсинх",
+        "CreateDirectoryAsync",
+        "УдалитьФайлыАсинх",
+        "DeleteFilesAsync",
+    )
 )
-_BSL188_FILESYSTEM_NEW_RE = re.compile(
-    r"\b(?:Новый|New)\s*(?:\(\s*)?("
-    r"File|Файл|xBase|HTMLWriter|ЗаписьHTML|HTMLReader|ЧтениеHTML|"
-    r"FastInfosetReader|ЧтениеFastInfoset|FastInfosetWriter|ЗаписьFastInfoset|"
-    r"XSLTransform|ПреобразованиеXSL|ZipFileWriter|ЗаписьZipФайла|ZipFileReader|"
-    r"ЧтениеZipФайла|TextReader|ЧтениеТекста|TextWriter|ЗаписьТекста|TextExtraction|"
-    r"ИзвлечениеТекста|BinaryData|ДвоичныеДанные|FileStream|ФайловыйПоток|"
-    r"FileStreamsManager|МенеджерФайловыхПотоков|DataWriter|ЗаписьДанных|DataReader|ЧтениеДанных"
-    r")\b",
-    re.IGNORECASE | re.UNICODE,
+_BSL188_FILESYSTEM_NEW_NAMES = frozenset(
+    name.casefold()
+    for name in (
+        "File",
+        "Файл",
+        "xBase",
+        "HTMLWriter",
+        "ЗаписьHTML",
+        "HTMLReader",
+        "ЧтениеHTML",
+        "FastInfosetReader",
+        "ЧтениеFastInfoset",
+        "FastInfosetWriter",
+        "ЗаписьFastInfoset",
+        "XSLTransform",
+        "ПреобразованиеXSL",
+        "ZipFileWriter",
+        "ЗаписьZipФайла",
+        "ZipFileReader",
+        "ЧтениеZipФайла",
+        "TextReader",
+        "ЧтениеТекста",
+        "TextWriter",
+        "ЗаписьТекста",
+        "TextExtraction",
+        "ИзвлечениеТекста",
+        "BinaryData",
+        "ДвоичныеДанные",
+        "FileStream",
+        "ФайловыйПоток",
+        "FileStreamsManager",
+        "МенеджерФайловыхПотоков",
+        "DataWriter",
+        "ЗаписьДанных",
+        "DataReader",
+        "ЧтениеДанных",
+    )
 )
-_BSL203_INTERNET_NEW_RE = re.compile(
-    r"\b(?:Новый|New)\s*(?:\(\s*)?("
-    r"FTPСоединение|FTPConnection|HTTPСоединение|HTTPConnection|WSОпределения|WSDefinitions|"
-    r"WSПрокси|WSProxy|ИнтернетПочтовыйПрофиль|InternetMailProfile|ИнтернетПочта|"
-    r"InternetMail|Почта|Mail|HTTPЗапрос|HTTPRequest|ИнтернетПрокси|InternetProxy"
-    r")\b",
-    re.IGNORECASE | re.UNICODE,
+_BSL203_INTERNET_NEW_NAMES = frozenset(
+    name.casefold()
+    for name in (
+        "FTPСоединение",
+        "FTPConnection",
+        "HTTPСоединение",
+        "HTTPConnection",
+        "WSОпределения",
+        "WSDefinitions",
+        "WSПрокси",
+        "WSProxy",
+        "ИнтернетПочтовыйПрофиль",
+        "InternetMailProfile",
+        "ИнтернетПочта",
+        "InternetMail",
+        "Почта",
+        "Mail",
+        "HTTPЗапрос",
+        "HTTPRequest",
+        "ИнтернетПрокси",
+        "InternetProxy",
+    )
 )
-_BSL203_INTERNET_STRING_NEW_RE = re.compile(
-    r'\b(?:Новый|New)\s*\(\s*"('
-    r"FTPСоединение|FTPConnection|HTTPСоединение|HTTPConnection|WSОпределения|WSDefinitions|"
-    r"WSПрокси|WSProxy|ИнтернетПочтовыйПрофиль|InternetMailProfile|ИнтернетПочта|"
-    r"InternetMail|Почта|Mail|HTTPЗапрос|HTTPRequest|ИнтернетПрокси|InternetProxy"
-    r')"',
-    re.IGNORECASE | re.UNICODE,
-)
-_BSL264_SYSTEM_INFO_NEW_RE = re.compile(
-    r"\b(?:Новый|New)\s*(?:\(\s*)?(СистемнаяИнформация|SystemInfo)\b",
-    re.IGNORECASE | re.UNICODE,
-)
-_BSL264_SYSTEM_INFO_STRING_NEW_RE = re.compile(
-    r'\b(?:Новый|New)\s*\(\s*"(СистемнаяИнформация|SystemInfo)"',
-    re.IGNORECASE | re.UNICODE,
+_BSL264_SYSTEM_INFO_NEW_NAMES = frozenset(
+    name.casefold() for name in ("СистемнаяИнформация", "SystemInfo")
 )
 _BSL205_ROLE_AVAILABLE_RE = re.compile(
     r"(?<!\.)(?<!\w)\b(РольДоступна|IsInRole)\s*\(",
@@ -2415,111 +2491,162 @@ class ExternalAppStartingRule(DiagnosticRuntimeRule):
 
 class FileSystemAccessRule(DiagnosticRuntimeRule):
     code = "BSL188"
+    message = "Проверьте обращение к файловой системе"
+    severity = Severity.ERROR
+    new_type_names = _BSL188_FILESYSTEM_NEW_NAMES
+    global_method_names = _BSL188_FILESYSTEM_METHOD_NAMES
+
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        if not self._tree_ok(context):
+            return []
+        storage = DiagnosticStorage(context.path)
+        for node in self._new_expression_nodes(context):
+            if self._new_expression_type_name(node) not in self.new_type_names:
+                continue
+            self._add_node_diag(storage, context, node)
+        for node in self._dynamic_new_expression_nodes(context):
+            if self._dynamic_new_type_name(node) not in self.new_type_names:
+                continue
+            self._add_node_diag(storage, context, node)
+        for call in self._global_method_calls(context):
+            if call["name"].casefold() not in self.global_method_names:
+                continue
+            storage.add_range(
+                code=self.code,
+                line=int(call["line"]),
+                character=int(call["character"]),
+                end_line=int(call["line"]),
+                end_character=int(call["end_character"]),
+                severity=self.severity,
+                message=self.message,
+            )
+        return storage.diagnostics
 
     @staticmethod
-    def _new_end(clean: str, type_end: int) -> int:
-        pos = type_end
-        while pos < len(clean) and clean[pos].isspace():
-            pos += 1
-        if pos < len(clean) and clean[pos] == "(":
-            return _single_line_call_end(clean, pos)
-        return type_end
+    def _tree_ok(context: DiagnosticDocumentContext) -> bool:
+        root = getattr(context.tree, "root_node", None)
+        return root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
 
-    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        storage = DiagnosticStorage(context.path)
-        for idx, line in enumerate(context.lines):
-            if _line_comment(line):
+    @staticmethod
+    def _new_expression_nodes(context: DiagnosticDocumentContext) -> list[Any]:
+        if context.ts_nodes_for_types:
+            return context.ts_nodes_for_types(context.tree, {"new_expression"})["new_expression"]
+        return [
+            node
+            for node in _ts_walk(context.tree.root_node)
+            if getattr(node, "type", None) == "new_expression"
+        ]
+
+    @staticmethod
+    def _new_expression_type_name(node: Any) -> str:
+        identifier = next(
+            (
+                child
+                for child in _ts_children(node)
+                if getattr(child, "type", None) == "identifier"
+            ),
+            None,
+        )
+        return _ts_node_text(identifier).casefold() if identifier is not None else ""
+
+    @staticmethod
+    def _dynamic_new_expression_nodes(context: DiagnosticDocumentContext) -> list[Any]:
+        if context.ts_nodes_for_types:
+            nodes = context.ts_nodes_for_types(context.tree, {"new_expression_method"})[
+                "new_expression_method"
+            ]
+        else:
+            nodes = [
+                node
+                for node in _ts_walk(context.tree.root_node)
+                if getattr(node, "type", None) == "new_expression_method"
+            ]
+        return [node for node in nodes if FileSystemAccessRule._dynamic_new_type_name(node)]
+
+    @staticmethod
+    def _dynamic_new_type_name(node: Any) -> str:
+        string_child = next(
+            (
+                child for child in _ts_walk(node) if getattr(child, "type", None) == "string"
+            ),
+            None,
+        )
+        if string_child is None:
+            return ""
+        literal = _ts_node_text(string_child).strip()
+        if len(literal) < 2 or not literal.startswith('"') or not literal.endswith('"'):
+            return ""
+        return literal[1:-1].replace('""', '"').casefold()
+
+    @staticmethod
+    def _global_method_calls(context: DiagnosticDocumentContext) -> list[dict[str, Any]]:
+        if context.ts_nodes_for_types:
+            nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
+            method_call_nodes = nodes["method_call"]
+        else:
+            method_call_nodes = [
+                node
+                for node in _ts_walk(context.tree.root_node)
+                if getattr(node, "type", None) == "method_call"
+            ]
+        out: list[dict[str, Any]] = []
+        for node in method_call_nodes:
+            if getattr(getattr(node, "parent", None), "type", None) != "expression":
                 continue
-            clean = _code_mask_without_strings_and_comments(line)
-            for match in _BSL188_FILESYSTEM_METHOD_RE.finditer(clean):
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(1),
-                    end_line=idx,
-                    end_character=match.end(1),
-                    severity=Severity.ERROR,
-                    message="Проверьте обращение к файловой системе",
-                )
-            for match in _BSL188_FILESYSTEM_NEW_RE.finditer(clean):
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(),
-                    end_line=idx,
-                    end_character=self._new_end(clean, match.end(1)),
-                    severity=Severity.ERROR,
-                    message="Проверьте обращение к файловой системе",
-                )
-        return storage.diagnostics
+            ident = next(
+                (
+                    child
+                    for child in _ts_children(node)
+                    if getattr(child, "type", None) == "identifier"
+                ),
+                None,
+            )
+            if ident is None:
+                continue
+            start = ident.start_point
+            end = ident.end_point
+            out.append(
+                {
+                    "node": node,
+                    "name": _ts_node_text(ident),
+                    "line": int(start[0]),
+                    "character": _point_char(context.lines, start),
+                    "end_character": _point_char(context.lines, end),
+                }
+            )
+        return out
+
+    def _add_node_diag(
+        self,
+        storage: DiagnosticStorage,
+        context: DiagnosticDocumentContext,
+        node: Any,
+    ) -> None:
+        _add_node_range(
+            storage,
+            code=self.code,
+            message=self.message,
+            severity=self.severity,
+            lines=context.lines,
+            start_node=node,
+            end_node=node,
+        )
 
 
-class InternetAccessRule(DiagnosticRuntimeRule):
+class InternetAccessRule(FileSystemAccessRule):
     code = "BSL203"
-
-    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        storage = DiagnosticStorage(context.path)
-        for idx, line in enumerate(context.lines):
-            if _line_comment(line):
-                continue
-            clean = _code_mask_without_strings_and_comments(line)
-            for match in _BSL203_INTERNET_NEW_RE.finditer(clean):
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(),
-                    end_line=idx,
-                    end_character=FileSystemAccessRule._new_end(clean, match.end(1)),
-                    severity=Severity.WARNING,
-                    message="Проверьте обращение к Интернет-ресурсам",
-                )
-            code_part = _code_before_comment(line)
-            for match in _BSL203_INTERNET_STRING_NEW_RE.finditer(code_part):
-                open_paren = code_part.find("(", match.start())
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(),
-                    end_line=idx,
-                    end_character=_single_line_call_end(code_part, open_paren),
-                    severity=Severity.WARNING,
-                    message="Проверьте обращение к Интернет-ресурсам",
-                )
-        return storage.diagnostics
+    message = "Проверьте обращение к Интернет-ресурсам"
+    severity = Severity.WARNING
+    new_type_names = _BSL203_INTERNET_NEW_NAMES
+    global_method_names = frozenset[str]()
 
 
-class UseSystemInformationRule(DiagnosticRuntimeRule):
+class UseSystemInformationRule(FileSystemAccessRule):
     code = "BSL264"
-
-    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        storage = DiagnosticStorage(context.path)
-        for idx, line in enumerate(context.lines):
-            if _line_comment(line):
-                continue
-            clean = _code_mask_without_strings_and_comments(line)
-            for match in _BSL264_SYSTEM_INFO_NEW_RE.finditer(clean):
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(),
-                    end_line=idx,
-                    end_character=FileSystemAccessRule._new_end(clean, match.end(1)),
-                    severity=Severity.ERROR,
-                    message="Избавьтесь от использования объекта `СистемнаяИнформация`",
-                )
-            code_part = _code_before_comment(line)
-            for match in _BSL264_SYSTEM_INFO_STRING_NEW_RE.finditer(code_part):
-                open_paren = code_part.find("(", match.start())
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(),
-                    end_line=idx,
-                    end_character=_single_line_call_end(code_part, open_paren),
-                    severity=Severity.ERROR,
-                    message="Избавьтесь от использования объекта `СистемнаяИнформация`",
-                )
-        return storage.diagnostics
+    message = "Избавьтесь от использования объекта `СистемнаяИнформация`"
+    severity = Severity.ERROR
+    new_type_names = _BSL264_SYSTEM_INFO_NEW_NAMES
+    global_method_names = frozenset[str]()
 
 
 class IsInRoleMethodRule(DiagnosticRuntimeRule):
