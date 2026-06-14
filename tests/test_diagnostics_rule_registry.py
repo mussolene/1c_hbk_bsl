@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from onec_hbk_bsl.analysis.bslls_parity import BSLLS_DEFAULT_DISABLED_NAMES
 from onec_hbk_bsl.analysis.diagnostic.registry import (
     RulePhase,
     build_enabled_invoke_snapshot,
@@ -35,6 +36,11 @@ def test_build_snapshot_respects_engine_select() -> None:
     assert snap["counts_by_phase"].get("line") == 1
     assert snap["counts_by_phase"].get("other") == 1
     assert "BSL014" in snap["codes_by_phase"].get("line", [])
+
+
+def test_server_side_export_form_method_is_not_bslls_default_disabled() -> None:
+    assert "ServerSideExportFormMethod" not in BSLLS_DEFAULT_DISABLED_NAMES
+    assert DiagnosticEngine()._rule_enabled("BSL245")
 
 
 def test_local_only_rules_are_not_public_or_selectable() -> None:
