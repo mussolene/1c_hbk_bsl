@@ -74,7 +74,6 @@ class DiagnosticEngine:
             "BSL042",
             "BSL150",
             "BSL154",
-            "BSL169",
             "BSL170",
             "BSL174",
             "BSL182",

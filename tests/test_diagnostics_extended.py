@@ -1042,6 +1042,51 @@ class TestTailParityBatches:
         )
         got = set(_codes(diags))
         assert {"BSL169", "BSL181", "BSL182", "BSL196"} <= got
+        assert next(diag for diag in diags if diag.code == "BSL169").severity is Severity.ERROR
+
+    def test_compilation_directive_lost_skips_ordinary_form(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        xml_path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form.xml"
+        path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            "<Form><Properties><FormType>Ordinary</FormType></Properties></Form>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Обработчик()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL169"}).check_file(str(path))
+
+        assert "BSL169" not in _codes(diags)
+
+    def test_compilation_directive_lost_reports_managed_form(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        xml_path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form.xml"
+        path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            "<Form><Properties><FormType>Managed</FormType></Properties></Form>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Обработчик()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL169"}).check_file(str(path))
+
+        assert "BSL169" in _codes(diags)
 
     def test_needless_compilation_directive_in_manager_module(self, tmp_path: Path) -> None:
         path = tmp_path / "Catalogs" / "Тест" / "Ext" / "ManagerModule.bsl"

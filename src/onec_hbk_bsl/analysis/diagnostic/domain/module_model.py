@@ -6,8 +6,40 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import current_form_xml_path
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
+
+
+def _path_is_unmanaged_form_module(path: str) -> bool:
+    xml_path = current_form_xml_path(path)
+    if xml_path is None:
+        module_path = Path(path)
+        candidates = [
+            module_path.parent.parent / "Form.xml",
+            module_path.parent.parent.with_suffix(".xml"),
+        ]
+    else:
+        candidates = [xml_path]
+
+    raw = ""
+    for candidate in candidates:
+        try:
+            raw = candidate.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            continue
+        if raw:
+            break
+    if not raw:
+        return False
+    return bool(re.search(r"<FormType>\s*Ordinary\s*</FormType>", raw, re.IGNORECASE))
+
+
+def _path_matches_bsl169_form_module(path: str) -> bool:
+    low = path.replace("\\", "/").lower()
+    if "/forms/" not in low:
+        return False
+    return low.endswith("/ext/module.bsl") or low.endswith("/ext/form/module.bsl")
 
 
 def _path_matches_bsl007_module_types(path: str) -> bool:
@@ -1003,9 +1035,9 @@ class ModuleModel:
     ) -> list[Diagnostic]:
         enabled_set = set(enabled)
         diags: list[Diagnostic] = []
-        is_form_or_command = path_is_likely_form_module_bsl_fn(
-            self.path
-        ) or path_is_command_module_bsl_fn(self.path)
+        is_form_module = _path_matches_bsl169_form_module(self.path)
+        is_form_or_command = is_form_module or path_is_command_module_bsl_fn(self.path)
+        skip_bsl169 = is_form_module and _path_is_unmanaged_form_module(self.path)
         clean_lines = (
             snapshot.code_lines_without_comments
             if snapshot is not None
@@ -1047,7 +1079,7 @@ class ModuleModel:
                     j -= 1
                     continue
                 break
-            if "BSL169" in enabled_set and is_form_or_command and not annotation_lines:
+            if "BSL169" in enabled_set and is_form_or_command and not skip_bsl169 and not annotation_lines:
                 c0, c1 = proc_name_span_fn(lines, proc)
                 diags.append(
                     Diagnostic(
@@ -1056,7 +1088,7 @@ class ModuleModel:
                         character=c0,
                         end_line=proc.start_idx + 1,
                         end_character=c1,
-                        severity=Severity.WARNING,
+                        severity=Severity.ERROR,
                         code="BSL169",
                         message=f"Для метода {proc.name} потеряна директива компиляции",
                     )

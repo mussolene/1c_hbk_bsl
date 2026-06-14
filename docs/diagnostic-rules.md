@@ -89,7 +89,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL166` | `CommonModuleNameGlobalClient` | Yes | INFORMATION | Глобальный модуль с постфиксом "Клиент" | Global module with postfix "Client" | convention, naming, module |
 | `BSL167` | `CommonModuleNameServerCall` | Yes | INFORMATION | Пропущен постфикс "ВызовСервера" | Missed postfix "ServerCall" | convention, naming, module |
 | `BSL168` | `CommonModuleNameWords` | Yes | INFORMATION | Нерекомендуемое имя общего модуля | Unrecommended common module name | convention, naming, module |
-| `BSL169` | `CompilationDirectiveLost` | No | ERROR | Директивы компиляции методов | Methods compilation directive | correctness, directive |
+| `BSL169` | `CompilationDirectiveLost` | Yes | ERROR | Директивы компиляции методов | Methods compilation directive | correctness, directive |
 | `BSL170` | `CompilationDirectiveNeedLess` | No | INFORMATION | Лишняя директива компиляции | Needless compilation directive | redundant, directive |
 | `BSL171` | `CrazyMultilineString` | Yes | INFORMATION | Безумные многострочные литералы | Crazy multiline literals | style, readability |
 | `BSL172` | `DataExchangeLoading` | Yes | WARNING | Отсутствует проверка признака ОбменДанными.Загрузка в обработчике событий объекта | There is no check for the attribute DataExchange.Load in the object's event handler | correctness, data-exchange |
