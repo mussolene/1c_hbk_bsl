@@ -39,8 +39,31 @@ def _path_is_form_module_bsl(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     return (
         normalized.endswith("/forms/")
-        or "/forms/" in normalized
-        and normalized.endswith("/ext/module.bsl")
+        or "/forms/" in normalized and normalized.endswith("/ext/module.bsl")
+        or "/forms/" in normalized and normalized.endswith("/ext/form/module.bsl")
+        or "/forms/" in normalized and "/ext/form/" in normalized and normalized.endswith(".bsl")
+    )
+
+
+def _path_is_whole_module_bsl(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    if _path_is_form_module_bsl(path):
+        return False
+    if "/commonmodules/" in normalized and normalized.endswith("/ext/module.bsl"):
+        return True
+    if "/ext/" not in normalized:
+        return config_root_for_file(path) is None
+    return normalized.endswith(
+        (
+            "/ext/objectmodule.bsl",
+            "/ext/managermodule.bsl",
+            "/ext/recordsetmodule.bsl",
+            "/ext/valuemanagermodule.bsl",
+            "/ext/sessionmodule.bsl",
+            "/ext/managedapplicationmodule.bsl",
+            "/ext/ordinaryapplicationmodule.bsl",
+            "/ext/externalconnectionmodule.bsl",
+        )
     )
 
 
@@ -291,6 +314,84 @@ def _add_node_start_token_range(
         end_line=int(end[0]),
         end_character=max(_point_char(lines, end), _point_char(lines, start) + 1),
     )
+
+
+def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) -> list[Diagnostic]:
+    if _path_is_form_module_bsl(context.path):
+        return []
+    if not _path_is_whole_module_bsl(context.path):
+        return []
+
+    calls = list(getattr(context.snapshot, "calls", []) or [])
+    if not context.procedures:
+        return []
+
+    called_by_other_proc: set[str] = set()
+    for call in calls:
+        callee = str(getattr(call, "callee_name", "") or "").casefold()
+        if not callee:
+            continue
+        caller = str(getattr(call, "caller_name", "") or "").casefold()
+        if caller and caller == callee:
+            continue
+        called_by_other_proc.add(callee)
+
+    diags: list[Diagnostic] = []
+    for proc in context.procedures:
+        name_cf = proc.name.casefold()
+        if proc.is_export or name_cf in called_by_other_proc:
+            continue
+        if _bsl042_is_extension_override(context.lines, proc.start_idx):
+            continue
+        if _bsl042_is_platform_handler(proc.name):
+            continue
+        start_col, end_col = _diag._proc_name_span(context.lines, proc)
+        line_text = context.lines[proc.start_idx] if proc.start_idx < len(context.lines) else ""
+        diags.append(
+            Diagnostic(
+                file=context.path,
+                line=proc.start_idx + 1,
+                character=start_col,
+                end_line=proc.start_idx + 1,
+                end_character=end_col or len(line_text),
+                severity=Severity.WARNING,
+                code="BSL042",
+                message=f'Локальный метод "{proc.name}" не используется',
+            )
+        )
+    return diags
+
+
+def _bsl042_is_extension_override(lines: list[str], proc_start_idx: int) -> bool:
+    idx = proc_start_idx - 1
+    while idx >= 0:
+        stripped = lines[idx].strip()
+        if not stripped or stripped.startswith("//"):
+            idx -= 1
+            continue
+        if not stripped.startswith("&"):
+            return False
+        annotation = stripped.split("(", 1)[0].casefold()
+        if annotation in {
+            "&перед",
+            "&before",
+            "&после",
+            "&after",
+            "&вместо",
+            "&around",
+            "&изменениеиконтроль",
+            "&changeandvalidate",
+        }:
+            return True
+        idx -= 1
+    return False
+
+
+def _bsl042_is_platform_handler(name: str) -> bool:
+    return name.casefold() in {
+        "присозданииобъекта",
+        "onobjectcreate",
+    }
 
 
 def _diagnostics_bsl020_nested_statements(
@@ -6042,12 +6143,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 for fact in snapshot.this_form_usage_facts
             ]
         if code == "BSL042":
-            return model.validate_bsl042_empty_export_method(
-                lines=context.lines,
-                procs=procs,
-                procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
-                blank_or_comment_re=_diag._RE_BLANK_OR_COMMENT,
-            )
+            return _diagnostics_bsl042_unused_local_method(context)
         if code == "BSL051":
             return model.validate_bsl051_unreachable_code(
                 lines=context.lines,

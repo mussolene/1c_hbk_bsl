@@ -4617,43 +4617,88 @@ class TestBsl041DeprecatedMessage:
 
 
 # ---------------------------------------------------------------------------
-# BSL042 — EmptyExportMethod
+# BSL042 — UnusedLocalMethod
 # ---------------------------------------------------------------------------
 
 
-class TestBsl042EmptyExportMethod:
-    def test_empty_export_method_detected(self, tmp_path: Path) -> None:
+class TestBsl042UnusedLocalMethod:
+    def test_unused_local_method_detected(self, tmp_path: Path) -> None:
         content = """\
-            Процедура ПустойМетод() Экспорт
+            Процедура НеИспользуется()
             КонецПроцедуры
         """
-        diags = _check(content, tmp_path, select={"BSL042"})
-        assert "BSL042" in _codes(diags)
+        diags = [d for d in _check(content, tmp_path, select={"BSL042"}) if d.code == "BSL042"]
+        assert len(diags) == 1
+        assert diags[0].message == 'Локальный метод "НеИспользуется" не используется'
 
-    def test_empty_export_method_with_comment(self, tmp_path: Path) -> None:
+    def test_called_local_method_no_warning(self, tmp_path: Path) -> None:
         content = """\
-            Процедура ПустойМетод() Экспорт
-                // TODO: implement
+            Процедура Используется()
             КонецПроцедуры
-        """
-        diags = _check(content, tmp_path, select={"BSL042"})
-        assert "BSL042" in _codes(diags)
 
-    def test_export_with_body_no_warning(self, tmp_path: Path) -> None:
-        content = """\
-            Процедура МетодСТелом() Экспорт
-                Сообщить("ok");
+            Процедура Вызов() Экспорт
+                Используется();
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL042"})
         assert "BSL042" not in _codes(diags)
 
-    def test_non_export_empty_no_warning(self, tmp_path: Path) -> None:
+    def test_export_method_no_warning(self, tmp_path: Path) -> None:
         content = """\
-            Процедура ВнутреннийМетод()
+            Процедура ЭкспортныйМетод() Экспорт
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL042"})
+        assert "BSL042" not in _codes(diags)
+
+    def test_recursive_only_local_method_is_unused(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Рекурсия()
+                Рекурсия();
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL042"}) if d.code == "BSL042"]
+        assert len(diags) == 1
+        assert diags[0].message == 'Локальный метод "Рекурсия" не используется'
+
+    def test_extension_override_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            &Перед("Метод")
+            Процедура Расширение()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL042"})
+        assert "BSL042" not in _codes(diags)
+
+    def test_form_module_is_skipped(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура ОбработчикФормы()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL042"}).check_file(str(path))
+        assert "BSL042" not in _codes(diags)
+
+    def test_split_method_file_is_skipped(self, tmp_path: Path) -> None:
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        path = tmp_path / "DataProcessors" / "Тест" / "Ext" / "РазрезанныйМетод.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура РазрезанныйМетод()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL042"}).check_file(str(path))
         assert "BSL042" not in _codes(diags)
 
 
