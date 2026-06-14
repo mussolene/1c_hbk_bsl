@@ -36,6 +36,20 @@ _RE_XML_PROTECTED = re.compile(
     r"<(?:IsProtected|Protected)>\s*true\s*</(?:IsProtected|Protected)>", re.IGNORECASE
 )
 _RE_XML_PRIVILEGED = re.compile(r"<Privileged>\s*true\s*</Privileged>", re.IGNORECASE)
+_FIND_BY_CODE_METADATA_FOLDERS = {
+    "Catalogs": {
+        "roots": {"справочники", "catalogs"},
+        "safe_code_series": {"wholecatalog"},
+    },
+    "ChartsOfCharacteristicTypes": {
+        "roots": {"планывидовхарактеристик", "chartsofcharacteristictypes"},
+        "safe_code_series": {"wholecatalog", "wholecharacteristickind"},
+    },
+    "ChartsOfAccounts": {
+        "roots": {"планысчетов", "chartsofaccounts"},
+        "safe_code_series": {"wholecatalog", "wholechartofaccounts"},
+    },
+}
 
 
 def path_is_command_module_bsl(path: str) -> bool:
@@ -101,6 +115,38 @@ def workspace_metadata_name_index_cached(config_root: str) -> frozenset[str]:
     for cfg_root in config_roots:
         names.update(metadata_name_index_cached(str(cfg_root)))
     return frozenset(names)
+
+
+@functools.lru_cache(maxsize=16)
+def unsafe_find_by_code_metadata_index_cached(
+    config_root: str,
+) -> dict[tuple[str, str], bool]:
+    root = Path(config_root)
+    out: dict[tuple[str, str], bool] = {}
+    for folder_name, folder_info in _FIND_BY_CODE_METADATA_FOLDERS.items():
+        folder = root / folder_name
+        if not folder.exists():
+            continue
+        for xml_file in folder.glob("*.xml"):
+            text = read_text_cached(str(xml_file))
+            check_unique_match = re.search(
+                _RE_XML_BOOL_SIMPLE.format(tag="CheckUnique"),
+                text,
+                re.IGNORECASE,
+            )
+            check_unique = bool(
+                check_unique_match and check_unique_match.group(1).casefold() == "true"
+            )
+            code_series_match = re.search(
+                r"<CodeSeries>\s*([^<]+?)\s*</CodeSeries>",
+                text,
+                re.IGNORECASE,
+            )
+            code_series = code_series_match.group(1).strip().casefold() if code_series_match else ""
+            unsafe = (not check_unique) or code_series not in folder_info["safe_code_series"]
+            for root_name in folder_info["roots"]:
+                out[(root_name, xml_file.stem.casefold())] = unsafe
+    return out
 
 
 @functools.lru_cache(maxsize=4096)

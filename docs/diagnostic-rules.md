@@ -180,7 +180,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL257` | `UnaryPlusInConcatenation` | Yes | ERROR | Унарный плюс в конкатенации строк | Unary Plus sign in string concatenation | suspicious, brainoverload |
 | `BSL258` | `UnionAll` | Yes | WARNING | Использование ключевого слова "ОБЪЕДИНИТЬ" в запросах | Using keyword "UNION" in queries | query, performance |
 | `BSL259` | `UnknownPreprocessorSymbol` | Yes | WARNING | Неизвестный символ препроцессора | Unknown preprocessor symbol | correctness, directive |
-| `BSL260` | `UnsafeFindByCode` | No | WARNING | Небезопасное использование метода НайтиПоКоду() | Unsafe FindByCode() method usage | correctness, robustness |
+| `BSL260` | `UnsafeFindByCode` | Yes | WARNING | Небезопасное использование метода НайтиПоКоду() | Unsafe FindByCode() method usage | correctness, robustness |
 | `BSL261` | `UnsafeSafeModeMethodCall` | Yes | WARNING | Небезопасное использование функции БезопасныйРежим() | Unsafe SafeMode method call | security, correctness |
 | `BSL262` | `UsageWriteLogEvent` | Yes | INFORMATION | Неверное использование метода "ЗаписьЖурналаРегистрации" | Incorrect use of the method "WriteLogEvent" | standard, badpractice |
 | `BSL263` | `UseLessForEach` | Yes | WARNING | Бесполезный перебор коллекции | Useless collection iteration | redundant, suspicious |

@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import current_form_xml_path
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    config_root_for_file,
+    current_form_xml_path,
+    unsafe_find_by_code_metadata_index_cached,
+)
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
@@ -73,6 +77,32 @@ def _path_matches_bsl007_module_types(path: str) -> bool:
         return False
 
     return low.endswith(".bsl")
+
+
+def _bsl260_access_metadata_key(access_text: str) -> tuple[str, str] | None:
+    parts = [part.strip().casefold() for part in access_text.split(".") if part.strip()]
+    if len(parts) != 2:
+        return None
+    if parts[0] not in {
+        "справочники",
+        "catalogs",
+        "планывидовхарактеристик",
+        "chartsofcharacteristictypes",
+        "планысчетов",
+        "chartsofaccounts",
+    }:
+        return None
+    return parts[0], parts[1]
+
+
+def _bsl260_call_access_text(method_call: Any, ts_node_text_fn) -> str:
+    call_expr = getattr(method_call, "parent", None)
+    if getattr(call_expr, "type", None) != "call_expression":
+        return ""
+    for child in getattr(call_expr, "children", ()):
+        if getattr(child, "type", None) == "access":
+            return ts_node_text_fn(child)
+    return ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1027,6 +1057,11 @@ class ModuleModel:
         procs: list[ProcInfo],
         enabled: tuple[str, ...],
         snapshot,
+        tree,
+        ts_nodes_for_types_fn,
+        ts_child_of_type_fn,
+        ts_node_text_fn,
+        utf8_byte_offset_to_lsp_character_fn,
         path_is_likely_form_module_bsl_fn,
         path_is_command_module_bsl_fn,
         strip_inline_comment_preserve_strings_fn,
@@ -1209,37 +1244,54 @@ class ModuleModel:
                     ):
                         control_depth += 1
             if "BSL260" in enabled_set:
-                for idx, _raw_line in enumerate(lines):
-                    line = clean_lines[idx]
-                    assign = re.search(
-                        r"(?P<var>\w+)\s*=\s*(?P<expr>\w+(?:\.\w+)*\.(?:НайтиПоКоду|FindByCode)\s*\([^)]*\))",
-                        line,
-                        re.IGNORECASE,
+                config_root = config_root_for_file(self.path)
+                unsafe_index = (
+                    unsafe_find_by_code_metadata_index_cached(config_root)
+                    if config_root is not None
+                    else {}
+                )
+                root = getattr(tree, "root_node", None)
+                tree_ok = root is not None and isinstance(
+                    getattr(root, "text", None),
+                    (bytes, bytearray),
+                )
+                nodes_for_bsl260 = (
+                    ts_nodes_for_types_fn(tree, {"method_call"}).get("method_call", [])
+                    if unsafe_index and tree_ok
+                    else ()
+                )
+                for node in nodes_for_bsl260 or ():
+                    ident = ts_child_of_type_fn(node, "identifier")
+                    if ident is None:
+                        continue
+                    name = ts_node_text_fn(ident)
+                    if name.casefold() not in {"найтипокоду", "findbycode"}:
+                        continue
+                    key = _bsl260_access_metadata_key(
+                        _bsl260_call_access_text(node, ts_node_text_fn)
                     )
-                    if assign is None:
+                    if key is None or not unsafe_index.get(key, False):
                         continue
-                    var_name = assign.group("var")
-                    lookahead = "\n".join(lines[idx + 1 : min(len(lines), idx + 4)])
-                    if re.search(
-                        rf"\b(?:ЗначениеЗаполнено|ValueIsFilled)\s*\([^)]*\b{re.escape(var_name)}\b",
-                        lookahead,
-                        re.IGNORECASE,
-                    ) or re.search(
-                        rf"\b{re.escape(var_name)}\b\s*(?:=|<>)\s*(?:Неопределено|Undefined)",
-                        lookahead,
-                        re.IGNORECASE,
-                    ):
+                    line_idx = ident.start_point[0]
+                    if line_idx < proc.start_idx or line_idx > proc.end_idx:
                         continue
+                    line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
                     diags.append(
                         Diagnostic(
                             file=self.path,
-                            line=idx + 1,
-                            character=assign.start("expr"),
-                            end_line=idx + 1,
-                            end_character=assign.end("expr"),
+                            line=line_idx + 1,
+                            character=utf8_byte_offset_to_lsp_character_fn(
+                                line_text,
+                                ident.start_point[1],
+                            ),
+                            end_line=line_idx + 1,
+                            end_character=utf8_byte_offset_to_lsp_character_fn(
+                                line_text,
+                                ident.end_point[1],
+                            ),
                             severity=Severity.WARNING,
                             code="BSL260",
-                            message="Использование НайтиПоКоду() небезопасно без проверки результата",
+                            message="Небезопасное использование метода НайтиПоКоду()",
                         )
                     )
         return diags

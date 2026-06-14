@@ -1105,13 +1105,33 @@ class TestTailParityBatches:
         assert "BSL170" in _codes(diags)
 
     def test_unsafe_find_by_code_tail_rule(self, tmp_path: Path) -> None:
-        path = tmp_path / "Catalogs" / "Тест" / "Ext" / "ManagerModule.bsl"
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "Catalogs").mkdir()
+        (root / "Catalogs" / "Номенклатура.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                    <Catalog>
+                        <Properties>
+                            <Name>Номенклатура</Name>
+                            <CodeSeries>WithinOwner</CodeSeries>
+                            <CheckUnique>true</CheckUnique>
+                        </Properties>
+                    </Catalog>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        path = root / "Catalogs" / "Номенклатура" / "Ext" / "ManagerModule.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(
             textwrap.dedent(
                 """\
                 Процедура Метод()
-                    Найденный = Каталог.НайтиПоКоду("001");
+                    Найденный = Справочники.Номенклатура.НайтиПоКоду("001");
                 КонецПроцедуры
                 """
             ),
@@ -1119,6 +1139,45 @@ class TestTailParityBatches:
         )
         diags = DiagnosticEngine(select={"BSL260"}).check_file(str(path))
         assert "BSL260" in _codes(diags)
+
+    def test_unsafe_find_by_code_uses_metadata_safety(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "Catalogs").mkdir()
+        (root / "Catalogs" / "Номенклатура.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                    <Catalog>
+                        <Properties>
+                            <Name>Номенклатура</Name>
+                            <CodeSeries>WholeCatalog</CodeSeries>
+                            <CheckUnique>true</CheckUnique>
+                        </Properties>
+                    </Catalog>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        path = root / "Catalogs" / "Номенклатура" / "Ext" / "ManagerModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Метод()
+                    Найденный = Справочники.Номенклатура.НайтиПоКоду("001");
+                    Другой = Каталог.НайтиПоКоду("001");
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL260"}).check_file(str(path))
+
+        assert "BSL260" not in _codes(diags)
 
     def test_metadata_tail_pool(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"

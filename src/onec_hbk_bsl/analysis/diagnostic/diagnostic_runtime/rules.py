@@ -5642,6 +5642,11 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                     procs=procs,
                     enabled=(code,),
                     snapshot=snapshot,
+                    tree=context.tree,
+                    ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+                    ts_child_of_type_fn=_diag._ts_child_of_type,
+                    ts_node_text_fn=_diag._ts_node_text,
+                    utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
                     path_is_likely_form_module_bsl_fn=_diag.path_is_likely_form_module_bsl,
                     path_is_command_module_bsl_fn=_diag._path_is_command_module_bsl,
                     strip_inline_comment_preserve_strings_fn=(
