@@ -171,11 +171,12 @@ def run_bsl174_187_236_238_query_metadata_pool(
             list(_diag._iter_query_text_content_lines(start_idx, block_lines))
             for start_idx, block_lines in _diag._iter_query_text_blocks(cleaned_lines or lines)
         ]
-        has_sdbl_tree = False
     else:
         all_query_lines = [_diag._query_block_content_line_tuples(block) for block in query_blocks]
-        has_sdbl_tree = any(getattr(block, "sdbl_tree", None) is not None for block in query_blocks)
-    if "BSL187" in enabled_set and not has_sdbl_tree:
+    if "BSL187" in enabled_set:
+        # BSL187 needs a dedicated SDBL CST implementation. The previous
+        # line-regex approximation produced broad noise and is intentionally
+        # disabled until the AST path is implemented.
         enabled_set.remove("BSL187")
 
     temp_table_names: set[str] = set()
