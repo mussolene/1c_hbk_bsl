@@ -72,6 +72,8 @@ def _bsl242_proc_body_is_empty(lines: list[str], proc: Any) -> bool:
             continue
         return False
     return True
+
+
 _QUERY_SECTION_KEYWORDS: frozenset[str] = frozenset(
     {
         "где",
@@ -611,9 +613,9 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         message=f"Общий модуль {module_name} обработчика регламентного задания должен выполняться на сервере",
                     )
                 )
-            for handler, job_name, predefined in _diag._scheduled_job_handlers_by_module_cached(root).get(
-                module_name.casefold(), ()
-            ):
+            for handler, job_name, predefined in _diag._scheduled_job_handlers_by_module_cached(
+                root
+            ).get(module_name.casefold(), ()):
                 meth = handler.split(".")[-1]
                 proc = proc_names.get(meth.casefold())
                 if proc is None:

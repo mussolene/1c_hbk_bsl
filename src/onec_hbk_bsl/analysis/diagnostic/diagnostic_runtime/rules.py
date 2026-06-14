@@ -39,9 +39,13 @@ def _path_is_form_module_bsl(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     return (
         normalized.endswith("/forms/")
-        or "/forms/" in normalized and normalized.endswith("/ext/module.bsl")
-        or "/forms/" in normalized and normalized.endswith("/ext/form/module.bsl")
-        or "/forms/" in normalized and "/ext/form/" in normalized and normalized.endswith(".bsl")
+        or "/forms/" in normalized
+        and normalized.endswith("/ext/module.bsl")
+        or "/forms/" in normalized
+        and normalized.endswith("/ext/form/module.bsl")
+        or "/forms/" in normalized
+        and "/ext/form/" in normalized
+        and normalized.endswith(".bsl")
     )
 
 
@@ -2641,11 +2645,7 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
     @staticmethod
     def _new_expression_type_name(node: Any) -> str:
         identifier = next(
-            (
-                child
-                for child in _ts_children(node)
-                if getattr(child, "type", None) == "identifier"
-            ),
+            (child for child in _ts_children(node) if getattr(child, "type", None) == "identifier"),
             None,
         )
         return _ts_node_text(identifier).casefold() if identifier is not None else ""
@@ -2667,9 +2667,7 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
     @staticmethod
     def _dynamic_new_type_name(node: Any) -> str:
         string_child = next(
-            (
-                child for child in _ts_walk(node) if getattr(child, "type", None) == "string"
-            ),
+            (child for child in _ts_walk(node) if getattr(child, "type", None) == "string"),
             None,
         )
         if string_child is None:

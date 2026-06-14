@@ -1079,7 +1079,12 @@ class ModuleModel:
                     j -= 1
                     continue
                 break
-            if "BSL169" in enabled_set and is_form_or_command and not skip_bsl169 and not annotation_lines:
+            if (
+                "BSL169" in enabled_set
+                and is_form_or_command
+                and not skip_bsl169
+                and not annotation_lines
+            ):
                 c0, c1 = proc_name_span_fn(lines, proc)
                 diags.append(
                     Diagnostic(

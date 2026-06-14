@@ -310,8 +310,6 @@ def scheduled_job_handlers_by_module_cached(
                 text,
                 re.IGNORECASE,
             )
-            predefined = bool(
-                predefined_match and predefined_match.group(1).casefold() == "true"
-            )
+            predefined = bool(predefined_match and predefined_match.group(1).casefold() == "true")
             handlers[parts[1].casefold()].append((handler, xml_file.stem, predefined))
     return {module_name: tuple(values) for module_name, values in handlers.items()}

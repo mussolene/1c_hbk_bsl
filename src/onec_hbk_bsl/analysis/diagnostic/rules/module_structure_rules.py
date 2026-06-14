@@ -26,9 +26,7 @@ _BSL154_ASYNC_PIPE = (
     "НАЧАТЬЗАПРОСРАЗРЕШЕНИЯПОЛЬЗОВАТЕЛЯ|BEGINREQUESTINGUSERPERMISSION|"
     "НАЧАТЬЗАПУСКПРИЛОЖЕНИЯ|BEGINRUNNINGAPPLICATION"
 )
-_BSL154_ASYNC_NAMES = frozenset(
-    x.casefold() for x in _BSL154_ASYNC_PIPE.split("|") if x.strip()
-)
+_BSL154_ASYNC_NAMES = frozenset(x.casefold() for x in _BSL154_ASYNC_PIPE.split("|") if x.strip())
 _RE_COMPILER = re.compile(r"^\s*&\w", re.IGNORECASE)
 _RE_MODULE_VAR = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
 _RE_REGION_OPEN_LINE = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE)
@@ -164,7 +162,10 @@ def _bsl154_has_blocking_followup(statement: object) -> bool:
     while current is not None:
         next_statement = _bsl154_next_statement(current)
         if next_statement is not None:
-            return getattr(next_statement, "type", None) not in {"return_statement", "break_statement"}
+            return getattr(next_statement, "type", None) not in {
+                "return_statement",
+                "break_statement",
+            }
         current = _nearest_ancestor(current, _BSL154_STATEMENT_TYPES)
     return False
 
@@ -186,7 +187,10 @@ def bsl154_code_after_async_spans_cst(
         method = _bsl154_method_name(node)
         if not method or method.casefold() not in _BSL154_ASYNC_NAMES:
             continue
-        if _nearest_ancestor(node, frozenset({"procedure_definition", "function_definition"})) is None:
+        if (
+            _nearest_ancestor(node, frozenset({"procedure_definition", "function_definition"}))
+            is None
+        ):
             continue
         statement = _nearest_ancestor(node, _BSL154_STATEMENT_TYPES)
         if statement is None or not _bsl154_has_blocking_followup(statement):
