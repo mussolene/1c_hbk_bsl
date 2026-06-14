@@ -11,7 +11,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "tree-sitter>=0.24,<0.26",
-    "tree-sitter-bsl>=0.1.6,<0.2",
+    "tree-sitter-bsl>=0.1.7,<0.2",
     "watchfiles>=0.24",
     "pygls>=1.3",
     "rich>=13.0",
@@ -96,4 +96,4 @@ dev = [
 ]
 
 [tool.uv.sources]
-tree-sitter-bsl = { git = "https://github.com/mussolene/tree-sitter-bsl.git", rev = "57320c14389f281e632d2f8fb83ae41a33147d2e" }
+tree-sitter-bsl = { git = "https://github.com/mussolene/tree-sitter-bsl.git", rev = "5752667f4d40879a533c4ffe3005da10ff0b5e29" }

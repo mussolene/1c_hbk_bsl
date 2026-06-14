@@ -507,7 +507,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "setuptools-scm", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "tree-sitter", specifier = ">=0.24,<0.26" },
-    { name = "tree-sitter-bsl", git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=57320c14389f281e632d2f8fb83ae41a33147d2e" },
+    { name = "tree-sitter-bsl", git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=5752667f4d40879a533c4ffe3005da10ff0b5e29" },
     { name = "watchfiles", specifier = ">=0.24" },
 ]
 provides-extras = ["mcp", "all", "dev", "build"]
@@ -1053,7 +1053,7 @@ wheels = [
 [[package]]
 name = "tree-sitter-bsl"
 version = "0.1.7"
-source = { git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=57320c14389f281e632d2f8fb83ae41a33147d2e#57320c14389f281e632d2f8fb83ae41a33147d2e" }
+source = { git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=5752667f4d40879a533c4ffe3005da10ff0b5e29#5752667f4d40879a533c4ffe3005da10ff0b5e29" }
 
 [[package]]
 name = "typing-extensions"
