@@ -162,7 +162,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL239` | `ReservedParameterNames` | Yes | WARNING | Зарезервированные имена параметров | Reserved parameter names | naming, suspicious |
 | `BSL240` | `RewriteMethodParameter` | Yes | WARNING | Перезапись параметров метода | Rewrite method parameter | suspicious, correctness |
 | `BSL241` | `SameMetadataObjectAndChildNames` | No | WARNING | Совпадает имя объекта метаданного и его дочернего | Same metadata object and child name | naming, design |
-| `BSL242` | `ScheduledJobHandler` | No | ERROR | Обработчик регламентного задания | Scheduled job handler | correctness, scheduled-jobs |
+| `BSL242` | `ScheduledJobHandler` | Yes | ERROR | Обработчик регламентного задания | Scheduled job handler | correctness, scheduled-jobs |
 | `BSL243` | `SelfInsertion` | Yes | ERROR | Вставка коллекции в саму себя | Insert a collection into itself | correctness, suspicious |
 | `BSL244` | `ServerCallsInFormEvents` | Yes | WARNING | Серверные вызовы в событиях форм | Server calls in form events | correctness, ui, performance |
 | `BSL245` | `ServerSideExportFormMethod` | Yes | WARNING | Серверный экспортный метод формы | Server-side export form method | correctness, ui |

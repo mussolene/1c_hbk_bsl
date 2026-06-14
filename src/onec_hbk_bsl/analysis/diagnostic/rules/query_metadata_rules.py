@@ -63,6 +63,15 @@ _QUERY_METADATA_TYPE_REF_RE = re.compile(
     rf"(({_QUERY_METADATA_ROOT_PATTERN})\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)\s*\)",
     re.IGNORECASE,
 )
+
+
+def _bsl242_proc_body_is_empty(lines: list[str], proc: Any) -> bool:
+    for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
+        stripped = lines[idx].strip()
+        if not stripped or stripped.startswith("//") or stripped.startswith("#"):
+            continue
+        return False
+    return True
 _QUERY_SECTION_KEYWORDS: frozenset[str] = frozenset(
     {
         "где",
@@ -349,7 +358,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     )
     common_module_index = (
         _diag._common_module_index_cached(root)
-        if root is not None and "BSL213" in enabled_set
+        if root is not None and ({"BSL213", "BSL242"} & enabled_set)
         else {}
     )
 
@@ -586,9 +595,23 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             message=f"Обработчик подписки на событие {handler} не существует",
                         )
                     )
-        if "BSL242" in enabled_set:
+        if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
             handlers_seen: dict[str, str] = {}
-            for handler, job_name in _diag._scheduled_job_handlers_by_module_cached(root).get(
+            module_info = common_module_index.get(module_name.casefold()) or {}
+            if module_info and not module_info.get("server"):
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=1,
+                        character=0,
+                        end_line=1,
+                        end_character=max(len(line_text.rstrip()), 1),
+                        severity=_diag.Severity.ERROR,
+                        code="BSL242",
+                        message=f"Общий модуль {module_name} обработчика регламентного задания должен выполняться на сервере",
+                    )
+                )
+            for handler, job_name, predefined in _diag._scheduled_job_handlers_by_module_cached(root).get(
                 module_name.casefold(), ()
             ):
                 meth = handler.split(".")[-1]
@@ -621,7 +644,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             message=f"Обработчик регламентного задания {handler} должен быть экспортным",
                         )
                     )
-                if proc.optional_count > 0 or proc.params:
+                if predefined and (proc.optional_count > 0 or proc.params):
                     start_char, end_char = _diag._proc_name_span(lines, proc)
                     diags.append(
                         _diag.Diagnostic(
@@ -633,6 +656,20 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
                             message=f"Обработчик регламентного задания {handler} не должен принимать параметры",
+                        )
+                    )
+                if _bsl242_proc_body_is_empty(lines, proc):
+                    start_char, end_char = _diag._proc_name_span(lines, proc)
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=proc.start_idx + 1,
+                            character=start_char,
+                            end_line=proc.start_idx + 1,
+                            end_character=end_char,
+                            severity=_diag.Severity.ERROR,
+                            code="BSL242",
+                            message=f"Обработчик регламентного задания {handler} не должен быть пустым",
                         )
                     )
                 if handler in handlers_seen and handlers_seen[handler] != job_name:

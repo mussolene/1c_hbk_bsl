@@ -185,11 +185,13 @@ def common_module_index_cached(config_root: str) -> dict[str, dict[str, Any]]:
     for xml_file in root.glob("*.xml"):
         name = xml_file.stem
         raw = read_text_cached(str(xml_file))
+        server_match = re.search(_RE_XML_BOOL_SIMPLE.format(tag="Server"), raw, re.IGNORECASE)
         module_file = root / name / "Ext" / "Module.bsl"
         result[name.casefold()] = {
             "name": name,
             "privileged": bool(_RE_XML_PRIVILEGED.search(raw)),
             "protected": bool(_RE_XML_PROTECTED.search(raw)),
+            "server": bool(server_match and server_match.group(1).casefold() == "true"),
             "module_file": str(module_file) if module_file.exists() else "",
         }
     return result
@@ -287,8 +289,8 @@ def event_subscription_handlers_by_module_cached(config_root: str) -> dict[str, 
 @functools.lru_cache(maxsize=128)
 def scheduled_job_handlers_by_module_cached(
     config_root: str,
-) -> dict[str, tuple[tuple[str, str], ...]]:
-    handlers: dict[str, list[tuple[str, str]]] = defaultdict(list)
+) -> dict[str, tuple[tuple[str, str, bool], ...]]:
+    handlers: dict[str, list[tuple[str, str, bool]]] = defaultdict(list)
     jobs_dir = Path(config_root) / "ScheduledJobs"
     if not jobs_dir.exists():
         return {}
@@ -303,5 +305,13 @@ def scheduled_job_handlers_by_module_cached(
             parts = handler.split(".", 2)
             if len(parts) != 3 or not parts[1] or not parts[2]:
                 continue
-            handlers[parts[1].casefold()].append((handler, xml_file.stem))
+            predefined_match = re.search(
+                _RE_XML_BOOL_SIMPLE.format(tag="Predefined"),
+                text,
+                re.IGNORECASE,
+            )
+            predefined = bool(
+                predefined_match and predefined_match.group(1).casefold() == "true"
+            )
+            handlers[parts[1].casefold()].append((handler, xml_file.stem, predefined))
     return {module_name: tuple(values) for module_name, values in handlers.items()}

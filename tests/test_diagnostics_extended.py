@@ -1307,6 +1307,98 @@ class TestTailParityBatches:
         session_diags = DiagnosticEngine(select={"BSL232"}).check_file(str(session_module))
         assert "BSL232" in _codes(session_diags)
 
+    def test_scheduled_job_handler_skips_split_common_module_file(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Фоновые" / "Ext").mkdir(parents=True)
+        (root / "ScheduledJobs").mkdir(parents=True)
+        (root / "CommonModules" / "Фоновые.xml").write_text(
+            "<CommonModule><Name>Фоновые</Name><Server>true</Server></CommonModule>",
+            encoding="utf-8",
+        )
+        (root / "ScheduledJobs" / "Задание.xml").write_text(
+            "<ScheduledJob><MethodName>CommonModule.Фоновые.Выполнить</MethodName></ScheduledJob>",
+            encoding="utf-8",
+        )
+        split_file = root / "CommonModules" / "Фоновые" / "Ext" / "ДругойМетод.bsl"
+        split_file.write_text("Процедура ДругойМетод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL242"}).check_file(str(split_file))
+
+        assert "BSL242" not in _codes(diags)
+
+    def test_scheduled_job_handler_predefined_false_allows_parameters(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Фоновые" / "Ext").mkdir(parents=True)
+        (root / "ScheduledJobs").mkdir(parents=True)
+        (root / "CommonModules" / "Фоновые.xml").write_text(
+            "<CommonModule><Name>Фоновые</Name><Server>true</Server></CommonModule>",
+            encoding="utf-8",
+        )
+        (root / "ScheduledJobs" / "Задание.xml").write_text(
+            "<ScheduledJob><MethodName>CommonModule.Фоновые.Выполнить</MethodName><Predefined>false</Predefined></ScheduledJob>",
+            encoding="utf-8",
+        )
+        module = root / "CommonModules" / "Фоновые" / "Ext" / "Module.bsl"
+        module.write_text(
+            "Процедура Выполнить(Параметр) Экспорт\n    Сообщить(Параметр);\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
+
+        assert "BSL242" not in _codes(diags)
+
+    def test_scheduled_job_handler_requires_server_common_module(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Фоновые" / "Ext").mkdir(parents=True)
+        (root / "ScheduledJobs").mkdir(parents=True)
+        (root / "CommonModules" / "Фоновые.xml").write_text(
+            "<CommonModule><Name>Фоновые</Name><Server>false</Server></CommonModule>",
+            encoding="utf-8",
+        )
+        (root / "ScheduledJobs" / "Задание.xml").write_text(
+            "<ScheduledJob><MethodName>CommonModule.Фоновые.Выполнить</MethodName></ScheduledJob>",
+            encoding="utf-8",
+        )
+        module = root / "CommonModules" / "Фоновые" / "Ext" / "Module.bsl"
+        module.write_text(
+            "Процедура Выполнить() Экспорт\n    Сообщить(1);\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
+
+        assert "BSL242" in _codes(diags)
+        assert "сервере" in next(d.message for d in diags if d.code == "BSL242")
+
+    def test_scheduled_job_handler_empty_method_detected(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Фоновые" / "Ext").mkdir(parents=True)
+        (root / "ScheduledJobs").mkdir(parents=True)
+        (root / "CommonModules" / "Фоновые.xml").write_text(
+            "<CommonModule><Name>Фоновые</Name><Server>true</Server></CommonModule>",
+            encoding="utf-8",
+        )
+        (root / "ScheduledJobs" / "Задание.xml").write_text(
+            "<ScheduledJob><MethodName>CommonModule.Фоновые.Выполнить</MethodName></ScheduledJob>",
+            encoding="utf-8",
+        )
+        module = root / "CommonModules" / "Фоновые" / "Ext" / "Module.bsl"
+        module.write_text("Процедура Выполнить() Экспорт\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
+
+        assert "BSL242" in _codes(diags)
+        assert "пустым" in next(d.message for d in diags if d.code == "BSL242")
+
     def test_query_and_runtime_tail_pool(self, tmp_path: Path) -> None:
         path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
         path.parent.mkdir(parents=True)
