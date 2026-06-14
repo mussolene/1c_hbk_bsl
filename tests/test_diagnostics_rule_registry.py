@@ -43,6 +43,21 @@ def test_server_side_export_form_method_is_not_bslls_default_disabled() -> None:
     assert DiagnosticEngine()._rule_enabled("BSL245")
 
 
+def test_high_value_zero_noise_rules_are_default_enabled() -> None:
+    for code in (
+        "BSL196",
+        "BSL213",
+        "BSL214",
+        "BSL231",
+        "BSL244",
+        "BSL246",
+        "BSL253",
+        "BSL261",
+        "BSL274",
+    ):
+        assert DiagnosticEngine()._rule_enabled(code)
+
+
 def test_local_only_rules_are_not_public_or_selectable() -> None:
     for code in ("BSL999", "BSL998"):
         assert code not in RULE_METADATA

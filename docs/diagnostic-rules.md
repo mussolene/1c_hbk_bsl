@@ -116,7 +116,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL193` | `FunctionOutParameter` | Yes | WARNING | Исходящий параметр функции | Out function parameter | design |
 | `BSL194` | `FunctionReturnsSamePrimitive` | Yes | ERROR | Функция всегда возвращает одно и то же примитивное значение | The function always returns the same primitive value | redundant, design |
 | `BSL195` | `GetFormMethod` | Yes | WARNING | Использование метода ПолучитьФорму | GetForm method call | deprecated, ui |
-| `BSL196` | `GlobalContextMethodCollision8312` | No | ERROR | Конфликт имен методов с методами глобального контекста | Global context method names collision | correctness, compatibility |
+| `BSL196` | `GlobalContextMethodCollision8312` | Yes | ERROR | Конфликт имен методов с методами глобального контекста | Global context method names collision | correctness, compatibility |
 | `BSL197` | `IfElseDuplicatedCodeBlock` | Yes | WARNING | Повторяющиеся блоки кода в синтаксической конструкции Если...Тогда...ИначеЕсли... | Duplicated code blocks in If...Then...ElseIf... statements | suspicious, duplicate |
 | `BSL198` | `IfElseDuplicatedCondition` | Yes | WARNING | Повторяющиеся условия в синтаксической конструкции Если...Тогда...ИначеЕсли... | Duplicated conditions in If...Then...ElseIf... statements | suspicious, correctness |
 | `BSL199` | `IfElseIfEndsWithElse` | Yes | INFORMATION | Использование синтаксической конструкции Если...Тогда...ИначеЕсли... | Else...The...ElseIf... statement should end with Else branch | design, robustness |
@@ -133,8 +133,8 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL210` | `LogicalOrInTheWhereSectionOfQuery` | Yes | WARNING | Использование логического "ИЛИ" в секции "ГДЕ" запроса | Using a logical "OR" in the "WHERE" section of a query | query, performance, standard |
 | `BSL211` | `MetadataObjectNameLength` | No | WARNING | Имена объектов метаданных не должны превышать допустимой длины наименования | Metadata object names must not exceed the allowed length | naming, convention |
 | `BSL212` | `MissedRequiredParameter` | Yes | ERROR | Пропущен обязательный параметр метода | Missed a required method parameter | correctness |
-| `BSL213` | `MissingCommonModuleMethod` | No | ERROR | Обращение к отсутствующему методу общего модуля | Referencing a missing common module method | correctness, module |
-| `BSL214` | `MissingEventSubscriptionHandler` | No | ERROR | Отсутствует обработчик подписки на событие | Event subscription handler missing | correctness, events |
+| `BSL213` | `MissingCommonModuleMethod` | Yes | ERROR | Обращение к отсутствующему методу общего модуля | Referencing a missing common module method | correctness, module |
+| `BSL214` | `MissingEventSubscriptionHandler` | Yes | ERROR | Отсутствует обработчик подписки на событие | Event subscription handler missing | correctness, events |
 | `BSL215` | `MissingParameterDescription` | Yes | INFORMATION | Отсутствует описание параметров метода | Method parameters description are missing | documentation, api |
 | `BSL216` | `MissingSpace` | Yes | INFORMATION | Пропущены пробелы слева или справа от операторов `+ - * / = % < > <> <= >=`, от ключевых слов, а так же справа от `,` и `;` | Missing spaces to the left or right of operators + - * / = % < > <> <= >=, keywords, and also to the right of , and ; | style, convention |
 | `BSL217` | `MissingTempStorageDeletion` | Yes | WARNING | Отсутствует удаление данных из временного хранилища после использования | Missing temporary storage data deletion after using | resource-management, memory |
@@ -151,7 +151,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL228` | `OrderOfParams` | Yes | INFORMATION | Порядок параметров метода | Order of Parameters in method | design, convention |
 | `BSL229` | `OrdinaryAppSupport` | Yes | WARNING | Поддержка обычного приложения | Ordinary application support | compatibility, ui |
 | `BSL230` | `PairingBrokenTransaction` | Yes | ERROR | Нарушение парности использования методов "НачатьТранзакцию()" и "ЗафиксироватьТранзакцию()" / "ОтменитьТранзакцию()" | Violation of pairing using methods "BeginTransaction()" & "CommitTransaction()" / "RollbackTransaction()" | transaction, correctness |
-| `BSL231` | `PrivilegedModuleMethodCall` | No | WARNING | Обращение к методам привилегированных модулей | Accessing privileged module methods | security, access-control |
+| `BSL231` | `PrivilegedModuleMethodCall` | Yes | WARNING | Обращение к методам привилегированных модулей | Accessing privileged module methods | security, access-control |
 | `BSL232` | `ProtectedModule` | No | INFORMATION | Защищенные модули | Protected modules | design |
 | `BSL233` | `PublicMethodsDescription` | Yes | INFORMATION | Все методы программного интерфейса должны иметь описание | All public methods must have a description | documentation, api |
 | `BSL234` | `QueryNestedFieldsByDot` | Yes | WARNING | Разыменование ссылочных полей запроса через точку | Getting objects nested fields data by dot in database query text | query, performance |
@@ -164,16 +164,16 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL241` | `SameMetadataObjectAndChildNames` | No | WARNING | Совпадает имя объекта метаданного и его дочернего | Same metadata object and child name | naming, design |
 | `BSL242` | `ScheduledJobHandler` | No | ERROR | Обработчик регламентного задания | Scheduled job handler | correctness, scheduled-jobs |
 | `BSL243` | `SelfInsertion` | Yes | ERROR | Вставка коллекции в саму себя | Insert a collection into itself | correctness, suspicious |
-| `BSL244` | `ServerCallsInFormEvents` | No | WARNING | Серверные вызовы в событиях форм | Server calls in form events | correctness, ui, performance |
+| `BSL244` | `ServerCallsInFormEvents` | Yes | WARNING | Серверные вызовы в событиях форм | Server calls in form events | correctness, ui, performance |
 | `BSL245` | `ServerSideExportFormMethod` | Yes | WARNING | Серверный экспортный метод формы | Server-side export form method | correctness, ui |
-| `BSL246` | `SetPermissionsForNewObjects` | No | WARNING | Флажок «Устанавливать права для новых объектов» должен быть установлен только у роли ПолныеПрава | The check box «Set permissions for new objects» should only be selected for the FullAccess role | security, access-control |
+| `BSL246` | `SetPermissionsForNewObjects` | Yes | WARNING | Флажок «Устанавливать права для новых объектов» должен быть установлен только у роли ПолныеПрава | The check box «Set permissions for new objects» should only be selected for the FullAccess role | security, access-control |
 | `BSL247` | `SetPrivilegedMode` | Yes | WARNING | Использование привилегированного режима | Using privileged mode | security |
 | `BSL248` | `SeveralCompilerDirectives` | Yes | ERROR | Ошибочное указание нескольких директив компиляции | Erroneous indication of several compilation directives | correctness, directive |
 | `BSL249` | `StyleElementConstructors` | Yes | ERROR | Конструктор элемента стиля | Style element constructor | ui, design |
 | `BSL250` | `TempFilesDir` | Yes | WARNING | Вызов функции КаталогВременныхФайлов() | TempFilesDir() method call | standard, badpractice |
 | `BSL251` | `TernaryOperatorUsage` | No | INFORMATION | Использование тернарного оператора | Ternary operator usage | style, readability |
 | `BSL252` | `ThisObjectAssign` | Yes | ERROR | Присвоение значения свойству ЭтотОбъект | ThisObject assign | correctness, suspicious |
-| `BSL253` | `TimeoutsInExternalResources` | No | WARNING | Таймауты при работе с внешними ресурсами | Timeouts working with external resources | robustness, performance |
+| `BSL253` | `TimeoutsInExternalResources` | Yes | WARNING | Таймауты при работе с внешними ресурсами | Timeouts working with external resources | robustness, performance |
 | `BSL254` | `TransferringParametersBetweenClientAndServer` | Yes | WARNING | Передача параметров между клиентом и сервером | Transferring parameters between the client and the server | performance, design |
 | `BSL255` | `TryNumber` | Yes | WARNING | Приведение к числу в попытке | Cast to number of try catch block | error-handling, suspicious |
 | `BSL256` | `Typo` | Yes | INFORMATION | Опечатка | Typo | convention |
@@ -181,7 +181,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL258` | `UnionAll` | Yes | WARNING | Использование ключевого слова "ОБЪЕДИНИТЬ" в запросах | Using keyword "UNION" in queries | query, performance |
 | `BSL259` | `UnknownPreprocessorSymbol` | Yes | WARNING | Неизвестный символ препроцессора | Unknown preprocessor symbol | correctness, directive |
 | `BSL260` | `UnsafeFindByCode` | No | WARNING | Небезопасное использование метода НайтиПоКоду() | Unsafe FindByCode() method usage | correctness, robustness |
-| `BSL261` | `UnsafeSafeModeMethodCall` | No | WARNING | Небезопасное использование функции БезопасныйРежим() | Unsafe SafeMode method call | security, correctness |
+| `BSL261` | `UnsafeSafeModeMethodCall` | Yes | WARNING | Небезопасное использование функции БезопасныйРежим() | Unsafe SafeMode method call | security, correctness |
 | `BSL262` | `UsageWriteLogEvent` | Yes | INFORMATION | Неверное использование метода "ЗаписьЖурналаРегистрации" | Incorrect use of the method "WriteLogEvent" | standard, badpractice |
 | `BSL263` | `UseLessForEach` | Yes | WARNING | Бесполезный перебор коллекции | Useless collection iteration | redundant, suspicious |
 | `BSL264` | `UseSystemInformation` | No | WARNING | Использование системной информации | Use of system information | security |
@@ -193,7 +193,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL271` | `UsingObjectNotAvailableUnix` | Yes | WARNING | Использование объектов недоступных в Unix системах | Using unavailable in Unix objects | compatibility |
 | `BSL272` | `UsingSynchronousCalls` | Yes | WARNING | Использование синхронных вызовов | Using synchronous calls | performance, ui |
 | `BSL273` | `VirtualTableCallWithoutParameters` | Yes | WARNING | Обращение к виртуальной таблице без параметров | Virtual table call without parameters | query, performance |
-| `BSL274` | `WrongDataPathForFormElements` | No | ERROR | У полей формы не указан путь к данным | Form fields do not have a data path | correctness, ui |
+| `BSL274` | `WrongDataPathForFormElements` | Yes | ERROR | У полей формы не указан путь к данным | Form fields do not have a data path | correctness, ui |
 | `BSL275` | `WrongHttpServiceHandler` | Yes | ERROR | Неверно задан обработчик метода http-сервиса | Missing handler for http service | correctness, http |
 | `BSL276` | `WrongUseFunctionProceedWithCall` | Yes | ERROR | Некорректное использование функции ПродолжитьВызов() | Wrong use of ProceedWithCall function | correctness, extensions |
 | `BSL277` | `WrongUseOfRollbackTransactionMethod` | Yes | ERROR | Некорректное использование метода ОтменитьТранзакцию() | Not recommended using of RollbackTransaction method | transaction, error-handling |

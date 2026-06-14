@@ -81,23 +81,14 @@ class DiagnosticEngine:
             "BSL187",
             "BSL188",
             "BSL189",
-            "BSL196",
             "BSL203",
             "BSL211",
-            "BSL213",
-            "BSL214",
-            "BSL231",
             "BSL232",
             "BSL241",
             "BSL242",
-            "BSL244",
-            "BSL246",
             "BSL251",
-            "BSL253",
             "BSL260",
-            "BSL261",
             "BSL264",
-            "BSL274",
         }
     )
 
