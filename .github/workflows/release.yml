@@ -198,6 +198,8 @@ jobs:
 
       - name: Build wheel and sdist
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          export SETUPTOOLS_SCM_PRETEND_VERSION="$VERSION"
           pip install build twine
           pip install setuptools-scm
           python scripts/sync_version.py --runtime-only
