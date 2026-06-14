@@ -1528,9 +1528,9 @@ class TestTailParityBatches:
             select={"BSL187", "BSL236", "BSL238", "BSL244", "BSL261"}
         ).check_file(str(path))
         assert {"BSL236", "BSL238", "BSL244", "BSL261"} <= set(_codes(diags))
-        assert "BSL187" not in _codes(diags)
+        assert _codes(diags).count("BSL187") == 1
 
-    def test_bsl187_skips_without_sdbl_tree(self, tmp_path: Path) -> None:
+    def test_bsl187_reports_left_join_field_without_isnull(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(
@@ -1551,7 +1551,75 @@ class TestTailParityBatches:
 
         diags = DiagnosticEngine(select={"BSL187"}).check_file(str(path))
 
+        bsl187 = [diag for diag in diags if diag.code == "BSL187"]
+        assert len(bsl187) == 1
+        assert bsl187[0].line == 4
+
+    def test_bsl187_skips_field_inside_isnull(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  ЕСТЬNULL(Левое.Тест, 0) КАК Поле
+            |ИЗ Справочник.Тест КАК Основание
+            |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Левое
+            |    ПО Основание.Ссылка = Левое.Ссылка";
+        """
+
+        diags = _check(content, tmp_path, select={"BSL187"})
+
         assert "BSL187" not in _codes(diags)
+
+    def test_bsl187_skips_alias_checked_not_null_in_where(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  Левое.Тест КАК Поле
+            |ИЗ Справочник.Тест КАК Основание
+            |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Левое
+            |    ПО Основание.Ссылка = Левое.Ссылка
+            |ГДЕ Левое.Ссылка ЕСТЬ НЕ NULL";
+        """
+
+        diags = _check(content, tmp_path, select={"BSL187"})
+
+        assert "BSL187" not in _codes(diags)
+
+    def test_bsl187_skips_invalid_sdbl_tree(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  Левое.Тест КАК Поле
+            |ИЗ Справочник.Тест КАК Основание
+            |    ЛЕВОЕ СОЕДИНЕНИЕ
+            |    ПО Истина";
+        """
+
+        diags = _check(content, tmp_path, select={"BSL187"})
+
+        assert "BSL187" not in _codes(diags)
+
+    def test_bsl187_reports_right_and_full_join_nullable_sides(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  Основание.Тест КАК Поле1,
+            |  Правое.Тест КАК Поле2
+            |ИЗ Справочник.Тест КАК Основание
+            |    ПРАВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Правое
+            |    ПО Основание.Ссылка = Правое.Ссылка";
+
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  ПолноеЛевое.Тест КАК Поле2,
+            |  ПолноеПравое.Тест КАК Поле3
+            |ИЗ Справочник.Тест КАК ПолноеЛевое
+            |    ПОЛНОЕ СОЕДИНЕНИЕ Справочник.Тест КАК ПолноеПравое
+            |    ПО ПолноеЛевое.Ссылка = ПолноеПравое.Ссылка";
+        """
+
+        diags = [diag for diag in _check(content, tmp_path, select={"BSL187"}) if diag.code == "BSL187"]
+
+        assert [(diag.line, diag.character) for diag in diags] == [(3, 3), (11, 3), (12, 3)]
 
     def test_bsl236_uses_full_metadata_source_name(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"

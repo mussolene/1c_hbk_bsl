@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from onec_hbk_bsl.analysis.sdbl_cst import nullable_join_field_uses_without_isnull
+
 _QUERY_METADATA_ROOTS: frozenset[str] = frozenset(
     {
         "бизнеспроцесс",
@@ -125,6 +127,40 @@ def _missing_metadata_name(
     return ".".join(parts[:2])
 
 
+def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
+    tree = getattr(block, "sdbl_tree", None)
+    root = getattr(tree, "root_node", None)
+    if root is None or getattr(block, "sdbl_has_errors", False):
+        return []
+
+    _diag = _diag_module()
+    diags: list[Any] = []
+    seen: set[tuple[int, str]] = set()
+    for usage in nullable_join_field_uses_without_isnull(root):
+        node = usage.node
+        key = (getattr(usage.scope_node, "id", 0), usage.alias.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        start_line, start_char = block.original_lsp_position(
+            node.start_point[0], node.start_point[1]
+        )
+        end_line, end_char = block.original_lsp_position(node.end_point[0], node.end_point[1])
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line + 1,
+                character=start_char,
+                end_line=end_line + 1,
+                end_character=end_char,
+                severity=_diag.Severity.ERROR,
+                code="BSL187",
+                message="Поля из внешнего соединения должны использоваться с ЕСТЬNULL/ISNULL",
+            )
+        )
+    return diags
+
+
 def run_bsl174_187_236_238_query_metadata_pool(
     path: str,
     lines: list[str],
@@ -173,11 +209,9 @@ def run_bsl174_187_236_238_query_metadata_pool(
         ]
     else:
         all_query_lines = [_diag._query_block_content_line_tuples(block) for block in query_blocks]
-    if "BSL187" in enabled_set:
-        # BSL187 needs a dedicated SDBL CST implementation. The previous
-        # line-regex approximation produced broad noise and is intentionally
-        # disabled until the AST path is implemented.
-        enabled_set.remove("BSL187")
+    if "BSL187" in enabled_set and query_blocks is not None:
+        for block in query_blocks:
+            diags.extend(_run_bsl187_on_sdbl_tree(path, block))
 
     temp_table_names: set[str] = set()
     if "BSL236" in enabled_set:
@@ -189,9 +223,7 @@ def run_bsl174_187_236_238_query_metadata_pool(
     for query_lines in all_query_lines:
         if not query_lines:
             continue
-        query_text = "\n".join(head for _ln, _base, _content, head, _end in query_lines)
         bsl236_pending_from = False
-        left_join_aliases: set[str] = set()
         simple_table_aliases: set[str] = set()
         tabular_section_aliases: set[str] = set()
         prepass_in_from = False
@@ -318,35 +350,6 @@ def run_bsl174_187_236_238_query_metadata_pool(
                             message='Избавьтесь от получения поля "Ссылка" в запросе.',
                         )
                     )
-            if "BSL187" in enabled_set:
-                for join_match in re.finditer(
-                    r"\b(?:ЛЕВОЕ\s+СОЕДИНЕНИЕ|LEFT\s+JOIN)\b.*?\b(?:КАК|AS)\s+([A-Za-zА-Яа-яЁё_]\w*)",
-                    head,
-                    re.IGNORECASE,
-                ):
-                    left_join_aliases.add(join_match.group(1).casefold())
-        if "BSL187" in enabled_set and left_join_aliases:
-            has_isnull = re.search(r"\b(?:ЕСТЬNULL|ISNULL)\s*\(", query_text, re.IGNORECASE)
-            if not has_isnull:
-                for line_no, content_base, _content, head, _ended in query_lines:
-                    for alias in left_join_aliases:
-                        match = re.search(rf"\b{re.escape(alias)}\.\w+", head, re.IGNORECASE)
-                        if match is None:
-                            continue
-                        col = content_base + match.start()
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=col,
-                                end_line=line_no,
-                                end_character=col + len(match.group(0)),
-                                severity=_diag.Severity.ERROR,
-                                code="BSL187",
-                                message="Поля из внешнего соединения должны использоваться с ЕСТЬNULL/ISNULL",
-                            )
-                        )
-                        break
     return diags
 
 
