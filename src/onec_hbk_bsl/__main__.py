@@ -521,10 +521,15 @@ Examples:
         help="Indent with spaces instead of tabs",
     )
 
-    subparsers.add_parser(
+    lsp_parser = subparsers.add_parser(
         "lsp",
         parents=[log_parent],
         help="Start LSP server on stdio",
+    )
+    lsp_parser.add_argument(
+        "--stdio",
+        action="store_true",
+        help="Accepted for VS Code language client compatibility; LSP always uses stdio",
     )
 
     mcp_parser = subparsers.add_parser(

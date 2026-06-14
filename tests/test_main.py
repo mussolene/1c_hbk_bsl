@@ -388,6 +388,7 @@ class TestMainCompatibilityAliases:
             (["--check", "."], ["check", "."]),
             (["--lsp"], ["lsp"]),
             (["--mcp", "--stdio"], ["mcp", "--stdio"]),
+            (["--lsp", "--stdio"], ["lsp", "--stdio"]),
             (["--index", ".", "--force"], ["index", ".", "--force"]),
             (["--list-rules"], ["rules"]),
             (["--init"], ["init"]),
@@ -411,6 +412,24 @@ class TestMainCompatibilityAliases:
     def test_legacy_rules_alias_still_runs(self) -> None:
         with patch("sys.argv", ["onec-hbk-bsl", "--list-rules", "--tag", "security"]):
             main()
+
+    def test_lsp_stdio_flag_is_accepted_for_language_client_compatibility(self) -> None:
+        with (
+            patch("sys.argv", ["onec-hbk-bsl", "lsp", "--stdio"]),
+            patch("onec_hbk_bsl.__main__._run_lsp") as run_lsp,
+        ):
+            main()
+
+        run_lsp.assert_called_once_with("warning")
+
+    def test_legacy_lsp_alias_accepts_stdio_flag(self) -> None:
+        with (
+            patch("sys.argv", ["onec-hbk-bsl", "--lsp", "--stdio"]),
+            patch("onec_hbk_bsl.__main__._run_lsp") as run_lsp,
+        ):
+            main()
+
+        run_lsp.assert_called_once_with("warning")
 
     def test_legacy_init_alias_still_runs(self, tmp_path: Path) -> None:
         with patch("sys.argv", ["onec-hbk-bsl", "--init"]):
