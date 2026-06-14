@@ -63,6 +63,14 @@ _QUERY_METADATA_TYPE_REF_RE = re.compile(
     rf"(({_QUERY_METADATA_ROOT_PATTERN})\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)\s*\)",
     re.IGNORECASE,
 )
+_BSL174_REGISTER_FOLDERS: frozenset[str] = frozenset(
+    {
+        "InformationRegisters",
+        "AccumulationRegisters",
+        "AccountingRegisters",
+        "CalculationRegisters",
+    }
+)
 
 
 def _bsl242_proc_body_is_empty(lines: list[str], proc: Any) -> bool:
@@ -133,7 +141,12 @@ def run_bsl174_187_236_238_query_metadata_pool(
         meta_names = set(_diag._workspace_metadata_name_index_cached(root))
 
     object_xml = _diag._current_object_xml_path(path)
-    if "BSL174" in enabled_set and object_xml is not None:
+    object_context = _diag._current_module_xml_context(path)
+    if (
+        "BSL174" in enabled_set
+        and object_xml is not None
+        and object_context.get("folder") in _BSL174_REGISTER_FOLDERS
+    ):
         xml_text = _diag._read_text_cached(str(object_xml))
         for match in _diag._RE_XML_DIMENSION_BLOCK.finditer(xml_text):
             if match.group(2).lower() == "false":

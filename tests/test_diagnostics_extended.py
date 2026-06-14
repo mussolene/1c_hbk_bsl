@@ -1237,6 +1237,38 @@ class TestTailParityBatches:
         diags_app = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags_app)
 
+    def test_deny_incomplete_values_skips_non_register_metadata(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        obj_dir = root / "Catalogs" / "Номенклатура"
+        (obj_dir / "Ext").mkdir(parents=True)
+        (root / "Catalogs" / "Номенклатура.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                    <Catalog>
+                        <ChildObjects>
+                            <Dimension>
+                                <Properties>
+                                    <Name>Измерение</Name>
+                                    <DenyIncompleteValues>false</DenyIncompleteValues>
+                                </Properties>
+                            </Dimension>
+                        </ChildObjects>
+                    </Catalog>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module = obj_dir / "Ext" / "ManagerModule.bsl"
+        module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL174"}).check_file(str(module))
+
+        assert "BSL174" not in _codes(diags)
+
     def test_bsl189_reports_storage_attribute_but_skips_tabular_section_attribute(
         self, tmp_path: Path
     ) -> None:
