@@ -43,10 +43,11 @@ def test_server_side_export_form_method_is_not_bslls_default_disabled() -> None:
     assert DiagnosticEngine()._rule_enabled("BSL245")
 
 
-def test_high_value_zero_noise_rules_are_default_enabled() -> None:
+def test_high_value_rules_are_default_enabled() -> None:
     for code in (
         "BSL189",
         "BSL196",
+        "BSL203",
         "BSL213",
         "BSL214",
         "BSL231",
@@ -54,9 +55,18 @@ def test_high_value_zero_noise_rules_are_default_enabled() -> None:
         "BSL246",
         "BSL253",
         "BSL261",
+        "BSL264",
         "BSL274",
     ):
         assert DiagnosticEngine()._rule_enabled(code)
+
+
+def test_product_default_enabled_rules_do_not_leak_into_explicit_select() -> None:
+    engine = DiagnosticEngine(select={"BSL014"})
+
+    assert engine._rule_enabled("BSL014")
+    assert not engine._rule_enabled("BSL203")
+    assert not engine._rule_enabled("BSL264")
 
 
 def test_local_only_rules_are_not_public_or_selectable() -> None:

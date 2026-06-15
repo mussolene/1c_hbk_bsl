@@ -64,7 +64,7 @@ class TestBslLanguageServerInit:
         ls = BslLanguageServer()
         assert isinstance(ls.diagnostics_engine, DiagnosticEngine)
 
-    def test_server_defaults_diagnostics_to_bslls_rule_set(
+    def test_server_defaults_diagnostics_to_product_rule_set(
         self, tmp_path: Path, monkeypatch: object
     ) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
@@ -77,9 +77,12 @@ class TestBslLanguageServerInit:
             _BSLLS_NAME_TO_CODE,
             default_disabled_codes=ls.diagnostics_engine.DEFAULT_DISABLED,
         )
+        expected = set(expected) | set(ls.diagnostics_engine.PRODUCT_DEFAULT_ENABLED)
         assert ls.diagnostics_engine._select == set(expected)
         assert "BSL156" in ls.diagnostics_engine._select
         assert "BSL236" in ls.diagnostics_engine._select
+        assert "BSL203" in ls.diagnostics_engine._select
+        assert "BSL264" in ls.diagnostics_engine._select
 
     def test_server_has_empty_docs_cache(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))

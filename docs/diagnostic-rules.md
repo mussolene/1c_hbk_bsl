@@ -123,7 +123,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL200` | `IncorrectLineBreak` | Yes | INFORMATION | Неправильный перенос выражения | Incorrect expression line break | style, convention |
 | `BSL201` | `IncorrectUseLikeInQuery` | Yes | WARNING | Некорректное использование 'ПОДОБНО' | Incorrect use of 'LIKE' | query, correctness |
 | `BSL202` | `IncorrectUseOfStrTemplate` | Yes | ERROR | Неверное использование "СтрШаблон" | Incorrect use of "StrTemplate" | correctness |
-| `BSL203` | `InternetAccess` | No | WARNING | Обращение к Интернет-ресурсам | Referring to Internet resources | security |
+| `BSL203` | `InternetAccess` | Yes | WARNING | Обращение к Интернет-ресурсам | Referring to Internet resources | security |
 | `BSL204` | `InvalidCharacterInFile` | Yes | WARNING | Недопустимый символ | Invalid character | correctness, encoding |
 | `BSL205` | `IsInRoleMethod` | Yes | WARNING | Использование метода РольДоступна | IsInRole global method call | security, access-control |
 | `BSL206` | `JoinWithSubQuery` | Yes | WARNING | Соединение с вложенными запросами | Join with sub queries | query, performance |
@@ -184,7 +184,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL261` | `UnsafeSafeModeMethodCall` | Yes | WARNING | Небезопасное использование функции БезопасныйРежим() | Unsafe SafeMode method call | security, correctness |
 | `BSL262` | `UsageWriteLogEvent` | Yes | INFORMATION | Неверное использование метода "ЗаписьЖурналаРегистрации" | Incorrect use of the method "WriteLogEvent" | standard, badpractice |
 | `BSL263` | `UseLessForEach` | Yes | WARNING | Бесполезный перебор коллекции | Useless collection iteration | redundant, suspicious |
-| `BSL264` | `UseSystemInformation` | No | WARNING | Использование системной информации | Use of system information | security |
+| `BSL264` | `UseSystemInformation` | Yes | WARNING | Использование системной информации | Use of system information | security |
 | `BSL265` | `UselessTernaryOperator` | Yes | INFORMATION | Бесполезный тернарный оператор | Useless ternary operator | redundant, readability |
 | `BSL266` | `UsingCancelParameter` | Yes | WARNING | Работа с параметром "Отказ" | Using parameter "Cancel" | correctness, events |
 | `BSL267` | `UsingExternalCodeTools` | Yes | ERROR | Использование возможностей выполнения внешнего кода | Using external code tools | standard, design |

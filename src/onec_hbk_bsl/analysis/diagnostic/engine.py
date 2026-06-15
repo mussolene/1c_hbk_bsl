@@ -79,14 +79,13 @@ class DiagnosticEngine:
             "BSL182",
             "BSL187",
             "BSL188",
-            "BSL203",
             "BSL211",
             "BSL232",
             "BSL241",
             "BSL251",
-            "BSL264",
         }
     )
+    PRODUCT_DEFAULT_ENABLED: frozenset[str] = frozenset({"BSL203", "BSL264"})
 
     # Default thresholds (class-level — can override in __init__)
     MAX_PROC_LINES: int = 200
@@ -135,6 +134,8 @@ class DiagnosticEngine:
             _BSLLS_NAME_TO_CODE,
             default_disabled_codes=self.DEFAULT_DISABLED,
         )
+        if _user_select is None:
+            self._select |= self.PRODUCT_DEFAULT_ENABLED
         # Instrumentation for benchmarks/debug: per-thread (free-threading safe).
         self._metrics_tls = threading.local()
         self._current_snapshot: Any | None = None
