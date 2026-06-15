@@ -158,7 +158,9 @@ def _null_checked_aliases(where_clause: Any | None, nullable_aliases: set[str]) 
         return set()
     checked: set[str] = set()
     for null_check in iter_nodes(where_clause, "null_check_expression"):
-        is_not_null = _has_not_keyword(null_check) or _is_negated_by_parent(null_check, where_clause)
+        is_not_null = _has_not_keyword(null_check) or _is_negated_by_parent(
+            null_check, where_clause
+        )
         if not is_not_null:
             continue
         for dotted in iter_nodes(null_check, "dotted_identifier"):
@@ -208,5 +210,7 @@ def nullable_join_field_uses_without_isnull(root: Any) -> list[NullableJoinField
                     continue
                 if is_inside_isnull_function(dotted) or is_inside_is_null_predicate(dotted):
                     continue
-                result.append(NullableJoinFieldUse(node=dotted, alias=parts[0], scope_node=select_section))
+                result.append(
+                    NullableJoinFieldUse(node=dotted, alias=parts[0], scope_node=select_section)
+                )
     return result

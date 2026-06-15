@@ -1619,7 +1619,9 @@ class TestTailParityBatches:
             |    ПО ПолноеЛевое.Ссылка = ПолноеПравое.Ссылка";
         """
 
-        diags = [diag for diag in _check(content, tmp_path, select={"BSL187"}) if diag.code == "BSL187"]
+        diags = [
+            diag for diag in _check(content, tmp_path, select={"BSL187"}) if diag.code == "BSL187"
+        ]
 
         assert [(diag.line, diag.character) for diag in diags] == [(3, 3), (11, 3), (12, 3)]
 
@@ -5328,7 +5330,11 @@ class TestBsl040UsingThisForm:
         plain.write_text("// ok\n", encoding="utf-8")
         assert not path_is_likely_form_module_bsl(str(plain))
         object_split = (
-            tmp_path / "DataProcessors" / "Foo" / "Ext" / "ФайлыИнформационнойБазы_ДоступноДобавление.bsl"
+            tmp_path
+            / "DataProcessors"
+            / "Foo"
+            / "Ext"
+            / "ФайлыИнформационнойБазы_ДоступноДобавление.bsl"
         )
         object_split.parent.mkdir(parents=True)
         object_split.write_text("// ok\n", encoding="utf-8")
