@@ -81,6 +81,8 @@ class TestBslLanguageServerInit:
         assert ls.diagnostics_engine._select == set(expected)
         assert "BSL156" in ls.diagnostics_engine._select
         assert "BSL236" in ls.diagnostics_engine._select
+        assert "BSL187" in ls.diagnostics_engine._select
+        assert "BSL188" in ls.diagnostics_engine._select
         assert "BSL203" in ls.diagnostics_engine._select
         assert "BSL264" in ls.diagnostics_engine._select
 

@@ -77,15 +77,13 @@ class DiagnosticEngine:
             "BSL170",
             "BSL174",
             "BSL182",
-            "BSL187",
-            "BSL188",
             "BSL211",
             "BSL232",
             "BSL241",
             "BSL251",
         }
     )
-    PRODUCT_DEFAULT_ENABLED: frozenset[str] = frozenset({"BSL203", "BSL264"})
+    PRODUCT_DEFAULT_ENABLED: frozenset[str] = frozenset({"BSL187", "BSL188", "BSL203", "BSL264"})
 
     # Default thresholds (class-level — can override in __init__)
     MAX_PROC_LINES: int = 200

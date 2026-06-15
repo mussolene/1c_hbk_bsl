@@ -107,8 +107,8 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL184` | `ExecuteExternalCodeInCommonModule` | Yes | WARNING | Выполнение произвольного кода в общем модуле на сервере | Executing of external code in a common module on the server | security, module |
 | `BSL185` | `ExternalAppStarting` | Yes | WARNING | Запуск внешних приложений | External applications starting | security |
 | `BSL186` | `ExtraCommas` | Yes | WARNING | Запятые без указания параметра в конце вызова метода | Commas without a parameter at the end of a method call | syntax, style |
-| `BSL187` | `FieldsFromJoinsWithoutIsNull` | No | WARNING | Отсутствие проверки на NULL для полей из присоединяемых таблиц | No NULL checks for fields from joined tables | query, correctness |
-| `BSL188` | `FileSystemAccess` | No | WARNING | Доступ к файловой системе | File system access | security, compatibility |
+| `BSL187` | `FieldsFromJoinsWithoutIsNull` | Yes | WARNING | Отсутствие проверки на NULL для полей из присоединяемых таблиц | No NULL checks for fields from joined tables | query, correctness |
+| `BSL188` | `FileSystemAccess` | Yes | WARNING | Доступ к файловой системе | File system access | security, compatibility |
 | `BSL189` | `ForbiddenMetadataName` | Yes | WARNING | Объекту метаданных присвоено запрещенное имя | Metadata object has a forbidden name | naming, convention |
 | `BSL190` | `FormDataToValue` | Yes | WARNING | Использование метода ДанныеФормыВЗначение | FormDataToValue method call | performance, ui |
 | `BSL191` | `FullOuterJoinQuery` | Yes | WARNING | Использование конструкции "ПОЛНОЕ ВНЕШНЕЕ СОЕДИНЕНИЕ" в запросах | Using of "FULL OUTER JOIN" in queries | query, design |

@@ -45,6 +45,8 @@ def test_server_side_export_form_method_is_not_bslls_default_disabled() -> None:
 
 def test_high_value_rules_are_default_enabled() -> None:
     for code in (
+        "BSL187",
+        "BSL188",
         "BSL189",
         "BSL196",
         "BSL203",
@@ -65,6 +67,8 @@ def test_product_default_enabled_rules_do_not_leak_into_explicit_select() -> Non
     engine = DiagnosticEngine(select={"BSL014"})
 
     assert engine._rule_enabled("BSL014")
+    assert not engine._rule_enabled("BSL187")
+    assert not engine._rule_enabled("BSL188")
     assert not engine._rule_enabled("BSL203")
     assert not engine._rule_enabled("BSL264")
 
