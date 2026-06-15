@@ -72,7 +72,8 @@ jobs:
       - name: Smoke test binary
         run: |
           ./dist/onec-hbk-bsl --version | tee version.txt
-          grep -F "onec-hbk-bsl $(python -m setuptools_scm)" version.txt
+          expected="$(python -c 'from onec_hbk_bsl._version import __version__; print(f"onec-hbk-bsl {__version__}")')"
+          grep -F "$expected" version.txt
           ./dist/onec-hbk-bsl --help | head -n 5
 
   lint-ts:
