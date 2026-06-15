@@ -631,11 +631,19 @@ def _path_is_likely_form_module_bsl(path: str) -> bool:
         p = Path(path).resolve()
     except OSError:
         return False
-    stem = p.stem.lower()
-    if "форма" in stem or stem.endswith("form"):
-        return True
     parts = [x.lower() for x in p.parts]
-    return p.name.lower() == "module.bsl" and ("forms" in parts or "формы" in parts)
+    if p.suffix.lower() != ".bsl":
+        return False
+    form_indexes = [idx for idx, part in enumerate(parts) if part in {"forms", "формы"}]
+    if not any("ext" in parts[idx + 1 :] for idx in form_indexes):
+        return False
+    if p.name.lower() == "module.bsl":
+        return True
+    try:
+        lower_siblings = {sibling.name.lower() for sibling in p.parent.iterdir()}
+    except OSError:
+        return False
+    return bool({"module.bsl", "module.header", "form.xml", "form.prettydata"} & lower_siblings)
 
 
 def _is_standard_region_name_for_path(path: str, region_name: str) -> bool:

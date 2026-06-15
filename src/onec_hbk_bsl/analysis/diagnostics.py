@@ -2417,20 +2417,26 @@ _RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
 def path_is_likely_form_module_bsl(path: str) -> bool:
     """
-    True for EDT-style ``.../Forms/.../Ext/Module.bsl`` or file stems containing
-    ``форма`` / ending with ``form`` (модули форм — ``ЭтаФорма`` допустима).
+    True for EDT-style form modules and HBK split fragments below
+    ``.../Forms/<form>/Ext/...``.
     """
     try:
         p = Path(path).resolve()
     except OSError:
         return False
-    stem = p.stem.lower()
-    if "форма" in stem or stem.endswith("form"):
-        return True
     parts = [x.lower() for x in p.parts]
-    if p.name.lower() == "module.bsl" and ("forms" in parts or "формы" in parts):
+    if p.suffix.lower() != ".bsl":
+        return False
+    form_indexes = [idx for idx, part in enumerate(parts) if part in {"forms", "формы"}]
+    if not any("ext" in parts[idx + 1 :] for idx in form_indexes):
+        return False
+    if p.name.lower() == "module.bsl":
         return True
-    return False
+    try:
+        lower_siblings = {sibling.name.lower() for sibling in p.parent.iterdir()}
+    except OSError:
+        return False
+    return bool({"module.bsl", "module.header", "form.xml", "form.prettydata"} & lower_siblings)
 
 
 def _redundant_access_prefix_patterns(path: str) -> list[re.Pattern[str]]:

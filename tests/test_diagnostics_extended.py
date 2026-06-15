@@ -5317,10 +5317,20 @@ class TestBsl040UsingThisForm:
         mod.parent.mkdir(parents=True)
         mod.write_text("// ok\n", encoding="utf-8")
         assert path_is_likely_form_module_bsl(str(mod))
+        split_form = tmp_path / "Forms" / "SomeForm" / "Ext" / "Команда.bsl"
+        split_form.write_text("// ok\n", encoding="utf-8")
+        (split_form.parent / "module.header").write_text("// ok\n", encoding="utf-8")
+        assert path_is_likely_form_module_bsl(str(split_form))
         plain = tmp_path / "CommonModules" / "Foo" / "Ext" / "Module.bsl"
         plain.parent.mkdir(parents=True)
         plain.write_text("// ok\n", encoding="utf-8")
         assert not path_is_likely_form_module_bsl(str(plain))
+        object_split = (
+            tmp_path / "DataProcessors" / "Foo" / "Ext" / "ФайлыИнформационнойБазы_ДоступноДобавление.bsl"
+        )
+        object_split.parent.mkdir(parents=True)
+        object_split.write_text("// ok\n", encoding="utf-8")
+        assert not path_is_likely_form_module_bsl(str(object_split))
 
 
 # ---------------------------------------------------------------------------
@@ -6349,6 +6359,24 @@ class TestBsl245ServerSideExportFormMethod:
             КонецПроцедуры
         """
         path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert "BSL245" not in _codes(diags)
+
+    def test_object_module_split_with_form_substring_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Функция ФайлыИнформационнойБазы_ДоступноДобавление() Экспорт
+                Возврат Истина;
+            КонецФункции
+        """
+        path = (
+            tmp_path
+            / "DataProcessors"
+            / "ТестЭДО"
+            / "Ext"
+            / "ФайлыИнформационнойБазы_ДоступноДобавление.bsl"
+        )
         path.parent.mkdir(parents=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
