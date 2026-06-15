@@ -312,6 +312,14 @@ jobs:
           env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm ci
           unset npm_config_devdir NPM_CONFIG_DEVDIR
           for vsix in ../artifacts/vsix-*/*.vsix; do
-            echo "Publishing $vsix"
-            npx @vscode/vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
+            for attempt in 1 2 3; do
+              echo "Publishing $vsix (attempt $attempt/3)"
+              if npx @vscode/vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"; then
+                break
+              fi
+              if [[ "$attempt" == "3" ]]; then
+                exit 1
+              fi
+              sleep $((attempt * 30))
+            done
           done
