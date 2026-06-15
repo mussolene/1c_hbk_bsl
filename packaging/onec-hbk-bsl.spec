@@ -30,9 +30,14 @@ datas += copy_metadata("mcp")
 datas += copy_metadata("onec-hbk-bsl-core")
 # Typo parity uses importlib.resources against this package at runtime.
 datas += collect_data_files("onec_hbk_bsl.bslls_typo_data")
-# pyspellchecker loads bundled resources/*.json.gz at runtime via pkgutil.get_data.
+# BSL256 uses SpellChecker(language="ru"); keep only that dictionary in the bundle.
 SPELLCHECKER_ROOT = Path(spellchecker.__file__).resolve().parent
-datas += [(str(SPELLCHECKER_ROOT / "resources"), "spellchecker/resources")]
+datas += [
+    (
+        str(SPELLCHECKER_ROOT / "resources" / "ru.json.gz"),
+        "spellchecker/resources",
+    )
+]
 
 binaries: list = []
 
@@ -62,7 +67,6 @@ excludes = [
     "pandas",
     "IPython",
     "cryptography",
-    "pygments",
 ]
 
 block_cipher = None
