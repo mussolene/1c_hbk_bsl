@@ -551,6 +551,7 @@ class TestSecurityApiParityBatch:
                 Ф = Новый Файл("a.txt");
                 Данные = Новый("ДвоичныеДанные", "a.txt");
                 Каталог = КаталогВременныхФайлов();
+                КопироватьФайл("a.txt", "b.txt");
                 Объект.КаталогВременныхФайлов();
                 Текст = "Новый Файл(""a.txt"")";
                 // УдалитьФайлы("a.txt");
@@ -561,6 +562,7 @@ class TestSecurityApiParityBatch:
             (2, 8, "WARNING"),
             (3, 13, "WARNING"),
             (4, 14, "WARNING"),
+            (5, 4, "WARNING"),
         ]
 
     def test_bsl203_internet_access_uses_cst_constructors(self, tmp_path: Path) -> None:

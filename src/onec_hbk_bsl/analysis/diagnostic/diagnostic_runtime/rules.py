@@ -2690,7 +2690,8 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
             ]
         out: list[dict[str, Any]] = []
         for node in method_call_nodes:
-            if getattr(getattr(node, "parent", None), "type", None) != "expression":
+            parent_type = getattr(getattr(node, "parent", None), "type", None)
+            if parent_type not in {"expression", "call_statement"}:
                 continue
             ident = next(
                 (
