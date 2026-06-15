@@ -110,6 +110,18 @@ class TestBslParserExtractErrors:
         tree = parser.parse_content(code)
         assert parser.extract_errors(tree) == []
 
+    @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-bsl required")
+    def test_no_false_positive_property_access_after_ternary_expression(self) -> None:
+        """BSL allows postfix property access on ``?(...)`` expression results."""
+        parser = BslParser()
+        code = """\
+Процедура Тест()
+\tСообщение.ИдентификаторНазначения = ?(ФормаВывода = Неопределено, ЭтаФорма, ФормаВывода).УникальныйИдентификатор;
+КонецПроцедуры
+"""
+        tree = parser.parse_content(code)
+        assert parser.extract_errors(tree) == []
+
 
 class TestBslParserProcedureCount:
     def test_sample_bsl_has_procedures(self, sample_bsl_path: str) -> None:

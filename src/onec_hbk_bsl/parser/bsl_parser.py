@@ -234,6 +234,10 @@ class BslParser:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
+            if node.type in ("ERROR", "error") and self._is_property_after_ternary_error(node):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
             errors.append(
                 {
                     "line": node.start_point[0] + 1,
@@ -502,6 +506,32 @@ class BslParser:
                 re.IGNORECASE,
             )
         )
+
+    @classmethod
+    def _is_property_after_ternary_error(cls, node: Any) -> bool:
+        """tree-sitter-bsl rejects valid postfix access after ``?(...)`` expressions."""
+        text = node.text if isinstance(node.text, bytes) else b""
+        stripped = text.strip()
+        if not stripped.startswith(b"."):
+            return False
+        property_name = stripped[1:].decode("utf-8", errors="replace")
+        if not property_name or not property_name.isidentifier():
+            return False
+        parent = getattr(node, "parent", None)
+        if parent is None:
+            return False
+        children = list(parent.children)
+        idx = next((i for i, child in enumerate(children) if child.id == node.id), -1)
+        if idx <= 0:
+            return False
+        previous = children[idx - 1]
+        return cls._node_contains_type(previous, "ternary_expression")
+
+    @classmethod
+    def _node_contains_type(cls, node: Any, node_type: str) -> bool:
+        if getattr(node, "type", None) == node_type:
+            return True
+        return any(cls._node_contains_type(child, node_type) for child in node.children)
 
 
 # ---------------------------------------------------------------------------
