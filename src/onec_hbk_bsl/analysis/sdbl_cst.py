@@ -109,6 +109,14 @@ class NullableJoinFieldUse:
     scope_node: Any
 
 
+@dataclass(frozen=True)
+class SelectTopWithoutOrder:
+    node: Any
+    limit: str
+    query_has_union: bool
+    select_has_where: bool
+
+
 def _join_kind(join_node: Any) -> str:
     kind_node = first_named_child(join_node, "join_kind")
     if kind_node is None:
@@ -213,4 +221,56 @@ def nullable_join_field_uses_without_isnull(root: Any) -> list[NullableJoinField
                 result.append(
                     NullableJoinFieldUse(node=dotted, alias=parts[0], scope_node=select_section)
                 )
+    return result
+
+
+def _direct_child(node: Any, node_type: str) -> Any | None:
+    for child in getattr(node, "children", []) or []:
+        if getattr(child, "type", None) == node_type:
+            return child
+    return None
+
+
+def _same_node(left: Any | None, right: Any | None) -> bool:
+    if left is None or right is None:
+        return False
+    return getattr(left, "id", None) == getattr(right, "id", None)
+
+
+def _select_top_limit(top_clause: Any) -> str:
+    for child in getattr(top_clause, "children", []) or []:
+        text = node_text(child).strip()
+        if text.isdigit():
+            return text
+    return ""
+
+
+def select_top_without_order(root: Any) -> list[SelectTopWithoutOrder]:
+    """Return SDBL SELECT TOP/FIRST clauses whose query has no deterministic order."""
+
+    result: list[SelectTopWithoutOrder] = []
+    for query in iter_nodes(root, "query"):
+        has_union = _direct_child(query, "union_clause") is not None
+        has_order = _direct_child(query, "order_by_clause") is not None
+        if has_order and not has_union:
+            continue
+
+        for select_section in iter_nodes(query, "select_section"):
+            if not _same_node(ancestor(select_section, "query"), query):
+                continue
+            top_clause = _direct_child(select_section, "top_clause")
+            if top_clause is None:
+                continue
+            limit = _select_top_limit(top_clause)
+            has_where = _direct_child(select_section, "where_clause") is not None
+            if limit in {"0", "1"} and (not has_union or has_where):
+                continue
+            result.append(
+                SelectTopWithoutOrder(
+                    node=top_clause,
+                    limit=limit,
+                    query_has_union=has_union,
+                    select_has_where=has_where,
+                )
+            )
     return result

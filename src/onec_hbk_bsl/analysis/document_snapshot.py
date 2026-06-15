@@ -35,6 +35,7 @@ from onec_hbk_bsl.analysis.diagnostic.string_state import (
 )
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
 from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
+from onec_hbk_bsl.analysis.sdbl_cst import select_top_without_order
 from onec_hbk_bsl.analysis.semantic import SemanticModel, extract_semantic_model
 from onec_hbk_bsl.analysis.symbols import Symbol
 
@@ -2322,35 +2323,27 @@ class DocumentSnapshot:
 
         facts: list[LineDiagnosticFact] = []
         for block in self.query_text_blocks:
-            packages: list[list[QueryTextLineInfo]] = [[]]
-            for line in block.content_lines:
-                if line.head.strip() == ";":
-                    packages.append([])
-                    continue
-                packages[-1].append(line)
-
-            for package_lines in packages:
-                if not package_lines:
-                    continue
-                package_text = "\n".join(line.head for line in package_lines)
-                has_union = bool(_RE_QUERY_UNION.search(package_text))
-                if not has_union and _RE_QUERY_ORDER_BY.search(package_text):
-                    continue
-
-                for line in package_lines:
-                    for top_match in _RE_QUERY_TOP.finditer(line.head):
-                        top_limit = top_match.group(1)
-                        if not has_union and top_limit in {"0", "1"}:
-                            continue
-                        col = line.content_base + top_match.start()
-                        facts.append(
-                            LineDiagnosticFact(
-                                line_idx=line.line_no - 1,
-                                character=col,
-                                end_character=col + (top_match.end() - top_match.start()),
-                                message="Нужно изменить запрос, добавив упорядочивание",
-                            )
-                        )
+            root = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
+            if root is None or block.sdbl_has_errors:
+                continue
+            for top_fact in select_top_without_order(root):
+                start_line, start_char = block.original_lsp_position(
+                    top_fact.node.start_point[0],
+                    top_fact.node.start_point[1],
+                )
+                end_line, end_char = block.original_lsp_position(
+                    top_fact.node.end_point[0],
+                    top_fact.node.end_point[1],
+                )
+                facts.append(
+                    LineDiagnosticFact(
+                        line_idx=start_line,
+                        character=start_char,
+                        end_character=end_char,
+                        end_line_idx=end_line,
+                        message="Нужно изменить запрос, добавив упорядочивание",
+                    )
+                )
         self._select_top_without_order_facts = facts
         return facts
 

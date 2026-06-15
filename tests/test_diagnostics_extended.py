@@ -2058,6 +2058,64 @@ class TestTailParityBatches:
         diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
         assert [(d.line, d.character, d.end_character) for d in diags] == [(3, 28, 39)]
 
+    def test_bsl077_skips_ordered_top_into_query_with_temporary_table(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос = Новый Запрос;
+                Запрос.Текст = "ВЫБРАТЬ РАЗРЕШЕННЫЕ ПЕРВЫЕ 1
+                |  Источник.Ссылка КАК Документ,
+                |  Источник.ДатаСобытия
+                |ПОМЕСТИТЬ ВТ_ПоследнееСобытие
+                |ИЗ
+                |  Документ.ТестовыйДокумент.События КАК Источник
+                |ГДЕ
+                |  Источник.Ссылка = &СсылкаНаОбъект
+                |УПОРЯДОЧИТЬ ПО
+                |  ДатаСобытия УБЫВ;
+                |
+                |ВЫБРАТЬ
+                |  ВТ_ПоследнееСобытие.Документ
+                |ИЗ ВТ_ПоследнееСобытие КАК ВТ_ПоследнееСобытие";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
+        assert diags == []
+
+    def test_bsl077_reports_union_top_one_without_where(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос.Текст = "ВЫБРАТЬ ПЕРВЫЕ 1
+                |  Таблица.Ссылка
+                |ИЗ Справочник.Тест КАК Таблица
+                |
+                |ОБЪЕДИНИТЬ ВСЕ
+                |
+                |ВЫБРАТЬ
+                |  ДругаяТаблица.Ссылка
+                |ИЗ Справочник.ДругойТест КАК ДругаяТаблица";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(2, 28, 36)]
+
+    def test_bsl077_skips_union_top_one_with_where_like_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос.Текст = "ВЫБРАТЬ ПЕРВЫЕ 1
+                |  Таблица.Ссылка
+                |ИЗ Справочник.Тест КАК Таблица
+                |ГДЕ Таблица.Ссылка = &Ссылка
+                |
+                |ОБЪЕДИНИТЬ ВСЕ
+                |
+                |ВЫБРАТЬ
+                |  ДругаяТаблица.Ссылка
+                |ИЗ Справочник.ДругойТест КАК ДругаяТаблица";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
+        assert diags == []
+
     def test_bsl246_uses_cached_role_index_without_full_crawl(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
