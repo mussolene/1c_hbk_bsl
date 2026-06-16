@@ -29,7 +29,7 @@ Commands used (no matches in this repo):
 
 - `git log --all -S 'ghp_'`
 - `git log --all -S 'BEGIN OPENSSH PRIVATE KEY'`
-- `git log --all -S '/Users/'`
+- `git log --all -S '<local path marker>'`
 
 ## CI secrets
 

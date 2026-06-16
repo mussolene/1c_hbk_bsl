@@ -1,16 +1,16 @@
 # 1C HBK BSL для VS Code / Cursor
 
-Расширение подключает `onec-hbk-bsl` к редактору для проектов 1С:
-диагностики, навигация по BSL-коду, hover, completion, rename, formatting,
-semantic tokens и inlay hints.
+Расширение подключает `onec-hbk-bsl` к редактору и дает рабочий BSL-инструментарий
+без отдельной настройки сервера: диагностики, форматирование, навигацию,
+completion, hover, rename, semantic tokens и inlay hints.
 
 ## Быстрый Старт
 
 1. Установите расширение `mussolene.1c-hbk-bsl`.
-2. Откройте проект с `.bsl` / `.os`.
-3. Дождитесь запуска сервера: диагностики появятся в Problems.
+2. Откройте workspace с `.bsl` / `.os`.
+3. Дождитесь запуска сервера. Диагностики появятся в Problems.
 
-Рекомендуемые настройки:
+Рекомендуемые настройки workspace:
 
 ```json
 {
@@ -26,28 +26,36 @@ semantic tokens и inlay hints.
 
 ## Возможности
 
-| Возможность | Что делает |
+| Область | Что работает |
 |---|---|
-| Diagnostics | Показывает ошибки и предупреждения в Problems |
+| Diagnostics | Ошибки, предупреждения, `Problems`, quick fixes |
+| Formatting | Полный документ, range formatting, on-type indentation |
 | Navigation | Definition, references, workspace symbols, call hierarchy |
-| Editing | Formatting, on-type indentation, rename, quick fixes |
 | Assistance | Hover, completion, signature help, inlay hints |
-| Highlighting | TextMate grammar + semantic tokens |
+| Highlighting | TextMate grammar и semantic tokens |
 
-Сервер работает как отдельный исполняемый файл `onec-hbk-bsl`. Расширение может
-использовать бинарник из `PATH`, вложенный бинарник из VSIX или скачанный
-релизный бинарник.
+## Как Находится Сервер
+
+Расширение запускает исполняемый файл `onec-hbk-bsl`. Порядок поиска:
+
+1. `onecHbkBsl.serverPath`, если задан явный путь;
+2. бинарник, вложенный в VSIX;
+3. `onec-hbk-bsl` из системного `PATH`;
+4. ранее скачанный релизный бинарник в storage расширения;
+5. релизный бинарник для текущей платформы, если доступен.
+
+В большинстве случаев ничего настраивать не нужно.
 
 ## Настройки
 
 | Ключ | Назначение |
 |---|---|
-| `onecHbkBsl.serverPath` | Явный путь к `onec-hbk-bsl`; пусто/`onec-hbk-bsl` = искать автоматически |
-| `onecHbkBsl.indexDbPath` | Явный путь к SQLite-индексу |
+| `onecHbkBsl.serverPath` | Явный путь к `onec-hbk-bsl` |
+| `onecHbkBsl.indexDbPath` | Путь к SQLite-индексу |
 | `onecHbkBsl.logLevel` | Уровень логов сервера |
 | `onecHbkBsl.diagnostics.enabled` | Включить диагностики |
-| `onecHbkBsl.diagnostics.select` | Запускать только указанные правила (`BSL###` или BSLLS key) |
-| `onecHbkBsl.diagnostics.ignore` | Игнорировать указанные правила (`BSL###` или BSLLS key) |
+| `onecHbkBsl.diagnostics.select` | Запускать только указанные правила (`BSL###` или compatible key) |
+| `onecHbkBsl.diagnostics.ignore` | Игнорировать указанные правила (`BSL###` или compatible key) |
 | `onecHbkBsl.format.indentSize` | Логический размер отступа |
 | `onecHbkBsl.inlayHints.enabled` | Включить inlay hints |
 | `onecHbkBsl.semanticTokens.enabled` | Включить semantic tokens |
@@ -56,7 +64,8 @@ semantic tokens и inlay hints.
 
 ## Конфигурация Проекта
 
-Основной проектный конфиг сервера: `onec-hbk-bsl.toml`.
+Настройки расширения управляют редактором и запуском сервера. Настройки анализа
+лучше хранить в `onec-hbk-bsl.toml` в корне workspace:
 
 ```toml
 ignore = ["BSL012"]
@@ -66,12 +75,16 @@ exclude = ["vendor", "*.gen.bsl"]
 "legacy/*.bsl" = ["BSL002", "BSL011"]
 ```
 
-Настройки расширения управляют поведением редактора и запуском сервера.
-Настройки проекта управляют анализом кода.
+Справочник правил: [Diagnostic rules](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/diagnostic-rules.md).
 
-Идентификаторы правил принимаются в двух формах: стабильный код `BSL###`
-или совместимое имя BSLLS, например `LineLength`. Полный справочник правил:
-[`docs/diagnostic-rules.md`](../docs/diagnostic-rules.md).
+## Команды
+
+Command Palette:
+
+- `1C HBK BSL: Reindex Workspace`
+- `1C HBK BSL: Reindex Current File`
+- `1C HBK BSL: Show Index Status`
+- `1C HBK BSL: Show Server Log`
 
 ## Docker LSP
 
@@ -85,14 +98,14 @@ docker exec -i -e LOG_LEVEL=... <container> onec-hbk-bsl lsp
 открыт в редакторе. В контейнер также передаются `INDEX_DB_PATH`, `BSL_SELECT`
 и `BSL_IGNORE`, если они заданы.
 
-## Команды
+## Если Что-то Не Работает
 
-Command Palette:
-
-- `1C HBK BSL: Reindex Workspace`
-- `1C HBK BSL: Reindex Current File`
-- `1C HBK BSL: Show Index Status`
-- `1C HBK BSL: Show Server Log`
+- Проверьте `1C HBK BSL: Show Server Log`.
+- Если сервер не стартует, задайте `onecHbkBsl.serverPath` на установленный
+  `onec-hbk-bsl`.
+- Если диагностики не совпадают с ожиданием, проверьте `onec-hbk-bsl.toml`,
+  `onecHbkBsl.diagnostics.select` и `onecHbkBsl.diagnostics.ignore`.
+- После больших изменений в проекте запустите `1C HBK BSL: Reindex Workspace`.
 
 ## Репозиторий
 

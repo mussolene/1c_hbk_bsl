@@ -83,7 +83,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--output-dir",
-        default=".agent/reports/lsp-soak",
+        default=".tmp/reports/lsp-soak",
         help="Directory for JSONL samples and summary JSON.",
     )
     args = parser.parse_args()

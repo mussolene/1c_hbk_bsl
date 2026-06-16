@@ -39,23 +39,3 @@ python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 - throughput по файлам, строкам и мегабайтам
 
 Это именно исследовательский / development-only прогон, не тестовый fixture pipeline.
-
-## Внешние oracle-прогоны
-
-Java BSLLS не является частью продуктового Python-пакета и не запускается через
-`onec_hbk_bsl`. Если нужен разовый внешний oracle-прогон, запускайте BSLLS CLI
-напрямую из локально установленного JDK/exec.jar и сохраняйте результат как
-OACS evidence или обычный артефакт исследования.
-
-Пример формы команды:
-
-```bash
-java -jar /path/to/bsl-language-server-*-exec.jar analyze \
-  -s /path/to/1c/config \
-  -w /path/to/1c/config \
-  -o /tmp/bslls-report \
-  -r json -q
-```
-
-Сравнение с такими отчётами должно оставаться dev-only исследованием, а не
-публичной runtime-поверхностью пакета.

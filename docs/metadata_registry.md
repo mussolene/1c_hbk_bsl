@@ -23,4 +23,4 @@ The single source of truth is [`src/onec_hbk_bsl/indexer/metadata_registry.py`](
 
 ## Diagnostics
 
-The metadata index is available to BSLLS-compatible diagnostics that need configuration context.
+The metadata index is available to diagnostics that need configuration context.

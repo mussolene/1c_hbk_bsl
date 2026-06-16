@@ -18,6 +18,6 @@ Legal review cannot be automated. Before adding or updating data from internal o
 
 If any past commit accidentally contained confidential material, follow the incident response steps in [SECURITY_AUDIT.md](SECURITY_AUDIT.md) (rotation + optional history rewrite).
 
-## bsl-language-server (LGPL)
+## Diagnostic Alias Provenance
 
-The project may reference **diagnostic codes** (e.g. BSLLS-style identifiers) for parity documentation. **bsl-language-server** is LGPL-3.0; this repository does **not** ship or link its Java implementation as a dependency of the Python analyzer. Using rule **names/codes** for documentation is a separate question from combining code; if your policy requires stricter separation, keep references in docs only and avoid copying substantial excerpts from LGPL-covered source files.
+The project accepts compatibility aliases for diagnostic selection and suppression comments. The alias list is documentary/reference metadata; this repository does **not** ship or link the Java implementation of **bsl-language-server** as a dependency of the Python analyzer. If your policy requires stricter separation, keep references in provenance/license documents only and avoid copying substantial excerpts from LGPL-covered source files.

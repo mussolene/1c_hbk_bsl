@@ -14,7 +14,7 @@ The active context is a compact OACS capsule assembled from:
 - ACS memory query results relevant to the current task.
 - ACS context build output for the current intent.
 - Current repository state from focused commands such as `git status`, `rg`,
-  `sed`, targeted tests, and optional external oracle runs.
+  `sed`, targeted tests, and release checks.
 - Compact evidence references: `ev_...` ids, report paths, command labels, and
   summaries, not raw logs unless needed for a specific failure.
 
@@ -27,7 +27,7 @@ The capsule should contain only:
 - `risks`: unresolved mismatches, failing checks, or assumptions.
 - `next`: the next concrete action.
 
-Do not include full chat history, large command outputs, full parity JSON,
+Do not include full chat history, large command outputs,
 complete source files, credentials, license data, platform archives, OACS DB
 files, or unrelated local paths. Store large raw outputs as artifacts and refer
 to their paths or ACS evidence ids.
@@ -93,7 +93,7 @@ acs evidence inspect <ev_...> --json
 
 ```bash
 acs checkpoint add --task "<task intent>" \
-  --summary "Implemented formatter CLI and oracle parity smoke" \
+  --summary "Implemented formatter CLI and release smoke checks" \
   --next "Run full verification" \
   --evidence ev_... \
   --json
@@ -110,7 +110,7 @@ When evidence should become reusable project knowledge:
 
 ```bash
 MEM_ID=$(acs memory propose --type procedure --depth 2 --scope project \
-  --text "External oracle diagnostics are run outside the product package and recorded as OACS evidence with artifact paths and summaries." \
+  --text "Release checks are recorded as OACS evidence with compact summaries and artifact paths when raw output is too large." \
   --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 acs memory commit "$MEM_ID" --json
 acs memory sharpen "$MEM_ID" <ev_...> --json

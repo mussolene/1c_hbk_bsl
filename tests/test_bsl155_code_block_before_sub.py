@@ -29,6 +29,16 @@ def test_bsl155_skips_annotation_before_first_proc(tmp_path: Path) -> None:
     assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
 
 
+def test_bsl155_skips_annotation_with_argument_before_first_proc(tmp_path: Path) -> None:
+    p = tmp_path / "m.bsl"
+    p.write_text(
+        '&После("УстановкаПараметровСеанса")\nПроцедура П(ИменаПараметровСеанса)\nКонецПроцедуры\n',
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL155"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
+
+
 def test_bsl155_fires_executable_before_proc(tmp_path: Path) -> None:
     p = tmp_path / "m.bsl"
     p.write_text(
@@ -42,9 +52,22 @@ def test_bsl155_fires_executable_before_proc(tmp_path: Path) -> None:
     assert diags[0].severity.name == "ERROR"
 
 
+def test_bsl155_skips_split_fragment(tmp_path: Path) -> None:
+    ext = tmp_path / "CommonModules" / "Модуль" / "Ext"
+    ext.mkdir(parents=True)
+    (ext / "Module.bsl").write_text("// full module\n", encoding="utf-8")
+    p = ext / "П.bsl"
+    p.write_text(
+        "а = 1;\nПроцедура П() Экспорт\nКонецПроцедуры\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL155"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
+
+
 def test_bsl155_matches_upstream_fixture_range() -> None:
     p = Path(
-        ".agent/tmp/bslls-source/src/test/resources/diagnostics/CodeBlockBeforeSubDiagnostic.bsl"
+        ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/CodeBlockBeforeSubDiagnostic.bsl"
     )
     if not p.exists():
         pytest.skip("BSLLS fixture is not available")

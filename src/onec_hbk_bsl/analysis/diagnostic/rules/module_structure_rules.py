@@ -5,6 +5,7 @@ Module-structure rules: async continuation, code before subroutines, code outsid
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
 _BSL154_ASYNC_PIPE = (
@@ -45,6 +46,9 @@ _CANONICAL_MODULE_FILE_NAMES = frozenset(
         "OrdinaryApplicationModule.bsl",
     }
 )
+_CANONICAL_MODULE_FILE_NAMES_CF = frozenset(
+    name.casefold() for name in _CANONICAL_MODULE_FILE_NAMES
+)
 _ROOT_MODULE_FILES = frozenset(
     {
         "managedapplicationmodule.bsl",
@@ -77,6 +81,14 @@ _MODULE_TYPE_FOLDERS = frozenset(
 _FORM_FOLDERS = frozenset({"forms", "формы"})
 _COMMAND_FOLDERS = frozenset({"commands", "команды"})
 _EXT_FOLDERS = frozenset({"ext"})
+
+
+@lru_cache(maxsize=32_768)
+def _casefolded_sibling_names(parent: str) -> frozenset[str]:
+    try:
+        return frozenset(sibling.name.casefold() for sibling in Path(parent).iterdir())
+    except OSError:
+        return frozenset()
 
 
 def path_matches_bsl154_module_types(path: str) -> bool:
@@ -200,14 +212,19 @@ def bsl154_code_after_async_spans_cst(
     return out
 
 
-def _is_split_module_fragment(path: str) -> bool:
+@lru_cache(maxsize=131_072)
+def is_split_module_fragment(path: str) -> bool:
     current = Path(path)
     if current.suffix.lower() != ".bsl":
         return False
-    if current.name in _CANONICAL_MODULE_FILE_NAMES:
+    if current.name.casefold() in _CANONICAL_MODULE_FILE_NAMES_CF:
         return False
-    parent = current.parent
-    return any((parent / name).is_file() for name in _CANONICAL_MODULE_FILE_NAMES)
+    sibling_names = _casefolded_sibling_names(str(current.parent))
+    return bool(sibling_names & _CANONICAL_MODULE_FILE_NAMES_CF)
+
+
+def _is_split_module_fragment(path: str) -> bool:
+    return is_split_module_fragment(path)
 
 
 def path_has_known_bsl156_module_type(path: str) -> bool:

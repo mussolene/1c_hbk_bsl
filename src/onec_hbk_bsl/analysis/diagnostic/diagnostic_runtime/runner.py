@@ -86,6 +86,7 @@ from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
     WrongUseFunctionProceedWithCallRule,
     WrongUseOfRollbackTransactionMethodRule,
     YoLetterUsageRule,
+    _path_is_split_module_fragment,
 )
 from onec_hbk_bsl.analysis.diagnostic.execution import make_diagnostic_rule_task
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
@@ -291,6 +292,7 @@ _METADATA_POOL_CODES: tuple[str, ...] = (
     "BSL274",
 )
 _METADATA_RUNTIME_CODES: tuple[str, ...] = ("BSL244", "BSL253", "BSL261")
+_DEPRECATED_API_POOL_CODES: tuple[str, ...] = ("BSL175", "BSL176")
 _AGGREGATED_RULE_CODES: frozenset[str] = frozenset(
     _QUERY_TEXT_191_201_CODES
     + _QUERY_TEXT_220_235_269_CODES
@@ -359,6 +361,7 @@ _PROCESS_CORE_FACT_CODES: tuple[str, ...] = (
     "BSL219",
 )
 _PROCESS_CORE_FACT_CODE_SET: frozenset[str] = frozenset(_PROCESS_CORE_FACT_CODES)
+_SPLIT_FRAGMENT_CORE_FACT_CODES: frozenset[str] = frozenset({"BSL017", "BSL026", "BSL040"})
 _FORK_CONTEXT: DiagnosticDocumentContext | None = None
 _FORK_RULE_BY_CODE: dict[str, DiagnosticRuntimeRule] = {}
 
@@ -499,6 +502,36 @@ def _run_bsl011_175_snapshot_facts(
             if diag.code == "BSL175"
         )
     return out
+
+
+def _run_deprecated_api_pool(
+    context: DiagnosticDocumentContext,
+    enabled_codes: tuple[str, ...],
+) -> list[Diagnostic]:
+    from onec_hbk_bsl.analysis import diagnostics as _diag
+
+    snapshot = context.snapshot
+    symbols = list(getattr(snapshot, "symbols", []) or [])
+    calls = list(getattr(snapshot, "calls", []) or [])
+    return context.module_model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
+        lines=context.lines,
+        symbols=symbols,
+        calls=calls,
+        enabled_codes=enabled_codes,
+        line_comment_re=_diag._RE_LINE_COMMENT,
+        bsl176_deprecated_doc_re=_diag._RE_BSL176_DEPRECATED_DOC,
+        mask_double_quoted_strings_preserve_len_fn=(
+            _diag._mask_double_quoted_strings_preserve_len
+        ),
+        bsl175_attribute_re=_diag._RE_BSL175_ATTRIBUTE,
+        bsl175_attr_replacements=_diag._BSL175_ATTR_REPLACEMENTS,
+        bsl175_method_replacements=_diag._BSL175_METHOD_REPLACEMENTS,
+        bsl175_child_form_items_re=_diag._RE_BSL175_CHILD_FORM_ITEMS,
+        bsl175_enum_replacements=_diag._BSL175_ENUM_REPLACEMENTS,
+        bsl175_enum_name_re=_diag._RE_BSL175_ENUM_NAME,
+        bsl175_global_method_re=_diag._RE_BSL175_GLOBAL_METHOD,
+        bsl175_global_methods=_diag._BSL175_GLOBAL_METHODS,
+    )
 
 
 def _chunk_spell_candidates(
@@ -703,9 +736,15 @@ def append_diagnostic_runtime_rule_tasks(
             )
         if query_metadata:
             from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
+                applicable_bsl174_187_236_238_codes,
                 run_bsl174_187_236_238_query_metadata_pool,
             )
 
+            query_metadata = applicable_bsl174_187_236_238_codes(
+                context.path,
+                query_metadata,
+                query_blocks,
+            )
             add_task(
                 query_metadata,
                 lambda codes=query_metadata: run_bsl174_187_236_238_query_metadata_pool(
@@ -733,9 +772,15 @@ def append_diagnostic_runtime_rule_tasks(
             )
         if metadata_pool:
             from onec_hbk_bsl.analysis.diagnostic.rules.query_metadata_rules import (
+                applicable_bsl189_211_213_214_231_232_241_242_246_274_codes,
                 run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool,
             )
 
+            metadata_pool = applicable_bsl189_211_213_214_231_232_241_242_246_274_codes(
+                context.path,
+                context.content,
+                metadata_pool,
+            )
             add_task(
                 metadata_pool,
                 lambda codes=metadata_pool: (
@@ -778,12 +823,25 @@ def append_diagnostic_runtime_rule_tasks(
         )
         coarse_parallelized.update(fact_group_011_175)
 
+    deprecated_api_parallelized: set[str] = set()
+    deprecated_api_pool = tuple(
+        code for code in enabled_codes(_DEPRECATED_API_POOL_CODES) if code not in coarse_parallelized
+    )
+    if deprecated_api_pool:
+        add_task(
+            deprecated_api_pool,
+            lambda codes=deprecated_api_pool: _run_deprecated_api_pool(context, codes),
+        )
+        deprecated_api_parallelized.update(deprecated_api_pool)
+
     core_fact_parallelized: set[str] = set()
     if snapshot is not None:
+        split_fragment = _path_is_split_module_fragment(path)
         enabled_core_fact_codes = tuple(
             code
             for code in enabled_codes(_PROCESS_CORE_FACT_CODES)
             if code not in coarse_parallelized
+            and not (split_fragment and code in _SPLIT_FRAGMENT_CORE_FACT_CODES)
         )
         if enabled_core_fact_codes:
             complexity_metrics: list[tuple[int, int]] = []
@@ -882,6 +940,8 @@ def append_diagnostic_runtime_rule_tasks(
         if rule.code in coarse_parallelized:
             continue
         if rule.code in core_fact_parallelized:
+            continue
+        if rule.code in deprecated_api_parallelized:
             continue
         if rule.code in fork_parallelized:
             continue

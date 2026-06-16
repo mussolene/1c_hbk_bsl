@@ -1,6 +1,6 @@
 # BSL Analyzer — Architecture
 
-Актуальный контракт по эксплуатации, паритету LSP/MCP и индексации: [Production-Notes.md](Production-Notes.md).
+Актуальный контракт по эксплуатации, совместимости LSP/MCP и индексации: [Production-Notes.md](Production-Notes.md).
 
 ## Overview
 
@@ -27,7 +27,7 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │  ┌──────────────┐  ┌───────────────┐  ┌──────────────────┐  │
 │  │  symbols.py  │  │ call_graph.py │  │  diagnostics.py  │  │
 │  │  Symbol      │  │  Call         │  │  DiagnosticEngine│  │
-│  │  extraction  │  │  build_call_  │  │  BSLLS registry  │  │
+│  │  extraction  │  │  build_call_  │  │  Rule registry   │  │
 │  │              │  │  graph()      │  │  (реестр; подмн. │  │
 │  │              │  │               │  │   набор активен) │  │
 │  └──────┬───────┘  └───────┬───────┘  └──────┬───────────┘  │
@@ -99,17 +99,17 @@ Formatted response (dict / LSP Location)
 `textDocument/formatting` and `textDocument/rangeFormatting` use `BslFormatter`
 (`src/onec_hbk_bsl/analysis/formatter.py`).
 
-- **BSLLS-compatible token stream:** `formatter_tokens.py` provides the lexer used
+- **Product token stream:** `formatter_tokens.py` provides the lexer used
   by the formatter. It recognizes preprocessor lines, comments, annotations,
   strings/query pipes, datetime literals, keywords, operators, and punctuation.
-- **Formatting state:** `formatter.py` applies BSLLS-like indentation and spacing
+- **Formatting state:** `formatter.py` applies product indentation and spacing
   from the token stream. Range formatting formats the full document first and
   then returns the requested lines, so the selected range keeps surrounding
   token context.
 - **Parse-tree helpers:** diagnostics and snapshots use `parse_tree.py` for CST
   parse-error checks. Formatting no longer depends on CST indentation fallbacks.
 
-Связь с диагностиками стиля BSLLS поддерживается в текущем наборе тестов и правилах движка.
+Совместимые diagnostic aliases поддерживаются в текущем наборе тестов и правилах движка.
 
 Политика структурных правил и CST: [cst_policy.md](cst_policy.md).
 
@@ -167,7 +167,7 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | Files & search | `bsl_read_file`, `bsl_search`, `bsl_workspace_scan`, `bsl_hover` |
 | Metadata | `bsl_meta_object`, `bsl_meta_collection`, `bsl_meta_index` |
 
-`bsl_diagnostics` / `bsl_check_file` run the BSLLS-compatible diagnostic engine for a file. Optional `include_unused=true` appends **BSL-DEAD** (unused non-export symbols) when the index is populated — same signal as LSP Problems under source `onec-hbk-bsl · BSL-DEAD`. Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
+`bsl_diagnostics` / `bsl_check_file` run the product diagnostic engine for a file. Optional `include_unused=true` appends **BSL-DEAD** (unused non-export symbols) when the index is populated — same signal as LSP Problems under source `onec-hbk-bsl · BSL-DEAD`. Multi-project: pass `workspace_root` / `config_root` as documented in tool handlers and [Production-Notes.md](Production-Notes.md).
 
 MCP tools are intentionally scoped to the current BSL project workspace: code navigation,
 diagnostics, formatting, fixes, search, and configuration metadata. External help/reference

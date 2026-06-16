@@ -2415,6 +2415,15 @@ _RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*-", re.UNICODE)
 _RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
 
+@functools.lru_cache(maxsize=32_768)
+def _casefolded_sibling_names(parent: str) -> frozenset[str]:
+    try:
+        return frozenset(sibling.name.lower() for sibling in Path(parent).iterdir())
+    except OSError:
+        return frozenset()
+
+
+@functools.lru_cache(maxsize=131_072)
 def path_is_likely_form_module_bsl(path: str) -> bool:
     """
     True for EDT-style form modules and HBK split fragments below
@@ -2432,10 +2441,7 @@ def path_is_likely_form_module_bsl(path: str) -> bool:
         return False
     if p.name.lower() == "module.bsl":
         return True
-    try:
-        lower_siblings = {sibling.name.lower() for sibling in p.parent.iterdir()}
-    except OSError:
-        return False
+    lower_siblings = _casefolded_sibling_names(str(p.parent))
     return bool({"module.bsl", "module.header", "form.xml", "form.prettydata"} & lower_siblings)
 
 

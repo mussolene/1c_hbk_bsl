@@ -34,7 +34,7 @@ HOST_FILE = HOST_WS / relative
 | Файл на хосте | `/path/to/your/workspace/src/CommonModules/MyModule/Ext/Module.bsl` |
 | URI для `document_diagnostics` | `file:///projects/src/CommonModules/.../Module.bsl` (сегменты с кириллицей — в URL-encoding) |
 
-Если передать **хостовый** `file:///Users/...` или `file:///home/...` без согласования с тем, что открыто в LSP, bridge часто возвращает **0 диагностик** — документ не совпадает с workspace сервера. Для **onec-hbk-bsl** используйте абсолютные пути на хосте и тот же `workspace_root=HOST_WS`, что и у индексатора.
+Если передать **хостовый** URI вне согласованного workspace без связи с тем, что открыто в LSP, bridge часто возвращает **0 диагностик** — документ не совпадает с workspace сервера. Для **onec-hbk-bsl** используйте абсолютные пути на хосте и тот же `workspace_root=HOST_WS`, что и у индексатора.
 
 ## Пример на Python (локально, без отдельного скрипта)
 

@@ -1,166 +1,54 @@
 # Public Surface
 
-This document defines the product-facing contract for `onec-hbk-bsl`.
-Development-only tools may exist in the repository, but they should not be the
-main user-facing story.
+This document defines what `onec-hbk-bsl` treats as product-facing API and UI.
+It is a guardrail for future changes, not a user guide. User-facing docs live in
+[README.md](../README.md) and [vscode-extension/README.md](../vscode-extension/README.md).
 
-## Product Standard
+## Product Contract
 
 - Primary project config: `onec-hbk-bsl.toml`.
 - `pyproject.toml` support is a convenience for Python-centric projects.
-- Suppression comments in source code are supported for compatibility, including
-  `// noqa: BSL###` and `// BSLLS-off/on`.
+- Stable rule identifiers: `BSL###`.
+- Compatible rule aliases are accepted in `select` / `ignore` for existing BSL projects.
+- Suppressions: `// noqa: BSL###` and compatible `// BSLLS-off/on` comments.
 - `.bsl-language-server.json` is not a supported project config.
-- Java/BSLLS is not launched at runtime.
-- Public docs should describe `onec-hbk-bsl` behavior directly, not as a wrapper
-  around another analyzer.
+- No separate Java analyzer is launched at runtime.
 
-## Diagnostic Rule Identifiers
+## Stable User Surfaces
 
-- `BSL###` is the stable product code for diagnostics output, `--select`,
-  `--ignore`, `onec-hbk-bsl.toml`, SARIF/JSON, and `// noqa: BSL###`.
-- `BSLLS key` is the compatible diagnostic name from BSL Language Server
-  semantics, such as `LineLength` or `ConsecutiveEmptyLines`.
-- CLI and config accept both forms; output surfaces use `BSL###`.
-- Rule numbering is stable but not continuous. Missing numbers are not valid
-  rule identifiers unless they appear in the generated rule reference.
-- The generated rule reference is [diagnostic-rules.md](diagnostic-rules.md).
-
-## CLI Classification
-
-### Core User Commands
-
-These are the stable commands users should see first:
-
-```bash
-onec-hbk-bsl check .
-onec-hbk-bsl format .
-onec-hbk-bsl rules
-onec-hbk-bsl init
-onec-hbk-bsl --version
-```
-
-Core options:
-
-- `--select`
-- `--ignore`
-- `--format text|json|sarif`
-- `--jobs`
-- `--fix`
-
-### Compatibility Aliases
-
-The command form is the preferred product surface. The legacy mode-flag form is
-also supported for editor/runtime compatibility and existing scripts:
-
-| Preferred | Alias |
+| Surface | Stable contract |
 |---|---|
-| `onec-hbk-bsl check .` | `onec-hbk-bsl --check .` |
-| `onec-hbk-bsl lsp` | `onec-hbk-bsl --lsp` |
-| `onec-hbk-bsl mcp` | `onec-hbk-bsl --mcp` |
-| `onec-hbk-bsl index PATH` | `onec-hbk-bsl --index PATH` |
-| `onec-hbk-bsl rules` | `onec-hbk-bsl --list-rules` |
-| `onec-hbk-bsl init` | `onec-hbk-bsl --init` |
+| CLI | `check`, `format`, `rules`, `init`, `lsp`, `mcp`, `index` |
+| Reports | `--format text`, `--format json`, `--format sarif` |
+| Rule control | `--select`, `--ignore`, config `ignore`, per-file ignores |
+| CI adoption | `--exit-zero`, `--baseline`, `--update-baseline`, `--diff`, `--since`, `--paths-from` |
+| VS Code | diagnostics, formatting, navigation, hover, completion, inlay hints, semantic tokens |
+| Python API | `check_files(...)`, `DiagnosticEngine` |
 
-Do not add new product behavior only to the alias form.
+Legacy flag aliases such as `--check`, `--lsp`, `--mcp`, `--index`,
+`--list-rules`, and `--init` remain supported for existing integrations. New
+behavior should be added to command forms first.
 
-### CI Commands
+## Packaging
 
-These are stable for automation:
+- `onec-hbk-bsl-core`: CLI, formatter, diagnostics, Python API and LSP without MCP dependencies.
+- `onec-hbk-bsl`: full compatibility package depending on `onec-hbk-bsl-core[mcp]`.
 
-- `--format json`
-- `--format sarif`
-- `--exit-zero`
-- `--baseline`
-- `--update-baseline`
-- `--diff`
-- `--since`
-- `--paths-from`
+Running `onec-hbk-bsl mcp` from a slim core installation without MCP should exit
+with a clear installation hint rather than an import traceback.
 
-### Server Commands
+## Non-Product Surface
 
-These are stable integration points:
+Do not expose these as stable CLI/API features:
 
-- `lsp`
-- `mcp`
-- `mcp --stdio`
-- `mcp --workspace PATH`
-- `index PATH`
+- research or comparison scripts;
+- benchmark helpers;
+- MCP handler internals;
+- VS Code extension implementation details;
+- removed switches such as `--watch`, `--bench`, `--stats`, `--show-fix`,
+  `--check-profile`, `--paths-from0`, `--changed-lines-only`,
+  `--split-fragment`, `--format sonarqube`, `--sonar-root`.
 
-Python packaging is split into two PyPI distributions:
-
-- `onec-hbk-bsl-core`: implementation package containing formatter,
-  diagnostics, Python API, CLI, and LSP, without MCP dependencies by default.
-- `onec-hbk-bsl`: full backwards-compatible meta package depending on
-  `onec-hbk-bsl-core[mcp]`.
-
-Use `onec-hbk-bsl-core` directly for formatter, diagnostics, CLI, LSP, and
-Python API usage without pulling the Python MCP SDK. The default
-`onec-hbk-bsl` package keeps the full historical surface including MCP.
-
-```bash
-pip install onec-hbk-bsl
-pip install onec-hbk-bsl-core
-pip install "onec-hbk-bsl-core[mcp]"
-```
-
-Running `onec-hbk-bsl mcp` from a slim core installation without MCP should exit with a clear
-installation hint rather than an import traceback.
-
-### Removed Non-Product Switches
-
-These switches are intentionally not part of the product CLI. They either
-leaked implementation details, duplicated editor/LSP behavior, or were covered
-by simpler formats and config:
-
-- `--watch`
-- `--bench`
-- `--stats`
-- `--show-fix`
-- `--check-profile`
-- `--paths-from0`
-- `--changed-lines-only`
-- `--split-fragment`
-- `--format sonarqube`
-- `--sonar-root`
-
-Do not reintroduce these as compatibility aliases. If a need returns, add a
-clear workflow-level command or config field instead of another engine switch.
-
-## Library API
-
-Stable import surface:
-
-```python
-from onec_hbk_bsl import check_files
-from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
-```
-
-The library contract should expose diagnostics, formatting and config loading.
-It should not expose parity scripts, benchmark helpers, MCP handler internals or
-VS Code extension implementation details as stable API.
-
-## VS Code Extension
-
-The extension docs should focus on:
-
-- how the server is found;
-- diagnostics and formatting;
-- project config vs editor settings;
-- Docker LSP as an advanced runtime option;
-- command palette actions.
-
-Packaging, release mechanics and binary-cache details belong in development
-docs, not in the Marketplace README.
-
-## Documentation Layers
-
-Recommended layers:
-
-- `README.md`: quick guide and links.
-- `vscode-extension/README.md`: user-facing extension guide.
-- `docs/diagnostic-rules.md`: generated rule reference for users and integrators.
-- `docs/public-surface.md`: public contract and CLI classification.
-- `docs/architecture.md`: implementation architecture.
-- `docs/Production-Notes.md`: runbook for maintainers.
-- `docs/archive/`: historical plans and old roadmaps.
+Development docs may mention internal tools, but README and Marketplace docs
+should stay focused on how to install, configure, run, and troubleshoot the
+product.

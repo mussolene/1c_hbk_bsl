@@ -9,11 +9,15 @@ rule bodies are migrated out of ``diagnostics.py``.
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
 from onec_hbk_bsl.analysis.bslls_parity import merge_default_with_select
 from onec_hbk_bsl.analysis.diagnostic.pipeline import AnalysisFrame, PipelineExecutor
+from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
+    is_split_module_fragment,
+)
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
     parse_suppressions,
@@ -40,6 +44,22 @@ _HOT_TS_NODE_TYPES: frozenset[str] = frozenset(
         "var_definition",
     }
 )
+
+_CHEAP_PREFILTER_CODES: frozenset[str] = frozenset(
+    {
+        "BSL017",
+        "BSL026",
+        "BSL040",
+        "BSL062",
+        "BSL155",
+        "BSL170",
+        "BSL245",
+    }
+)
+_PROC_KEYWORD_RE = re.compile(r"\b(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE)
+_ANNOTATION_RE = re.compile(r"^\s*&\w+", re.IGNORECASE | re.MULTILINE)
+_EXPORT_RE = re.compile(r"\b(?:Экспорт|Export)\b", re.IGNORECASE)
+_REGION_RE = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE | re.MULTILINE)
 
 globals().update(
     {
@@ -141,6 +161,11 @@ class DiagnosticEngine:
         _user_ignore: set[str] = normalize_rule_code_set(ignore) if ignore else set()
         _effective_defaults = self.DEFAULT_DISABLED - (self._select or set())
         self._ignore: set[str] = _user_ignore | _effective_defaults
+        self._enabled_codes: frozenset[str] = frozenset(
+            code
+            for code in RULE_METADATA
+            if (self._select is None or code in self._select) and code not in self._ignore
+        )
         self.max_proc_lines = max_proc_lines
         self.max_returns = max_returns
         self.max_cognitive_complexity = max_cognitive_complexity
@@ -204,6 +229,52 @@ class DiagnosticEngine:
             return False
         return code not in self._ignore
 
+    def _enabled_rule_codes(self) -> frozenset[str]:
+        return self._enabled_codes
+
+    def _cheap_prefilter_allows_parse(self, path: str, content: str) -> bool:
+        enabled = self._enabled_rule_codes()
+        if not enabled or not enabled <= _CHEAP_PREFILTER_CODES:
+            return True
+        split_fragment = is_split_module_fragment(path)
+
+        for code in enabled:
+            if code == "BSL017":
+                if not split_fragment and _EXPORT_RE.search(content):
+                    return True
+                continue
+            if code == "BSL026":
+                if not split_fragment and _REGION_RE.search(content):
+                    return True
+                continue
+            if code == "BSL040":
+                if not split_fragment and re.search(r"\b(?:ЭтаФорма|ThisForm)\b", content):
+                    return True
+                continue
+            if code == "BSL062":
+                if not split_fragment and _PROC_KEYWORD_RE.search(content) and "(" in content:
+                    return True
+                continue
+            if code == "BSL155":
+                if not split_fragment and _PROC_KEYWORD_RE.search(content):
+                    return True
+                continue
+            if code == "BSL170":
+                if not split_fragment and _ANNOTATION_RE.search(content):
+                    return True
+                continue
+            if code == "BSL245":
+                if (
+                    not split_fragment
+                    and _diag.path_is_likely_form_module_bsl(path)
+                    and _EXPORT_RE.search(content)
+                    and _ANNOTATION_RE.search(content)
+                ):
+                    return True
+                continue
+            return True
+        return False
+
     def check_content(
         self,
         path: str,
@@ -227,6 +298,9 @@ class DiagnosticEngine:
                 if cached_entry is not None and cached_entry[0] == content:
                     self._content_diag_cache.move_to_end(cache_key)
                     return list(cached_entry[1])
+
+        if not self._cheap_prefilter_allows_parse(path, content):
+            return []
 
         try:
             tree = self._get_parser().parse_content(content, file_path=path)
@@ -302,6 +376,9 @@ class DiagnosticEngine:
                         message=f"Не удалось прочитать файл: {exc}",
                     )
                 ]
+
+            if not self._cheap_prefilter_allows_parse(path, content):
+                return []
 
             try:
                 tree = self._get_parser().parse_content(content, file_path=path)

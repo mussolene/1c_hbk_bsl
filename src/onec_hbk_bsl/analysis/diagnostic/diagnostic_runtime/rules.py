@@ -21,6 +21,9 @@ from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     common_module_execute_external_code_applicable,
     common_module_xml_for_module_bsl,
 )
+from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
+    is_split_module_fragment,
+)
 from onec_hbk_bsl.analysis.diagnostic.string_state import (
     build_line_string_states,
     comment_start_outside_double_quotes,
@@ -49,14 +52,20 @@ def _path_is_form_module_bsl(path: str) -> bool:
     )
 
 
+def _path_is_split_module_fragment(path: str) -> bool:
+    return is_split_module_fragment(path)
+
+
 def _path_is_whole_module_bsl(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     if _path_is_form_module_bsl(path):
-        return False
+        return not _path_is_split_module_fragment(path)
     if "/commonmodules/" in normalized and normalized.endswith("/ext/module.bsl"):
         return True
     if "/ext/" not in normalized:
         return config_root_for_file(path) is None
+    if _path_is_split_module_fragment(path):
+        return False
     return normalized.endswith(
         (
             "/ext/objectmodule.bsl",
@@ -1306,6 +1315,8 @@ class CanonicalSpellingKeywordsRule(DiagnosticRuntimeRule):
         for idx, line in enumerate(context.lines):
             if _line_comment(line) or idx in skipped_lines:
                 continue
+            if not self._word_re.search(line):
+                continue
             clean = _code_mask_without_strings_and_comments(line)
             for match in self._word_re.finditer(clean):
                 word = match.group()
@@ -1875,10 +1886,9 @@ class MagicNumberRule(DiagnosticRuntimeRule):
         if getattr(root, "text", None) is None:
             return []
         storage = DiagnosticStorage(context.path)
-        container_assignments = self._container_assignments(root)
-        for number in _ts_walk(root):
-            if getattr(number, "type", None) != "number":
-                continue
+        nodes = self._nodes_by_type(context)
+        container_assignments = self._container_assignments(nodes["assignment_statement"])
+        for number in nodes["number"]:
             value = _ts_node_text(number)
             signed_value = self._signed_value(number, value)
             if signed_value in self._authorized_numbers:
@@ -1903,6 +1913,18 @@ class MagicNumberRule(DiagnosticRuntimeRule):
                 continue
             self._add_number(storage, context.lines, number, value)
         return storage.diagnostics
+
+    @staticmethod
+    def _nodes_by_type(context: DiagnosticDocumentContext) -> dict[str, list[Any]]:
+        wanted = {"assignment_statement", "number"}
+        if context.ts_nodes_for_types:
+            return context.ts_nodes_for_types(context.tree, wanted)
+        grouped = {node_type: [] for node_type in wanted}
+        for node in _ts_walk(context.tree.root_node):
+            node_type = getattr(node, "type", None)
+            if node_type in grouped:
+                grouped[node_type].append(node)
+        return grouped
 
     def _add_number(
         self, storage: DiagnosticStorage, lines: list[str], number: Any, value: str
@@ -2053,11 +2075,12 @@ class MagicNumberRule(DiagnosticRuntimeRule):
         return cls._argument_is_simple_number(expression)
 
     @classmethod
-    def _container_assignments(cls, root: Any) -> dict[str, list[tuple[str, Any]]]:
+    def _container_assignments(
+        cls,
+        assignment_nodes: list[Any],
+    ) -> dict[str, list[tuple[str, Any]]]:
         assignments: dict[str, list[tuple[str, Any]]] = {}
-        for node in _ts_walk(root):
-            if getattr(node, "type", None) != "assignment_statement":
-                continue
+        for node in assignment_nodes:
             children = _ts_children(node)
             identifier = next(
                 (child for child in children if getattr(child, "type", None) == "identifier"),
@@ -2613,18 +2636,19 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
             if self._dynamic_new_type_name(node) not in self.new_type_names:
                 continue
             self._add_node_diag(storage, context, node)
-        for call in self._global_method_calls(context):
-            if call["name"].casefold() not in self.global_method_names:
-                continue
-            storage.add_range(
-                code=self.code,
-                line=int(call["line"]),
-                character=int(call["character"]),
-                end_line=int(call["line"]),
-                end_character=int(call["end_character"]),
-                severity=self.severity,
-                message=self.message,
-            )
+        if self.global_method_names:
+            for call in self._global_method_calls(context):
+                if call["name"].casefold() not in self.global_method_names:
+                    continue
+                storage.add_range(
+                    code=self.code,
+                    line=int(call["line"]),
+                    character=int(call["character"]),
+                    end_line=int(call["line"]),
+                    end_character=int(call["end_character"]),
+                    severity=self.severity,
+                    message=self.message,
+                )
         return storage.diagnostics
 
     @staticmethod
@@ -3680,6 +3704,9 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
     _ignored_before_body_types = {"comment", "line_comment", "var_definition"}
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        if _path_is_split_module_fragment(context.path):
+            return []
+
         root = getattr(context.tree, "root_node", None)
         if root is None:
             return []
@@ -3745,6 +3772,9 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
             "annotation",
             "identifier",
             "expression",
+            "string",
+            "(",
+            ")",
         }
         for child in _ts_children(node):
             if getattr(child, "type", None) in skipped_preprocessor_parts:
@@ -6003,6 +6033,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 for fact in snapshot.non_standard_region_facts
             ]
         if code == "BSL017":
+            if _path_is_split_module_fragment(context.path):
+                return []
             assert snapshot is not None
             return [
                 Diagnostic(
@@ -6055,6 +6087,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 for fact in snapshot.deprecated_warning_facts
             ]
         if code == "BSL026":
+            if _path_is_split_module_fragment(context.path):
+                return []
             assert snapshot is not None
             return [
                 Diagnostic(
@@ -6132,6 +6166,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 for fact in snapshot.complex_condition_facts(engine.max_bool_ops)
             ]
         if code == "BSL040":
+            if _path_is_split_module_fragment(context.path):
+                return []
             assert snapshot is not None
             return [
                 Diagnostic(
@@ -6173,6 +6209,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 clean_lines=clean_lines,
             )
         if code == "BSL062":
+            if _path_is_split_module_fragment(context.path):
+                return []
             proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
             return model.validate_bsl062_unused_parameter(
                 lines=context.lines,

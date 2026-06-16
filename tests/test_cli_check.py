@@ -13,6 +13,7 @@ import pytest
 from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
 from onec_hbk_bsl.cli.check import (
     BSL_EXTENSIONS,
+    _auto_check_workers,
     _collect_files,
     _print_json,
     _print_sarif,
@@ -95,6 +96,9 @@ class TestCollectFiles:
 
 
 class TestRunChecks:
+    def test_auto_jobs_defaults_to_serial_worker(self) -> None:
+        assert _auto_check_workers() == 1
+
     def test_finds_issues_serial(self, tmp_path: Path) -> None:
         f = _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
         diags, err = _run_checks([str(f)], select={"BSL012"}, ignore=None, jobs=1)

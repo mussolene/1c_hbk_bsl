@@ -161,6 +161,30 @@ def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
     return diags
 
 
+def applicable_bsl174_187_236_238_codes(
+    path: str,
+    enabled: tuple[str, ...],
+    query_blocks: list[Any] | None,
+) -> tuple[str, ...]:
+    _diag = _diag_module()
+    enabled_set = set(enabled)
+    out: list[str] = []
+
+    if "BSL174" in enabled_set:
+        object_xml = _diag._current_object_xml_path(path)
+        object_context = _diag._current_module_xml_context(path)
+        if object_xml is not None and object_context.get("folder") in _BSL174_REGISTER_FOLDERS:
+            out.append("BSL174")
+
+    if query_blocks and "BSL187" in enabled_set:
+        out.append("BSL187")
+    if query_blocks and "BSL236" in enabled_set:
+        out.append("BSL236")
+    if query_blocks and "BSL238" in enabled_set:
+        out.append("BSL238")
+    return tuple(code for code in enabled if code in out)
+
+
 def run_bsl174_187_236_238_query_metadata_pool(
     path: str,
     lines: list[str],
@@ -351,6 +375,43 @@ def run_bsl174_187_236_238_query_metadata_pool(
                         )
                     )
     return diags
+
+
+def applicable_bsl189_211_213_214_231_232_241_242_246_274_codes(
+    path: str,
+    content: str,
+    enabled: tuple[str, ...],
+) -> tuple[str, ...]:
+    _diag = _diag_module()
+    enabled_set = set(enabled)
+    out: list[str] = []
+    root = _diag._config_root_for_file(path)
+    object_xml = _diag._current_object_xml_path(path)
+    low_path = path.replace("\\", "/").lower()
+
+    for code in ("BSL189", "BSL211", "BSL241"):
+        if code in enabled_set and object_xml is not None:
+            out.append(code)
+
+    if "BSL274" in enabled_set and _diag.path_is_likely_form_module_bsl(path):
+        out.append("BSL274")
+    if "BSL246" in enabled_set and low_path.endswith("/ext/managedapplicationmodule.bsl"):
+        if root is not None:
+            out.append("BSL246")
+    if "BSL232" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl"):
+        if root is not None:
+            out.append("BSL232")
+    if "BSL231" in enabled_set and root is not None and "." in content and "(" in content:
+        out.append("BSL231")
+    if root is not None and "/commonmodules/" in low_path:
+        if "BSL213" in enabled_set and "." in content and "(" in content:
+            out.append("BSL213")
+        if "BSL214" in enabled_set:
+            out.append("BSL214")
+        if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
+            out.append("BSL242")
+
+    return tuple(code for code in enabled if code in out)
 
 
 def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(

@@ -1,22 +1,36 @@
 # 1C HBK BSL
 
 Инструменты для разработки на **1C Enterprise / BSL**: расширение VS Code /
-Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для AI-агентов.
+Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для локальных
+интеграций.
 
 [![CI](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml)
 [![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/mussolene.1c-hbk-bsl)](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl)
 [![PyPI](https://img.shields.io/pypi/v/onec-hbk-bsl)](https://pypi.org/project/onec-hbk-bsl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Быстрый Гид
+## Что Это
+
+`onec-hbk-bsl` помогает держать BSL-код в порядке:
+
+- показывает диагностики в редакторе и CLI;
+- форматирует `.bsl` / `.os`;
+- дает навигацию, hover, completion, rename и inlay hints через LSP;
+- умеет отдавать SARIF/JSON для CI;
+- предоставляет MCP-инструменты для локальных AI-ассистентов.
+
+Проект не запускает Java-анализатор в рантайме. Публичный контракт продукта:
+`BSL###` коды правил, `onec-hbk-bsl.toml`, CLI/LSP/MCP и VS Code extension.
+
+## Быстрый Старт
 
 ### VS Code / Cursor
 
 1. Установите расширение `mussolene.1c-hbk-bsl`.
-2. Откройте проект с файлами `.bsl` / `.os`.
-3. Диагностики появятся в Problems, навигация и форматирование заработают через LSP.
+2. Откройте каталог с исходниками 1С.
+3. Диагностики появятся в Problems; форматирование и навигация заработают через LSP.
 
-Рекомендуемые настройки проекта:
+Рекомендуемые настройки workspace:
 
 ```json
 {
@@ -29,69 +43,29 @@ Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для
 }
 ```
 
-### CLI / CI
+Подробнее: [vscode-extension/README.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md).
+
+### CLI
 
 ```bash
 uv tool install onec-hbk-bsl
+
 onec-hbk-bsl check .
-onec-hbk-bsl check . --format sarif > bsl-results.sarif
 onec-hbk-bsl format . --check
+onec-hbk-bsl check . --format sarif > bsl-results.sarif
 ```
 
-Для GitHub Code Scanning загрузите SARIF:
-
-```yaml
-- name: 1C HBK BSL
-  run: |
-    pip install onec-hbk-bsl
-    onec-hbk-bsl check . --format sarif > bsl-results.sarif
-
-- uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: bsl-results.sarif
-```
-
-### MCP
-
-Обычная установка `onec-hbk-bsl` остается полной и включает MCP-зависимости для
-обратной совместимости. Для продуктовых пайплайнов, где нужны только formatter,
-diagnostics или Python API, используйте slim-пакет `onec-hbk-bsl-core`.
+Для обычной установки через pip:
 
 ```bash
 pip install onec-hbk-bsl
-# slim-вариант без MCP:
-pip install onec-hbk-bsl-core
-
-onec-hbk-bsl mcp --stdio --workspace /path/to/project
 ```
-
-Пакеты публикуются как два PyPI-дистрибутива:
-
-| Пакет | Назначение |
-|---|---|
-| `onec-hbk-bsl-core` | Реализация: formatter, diagnostics, Python API, CLI и LSP |
-| `onec-hbk-bsl` | Полный backwards-compatible метапакет поверх `onec-hbk-bsl-core[mcp]` |
-
-## Что Входит
-
-| Поверхность | Назначение |
-|---|---|
-| VS Code / Cursor | Диагностики, навигация, hover, completion, rename, formatting, inlay hints |
-| CLI | `check`, `format`, SARIF/JSON/text output, baseline для постепенного внедрения |
-| LSP | Сервер для редакторов и локальных интеграций |
-| MCP | Входит в полный метапакет `onec-hbk-bsl`; для прямой установки core доступен extra `onec-hbk-bsl-core[mcp]` |
-| Python API | `check_files(...)` и диагностический движок для встраивания |
-
-`onec-hbk-bsl` не запускает Java-анализатор в рантайме. Совместимость с
-существующими BSL-практиками поддерживается там, где она полезна: например,
-комментарии `// BSLLS-off/on` в коде учитываются как suppression comments.
 
 ## Конфигурация
 
-Основной конфиг проекта: `onec-hbk-bsl.toml`.
+Основной файл проекта: `onec-hbk-bsl.toml`.
 
 ```toml
-# onec-hbk-bsl.toml
 ignore = ["BSL012"]
 exclude = ["vendor", "build", "*.gen.bsl"]
 format = "text"
@@ -102,41 +76,36 @@ jobs = 0
 ```
 
 Также поддерживается секция `[tool."onec-hbk-bsl"]` в `pyproject.toml`.
-Явные CLI-флаги имеют приоритет над конфигом.
+CLI-флаги имеют приоритет над конфигом.
 
-Идентификаторы правил:
+## Правила
 
-- `BSL###` — стабильный код `onec-hbk-bsl` для вывода, `--select`,
-  `--ignore`, `onec-hbk-bsl.toml` и `// noqa: BSL###`.
-- BSLLS key — совместимое имя диагностики из семантики BSL Language Server,
-  например `LineLength` или `ConsecutiveEmptyLines`.
+- `BSL###` — стабильный код правила для вывода, `--select`, `--ignore`,
+  `onec-hbk-bsl.toml` и `// noqa: BSL###`.
+- `Compatible key` — совместимый alias для существующих BSL-проектов, например
+  `LineLength` или `ConsecutiveEmptyLines`.
 - CLI и конфиг принимают оба вида, но выводят `BSL###`.
-- Нумерация не обязана быть сплошной: отсутствующий номер, например `BSL053`,
-  не является правилом, если его нет в справочнике.
 
-Полный справочник: [docs/diagnostic-rules.md](docs/diagnostic-rules.md).
+Справочник правил: [docs/diagnostic-rules.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/diagnostic-rules.md).
 
-Подавление в коде:
+Подавление:
 
 ```bsl
 Пароль = "dev_only";  // noqa: BSL012
 // BSLLS:MethodSize-off
 ```
 
-## Основные Команды
+## Команды
 
 ```bash
-# Линтинг
+# Диагностики
 onec-hbk-bsl check .
 onec-hbk-bsl check . --select BSL001,BSL012
 onec-hbk-bsl check . --ignore BSL014
 
-# CI / отчеты
+# Отчеты и постепенное внедрение
 onec-hbk-bsl check . --format json
 onec-hbk-bsl check . --format sarif > bsl-results.sarif
-onec-hbk-bsl check . --exit-zero
-
-# Gradual adoption
 onec-hbk-bsl check . --update-baseline bsl-baseline.json
 onec-hbk-bsl check . --baseline bsl-baseline.json
 
@@ -144,15 +113,15 @@ onec-hbk-bsl check . --baseline bsl-baseline.json
 onec-hbk-bsl format .
 onec-hbk-bsl format . --check
 
-# Серверы и индекс
+# Серверы
 onec-hbk-bsl lsp
 onec-hbk-bsl mcp --stdio --workspace /path/to/project
 onec-hbk-bsl index /path/to/project
 ```
 
-Полная классификация публичных, CI и внутренних команд: [docs/public-surface.md](docs/public-surface.md).
+Публичная поверхность CLI/API описана в [docs/public-surface.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/public-surface.md).
 
-## Python API
+## Python И Пакеты
 
 ```python
 from onec_hbk_bsl import check_files
@@ -162,16 +131,23 @@ for diagnostic in diagnostics:
     print(diagnostic.code, diagnostic.file, diagnostic.line)
 ```
 
+Публикуются два PyPI-дистрибутива:
+
+| Пакет | Назначение |
+|---|---|
+| `onec-hbk-bsl-core` | CLI, formatter, diagnostics, Python API и LSP без MCP-зависимостей |
+| `onec-hbk-bsl` | Полный совместимый пакет поверх `onec-hbk-bsl-core[mcp]` |
+
 ## Документация
 
 | Документ | Для чего |
 |---|---|
-| [docs/public-surface.md](docs/public-surface.md) | Публичный контракт CLI, API, VS Code и MCP |
-| [docs/diagnostic-rules.md](docs/diagnostic-rules.md) | Справочник правил: `BSL###`, BSLLS key, RU/EN описание, severity и tags |
-| [docs/architecture.md](docs/architecture.md) | Архитектура сервера, индекса и анализатора |
-| [docs/Production-Notes.md](docs/Production-Notes.md) | Эксплуатация, релизы, проверки |
-| [docs/metadata_registry.md](docs/metadata_registry.md) | Метаданные конфигураций 1С |
-| [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md) | Лицензии и источники данных |
+| [VS Code extension guide](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md) | Расширение VS Code / Cursor |
+| [Diagnostic rules](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/diagnostic-rules.md) | Справочник правил |
+| [Public surface](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/public-surface.md) | Публичный контракт CLI/API/extension |
+| [Architecture](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/architecture.md) | Архитектура сервера и анализатора |
+| [Production notes](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/Production-Notes.md) | Release и эксплуатационные проверки |
+| [Third-party notices](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/THIRD_PARTY_NOTICES.md) | Лицензии и источники данных |
 
 ## Разработка
 
@@ -181,11 +157,9 @@ cd 1c_hbk_bsl
 make install
 make lint
 make test
-make build
 ```
 
-Для локальной сборки VSIX используйте `make vsix`, чтобы в расширение попал
-актуальный бинарник.
+Для локальной сборки VSIX используйте `make vsix`.
 
 ## Лицензия
 

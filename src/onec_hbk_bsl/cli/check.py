@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -307,6 +308,14 @@ def list_rules(tag: str | None = None) -> None:
 _PROGRESS_THRESHOLD = 20  # show progress bar only for larger batches
 
 
+def _auto_check_workers() -> int:
+    # Diagnostics are mostly CPU-bound and already use targeted process-safe
+    # subtasks for the few large-file hotspots. Threading whole-file checks adds
+    # scheduler overhead on large 1C workspaces, so the adaptive default stays
+    # serial unless the caller explicitly requests --jobs N.
+    return 1
+
+
 def _run_checks(
     files: list[str],
     select: set[str] | None,
@@ -345,7 +354,7 @@ def _run_checks(
             **engine_kw,
         )
 
-    workers = jobs if jobs > 0 else min(os.cpu_count() or 4, 8)
+    workers = jobs if jobs > 0 else _auto_check_workers()
 
     all_diagnostics: list[Diagnostic] = []
     error_occurred = False
@@ -384,10 +393,22 @@ def _run_checks(
                 if task_id is not None and progress_ctx is not None:
                     progress_ctx.advance(task_id)
         else:
+            engine_tls = threading.local()
 
             def _check_one(fp: str) -> list[Diagnostic]:
                 per_file_extra = cfg.get_file_ignores(fp)
-                return _make_engine(per_file_extra).check_file(fp)
+                engine_key = frozenset(per_file_extra)
+                engines: dict[frozenset[str], DiagnosticEngine] | None = getattr(
+                    engine_tls, "engines", None
+                )
+                if engines is None:
+                    engines = {}
+                    engine_tls.engines = engines
+                engine = engines.get(engine_key)
+                if engine is None:
+                    engine = _make_engine(per_file_extra)
+                    engines[engine_key] = engine
+                return engine.check_file(fp)
 
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = {executor.submit(_check_one, fp): fp for fp in files}

@@ -839,7 +839,7 @@ class TestSecurityApiParityBatch:
     def test_bsl272_synchronous_calls_matches_bslls_fixture(self, tmp_path: Path) -> None:
         fixture = (
             Path(__file__).resolve().parents[1]
-            / ".agent/tmp/bslls-source/src/test/resources/diagnostics/UsingSynchronousCallsDiagnostic.bsl"
+            / ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/UsingSynchronousCallsDiagnostic.bsl"
         )
         if not fixture.exists():
             pytest.skip("BSLLS upstream fixture is not available")
@@ -1105,6 +1105,44 @@ class TestTailParityBatches:
         )
         diags = DiagnosticEngine(select={"BSL170"}).check_file(str(path))
         assert "BSL170" in _codes(diags)
+
+    def test_needless_compilation_directive_skips_split_form_fragment(self, tmp_path: Path) -> None:
+        form_dir = tmp_path / "DataProcessors" / "Тест" / "Forms" / "Форма" / "Ext" / "Form"
+        form_dir.mkdir(parents=True)
+        (form_dir / "Module.bsl").write_text("// full module\n", encoding="utf-8")
+        path = form_dir / "СерверныйМетод.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаСервере
+                Процедура СерверныйМетод()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL170"}).check_file(str(path))
+        assert "BSL170" not in _codes(diags)
+
+    def test_needless_compilation_directive_skips_split_object_fragment(
+        self, tmp_path: Path
+    ) -> None:
+        ext_dir = tmp_path / "DataProcessors" / "Тест" / "Ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "ObjectModule.bsl").write_text("// full module\n", encoding="utf-8")
+        path = ext_dir / "СерверныйМетод.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаСервере
+                Процедура СерверныйМетод()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL170"}).check_file(str(path))
+        assert "BSL170" not in _codes(diags)
 
     def test_unsafe_find_by_code_tail_rule(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -2331,7 +2369,7 @@ class TestBsl217MissingTempStorageDeletion:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
-            ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
+            ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/"
             "MissingTempStorageDeletionDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -3097,6 +3135,17 @@ class TestBsl017ExportInCommandModule:
         diags = engine.check_file(str(bsl_file))
         assert "BSL017" not in [d.code for d in diags]
 
+    def test_export_in_split_object_fragment_no_warning(self, tmp_path: Path) -> None:
+        ext = tmp_path / "DataProcessors" / "Тест" / "Ext"
+        ext.mkdir(parents=True)
+        (ext / "ObjectModule.bsl").write_text("// full module\n", encoding="utf-8")
+        bsl_file = ext / "ЭкспортныйМетод.bsl"
+        bsl_file.write_text(
+            "Процедура ЭкспортныйМетод() Экспорт\nКонецПроцедуры\n", encoding="utf-8"
+        )
+        diags = DiagnosticEngine(select={"BSL017"}).check_file(str(bsl_file))
+        assert "BSL017" not in [d.code for d in diags]
+
 
 # ---------------------------------------------------------------------------
 # Rule selection / suppression
@@ -3684,7 +3733,7 @@ class TestBsl200IncorrectLineBreak:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
-            ".agent/tmp/bslls-source/src/test/resources/diagnostics/IncorrectLineBreakDiagnostic.bsl"
+            ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/IncorrectLineBreakDiagnostic.bsl"
         )
         if not fixture.exists():
             pytest.skip("BSLLS fixture is not available")
@@ -3762,6 +3811,23 @@ class TestBsl026EmptyRegion:
         diags = _check(content, tmp_path)
         assert "BSL026" in _codes(diags)
 
+    def test_empty_region_skips_split_fragment(self, tmp_path: Path) -> None:
+        ext = tmp_path / "CommonModules" / "Модуль" / "Ext"
+        ext.mkdir(parents=True)
+        (ext / "Module.bsl").write_text("// full module\n", encoding="utf-8")
+        path = ext / "Метод.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                #Область ПустаяОбласть
+                #КонецОбласти
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL026"}).check_file(str(path))
+        assert "BSL026" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL027 — UseGotoOperator
@@ -3794,7 +3860,7 @@ class TestBsl027UseGoto:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
-            ".agent/tmp/bslls-source/src/test/resources/diagnostics/UsingGotoDiagnostic.bsl"
+            ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/UsingGotoDiagnostic.bsl"
         )
         if not fixture.exists():
             pytest.skip("BSLLS fixture is not available")
@@ -3871,7 +3937,7 @@ class TestBsl028MissingCodeTryCatchEx:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
-            ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
+            ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/"
             "MissingCodeTryCatchExDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -4118,7 +4184,7 @@ class TestBsl029MagicNumber:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
-            ".agent/tmp/bslls-source/src/test/resources/diagnostics/MagicNumberDiagnostic.bsl"
+            ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/MagicNumberDiagnostic.bsl"
         )
         if not fixture.exists():
             pytest.skip("BSLLS fixture is not available")
@@ -5374,6 +5440,24 @@ class TestBsl040UsingThisForm:
         diags = DiagnosticEngine(select={"BSL040"}).check_file(str(bsl_path))
         assert "BSL040" not in _codes(diags)
 
+    def test_this_form_skips_split_form_fragment(self, tmp_path: Path) -> None:
+        form_dir = tmp_path / "Catalogs" / "Foo" / "Forms" / "ФормаЭлемента" / "Ext"
+        form_dir.mkdir(parents=True)
+        (form_dir / "Module.bsl").write_text("// full module\n", encoding="utf-8")
+        bsl_path = form_dir / "ПриОткрытии.bsl"
+        bsl_path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура ПриОткрытии()
+                    ЭтаФорма.Закрыть();
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL040"}).check_file(str(bsl_path))
+        assert "BSL040" not in _codes(diags)
+
     def test_path_is_likely_form_module_bsl(self, tmp_path: Path) -> None:
         mod = tmp_path / "Forms" / "SomeForm" / "Ext" / "Module.bsl"
         mod.parent.mkdir(parents=True)
@@ -5665,7 +5749,7 @@ class TestBsl258UnionAll:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "UnionAllDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -5944,7 +6028,7 @@ class TestBsl210LogicalOrInWhereSection:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
-            ".agent/tmp/bslls-source/src/test/resources/diagnostics/"
+            ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/"
             "LogicalOrInTheWhereSectionOfQueryDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -6108,6 +6192,24 @@ class TestBsl062UnusedParameter:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_unused_param_skips_split_fragment(self, tmp_path: Path) -> None:
+        ext = tmp_path / "CommonModules" / "Модуль" / "Ext"
+        ext.mkdir(parents=True)
+        (ext / "Module.bsl").write_text("// full module\n", encoding="utf-8")
+        path = ext / "Метод.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Метод(НеИспользуемый)
+                    А = 1;
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL062"}).check_file(str(path))
         assert "BSL062" not in _codes(diags)
 
 
@@ -6343,7 +6445,7 @@ class TestBsl218MissingTemporaryFileDeletion:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "MissingTemporaryFileDeletionDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -6444,6 +6546,20 @@ class TestBsl245ServerSideExportFormMethod:
             / "ФайлыИнформационнойБазы_ДоступноДобавление.bsl"
         )
         path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert "BSL245" not in _codes(diags)
+
+    def test_server_export_in_split_form_fragment_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            &НаСервере
+            Процедура ПолучитьДанные() Экспорт
+            КонецПроцедуры
+        """
+        form_dir = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form"
+        form_dir.mkdir(parents=True)
+        (form_dir / "Module.bsl").write_text("// full module\n", encoding="utf-8")
+        path = form_dir / "ПолучитьДанные.bsl"
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert "BSL245" not in _codes(diags)
@@ -6990,7 +7106,7 @@ class TestBsl190FormDataToValue:
 class TestBsl255TryNumber:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "TryNumberDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7016,7 +7132,7 @@ class TestBsl255TryNumber:
 class TestBsl257UnaryPlusInConcatenation:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "UnaryPlusInConcatenationDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7042,7 +7158,7 @@ class TestBsl257UnaryPlusInConcatenation:
 class TestBsl273VirtualTableCallWithoutParameters:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "VirtualTableCallWithoutParametersDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7069,7 +7185,7 @@ class TestBsl273VirtualTableCallWithoutParameters:
 class TestBsl279YoLetterUsage:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "YoLetterUsageDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7097,7 +7213,7 @@ class TestBsl279YoLetterUsage:
 class TestBsl277WrongUseOfRollbackTransaction:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "WrongUseOfRollbackTransactionMethodDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7123,7 +7239,7 @@ class TestBsl277WrongUseOfRollbackTransaction:
 class TestBsl276WrongUseFunctionProceedWithCall:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "WrongUseFunctionProceedWithCallDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7151,7 +7267,7 @@ class TestBsl276WrongUseFunctionProceedWithCall:
 class TestBsl263UseLessForEach:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "UseLessForEachDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7174,7 +7290,7 @@ class TestBsl263UseLessForEach:
 class TestBsl199IfElseIfEndsWithElse:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "IfElseIfEndsWithElseDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7199,7 +7315,7 @@ class TestBsl199IfElseIfEndsWithElse:
 class TestBsl198IfElseDuplicatedCondition:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "IfElseDuplicatedConditionDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7227,7 +7343,7 @@ class TestBsl198IfElseDuplicatedCondition:
 class TestBsl197IfElseDuplicatedCodeBlock:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "IfElseDuplicatedCodeBlockDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7256,7 +7372,7 @@ class TestBsl197IfElseDuplicatedCodeBlock:
 class TestBsl225NumberOfValuesInStructureConstructorBslls:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "NumberOfValuesInStructureConstructorDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7283,7 +7399,7 @@ class TestBsl225NumberOfValuesInStructureConstructorBslls:
 class TestBsl262UsageWriteLogEvent:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "UsageWriteLogEventDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7328,7 +7444,7 @@ class TestBsl262UsageWriteLogEvent:
 class TestBsl151BeginTransactionBeforeTryCatch:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "BeginTransactionBeforeTryCatchDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7359,7 +7475,7 @@ class TestBsl151BeginTransactionBeforeTryCatch:
 class TestBsl157CommitTransactionOutsideTryCatch:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "CommitTransactionOutsideTryCatchDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7389,7 +7505,7 @@ class TestBsl157CommitTransactionOutsideTryCatch:
 
     def test_matches_bslls_single_sub_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "CommitTransactionOutsideTryCatchDiagnosticSingleSub.bsl"
         )
         if not fixture.exists():
@@ -7424,7 +7540,7 @@ class TestBsl230PairingBrokenTransaction:
 
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "PairingBrokenTransactionDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7489,7 +7605,7 @@ class TestBsl268UsingFindElementByString:
 class TestBsl227OneStatementPerLine:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "OneStatementPerLineDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7511,7 +7627,7 @@ class TestBsl227OneStatementPerLine:
 
     def test_matches_bslls_end_file_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "OneStatementPerLineDiagnosticEndFile.bsl"
         )
         if not fixture.exists():
@@ -7532,7 +7648,7 @@ class TestBsl227OneStatementPerLine:
 class TestBsl149AssignAliasFieldsInQuery:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "AssignAliasFieldsInQueryDiagnostic.bsl"
         )
         if not fixture.exists():
@@ -7556,7 +7672,7 @@ class TestBsl149AssignAliasFieldsInQuery:
 class TestBsl186ExtraCommas:
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
-            Path(".agent/tmp/bslls-source/src/test/resources/diagnostics")
+            Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
             / "ExtraCommasDiagnostic.bsl"
         )
         if not fixture.exists():

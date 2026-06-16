@@ -12,6 +12,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     unsafe_find_by_code_metadata_index_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
+from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
+    is_split_module_fragment,
+)
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
 
@@ -43,7 +46,11 @@ def _path_matches_bsl169_form_module(path: str) -> bool:
     low = path.replace("\\", "/").lower()
     if "/forms/" not in low:
         return False
-    return low.endswith("/ext/module.bsl") or low.endswith("/ext/form/module.bsl")
+    return (
+        low.endswith("/ext/module.bsl")
+        or low.endswith("/ext/form/module.bsl")
+        or "/ext/form/" in low
+    )
 
 
 def _path_matches_bsl007_module_types(path: str) -> bool:
@@ -421,6 +428,8 @@ class ModuleModel:
                 )
             ]
         for idx, line in enumerate(lines):
+            if '"' not in line:
+                continue
             if "|" not in line and line.count('"') >= 4:
                 continue
             if re.search(r"\+\s*\"", line) or re.search(r"\"\s*\+", line):
@@ -1072,6 +1081,7 @@ class ModuleModel:
         diags: list[Diagnostic] = []
         is_form_module = _path_matches_bsl169_form_module(self.path)
         is_form_or_command = is_form_module or path_is_command_module_bsl_fn(self.path)
+        split_module_fragment = is_split_module_fragment(self.path)
         skip_bsl169 = is_form_module and _path_is_unmanaged_form_module(self.path)
         clean_lines = (
             snapshot.code_lines_without_comments
@@ -1133,7 +1143,7 @@ class ModuleModel:
                         message=f"Для метода {proc.name} потеряна директива компиляции",
                     )
                 )
-            if "BSL170" in enabled_set and not is_form_or_command:
+            if "BSL170" in enabled_set and not is_form_or_command and not split_module_fragment:
                 for ann_idx, ann_line in annotation_lines:
                     col = ann_line.find("&")
                     diags.append(
@@ -1488,14 +1498,19 @@ class ModuleModel:
         tree_ok = root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
         typed_nodes: dict[str, list[Any]] = {}
         if tree_ok:
-            wanted = {
-                "ERROR",
-                "ternary_expression",
-                "assignment_statement",
-                "preprocessor",
-                "method_call",
-            }
-            typed_nodes = ts_nodes_for_types_fn(tree, wanted)
+            wanted: set[str] = set()
+            if "BSL171" in enabled:
+                wanted.add("ERROR")
+            if "BSL251" in enabled:
+                wanted.add("ternary_expression")
+            if "BSL252" in enabled:
+                wanted.add("assignment_statement")
+            if "BSL259" in enabled:
+                wanted.add("preprocessor")
+            if "BSL268" in enabled:
+                wanted.add("method_call")
+            if wanted:
+                typed_nodes = ts_nodes_for_types_fn(tree, wanted)
 
         if "BSL171" in enabled:
             diags.extend(

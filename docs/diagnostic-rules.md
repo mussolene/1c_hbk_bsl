@@ -8,16 +8,16 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 
 - `BSL###` is the stable `onec-hbk-bsl` rule code used in diagnostics output,
   `--select`, `--ignore`, `onec-hbk-bsl.toml`, and `// noqa: BSL###`.
-- `BSLLS key` is the compatible diagnostic name from BSL Language Server
-  semantics, such as `LineLength` or `ConsecutiveEmptyLines`.
+- `Compatible key` is the stable diagnostic alias accepted for compatibility
+  with existing BSL projects, such as `LineLength` or `ConsecutiveEmptyLines`.
 - CLI and config accept both forms, but output uses `BSL###`.
 - Rule numbering is stable but not continuous. Missing numbers, for example
   `BSL053`, are not valid rules unless they appear in this table.
-- Unknown rule codes or BSLLS keys are configuration errors.
+- Unknown rule codes or compatible keys are configuration errors.
 
 ## Справочник Правил
 
-| Code | BSLLS key | Default | Severity | Русское описание | English description | Tags |
+| Code | Compatible key | Default | Severity | Русское описание | English description | Tags |
 |---|---|---:|---|---|---|---|
 | `BSL001` | `ParseError` | Yes | ERROR | Ошибка разбора исходного кода | Source code parse error | syntax |
 | `BSL002` | `MethodSize` | Yes | ERROR | Ограничение на размер метода | Method size | size, brain-overload |

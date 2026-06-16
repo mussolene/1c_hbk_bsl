@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
+    is_split_module_fragment,
+)
+
 
 def _diag_module() -> Any:
     from onec_hbk_bsl.analysis import diagnostics as _diag
@@ -591,7 +595,7 @@ def run_bsl245_server_side_export_form_method(
     path: str, lines: list[str], procs: list[Any]
 ) -> list[Any]:
     _diag = _diag_module()
-    if not _diag.path_is_likely_form_module_bsl(path):
+    if is_split_module_fragment(path) or not _diag.path_is_likely_form_module_bsl(path):
         return []
     diags: list[Any] = []
     for proc in procs:

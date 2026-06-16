@@ -12,7 +12,7 @@ This runbook covers production usage of:
 - The primary project config is `onec-hbk-bsl.toml`; `.bsl-language-server.json` is not a supported runtime config.
 - `BSL_SELECT` / `onecHbkBsl.diagnostics.select` select the exact rules to run, including rules disabled by default.
 - `BSL_IGNORE` / `onecHbkBsl.diagnostics.ignore` suppress rules from the default-enabled set.
-- Rule selectors accept stable `BSL###` codes and BSLLS-compatible diagnostic names; the generated reference is [diagnostic-rules.md](diagnostic-rules.md).
+- Rule selectors accept stable `BSL###` codes and compatible diagnostic aliases; the generated reference is [diagnostic-rules.md](diagnostic-rules.md).
 - Source suppressions such as `// noqa: BSL###` and `// BSLLS-off/on` are supported for compatibility with existing BSL codebases.
 - Formatting defaults are tabs for `[bsl]`, logical indent width 4, and safe on-type indentation on newline only.
 - Diagnostics/indexing parser fallbacks are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.
@@ -39,14 +39,14 @@ When `useDocker` is true, the extension runs:
 
 — the same environment keys as for a local binary (`extension.ts`), so log level, DB path, and rule selection match non-Docker mode. The container must already exist; mount workspace and index paths so `INDEX_DB_PATH` (if set) resolves inside the container.
 
-## LSP Parity Checklist
+## LSP Compatibility Checklist
 - Navigation: definition, references, rename, call hierarchy
 - Editor help: hover, completion, signature help, inlay hints
 - Structure/UX: document symbols, workspace symbols, folding, semantic tokens
 - Editing: formatting, on-type formatting, code actions
 - Diagnostics: rules engine, select/ignore settings, suppression comments
 
-## MCP Parity Checklist
+## MCP Compatibility Checklist
 - Symbol/code tools: status, find symbol, file symbols, callers/callees, references, search
 - File tools: read file, format, fix, rename, workspace scan
 - Metadata tools: meta object, meta collection, metadata index
@@ -69,13 +69,13 @@ When `useDocker` is true, the extension runs:
 ## Operational Commands
 - Lint: `ruff check`
 - Tests + coverage gate: `PYTHONPATH=src pytest -q`
-- Benchmarks: use repository scripts or dedicated test tooling; benchmark
-  helpers are not part of the product CLI.
+- Performance checks: use repository scripts or dedicated test tooling; helper
+  scripts are not part of the product CLI.
 - VSCode extension compile: `npm run compile` (in `vscode-extension`)
 
 ## Release Go/No-Go
 - `ruff check` passes.
 - `PYTHONPATH=src pytest -q` passes with coverage threshold.
 - If extension changed, `npm run compile` passes.
-- Compatibility oracle checks for selected release corpora have no message, severity, or anchor mismatches.
-- Bench output is collected and reviewed (cold/warm index, diagnostics timing).
+- Diagnostic stability checks on selected release corpora preserve expected counts, severity and anchors.
+- Performance output is collected and reviewed (cold/warm index, diagnostics timing).

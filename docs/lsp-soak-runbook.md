@@ -12,7 +12,7 @@ Use this runbook to collect long-session drift evidence for memory, thread count
   --file-limit 200 \
   --seed 42 \
   --index-workspace \
-  --output-dir .agent/reports/lsp-soak
+  --output-dir .tmp/reports/lsp-soak
 ```
 
 For a longer run, set `--duration-min 60`.

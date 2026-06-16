@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.16] - 2026-06-16
+
 ### Changed
 
 - Разделены PyPI-дистрибутивы: `onec-hbk-bsl-core` содержит slim-реализацию
@@ -14,12 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backwards-compatible метапакетом поверх `onec-hbk-bsl-core[mcp]`.
 - `onec-hbk-bsl mcp` без MCP-зависимостей теперь завершается понятной
   подсказкой по установке вместо низкоуровневого `ModuleNotFoundError`.
+- Пользовательская документация, README расширения и публичная surface-документация
+  сжаты до продуктового вида без локальных parity-артефактов и внутренних путей.
+- Публичные описания совместимых диагностических alias больше не используют
+  `BSLLS key` / `BSLLS diagnostic names` как пользовательскую терминологию.
+
+### Fixed
+
+- `ServerSideExportMethodsInForm` (`BSL245`) корректнее определяет split-модули
+  форм и не стреляет по object-module split-файлам.
+- `SelectTopWithoutOrderBy` (`BSL077`) проверяется через SDBL/CST и корректно
+  диагностирует `ВЫБРАТЬ ПЕРВЫЕ` без `УПОРЯДОЧИТЬ ПО`.
+- Диагностический pipeline переиспользует рассчитанный контекст правил, чтобы
+  снизить лишнюю работу при прогоне связанных metadata/query правил.
 
 ## [0.8.3] - 2026-06-13
 
 ### Fixed
 
-- `SemicolonPresence` (`BSL030`) теперь проверяет statement-узлы CST, как BSLLS,
+- `SemicolonPresence` (`BSL030`) теперь проверяет statement-узлы CST,
   и больше не даёт ложные срабатывания на многострочных выражениях с переносом
   перед оператором сравнения.
 
@@ -27,17 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Re-formatted the diagnostic message parity changes with the repository Ruff
+- Re-formatted the diagnostic message compatibility changes with the repository Ruff
   formatter so the CI format gate passes for the published fix.
 
 ## [0.7.54] - 2026-06-12
 
 ### Changed
 
-- Structured diagnostic output now includes canonical BSLLS `rule_message`
+- Structured diagnostic output now includes canonical `rule_message`
   alongside occurrence-specific `message`, so agents and report consumers can
   distinguish the rule wording from local details.
-- `CommonModuleInvalidType` (`BSL159`) now reports the BSLLS message
+- `CommonModuleInvalidType` (`BSL159`) now reports the canonical message
   `Общий модуль недопустимого типа` instead of the misleading local wording
   about a missing execution context.
 
@@ -57,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `code`, `severity` и `message`.
 - Git diff helpers читают пути как UTF-8 с `core.quotepath=false`, чтобы
   корректно работать с кириллическими путями.
-- `StyleElementConstructors` (`BSL249`) выровнен с BSLLS metadata как `ERROR`.
+- `StyleElementConstructors` (`BSL249`) выровнен как `ERROR`.
 
 ## [0.7.48] - 2026-06-02
 
@@ -73,8 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Описания диагностических правил в публичных UI/JSON surfaces теперь
   локализуются на русский: LSP `Diagnostic.data.rule_description`, `--list-rules`,
   SARIF `shortDescription` и MCP `bsl_list_rules`.
-- Дефолтный набор диагностик теперь включает BSLLS `CodeOutOfRegion` (`BSL156`)
-  и `QueryToMissingMetadata` (`BSL236`), что совпадает с локальным BSLLS oracle
+- Дефолтный набор диагностик теперь включает совместимые `CodeOutOfRegion` (`BSL156`)
+  и `QueryToMissingMetadata` (`BSL236`) по результатам локальных regression checks
   на больших реальных корпусах.
 - LSP для больших файлов в VS Code теперь отвечает на первый pull diagnostics быстро:
   полный анализ выполняется в фоне и обновляет Problems через `workspace/diagnostic/refresh`.
@@ -103,15 +118,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Убрана прямая зависимость от внешнего `fastmcp`: MCP bridge использует `mcp.server.fastmcp.FastMCP` из официального Python MCP SDK.
 - Полная установка остается одним пакетом без extras-разделения; CLI-режимы по-прежнему выбираются ключами `--mcp`, `--stdio`, `--port`, `--workspace`.
 - MCP HTTP запуск перенес `host`/`port` в создание приложения, как требует официальный SDK.
-- Диагностики и форматирование доведены до exact BSLLS oracle-parity на целевых больших корпусах: без `only_ours`, `only_bslls`, message, severity и anchor mismatch.
-- Счетчики `MethodSize`, `CognitiveComplexity` и `CyclomaticComplexity` выровнены по BSLLS-семантике для многострочных сигнатур, comment-only границ тела, вложенных boolean-expression и многострочных строк.
-- Пользовательская документация и README расширения описывают единый BSLLS-совместимый профиль без legacy/compat режимов.
+- Диагностики и форматирование доведены до стабильного compatibility-профиля на целевых больших корпусах: без message, severity и anchor mismatch.
+- Счетчики `MethodSize`, `CognitiveComplexity` и `CyclomaticComplexity` выровнены для многострочных сигнатур, comment-only границ тела, вложенных boolean-expression и многострочных строк.
+- Пользовательская документация и README расширения описывают единый compatibility-профиль без legacy/compat режимов.
 
 ## [0.7.23] - 2026-05-05
 
 ### Changed
 
-- Выравнены диагностики и форматирование `strict-bslls` по BSLLS fixture/oracle-прогонам.
+- Выравнены диагностики и форматирование `strict-bslls` по локальным compatibility fixtures.
 - Синхронизирована версия VS Code extension с runtime package.
 
 ## [0.7.22] - 2026-04-16
@@ -136,13 +151,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **BSL210** (`LogicalOrInTheWhereSectionOfQuery`): эвристика для встроенных запросов (продолжения `|…`, литералы); совпадение с BSLLS по типичным многострочным `ГДЕ` + `ИЛИ`.
+- **BSL210** (`LogicalOrInTheWhereSectionOfQuery`): эвристика для встроенных запросов (продолжения `|…`, литералы); стабильная обработка типичных многострочных `ГДЕ` + `ИЛИ`.
 
 ### Changed
 
 - **BSL256 (Typo):** вместо LanguageTool — `pyspellchecker` + `pymorphy3` и исключения из `bslls_typo_data` / `TypoDiagnostic_ru.properties`; зависимость `language-tool-python` убрана.
-- **BSL254:** включён паритет с BSLLS через индекс вызовов клиент/сервер.
-- **Форматтер (`strict-bslls`):** как BSLLS CLI — табы по умолчанию, пробел после `,` в коде, пустые строки с отступом; профиль `compat` по-прежнему с пробелами при явном выборе.
+- **BSL254:** включён compatibility-режим через индекс вызовов клиент/сервер.
+- **Форматтер (`strict-bslls`):** табы по умолчанию, пробел после `,` в коде, пустые строки с отступом; профиль `compat` по-прежнему с пробелами при явном выборе.
 - **LSP / MCP:** `insertSpaces` из запроса форматирования или профиль по умолчанию (для `[bsl]` в расширении — табы); убран принудительный режим «только пробелы» в code action и MCP.
 
 ### Docs
@@ -160,23 +175,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`__version__`:** в рабочей копии (`src/onec_hbk_bsl` + `.git`) сначала **setuptools-scm** по корню репозитория, чтобы `pytest` и локальный запуск с `PYTHONPATH=src` не подхватывали устаревшую версию из чужой установки в site-packages.
 
 ### Changed
-- Документация: объединены гайды CST в [docs/cst_policy.md](docs/cst_policy.md); parity/baseline notes перенесены в текущие task reports и CLI tooling; объединены дублирующие CST-документы в docs/cst_policy.md; убраны битые ссылки на локальные пути вне репозитория; CI без загрузки отчёта в Codecov.
+- Документация: объединены гайды CST в [docs/cst_policy.md](docs/cst_policy.md); baseline notes перенесены в текущие task reports и CLI tooling; объединены дублирующие CST-документы в docs/cst_policy.md; убраны битые ссылки на локальные пути вне репозитория; CI без загрузки отчёта в Codecov.
 
 ### Changed
 - **LSP semantic tokens (подсветка):** логические операторы **И** / **ИЛИ** / **НЕ** учитываются в **любом регистре** (`и`, `ИЛИ`, `нЕ` и т.д.); исправлено написание **ИЛИ** (раньше в шаблоне ошибочно фигурировало «Или» без совпадения с ключевым словом в модуле).
-- **BSL001 (ParseError):** подавление ложных узлов `(` / `)` от грамматики tree-sitter-bsl не только внутри ``Если (…)``, но и в **присваиваниях** с многострочными скобками и в конструкциях вроде ``Новый("…")`` — ближе к BSLLS и к допустимому BSL (см. `BslParser._should_suppress_lone_paren_error`).
-- **BSL065 (Missing export comment):** в модулях форм EDT (`path_is_likely_form_module_bsl`) правило не выполняется — паритет с BSLLS на `…/Forms/…/Ext/Module.bsl`.
-- **BSL153 (CanonicalSpellingKeywords):** в модулях форм EDT (`path_is_likely_form_module_bsl`) правило не выполняется — паритет с BSLLS на типичных `Module.bsl` форм.
-- **BSL011 (CognitiveComplexity):** в метрику добавлен учёт логических операторов `И`/`ИЛИ`/`And`/`Or` (в духе Sonar/BSLLS), чтобы совместно с BSL019 не «отставать» от BSLLS на длинных условиях.
+- **BSL001 (ParseError):** подавление ложных узлов `(` / `)` от грамматики tree-sitter-bsl не только внутри ``Если (…)``, но и в **присваиваниях** с многострочными скобками и в конструкциях вроде ``Новый("…")`` — ближе к допустимому BSL (см. `BslParser._should_suppress_lone_paren_error`).
+- **BSL065 (Missing export comment):** в модулях форм EDT (`path_is_likely_form_module_bsl`) правило не выполняется для `…/Forms/…/Ext/Module.bsl`.
+- **BSL153 (CanonicalSpellingKeywords):** в модулях форм EDT (`path_is_likely_form_module_bsl`) правило не выполняется для типичных `Module.bsl` форм.
+- **BSL011 (CognitiveComplexity):** в метрику добавлен учёт логических операторов `И`/`ИЛИ`/`And`/`Or`, чтобы совместно с BSL019 корректнее оценивать длинные условия.
 - **BSL046 / BSL199:** при включённом BSL199 цепочка «Если/ИначеЕсли без Иначе» даёт только **BSL199** (строка **КонецЕсли**), без дубля BSL046; при отключённом BSL199 по-прежнему срабатывает BSL046 на строке `Если`.
 - **BSL036 (IfConditionComplexity):** подсчёт операторов `И`/`ИЛИ` по **всему** условию до `Тогда` (многострочные `Если`/`ИначеЕсли`); **BSL153** не выдаётся на строках этого условия, если с первой строки срабатывает BSL036.
-- **BSL024 (SpaceAtStartComment):** дополнительно не помечаются только строки `//&…` (директивы компилятора); `//{`/`//}` и декоративные `//****…` снова проверяются как у BSLLS на эталонных модулях.
-- **BSL055 (ConsecutiveEmptyLines):** порог как у BSLLS — не более **одной** пустой строки подряд между фрагментами кода (`MAX_BLANK_LINES=1`); quick-fix в [fix_engine.py](src/onec_hbk_bsl/analysis/fix_engine.py) согласован.
-- **BSL256 (Typo) / BSL208 (LatinAndCyrillicSymbolInWord):** включено по умолчанию правило **BSL256** для идентификаторов, где кириллица состоит только из букв-омоглифов латиницы (как у BSLLS — приоритет Typo); намеренное смешение алфавитов по-прежнему даёт **BSL208**. Общая реализация: `_rule_bsl208_bsl256_latin_cyrillic_and_typo`.
-- **BSL219 (MissingVariablesDescription):** реализовано для `Перем … Экспорт` / `Var … Export` на уровне модуля без непустой строки описания `//` или `///` непосредственно выше (как BSLLS; часто вместе с BSL054 на той же строке).
+- **BSL024 (SpaceAtStartComment):** дополнительно не помечаются только строки `//&…` (директивы компилятора); `//{`/`//}` и декоративные `//****…` снова проверяются на эталонных модулях.
+- **BSL055 (ConsecutiveEmptyLines):** порог — не более **одной** пустой строки подряд между фрагментами кода (`MAX_BLANK_LINES=1`); quick-fix в [fix_engine.py](src/onec_hbk_bsl/analysis/fix_engine.py) согласован.
+- **BSL256 (Typo) / BSL208 (LatinAndCyrillicSymbolInWord):** включено по умолчанию правило **BSL256** для идентификаторов, где кириллица состоит только из букв-омоглифов латиницы; намеренное смешение алфавитов по-прежнему даёт **BSL208**. Общая реализация: `_rule_bsl208_bsl256_latin_cyrillic_and_typo`.
+- **BSL219 (MissingVariablesDescription):** реализовано для `Перем … Экспорт` / `Var … Export` на уровне модуля без непустой строки описания `//` или `///` непосредственно выше; часто вместе с BSL054 на той же строке.
 - **BSL040 (UsingThisForm):** модули форм определяются по пути EDT (`…/Forms/…/Ext/Module.bsl`) и по имени файла (`*форма*`, окончание `form`) — для них **ЭтаФорма** не помечается как ошибочное использование вне обработчика.
-- **BSL024 (SpaceAtStartComment):** выравнивание с BSLLS — строгий «допустимый» комментарий как в `SpaceAtStartCommentDiagnostic`, аннотации `//@` / `//(c)` / `//©`, пропуск строк с закомментированным кодом (аналог `CodeRecognizer`), `///`, `//|`, `//!`; общая функция `bsl024_should_report_line` для движка и LSP quick-fix.
-- **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение` (согласовано с BSLLS); **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
+- **BSL024 (SpaceAtStartComment):** строгий «допустимый» комментарий: аннотации `//@` / `//(c)` / `//©`, пропуск строк с закомментированным кодом, `///`, `//|`, `//!`; общая функция `bsl024_should_report_line` для движка и LSP quick-fix.
+- **BSL004 (EmptyCodeBlock):** пустая ветка после «Тогда» / «Then» даёт то же предупреждение, что и пустой `Исключение`; **BSL059** не дублирует это на той же строке. На сложных условиях **BSL036** подавляет **BSL153**, если оба правила включены.
 - Сборка standalone-бинарника: **PyInstaller** (spec [`packaging/onec-hbk-bsl.spec`](packaging/onec-hbk-bsl.spec)) вместо Nuitka; уменьшение графа зависимостей через `excludes` в spec; в CI добавлен smoke-job сборки бинарника на Linux; релизные бинарники и CI — **Python 3.14** (`requires-python >=3.14`).
 
 ## [0.7.3] - 2026-03-23
@@ -283,7 +298,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **BSL018** (RaiseWithLiteral): отключено по умолчанию; подсказки ссылаются на расширенный синтаксис `ВызватьИсключение` (8.3.21+), без `НовоеИсключение()`; включение — через `select`/настройки движка.
-- **RULE_METADATA[`name`]**: приведены к именам диагностик **BSL Language Server** (`*Diagnostic` без суффикса), в духе копирования справочника BSLLS; прямая карта `_BSLLS_NAME_TO_CODE` только для подавлений `// BSLLS:…` и внешних отчётов — без лишних синонимов-ключей.
+- **RULE_METADATA[`name`]**: приведены к совместимым diagnostic aliases (`*Diagnostic` без суффикса); прямая карта `_BSLLS_NAME_TO_CODE` только для подавлений `// BSLLS:…` и внешних отчётов — без лишних синонимов-ключей.
 
 ### Fixed
 - Критическая ошибка производительности: `find_symbol` не использовал B-tree индекс из-за `LOWER()` —
@@ -340,7 +355,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.16...HEAD
+[0.8.16]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.15...v0.8.16
 [0.3.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mussolene/1c_hbk_bsl/releases/tag/v0.1.0
