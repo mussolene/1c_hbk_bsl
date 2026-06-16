@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.17] - 2026-06-16
+
+### Fixed
+
+- `ServerCallsInFormEvents` (`BSL244`) больше не диагностирует серверный
+  обработчик формы, который вызывает серверную вспомогательную процедуру.
+- `UnusedLocalVariable` (`BSL007`) учитывает использование переменной-приемника
+  в динамическом вызове через `Выполнить` / `Execute`, но обычные строковые
+  упоминания по-прежнему не считаются чтением переменной.
+
 ## [0.8.16] - 2026-06-16
 
 ### Changed
@@ -355,7 +365,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.16...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.17...HEAD
+[0.8.17]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.16...v0.8.17
 [0.8.16]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.15...v0.8.16
 [0.3.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.1.0...v0.2.0

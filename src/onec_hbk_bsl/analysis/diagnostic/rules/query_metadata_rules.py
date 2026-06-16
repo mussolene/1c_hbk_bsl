@@ -799,6 +799,8 @@ def run_bsl244_253_261_runtime_pool(
             is_form_event = name_cf.startswith("при") or name_cf.startswith("on")
             if not is_form_event:
                 continue
+            if _diag._procedure_compiler_execution_context(lines, proc) == "server":
+                continue
             for match in re.finditer(r"\b(?P<call>\w+)\s*\(", line):
                 if match.group("call").casefold() in server_proc_names:
                     diags.append(

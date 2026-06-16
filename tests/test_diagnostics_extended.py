@@ -1570,6 +1570,54 @@ class TestTailParityBatches:
         assert {"BSL236", "BSL238", "BSL244", "BSL261"} <= set(_codes(diags))
         assert _codes(diags).count("BSL187") == 1
 
+    def test_bsl244_server_form_event_calling_server_helper_is_clean(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаСервере
+                Процедура ПриСозданииНаСервере(Отказ, СтандартнаяОбработка)
+                    ЗаполнитьДанныеФормы();
+                КонецПроцедуры
+
+                &НаСервере
+                Процедура ЗаполнитьДанныеФормы()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL244"}).check_file(str(path))
+
+        assert "BSL244" not in _codes(diags)
+
+    def test_bsl244_client_form_event_calling_server_helper_still_reports(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаКлиенте
+                Процедура ПриОткрытии()
+                    ЗаполнитьДанныеФормы();
+                КонецПроцедуры
+
+                &НаСервере
+                Процедура ЗаполнитьДанныеФормы()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL244"}).check_file(str(path))
+
+        assert "BSL244" in _codes(diags)
+
     def test_bsl187_reports_left_join_field_without_isnull(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
         path.parent.mkdir(parents=True)
@@ -2672,6 +2720,27 @@ class TestBsl007UnusedLocalVariableParity:
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
         assert "ИмяСобытия" in diags[0].message
+
+    def test_variable_used_as_dynamic_execute_receiver_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ВыполнитьДинамическийОбработчик(ПараметрыКоманды, ИмяОбработчика)
+                ЦелеваяФорма = ПолучитьФорму(ПараметрыКоманды.ИмяМенеджера + ".Форма", , ЭтаФорма, Истина);
+                ИмяОбработчика = "ЦелеваяФорма." + ИмяОбработчика;
+                Выполнить(ИмяОбработчика + "(ПараметрыВызова)");
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+        assert all("ЦелеваяФорма" not in d.message for d in diags)
+
+    def test_plain_string_receiver_name_does_not_count_as_use(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ЦелеваяФорма = ПолучитьФорму("Форма");
+                ИмяОбработчика = "ЦелеваяФорма.";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+        assert any("ЦелеваяФорма" in d.message for d in diags)
 
     def test_object_module_is_skipped(self, tmp_path: Path) -> None:
         content = """\

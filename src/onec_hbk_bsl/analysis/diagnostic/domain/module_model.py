@@ -1871,6 +1871,49 @@ class ModuleModel:
                 return read_words_ignoring_member_access(tail)
             return read_words_ignoring_member_access(code_clean)
 
+        def double_quoted_segments(raw_line: str) -> list[str]:
+            segments: list[str] = []
+            i, n = 0, len(raw_line)
+            while i < n:
+                if raw_line[i] != '"':
+                    i += 1
+                    continue
+                i += 1
+                chars: list[str] = []
+                while i < n:
+                    ch = raw_line[i]
+                    if ch == '"':
+                        if i + 1 < n and raw_line[i + 1] == '"':
+                            chars.append('"')
+                            i += 2
+                            continue
+                        i += 1
+                        break
+                    chars.append(ch)
+                    i += 1
+                segments.append("".join(chars))
+            return segments
+
+        def dotted_roots_in_strings(raw_line: str) -> set[str]:
+            roots: set[str] = set()
+            for segment in double_quoted_segments(raw_line):
+                for match in re.finditer(r"\b(?P<name>\w+)\s*\.", segment):
+                    roots.add(match.group("name").casefold())
+            return roots
+
+        def leading_assignment_name(raw_line: str) -> str | None:
+            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
+            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
+            match = bsl007_simple_assign_at_start_re.match(code_clean)
+            if not match:
+                return None
+            return match.group(1).casefold()
+
+        def line_has_dynamic_execute_call(raw_line: str) -> bool:
+            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
+            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
+            return bool(re.search(r"(?<![\w.])(?:Выполнить|Execute)\s*\(", code_clean, re.IGNORECASE))
+
         line_read_names = [read_names_by_line(line) for line in code_lines]
         file_read_counts: Counter[str] = Counter()
         for names in line_read_names:
@@ -1937,6 +1980,27 @@ class ModuleModel:
             for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
                 for read_name in line_read_names[abs_idx]:
                     proc_read_counts[read_name] += 1
+
+            dynamic_execute_builder_vars: set[str] = set()
+            for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
+                if not line_has_dynamic_execute_call(lines[abs_idx]):
+                    continue
+                dynamic_execute_builder_vars.update(line_read_names[abs_idx])
+                dynamic_execute_builder_vars.discard("выполнить")
+                dynamic_execute_builder_vars.discard("execute")
+
+            dynamic_string_reads: set[str] = set()
+            if dynamic_execute_builder_vars:
+                for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
+                    assigned_name = leading_assignment_name(lines[abs_idx])
+                    if assigned_name is None or assigned_name not in dynamic_execute_builder_vars:
+                        continue
+                    dynamic_string_reads.update(dotted_roots_in_strings(lines[abs_idx]))
+                for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
+                    if line_has_dynamic_execute_call(lines[abs_idx]):
+                        dynamic_string_reads.update(dotted_roots_in_strings(lines[abs_idx]))
+            for read_name in dynamic_string_reads:
+                proc_read_counts[read_name] += 1
 
             def emit_unused(
                 abs_line: int,
