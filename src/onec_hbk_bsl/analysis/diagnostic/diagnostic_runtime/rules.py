@@ -361,6 +361,8 @@ def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) 
             continue
         if _bsl042_is_extension_override(context.lines, proc.start_idx):
             continue
+        if _bsl042_is_attachable_method(proc.name):
+            continue
         if _bsl042_is_platform_handler(proc.name):
             continue
         start_col, end_col = _diag._proc_name_span(context.lines, proc)
@@ -403,6 +405,10 @@ def _bsl042_is_extension_override(lines: list[str], proc_start_idx: int) -> bool
             return True
         idx -= 1
     return False
+
+
+def _bsl042_is_attachable_method(name: str) -> bool:
+    return name.casefold().startswith(("подключаемый_", "attachable_"))
 
 
 def _bsl042_is_platform_handler(name: str) -> bool:

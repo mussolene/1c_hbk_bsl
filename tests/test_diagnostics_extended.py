@@ -5342,6 +5342,22 @@ class TestBsl042UnusedLocalMethod:
         diags = _check(content, tmp_path, select={"BSL042"})
         assert "BSL042" not in _codes(diags)
 
+    def test_attachable_method_prefix_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Подключаемый_Команда()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL042"})
+        assert "BSL042" not in _codes(diags)
+
+    def test_attachable_method_prefix_en_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Procedure Attachable_Command()
+            EndProcedure
+        """
+        diags = _check(content, tmp_path, select={"BSL042"})
+        assert "BSL042" not in _codes(diags)
+
     def test_form_module_is_skipped(self, tmp_path: Path) -> None:
         path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
         path.parent.mkdir(parents=True)
