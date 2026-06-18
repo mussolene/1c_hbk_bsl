@@ -514,7 +514,7 @@ class BslParser:
         stripped = text.strip()
         if not stripped.startswith(b"."):
             return False
-        property_name = stripped[1:].decode("utf-8", errors="replace")
+        property_name = stripped[1:].rstrip(b";").decode("utf-8", errors="replace")
         if not property_name or not property_name.isidentifier():
             return False
         parent = getattr(node, "parent", None)

@@ -30,7 +30,9 @@ def test_bsl150_with_pattern_finds_word() -> None:
 
 
 def test_bsl150_matches_bslls_configured_fixture() -> None:
-    fixture = Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/BadWordsDiagnostic.bsl")
+    fixture = Path(
+        ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/BadWordsDiagnostic.bsl"
+    )
     if not fixture.exists():
         pytest.skip("BSLLS fixture is not available")
 

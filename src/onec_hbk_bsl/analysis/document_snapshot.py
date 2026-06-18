@@ -845,7 +845,7 @@ class QueryTextBlockInfo:
 
     @property
     def query_text(self) -> str:
-        return "\n".join(self.block_lines)
+        return "\n".join(line.head for line in self.content_lines)
 
     @property
     def head_text(self) -> str:
@@ -866,6 +866,60 @@ def _parse_sdbl_query_text(query_text: str) -> tuple[Any | None, bool]:
     tree = parser.parse(query_text.encode("utf-8"))
     root = getattr(tree, "root_node", None)
     return tree, bool(root is not None and tree_has_errors(root))
+
+
+_QUERY_TOP_RE = re.compile(
+    r"\b(?:ВЫБРАТЬ|SELECT)\b\s+(?:РАЗРЕШЕННЫЕ|ALLOWED\s+)?"
+    r"(?P<top>ПЕРВЫЕ|TOP)\s+(?P<limit>\d+)",
+    re.IGNORECASE,
+)
+_QUERY_SELECT_RE = re.compile(r"\b(?:ВЫБРАТЬ|SELECT)\b", re.IGNORECASE)
+_QUERY_UNION_RE = re.compile(r"^(?:ОБЪЕДИНИТЬ|UNION)\b", re.IGNORECASE)
+_QUERY_ORDER_RE = re.compile(r"^(?:УПОРЯДОЧИТЬ\s+ПО|ORDER\s+BY)\b", re.IGNORECASE)
+_QUERY_WHERE_RE = re.compile(r"^(?:ГДЕ|WHERE)\b", re.IGNORECASE)
+
+
+def _fallback_select_top_without_order_facts(
+    block: QueryTextBlockInfo,
+) -> list[LineDiagnosticFact]:
+    facts: list[LineDiagnosticFact] = []
+    lines = block.content_line_tuples
+    select_indices = [
+        idx
+        for idx, (_line_no, _base, _content, head, _ended) in enumerate(lines)
+        if _QUERY_SELECT_RE.search(head)
+    ]
+    if not select_indices:
+        return facts
+    has_union = any(_QUERY_UNION_RE.match(head) for *_prefix, head, _ended in lines)
+
+    for pos, idx in enumerate(select_indices):
+        line_no, content_base, _content, head, _ended = lines[idx]
+        match = _QUERY_TOP_RE.search(head)
+        if match is None:
+            continue
+
+        next_select_idx = select_indices[pos + 1] if pos + 1 < len(select_indices) else len(lines)
+        section = lines[idx:next_select_idx]
+        has_order = any(_QUERY_ORDER_RE.match(item[3]) for item in section)
+        if has_order and not has_union:
+            continue
+        has_where = any(_QUERY_WHERE_RE.match(item[3]) for item in section)
+        limit = match.group("limit")
+        if limit in {"0", "1"} and (not has_union or has_where):
+            continue
+
+        start = content_base + match.start("top")
+        end = content_base + match.end("limit")
+        facts.append(
+            LineDiagnosticFact(
+                line_idx=line_no - 1,
+                character=start,
+                end_character=end,
+                message="Нужно изменить запрос, добавив упорядочивание",
+            )
+        )
+    return facts
 
 
 def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
@@ -1073,9 +1127,7 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
                             (
                                 param_name,
                                 param_identifier.start_point[0],
-                                _ts_point_to_lsp_character(
-                                    node, param_identifier.start_point
-                                ),
+                                _ts_point_to_lsp_character(node, param_identifier.start_point),
                                 param_identifier.end_point[0],
                                 _ts_point_to_lsp_character(node, param_identifier.end_point),
                             )
@@ -2490,7 +2542,10 @@ class DocumentSnapshot:
         facts: list[LineDiagnosticFact] = []
         for block in self.query_text_blocks:
             root = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
-            if root is None or block.sdbl_has_errors:
+            if root is None:
+                facts.extend(_fallback_select_top_without_order_facts(block))
+                continue
+            if block.sdbl_has_errors:
                 continue
             for top_fact in select_top_without_order(root):
                 start_line, start_char = block.original_lsp_position(

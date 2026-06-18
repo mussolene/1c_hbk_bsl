@@ -485,7 +485,9 @@ class ProcedureModel:
         loop_open_re,
         loop_close_re,
     ) -> list[Diagnostic]:
-        assignment_re = re.compile(r"^\s*(?P<name>[\w.]+)\s*=\s*(?P<value>.+?);?\s*$", re.IGNORECASE)
+        assignment_re = re.compile(
+            r"^\s*(?P<name>[\w.]+)\s*=\s*(?P<value>.+?);?\s*$", re.IGNORECASE
+        )
         new_query_re = re.compile(
             r"^\s*(?:Новый|New)\s+"
             r"(?P<type>Запрос|Query|ПостроительЗапроса|QueryBuilder|"

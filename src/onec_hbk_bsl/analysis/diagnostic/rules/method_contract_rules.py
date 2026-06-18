@@ -1107,13 +1107,12 @@ def _method_proc_node(
 
 
 def _assigned_names_from_cst(_diag: Any, proc_node: Any) -> set[str]:
-    return {
-        item[1].casefold()
-        for item in _bsl240_assignment_items_from_cst(_diag, proc_node)
-    }
+    return {item[1].casefold() for item in _bsl240_assignment_items_from_cst(_diag, proc_node)}
 
 
-def _bsl240_assignment_items_from_cst(_diag: Any, proc_node: Any) -> list[tuple[int, str, str, int, int, str]]:
+def _bsl240_assignment_items_from_cst(
+    _diag: Any, proc_node: Any
+) -> list[tuple[int, str, str, int, int, str]]:
     items: list[tuple[int, str, str, int, int, str]] = []
     for node in _diag._ts_walk(proc_node):
         if getattr(node, "type", None) != "assignment_statement":

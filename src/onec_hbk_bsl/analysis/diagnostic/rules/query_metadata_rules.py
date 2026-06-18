@@ -130,7 +130,9 @@ def _missing_metadata_name(
 def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
     tree = getattr(block, "sdbl_tree", None)
     root = getattr(tree, "root_node", None)
-    if root is None or getattr(block, "sdbl_has_errors", False):
+    if root is None:
+        return _run_bsl187_without_sdbl_tree(path, block)
+    if getattr(block, "sdbl_has_errors", False):
         return []
 
     _diag = _diag_module()
@@ -158,6 +160,115 @@ def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
                 message="Поля из внешнего соединения должны использоваться с ЕСТЬNULL/ISNULL",
             )
         )
+    return diags
+
+
+_QUERY_SOURCE_ALIAS_RE = re.compile(
+    r"^(?:ИЗ|FROM)\s+"
+    r"[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s+"
+    r"(?:КАК|AS)\s+([A-Za-zА-Яа-яЁё_]\w*)\b",
+    re.IGNORECASE,
+)
+_QUERY_JOIN_ALIAS_RE = re.compile(
+    r"^(?P<kind>ЛЕВОЕ|LEFT|ПРАВОЕ|RIGHT|ПОЛНОЕ|FULL)\s+"
+    r"(?:ВНЕШНЕЕ\s+|OUTER\s+)?(?:СОЕДИНЕНИЕ|JOIN)\s+"
+    r"[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s+"
+    r"(?:КАК|AS)\s+(?P<alias>[A-Za-zА-Яа-яЁё_]\w*)\b",
+    re.IGNORECASE,
+)
+_QUERY_DOTTED_RE = re.compile(
+    r"\b(?P<alias>[A-Za-zА-Яа-яЁё_]\w*)\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*"
+)
+_QUERY_NOT_NULL_RE = re.compile(
+    r"\b(?P<alias>[A-Za-zА-Яа-яЁё_]\w*)\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*"
+    r"\s+(?:ЕСТЬ\s+НЕ\s+NULL|IS\s+NOT\s+NULL)\b",
+    re.IGNORECASE,
+)
+_QUERY_SELECT_START_RE = re.compile(r"^(?:ВЫБРАТЬ|SELECT)\b", re.IGNORECASE)
+_QUERY_FROM_START_RE = re.compile(r"^(?:ИЗ|FROM)\b", re.IGNORECASE)
+_QUERY_WHERE_START_RE = re.compile(r"^(?:ГДЕ|WHERE)\b", re.IGNORECASE)
+_QUERY_STRUCTURAL_START_RE = re.compile(
+    r"^(?:ИЗ|FROM|ПО|ON|ГДЕ|WHERE|СГРУППИРОВАТЬ|GROUP|УПОРЯДОЧИТЬ|ORDER|ОБЪЕДИНИТЬ|UNION|;)\b",
+    re.IGNORECASE,
+)
+
+
+def _run_bsl187_without_sdbl_tree(path: str, block: Any) -> list[Any]:
+    query_lines = list(getattr(block, "content_line_tuples", ()) or ())
+    if not query_lines:
+        return []
+
+    _diag = _diag_module()
+    diags: list[Any] = []
+    sections: list[list[tuple[int, int, str, str, bool]]] = []
+    current: list[tuple[int, int, str, str, bool]] = []
+    for item in query_lines:
+        if _QUERY_SELECT_START_RE.match(item[3]) and current:
+            sections.append(current)
+            current = []
+        current.append(item)
+    if current:
+        sections.append(current)
+
+    for section in sections:
+        base_alias = ""
+        nullable_aliases: set[str] = set()
+        for _line_no, _base, _content, head, _ended in section:
+            if not base_alias:
+                source_match = _QUERY_SOURCE_ALIAS_RE.match(head)
+                if source_match:
+                    base_alias = source_match.group(1).casefold()
+            join_match = _QUERY_JOIN_ALIAS_RE.match(head)
+            if join_match is None:
+                continue
+            kind = join_match.group("kind").casefold()
+            joined_alias = join_match.group("alias").casefold()
+            if kind in {"левое", "left"}:
+                nullable_aliases.add(joined_alias)
+            elif kind in {"правое", "right"} and base_alias:
+                nullable_aliases.add(base_alias)
+            elif kind in {"полное", "full"}:
+                nullable_aliases.add(joined_alias)
+                if base_alias:
+                    nullable_aliases.add(base_alias)
+        if not nullable_aliases:
+            continue
+
+        for _line_no, _base, _content, head, _ended in section:
+            if not _QUERY_WHERE_START_RE.match(head):
+                continue
+            nullable_aliases -= {
+                match.group("alias").casefold() for match in _QUERY_NOT_NULL_RE.finditer(head)
+            }
+        if not nullable_aliases:
+            continue
+
+        seen_aliases: set[str] = set()
+        for line_no, content_base, _content, head, _ended in section:
+            if _QUERY_STRUCTURAL_START_RE.match(head):
+                continue
+            for match in _QUERY_DOTTED_RE.finditer(head):
+                alias = match.group("alias").casefold()
+                if alias not in nullable_aliases or alias in seen_aliases:
+                    continue
+                prefix = head[: match.start()]
+                if re.search(r"(?:ЕСТЬNULL|ISNULL)\s*\([^)]*$", prefix, re.IGNORECASE):
+                    continue
+                seen_aliases.add(alias)
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=line_no,
+                        character=content_base + match.start(),
+                        end_line=line_no,
+                        end_character=content_base + match.end(),
+                        severity=_diag.Severity.ERROR,
+                        code="BSL187",
+                        message=(
+                            "Поля из внешнего соединения должны использоваться с ЕСТЬNULL/ISNULL"
+                        ),
+                    )
+                )
     return diags
 
 

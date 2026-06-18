@@ -1926,7 +1926,9 @@ class ModuleModel:
         def line_has_dynamic_execute_call(raw_line: str) -> bool:
             code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
             code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
-            return bool(re.search(r"(?<![\w.])(?:Выполнить|Execute)\s*\(", code_clean, re.IGNORECASE))
+            return bool(
+                re.search(r"(?<![\w.])(?:Выполнить|Execute)\s*\(", code_clean, re.IGNORECASE)
+            )
 
         line_read_names = [read_names_by_line(line) for line in code_lines]
         file_read_counts: Counter[str] = Counter()

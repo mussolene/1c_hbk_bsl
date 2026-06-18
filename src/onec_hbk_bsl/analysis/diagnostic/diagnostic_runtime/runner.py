@@ -520,9 +520,7 @@ def _run_deprecated_api_pool(
         enabled_codes=enabled_codes,
         line_comment_re=_diag._RE_LINE_COMMENT,
         bsl176_deprecated_doc_re=_diag._RE_BSL176_DEPRECATED_DOC,
-        mask_double_quoted_strings_preserve_len_fn=(
-            _diag._mask_double_quoted_strings_preserve_len
-        ),
+        mask_double_quoted_strings_preserve_len_fn=(_diag._mask_double_quoted_strings_preserve_len),
         bsl175_attribute_re=_diag._RE_BSL175_ATTRIBUTE,
         bsl175_attr_replacements=_diag._BSL175_ATTR_REPLACEMENTS,
         bsl175_method_replacements=_diag._BSL175_METHOD_REPLACEMENTS,
@@ -825,7 +823,9 @@ def append_diagnostic_runtime_rule_tasks(
 
     deprecated_api_parallelized: set[str] = set()
     deprecated_api_pool = tuple(
-        code for code in enabled_codes(_DEPRECATED_API_POOL_CODES) if code not in coarse_parallelized
+        code
+        for code in enabled_codes(_DEPRECATED_API_POOL_CODES)
+        if code not in coarse_parallelized
     )
     if deprecated_api_pool:
         add_task(

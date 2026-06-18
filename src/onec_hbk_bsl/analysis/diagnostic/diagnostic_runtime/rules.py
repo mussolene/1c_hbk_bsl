@@ -382,7 +382,9 @@ def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) 
     return diags
 
 
-def _diagnostics_bsl052_identical_expressions(context: DiagnosticDocumentContext) -> list[Diagnostic]:
+def _diagnostics_bsl052_identical_expressions(
+    context: DiagnosticDocumentContext,
+) -> list[Diagnostic]:
     root = getattr(context.tree, "root_node", None)
     if root is None or not _ts_tree_available(context.tree):
         return []
@@ -6410,9 +6412,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 proc_node_map=proc_node_map,
                 find_proc_definition_node_fn=_diag._find_proc_definition_node,
                 ts_walk_fn=_diag._ts_walk,
-                utf8_byte_offset_to_lsp_character_fn=(
-                    _diag.utf8_byte_offset_to_lsp_character
-                ),
+                utf8_byte_offset_to_lsp_character_fn=(_diag.utf8_byte_offset_to_lsp_character),
                 lines=context.lines,
             )
         if code == "BSL065":

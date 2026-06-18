@@ -1020,7 +1020,9 @@ class TestLocalXmlParityBatch:
 
 class TestTailParityBatches:
     def test_compilation_and_name_tail_pool(self, tmp_path: Path) -> None:
-        form_path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        form_path = (
+            tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        )
         form_path.parent.mkdir(parents=True)
         form_path.write_text(
             textwrap.dedent(
@@ -5631,6 +5633,7 @@ class TestBsl052IdenticalExpressions:
         diags = _check(content, tmp_path, select={"BSL052"})
         assert "BSL052" not in _codes(diags)
 
+
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
@@ -6868,9 +6871,7 @@ class TestBsl245ServerSideExportFormMethod:
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert "BSL245" not in _codes(diags)
 
-    def test_server_export_in_ordinary_ext_module_is_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_server_export_in_ordinary_ext_module_is_clean(self, tmp_path: Path) -> None:
         content = """\
             Процедура ЗавершитьПолучение(Результат, ДополнительныеПараметры) Экспорт
             КонецПроцедуры
