@@ -581,15 +581,49 @@ class ProcedureModel:
         loop_open_re,
         loop_close_re,
     ) -> list[Diagnostic]:
+        assignment_re = re.compile(r"^\s*(?P<name>[\w.]+)\s*=\s*(?P<value>.+?);?\s*$", re.IGNORECASE)
+        new_query_re = re.compile(
+            r"^\s*(?:Новый|New)\s+"
+            r"(?P<type>Запрос|Query|ПостроительЗапроса|QueryBuilder|"
+            r"ПостроительОтчета|ReportBuilder)\b",
+            re.IGNORECASE,
+        )
+        execute_re = re.compile(r"(?P<name>[\w.]+)\.(?:Выполнить|Execute)\s*\(", re.IGNORECASE)
+        query_types = {
+            "запрос",
+            "query",
+            "построительзапроса",
+            "querybuilder",
+            "построительотчета",
+            "reportbuilder",
+        }
+        variable_types: dict[str, set[str]] = {}
+
+        def assignment_type(value: str) -> set[str]:
+            new_match = new_query_re.match(value)
+            if new_match:
+                return {new_match.group("type").casefold()}
+            inherited = variable_types.get(value.strip().rstrip(";"))
+            return set(inherited or ())
+
         diags: list[Diagnostic] = []
         loop_depth = 0
         for i in range(self.start_idx + 1, min(self.end_idx, len(lines))):
             line = lines[i]
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
+
             if loop_lines is not None:
+                assign_match = assignment_re.match(line)
+                if assign_match:
+                    variable_types[assign_match.group("name")] = assignment_type(
+                        assign_match.group("value")
+                    )
                 if i not in loop_lines:
                     continue
-                m = query_execute_re.search(line)
-                if m and not line.strip().startswith("//"):
+                m = execute_re.search(line)
+                if m and variable_types.get(m.group("name"), set()) & query_types:
                     diags.append(
                         Diagnostic(
                             file=self.path,
@@ -608,11 +642,20 @@ class ProcedureModel:
                 continue
             if loop_open_re.match(line):
                 loop_depth += 1
-            elif loop_close_re.match(line):
+                continue
+            if loop_close_re.match(line):
                 loop_depth = max(0, loop_depth - 1)
-            elif loop_depth > 0:
-                m = query_execute_re.search(line)
-                if m and not line.strip().startswith("//"):
+                continue
+
+            assign_match = assignment_re.match(line)
+            if assign_match:
+                variable_types[assign_match.group("name")] = assignment_type(
+                    assign_match.group("value")
+                )
+
+            if loop_depth > 0:
+                m = execute_re.search(line)
+                if m and variable_types.get(m.group("name"), set()) & query_types:
                     diags.append(
                         Diagnostic(
                             file=self.path,

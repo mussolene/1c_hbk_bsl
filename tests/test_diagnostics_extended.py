@@ -4524,6 +4524,7 @@ class TestBsl033QueryInLoop:
     def test_query_in_foreach_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест(Коллекция)
+                Запрос = Новый Запрос;
                 Для Каждого Элемент Из Коллекция Цикл
                     Результат = Запрос.Выполнить();
                 КонецЦикла;
@@ -4535,17 +4536,44 @@ class TestBsl033QueryInLoop:
     def test_query_in_while_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
+                Запрос = Новый Query;
                 Пока Условие Цикл
-                    Рез = ЗапросHTTP.Execute();
+                    Рез = Запрос.Execute();
                 КонецЦикла;
             КонецПроцедуры
         """
         diags = _check(content, tmp_path)
         assert "BSL033" in _codes(diags)
 
+    def test_unknown_execute_in_loop_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Пока Условие Цикл
+                    Рез = Запрос.Выполнить();
+                    Ответ = ЗапросHTTP.Execute();
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL033"})
+        assert "BSL033" not in _codes(diags)
+
+    def test_query_type_is_inherited_from_assignment(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос = Новый Запрос;
+                ДругойЗапрос = Запрос;
+                Пока Условие Цикл
+                    Рез = ДругойЗапрос.Выполнить();
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL033"})
+        assert "BSL033" in _codes(diags)
+
     def test_query_outside_loop_no_warning(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
+                Запрос = Новый Запрос;
                 Результат = Запрос.Выполнить();
             КонецПроцедуры
         """
