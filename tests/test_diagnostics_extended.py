@@ -6642,6 +6642,28 @@ class TestBsl254TransferringParameters:
         )
         assert "BSL254" not in _codes(diags)
 
+    def test_at_server_no_context_method_called_from_client_is_reported(
+        self, tmp_path: Path
+    ) -> None:
+        diags = self._check_indexed(
+            tmp_path,
+            {
+                "Module.bsl": """\
+                    &НаКлиенте
+                    Процедура Клиент()
+                        Сервер(Документ);
+                    КонецПроцедуры
+
+                    &НаСервереБезКонтекста
+                    Процедура Сервер(Документ)
+                        Возврат;
+                    КонецПроцедуры
+                """,
+            },
+            target="Module.bsl",
+        )
+        assert _codes(diags) == ["BSL254"]
+
     def test_external_caller_uses_snapshot_procedure_cache(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -7175,6 +7197,49 @@ class TestBsl240RewriteMethodParameter:
             Процедура Тест(Знач Строка)
                 Строка = СокрЛП(Строка);
                 Сообщить(Строка);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" not in _codes(diags)
+
+    def test_optional_val_param_overwrite_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Знач П = 1)
+                П = 2;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" in _codes(diags)
+
+    def test_val_param_overwrite_detected_in_form_module(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПриОткрытии(Знач Отказ)
+                Отказ = Истина;
+            КонецПроцедуры
+        """
+        form_dir = tmp_path / "Catalogs" / "Foo" / "Forms" / "ФормаЭлемента" / "Ext"
+        form_dir.mkdir(parents=True)
+        bsl_path = form_dir / "Module.bsl"
+        bsl_path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL240"}).check_file(str(bsl_path))
+        assert "BSL240" in _codes(diags)
+
+    def test_val_param_overwrite_after_many_lines_detected(self, tmp_path: Path) -> None:
+        body = "\n".join(f"    Локальная{i} = {i};" for i in range(20))
+        content = f"""\
+            Процедура Тест(Знач П)
+        {body}
+                П = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" in _codes(diags)
+
+    def test_val_param_rhs_read_prevents_later_overwrite_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Знач П)
+                П = СокрЛП(П);
+                П = 1;
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL240"})

@@ -5613,6 +5613,8 @@ class MethodContractDiagnosticsRule(DiagnosticRuntimeRule):
             context.path,
             context.lines,
             procs,
+            context.tree,
+            dict(getattr(snapshot, "proc_node_map", {}) or {}),
         )
 
 

@@ -720,15 +720,20 @@ def run_bsl254_transferring_parameters(
     path: str,
     lines: list[str],
     procs: list[_ProcInfo],
+    tree: Any,
+    proc_node_map: dict[tuple[str, int, str], Any] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
-    if symbol_index is None:
+    if symbol_index is None or not _diag._ts_tree_ok_for_rules(tree):
         return []
 
     diags: list[Any] = []
     file_lines_cache: dict[str, list[str]] = {path: lines}
     proc_cache: dict[str, list[_ProcInfo]] = {path: procs}
     for proc in procs:
+        pnode = _method_proc_node(_diag, tree, proc, proc_node_map)
+        if pnode is None:
+            continue
         if _diag._procedure_compiler_execution_context(lines, proc) != "server":
             continue
         if not proc.params:
@@ -760,7 +765,7 @@ def run_bsl254_transferring_parameters(
         ]
         if not client_callers:
             continue
-        assigned = _diag._proc_assigned_param_names(lines, proc)
+        assigned = _assigned_names_from_cst(_diag, pnode)
         for param_name in missing_val:
             if param_name.casefold() in assigned:
                 continue
@@ -1034,48 +1039,17 @@ def run_bsl240_rewrite_method_parameter(
 ) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
-    if _diag.path_is_likely_form_module_bsl(path):
-        return []
     tree_ok = _diag._ts_tree_ok_for_rules(tree)
+    if not tree_ok:
+        return []
     for proc in procs:
-        header_line = lines[proc.start_idx] if proc.start_idx < len(lines) else ""
-        param_names: set[str] = set()
-        proc_params = getattr(proc, "params", None)
-        if proc_params:
-            param_names = {n.casefold() for n in proc_params if n}
-        else:
-            hm = _diag._RE_BSL240_PARAM_HEADER.match(header_line)
-            if not hm:
-                continue
-            raw_params = hm.group(1)
-            for part in _diag.split_commas_outside_double_quotes(raw_params):
-                part = part.strip()
-                part = _diag._RE_BSL240_ZNACH.sub("", part)
-                name = part.split("=")[0].strip()
-                if name:
-                    param_names.add(name.casefold())
-
-        if not param_names:
-            continue
-
         body_start = proc.start_idx + 1
-        if tree_ok:
-            key = (proc.name, proc.start_idx, getattr(proc, "kind", "procedure"))
-            pnode = (
-                proc_node_map.get(key)
-                if proc_node_map is not None
-                else _diag._find_proc_definition_node(tree, proc)
-            )
-            if pnode is not None:
-                bl = _diag._ts_first_body_statement_line_idx(pnode)
-                if bl is not None and bl > proc.start_idx:
-                    body_start = bl
-                else:
-                    body_start = _diag._proc_body_start_line_idx_fallback(lines, proc)
-            else:
-                body_start = _diag._proc_body_start_line_idx_fallback(lines, proc)
-        else:
-            body_start = _diag._proc_body_start_line_idx_fallback(lines, proc)
+        pnode = _method_proc_node(_diag, tree, proc, proc_node_map)
+        if pnode is None:
+            continue
+        bl = _diag._ts_first_body_statement_line_idx(pnode)
+        if bl is not None and bl > proc.start_idx:
+            body_start = bl
 
         if body_start >= proc.end_idx:
             continue
@@ -1083,45 +1057,84 @@ def run_bsl240_rewrite_method_parameter(
         val_cf = {n.casefold() for n in (getattr(proc, "val_params", None) or [])}
         if not val_cf:
             continue
-        opt_cf = {n.casefold() for n in (getattr(proc, "optional_params", None) or [])}
-        val_cf -= opt_cf
         used_before_assign: set[str] = set()
 
-        for li in range(body_start, min(body_start + 15, proc.end_idx)):
+        assignment_items = _bsl240_assignment_items_from_cst(_diag, pnode)
+
+        for li, lhs_text, rhs_text, start_char, end_char, line_text in assignment_items:
             if li >= len(lines):
                 break
-            line = lines[li]
-            if _diag._RE_LINE_COMMENT.match(line) or not line.strip():
-                continue
-            am = _diag._RE_BSL240_ASSIGN.match(line)
-            if am:
-                lhs = am.group(1).casefold()
-                if lhs in val_cf and lhs not in _diag._BSL062_SKIP_STANDARD_COMMAND_PARAMS:
-                    rhs = line[am.end() :].strip()
-                    if lhs not in rhs.casefold() and lhs not in used_before_assign:
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=li + 1,
-                                character=am.start(),
-                                end_line=li + 1,
-                                end_character=am.end(),
-                                severity=_diag.Severity.WARNING,
-                                code="BSL240",
-                                message=(
-                                    f"Параметр «{am.group(1)}» перезаписывается "
-                                    "до первого использования — вероятно ошибка"
-                                ),
-                            )
+            lhs = lhs_text.casefold()
+            if lhs in val_cf:
+                if lhs not in rhs_text.casefold() and lhs not in used_before_assign:
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=li + 1,
+                            character=start_char,
+                            end_line=li + 1,
+                            end_character=end_char,
+                            severity=_diag.Severity.WARNING,
+                            code="BSL240",
+                            message=(
+                                f"Параметр «{lhs_text}» перезаписывается "
+                                "до первого использования — вероятно ошибка"
+                            ),
                         )
-                        param_names.discard(lhs)
-                for param_cf in val_cf:
-                    if param_cf != lhs and re.search(
-                        rf"\b{re.escape(param_cf)}\b", line, re.IGNORECASE
-                    ):
-                        used_before_assign.add(param_cf)
-                continue
+                    )
+                elif lhs in rhs_text.casefold():
+                    used_before_assign.add(lhs)
             for param_cf in val_cf:
-                if re.search(rf"\b{re.escape(param_cf)}\b", line, re.IGNORECASE):
+                if param_cf != lhs and re.search(
+                    rf"\b{re.escape(param_cf)}\b", line_text, re.IGNORECASE
+                ):
                     used_before_assign.add(param_cf)
     return diags
+
+
+def _method_proc_node(
+    _diag: Any,
+    tree: Any,
+    proc: _ProcInfo,
+    proc_node_map: dict[tuple[str, int, str], Any] | None,
+) -> Any | None:
+    key = (proc.name, proc.start_idx, getattr(proc, "kind", "procedure"))
+    return (
+        proc_node_map.get(key)
+        if proc_node_map is not None
+        else _diag._find_proc_definition_node(tree, proc)
+    )
+
+
+def _assigned_names_from_cst(_diag: Any, proc_node: Any) -> set[str]:
+    return {
+        item[1].casefold()
+        for item in _bsl240_assignment_items_from_cst(_diag, proc_node)
+    }
+
+
+def _bsl240_assignment_items_from_cst(_diag: Any, proc_node: Any) -> list[tuple[int, str, str, int, int, str]]:
+    items: list[tuple[int, str, str, int, int, str]] = []
+    for node in _diag._ts_walk(proc_node):
+        if getattr(node, "type", None) != "assignment_statement":
+            continue
+        children = list(getattr(node, "children", []) or [])
+        if not children or getattr(children[0], "type", None) != "identifier":
+            continue
+        lhs_node = children[0]
+        rhs_node = next((c for c in children if getattr(c, "type", None) == "expression"), None)
+        lhs_text = _diag._ts_node_text(lhs_node)
+        rhs_text = _diag._ts_node_text(rhs_node) if rhs_node is not None else ""
+        line_idx = lhs_node.start_point[0]
+        line_text = _diag._ts_node_text(node)
+        items.append(
+            (
+                line_idx,
+                lhs_text,
+                rhs_text,
+                lhs_node.start_point[1],
+                lhs_node.end_point[1],
+                line_text,
+            )
+        )
+    return sorted(items, key=lambda item: (item[0], item[3]))
