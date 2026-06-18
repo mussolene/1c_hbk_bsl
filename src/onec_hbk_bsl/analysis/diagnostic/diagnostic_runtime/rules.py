@@ -744,7 +744,6 @@ _BSL024_COMMENTED_CODE_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-_BSL066_DEPRECATED_FIND_RE = re.compile(r"(?<!\.)(?<!\w)\b(найти|find)\s*\(", re.IGNORECASE)
 _BSL178_DEPRECATED_METHOD_RE = re.compile(
     r"(?<!\.)(?<!\w)\b("
     r"КраткоеПредставлениеОшибки|BriefErrorDescription|"
@@ -2618,24 +2617,37 @@ class UselessTernaryOperatorRule(DiagnosticRuntimeRule):
 
 class DeprecatedFindRule(DiagnosticRuntimeRule):
     code = "BSL066"
+    _names = frozenset({"найти", "find"})
+    _message = 'Используйте "СтрНайти" вместо устаревшего "Найти"'
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
         storage = DiagnosticStorage(context.path)
-        for idx, line in enumerate(context.lines):
-            if _line_comment(line):
+        for call in self._global_method_calls(context):
+            if call["name"].casefold() not in self._names:
                 continue
-            clean = _code_mask_without_strings_and_comments(line)
-            for match in _BSL066_DEPRECATED_FIND_RE.finditer(clean):
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(1),
-                    end_line=idx,
-                    end_character=match.end(1),
-                    severity=Severity.INFORMATION,
-                    message='Используйте "СтрНайти" вместо устаревшего "Найти"',
-                )
+            ident = _diag._ts_child_of_type(call["node"], "identifier")
+            if ident is None:
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self._message,
+                severity=Severity.INFORMATION,
+                lines=context.lines,
+                start_node=ident,
+                end_node=ident,
+            )
         return storage.diagnostics
+
+    @staticmethod
+    def _global_method_calls(context: DiagnosticDocumentContext) -> list[dict[str, Any]]:
+        if context.ts_nodes_for_types and context.global_method_calls_from_nodes:
+            nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
+            return context.global_method_calls_from_nodes(nodes["method_call"], context.lines)
+        return _diag._ts_global_method_calls(context.tree.root_node, context.lines)
 
 
 class DeprecatedMethods8317Rule(DiagnosticRuntimeRule):
