@@ -6207,7 +6207,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 min_duplicate_uses=engine.min_duplicate_uses,
                 string_literal_re=_diag._RE_STRING_LITERAL,
                 scope_line_indices_fn=_diag._bsl035_scope_line_indices,
-                line_starts_with_raise_statement_fn=_diag._line_starts_with_raise_statement,
             )
         if code == "BSL036":
             assert snapshot is not None

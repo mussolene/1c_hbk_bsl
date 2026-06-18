@@ -292,7 +292,6 @@ class ModuleModel:
         min_duplicate_uses: int,
         string_literal_re,
         scope_line_indices_fn,
-        line_starts_with_raise_statement_fn,
     ) -> list[Diagnostic]:
         from collections import Counter
 
@@ -326,8 +325,6 @@ class ModuleModel:
                 if count < min_duplicate_uses:
                     continue
                 pos_list = positions[key]
-                if all(line_starts_with_raise_statement_fn(lines[ln - 1]) for ln, _ in pos_list):
-                    continue
                 line_no, col = pos_list[0]
                 val = display_values[key]
                 diags.append(

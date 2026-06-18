@@ -4613,7 +4613,7 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3)
         assert "BSL035" not in _codes(diags)
 
-    def test_duplicate_only_on_raise_lines_no_warning(self, tmp_path: Path) -> None:
+    def test_duplicate_only_on_raise_lines_is_reported(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 ВызватьИсключение "ОченьДлиннаяСтрока";
@@ -4621,8 +4621,9 @@ class TestBsl035DuplicateStringLiteral:
                 ВызватьИсключение "ОченьДлиннаяСтрока";
             КонецПроцедуры
         """
-        diags = _check(content, tmp_path, min_duplicate_uses=3)
-        assert "BSL035" not in _codes(diags)
+        diags = _check(content, tmp_path, min_duplicate_uses=3, select={"BSL035"})
+        bsl035 = [d for d in diags if d.code == "BSL035"]
+        assert [(d.line, d.character, d.end_character) for d in bsl035] == [(2, 22, 42)]
 
     def test_same_literal_in_different_procedures_no_warning(self, tmp_path: Path) -> None:
         """Repeated structure keys like Вставить("Ключ") across methods are not duplicates."""
