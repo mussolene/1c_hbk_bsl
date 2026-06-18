@@ -577,7 +577,6 @@ class ProcedureModel:
         lines: list[str],
         *,
         loop_lines: set[int] | None,
-        query_execute_re,
         loop_open_re,
         loop_close_re,
     ) -> list[Diagnostic]:

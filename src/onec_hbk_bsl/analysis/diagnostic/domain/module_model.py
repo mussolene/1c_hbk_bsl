@@ -130,34 +130,6 @@ def _bsl260_call_access_text(method_call: Any, ts_node_text_fn) -> str:
 class ModuleModel:
     path: str
 
-    def validate_useless_condition_regex_fallback(
-        self,
-        lines: list[str],
-        *,
-        if_literal_re,
-    ) -> list[Diagnostic]:
-        diags: list[Diagnostic] = []
-        for idx, line in enumerate(lines):
-            if line.lstrip().startswith("//"):
-                continue
-            if not if_literal_re.match(line):
-                continue
-            literal_m = re.search(r"\b(Истина|True|Ложь|False)\b", line, re.IGNORECASE)
-            literal = literal_m.group(1) if literal_m else "literal"
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=idx + 1,
-                    character=len(line) - len(line.lstrip()),
-                    end_line=idx + 1,
-                    end_character=len(line),
-                    severity=Severity.WARNING,
-                    code="BSL052",
-                    message=f"Условие всегда равно '{literal}'",
-                )
-            )
-        return diags
-
     def validate_module_level_export_variables(
         self,
         lines: list[str],

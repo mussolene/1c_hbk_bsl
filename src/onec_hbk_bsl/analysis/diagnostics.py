@@ -1958,13 +1958,6 @@ def _proc_body_base_indent(lines: list[str], proc: _ProcInfo) -> int:
     return 0
 
 
-def _line_starts_with_raise_statement(line: str) -> bool:
-    """True if the line begins with ВызватьИсключение/Raise (not a // comment)."""
-    if line.strip().startswith("//"):
-        return False
-    return bool(_RE_RAISE.match(line))
-
-
 def _bsl035_scope_line_indices(lines: list[str], procs: list[_ProcInfo]) -> list[list[int]]:
     """Split the file into scopes for BSL035: each procedure/function body, then module-level."""
     n = len(lines)
@@ -3152,12 +3145,6 @@ _RE_MAGIC_NUMBER = re.compile(
     r"(?![\w.\"])",  # not followed by word/dot/quote
 )
 
-# Query execution in loop — Запрос.Выполнить() or Выполнить() after .
-_RE_QUERY_EXECUTE = re.compile(
-    r"\.(?:Выполнить|Execute)\s*\(",
-    re.IGNORECASE,
-)
-
 # Loop open/close for QueryInLoop detection (separate from nesting ones)
 _RE_LOOP_OPEN = re.compile(
     r"^\s*(?:ДляКаждого|ForEach|Для|For|Пока|While)\b",
@@ -4049,54 +4036,6 @@ def _bsl051_delimiter_lines_for_tree(tree: Any) -> set[int] | None:
     if tree_has_errors(root):
         return None
     return _collect_bsl051_delimiter_lines_from_tree(root)
-
-
-# BSL052 — literal True/False in If / ElsIf condition (tree-sitter CST).
-def _bsl052_literal_boolean_from_expression(expr: Any) -> str | None:
-    """
-    If *expr* is an ``expression`` node whose only value is a boolean literal,
-    return the literal as spelled in source (Истина, Ложь, True, False).
-    """
-    if getattr(expr, "type", None) != "expression":
-        return None
-    meaningful = [c for c in expr.children if c.type not in (";",)]
-    if len(meaningful) != 1:
-        return None
-    child = meaningful[0]
-    if child.type != "const_expression":
-        return None
-    for c in child.children:
-        if c.type != "boolean":
-            continue
-        for bc in c.children:
-            if bc.type in ("TRUE_KEYWORD", "FALSE_KEYWORD"):
-                return _ts_node_text(bc)
-    return None
-
-
-def _bsl052_collect_literal_if_nodes(root: Any, out: list[tuple[int, str]]) -> None:
-    """Fill *out* with (0-based line of Если/ИначеЕсли, literal text) for useless conditions."""
-
-    def _from_if_like(node: Any) -> None:
-        keyword_line: int | None = None
-        for c in node.children:
-            if c.type in ("IF_KEYWORD", "ELSIF_KEYWORD"):
-                keyword_line = c.start_point[0]
-            elif c.type == "expression":
-                lit = _bsl052_literal_boolean_from_expression(c)
-                if lit is not None and keyword_line is not None:
-                    out.append((keyword_line, lit))
-                return
-            elif c.type == "THEN_KEYWORD":
-                break
-
-    def walk(node: Any) -> None:
-        if node.type in ("if_statement", "elseif_clause"):
-            _from_if_like(node)
-        for c in node.children:
-            walk(c)
-
-    walk(root)
 
 
 def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:

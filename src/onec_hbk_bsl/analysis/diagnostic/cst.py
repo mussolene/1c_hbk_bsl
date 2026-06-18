@@ -112,25 +112,6 @@ def _expr_is_only_string_literal(expr: Any) -> bool:
     return False
 
 
-def _literal_boolean_from_if_expression(expr: Any) -> str | None:
-    """Same as BSL052: single boolean literal in expression."""
-    if getattr(expr, "type", None) != "expression":
-        return None
-    meaningful = [c for c in getattr(expr, "children", []) or [] if c.type not in (";",)]
-    if len(meaningful) != 1:
-        return None
-    child = meaningful[0]
-    if getattr(child, "type", None) != "const_expression":
-        return None
-    for c in getattr(child, "children", []) or []:
-        if getattr(c, "type", None) != "boolean":
-            continue
-        for bc in getattr(c, "children", []) or []:
-            if getattr(bc, "type", None) in ("TRUE_KEYWORD", "FALSE_KEYWORD"):
-                return ts_node_text(bc)
-    return None
-
-
 def ts_clause_body_is_empty(body: list[Any]) -> bool:
     """True if clause body has no executable statements (only comments / bare ``;``)."""
     for c in body:

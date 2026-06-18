@@ -6302,7 +6302,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     proc_model.validate_query_in_loop(
                         context.lines,
                         loop_lines=loop_lines,
-                        query_execute_re=_diag._RE_QUERY_EXECUTE,
                         loop_open_re=_diag._RE_LOOP_OPEN,
                         loop_close_re=_diag._RE_LOOP_CLOSE,
                     )

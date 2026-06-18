@@ -5631,23 +5631,6 @@ class TestBsl052IdenticalExpressions:
         diags = _check(content, tmp_path, select={"BSL052"})
         assert "BSL052" not in _codes(diags)
 
-    def test_bsl052_cst_helpers_match_parser(self, tmp_path: Path) -> None:
-        from onec_hbk_bsl.analysis.diagnostics import _bsl052_collect_literal_if_nodes
-        from onec_hbk_bsl.parser.bsl_parser import BslParser
-
-        content = """\
-            Процедура Т()
-                Если А = 1 Тогда
-                ИначеЕсли Истина Тогда
-                КонецЕсли;
-            КонецПроцедуры
-        """
-        tree = BslParser().parse_content(content)
-        pairs: list[tuple[int, str]] = []
-        _bsl052_collect_literal_if_nodes(tree.root_node, pairs)
-        assert pairs == [(2, "Истина")]
-
-
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
