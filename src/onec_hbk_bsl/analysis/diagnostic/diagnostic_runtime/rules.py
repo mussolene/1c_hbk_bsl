@@ -6382,17 +6382,11 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 procs=procs,
                 tree=context.tree,
                 proc_node_map=proc_node_map,
-                path_is_likely_form_module_bsl_fn=_diag.path_is_likely_form_module_bsl,
                 find_proc_definition_node_fn=_diag._find_proc_definition_node,
                 collect_identifier_casefolds_in_proc_body_fn=(
                     _diag._collect_identifier_casefolds_in_proc_body
                 ),
                 procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
-                bsl062_skip_standard_command_params=_diag._BSL062_SKIP_STANDARD_COMMAND_PARAMS,
-                is_typical_client_command_handler_fn=_diag._is_typical_client_command_handler,
-                is_client_notify_completion_export_handler_fn=(
-                    _diag._is_client_notify_completion_export_handler
-                ),
             )
         if code == "BSL064":
             return model.validate_bsl064_procedure_returns_value(

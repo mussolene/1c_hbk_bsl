@@ -23,6 +23,7 @@ class ProcedureModel:
     params_start_character: int | None = None
     params_end_idx: int | None = None
     params_end_character: int | None = None
+    param_ranges: tuple[tuple[str, int, int, int, int], ...] = ()
 
     @classmethod
     def from_proc_info(cls, path: str, proc: ProcInfo) -> ProcedureModel:
@@ -41,6 +42,7 @@ class ProcedureModel:
             params_start_character=proc.params_start_character,
             params_end_idx=proc.params_end_idx,
             params_end_character=proc.params_end_character,
+            param_ranges=proc.param_ranges,
         )
 
     def _param_list_range(self, lines: list[str]) -> tuple[int, int, int, int]:
@@ -463,34 +465,19 @@ class ProcedureModel:
         lines: list[str],
         *,
         used_casefold: set[str] | None,
-        skip_standard_params: set[str] | frozenset[str],
-        is_typical_client_command_handler,
-        is_client_notify_completion_export_handler,
     ) -> list[Diagnostic]:
-        if not self.params or self.is_export:
+        if not self.params or re.fullmatch(
+            r"(?:ПриСозданииОбъекта|OnObjectCreate)", self.name, re.IGNORECASE
+        ):
             return []
-        header_line = lines[self.start_idx]
         body_lines = lines[self.start_idx + 1 : self.end_idx]
+        if not any(line.strip() and not line.lstrip().startswith("//") for line in body_lines):
+            return []
         body_text = "\n".join(body_lines)
-        header_lineno = self.start_idx + 1
         diags: list[Diagnostic] = []
 
         for param_name in self.params:
             if not param_name:
-                continue
-            if param_name.startswith("_"):
-                continue
-            if not param_name.isidentifier():
-                continue
-            if param_name.casefold() in skip_standard_params:
-                continue
-            if param_name in self.optional_params:
-                continue
-            proc_info = self._to_proc_info()
-            if param_name.casefold() in ("параметры", "parameters") and (
-                is_typical_client_command_handler(proc_info, lines)
-                or is_client_notify_completion_export_handler(proc_info, lines)
-            ):
                 continue
             if used_casefold is not None:
                 is_used = param_name.casefold() in used_casefold
@@ -504,19 +491,36 @@ class ProcedureModel:
                 )
             if is_used:
                 continue
+            line, character, end_line, end_character = self._param_name_range(param_name, lines)
             diags.append(
                 Diagnostic(
                     file=self.path,
-                    line=header_lineno,
-                    character=self.header_col,
-                    end_line=header_lineno,
-                    end_character=len(header_line.rstrip()),
+                    line=line,
+                    character=character,
+                    end_line=end_line,
+                    end_character=end_character,
                     severity=Severity.WARNING,
                     code="BSL062",
                     message=f"Параметр '{param_name}' не используется в теле метода",
                 )
             )
         return diags
+
+    def _param_name_range(self, param_name: str, lines: list[str]) -> tuple[int, int, int, int]:
+        param_casefold = param_name.casefold()
+        for name, start_idx, start_character, end_idx, end_character in self.param_ranges:
+            if name.casefold() == param_casefold:
+                return start_idx + 1, start_character, end_idx + 1, end_character
+        header_line = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        character = header_line.lower().find(param_name.lower())
+        if character < 0:
+            character = self.header_col
+        return (
+            self.start_idx + 1,
+            character,
+            self.start_idx + 1,
+            character + len(param_name),
+        )
 
     def validate_cognitive_complexity(
         self,
@@ -688,4 +692,5 @@ class ProcedureModel:
             params_start_character=self.params_start_character,
             params_end_idx=self.params_end_idx,
             params_end_character=self.params_end_character,
+            param_ranges=self.param_ranges,
         )

@@ -6381,14 +6381,14 @@ class TestBsl062UnusedParameter:
         diags = _check(content, tmp_path, select={"BSL062"})
         assert "BSL062" not in _codes(diags)
 
-    def test_underscore_param_ignored(self, tmp_path: Path) -> None:
+    def test_underscore_param_reported_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест(_НеИспользуемый)
                 А = 1;
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})
-        assert "BSL062" not in _codes(diags)
+        assert "BSL062" in _codes(diags)
 
     def test_no_params_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -6427,8 +6427,7 @@ class TestBsl062UnusedParameter:
         diags = _check(content, tmp_path, select={"BSL062"})
         assert "BSL062" not in _codes(diags)
 
-    def test_unused_parameters_skipped_in_client_command_handler(self, tmp_path: Path) -> None:
-        """Колбэк Параметры в типовом ОбработкаКоманды на клиенте — не BSL062 (как BSLLS на командах)."""
+    def test_unused_parameters_reported_in_client_command_handler(self, tmp_path: Path) -> None:
         content = """\
             &НаКлиенте
             Процедура ОбработкаКоманды(ПараметрКоманды, ПараметрыВыполненияКоманды, Параметры)
@@ -6436,10 +6435,15 @@ class TestBsl062UnusedParameter:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})
-        assert "BSL062" not in _codes(diags)
+        assert [d.message for d in diags if d.code == "BSL062"] == [
+            "Параметр 'ПараметрКоманды' не используется в теле метода",
+            "Параметр 'ПараметрыВыполненияКоманды' не используется в теле метода",
+            "Параметр 'Параметры' не используется в теле метода",
+        ]
 
-    def test_unused_parameters_skipped_in_notify_completion_handler(self, tmp_path: Path) -> None:
-        """Второй параметр Параметры в экспортном *Завершение — штатный колбэк оповещения."""
+    def test_unused_parameters_reported_in_export_notify_completion_handler(
+        self, tmp_path: Path
+    ) -> None:
         content = """\
             &НаКлиенте
             Процедура МояОперацияЗавершение(Результат, Параметры) Экспорт
@@ -6447,20 +6451,23 @@ class TestBsl062UnusedParameter:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})
-        assert "BSL062" not in _codes(diags)
+        assert [d.message for d in diags if d.code == "BSL062"] == [
+            "Параметр 'Параметры' не используется в теле метода",
+        ]
 
-    def test_optional_param_not_flagged(self, tmp_path: Path) -> None:
-        """Параметры с дефолтным значением (= Неопределено) не флагуются как BSL062."""
+    def test_optional_param_flagged_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
             Функция ВычислитьЦену(Количество, Скидка = 0, Валюта = Неопределено)
                 Возврат Количество;
             КонецФункции
         """
         diags = _check(content, tmp_path, select={"BSL062"})
-        assert "BSL062" not in _codes(diags)
+        assert [d.message for d in diags if d.code == "BSL062"] == [
+            "Параметр 'Скидка' не используется в теле метода",
+            "Параметр 'Валюта' не используется в теле метода",
+        ]
 
-    def test_command_param_not_flagged(self, tmp_path: Path) -> None:
-        """Параметр Команда в командных обработчиках формы не флагуется."""
+    def test_command_param_reported_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
             &НаКлиенте
             Процедура Сохранить(Команда)
@@ -6468,14 +6475,34 @@ class TestBsl062UnusedParameter:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})
-        assert "BSL062" not in _codes(diags)
+        assert "BSL062" in _codes(diags)
 
-    def test_dopolnitelnye_parametry_not_flagged(self, tmp_path: Path) -> None:
-        """ДополнительныеПараметры в колбэках ОписаниеОповещения не флагуются."""
+    def test_dopolnitelnye_parametry_reported_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
             &НаКлиенте
             Процедура ОткрытьЗавершение(Отказ, ДополнительныеПараметры) Экспорт
                 Сообщить("ok");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert [d.message for d in diags if d.code == "BSL062"] == [
+            "Параметр 'Отказ' не используется в теле метода",
+            "Параметр 'ДополнительныеПараметры' не используется в теле метода",
+        ]
+
+    def test_on_object_create_handler_skipped_bslls_parity(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПриСозданииОбъекта(НеИспользуемый)
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL062"})
+        assert "BSL062" not in _codes(diags)
+
+    def test_empty_body_skipped_bslls_parity(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(НеИспользуемый)
+                // Пока пусто.
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})

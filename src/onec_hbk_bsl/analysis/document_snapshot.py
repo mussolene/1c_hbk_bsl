@@ -795,6 +795,7 @@ class ProcInfo:
     params_start_character: int | None = None
     params_end_idx: int | None = None
     params_end_character: int | None = None
+    param_ranges: tuple[tuple[str, int, int, int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -880,6 +881,34 @@ def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
         if name and re.match(r"^\w+$", name):
             result.append((name, is_val, is_optional))
     return result
+
+
+def _param_ranges_from_params_string(
+    content: str,
+    line_breaks: list[int],
+    params_str: str,
+    params_start_offset: int,
+) -> tuple[tuple[str, int, int, int, int], ...]:
+    ranges: list[tuple[str, int, int, int, int]] = []
+    offset = 0
+    for raw_part in split_commas_outside_double_quotes(params_str):
+        part_start = params_start_offset + offset
+        offset += len(raw_part) + 1
+        clean = strip_leading_val_keywords(raw_part.strip())
+        if not clean:
+            continue
+        name = clean.split("=", 1)[0].strip()
+        if not name or not re.match(r"^\w+$", name):
+            continue
+        relative = raw_part.find(name)
+        if relative < 0:
+            continue
+        start_offset = part_start + relative
+        end_offset = start_offset + len(name)
+        start_idx, start_character = _lsp_point_for_offset(content, line_breaks, start_offset)
+        end_idx, end_character = _lsp_point_for_offset(content, line_breaks, end_offset)
+        ranges.append((name, start_idx, start_character, end_idx, end_character))
+    return tuple(ranges)
 
 
 def _ts_node_text(node: Any) -> str:
@@ -995,6 +1024,7 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
     optional_count = 0
     is_export = False
     optional_params_list: list[str] = []
+    param_ranges_list: list[tuple[str, int, int, int, int]] = []
     params_start_idx: int | None = None
     params_start_character: int | None = None
     params_end_idx: int | None = None
@@ -1024,6 +1054,7 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
                 if getattr(param, "type", None) != "parameter":
                     continue
                 param_name = ""
+                param_identifier = None
                 is_val = False
                 has_default = False
                 for param_child in getattr(param, "children", []) or []:
@@ -1032,10 +1063,23 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
                         is_val = True
                     elif param_child_type == "identifier" and not param_name:
                         param_name = _ts_node_text(param_child)
+                        param_identifier = param_child
                     elif param_child_type == "=":
                         has_default = True
                 if param_name:
                     params.append(param_name)
+                    if param_identifier is not None:
+                        param_ranges_list.append(
+                            (
+                                param_name,
+                                param_identifier.start_point[0],
+                                _ts_point_to_lsp_character(
+                                    node, param_identifier.start_point
+                                ),
+                                param_identifier.end_point[0],
+                                _ts_point_to_lsp_character(node, param_identifier.end_point),
+                            )
+                        )
                     if is_val:
                         val_params.append(param_name)
                     if has_default:
@@ -1072,6 +1116,7 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
         params_start_character=params_start_character,
         params_end_idx=params_end_idx,
         params_end_character=params_end_character,
+        param_ranges=tuple(param_ranges_list),
     )
 
 
@@ -1165,6 +1210,12 @@ def _find_procedures(content: str) -> list[ProcInfo]:
         val_params = [param[0] for param in parsed if param[1]]
         optional_count = sum(1 for param in parsed if param[2])
         optional_params = frozenset(param[0] for param in parsed if param[2])
+        param_ranges = _param_ranges_from_params_string(
+            content,
+            line_breaks,
+            params_str,
+            match.start("params"),
+        )
         params_start_idx, params_start_character = _lsp_point_for_offset(
             content, line_breaks, match.start("params")
         )
@@ -1193,6 +1244,7 @@ def _find_procedures(content: str) -> list[ProcInfo]:
                 params_start_character=params_start_character,
                 params_end_idx=params_end_idx,
                 params_end_character=params_end_character,
+                param_ranges=param_ranges,
             )
         )
     return result

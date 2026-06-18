@@ -1743,16 +1743,10 @@ class ModuleModel:
         procs: list[ProcInfo],
         tree: Any,
         proc_node_map: dict[tuple[str, int, str], Any] | None,
-        path_is_likely_form_module_bsl_fn,
         find_proc_definition_node_fn,
         collect_identifier_casefolds_in_proc_body_fn,
         procedure_model_from_proc_info_fn,
-        bsl062_skip_standard_command_params: set[str],
-        is_typical_client_command_handler_fn,
-        is_client_notify_completion_export_handler_fn,
     ) -> list[Diagnostic]:
-        if path_is_likely_form_module_bsl_fn(self.path):
-            return []
         diags: list[Diagnostic] = []
         root = getattr(tree, "root_node", None)
         tree_is_ts = root is not None and isinstance(
@@ -1775,11 +1769,6 @@ class ModuleModel:
                 model.validate_unused_parameters(
                     lines,
                     used_casefold=used_casefold,
-                    skip_standard_params=bsl062_skip_standard_command_params,
-                    is_typical_client_command_handler=is_typical_client_command_handler_fn,
-                    is_client_notify_completion_export_handler=(
-                        is_client_notify_completion_export_handler_fn
-                    ),
                 )
             )
         return diags
