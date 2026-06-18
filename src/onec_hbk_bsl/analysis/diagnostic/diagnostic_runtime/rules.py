@@ -382,6 +382,109 @@ def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) 
     return diags
 
 
+def _diagnostics_bsl052_identical_expressions(context: DiagnosticDocumentContext) -> list[Diagnostic]:
+    root = getattr(context.tree, "root_node", None)
+    if root is None or not _ts_tree_available(context.tree):
+        return []
+
+    storage = DiagnosticStorage(context.path)
+    for node in _ts_walk(root):
+        if getattr(node, "type", None) != "binary_expression":
+            continue
+        parts = _bsl052_binary_parts(node)
+        if parts is None:
+            continue
+        left, operator, right = parts
+        operator_text = _ts_node_text(operator).casefold()
+        if operator_text in {"+", "*", "."}:
+            continue
+        left_key = _bsl052_expression_key(left)
+        right_key = _bsl052_expression_key(right)
+        if not left_key or not right_key:
+            continue
+        duplicate_key = left_key if left_key == right_key else None
+        if duplicate_key is None and operator_text in {"и", "and", "или", "or"}:
+            duplicate_key = _bsl052_transitive_duplicate_key(node, operator_text)
+        if duplicate_key is None:
+            continue
+        operand_text = _bsl052_operand_display(left if left_key == duplicate_key else right)
+        storage.add_range(
+            code="BSL052",
+            line=int(node.start_point[0]) + 1,
+            character=utf8_byte_offset_to_lsp_character(
+                context.lines[int(node.start_point[0])], int(node.start_point[1])
+            ),
+            end_line=int(node.end_point[0]) + 1,
+            end_character=utf8_byte_offset_to_lsp_character(
+                context.lines[int(node.end_point[0])], int(node.end_point[1])
+            ),
+            severity=Severity.ERROR,
+            message=(
+                f'Слева и справа от оператора "{_ts_node_text(operator)}" '
+                f'находятся одинаковые подвыражения: "{operand_text}"'
+            ),
+        )
+    return storage.diagnostics
+
+
+def _bsl052_binary_parts(node: Any) -> tuple[Any, Any, Any] | None:
+    children = [
+        child
+        for child in _ts_children(node)
+        if getattr(child, "type", None) not in {"line_comment", "comment"}
+    ]
+    try:
+        op_index = next(
+            idx for idx, child in enumerate(children) if getattr(child, "type", None) == "operator"
+        )
+    except StopIteration:
+        return None
+    if op_index == 0 or op_index >= len(children) - 1:
+        return None
+    return children[op_index - 1], children[op_index], children[op_index + 1]
+
+
+def _bsl052_expression_key(node: Any) -> str:
+    return re.sub(r"\s+", "", _ts_node_text(node)).casefold()
+
+
+def _bsl052_operand_display(node: Any) -> str:
+    return " ".join(_ts_node_text(node).split())
+
+
+def _bsl052_transitive_duplicate_key(node: Any, operator_text: str) -> str | None:
+    operands: list[Any] = []
+
+    def collect(current: Any) -> None:
+        if getattr(current, "type", None) == "expression":
+            expr_children = [
+                child
+                for child in _ts_children(current)
+                if getattr(child, "type", None) not in {"line_comment", "comment"}
+            ]
+            if len(expr_children) == 1:
+                collect(expr_children[0])
+                return
+        if getattr(current, "type", None) == "binary_expression":
+            parts = _bsl052_binary_parts(current)
+            if parts is not None and _ts_node_text(parts[1]).casefold() == operator_text:
+                collect(parts[0])
+                collect(parts[2])
+                return
+        operands.append(current)
+
+    collect(node)
+    seen: set[str] = set()
+    for operand in operands:
+        key = _bsl052_expression_key(operand)
+        if not key:
+            continue
+        if key in seen:
+            return key
+        seen.add(key)
+    return None
+
+
 def _bsl042_is_extension_override(lines: list[str], proc_start_idx: int) -> bool:
     idx = proc_start_idx - 1
     while idx >= 0:
@@ -6262,9 +6365,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 re_bsl051_delimiter_fallback=_diag._RE_BSL051_DELIMITER_FALLBACK,
             )
         if code == "BSL052":
-            # BSLLS BSL052 is IdenticalExpressions. Literal-only conditions are a
-            # different heuristic and produce false positives under this rule id.
-            return []
+            return _diagnostics_bsl052_identical_expressions(context)
         if code == "BSL054":
             clean_lines = snapshot.code_lines_without_comments
             return model.validate_module_level_export_variables(

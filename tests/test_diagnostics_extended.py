@@ -5590,6 +5590,36 @@ class TestBsl052IdenticalExpressions:
         diags = _check(content, tmp_path, select={"BSL052"})
         assert "BSL052" not in _codes(diags)
 
+    def test_identical_binary_operands_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Если Количество > Количество Тогда
+                Сообщить(МояПеременная);
+            КонецЕсли;
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL052"}) if d.code == "BSL052"]
+        assert [(d.line, d.character, d.end_character, d.severity) for d in diags] == [
+            (2, 5, 28, Severity.ERROR),
+        ]
+        assert '"Количество"' in diags[0].message
+
+    def test_addition_with_identical_operands_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Если А + А Тогда
+                Сообщить(МояПеременная);
+            КонецЕсли;
+        """
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert "BSL052" not in _codes(diags)
+
+    def test_transitive_logical_duplicate_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Если А И Б И А Тогда
+                Сообщить(МояПеременная);
+            КонецЕсли;
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL052"}) if d.code == "BSL052"]
+        assert len(diags) == 1
+
     def test_elseif_true_is_not_reported_as_identical_expressions(self, tmp_path: Path) -> None:
         content = """\
             Процедура Т()
