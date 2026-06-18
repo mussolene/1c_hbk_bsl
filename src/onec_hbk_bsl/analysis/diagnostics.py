@@ -3328,7 +3328,8 @@ _RE_QUERY_END_QUOTE = re.compile(r'[^|"]*"')
 
 # Unconditional exit from method body (for unreachable code detection)
 _RE_UNCONDITIONAL_EXIT = re.compile(
-    r"^\s*(?:Возврат|Return|ВызватьИсключение|Raise)\b",
+    r"^\s*(?:Возврат|Return|ВызватьИсключение|Raise|Прервать|Break|Продолжить|Continue|"
+    r"Перейти|Goto)\b",
     re.IGNORECASE,
 )
 

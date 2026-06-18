@@ -5448,6 +5448,27 @@ class TestBsl051UnreachableCode:
         diags = _check(content, tmp_path, select={"BSL051"})
         assert "BSL051" in _codes(diags)
 
+    def test_code_after_break_continue_and_goto_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Пока Истина Цикл
+                    Прервать;
+                    Сообщить("никогда");
+                    Продолжить;
+                    Сообщить("тоже никогда");
+                КонецЦикла;
+                Перейти ~Метка;
+                Сообщить("после перейти");
+                ~Метка:
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL051"}) if d.code == "BSL051"]
+        assert [(d.line, d.character) for d in diags] == [
+            (4, 8),
+            (6, 8),
+            (9, 4),
+        ]
+
     def test_no_unreachable_code_no_warning(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
