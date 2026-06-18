@@ -149,18 +149,22 @@ class ModuleModel:
             m = var_module_export_re.match(clean_lines[idx])
             if not m:
                 continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=idx + 1,
-                    character=m.start("names"),
-                    end_line=idx + 1,
-                    end_character=len(clean_lines[idx].rstrip().rstrip(";").rstrip()),
-                    severity=Severity.WARNING,
-                    code="BSL054",
-                    message="Не рекомендуется использовать экспортные переменные. Это может стать источником трудновоспроизводимых ошибок",
+
+            names = m.group("names")
+            base = m.start("names")
+            for part in re.finditer(r"\w+", names):
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=idx + 1,
+                        character=base + part.start(),
+                        end_line=idx + 1,
+                        end_character=base + part.end(),
+                        severity=Severity.WARNING,
+                        code="BSL054",
+                        message="Не рекомендуется использовать экспортные переменные. Это может стать источником трудновоспроизводимых ошибок",
+                    )
                 )
-            )
         return diags
 
     def validate_self_assign_regex_fallback(

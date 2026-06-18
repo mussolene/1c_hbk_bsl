@@ -5651,6 +5651,19 @@ class TestBsl054ModuleLevelVariable:
         diags = _check(content, tmp_path, select={"BSL054"})
         assert "BSL054" in _codes(diags)
 
+    def test_module_level_export_vars_reported_per_variable(self, tmp_path: Path) -> None:
+        content = """\
+            Перем Первая, Вторая Экспорт;
+            Процедура Тест()
+                Сообщить(Первая);
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL054"}) if d.code == "BSL054"]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (1, 6, 12),
+            (1, 14, 20),
+        ]
+
     def test_module_level_non_export_var_no_warning(self, tmp_path: Path) -> None:
         """Non-exported module-level Перем is not flagged (BSLLS ExportVariables only flags Экспорт)."""
         content = """\
