@@ -4356,6 +4356,32 @@ class TestBsl029MagicNumber:
 
 
 # ---------------------------------------------------------------------------
+# BSL025 — EmptyStatement
+# ---------------------------------------------------------------------------
+
+
+class TestBsl025EmptyStatement:
+    def test_standalone_semicolon_in_procedure_detected(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    ;\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL025"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL025"] == [
+            (2, 4, 5)
+        ]
+
+    def test_standalone_semicolon_in_module_body_detected(self, tmp_path: Path) -> None:
+        content = ";\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL025"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL025"] == [
+            (1, 0, 1)
+        ]
+
+    def test_valid_while_end_semicolon_no_warning(self, tmp_path: Path) -> None:
+        content = "Пока Истина Цикл\nКонецЦикла;\n"
+        diags = _check(content, tmp_path, select={"BSL025"})
+        assert "BSL025" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL030 — SemicolonPresence (missing statement semicolon)
 # ---------------------------------------------------------------------------
 

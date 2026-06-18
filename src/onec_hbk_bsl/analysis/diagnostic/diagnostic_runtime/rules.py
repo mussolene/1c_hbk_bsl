@@ -166,6 +166,11 @@ def _ts_children(node: Any) -> list[Any]:
     return list(getattr(node, "children", []) or [])
 
 
+def _ts_tree_available(tree: Any) -> bool:
+    root = getattr(tree, "root_node", None)
+    return root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray))
+
+
 _BSL030_STATEMENT_TYPES = frozenset(
     {
         "assignment_statement",
@@ -1712,8 +1717,44 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
         r"^\s*(?:Процедура|Функция|Procedure|Function)\b.*;\s*$",
         re.IGNORECASE,
     )
+    _valid_closing_semicolon_re = re.compile(r"^\s*(?:КонецЦикла|EndDo)\s*$", re.IGNORECASE)
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        if _ts_tree_available(context.tree):
+            return self._run_from_tree(context)
+        return self._run_from_lines(context)
+
+    def _run_from_tree(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        storage = DiagnosticStorage(context.path)
+        root = context.tree.root_node
+        for node in _ts_walk(root):
+            if getattr(node, "type", None) != "ERROR":
+                continue
+            if _ts_node_text(node).strip() != ";":
+                continue
+            line_idx = int(node.start_point[0])
+            if not (0 <= line_idx < len(context.lines)):
+                continue
+            byte_col = int(node.start_point[1])
+            character = utf8_byte_offset_to_lsp_character(context.lines[line_idx], byte_col)
+            line_prefix = context.lines[line_idx][:character]
+            if self._valid_closing_semicolon_re.match(line_prefix):
+                continue
+            end_character = utf8_byte_offset_to_lsp_character(
+                context.lines[line_idx], int(node.end_point[1])
+            )
+            storage.add_range(
+                code=self.code,
+                line=line_idx,
+                character=character,
+                end_line=line_idx,
+                end_character=end_character,
+                severity=Severity.HINT,
+                message='Удалите ";"',
+            )
+        return storage.diagnostics
+
+    def _run_from_lines(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
