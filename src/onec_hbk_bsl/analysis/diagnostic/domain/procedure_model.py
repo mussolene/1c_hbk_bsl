@@ -308,49 +308,6 @@ class ProcedureModel:
         has_valid_return_entry = False
         if returns_section_start is not None:
             return_section_lines = comment_block[returns_section_start + 1 :]
-            has_struct_fields = any(
-                re.match(r"^\s*//\s+\*\s+\S", rcl) for rcl in return_section_lines
-            )
-
-            def has_bslls_return_type_description(text: str) -> bool:
-                if legacy_doc_path:
-                    text = re.sub(r"^\s*-\s*", "", text)
-                type_text = text.split(" - ", 1)[0].strip()
-                if not type_text or "\t" in type_text:
-                    return False
-                type_text = type_text.rstrip()
-                if type_text.endswith(","):
-                    return True
-                if legacy_doc_path and type_text.endswith("-"):
-                    type_text = type_text[:-1].rstrip()
-                if type_text.endswith(":"):
-                    if re.search(r"\s+:$", type_text):
-                        return False
-                    type_text = type_text[:-1].rstrip()
-                elif type_text.rstrip() != type_text.rstrip(".;"):
-                    return False
-                if re.fullmatch(
-                    r"(?:Массив|Array)\s+(?:Из|Of)\s+[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*",
-                    type_text,
-                    re.IGNORECASE,
-                ):
-                    return legacy_doc_path or bool(
-                        re.fullmatch(
-                            r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)",
-                            type_text,
-                            re.IGNORECASE,
-                        )
-                    )
-                if re.search(r"\b(?:или|or|элементов|element)\b", type_text, re.IGNORECASE):
-                    return False
-                if re.search(r"[A-Za-zА-ЯЁа-яё0-9_]\s+[A-Za-zА-ЯЁа-яё0-9_]", type_text):
-                    return False
-                type_name = r"[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*"
-                return bool(
-                    re.fullmatch(rf"{type_name}(?:\s*,\s*{type_name})*", type_text)
-                    or (legacy_doc_path and re.fullmatch(r"[a-zа-яё]+", type_text))
-                )
-
             for cl in return_section_lines:
                 stripped = cl.strip()
                 if stripped == "//":
@@ -365,23 +322,6 @@ class ProcedureModel:
                     continue
                 text = entry.group("text").strip()
                 if text.startswith("*"):
-                    if has_struct_fields:
-                        continue
-                    has_valid_return_entry = True
-                    break
-                first_part = text.split("-", 1)[0].strip()
-                if text.startswith("-") and text.rstrip().endswith("."):
-                    continue
-                if "—" in text and "-" not in text:
-                    continue
-                if (
-                    has_struct_fields
-                    and ":" not in first_part
-                    and "-" in text
-                    and not text.endswith(":")
-                ):
-                    continue
-                if not has_bslls_return_type_description(text):
                     continue
                 has_valid_return_entry = True
                 break

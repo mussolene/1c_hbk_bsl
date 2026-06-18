@@ -7070,7 +7070,7 @@ class TestBsl065MissingReturnedValueDescription:
         diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
         assert "BSL065" not in _codes(diags)
 
-    def test_legacy_return_description_structure_space_before_colon_is_invalid(
+    def test_legacy_return_description_structure_space_before_colon_is_valid(
         self, tmp_path: Path
     ) -> None:
         path = tmp_path / "ObjectModule.bsl"
@@ -7087,9 +7087,9 @@ class TestBsl065MissingReturnedValueDescription:
         """
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
-        assert "BSL065" in _codes(diags)
+        assert "BSL065" not in _codes(diags)
 
-    def test_legacy_return_description_array_of_custom_type_with_period_is_invalid(
+    def test_legacy_return_description_array_of_custom_type_with_period_is_valid(
         self, tmp_path: Path
     ) -> None:
         path = tmp_path / "ObjectModule.bsl"
@@ -7105,7 +7105,7 @@ class TestBsl065MissingReturnedValueDescription:
         """
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL065"}).check_file(path)
-        assert "BSL065" in _codes(diags)
+        assert "BSL065" not in _codes(diags)
 
     def test_procedure_with_return_description_reports_removal(self, tmp_path: Path) -> None:
         content = """\
