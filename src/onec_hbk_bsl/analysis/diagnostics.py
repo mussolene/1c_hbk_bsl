@@ -1837,7 +1837,7 @@ RULE_FIX_HINTS: dict[str, str] = {
     "BSL013": "Delete or restore the commented-out code block.",
     "BSL014": "Break the long line using BSL | continuation or an intermediate variable.",
     "BSL015": "Reduce optional parameters or introduce a parameter struct/object.",
-    "BSL022": "Replace Предупреждение() with asynchronous ShowMessageBox().",
+    "BSL022": "Replace modal global calls with asynchronous managed UI APIs.",
     "BSL027": "Replace Перейти/Goto with a structured loop or conditional.",
     "BSL028": "Wrap risky operations in Попытка...Исключение...КонецПопытки.",
     "BSL033": "Move the query outside the loop; collect data first, then iterate.",

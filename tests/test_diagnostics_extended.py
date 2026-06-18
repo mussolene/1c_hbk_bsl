@@ -3572,11 +3572,11 @@ class TestBsl036IfConditionComplexityParity:
 
 
 # ---------------------------------------------------------------------------
-# BSL022 — DeprecatedMessage
+# BSL022 — UsingModalWindows
 # ---------------------------------------------------------------------------
 
 
-class TestBsl022DeprecatedMessage:
+class TestBsl022UsingModalWindows:
     def test_preduprezhdenie_detected(self, tmp_path: Path) -> None:
         content = 'Предупреждение("Внимание!");\n'
         diags = _check(content, tmp_path)
@@ -3586,6 +3586,66 @@ class TestBsl022DeprecatedMessage:
         content = 'Warning("Alert!");\n'
         diags = _check(content, tmp_path)
         assert "BSL022" in _codes(diags)
+
+    def test_modal_global_methods_detected(self, tmp_path: Path) -> None:
+        content = "\n".join(
+            [
+                'Вопрос("Продолжить?", РежимДиалогаВопрос.ДаНет);',
+                'ОткрытьФормуМодально("Справочник.Номенклатура.ФормаВыбора");',
+                "ОткрытьЗначение(Значение);",
+                "ВвестиДату(Дата);",
+                "ВвестиЗначение(Значение);",
+                "ВвестиСтроку(Строка);",
+                "ВвестиЧисло(Число);",
+                'УстановитьВнешнююКомпоненту("AddIn");',
+                "УстановитьРасширениеРаботыСФайлами();",
+                "УстановитьРасширениеРаботыСКриптографией();",
+                'ПоместитьФайл("ИмяФайла");',
+                'DoQueryBox("Continue?");',
+                'OpenFormModal("Catalog.Items.Form.ChoiceForm");',
+                "OpenValue(Value);",
+                "DoMessageBox();",
+                "InputDate(Date);",
+                "InputValue(Value);",
+                "InputString(StringValue);",
+                "InputNumber(NumberValue);",
+                "InstallAddIn();",
+                "InstallFileSystemExtension();",
+                "InstallCryptoExtension();",
+                "PutFile();",
+                "",
+            ]
+        )
+
+        diags = _check(content, tmp_path, select={"BSL022"})
+
+        assert [d.line for d in diags if d.code == "BSL022"] == list(range(1, 24))
+
+    def test_nested_modal_global_method_detected(self, tmp_path: Path) -> None:
+        content = 'Если Вопрос("Продолжить?", РежимДиалогаВопрос.ДаНет) Тогда\nКонецЕсли;\n'
+        diags = _check(content, tmp_path, select={"BSL022"})
+        bsl022 = [d for d in diags if d.code == "BSL022"]
+        assert [(d.line, d.character, d.end_character) for d in bsl022] == [(1, 5, 11)]
+
+    def test_async_replacement_no_warning(self, tmp_path: Path) -> None:
+        content = 'ПоказатьВопрос("Продолжить?");\nПоказатьПредупреждение(, "Внимание");\n'
+        diags = _check(content, tmp_path, select={"BSL022"})
+        assert "BSL022" not in _codes(diags)
+
+    def test_method_call_on_object_no_warning(self, tmp_path: Path) -> None:
+        content = 'Диалог.Вопрос("Продолжить?");\n'
+        diags = _check(content, tmp_path, select={"BSL022"})
+        assert "BSL022" not in _codes(diags)
+
+    def test_modal_method_in_string_no_warning(self, tmp_path: Path) -> None:
+        content = 'Сообщить("Вопрос(""Продолжить?"")");\n'
+        diags = _check(content, tmp_path, select={"BSL022"})
+        assert "BSL022" not in _codes(diags)
+
+    def test_modal_method_in_inline_comment_no_warning(self, tmp_path: Path) -> None:
+        content = 'Сообщить("Готово"); // Вопрос("Продолжить?")\n'
+        diags = _check(content, tmp_path, select={"BSL022"})
+        assert "BSL022" not in _codes(diags)
 
     def test_soobshchit_no_warning(self, tmp_path: Path) -> None:
         content = 'Сообщить("Готово");\n'

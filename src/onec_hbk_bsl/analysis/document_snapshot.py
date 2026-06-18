@@ -107,9 +107,48 @@ _RE_COGNITIVE_EXPR_TERMINATOR = re.compile(
 _RE_COGNITIVE_CONTROL_TERMINATOR = re.compile(r"\b(?:Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
 _RE_ASSIGNMENT_CONTINUATION = re.compile(r"[=+\-*/]\s*$")
 _RE_LINE_COMMENT = re.compile(r"^\s*//")
-_RE_DEPRECATED_MSG = re.compile(
-    r"^\s*(?:Предупреждение|Warning)\s*\(",
-    re.IGNORECASE,
+_RE_MODAL_GLOBAL_METHOD = re.compile(
+    r"(?<![.\w])"
+    r"(?P<name>"
+    r"Вопрос|DoQueryBox|ОткрытьФормуМодально|OpenFormModal|ОткрытьЗначение|OpenValue|"
+    r"Предупреждение|DoMessageBox|Warning|ВвестиДату|InputDate|ВвестиЗначение|InputValue|"
+    r"ВвестиСтроку|InputString|ВвестиЧисло|InputNumber|"
+    r"УстановитьВнешнююКомпоненту|InstallAddIn|"
+    r"УстановитьРасширениеРаботыСФайлами|InstallFileSystemExtension|"
+    r"УстановитьРасширениеРаботыСКриптографией|InstallCryptoExtension|"
+    r"ПоместитьФайл|PutFile"
+    r")\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
+_BSL022_MODAL_GLOBAL_METHODS = frozenset(
+    name.casefold()
+    for name in (
+        "Вопрос",
+        "DoQueryBox",
+        "ОткрытьФормуМодально",
+        "OpenFormModal",
+        "ОткрытьЗначение",
+        "OpenValue",
+        "Предупреждение",
+        "DoMessageBox",
+        "Warning",
+        "ВвестиДату",
+        "InputDate",
+        "ВвестиЗначение",
+        "InputValue",
+        "ВвестиСтроку",
+        "InputString",
+        "ВвестиЧисло",
+        "InputNumber",
+        "УстановитьВнешнююКомпоненту",
+        "InstallAddIn",
+        "УстановитьРасширениеРаботыСФайлами",
+        "InstallFileSystemExtension",
+        "УстановитьРасширениеРаботыСКриптографией",
+        "InstallCryptoExtension",
+        "ПоместитьФайл",
+        "PutFile",
+    )
 )
 _RE_THIS_FORM = re.compile(
     r"\b(?:ЭтаФорма|ThisForm)\b",
@@ -850,6 +889,19 @@ def _ts_node_text(node: Any) -> str:
     return text.decode("utf-8", errors="replace") if isinstance(text, bytes) else str(text)
 
 
+def _ts_walk(node: Any):
+    yield node
+    for child in getattr(node, "children", []) or []:
+        yield from _ts_walk(child)
+
+
+def _ts_child_of_type(node: Any, child_type: str) -> Any | None:
+    for child in getattr(node, "children", []) or []:
+        if getattr(child, "type", None) == child_type:
+            return child
+    return None
+
+
 def _ts_point_to_lsp_character(container_node: Any, point: Any) -> int:
     node_text = _ts_node_text(container_node)
     row = point[0]
@@ -858,6 +910,82 @@ def _ts_point_to_lsp_character(container_node: Any, point: Any) -> int:
     if local_row < 0 or local_row >= len(lines):
         return point[1]
     return utf8_byte_offset_to_lsp_character(lines[local_row], point[1])
+
+
+def _ts_point_to_line_lsp_character(lines: list[str], point: Any) -> tuple[int, int]:
+    row = point[0]
+    if row < 0 or row >= len(lines):
+        return row, point[1]
+    return row, utf8_byte_offset_to_lsp_character(lines[row], point[1])
+
+
+def _bsl022_message(method_name: str) -> str:
+    return (
+        f"{method_name}() is a modal global method deprecated in managed UI. "
+        "Use asynchronous APIs instead."
+    )
+
+
+def _bsl022_modal_facts_from_tree(
+    root: Any,
+    lines: list[str],
+    procedures: list[ProcInfo],
+) -> list[LineDiagnosticFact]:
+    facts: list[LineDiagnosticFact] = []
+    for node in _ts_walk(root):
+        if getattr(node, "type", None) != "method_call":
+            continue
+        if getattr(getattr(node, "parent", None), "type", None) == "call_expression":
+            continue
+        ident = _ts_child_of_type(node, "identifier")
+        if ident is None:
+            continue
+        method_name = _ts_node_text(ident)
+        if method_name.casefold() not in _BSL022_MODAL_GLOBAL_METHODS:
+            continue
+        line_idx, character = _ts_point_to_line_lsp_character(lines, ident.start_point)
+        end_line_idx, end_character = _ts_point_to_line_lsp_character(lines, ident.end_point)
+        proc = proc_containing_line(procedures, line_idx)
+        if proc is not None and is_typical_client_command_handler(proc, lines):
+            continue
+        facts.append(
+            LineDiagnosticFact(
+                line_idx=line_idx,
+                character=character,
+                end_line_idx=end_line_idx,
+                end_character=end_character,
+                message=_bsl022_message(method_name),
+            )
+        )
+    return facts
+
+
+def _bsl022_modal_facts_from_lines(
+    lines: list[str],
+    procedures: list[ProcInfo],
+) -> list[LineDiagnosticFact]:
+    facts: list[LineDiagnosticFact] = []
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("//"):
+            continue
+        code_line = strip_inline_comment_preserve_strings(line)
+        code_line = mask_double_quoted_strings_preserve_len(code_line)
+        match = _RE_MODAL_GLOBAL_METHOD.search(code_line)
+        if match is None:
+            continue
+        proc = proc_containing_line(procedures, idx)
+        if proc is not None and is_typical_client_command_handler(proc, lines):
+            continue
+        method_name = match.group("name")
+        facts.append(
+            LineDiagnosticFact(
+                line_idx=idx,
+                character=match.start("name"),
+                end_character=match.end("name"),
+                message=_bsl022_message(method_name),
+            )
+        )
+    return facts
 
 
 def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
@@ -2033,29 +2161,15 @@ class DocumentSnapshot:
 
     @property
     def deprecated_warning_facts(self) -> list[LineDiagnosticFact]:
-        """Return cached BSL022 deprecated modal warning facts."""
+        """Return cached BSL022 modal global method facts."""
         if self._deprecated_warning_facts is not None:
             return self._deprecated_warning_facts
-        facts: list[LineDiagnosticFact] = []
-        for idx, line in enumerate(self.lines):
-            if line.strip().startswith("//"):
-                continue
-            if _RE_DEPRECATED_MSG.match(line) is None:
-                continue
-            proc = proc_containing_line(self.procedures, idx)
-            if proc is not None and is_typical_client_command_handler(proc, self.lines):
-                continue
-            facts.append(
-                LineDiagnosticFact(
-                    line_idx=idx,
-                    character=len(line) - len(line.lstrip()),
-                    end_character=len(line),
-                    message=(
-                        "Предупреждение()/Warning() is a modal dialog deprecated in managed UI. "
-                        "Use ПоказатьПредупреждение() / ShowMessageBox() instead."
-                    ),
-                )
-            )
+        root = self.root_node
+        facts = (
+            _bsl022_modal_facts_from_tree(root, self.lines, self.procedures)
+            if self.tree_ok and root is not None
+            else _bsl022_modal_facts_from_lines(self.lines, self.procedures)
+        )
         self._deprecated_warning_facts = facts
         return facts
 
