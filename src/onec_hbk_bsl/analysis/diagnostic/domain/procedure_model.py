@@ -154,45 +154,6 @@ class ProcedureModel:
             )
         ]
 
-    def validate_procedure_return_value(
-        self,
-        lines: list[str],
-        *,
-        return_value_re,
-        proc_header_re,
-    ) -> list[Diagnostic]:
-        if self.kind != "procedure":
-            return []
-        header_line = lines[self.start_idx]
-        match = proc_header_re.search(header_line)
-        if not match:
-            return []
-        kw = match.group("kw").lower()
-        if kw not in ("процедура", "procedure"):
-            return []
-        for idx in range(self.start_idx + 1, min(self.end_idx, len(lines))):
-            line = lines[idx]
-            stripped = line.lstrip()
-            if stripped.startswith("//"):
-                continue
-            if return_value_re.match(line):
-                return [
-                    Diagnostic(
-                        file=self.path,
-                        line=idx + 1,
-                        character=len(line) - len(stripped),
-                        end_line=idx + 1,
-                        end_character=len(line.rstrip()),
-                        severity=Severity.ERROR,
-                        code="BSL064",
-                        message=(
-                            "Процедура contains 'Возврат <value>' — "
-                            "change the declaration to 'Функция'."
-                        ),
-                    )
-                ]
-        return []
-
     def validate_max_returns(
         self, lines: list[str], *, max_returns: int, return_re
     ) -> list[Diagnostic]:

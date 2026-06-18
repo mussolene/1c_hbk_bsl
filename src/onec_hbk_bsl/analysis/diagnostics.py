@@ -3217,13 +3217,6 @@ _RE_ELSEIF = re.compile(r"^\s*(?:ИначеЕсли|ElsIf)\b", re.IGNORECASE)
 _RE_ELSE = re.compile(r"^\s*(?:Иначе|Else)\s*$|^\s*(?:Иначе|Else)\s*;?\s*$", re.IGNORECASE)
 _RE_ENDIF = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
 
-# Procedure body header (BSL062/BSL064)
-# Return with a value (BSL064 — Procedure returns value)
-_RE_RETURN_VALUE = re.compile(
-    r"^\s*(?:Возврат|Return)\s+\S",
-    re.IGNORECASE | re.MULTILINE,
-)
-
 # Comment line (BSL065 — export method comment check)
 _RE_COMMENT_LINE = re.compile(r"^\s*//")
 

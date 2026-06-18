@@ -6947,6 +6947,21 @@ class TestBsl064ProcedureReturnsValue:
         diags = _check(content, tmp_path, select={"BSL064"})
         assert "BSL064" in _codes(diags)
 
+    def test_each_procedure_return_value_reported_bslls_parity(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Если Условие Тогда
+                    Возврат 1;
+                КонецЕсли;
+                Возврат 2;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL064"}) if d.code == "BSL064"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (3, 8, 3, 18),
+            (5, 4, 5, 14),
+        ]
+
     def test_function_with_return_no_warning(self, tmp_path: Path) -> None:
         content = """\
             Функция Тест()

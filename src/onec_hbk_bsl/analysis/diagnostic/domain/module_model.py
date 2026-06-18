@@ -1776,22 +1776,60 @@ class ModuleModel:
     def validate_bsl064_procedure_returns_value(
         self,
         *,
-        lines: list[str],
         procs: list[ProcInfo],
-        procedure_model_from_proc_info_fn,
-        return_value_re,
-        proc_header_re,
+        tree: Any,
+        proc_node_map: dict[tuple[str, int, str], Any] | None,
+        find_proc_definition_node_fn,
+        ts_walk_fn,
+        utf8_byte_offset_to_lsp_character_fn,
+        lines: list[str],
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
+        root = getattr(tree, "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
+            return []
         for proc in procs:
-            model = procedure_model_from_proc_info_fn(self.path, proc)
-            diags.extend(
-                model.validate_procedure_return_value(
-                    lines,
-                    return_value_re=return_value_re,
-                    proc_header_re=proc_header_re,
-                )
+            if proc.kind != "procedure":
+                continue
+            key = (proc.name, proc.start_idx, proc.kind)
+            proc_node = (
+                proc_node_map.get(key)
+                if proc_node_map is not None
+                else find_proc_definition_node_fn(tree, proc)
             )
+            if proc_node is None:
+                continue
+            for node in ts_walk_fn(proc_node):
+                if getattr(node, "type", None) != "return_statement":
+                    continue
+                if not any(
+                    getattr(child, "type", None) == "expression"
+                    for child in getattr(node, "children", []) or []
+                ):
+                    continue
+                start_line_idx = node.start_point[0]
+                end_line_idx = node.end_point[0]
+                start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
+                end_line_text = lines[end_line_idx] if end_line_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=start_line_idx + 1,
+                        character=utf8_byte_offset_to_lsp_character_fn(
+                            start_line_text, node.start_point[1]
+                        ),
+                        end_line=end_line_idx + 1,
+                        end_character=utf8_byte_offset_to_lsp_character_fn(
+                            end_line_text, node.end_point[1]
+                        ),
+                        severity=Severity.ERROR,
+                        code="BSL064",
+                        message=(
+                            "Процедура contains 'Возврат <value>' — "
+                            "change the declaration to 'Функция'."
+                        ),
+                    )
+                )
         return diags
 
     def validate_bsl007_unused_local_variable(

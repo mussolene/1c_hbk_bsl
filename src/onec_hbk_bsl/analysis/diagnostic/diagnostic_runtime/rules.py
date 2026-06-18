@@ -6391,12 +6391,17 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
             )
         if code == "BSL064":
+            proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
             return model.validate_bsl064_procedure_returns_value(
-                lines=context.lines,
                 procs=procs,
-                procedure_model_from_proc_info_fn=context.procedure_model_from_proc_info,
-                return_value_re=_diag._RE_RETURN_VALUE,
-                proc_header_re=_diag._RE_PROC_HEADER,
+                tree=context.tree,
+                proc_node_map=proc_node_map,
+                find_proc_definition_node_fn=_diag._find_proc_definition_node,
+                ts_walk_fn=_diag._ts_walk,
+                utf8_byte_offset_to_lsp_character_fn=(
+                    _diag.utf8_byte_offset_to_lsp_character
+                ),
+                lines=context.lines,
             )
         if code == "BSL065":
             diags = []
