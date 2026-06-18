@@ -1950,6 +1950,8 @@ class MagicNumberRule(DiagnosticRuntimeRule):
                 continue
             if self._inside_structure_or_correspondence(expression, container_assignments):
                 continue
+            if self._inside_property_assignment(expression):
+                continue
             if not self._wrong_expression(expression):
                 continue
             self._add_number(storage, context.lines, number, value)
@@ -2114,6 +2116,23 @@ class MagicNumberRule(DiagnosticRuntimeRule):
         if arg_index == 0 and type_name not in {"соответствие", "map"}:
             return False
         return cls._argument_is_simple_number(expression)
+
+    @classmethod
+    def _inside_property_assignment(cls, expression: Any) -> bool:
+        assignment = cls._ancestor_of_type(expression, {"assignment_statement"})
+        if assignment is None:
+            return False
+        left = next(
+            (
+                child
+                for child in _ts_children(assignment)
+                if getattr(child, "type", None) not in {"=", ";"}
+            ),
+            None,
+        )
+        if getattr(left, "type", None) != "property_access":
+            return False
+        return any(getattr(child, "type", None) == "property" for child in _ts_children(left))
 
     @classmethod
     def _container_assignments(

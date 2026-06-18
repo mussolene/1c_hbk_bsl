@@ -4267,6 +4267,27 @@ class TestBsl029MagicNumber:
         diags = _check(content, tmp_path, select={"BSL029"})
         assert "BSL029" not in _codes(diags)
 
+    def test_property_assignment_expression_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Объект.Свойство = 40 + 2;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_index_assignment_expression_is_still_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Объект[ИмяРеквизита] = 40 + 2;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 27, 29),
+            (2, 32, 33),
+        ]
+
     def test_default_parameter_value_is_not_reported(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест(
