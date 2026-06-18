@@ -1020,7 +1020,7 @@ class TestLocalXmlParityBatch:
 
 class TestTailParityBatches:
     def test_compilation_and_name_tail_pool(self, tmp_path: Path) -> None:
-        form_path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        form_path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
         form_path.parent.mkdir(parents=True)
         form_path.write_text(
             textwrap.dedent(
@@ -1089,6 +1089,25 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL169"}).check_file(str(path))
 
         assert "BSL169" in _codes(diags)
+
+    def test_compilation_directive_lost_skips_ordinary_ext_module_without_xml(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура ПриОткрытии()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL169"}).check_file(str(path))
+
+        assert "BSL169" not in _codes(diags)
 
     def test_needless_compilation_directive_in_manager_module(self, tmp_path: Path) -> None:
         path = tmp_path / "Catalogs" / "Тест" / "Ext" / "ManagerModule.bsl"
@@ -6600,6 +6619,37 @@ class TestBsl245ServerSideExportFormMethod:
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert "BSL245" not in _codes(diags)
+
+    def test_server_export_in_ordinary_ext_module_is_clean(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура ЗавершитьПолучение(Результат, ДополнительныеПараметры) Экспорт
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert "BSL245" not in _codes(diags)
+
+    def test_notify_description_export_callback_in_managed_form_still_reports(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            &НаКлиенте
+            Процедура ЗапуститьПолучение()
+                Оповещение = Новый ОписаниеОповещения("ЗавершитьПолучение", ЭтаФорма);
+            КонецПроцедуры
+
+            Процедура ЗавершитьПолучение(Результат, ДополнительныеПараметры) Экспорт
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert _codes(diags) == ["BSL245"]
 
     def test_object_module_split_with_form_substring_is_clean(self, tmp_path: Path) -> None:
         content = """\

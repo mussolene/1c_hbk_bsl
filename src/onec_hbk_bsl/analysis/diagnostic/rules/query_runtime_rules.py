@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import current_form_xml_path
 from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
     is_split_module_fragment,
 )
@@ -597,6 +599,8 @@ def run_bsl245_server_side_export_form_method(
     _diag = _diag_module()
     if is_split_module_fragment(path) or not _diag.path_is_likely_form_module_bsl(path):
         return []
+    if _path_is_known_ordinary_form_module(path):
+        return []
     diags: list[Any] = []
     for proc in procs:
         if not proc.is_export:
@@ -617,3 +621,35 @@ def run_bsl245_server_side_export_form_method(
             )
         )
     return diags
+
+
+def _path_is_known_ordinary_form_module(path: str) -> bool:
+    module_path = Path(path)
+    xml_path = current_form_xml_path(path)
+    candidates: list[Path] = []
+    if xml_path is not None:
+        candidates.append(xml_path)
+    candidates.extend(
+        [
+            module_path.parent / "Form.xml",
+            module_path.parent / "form.xml",
+            module_path.parent.parent / "Form.xml",
+            module_path.parent.parent / "form.xml",
+        ]
+    )
+    raw = ""
+    for candidate in candidates:
+        try:
+            raw = candidate.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            continue
+        if raw:
+            break
+    if raw:
+        if re.search(r"<FormType>\s*(?:Ordinary|Обыч\w*)\s*</FormType>", raw, re.IGNORECASE):
+            return True
+        if re.search(r"<UseManagedForm>\s*false\s*</UseManagedForm>", raw, re.IGNORECASE):
+            return True
+        return bool(re.search(r"<Managed>\s*false\s*</Managed>", raw, re.IGNORECASE))
+    low = path.replace("\\", "/").lower()
+    return "/forms/" in low and low.endswith("/ext/module.bsl")

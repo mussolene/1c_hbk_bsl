@@ -19,15 +19,24 @@ from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
 
 def _path_is_unmanaged_form_module(path: str) -> bool:
+    module_path = Path(path)
     xml_path = current_form_xml_path(path)
     if xml_path is None:
-        module_path = Path(path)
         candidates = [
+            module_path.parent / "Form.xml",
+            module_path.parent / "form.xml",
             module_path.parent.parent / "Form.xml",
+            module_path.parent.parent / "form.xml",
             module_path.parent.parent.with_suffix(".xml"),
         ]
     else:
-        candidates = [xml_path]
+        candidates = [
+            xml_path,
+            module_path.parent / "Form.xml",
+            module_path.parent / "form.xml",
+            module_path.parent.parent / "Form.xml",
+            module_path.parent.parent / "form.xml",
+        ]
 
     raw = ""
     for candidate in candidates:
@@ -38,8 +47,13 @@ def _path_is_unmanaged_form_module(path: str) -> bool:
         if raw:
             break
     if not raw:
-        return False
-    return bool(re.search(r"<FormType>\s*Ordinary\s*</FormType>", raw, re.IGNORECASE))
+        low = path.replace("\\", "/").lower()
+        return "/forms/" in low and low.endswith("/ext/module.bsl")
+    if re.search(r"<FormType>\s*(?:Ordinary|Обыч\w*)\s*</FormType>", raw, re.IGNORECASE):
+        return True
+    if re.search(r"<UseManagedForm>\s*false\s*</UseManagedForm>", raw, re.IGNORECASE):
+        return True
+    return bool(re.search(r"<Managed>\s*false\s*</Managed>", raw, re.IGNORECASE))
 
 
 def _path_matches_bsl169_form_module(path: str) -> bool:

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.18] - 2026-06-18
+
+### Fixed
+
+- `CompilationDirectiveLost` (`BSL169`) больше не требует директивы компиляции
+  в модулях обычных форм, включая layout `Forms/<form>/Ext/Module.bsl`.
+- `ServerSideExportFormMethod` (`BSL245`) больше не диагностирует экспортные
+  методы в модулях обычных форм и сохраняет проверку для управляемых форм.
+
 ## [0.8.17] - 2026-06-16
 
 ### Fixed
@@ -365,7 +374,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.17...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.18...HEAD
+[0.8.18]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.17...v0.8.18
 [0.8.17]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.16...v0.8.17
 [0.8.16]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.15...v0.8.16
 [0.3.0]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.2.0...v0.3.0
