@@ -355,10 +355,15 @@ _DUPLICATE_REGION_ALIASES = {
     "eventhandlers": "eventhandlers",
     "обработчикисобытийформы": "formeventhandlers",
     "formeventhandlers": "formeventhandlers",
+    "обработчикисобытийэлементовшапкиформы": "formheaderitemseventhandlers",
+    "formheaderitemseventhandlers": "formheaderitemseventhandlers",
+    "обработчикикомандформы": "formcommandseventhandlers",
+    "formcommandseventhandlers": "formcommandseventhandlers",
+    "описаниепеременных": "variables",
+    "variables": "variables",
+    "инициализация": "initialize",
+    "initialize": "initialize",
 }
-_STANDARD_DUPLICATE_REGION_ALIASES = frozenset(
-    {"public", "internal", "private", "eventhandlers", "formeventhandlers"}
-)
 _MCCABE_GROUPING_KEYWORDS = frozenset(
     {
         "если",
@@ -2190,10 +2195,6 @@ class DocumentSnapshot:
             if not key:
                 continue
             if key not in seen:
-                seen[key] = region
-                continue
-            prev = seen[key]
-            if key not in _STANDARD_DUPLICATE_REGION_ALIASES and not self._region_is_empty(prev):
                 seen[key] = region
                 continue
             line = self.lines[region.start_idx] if 0 <= region.start_idx < len(self.lines) else ""

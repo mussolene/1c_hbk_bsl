@@ -7414,7 +7414,7 @@ class TestBsl131DuplicateRegion:
         assert [d.code for d in diags] == ["BSL131"]
         assert diags[0].message == 'Нужно удалить дубли раздела "Тест"'
 
-    def test_duplicate_non_empty_region_not_detected(self, tmp_path: Path) -> None:
+    def test_duplicate_non_empty_region_detected(self, tmp_path: Path) -> None:
         content = (
             "#Область Тест\n"
             "Процедура А()\n"
@@ -7430,7 +7430,23 @@ class TestBsl131DuplicateRegion:
         from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
-        assert "BSL131" not in [d.code for d in diags]
+        assert [d.code for d in diags] == ["BSL131"]
+
+    def test_standard_region_aliases_detected(self, tmp_path: Path) -> None:
+        content = (
+            "#Область ОписаниеПеременных\n"
+            "Перем А;\n"
+            "#КонецОбласти\n"
+            "#Region Variables\n"
+            "Перем Б;\n"
+            "#EndRegion\n"
+        )
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+
+        diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
+        assert [d.code for d in diags] == ["BSL131"]
 
 
 # ---------------------------------------------------------------------------
