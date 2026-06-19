@@ -4,7 +4,10 @@
 
 # ── Python runtime ───────────────────────────────────────────────────────────
 
-PYTHON3 ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+PYTHON3 ?= .venv/bin/python
+ifeq ($(wildcard $(PYTHON3)),)
+$(error Missing $(PYTHON3). Create or repair the project virtualenv before running Make targets)
+endif
 CONFIG_ROOT ?= /path/to/1c/config
 CORPUS_LARGEST_3 ?= $(CURDIR)/corpus-largest-3
 

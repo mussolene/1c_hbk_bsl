@@ -43,3 +43,15 @@ Hard rules:
   passphrases, or private agent state.
 
 See `docs/oacs-development.md` for repository-specific command examples.
+
+## Repository Python runtime
+
+All Python commands in this repository must use the project virtual
+environment: `./.venv/bin/python`. Do not use the system `python`, `python3`,
+or ad-hoc aliases for tests, diagnostics, scripts, parser probes, packaging, or
+release verification.
+
+If `./.venv/bin/python` is missing or broken, stop and repair the project
+environment before running Python-based checks. This matters for correctness:
+the project `.venv` pins the `tree-sitter-bsl` build that exposes SDBL CST
+support used by query diagnostics.
