@@ -7980,6 +7980,20 @@ class TestBsl262UsageWriteLogEvent:
 
 
 class TestBsl151BeginTransactionBeforeTryCatch:
+    def test_same_line_statement_after_begin_transaction_is_reported(self, tmp_path: Path) -> None:
+        content = """
+Процедура Тест()
+    НачатьТранзакцию(); Метод();
+КонецПроцедуры
+"""
+
+        diags = _check(content, tmp_path, select={"BSL151"})
+
+        bsl151 = [diag for diag in diags if diag.code == "BSL151"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl151] == [
+            (3, 4, 3, 23)
+        ]
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")

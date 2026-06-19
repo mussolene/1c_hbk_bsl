@@ -3840,43 +3840,94 @@ class BeginTransactionBeforeTryCatchRule(DiagnosticRuntimeRule):
         "Метод 'НачатьТранзакцию' должен быть за пределами блока "
         "'Попытка-Исключение' непосредственно перед оператором 'Попытка'"
     )
-    _begin_re = re.compile(r"^\s*(?:НачатьТранзакцию|BeginTransaction)\s*\(", re.IGNORECASE)
-    _try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+    _statement_types = frozenset(
+        {
+            "assignment_statement",
+            "break_statement",
+            "call_statement",
+            "continue_statement",
+            "for_each_statement",
+            "for_statement",
+            "goto_statement",
+            "if_statement",
+            "return_statement",
+            "rise_error_statement",
+            "try_statement",
+            "var_statement",
+            "while_statement",
+        }
+    )
+    _begin_names = frozenset({"начатьтранзакцию", "begintransaction"})
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        clean_lines = (
-            context.snapshot.code_lines_without_comments
-            if context.snapshot is not None
-            else context.lines
-        )
-        storage = DiagnosticStorage(context.path)
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
 
-        for idx, line in enumerate(clean_lines):
-            if self._begin_re.match(line) is None:
+        storage = DiagnosticStorage(context.path)
+        pending_begin: Any | None = None
+        statements = sorted(
+            (
+                node
+                for node in _ts_walk(root)
+                if getattr(node, "type", None) in self._statement_types
+                and not _diag.tree_has_errors(node)
+            ),
+            key=lambda node: (node.start_point[0], node.start_point[1], node.end_point[0]),
+        )
+
+        for statement in statements:
+            if getattr(statement, "type", None) == "try_statement":
+                pending_begin = None
                 continue
-            next_line = self._next_code_line(clean_lines, idx + 1)
-            if next_line is not None and self._try_re.match(next_line) is not None:
-                continue
-            character = len(line) - len(line.lstrip())
-            storage.add_range(
-                code=self.code,
-                message=self.message,
-                severity=Severity.ERROR,
-                line=idx,
-                character=character,
-                end_line=idx,
-                end_character=len(_code_before_comment(line).rstrip()),
-            )
+
+            if pending_begin is not None:
+                self._add_diagnostic(storage, context, pending_begin)
+                pending_begin = None
+
+            if self._is_global_begin_transaction(statement):
+                pending_begin = statement
+
+        if pending_begin is not None:
+            self._add_diagnostic(storage, context, pending_begin)
         return storage.diagnostics
 
-    @staticmethod
-    def _next_code_line(lines: list[str], start_idx: int) -> str | None:
-        for line in lines[start_idx:]:
-            stripped = line.strip()
-            if not stripped or stripped.startswith("//"):
+    @classmethod
+    def _is_global_begin_transaction(cls, statement: Any) -> bool:
+        if getattr(statement, "type", None) != "call_statement":
+            return False
+        children = _ts_children(statement)
+        if not children or getattr(children[0], "type", None) != "method_call":
+            return False
+        method_call = children[0]
+        for child in _ts_children(method_call):
+            if getattr(child, "type", None) != "identifier":
                 continue
-            return line
-        return None
+            return _ts_node_text(child).casefold() in cls._begin_names
+        return False
+
+    def _add_diagnostic(
+        self, storage: DiagnosticStorage, context: DiagnosticDocumentContext, statement: Any
+    ) -> None:
+        start_line = int(statement.start_point[0])
+        end_line = int(statement.end_point[0])
+        start_character = utf8_byte_offset_to_lsp_character(
+            context.lines[start_line],
+            int(statement.start_point[1]),
+        )
+        end_character = utf8_byte_offset_to_lsp_character(
+            context.lines[end_line],
+            int(statement.end_point[1]),
+        )
+        storage.add_range(
+            code=self.code,
+            message=self.message,
+            severity=Severity.ERROR,
+            line=start_line,
+            character=start_character,
+            end_line=end_line,
+            end_character=end_character,
+        )
 
 
 class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
