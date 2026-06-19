@@ -364,8 +364,8 @@ def run_bsl206_207_209_query_join_diagnostics(
             ]:
                 if (
                     ";" in future_head
-                    or _diag._RE_BSL149_UNION.search(future_head)
-                    or _diag._RE_BSL149_SELECT.search(future_head)
+                    or _diag._RE_QUERY_UNION_KEYWORD.search(future_head)
+                    or _diag._RE_QUERY_SELECT_KEYWORD.search(future_head)
                 ):
                     return False
                 if _diag._RE_QUERY_JOIN_KEYWORD.search(future_head):

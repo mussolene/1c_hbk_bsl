@@ -67,7 +67,7 @@ def _query_block_has_dynamic_tail(lines: list[str], block: Any) -> bool:
     return next_idx < len(lines) and lines[next_idx].lstrip().startswith("+")
 
 
-def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[Any] | None:
+def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[Any]:
     tree = getattr(block, "sdbl_tree", None)
     root = getattr(tree, "root_node", None)
     if (
@@ -75,7 +75,7 @@ def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[An
         or getattr(block, "sdbl_has_errors", False)
         or _query_block_has_dynamic_tail(lines, block)
     ):
-        return None
+        return []
 
     _diag = _diag_module()
     diags: list[Any] = []
@@ -116,272 +116,20 @@ def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[An
 
 
 def _run_bsl149_on_query_blocks(path: str, lines: list[str], query_blocks: list[Any]) -> list[Any]:
-    _diag = _diag_module()
     diags: list[Any] = []
     for block in query_blocks:
         if _query_block_has_dynamic_tail(lines, block):
             continue
-        sdbl_diags = _run_bsl149_on_sdbl_tree(path, lines, block)
-        if sdbl_diags is not None:
-            diags.extend(sdbl_diags)
-            continue
-        block_head = "\n".join(
-            head
-            for (
-                _line_no,
-                _content_base,
-                _content,
-                head,
-                _ended_query,
-            ) in _diag._query_block_content_line_tuples(block)
-        )
-        if re.search(r"\b(?:ИЗ|FROM)\b\s*\n\s*&ВТ_Цены\b", block_head, re.IGNORECASE):
-            continue
-        in_select = True
-        skip_select = False
-        paren_depth = 0
-        case_depth = 0
-        first_content_line = True
-        pending_multiline_alias = False
-        pending_multiline_expression = False
-        content_tuples = list(_diag._query_block_content_line_tuples(block))
-        for tuple_idx, (
-            line_no,
-            _content_base,
-            _content,
-            head,
-            _ended_query,
-        ) in enumerate(content_tuples):
-            idx = line_no - 1
-            line = lines[idx]
-            content = head
-
-            if first_content_line:
-                first_content_line = False
-                m_sel = _diag._RE_BSL149_SELECT.search(content)
-                if m_sel:
-                    tail = content[m_sel.end() :]
-                    m_clause = _diag._RE_BSL149_CLAUSE_AFTER_FIELDS.search(tail)
-                    if m_clause:
-                        field_region = tail[: m_clause.start()].strip()
-                        _diag._bsl149_append_missing_alias_diags(
-                            path, idx, line, field_region, diags
-                        )
-                        in_select = False
-                        continue
-                    field_region = tail.strip()
-                    if field_region:
-                        _diag._bsl149_append_missing_alias_diags(
-                            path, idx, line, field_region, diags
-                        )
-                        in_select = True
-                        continue
-
-            if ";" in content:
-                in_select = False
-                skip_select = False
-                paren_depth = 0
-                after_semi = content[content.index(";") + 1 :].strip()
-                if _diag._RE_BSL149_SELECT.search(after_semi):
-                    in_select = not skip_select
-                    skip_select = False
-                continue
-
-            if not content:
-                continue
-            case_head = content.strip()
-            if _diag._RE_BSL149_CASE_PART.match(case_head):
-                if re.match(r"^\s*(?:ВЫБОР|CASE)\b", case_head, re.IGNORECASE):
-                    case_depth += 1
-                elif re.match(r"^\s*(?:КОНЕЦ|END)\b", case_head, re.IGNORECASE):
-                    case_depth = max(0, case_depth - 1)
-                continue
-            if case_depth > 0:
-                continue
-            if _diag._RE_BSL149_UNION.search(content):
-                in_select = False
-                skip_select = True
-                continue
-            if _diag._RE_BSL149_SELECT.search(content):
-                m = _diag._RE_BSL149_SELECT.search(content)
-                before_select = content[: m.start()]
-                paren_depth += before_select.count("(") - before_select.count(")")
-                if skip_select:
-                    in_select = False
-                elif paren_depth > 0:
-                    in_select = True
-                else:
-                    in_select = not skip_select
-                    skip_select = False
-                continue
-            if _diag._RE_BSL149_CLAUSE_END.match(content):
-                paren_depth += content.count("(") - content.count(")")
-                if paren_depth < 0:
-                    paren_depth = 0
-                in_select = False
-                pending_multiline_alias = False
-                pending_multiline_expression = False
-                continue
-            if ")" in content and paren_depth > 0:
-                paren_depth -= content.count(")")
-                paren_depth += content.count("(")
-                if paren_depth < 0:
-                    paren_depth = 0
-                in_select = False
-                continue
-            if not in_select:
-                continue
-            if pending_multiline_alias:
-                pending_multiline_alias = False
-                pending_multiline_expression = False
-                continue
-            stripped_content = content.strip()
-            if pending_multiline_expression:
-                if _diag._RE_BSL149_HAS_ALIAS.search(stripped_content):
-                    pending_multiline_expression = False
-                    continue
-                if stripped_content.startswith(("+", "-", "*", "/")):
-                    continue
-                pending_multiline_expression = False
-            if re.search(r"\b(?:КАК|AS)\s*$", stripped_content, re.IGNORECASE):
-                pending_multiline_alias = True
-                continue
-            if stripped_content.startswith(("+", "-", "*", "/")):
-                pending_multiline_expression = True
-                continue
-            if content.rstrip().endswith(("+", "-", "*", "/")):
-                pending_multiline_expression = True
-                continue
-            next_tuple = (
-                content_tuples[tuple_idx + 1] if tuple_idx + 1 < len(content_tuples) else None
-            )
-            if next_tuple is not None and str(next_tuple[3]).strip().startswith(
-                ("+", "-", "*", "/")
-            ):
-                pending_multiline_expression = True
-                continue
-            _diag._bsl149_append_missing_alias_diags(path, idx, line, content, diags)
+        diags.extend(_run_bsl149_on_sdbl_tree(path, lines, block))
     return diags
 
 
 def run_bsl149_assign_alias_fields_in_query(
     path: str, lines: list[str], query_blocks: list[Any] | None = None
 ) -> list[Any]:
-    _diag = _diag_module()
     if query_blocks is not None:
         return _run_bsl149_on_query_blocks(path, lines, query_blocks)
-    diags: list[Any] = []
-    in_query = False
-    in_select = False
-    skip_select = False
-    paren_depth = 0
-    case_depth = 0
-
-    for idx, line in enumerate(lines):
-        stripped = line.rstrip()
-        if not _diag._RE_BSL149_CONTINUATION.match(stripped):
-            if in_query:
-                in_query = False
-                in_select = False
-                skip_select = False
-                paren_depth = 0
-            m_sel = _diag._RE_BSL149_SELECT.search(stripped)
-            if m_sel:
-                tail = stripped[m_sel.end() :]
-                m_clause = _diag._RE_BSL149_CLAUSE_AFTER_FIELDS.search(tail)
-                if m_clause:
-                    field_region = tail[: m_clause.start()]
-                    qpos = field_region.find('"')
-                    if qpos >= 0:
-                        field_region = field_region[:qpos]
-                    field_region = _diag._RE_BSL149_INLINE_COMMENT.sub("", field_region).strip()
-                    _diag._bsl149_append_missing_alias_diags(path, idx, line, field_region, diags)
-                else:
-                    in_query = True
-                    in_select = True
-                    skip_select = False
-                    paren_depth = 0
-            continue
-
-        if not in_query:
-            if _diag._RE_BSL149_SELECT.search(stripped):
-                in_query = True
-                in_select = True
-                skip_select = False
-                paren_depth = 0
-            else:
-                continue
-
-        raw_content = stripped.lstrip()
-        if raw_content.startswith("|"):
-            raw_content = raw_content[1:]
-        content = _diag._RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip()
-
-        if ";" in content:
-            in_select = False
-            skip_select = False
-            paren_depth = 0
-            after_semi = content[content.index(";") + 1 :].strip()
-            if _diag._RE_BSL149_SELECT.search(after_semi):
-                in_select = not skip_select
-                skip_select = False
-            continue
-
-        if '"' in content:
-            in_query = False
-            in_select = False
-            skip_select = False
-            paren_depth = 0
-            continue
-        if not content:
-            continue
-        case_head = content.strip()
-        if _diag._RE_BSL149_CASE_PART.match(case_head):
-            if re.match(r"^\s*(?:ВЫБОР|CASE)\b", case_head, re.IGNORECASE):
-                case_depth += 1
-            elif re.match(r"^\s*(?:КОНЕЦ|END)\b", case_head, re.IGNORECASE):
-                case_depth = max(0, case_depth - 1)
-            continue
-        if case_depth > 0:
-            continue
-        if _diag._RE_BSL149_UNION.search(content):
-            in_select = False
-            skip_select = True
-            continue
-        if _diag._RE_BSL149_SELECT.search(content):
-            m = _diag._RE_BSL149_SELECT.search(content)
-            before_select = content[: m.start()]
-            paren_depth += before_select.count("(") - before_select.count(")")
-            if skip_select:
-                in_select = False
-            elif paren_depth > 0:
-                in_select = True
-            else:
-                in_select = not skip_select
-                skip_select = False
-            continue
-        if _diag._RE_BSL149_CLAUSE_END.match(content):
-            paren_depth += content.count("(") - content.count(")")
-            if paren_depth < 0:
-                paren_depth = 0
-            in_select = False
-            continue
-        if ")" in content and paren_depth > 0:
-            paren_depth -= content.count(")")
-            paren_depth += content.count("(")
-            if paren_depth < 0:
-                paren_depth = 0
-            in_select = False
-            continue
-        if not in_select:
-            continue
-        if content.lstrip().startswith(("+", "-", "*", "/")):
-            continue
-        if content.rstrip().endswith(("+", "-", "*", "/")):
-            continue
-        _diag._bsl149_append_missing_alias_diags(path, idx, line, content, diags)
-
-    return diags
+    return []
 
 
 def run_bsl234_query_nested_fields_by_dot(

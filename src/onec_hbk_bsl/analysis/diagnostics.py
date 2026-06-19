@@ -2530,41 +2530,9 @@ _RE_MODULE_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_ASSIGN_LHS = re.compile(r"^\s*(?P<name>\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_BSL192_GET = re.compile(r"^(?:Получить|Get)\w*$", re.IGNORECASE)
 _RE_BSL266_CANCEL = re.compile(r"^(?:Отказ|Cancel)$", re.IGNORECASE)
-# BSL149 — AssignAliasFieldsInQuery
-_RE_BSL149_SELECT = re.compile(r"\bВЫБРАТЬ\b|\bSELECT\b", re.IGNORECASE)
-# Modifiers after SELECT that are not field names
-_RE_BSL149_SELECT_MODIFIERS = re.compile(
-    r"^\s*(?:РАЗРЕШЕННЫЕ|ALLOWED|РАЗЛИЧНЫЕ|DISTINCT|ПЕРВЫЕ|TOP)\b(?:\s+\d+)?\s*",
-    re.IGNORECASE,
-)
-# Clause keywords that end the SELECT field list (or signal UNION)
-_RE_BSL149_CLAUSE_END = re.compile(
-    r"^\s*(?:ПОМЕСТИТЬ|INTO|ИЗ|FROM|ГДЕ|WHERE|СГРУППИРОВАТЬ|GROUP\s+BY|"
-    r"УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
-    r"ИТОГИ|TOTALS|АВТОУПОРЯДОЧИВАНИЕ|AUTOORDER|"
-    r"ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE)\b",
-    re.IGNORECASE,
-)
-# Same keywords for one-line literals: field list may have leading spaces before clause
-_RE_BSL149_CLAUSE_AFTER_FIELDS = re.compile(
-    r"(?:ПОМЕСТИТЬ|INTO|ИЗ|FROM|ГДЕ|WHERE|СГРУППИРОВАТЬ|GROUP\s+BY|"
-    r"УПОРЯДОЧИТЬ|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|"
-    r"ИТОГИ|TOTALS|АВТОУПОРЯДОЧИВАНИЕ|AUTOORDER|"
-    r"ДЛЯ\s+ИЗМЕНЕНИЯ|FOR\s+UPDATE)\b",
-    re.IGNORECASE,
-)
-# UNION/ОБЪЕДИНИТЬ keyword — next SELECT's fields are skipped
-_RE_BSL149_UNION = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)
-# Field has explicit alias: КАК/AS followed by identifier (end of field text)
-_RE_BSL149_HAS_ALIAS = re.compile(r"\b(?:КАК|AS)\s+\w+\s*$", re.IGNORECASE)
-_RE_BSL149_CASE_PART = re.compile(
-    r"^\s*(?:ВЫБОР|CASE|КОГДА|WHEN|ТОГДА|THEN|ИНАЧЕ|ELSE|КОНЕЦ|END)\b",
-    re.IGNORECASE,
-)
-# Query continuation line
-_RE_BSL149_CONTINUATION = re.compile(r"^\s*\|")
-# Inline query comment
-_RE_BSL149_INLINE_COMMENT = re.compile(r"\s*//.*$")
+_RE_QUERY_SELECT_KEYWORD = re.compile(r"\bВЫБРАТЬ\b|\bSELECT\b", re.IGNORECASE)
+_RE_QUERY_UNION_KEYWORD = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)
+_RE_QUERY_INLINE_COMMENT = re.compile(r"\s*//.*$")
 _RE_BSL029_ANY_DIGIT = re.compile(r"\d")
 _RE_BSL208_WORD = re.compile(r"\b[a-zA-ZА-ЯЁа-яё_][a-zA-ZА-ЯЁа-яё0-9_]*\b", re.UNICODE)
 _RE_BSL208_HAS_LATIN = re.compile(r"[a-zA-Z]")
@@ -2611,89 +2579,6 @@ _RE_QUERY_PARSE_ERROR_TAIL_OPERATOR = re.compile(
     r"(?:[=<>+\-*/]|\b(?:И|AND|ИЛИ|OR)\b)\s*$", re.IGNORECASE
 )
 _RE_QUERY_FIELD_REF = re.compile(r"\b(?P<alias>\w+)\.(?P<field>\w+(?:\.\w+)*)\b", re.IGNORECASE)
-
-
-def _bsl149_strip_leading_select_modifiers(text: str) -> str:
-    """Strip РАЗЛИЧНЫЕ/DISTINCT, ПЕРВЫЕ/TOP N from the start of a SELECT field list."""
-    t = text.strip()
-    while True:
-        m = _RE_BSL149_SELECT_MODIFIERS.match(t)
-        if not m:
-            break
-        t = t[m.end() :].lstrip()
-    return t
-
-
-def _bsl149_append_missing_alias_diags(
-    path: str,
-    line_idx: int,
-    line: str,
-    field_region: str,
-    diags: list[Diagnostic],
-) -> None:
-    """Append at most one BSL149 diagnostic for *field_region* (comma-separated SELECT list)."""
-    field_region = _bsl149_strip_leading_select_modifiers(field_region)
-    if not field_region:
-        return
-    if re.match(r"^\s*(?:И|ИЛИ|AND|OR)\b", field_region, re.IGNORECASE):
-        return
-    for seg in split_commas_outside_double_quotes(field_region):
-        field = seg.strip().rstrip('";')
-        if not field or field == "*" or re.match(r"^\w+\.\*$", field, re.UNICODE):
-            continue
-        field_line_match = re.search(re.escape(field), line, re.IGNORECASE)
-        if field_line_match and re.search(
-            r"\b(?:КАК|AS)\b", line[field_line_match.end() :], re.IGNORECASE
-        ):
-            continue
-        # Multi-line CASE expressions are often split by query continuation lines.
-        # Skip intermediate CASE fragments; final line with alias is validated normally.
-        if _RE_BSL149_CASE_PART.match(field):
-            continue
-        if re.search(r"\b(?:ВЫБОР|CASE)\b", field, re.IGNORECASE):
-            continue
-        # WHERE/JOIN condition fragments (`И ...` / `ИЛИ ...`) are not SELECT fields.
-        if re.match(r"^(?:И|ИЛИ|AND|OR)\b", field, re.IGNORECASE):
-            continue
-        # Incomplete expression continuation (opened parenthesis not closed yet).
-        if field.count("(") > field.count(")") and not _RE_BSL149_HAS_ALIAS.search(field):
-            continue
-        # Broken dynamic-query fragments may leave a dangling table prefix (`Таблица.`).
-        # BSLLS does not report those incomplete fields.
-        if field.endswith("."):
-            continue
-        if _RE_BSL149_SELECT.search(field):
-            continue
-        if not _RE_BSL149_HAS_ALIAS.search(field):
-            field_for_message = re.sub(r"\s+", "", field) if field and field[0].isdigit() else field
-            field_start = 0
-            field_end = len(line.rstrip())
-            match = field_line_match
-            if match:
-                field_start = match.start()
-                field_end = match.end()
-            else:
-                pipe_pos = line.find("|")
-                if pipe_pos >= 0:
-                    after_pipe = line[pipe_pos + 1 :]
-                    leading_ws = len(after_pipe) - len(after_pipe.lstrip())
-                    field_start = pipe_pos + 1 + leading_ws
-                    field_end = min(len(line.rstrip()), field_start + len(field))
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=line_idx + 1,
-                    character=field_start,
-                    end_line=line_idx + 1,
-                    end_character=field_end,
-                    severity=Severity.WARNING,
-                    code="BSL149",
-                    message=(
-                        f'Полю "{field_for_message}" не назначен псевдоним или пропущено ключевое слово КАК'
-                    ),
-                )
-            )
-            break
 
 
 def _iter_query_text_blocks(lines: list[str]):
@@ -2750,7 +2635,7 @@ def _iter_query_text_content_lines(start_idx: int, block_lines: list[str]):
             content_base = pipe_pos + 1 + leading_ws
             raw_content = after_pipe.lstrip()
 
-        content = _RE_BSL149_INLINE_COMMENT.sub("", raw_content).rstrip().lstrip()
+        content = _RE_QUERY_INLINE_COMMENT.sub("", raw_content).rstrip().lstrip()
         if not content:
             continue
 
