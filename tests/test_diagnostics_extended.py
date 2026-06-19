@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from onec_hbk_bsl.analysis import document_snapshot as _document_snapshot
 from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
 from onec_hbk_bsl.analysis.diagnostics import (
     Diagnostic,
@@ -23,6 +24,12 @@ from onec_hbk_bsl.analysis.diagnostics import (
 from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+
+_SDBL_AVAILABLE = _document_snapshot._SDBL_LANGUAGE is not None
+_requires_sdbl = pytest.mark.skipif(
+    not _SDBL_AVAILABLE,
+    reason="SDBL tree-sitter parser is required",
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1551,6 +1558,7 @@ class TestTailParityBatches:
         assert "BSL242" in _codes(diags)
         assert "пустым" in next(d.message for d in diags if d.code == "BSL242")
 
+    @_requires_sdbl
     def test_query_and_runtime_tail_pool(self, tmp_path: Path) -> None:
         path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
         path.parent.mkdir(parents=True)
@@ -1639,6 +1647,7 @@ class TestTailParityBatches:
 
         assert "BSL244" in _codes(diags)
 
+    @_requires_sdbl
     def test_bsl187_reports_left_join_field_without_isnull(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
         path.parent.mkdir(parents=True)
@@ -1664,6 +1673,7 @@ class TestTailParityBatches:
         assert len(bsl187) == 1
         assert bsl187[0].line == 4
 
+    @_requires_sdbl
     def test_bsl187_skips_field_inside_isnull(self, tmp_path: Path) -> None:
         content = """\
             Запрос.Текст =
@@ -1678,6 +1688,7 @@ class TestTailParityBatches:
 
         assert "BSL187" not in _codes(diags)
 
+    @_requires_sdbl
     def test_bsl187_skips_alias_checked_not_null_in_where(self, tmp_path: Path) -> None:
         content = """\
             Запрос.Текст =
@@ -1693,6 +1704,7 @@ class TestTailParityBatches:
 
         assert "BSL187" not in _codes(diags)
 
+    @_requires_sdbl
     def test_bsl187_skips_invalid_sdbl_tree(self, tmp_path: Path) -> None:
         content = """\
             Запрос.Текст =
@@ -1707,6 +1719,7 @@ class TestTailParityBatches:
 
         assert "BSL187" not in _codes(diags)
 
+    @_requires_sdbl
     def test_bsl187_reports_right_and_full_join_nullable_sides(self, tmp_path: Path) -> None:
         content = """\
             Запрос.Текст =
@@ -2126,6 +2139,7 @@ class TestTailParityBatches:
         diags = _check(content, tmp_path, select={"BSL238"})
         assert "BSL238" not in _codes(diags)
 
+    @_requires_sdbl
     def test_bsl077_reports_top_in_package_before_later_order_by(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -2146,6 +2160,7 @@ class TestTailParityBatches:
         diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
         assert [(d.line, d.character, d.end_character) for d in diags] == [(3, 28, 39)]
 
+    @_requires_sdbl
     def test_bsl077_skips_top_in_separate_ordered_package(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -2165,6 +2180,7 @@ class TestTailParityBatches:
         diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
         assert [(d.line, d.character, d.end_character) for d in diags] == [(3, 28, 39)]
 
+    @_requires_sdbl
     def test_bsl077_skips_ordered_top_into_query_with_temporary_table(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -2188,6 +2204,7 @@ class TestTailParityBatches:
         diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
         assert diags == []
 
+    @_requires_sdbl
     def test_bsl077_reports_union_top_one_without_where(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -2205,6 +2222,7 @@ class TestTailParityBatches:
         diags = [d for d in _check(content, tmp_path, select={"BSL077"}) if d.code == "BSL077"]
         assert [(d.line, d.character, d.end_character) for d in diags] == [(2, 28, 36)]
 
+    @_requires_sdbl
     def test_bsl077_skips_union_top_one_with_where_like_bslls(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
