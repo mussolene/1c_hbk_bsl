@@ -761,10 +761,6 @@ _CONFIG_COMPATIBILITY_RE = re.compile(
     r"</(?:ConfigurationExtensionCompatibilityMode|CompatibilityMode)>",
     re.IGNORECASE,
 )
-_BSL097_DEPRECATED_CURRENT_DATE_RE = re.compile(
-    r"(?<!\.)(?<!\w)\b(ТекущаяДата|CurrentDate)\s*\(",
-    re.IGNORECASE,
-)
 _BSL177_METHOD_REPLACEMENTS: dict[str, str] = {
     "установитькраткийзаголовокприложения": "КлиентскоеПриложение.УстановитьКраткийЗаголовок",
     "получитькраткийзаголовокприложения": "КлиентскоеПриложение.ПолучитьКраткийЗаголовок",
@@ -1831,7 +1827,9 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if _ts_tree_available(context.tree):
-            return self._run_from_tree(context)
+            diagnostics = self._run_from_tree(context)
+            if diagnostics:
+                return diagnostics
         return self._run_from_lines(context)
 
     def _run_from_tree(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
@@ -1875,7 +1873,9 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
             if not stripped:
                 continue
             semi = -1
-            if self._header_semicolon_re.match(stripped) or self._compound_semicolon_re.match(
+            if code_part.strip() == ";":
+                semi = code_part.find(";")
+            elif self._header_semicolon_re.match(stripped) or self._compound_semicolon_re.match(
                 stripped
             ):
                 semi = stripped.rfind(";")
@@ -5393,24 +5393,37 @@ class IfElseDuplicatedCodeBlockRule(DiagnosticRuntimeRule):
 
 class DeprecatedCurrentDateRule(DiagnosticRuntimeRule):
     code = "BSL097"
+    _names = frozenset({"текущаядата", "currentdate"})
+    _message = 'Используйте "ТекущаяДатаСеанса" вместо устаревшего "ТекущаяДата"'
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
         storage = DiagnosticStorage(context.path)
-        for idx, line in enumerate(context.lines):
-            if _line_comment(line):
+        for call in self._global_method_calls(context):
+            if call["name"].casefold() not in self._names:
                 continue
-            clean = _code_mask_without_strings_and_comments(line)
-            for match in _BSL097_DEPRECATED_CURRENT_DATE_RE.finditer(clean):
-                storage.add_range(
-                    code=self.code,
-                    line=idx,
-                    character=match.start(1),
-                    end_line=idx,
-                    end_character=match.end(1),
-                    severity=Severity.ERROR,
-                    message='Используйте "ТекущаяДатаСеанса" вместо устаревшего "ТекущаяДата"',
-                )
+            ident = _diag._ts_child_of_type(call["node"], "identifier")
+            if ident is None:
+                continue
+            _add_node_range(
+                storage,
+                code=self.code,
+                message=self._message,
+                severity=Severity.ERROR,
+                lines=context.lines,
+                start_node=ident,
+                end_node=ident,
+            )
         return storage.diagnostics
+
+    @staticmethod
+    def _global_method_calls(context: DiagnosticDocumentContext) -> list[dict[str, Any]]:
+        if context.ts_nodes_for_types and context.global_method_calls_from_nodes:
+            nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
+            return context.global_method_calls_from_nodes(nodes["method_call"], context.lines)
+        return _diag._ts_global_method_calls(context.tree.root_node, context.lines)
 
 
 class ExtraCommasRule(DiagnosticRuntimeRule):

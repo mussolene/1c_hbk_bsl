@@ -7329,6 +7329,41 @@ class TestBsl066DeprecatedFind:
 
 
 # ---------------------------------------------------------------------------
+# BSL097 — DeprecatedCurrentDate (BSLLS parity: only global CurrentDate())
+# ---------------------------------------------------------------------------
+
+
+class TestBsl097DeprecatedCurrentDate:
+    def test_current_date_detected(self, tmp_path: Path) -> None:
+        content = "Дата = ТекущаяДата();\n"
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" in _codes(diags)
+
+    def test_english_current_date_detected(self, tmp_path: Path) -> None:
+        content = "DateValue = CurrentDate();\n"
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" in _codes(diags)
+
+    def test_object_method_not_flagged(self, tmp_path: Path) -> None:
+        content = "Дата = Объект.ТекущаяДата();\n"
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" not in _codes(diags)
+
+    def test_comment_and_string_not_flagged(self, tmp_path: Path) -> None:
+        content = """\
+            // ТекущаяДата();
+            Текст = "CurrentDate()";
+        """
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" not in _codes(diags)
+
+    def test_current_session_date_not_flagged(self, tmp_path: Path) -> None:
+        content = "Дата = ТекущаяДатаСеанса();\n"
+        diags = _check(content, tmp_path, select={"BSL097"})
+        assert "BSL097" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
 
