@@ -3077,12 +3077,6 @@ _RE_UNCONDITIONAL_EXIT = re.compile(
 # String continuation line in BSL (| at the start for multiline literals)
 _RE_STR_CONTINUATION = re.compile(r"^\s*\|", re.MULTILINE)
 
-# НачатьТранзакцию / BeginTransaction
-_RE_BEGIN_TRANSACTION = re.compile(
-    r"\b(?:НачатьТранзакцию|BeginTransaction)\s*\(",
-    re.IGNORECASE,
-)
-
 # ЗафиксироватьТранзакцию / CommitTransaction or РоллбекТранзакции / RollbackTransaction
 _RE_COMMIT_TRANSACTION = re.compile(
     r"\b(?:ЗафиксироватьТранзакцию|CommitTransaction"
@@ -3258,11 +3252,6 @@ _RE_NULL_COMPARISON = re.compile(
 
 _RE_NOOP_COMPOUND = re.compile(
     r"\w+\s*(?:\+=\s*0|-=\s*0|\*=\s*1|/=\s*1)\b",
-)
-
-_RE_BEGIN_TRANSACTION = re.compile(
-    r"\b(?:НачатьТранзакцию|BeginTransaction)\s*\(",
-    re.IGNORECASE,
 )
 
 _RE_CONNECTION_STRING = re.compile(
