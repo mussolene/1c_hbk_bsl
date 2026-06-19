@@ -1592,13 +1592,7 @@ class DocumentSnapshot:
     @property
     def regions(self) -> list[RegionInfo]:
         if self._regions is None:
-            self._regions = (
-                _find_regions_from_tree(self.tree)
-                if self.is_tree_sitter
-                else _find_regions(self.content)
-            )
-            if not self._regions:
-                self._regions = _find_regions(self.content)
+            self._regions = _find_regions_from_tree(self.tree) if self.is_tree_sitter else []
         return self._regions
 
     @property

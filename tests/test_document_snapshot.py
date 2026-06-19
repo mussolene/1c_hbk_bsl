@@ -35,7 +35,7 @@ def test_snapshot_collects_core_document_views(tmp_path: Path) -> None:
     assert any(symbol.name == "Тест" and symbol.kind == "procedure" for symbol in snapshot.symbols)
 
 
-def test_snapshot_falls_back_to_regex_views_when_tree_is_not_real_ts(tmp_path: Path) -> None:
+def test_non_tree_sitter_snapshot_keeps_procedure_fallback_but_not_regions(tmp_path: Path) -> None:
     content = """\
 #Область Test
 Функция Имя(Парам = 1)
@@ -50,7 +50,7 @@ def test_snapshot_falls_back_to_regex_views_when_tree_is_not_real_ts(tmp_path: P
     )
 
     assert snapshot.procedures[0].name == "Имя"
-    assert snapshot.regions[0].name == "Test"
+    assert snapshot.regions == []
 
 
 def test_snapshot_collects_embedded_query_blocks(tmp_path: Path) -> None:
@@ -138,7 +138,7 @@ def test_regex_fallback_snapshot_collects_async_procedures(tmp_path: Path) -> No
     assert [proc.name for proc in snapshot.procedures] == ["ВерсияАсинх"]
 
 
-def test_regex_fallback_regions_match_nested_blocks(tmp_path: Path) -> None:
+def test_regions_require_tree_sitter_snapshot(tmp_path: Path) -> None:
     content = """\
 #Область Outer
 Процедура Тест()
@@ -150,7 +150,4 @@ def test_regex_fallback_regions_match_nested_blocks(tmp_path: Path) -> None:
 """
     snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content, tree=object())
 
-    assert [(region.name, region.start_idx, region.end_idx) for region in snapshot.regions] == [
-        ("Outer", 0, 6),
-        ("Inner", 2, 4),
-    ]
+    assert snapshot.regions == []
