@@ -707,6 +707,19 @@ def _normalize_duplicate_region_name(name: str) -> str:
     return _DUPLICATE_REGION_ALIASES.get(raw, raw)
 
 
+def _module_level_regions(regions: list[RegionInfo]) -> list[RegionInfo]:
+    return [
+        region
+        for region in regions
+        if not any(
+            other is not region
+            and other.start_idx < region.start_idx
+            and region.end_idx <= other.end_idx
+            for other in regions
+        )
+    ]
+
+
 def _calc_complexity_metrics_from_lines(
     lines: list[str],
     start_idx: int,
@@ -2133,12 +2146,13 @@ class DocumentSnapshot:
         if self._non_standard_region_facts is not None:
             return self._non_standard_region_facts
         allowed = _standard_regions_for_path(self.path)
-        if not allowed or not self.regions:
+        module_regions = _module_level_regions(self.regions)
+        if not allowed or not module_regions:
             self._non_standard_region_facts = []
             return self._non_standard_region_facts
 
         facts: list[LineDiagnosticFact] = []
-        for region in self.regions:
+        for region in module_regions:
             if _is_standard_region_name_for_path(self.path, region.name):
                 continue
             line_idx = region.start_idx
@@ -2190,7 +2204,7 @@ class DocumentSnapshot:
 
         facts: list[LineDiagnosticFact] = []
         seen: dict[str, RegionInfo] = {}
-        for region in self.regions:
+        for region in _module_level_regions(self.regions):
             key = _normalize_duplicate_region_name(region.name)
             if not key:
                 continue

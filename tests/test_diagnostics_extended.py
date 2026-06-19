@@ -3211,6 +3211,21 @@ class TestBsl016NonStandardRegion:
         diags = DiagnosticEngine(select={"BSL016"}).check_file(str(path))
         assert "BSL016" not in _codes(diags)
 
+    def test_nested_custom_region_is_not_module_level(self, tmp_path: Path) -> None:
+        content = """\
+            #Область ПрограммныйИнтерфейс
+            #Область Вложенная
+            Процедура А() Экспорт
+            КонецПроцедуры
+            #КонецОбласти
+            #КонецОбласти
+        """
+        path = tmp_path / "CommonModules" / "Модуль" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL016"}).check_file(str(path))
+        assert "BSL016" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL017 — ExportMethodsInCommandModule
@@ -3995,6 +4010,16 @@ class TestBsl026EmptyRegion:
         )
         diags = DiagnosticEngine(select={"BSL026"}).check_file(str(path))
         assert "BSL026" not in _codes(diags)
+
+    def test_nested_empty_regions_are_checked(self, tmp_path: Path) -> None:
+        content = """\
+            #Область Outer
+            #Область Inner
+            #КонецОбласти
+            #КонецОбласти
+        """
+        diags = _check(content, tmp_path, select={"BSL026"})
+        assert _codes(diags) == ["BSL026", "BSL026"]
 
 
 # ---------------------------------------------------------------------------
@@ -7447,6 +7472,24 @@ class TestBsl131DuplicateRegion:
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert [d.code for d in diags] == ["BSL131"]
+
+    def test_nested_duplicate_regions_are_not_module_level(self, tmp_path: Path) -> None:
+        content = (
+            "#Область Outer\n"
+            "#Область D\n"
+            "А = 1;\n"
+            "#КонецОбласти\n"
+            "#Область D\n"
+            "Б = 2;\n"
+            "#КонецОбласти\n"
+            "#КонецОбласти\n"
+        )
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+
+        diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
+        assert "BSL131" not in [d.code for d in diags]
 
 
 # ---------------------------------------------------------------------------
