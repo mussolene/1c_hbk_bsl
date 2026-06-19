@@ -29,6 +29,21 @@ def test_bsl150_with_pattern_finds_word() -> None:
     assert diags[0].message == "В тексте модуля найдено запрещенное слово <BADWORD>."
 
 
+def test_bsl150_can_skip_comments() -> None:
+    engine = DiagnosticEngine(
+        select={"BSL150"},
+        bad_words_pattern=r"BADWORD",
+        bad_words_find_in_comments=False,
+    )
+    src = (
+        "Процедура Тест() // BADWORD comment\n"
+        '    Сообщить("BADWORD string"); // BADWORD comment\n'
+        "КонецПроцедуры\n"
+    )
+    diags = engine.check_content("m.bsl", src)
+    assert [(d.line, d.character, d.end_character) for d in diags] == [(2, 14, 21)]
+
+
 def test_bsl150_matches_bslls_configured_fixture() -> None:
     fixture = Path(
         ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/BadWordsDiagnostic.bsl"
@@ -47,6 +62,31 @@ def test_bsl150_matches_bslls_configured_fixture() -> None:
     assert [(d.message, d.line, d.character, d.end_line, d.end_character) for d in diags] == [
         ("В тексте модуля найдено запрещенное слово <лотус>.", 1, 42, 1, 47),
         ("В тексте модуля найдено запрещенное слово <шмотус>.", 1, 48, 1, 54),
+        ("В тексте модуля найдено запрещенное слово <Лотус>.", 5, 4, 5, 9),
+        ("В тексте модуля найдено запрещенное слово <Лотус>.", 7, 24, 7, 29),
+        ("В тексте модуля найдено запрещенное слово <Лотус>.", 7, 34, 7, 39),
+        ("В тексте модуля найдено запрещенное слово <Шмотус>.", 9, 4, 9, 10),
+    ]
+
+
+def test_bsl150_matches_bslls_configured_fixture_without_comments() -> None:
+    fixture = Path(
+        ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/BadWordsDiagnostic.bsl"
+    )
+    if not fixture.exists():
+        pytest.skip("BSLLS fixture is not available")
+
+    diags = [
+        diag
+        for diag in DiagnosticEngine(
+            select={"BSL150"},
+            bad_words_pattern="лотус|шмотус",
+            bad_words_find_in_comments=False,
+        ).check_file(str(fixture))
+        if diag.code == "BSL150"
+    ]
+
+    assert [(d.message, d.line, d.character, d.end_line, d.end_character) for d in diags] == [
         ("В тексте модуля найдено запрещенное слово <Лотус>.", 5, 4, 5, 9),
         ("В тексте модуля найдено запрещенное слово <Лотус>.", 7, 24, 7, 29),
         ("В тексте модуля найдено запрещенное слово <Лотус>.", 7, 34, 7, 39),

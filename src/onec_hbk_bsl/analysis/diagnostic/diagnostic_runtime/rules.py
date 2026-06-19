@@ -1272,11 +1272,27 @@ class BadWordsRule(DiagnosticRuntimeRule):
         rx = getattr(context.diagnostics_engine, "_bad_words_re", None)
         if rx is None:
             return []
+        find_in_comments = bool(
+            getattr(context.diagnostics_engine, "bad_words_find_in_comments", True)
+        )
+        if find_in_comments:
+            comment_starts = [None] * len(context.lines)
+        elif context.snapshot is not None:
+            comment_starts = list(context.snapshot.comment_starts)
+        else:
+            string_states = build_line_string_states(context.lines)
+            comment_starts = [
+                comment_start_outside_double_quotes(line, string_states[idx])
+                for idx, line in enumerate(context.lines)
+            ]
         storage = DiagnosticStorage(context.path)
         for line_idx, line in enumerate(context.lines):
             if not line:
                 continue
+            comment_start = comment_starts[line_idx]
             for match in rx.finditer(line):
+                if comment_start is not None and match.start() >= comment_start:
+                    continue
                 word = match.group(0)
                 storage.add_match(
                     code=self.code,

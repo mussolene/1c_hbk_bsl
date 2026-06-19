@@ -137,6 +137,7 @@ class DiagnosticEngine:
         max_module_lines: int = MAX_MODULE_LINES,
         symbol_index: Any | None = None,
         bad_words_pattern: str = "",
+        bad_words_find_in_comments: bool = True,
         reserved_parameter_names_pattern: str = "",
         declared_languages: str = "ru",
         bsl148_loops_executed_at_least_once: bool = True,
@@ -178,6 +179,7 @@ class DiagnosticEngine:
         self.min_duplicate_uses = min_duplicate_uses
         self.max_module_lines = max_module_lines
         self.bsl148_loops_executed_at_least_once = bsl148_loops_executed_at_least_once
+        self.bad_words_find_in_comments = bad_words_find_in_comments
         _bwp = bad_words_pattern.strip()
         try:
             self._bad_words_re: re.Pattern[str] | None = (
