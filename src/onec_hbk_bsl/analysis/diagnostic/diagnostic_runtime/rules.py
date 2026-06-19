@@ -1815,84 +1815,67 @@ class SpaceAtStartCommentRule(DiagnosticRuntimeRule):
 
 class EmptyStatementRule(DiagnosticRuntimeRule):
     code = "BSL025"
-    _compound_semicolon_re = re.compile(
-        r"^\s*(?:Если|If|ИначеЕсли|ElsIf|ElseIf|Для(?:\s+Каждого)?|For(?:\s+Each)?|Пока|While)\b.*(?:Тогда|Then|Цикл|Do)\s*;\s*$",
-        re.IGNORECASE,
+    _block_statement_types = frozenset(
+        {
+            "for_each_statement",
+            "for_statement",
+            "if_statement",
+            "try_statement",
+            "while_statement",
+        }
     )
-    _header_semicolon_re = re.compile(
-        r"^\s*(?:Процедура|Функция|Procedure|Function)\b.*;\s*$",
-        re.IGNORECASE,
-    )
-    _valid_closing_semicolon_re = re.compile(r"^\s*(?:КонецЦикла|EndDo)\s*$", re.IGNORECASE)
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        if _ts_tree_available(context.tree):
-            diagnostics = self._run_from_tree(context)
-            if diagnostics:
-                return diagnostics
-        return self._run_from_lines(context)
+        if not _ts_tree_available(context.tree):
+            return []
+        return self._run_from_tree(context)
 
     def _run_from_tree(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
         root = context.tree.root_node
         for node in _ts_walk(root):
-            if getattr(node, "type", None) != "ERROR":
+            if not self._is_empty_statement_semicolon(node):
                 continue
-            if _ts_node_text(node).strip() != ";":
-                continue
-            line_idx = int(node.start_point[0])
-            if not (0 <= line_idx < len(context.lines)):
-                continue
-            byte_col = int(node.start_point[1])
-            character = utf8_byte_offset_to_lsp_character(context.lines[line_idx], byte_col)
-            line_prefix = context.lines[line_idx][:character]
-            if self._valid_closing_semicolon_re.match(line_prefix):
-                continue
-            end_character = utf8_byte_offset_to_lsp_character(
-                context.lines[line_idx], int(node.end_point[1])
-            )
-            storage.add_range(
+            _add_node_range(
+                storage,
                 code=self.code,
-                line=line_idx,
-                character=character,
-                end_line=line_idx,
-                end_character=end_character,
-                severity=Severity.HINT,
                 message='Удалите ";"',
+                severity=Severity.HINT,
+                lines=context.lines,
+                start_node=node,
+                end_node=node,
             )
         return storage.diagnostics
 
-    def _run_from_lines(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        storage = DiagnosticStorage(context.path)
-        for idx, line in enumerate(context.lines):
-            if _line_comment(line):
-                continue
-            comment_start = _comment_start_outside_string(line)
-            code_part = line if comment_start < 0 else line[:comment_start]
-            stripped = code_part.rstrip()
-            if not stripped:
-                continue
-            semi = -1
-            if code_part.strip() == ";":
-                semi = code_part.find(";")
-            elif self._header_semicolon_re.match(stripped) or self._compound_semicolon_re.match(
-                stripped
-            ):
-                semi = stripped.rfind(";")
-            elif ";;" in stripped:
-                semi = stripped.find(";;") + 1
-            if semi < 0:
-                continue
-            storage.add_range(
-                code=self.code,
-                line=idx,
-                character=semi,
-                end_line=idx,
-                end_character=semi + 1,
-                severity=Severity.HINT,
-                message='Удалите ";"',
-            )
-        return storage.diagnostics
+    @classmethod
+    def _is_empty_statement_semicolon(cls, node: Any) -> bool:
+        if getattr(node, "type", None) != ";":
+            return False
+        parent = getattr(node, "parent", None)
+        parent_type = getattr(parent, "type", None)
+        if parent_type not in {"source_file", "procedure_definition", "function_definition"}:
+            return False
+        previous = cls._previous_named_sibling_or_token(node)
+        return getattr(previous, "type", None) not in cls._block_statement_types
+
+    @staticmethod
+    def _previous_named_sibling_or_token(node: Any) -> Any | None:
+        parent = getattr(node, "parent", None)
+        if parent is None:
+            return None
+        children = _ts_children(parent)
+        try:
+            index = children.index(node)
+        except ValueError:
+            return None
+        return next(
+            (
+                sibling
+                for sibling in reversed(children[:index])
+                if getattr(sibling, "type", None) not in {"line_comment", "comment"}
+            ),
+            None,
+        )
 
 
 class MissingCodeTryCatchRule(DiagnosticRuntimeRule):
