@@ -779,24 +779,30 @@ class SymbolIndex:
             ).fetchall()
         )
 
-    def find_callers(self, callee_name: str, limit: int = 50) -> list[dict[str, Any]]:
+    def find_callers(self, callee_name: str, limit: int | None = 50) -> list[dict[str, Any]]:
         """
         Find all call sites that call *callee_name*.
 
         Returns dicts with: caller_file, caller_line, caller_name, callee_name.
         """
-        return self._read_list(
-            lambda conn: conn.execute(
-                """
+        sql = """
                 SELECT c.caller_file, c.caller_line, c.caller_character, c.caller_name, c.callee_name,
                        s.signature as caller_signature
                 FROM calls c
                 LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower AND s.file_path = c.caller_file
                 WHERE c.callee_name_lower = ?
                 ORDER BY c.caller_file, c.caller_line
-                LIMIT ?
-                """,
-                (callee_name.casefold(), limit),
+                """
+        params: tuple[Any, ...]
+        if limit is None:
+            params = (callee_name.casefold(),)
+        else:
+            sql += " LIMIT ?"
+            params = (callee_name.casefold(), limit)
+        return self._read_list(
+            lambda conn: conn.execute(
+                sql,
+                params,
             ).fetchall()
         )
 

@@ -2120,6 +2120,8 @@ class ModuleModel:
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         delimiter_lines = bsl051_delimiter_lines_for_tree_fn(tree)
+        if delimiter_lines is None:
+            return []
         end_line_idxs = {proc.end_idx for proc in procs}
 
         for proc in procs:
@@ -2198,13 +2200,7 @@ class ModuleModel:
                             and next_indent <= exit_indent
                             and next_abs not in end_line_idxs
                         ):
-                            if delimiter_lines is not None:
-                                is_block_delimiter = next_abs in delimiter_lines
-                            else:
-                                is_block_delimiter = bool(
-                                    re_bsl051_delimiter_fallback.match(next_line)
-                                )
-                            if not is_block_delimiter:
+                            if next_abs not in delimiter_lines:
                                 emit_unreachable(next_abs, next_line, extend_to_block_end=True)
                         break
                     i = j
@@ -2224,9 +2220,7 @@ class ModuleModel:
                         if next_abs in end_line_idxs:
                             break
                         next_indent = len(next_line) - len(next_line.lstrip())
-                        if next_indent <= end_indent and not re_bsl051_delimiter_fallback.match(
-                            next_line
-                        ):
+                        if next_indent <= end_indent and next_abs not in delimiter_lines:
                             emit_unreachable(next_abs, next_line)
                         break
         return diags

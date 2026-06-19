@@ -56,6 +56,10 @@ def _path_is_split_module_fragment(path: str) -> bool:
     return is_split_module_fragment(path)
 
 
+def _path_is_object_module_bsl(path: str) -> bool:
+    return path.replace("\\", "/").lower().endswith("/ext/objectmodule.bsl")
+
+
 def _path_is_whole_module_bsl(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     if _path_is_form_module_bsl(path):
@@ -337,6 +341,8 @@ def _add_node_start_token_range(
 def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) -> list[Diagnostic]:
     if _path_is_form_module_bsl(context.path):
         return []
+    if _path_is_object_module_bsl(context.path):
+        return []
     if not _path_is_whole_module_bsl(context.path):
         return []
 
@@ -519,7 +525,9 @@ def _bsl042_is_attachable_method(name: str) -> bool:
 def _bsl042_is_platform_handler(name: str) -> bool:
     return name.casefold() in {
         "присозданииобъекта",
+        "передначаломработысистемы",
         "onobjectcreate",
+        "beforestart",
     }
 
 
@@ -1831,15 +1839,6 @@ class SpaceAtStartCommentRule(DiagnosticRuntimeRule):
 
 class EmptyStatementRule(DiagnosticRuntimeRule):
     code = "BSL025"
-    _block_statement_types = frozenset(
-        {
-            "for_each_statement",
-            "for_statement",
-            "if_statement",
-            "try_statement",
-            "while_statement",
-        }
-    )
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         if not _ts_tree_available(context.tree):
@@ -1850,7 +1849,7 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
         storage = DiagnosticStorage(context.path)
         root = context.tree.root_node
         for node in _ts_walk(root):
-            if not self._is_empty_statement_semicolon(node):
+            if not self._is_empty_statement_semicolon(node, context.lines):
                 continue
             _add_node_range(
                 storage,
@@ -1864,34 +1863,34 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
         return storage.diagnostics
 
     @classmethod
-    def _is_empty_statement_semicolon(cls, node: Any) -> bool:
+    def _is_empty_statement_semicolon(cls, node: Any, lines: list[str]) -> bool:
         if getattr(node, "type", None) != ";":
             return False
-        parent = getattr(node, "parent", None)
-        parent_type = getattr(parent, "type", None)
-        if parent_type not in {"source_file", "procedure_definition", "function_definition"}:
+        line_idx = int(getattr(node, "start_point", ([-1]))[0])
+        end_line_idx = int(getattr(node, "end_point", ([-2]))[0])
+        if line_idx != end_line_idx or line_idx < 0 or line_idx >= len(lines):
             return False
-        previous = cls._previous_named_sibling_or_token(node)
-        return getattr(previous, "type", None) not in cls._block_statement_types
-
-    @staticmethod
-    def _previous_named_sibling_or_token(node: Any) -> Any | None:
-        parent = getattr(node, "parent", None)
-        if parent is None:
-            return None
-        children = _ts_children(parent)
-        try:
-            index = children.index(node)
-        except ValueError:
-            return None
-        return next(
-            (
-                sibling
-                for sibling in reversed(children[:index])
-                if getattr(sibling, "type", None) not in {"line_comment", "comment"}
-            ),
-            None,
-        )
+        line_text = lines[line_idx]
+        col = int(getattr(node, "start_point", (0, 0))[1])
+        line_bytes = line_text.encode("utf-8", errors="replace")
+        if col > 0 and col <= len(line_bytes) and line_bytes[col - 1 : col] == b";":
+            return True
+        parent_type = getattr(getattr(node, "parent", None), "type", None)
+        if parent_type not in {
+            "source_file",
+            "procedure_definition",
+            "function_definition",
+            "try_statement",
+        }:
+            return False
+        if line_text.strip() == ";":
+            return True
+        if parent_type in {"procedure_definition", "function_definition"}:
+            before = line_bytes[:col].decode("utf-8", errors="replace").rstrip()
+            return before.endswith(")") or bool(
+                re.search(r"\b(?:Экспорт|Export)$", before, re.IGNORECASE)
+            )
+        return False
 
 
 class MissingCodeTryCatchRule(DiagnosticRuntimeRule):

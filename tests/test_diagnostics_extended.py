@@ -4446,6 +4446,33 @@ class TestBsl025EmptyStatement:
         diags = _check(content, tmp_path, select={"BSL025"})
         assert "BSL025" not in _codes(diags)
 
+    def test_method_header_semicolon_is_empty_statement(self, tmp_path: Path) -> None:
+        content = "Процедура Тест();\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL025"})
+        assert "BSL025" in _codes(diags)
+
+    def test_double_semicolon_reports_second_semicolon(self, tmp_path: Path) -> None:
+        content = "А = 1;;\n"
+        diags = _check(content, tmp_path, select={"BSL025"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL025"] == [
+            (1, 6, 7)
+        ]
+
+    def test_standalone_semicolon_in_exception_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    А = 1;
+                Исключение
+                    ;
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL025"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL025"] == [
+            (5, 8, 9)
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL030 — SemicolonPresence (missing statement semicolon)
@@ -5434,6 +5461,36 @@ class TestBsl042UnusedLocalMethod:
         diags = DiagnosticEngine(select={"BSL042"}).check_file(str(path))
         assert "BSL042" not in _codes(diags)
 
+    def test_object_module_is_skipped_by_default(self, tmp_path: Path) -> None:
+        path = tmp_path / "DataProcessors" / "Тест" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура НеИспользуется()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL042"}).check_file(str(path))
+        assert "BSL042" not in _codes(diags)
+
+    def test_managed_application_startup_handler_no_warning(self, tmp_path: Path) -> None:
+        path = tmp_path / "Ext" / "ManagedApplicationModule.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура ПередНачаломРаботыСистемы(Отказ)
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL042"}).check_file(str(path))
+        assert "BSL042" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL047 — MagicDate
@@ -6218,7 +6275,7 @@ class TestBsl149AssignAliasFieldsInQueryFixture:
         diags = _check(content, tmp_path, select={"BSL149"})
         assert "BSL149" not in _codes(diags)
 
-    def test_case_continuation_without_alias_no_warning(self, tmp_path: Path) -> None:
+    def test_case_continuation_without_alias_detected(self, tmp_path: Path) -> None:
         content = """\
             ТекстЗапроса = "ВЫБРАТЬ
             |   ВЫБОР
@@ -6229,6 +6286,49 @@ class TestBsl149AssignAliasFieldsInQueryFixture:
             |   Т.Ссылка КАК Ссылка
             |ИЗ
             |   Документ.РасходнаяНакладная КАК Т";
+        """
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" in _codes(diags)
+
+    def test_plain_string_starting_with_select_word_no_warning(self, tmp_path: Path) -> None:
+        content = 'А = "Выбрать тариф";\n'
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" not in _codes(diags)
+
+    def test_escaped_query_string_literal_is_not_treated_as_select_field(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   ""Товар"" КАК ТипНоменклатуры,
+            |   Т.Ссылка КАК Ссылка
+            |ИЗ
+            |   Справочник.Номенклатура КАК Т";
+        """
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" not in _codes(diags)
+
+    def test_dynamic_union_fragment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = ТекстЗапроса + "
+            |ОБЪЕДИНИТЬ ВСЕ
+            |ВЫБРАТЬ
+            |   2,
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т";
+        """
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert "BSL149" not in _codes(diags)
+
+    def test_dynamic_condition_fragment_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = ТекстЗапроса + "
+            |И Т.ПометкаУдаления = ЛОЖЬ
+            |ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т";
         """
         diags = _check(content, tmp_path, select={"BSL149"})
         assert "BSL149" not in _codes(diags)

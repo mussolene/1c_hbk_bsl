@@ -747,7 +747,7 @@ def run_bsl254_transferring_parameters(
             continue
         callers = getattr(symbol_index, "find_callers", lambda *_args, **_kwargs: [])(
             proc.name,
-            limit=200,
+            limit=None,
         )
         client_callers = [
             row

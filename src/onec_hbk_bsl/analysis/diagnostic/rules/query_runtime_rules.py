@@ -48,13 +48,35 @@ def _inside_union_clause(node: Any) -> bool:
     return False
 
 
+def _ancestor_of_type(node: Any, node_type: str) -> Any | None:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) == node_type:
+            return parent
+        parent = getattr(parent, "parent", None)
+    return None
+
+
+def _field_belongs_to_select_list(field_node: Any) -> bool:
+    return getattr(getattr(field_node, "parent", None), "type", None) == "field_list"
+
+
+def _query_has_from_clause(field_node: Any) -> bool:
+    query = _ancestor_of_type(field_node, "query")
+    if query is None:
+        return False
+    return any(
+        getattr(node, "type", None) == "from_clause" for node in _iter_nodes(query, "from_clause")
+    )
+
+
 def _field_should_be_skipped(field_text: str) -> bool:
     stripped = field_text.strip().rstrip(";")
     if not stripped or stripped == "*" or re.match(r"^\w+\.\*$", stripped, re.UNICODE):
         return True
-    if '""' in stripped:
+    if stripped.startswith('""'):
         return True
-    return bool(re.search(r"\b(?:ВЫБОР|CASE)\b", stripped, re.IGNORECASE))
+    return False
 
 
 def _query_block_has_dynamic_tail(lines: list[str], block: Any) -> bool:
@@ -67,19 +89,32 @@ def _query_block_has_dynamic_tail(lines: list[str], block: Any) -> bool:
     return next_idx < len(lines) and lines[next_idx].lstrip().startswith("+")
 
 
+def _query_block_is_dynamic_fragment(block: Any) -> bool:
+    query_text = str(getattr(block, "query_text", "") or "")
+    return bool(
+        re.match(
+            r"^\s*(?:ОБЪЕДИНИТЬ|UNION|И|AND|ИЛИ|OR)\b",
+            query_text,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[Any]:
     tree = getattr(block, "sdbl_tree", None)
     root = getattr(tree, "root_node", None)
-    if (
-        root is None
-        or getattr(block, "sdbl_has_errors", False)
-        or _query_block_has_dynamic_tail(lines, block)
-    ):
+    if root is None or _query_block_has_dynamic_tail(lines, block):
+        return []
+    if getattr(block, "sdbl_has_errors", False) and _query_block_is_dynamic_fragment(block):
         return []
 
     _diag = _diag_module()
     diags: list[Any] = []
     for field_node in _iter_nodes(root, "field"):
+        if not _field_belongs_to_select_list(field_node):
+            continue
+        if not _query_has_from_clause(field_node):
+            continue
         if _inside_union_clause(field_node):
             continue
         if _field_has_alias(field_node):
