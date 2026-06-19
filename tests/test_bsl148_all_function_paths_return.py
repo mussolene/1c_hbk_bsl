@@ -236,3 +236,54 @@ def test_bsl148_terminal_loop_branch_can_report_when_loop_assumption_is_disabled
     )
     diags = [d for d in engine.check_file(str(path)) if d.code == "BSL148"]
     assert [d.line for d in diags] == [1]
+
+
+def test_bsl148_preprocessor_branches_with_total_returns_are_not_reported(
+    tmp_path: Path,
+) -> None:
+    content = (
+        "Функция ТестВсеПутиСВозвратом()\n"
+        "    Если Условие1 Тогда\n"
+        "        #Если Сервер Тогда\n"
+        "            Если Условие2 Тогда\n"
+        "                Возврат 1;\n"
+        "            Иначе\n"
+        "                Возврат 2;\n"
+        "            КонецЕсли;\n"
+        "        #Иначе\n"
+        "            Возврат 4;\n"
+        "        #КонецЕсли\n"
+        "    Иначе\n"
+        "        Возврат 5;\n"
+        "    КонецЕсли;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "preprocessor_all_paths_return.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert diags == []
+
+
+def test_bsl148_loop_followed_by_return_is_not_reported_when_loop_can_be_skipped(
+    tmp_path: Path,
+) -> None:
+    content = (
+        "Функция ПроверкаПрерыванийИПродолжений()\n"
+        "    Пока Выборка.Следующий() Цикл\n"
+        "        Если РезультатыОтбора.Количество() >= МаксКоличествоВыбранных Тогда\n"
+        "            Прервать;\n"
+        "        КонецЕсли;\n"
+        "    КонецЦикла;\n"
+        "    Возврат 1;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "loop_then_return_strict.bsl"
+    path.write_text(content, encoding="utf-8")
+    engine = DiagnosticEngine(
+        select={"BSL148"},
+        bsl148_loops_executed_at_least_once=False,
+    )
+    diags = [d for d in engine.check_file(str(path)) if d.code == "BSL148"]
+    assert diags == []

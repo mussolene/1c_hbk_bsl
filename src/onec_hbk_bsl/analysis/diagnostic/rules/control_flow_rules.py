@@ -101,7 +101,43 @@ def _collect_if_branches(if_node: Any) -> tuple[list[list[Any]], bool]:
 
 
 def _is_meaningful_stmt(node: Any) -> bool:
-    return getattr(node, "type", None) not in (None, ";", "line_comment", "preprocessor")
+    return getattr(node, "type", None) not in (None, ";", "line_comment")
+
+
+def _collect_preprocessor_branches(preprocessor_node: Any) -> tuple[list[list[Any]], bool]:
+    branches: list[list[Any]] = []
+    current: list[Any] = []
+    has_else = False
+    for child in getattr(preprocessor_node, "children", []) or []:
+        child_type = getattr(child, "type", None)
+        if child_type in {"PREPROC_IF_KEYWORD", "PREPROC_ENDIF_KEYWORD"}:
+            continue
+        if child_type in {"expression", "THEN_KEYWORD"}:
+            continue
+        if child_type in {"PREPROC_ELSIF_KEYWORD", "PREPROC_ELSE_KEYWORD"}:
+            branches.append(current)
+            current = []
+            if child_type == "PREPROC_ELSE_KEYWORD":
+                has_else = True
+            continue
+        current.append(child)
+    branches.append(current)
+    return branches, has_else
+
+
+def _preprocessor_always_returns(
+    preprocessor_node: Any, *, loops_executed_at_least_once: bool = True
+) -> bool:
+    branches, has_else = _collect_preprocessor_branches(preprocessor_node)
+    if not branches or not has_else:
+        return False
+    return all(
+        _stmt_list_always_returns(
+            branch,
+            loops_executed_at_least_once=loops_executed_at_least_once,
+        )
+        for branch in branches
+    )
 
 
 def _stmt_list_always_returns(
@@ -114,6 +150,12 @@ def _stmt_list_always_returns(
         t = getattr(st, "type", None)
         if t in ("return_statement", "rise_error_statement"):
             return True
+        if t == "preprocessor":
+            if _preprocessor_always_returns(
+                st, loops_executed_at_least_once=loops_executed_at_least_once
+            ):
+                return True
+            continue
         if t == "if_statement":
             if _if_always_returns(st, loops_executed_at_least_once=loops_executed_at_least_once):
                 return True
@@ -256,6 +298,10 @@ def implicit_exit_reachable(
         if t in ("return_statement", "rise_error_statement"):
             return False
         if t == "preprocessor":
+            if _preprocessor_always_returns(
+                s, loops_executed_at_least_once=loops_executed_at_least_once
+            ):
+                return False
             return walk(i + 1)
         if t == "if_statement":
             if (
@@ -291,7 +337,7 @@ def implicit_exit_reachable(
                 s,
                 loops_executed_at_least_once=loops_executed_at_least_once,
             ):
-                return True
+                return walk(i + 1)
             return walk(i + 1)
         if t == "try_statement":
             if not _try_always_returns(
