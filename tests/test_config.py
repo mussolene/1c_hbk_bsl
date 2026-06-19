@@ -134,6 +134,18 @@ class TestBslConfigBaseline:
         assert cfg.baseline == "baseline.json"
 
 
+class TestBslConfigFormatter:
+    def test_formatter_defaults(self) -> None:
+        cfg = BslConfig({})
+        assert cfg.indent_size is None
+        assert cfg.insert_spaces is None
+
+    def test_formatter_options_from_config(self) -> None:
+        cfg = BslConfig({"indent-size": 2, "insert-spaces": True})
+        assert cfg.indent_size == 2
+        assert cfg.insert_spaces is True
+
+
 class TestBslConfigThresholds:
     def test_thresholds_none(self) -> None:
         cfg = BslConfig({})

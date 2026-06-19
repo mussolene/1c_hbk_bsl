@@ -128,6 +128,33 @@ class TestRunChecks:
         diags, _ = _run_checks([str(f)], select=None, ignore={"BSL012"}, jobs=1)
         assert not any(d.code == "BSL012" for d in diags)
 
+    def test_check_files_uses_config_select_and_ignore(self, tmp_path: Path) -> None:
+        f = _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"select": ["BSL012"], "ignore": ["BSL012"]})
+
+        diags = check_files([str(f)], config=cfg)
+
+        assert diags == []
+
+    def test_check_files_explicit_select_overrides_config_select(self, tmp_path: Path) -> None:
+        f = _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"select": ["BSL012"]})
+
+        diags = check_files([str(f)], select={"BSL001"}, config=cfg)
+
+        assert diags == []
+
+    def test_check_files_auto_loads_project_config(self, tmp_path: Path) -> None:
+        f = _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            'select = ["BSL012"]\nignore = ["BSL012"]\n',
+            encoding="utf-8",
+        )
+
+        diags = check_files([str(f)])
+
+        assert diags == []
+
 
 # ---------------------------------------------------------------------------
 # _print_json

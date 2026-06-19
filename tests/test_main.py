@@ -307,6 +307,38 @@ class TestMainFormat:
         assert exc_info.value.code == 0
         assert "\n\tА = 1;" in path.read_text(encoding="utf-8")
 
+    def test_format_subcommand_uses_project_config(self, tmp_path: Path) -> None:
+        path = tmp_path / "dirty.bsl"
+        path.write_text("Процедура Тест()\nА = 1;\nКонецПроцедуры\n", encoding="utf-8")
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            "insert-spaces = true\nindent-size = 2\n",
+            encoding="utf-8",
+        )
+
+        with patch("sys.argv", ["onec-hbk-bsl", "format", str(path)]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 0
+        assert "\n  А = 1;" in path.read_text(encoding="utf-8")
+
+    def test_format_subcommand_uses_project_exclude(self, tmp_path: Path) -> None:
+        excluded = tmp_path / "src" / "installer" / "dirty.bsl"
+        excluded.parent.mkdir(parents=True)
+        original = "Процедура Тест()\nА = 1;\nКонецПроцедуры\n"
+        excluded.write_text(original, encoding="utf-8")
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            'exclude = ["**/src/installer/**"]\n',
+            encoding="utf-8",
+        )
+
+        with patch("sys.argv", ["onec-hbk-bsl", "format", str(tmp_path)]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 0
+        assert excluded.read_text(encoding="utf-8") == original
+
     def test_help_mentions_format_subcommand(self, capsys: pytest.CaptureFixture) -> None:
         with patch("sys.argv", ["onec-hbk-bsl", "--help"]):
             with pytest.raises(SystemExit) as exc_info:

@@ -28,6 +28,8 @@ max-returns               int
 max-bool-ops              int
 min-duplicate-uses        int
 max-module-lines          int
+indent-size               int    — formatter indent width when spaces are used
+insert-spaces             bool   — formatter uses spaces instead of tabs
 """
 
 from __future__ import annotations
@@ -135,6 +137,16 @@ class BslConfig:
     @property
     def baseline(self) -> str | None:
         return self._data.get("baseline")
+
+    @property
+    def indent_size(self) -> int | None:
+        v = self._data.get("indent-size")
+        return int(v) if v is not None else None
+
+    @property
+    def insert_spaces(self) -> bool | None:
+        v = self._data.get("insert-spaces")
+        return bool(v) if v is not None else None
 
     # ------------------------------------------------------------------
     # DiagnosticEngine threshold overrides

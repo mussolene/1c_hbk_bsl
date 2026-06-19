@@ -36,6 +36,7 @@ import multiprocessing
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from onec_hbk_bsl import __version__
 
@@ -207,20 +208,23 @@ def _run_check(
     )
 
 
-def _iter_bsl_source_files(paths: list[str]) -> list[Path]:
+def _iter_bsl_source_files(paths: list[str], config: Any | None = None) -> list[Path]:
     suffixes = {".bsl", ".os"}
     out: list[Path] = []
     for raw in paths:
         path = Path(raw)
         if path.is_file():
-            if path.suffix.lower() in suffixes or path.name == "Module.bsl":
+            is_bsl_source = path.suffix.lower() in suffixes or path.name == "Module.bsl"
+            if is_bsl_source and (config is None or not config.is_excluded(str(path.resolve()))):
                 out.append(path)
             continue
         if path.is_dir():
             out.extend(
                 p
                 for p in path.rglob("*")
-                if p.is_file() and (p.suffix.lower() in suffixes or p.name == "Module.bsl")
+                if p.is_file()
+                and (p.suffix.lower() in suffixes or p.name == "Module.bsl")
+                and (config is None or not config.is_excluded(str(p.resolve())))
             )
     return sorted(set(out))
 
@@ -229,13 +233,19 @@ def _run_format(
     paths: list[str],
     *,
     check: bool,
-    indent_size: int,
+    indent_size: int | None,
     insert_spaces: bool | None,
 ) -> int:
     """Format BSL files in-place, or only check whether formatting would change them."""
     from onec_hbk_bsl.analysis.formatter import default_formatter
+    from onec_hbk_bsl.cli.config import load_config
 
-    files = _iter_bsl_source_files(paths)
+    cfg = load_config(paths[0] if paths else os.getcwd())
+    effective_indent_size = (
+        indent_size if indent_size is not None else (cfg.indent_size if cfg.indent_size else 4)
+    )
+    effective_insert_spaces = insert_spaces if insert_spaces is not None else cfg.insert_spaces
+    files = _iter_bsl_source_files(paths, cfg)
     changed: list[Path] = []
     failed: list[tuple[Path, str]] = []
 
@@ -244,8 +254,8 @@ def _run_format(
             original = path.read_text(encoding="utf-8")
             formatted = default_formatter.format(
                 original,
-                indent_size=indent_size,
-                insert_spaces=insert_spaces,
+                indent_size=effective_indent_size,
+                insert_spaces=effective_insert_spaces,
             )
         except Exception as exc:  # noqa: BLE001
             failed.append((path, str(exc)))
@@ -510,7 +520,7 @@ Examples:
     format_parser.add_argument(
         "--indent-size",
         type=int,
-        default=4,
+        default=None,
         metavar="N",
         help="Indent width when spaces are requested (default: 4)",
     )

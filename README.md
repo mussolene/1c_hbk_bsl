@@ -70,6 +70,8 @@ ignore = ["BSL012"]
 exclude = ["vendor", "build", "*.gen.bsl"]
 format = "text"
 jobs = 0
+insert-spaces = false
+indent-size = 4
 
 [per-file-ignores]
 "legacy/*.bsl" = ["BSL002", "BSL011"]
@@ -77,6 +79,11 @@ jobs = 0
 
 Также поддерживается секция `[tool."onec-hbk-bsl"]` в `pyproject.toml`.
 CLI-флаги имеют приоритет над конфигом.
+Python API `check_files(...)` автоматически ищет этот конфиг от первого
+переданного пути; если передать `config=cfg`, он применяется как набор
+дефолтов целиком. CLI `format` также читает конфиг для `exclude`,
+`insert-spaces` и `indent-size`; низкоуровневый `default_formatter.format(...)`
+остаётся чистой функцией от текста и явных параметров.
 
 ## Правила
 

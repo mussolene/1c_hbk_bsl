@@ -41,7 +41,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
     Severity,
     bslls_message_for_rule_code,
 )
-from onec_hbk_bsl.cli.config import _EMPTY, BslConfig
+from onec_hbk_bsl.cli.config import _EMPTY, BslConfig, load_config
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_description
@@ -77,7 +77,7 @@ def check_files(
     paths: list[str],
     *,
     use_index: bool | None = None,
-    jobs: int = 1,
+    jobs: int | None = None,
     select: set[str] | None = None,
     ignore: set[str] | None = None,
     config: BslConfig | None = None,
@@ -87,8 +87,16 @@ def check_files(
 
     ``paths`` is treated as a file list. Directories are ignored here; use the
     CLI ``check()`` helper when recursive directory collection is desired.
+
+    If *config* is provided, it supplies defaults for rule selection, ignores,
+    thresholds, jobs, excludes, and per-file ignores. Explicit keyword
+    arguments win over config values. If *config* is omitted, project config is
+    discovered from the first provided path.
     """
-    cfg = config or _EMPTY
+    cfg = config or (load_config(paths[0]) if paths else _EMPTY)
+    effective_select = select if select is not None else cfg.select
+    effective_ignore = ignore if ignore is not None else cfg.ignore
+    effective_jobs = jobs if jobs is not None else (cfg.jobs if cfg.jobs is not None else 1)
     files = [
         str(Path(raw).resolve())
         for raw in paths
@@ -101,9 +109,9 @@ def check_files(
 
     diagnostics, error_occurred = _run_checks(
         sorted(files),
-        select=select,
-        ignore=ignore,
-        jobs=jobs,
+        select=effective_select,
+        ignore=effective_ignore,
+        jobs=effective_jobs,
         config=cfg,
         show_progress=False,
         use_index=bool(use_index),
