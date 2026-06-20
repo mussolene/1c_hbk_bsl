@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.bsl_string_split import (
+from onec_hbk_bsl.analysis.bsl_source_fragments import (
     split_commas_outside_double_quotes,
     strip_leading_val_keywords,
 )
@@ -37,6 +37,7 @@ from onec_hbk_bsl.analysis.diagnostic.string_state import (
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
 from onec_hbk_bsl.analysis.sdbl_cst import select_top_without_order
 from onec_hbk_bsl.analysis.semantic import SemanticModel, extract_semantic_model
+from onec_hbk_bsl.analysis.source_positions import line_start_offsets
 from onec_hbk_bsl.analysis.symbols import Symbol
 
 try:
@@ -1191,6 +1192,33 @@ def _line_break_positions(content: str) -> list[int]:
     return breaks
 
 
+def _point_row_column(point: Any) -> tuple[int, int]:
+    row = getattr(point, "row", None)
+    column = getattr(point, "column", None)
+    if row is not None and column is not None:
+        return int(row), int(column)
+    return int(point[0]), int(point[1])
+
+
+def _char_offset_for_ts_point(
+    lines: list[str],
+    line_starts: list[int],
+    point: Any,
+) -> int:
+    row, byte_col = _point_row_column(point)
+    if row < 0:
+        return 0
+    if row >= len(lines):
+        return line_starts[-1] + len(lines[-1]) if lines else 0
+    line = lines[row]
+    raw = line.encode("utf-8")
+    if byte_col >= len(raw):
+        char_col = len(line)
+    else:
+        char_col = len(raw[: max(0, byte_col)].decode("utf-8", errors="replace"))
+    return line_starts[row] + char_col
+
+
 def _line_index_for_offset(line_breaks: list[int], offset: int) -> int:
     return bisect_left(line_breaks, offset)
 
@@ -1513,6 +1541,7 @@ class DocumentSnapshot:
     _query_blocks: list[QueryTextBlockInfo] | None = None
     _query_line_indices: frozenset[int] | None = None
     _query_content_line_tuples: tuple[QueryContentLineTuple, ...] | None = None
+    _string_literal_ranges: tuple[tuple[int, int], ...] | None = None
     _line_string_states: list[bool] | None = None
     _comment_starts: list[int | None] | None = None
     _masked_lines: list[str] | None = None
@@ -1731,6 +1760,25 @@ class DocumentSnapshot:
         if self._blank_line_flags is None:
             self._blank_line_flags = [line.strip() == "" for line in self.lines]
         return self._blank_line_flags
+
+    @property
+    def string_literal_ranges(self) -> tuple[tuple[int, int], ...]:
+        """Absolute character ranges of CST ``string`` nodes."""
+        if self._string_literal_ranges is None:
+            if not self.is_tree_sitter:
+                self._string_literal_ranges = ()
+            else:
+                line_starts = line_start_offsets(self.content)
+                ranges: list[tuple[int, int]] = []
+                for node in _ts_walk(self.root_node):
+                    if getattr(node, "type", None) != "string":
+                        continue
+                    start = _char_offset_for_ts_point(self.lines, line_starts, node.start_point)
+                    end = _char_offset_for_ts_point(self.lines, line_starts, node.end_point)
+                    if end > start:
+                        ranges.append((start, end))
+                self._string_literal_ranges = tuple(ranges)
+        return self._string_literal_ranges
 
     def ts_nodes_for_types(
         self,

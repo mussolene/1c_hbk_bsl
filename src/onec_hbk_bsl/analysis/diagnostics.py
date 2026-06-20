@@ -69,15 +69,11 @@ from pathlib import Path
 from typing import Any
 
 from onec_hbk_bsl.analysis import bslls_typo
-from onec_hbk_bsl.analysis.bsl_string_regions import (
-    diagnostic_overlaps_string_literal,
-    double_quoted_string_ranges,
-    line_start_offsets,
-)
-from onec_hbk_bsl.analysis.bsl_string_split import (
+from onec_hbk_bsl.analysis.bsl_source_fragments import (
     split_commas_outside_double_quotes,
     strip_leading_val_keywords,
 )
+from onec_hbk_bsl.analysis.source_positions import line_start_offsets
 from onec_hbk_bsl.analysis.diagnostic.rules.control_flow_rules import (
     bsl148_function_name_spans,
 )

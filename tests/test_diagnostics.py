@@ -471,6 +471,7 @@ class TestCheckFileOptimization:
             procedures: list[object] = []
             regions: list[object] = []
             lines = ["Процедура Тест()\n", "КонецПроцедуры\n"]
+            string_literal_ranges: tuple[tuple[int, int], ...] = ()
 
             @property
             def proc_node_map(self):  # pragma: no cover - defensive

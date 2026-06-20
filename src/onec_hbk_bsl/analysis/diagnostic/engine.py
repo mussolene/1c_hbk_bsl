@@ -10,6 +10,7 @@ rule bodies are migrated out of ``diagnostics.py``.
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from collections import OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
@@ -19,6 +20,7 @@ from onec_hbk_bsl.analysis.diagnostic.suppression import (
     parse_suppressions,
 )
 from onec_hbk_bsl.analysis.diagnostics import *  # noqa: F401,F403
+from onec_hbk_bsl.analysis.source_positions import line_col_to_offset, line_start_offsets
 
 _HOT_TS_NODE_TYPES: frozenset[str] = frozenset(
     {
@@ -48,6 +50,25 @@ globals().update(
         if name.startswith("_") and not name.startswith("__")
     }
 )
+
+
+def _diagnostic_overlaps_ranges(
+    content: str,
+    *,
+    line: int,
+    character: int,
+    end_line: int,
+    end_character: int,
+    ranges: tuple[tuple[int, int], ...],
+    line_starts: list[int],
+    range_starts: list[int],
+) -> bool:
+    start = line_col_to_offset(content, line - 1, character, line_starts=line_starts)
+    end = line_col_to_offset(content, end_line - 1, end_character, line_starts=line_starts)
+    if end < start:
+        end = start
+    idx = bisect_left(range_starts, end)
+    return idx > 0 and ranges[idx - 1][1] > start
 
 
 class DiagnosticEngine:
@@ -373,7 +394,7 @@ class DiagnosticEngine:
         diagnostics = PipelineExecutor().execute(self, frame)
         # Apply inline suppressions
         diagnostics = [d for d in diagnostics if not is_suppressed(d, suppressions)]
-        _str_ranges = double_quoted_string_ranges(content)
+        _str_ranges = snapshot.string_literal_ranges
         if _str_ranges:
             _line_starts = line_start_offsets(content)
             _str_range_starts = [start for start, _ in _str_ranges]
@@ -402,7 +423,7 @@ class DiagnosticEngine:
                 for d in diagnostics
                 if d.code in _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL
                 or bsl030_string_overlap_allowed(d)
-                or not diagnostic_overlaps_string_literal(
+                or not _diagnostic_overlaps_ranges(
                     content,
                     line=d.line,
                     character=d.character,

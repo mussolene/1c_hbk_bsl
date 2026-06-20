@@ -149,7 +149,7 @@ try:
 except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
-from onec_hbk_bsl.analysis.bsl_string_split import (
+from onec_hbk_bsl.analysis.bsl_source_fragments import (
     parameter_name_from_declaration_fragment,
     split_commas_outside_double_quotes,
 )
