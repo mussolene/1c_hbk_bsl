@@ -17,7 +17,6 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 _RE_XML_BOOL_SIMPLE = r"<{tag}>\s*(true|false)\s*</{tag}>"
 _RE_BSL275_HANDLER = re.compile(r"<Handler>\s*([^<]*)\s*</Handler>", re.IGNORECASE)
 _RE_BSL278_PROCNAME = re.compile(r"<ProcedureName>\s*([^<]*)\s*</ProcedureName>", re.IGNORECASE)
-_RE_XML_NAME_SIMPLE = re.compile(r"<Name>\s*([^<]+?)\s*</Name>", re.IGNORECASE)
 _RE_XML_DIMENSION_BLOCK = re.compile(
     r"<Dimension\b.*?>.*?<Name>\s*([^<]+?)\s*</Name>.*?<DenyIncompleteValues>\s*(true|false)\s*</DenyIncompleteValues>.*?</Dimension>",
     re.IGNORECASE | re.DOTALL,
@@ -209,20 +208,6 @@ def current_form_xml_path(path: str) -> Path | None:
 
 
 @functools.lru_cache(maxsize=128)
-def common_module_file_map(config_root: str) -> dict[str, dict[str, Any]]:
-    module_index = common_module_index_cached(config_root)
-    result: dict[str, dict[str, Any]] = {}
-    for name_cf, info in module_index.items():
-        result[name_cf] = {
-            "name": info["name"],
-            "privileged": bool(info["privileged"]),
-            "protected": bool(info["protected"]),
-            "proc_names": common_module_proc_names_for_module_cached(config_root, name_cf),
-        }
-    return result
-
-
-@functools.lru_cache(maxsize=128)
 def common_module_index_cached(config_root: str) -> dict[str, dict[str, Any]]:
     root = Path(config_root) / "CommonModules"
     result: dict[str, dict[str, Any]] = {}
@@ -275,15 +260,6 @@ def common_module_proc_names_for_module_cached(
     if not module_file:
         return frozenset()
     return common_module_proc_names_for_file_cached(module_file)
-
-
-@functools.lru_cache(maxsize=128)
-def common_module_proc_names_map_cached(config_root: str) -> dict[str, frozenset[str]]:
-    result: dict[str, frozenset[str]] = {}
-    module_index = common_module_index_cached(config_root)
-    for name_cf in module_index:
-        result[name_cf] = common_module_proc_names_for_module_cached(config_root, name_cf)
-    return result
 
 
 @functools.lru_cache(maxsize=128)

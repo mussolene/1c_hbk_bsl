@@ -43,7 +43,6 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                     end_character=end_char,
                     severity=_diag.Severity.INFORMATION,
                     code="BSL192",
-                    message="Имя функции должно начинаться с «Получить»",
                 )
             )
 
@@ -95,7 +94,6 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                             end_character=param_end,
                             severity=_diag.Severity.WARNING,
                             code="BSL228",
-                            message="Переместите необязательные параметры после обязательных",
                         )
                     )
                     break
@@ -124,7 +122,6 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                             end_character=m_assign.end("name"),
                             severity=_diag.Severity.WARNING,
                             code="BSL193",
-                            message="Функция изменяет параметр-ссылку (out-параметр)",
                         )
                     )
 
@@ -159,10 +156,6 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                         end_character=end_char,
                         severity=_diag.Severity.ERROR,
                         code="BSL194",
-                        message=(
-                            "Проверьте правильность возврата одного и того же "
-                            "примитивного значения в функции"
-                        ),
                     )
                 )
 
@@ -194,7 +187,6 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                                 end_character=len(lines[idx].rstrip()),
                                 severity=_diag.Severity.WARNING,
                                 code="BSL266",
-                                message="Параметр «Отказ» изменяется некорректно",
                             )
                         )
 
@@ -261,7 +253,6 @@ def run_bsl212_missed_required_parameter(
                 end_character=len(line_text.rstrip()),
                 severity=_diag.Severity.ERROR,
                 code="BSL212",
-                message=f"Пропущен обязательный параметр в вызове метода: {', '.join(missed)}",
             )
         )
     return diags
@@ -348,7 +339,6 @@ def run_bsl215_missing_parameter_description(
                     end_character=header_col + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
-                    message="Необходимо добавить описание всех параметров метода",
                 )
             )
             continue
@@ -549,7 +539,6 @@ def run_bsl215_missing_parameter_description(
                     end_character=header_col + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
-                    message="Необходимо добавить описание всех параметров метода",
                 )
             )
         else:
@@ -570,7 +559,6 @@ def run_bsl215_missing_parameter_description(
                         end_character=col + len(pname),
                         severity=_diag.Severity.WARNING,
                         code="BSL215",
-                        message=f'Необходимо добавить описание параметра "{pname}"',
                     )
                 )
 
@@ -591,10 +579,8 @@ def run_bsl215_missing_parameter_description(
                     end_character=col + len(pname),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
-                    message=f'Необходимо добавить описание параметра "{pname}"',
                 )
             )
-
         seen_actual_docs: set[str] = set()
         extra: list[str] = []
         for pname in documented_entries:
@@ -614,10 +600,6 @@ def run_bsl215_missing_parameter_description(
                     end_character=header_col + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
-                    message=(
-                        f'Необходимо удалить описания параметров "{", ".join(extra)}", '
-                        "отсутствующих в сигнатуре метода"
-                    ),
                 )
             )
         elif not missing_params and documented_entries:
@@ -635,10 +617,8 @@ def run_bsl215_missing_parameter_description(
                         end_character=header_col + len(proc.name),
                         severity=_diag.Severity.WARNING,
                         code="BSL215",
-                        message="Необходимо исправить порядок описаний параметров",
                     )
                 )
-
     return diags
 
 
@@ -708,10 +688,8 @@ def run_bsl233_public_methods_description(
                     end_character=col + len(proc.name),
                     severity=_diag.Severity.INFORMATION,
                     code="BSL233",
-                    message="Добавьте описание метода программного интерфейса",
                 )
             )
-
     return diags
 
 
@@ -786,7 +764,6 @@ def run_bsl254_transferring_parameters(
                     end_character=c1,
                     severity=_diag.Severity.WARNING,
                     code="BSL254",
-                    message=f'Установите модификатор "Знач" для параметра {param_name} метода {proc.name}',
                 )
             )
     return diags
@@ -879,13 +856,6 @@ def run_bsl224_nested_function_in_parameters(
                 if exact_start >= 0
                 else _diag.utf8_byte_offset_to_lsp_character(start_line_text, anchor.start_point[1])
             )
-            call_kind = (
-                "конструктора"
-                if name.casefold()
-                in {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
-                else "метода"
-            )
-
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -899,9 +869,6 @@ def run_bsl224_nested_function_in_parameters(
                     ),
                     severity=_diag.Severity.INFORMATION,
                     code="BSL224",
-                    message=(
-                        f'Уберите инициализацию параметров {call_kind} "{name}" вложенными методами'
-                    ),
                 )
             )
             seen.add((start_line_idx, start_char))
@@ -1023,10 +990,8 @@ def run_bsl224_nested_function_in_parameters(
                     end_character=match.end("name"),
                     severity=_diag.Severity.INFORMATION,
                     code="BSL224",
-                    message=f'Уберите инициализацию параметров метода "{name}" вложенными методами',
                 )
             )
-
     return diags
 
 
@@ -1076,10 +1041,6 @@ def run_bsl240_rewrite_method_parameter(
                             end_character=end_char,
                             severity=_diag.Severity.WARNING,
                             code="BSL240",
-                            message=(
-                                f"Параметр «{lhs_text}» перезаписывается "
-                                "до первого использования — вероятно ошибка"
-                            ),
                         )
                     )
                 elif lhs in rhs_text.casefold():

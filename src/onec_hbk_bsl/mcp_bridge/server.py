@@ -44,10 +44,10 @@ from typing import Annotated
 from mcp.server.fastmcp import FastMCP
 
 from onec_hbk_bsl.analysis.call_graph import build_call_graph
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import (
     RULE_METADATA,
     DiagnosticEngine,
-    display_name_for_rule_code,
     normalize_rule_code_set,
     parse_env_rule_filters,
 )
@@ -58,7 +58,6 @@ from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.metadata_registry import defs_snapshot
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_description
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -180,7 +179,7 @@ def _mcp_unused_diagnostics(file_path: str, idx: SymbolIndex) -> list[dict]:
                     "severity": "INFORMATION",
                     "code": "BSL-DEAD",
                     "message": msg,
-                    "rule_name": display_name_for_rule_code("BSL-DEAD"),
+                    "rule_name": get_rule("BSL-DEAD").name,
                     "source": "onec-hbk-bsl · BSL-DEAD",
                 }
             )
@@ -645,10 +644,10 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             rules.append(
                 {
                     "code": code,
-                    "name": meta["name"],
-                    "description": localize_rule_description(code),
-                    "severity": meta["severity"],
-                    "tags": meta.get("tags", []),
+                    "name": get_rule(code).name,
+                    "description": get_rule(code).description,
+                    "severity": get_rule(code).severity,
+                    "tags": list(get_rule(code).tags),
                 }
             )
         return {"count": len(rules), "rules": rules}

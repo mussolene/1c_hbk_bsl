@@ -126,6 +126,72 @@ def _bsl260_call_access_text(method_call: Any, ts_node_text_fn) -> str:
     return ""
 
 
+def _bsl051_all_branch_exit_end_if_lines(
+    body_lines: list[tuple[int, str]],
+    *,
+    re_unconditional_exit: re.Pattern[str],
+) -> set[int]:
+    if_start_re = re.compile(r"^\s*(?:Если|If)\b.*(?:Тогда|Then)\s*$", re.IGNORECASE)
+    elseif_re = re.compile(r"^\s*(?:ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE)
+    else_re = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
+    endif_re = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
+    try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+    endtry_re = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+
+    stack: list[dict[str, Any]] = []
+    result: set[int] = set()
+    try_depth = 0
+
+    def current_exits() -> bool:
+        return bool(stack and stack[-1]["current_exit"])
+
+    for abs_idx, line in body_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+
+        if try_re.match(line):
+            try_depth += 1
+            continue
+        if endtry_re.match(line):
+            try_depth = max(0, try_depth - 1)
+            continue
+
+        if if_start_re.match(line):
+            stack.append({"branches": [], "current_exit": False, "has_else": False})
+            continue
+
+        if not stack:
+            continue
+
+        if try_depth == 0 and re_unconditional_exit.match(line) and ";" in line:
+            stack[-1]["current_exit"] = True
+            continue
+
+        if elseif_re.match(line):
+            stack[-1]["branches"].append(current_exits())
+            stack[-1]["current_exit"] = False
+            continue
+
+        if else_re.match(line):
+            stack[-1]["branches"].append(current_exits())
+            stack[-1]["current_exit"] = False
+            stack[-1]["has_else"] = True
+            continue
+
+        if endif_re.match(line):
+            finished = stack.pop()
+            finished["branches"].append(finished["current_exit"])
+            exits = bool(finished["has_else"] and all(finished["branches"]))
+            if exits:
+                result.add(abs_idx)
+                if stack:
+                    stack[-1]["current_exit"] = True
+            continue
+
+    return result
+
+
 @dataclass(frozen=True, slots=True)
 class ModuleModel:
     path: str
@@ -162,7 +228,6 @@ class ModuleModel:
                         end_character=base + part.end(),
                         severity=Severity.WARNING,
                         code="BSL054",
-                        message="Не рекомендуется использовать экспортные переменные. Это может стать источником трудновоспроизводимых ошибок",
                     )
                 )
         return diags
@@ -186,7 +251,6 @@ class ModuleModel:
                     end_character=m.end(),
                     severity=Severity.ERROR,
                     code="BSL009",
-                    message="Удалите бесполезное присваивание переменной самой себе",
                 )
             )
         return diags
@@ -226,7 +290,6 @@ class ModuleModel:
                         end_character=end_col,
                         severity=Severity.WARNING,
                         code="BSL020",
-                        message="Превышен допустимый уровень вложенности управляющих конструкций",
                     )
                 )
                 pending = None
@@ -312,10 +375,6 @@ class ModuleModel:
                         end_character=col + len(val) + 2,
                         severity=Severity.INFORMATION,
                         code="BSL035",
-                        message=(
-                            "Необходимо избавиться от многократного использования "
-                            f'строкового литерала "{val}"'
-                        ),
                     )
                 )
         return diags
@@ -339,7 +398,6 @@ class ModuleModel:
                     end_character=col1,
                     severity=Severity.WARNING,
                     code="BSL148",
-                    message="Не все пути выполнения функции возвращают значение",
                 )
             )
         return diags
@@ -396,7 +454,6 @@ class ModuleModel:
                         end_character=end_char,
                         severity=Severity.INFORMATION,
                         code="BSL171",
-                        message=rule_descriptions_ru["BSL171"],
                     )
                 )
         if diags:
@@ -438,7 +495,6 @@ class ModuleModel:
                         end_character=match.end(),
                         severity=Severity.INFORMATION,
                         code="BSL171",
-                        message=rule_descriptions_ru["BSL171"],
                     )
                 )
                 continue
@@ -464,7 +520,6 @@ class ModuleModel:
                         end_character=end_character,
                         severity=Severity.INFORMATION,
                         code="BSL171",
-                        message=rule_descriptions_ru["BSL171"],
                     )
                 )
         return diags
@@ -498,7 +553,6 @@ class ModuleModel:
                     ),
                     severity=Severity.INFORMATION,
                     code="BSL251",
-                    message=rule_descriptions_ru["BSL251"],
                 )
             )
         return diags
@@ -547,7 +601,6 @@ class ModuleModel:
                     ),
                     severity=Severity.ERROR,
                     code="BSL252",
-                    message=rule_descriptions_ru["BSL252"],
                 )
             )
         return diags
@@ -598,7 +651,6 @@ class ModuleModel:
                             ),
                             severity=Severity.WARNING,
                             code="BSL259",
-                            message=f'Неизвестный символ препроцессора "{name}"',
                         )
                     )
             return diags
@@ -620,7 +672,6 @@ class ModuleModel:
                         end_character=ident.end(),
                         severity=Severity.WARNING,
                         code="BSL259",
-                        message=f'Неизвестный символ препроцессора "{name}"',
                     )
                 )
         return diags
@@ -690,7 +741,6 @@ class ModuleModel:
                         ),
                         severity=Severity.WARNING,
                         code="BSL268",
-                        message=f'Не следует использовать  метод "{name}" и поиск по строке',
                     )
                 )
             return diags
@@ -719,9 +769,6 @@ class ModuleModel:
                     end_character=end,
                     severity=Severity.WARNING,
                     code="BSL268",
-                    message=(
-                        f'Не следует использовать  метод "{match.group("name")}" и поиск по строке'
-                    ),
                 )
             )
         return diags
@@ -937,7 +984,6 @@ class ModuleModel:
                     end_character=c1,
                     severity=severity,
                     code=code,
-                    message=message,
                 )
             )
 
@@ -1025,10 +1071,8 @@ class ModuleModel:
                             end_character=end_char,
                             severity=severity,
                             code="BSL275",
-                            message=f"Обработчик HTTP-сервиса {handler_name} должен принимать ровно один параметр",
                         )
                     )
-
         if "BSL278" in enabled_set and low.endswith("/ext/module.bsl") and "/webservices/" in low:
             service_dir = file_path.parent.parent
             service_xml = service_dir.parent / f"{service_dir.name}.xml"
@@ -1127,7 +1171,6 @@ class ModuleModel:
                         end_character=c1,
                         severity=Severity.ERROR,
                         code="BSL169",
-                        message=f"Для метода {proc.name} потеряна директива компиляции",
                     )
                 )
             if "BSL170" in enabled_set and not is_form_or_command and not split_module_fragment:
@@ -1142,7 +1185,6 @@ class ModuleModel:
                             end_character=max(col, 0) + max(len(ann_line.strip()), 1),
                             severity=Severity.WARNING,
                             code="BSL170",
-                            message="Директива компиляции в этом модуле избыточна",
                         )
                     )
             if "BSL182" in enabled_set:
@@ -1165,7 +1207,6 @@ class ModuleModel:
                             end_character=col + len("АвтоТестПроверка"),
                             severity=Severity.WARNING,
                             code="BSL182",
-                            message="Избыточная повторная проверка АвтоТестПроверка",
                         )
                     )
             if "BSL196" in enabled_set and proc.name.casefold() in collision_names:
@@ -1179,7 +1220,6 @@ class ModuleModel:
                         end_character=c1,
                         severity=Severity.ERROR,
                         code="BSL196",
-                        message=f"Имя метода {proc.name} конфликтует с глобальным контекстом 8.3.12",
                     )
                 )
             if "BSL181" in enabled_set:
@@ -1227,9 +1267,6 @@ class ModuleModel:
                                     end_character=end_character,
                                     severity=Severity.WARNING,
                                     code="BSL181",
-                                    message=(
-                                        f"Проверьте повторную вставку {arg} в коллекцию {target}"
-                                    ),
                                 )
                             )
                         elif control_depth == 0:
@@ -1288,7 +1325,6 @@ class ModuleModel:
                             ),
                             severity=Severity.WARNING,
                             code="BSL260",
-                            message="Небезопасное использование метода НайтиПоКоду()",
                         )
                     )
         return diags
@@ -1354,10 +1390,6 @@ class ModuleModel:
                                 end_character=match.end("name"),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
-                                message=(
-                                    f'Метод "{name}" устарел. Вместо него стоит использовать '
-                                    f'"{replacement}"'
-                                ),
                             )
                         )
                     else:
@@ -1370,10 +1402,6 @@ class ModuleModel:
                                 end_character=match.end("name"),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
-                                message=(
-                                    f'Атрибут "{name}" устарел. Вместо него стоит использовать '
-                                    f"{replacement}"
-                                ),
                             )
                         )
                 for match in bsl175_child_form_items_re.finditer(clean):
@@ -1390,10 +1418,6 @@ class ModuleModel:
                             end_character=match.end("name"),
                             severity=Severity.INFORMATION,
                             code="BSL175",
-                            message=(
-                                f'Используется старое наименование "{name}". Вместо него '
-                                f'необходимо использовать "{replacement}"'
-                            ),
                         )
                     )
                 for match in bsl175_enum_name_re.finditer(clean):
@@ -1410,10 +1434,6 @@ class ModuleModel:
                             end_character=match.end("name"),
                             severity=Severity.INFORMATION,
                             code="BSL175",
-                            message=(
-                                f'Используется старое наименование "{name}". Вместо него '
-                                f'необходимо использовать "{replacement}"'
-                            ),
                         )
                     )
                 for match in bsl175_global_method_re.finditer(clean):
@@ -1429,7 +1449,6 @@ class ModuleModel:
                             end_character=match.end("name"),
                             severity=Severity.INFORMATION,
                             code="BSL175",
-                            message=f'Метод "{name}" устарел и больше не используется',
                         )
                     )
 
@@ -1454,7 +1473,6 @@ class ModuleModel:
                         end_character=start_char + len(callee_name),
                         severity=Severity.INFORMATION,
                         code="BSL176",
-                        message=f'Удалите вызов устаревшего метода "{callee_name}".',
                     )
                 )
 
@@ -1618,7 +1636,6 @@ class ModuleModel:
                             end_character=match.end(),
                             severity=Severity.INFORMATION,
                             code="BSL208",
-                            message="Нельзя использовать латинские и кириллические символы в одном идентификаторе",
                         )
                     )
         return diags
@@ -1650,7 +1667,6 @@ class ModuleModel:
 
     def validate_bsl004_empty_code_block(self, *, lines: list[str]) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
-        empty_msg = "Наполните блок кодом или удалите его"
         opener_re = re.compile(
             r"^\s*(?:Если\b.*\bТогда|If\b.*\bThen|ИначеЕсли\b.*\bТогда|ElseIf\b.*\bThen|ElsIf\b.*\bThen|Иначе\b|Else\b|Пока\b.*\bЦикл|While\b.*\bDo)",
             re.IGNORECASE,
@@ -1712,7 +1728,6 @@ class ModuleModel:
                     end_character=end_character,
                     severity=Severity.WARNING,
                     code="BSL004",
-                    message=empty_msg,
                 )
             )
         return diags
@@ -1824,10 +1839,6 @@ class ModuleModel:
                         ),
                         severity=Severity.ERROR,
                         code="BSL064",
-                        message=(
-                            "Процедура contains 'Возврат <value>' — "
-                            "change the declaration to 'Функция'."
-                        ),
                     )
                 )
         return diags
@@ -1971,7 +1982,6 @@ class ModuleModel:
                     end_character=len(line.rstrip()),
                     severity=Severity.WARNING,
                     code="BSL007",
-                    message=f"Удалите неиспользуемую переменную {var_name}",
                 )
             )
 
@@ -2037,7 +2047,6 @@ class ModuleModel:
                         end_character=char_pos + len(var_name),
                         severity=Severity.WARNING,
                         code="BSL007",
-                        message=f"Удалите неиспользуемую переменную {var_name}",
                     )
                 )
 
@@ -2114,9 +2123,7 @@ class ModuleModel:
         procs: list[ProcInfo],
         tree: Any,
         bsl051_delimiter_lines_for_tree_fn,
-        bsl051_all_branch_exit_end_if_lines_fn,
         re_unconditional_exit,
-        re_bsl051_delimiter_fallback,
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         delimiter_lines = bsl051_delimiter_lines_for_tree_fn(tree)
@@ -2172,7 +2179,6 @@ class ModuleModel:
                         end_character=end_character,
                         severity=Severity.ERROR,
                         code="BSL051",
-                        message="Исправьте алгоритм, т.к. этот код никогда не будет исполнен",
                     )
                 )
                 emitted_lines_local.add(abs_idx)
@@ -2207,7 +2213,10 @@ class ModuleModel:
                     continue
                 i += 1
 
-            if_exit_lines = bsl051_all_branch_exit_end_if_lines_fn(body_lines)
+            if_exit_lines = _bsl051_all_branch_exit_end_if_lines(
+                body_lines,
+                re_unconditional_exit=re_unconditional_exit,
+            )
             if if_exit_lines:
                 for pos, (abs_idx, _line) in enumerate(body_lines):
                     if abs_idx not in if_exit_lines:
@@ -2289,7 +2298,6 @@ class ModuleModel:
                     end_character=error["end_column"],
                     severity=Severity.ERROR,
                     code="BSL001",
-                    message=error["message"],
                 )
             )
         return diags
@@ -2425,9 +2433,6 @@ class ModuleModel:
                                         ),
                                         severity=Severity.INFORMATION,
                                         code="BSL223",
-                                        message=(
-                                            "Избегайте вложенных конструкторов в объявлении структуры"
-                                        ),
                                     )
                                 )
 
@@ -2460,10 +2465,6 @@ class ModuleModel:
                                         end_character=end_char,
                                         severity=Severity.ERROR,
                                         code="BSL202",
-                                        message=(
-                                            "Количество параметров СтрШаблон()/StrTemplate() "
-                                            "не соответствует шаблону"
-                                        ),
                                     )
                                 )
 
@@ -2489,7 +2490,6 @@ class ModuleModel:
                                     end_character=start + len(m.group("obj")),
                                     severity=Severity.ERROR,
                                     code="BSL243",
-                                    message="Нельзя вставлять объект в самого себя",
                                 )
                             )
                 if "BSL249" in enabled_set:
@@ -2515,9 +2515,6 @@ class ModuleModel:
                                 end_character=end_character,
                                 severity=Severity.ERROR,
                                 code="BSL249",
-                                message=(
-                                    f"Замените конструктор {m.group('name')} на получение элемента стиля"
-                                ),
                             )
                         )
         return diags
@@ -2577,11 +2574,6 @@ class ModuleModel:
                             end_character=match.end(),
                             severity=Severity.WARNING if code == "BSL222" else Severity.INFORMATION,
                             code=code,
-                            message=(
-                                "НСтр() не содержит все объявленные языки"
-                                if code == "BSL221"
-                                else "Не используйте неполную НСтр() внутри СтрШаблон()/StrTemplate()"
-                            ),
                         )
                     )
 
@@ -2603,7 +2595,6 @@ class ModuleModel:
                             end_character=col + len(param),
                             severity=Severity.WARNING,
                             code="BSL239",
-                            message=f'Имя параметра "{param}" входит в список зарезервированных',
                         )
                     )
 
@@ -2645,7 +2636,6 @@ class ModuleModel:
                         end_character=min(len(line_text), start_char + len(type_name)),
                         severity=Severity.ERROR,
                         code="BSL271",
-                        message=f'Объект "{type_name}" недоступен на Linux/Unix без платформенной проверки',
                     )
                 )
         return diags

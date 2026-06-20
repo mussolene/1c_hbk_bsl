@@ -423,11 +423,6 @@ def run_bsl152_cached_public(
                 end_character=c1,
                 severity=Severity.WARNING,
                 code="BSL152",
-                message=(
-                    "Не следует размещать программный интерфейс в общем модуле "
-                    "с повторным использованием возвращаемых значений "
-                    "(BSLLS CachedPublic)."
-                ),
             )
         )
     return diags
@@ -436,7 +431,7 @@ def run_bsl152_cached_public(
 def run_bsl154_code_after_async(path: str, tree: object | None) -> list[Any]:
     Diagnostic, Severity = _diag_types()
     diags: list[Any] = []
-    for line_1, c0, c1, method in bsl154_code_after_async_spans_cst(path, tree):
+    for line_1, c0, c1, _method in bsl154_code_after_async_spans_cst(path, tree):
         diags.append(
             Diagnostic(
                 file=path,
@@ -446,10 +441,6 @@ def run_bsl154_code_after_async(path: str, tree: object | None) -> list[Any]:
                 end_character=c1,
                 severity=Severity.WARNING,
                 code="BSL154",
-                message=(
-                    f"После асинхронного вызова «{method}» следует исполняемый код "
-                    f"(BSLLS CodeAfterAsyncCall)."
-                ),
             )
         )
     return diags
@@ -459,7 +450,7 @@ def run_bsl156_code_out_of_region(path: str, lines: list[str], procs: list[_Proc
     Diagnostic, Severity = _diag_types()
     triples = [(p.start_idx, p.end_idx, p.name) for p in procs]
     diags: list[Any] = []
-    for line_1, c0, c1, msg in bsl156_diagnostics(path, lines, triples):
+    for line_1, c0, c1, _msg in bsl156_diagnostics(path, lines, triples):
         diags.append(
             Diagnostic(
                 file=path,
@@ -469,7 +460,6 @@ def run_bsl156_code_out_of_region(path: str, lines: list[str], procs: list[_Proc
                 end_character=c1,
                 severity=Severity.INFORMATION,
                 code="BSL156",
-                message=msg,
             )
         )
     return diags
@@ -478,7 +468,7 @@ def run_bsl156_code_out_of_region(path: str, lines: list[str], procs: list[_Proc
 def run_bsl158_common_module_assign(path: str, lines: list[str], symbol_index: Any) -> list[Any]:
     Diagnostic, Severity = _diag_types()
     diags: list[Any] = []
-    for line_1, c0, c1, name in bsl158_common_module_assign_spans(lines, symbol_index):
+    for line_1, c0, c1, _name in bsl158_common_module_assign_spans(lines, symbol_index):
         diags.append(
             Diagnostic(
                 file=path,
@@ -488,10 +478,6 @@ def run_bsl158_common_module_assign(path: str, lines: list[str], symbol_index: A
                 end_character=c1,
                 severity=Severity.ERROR,
                 code="BSL158",
-                message=(
-                    f"Нельзя присваивать значение объекту общего модуля «{name}» "
-                    f"(BSLLS CommonModuleAssign)."
-                ),
             )
         )
     return diags
@@ -513,7 +499,6 @@ def run_bsl159_common_module_invalid_type(path: str, lines: list[str]) -> list[A
             end_character=c1,
             severity=Severity.ERROR,
             code="BSL159",
-            message="Общий модуль недопустимого типа",
         )
     ]
 
@@ -544,11 +529,6 @@ def run_bsl160_common_module_missing_api(
             end_character=c1,
             severity=Severity.INFORMATION,
             code="BSL160",
-            message=(
-                "В общем модуле нет экспортных методов и/или областей "
-                "программного интерфейса (Public/Internal) "
-                "(BSLLS CommonModuleMissingAPI)."
-            ),
         )
     ]
 
@@ -567,7 +547,7 @@ def run_bsl161_168_common_module_names(
     c0, c1 = span if span is not None else (0, 1)
     enabled = {c for c in codes if rule_enabled(c)}
     out: list[Any] = []
-    for code, message in issues:
+    for code, _message in issues:
         if code not in enabled:
             continue
         out.append(
@@ -579,7 +559,6 @@ def run_bsl161_168_common_module_names(
                 end_character=c1,
                 severity=Severity.INFORMATION,
                 code=code,
-                message=message,
             )
         )
     return out
@@ -650,7 +629,6 @@ def run_bsl172_data_exchange_loading(path: str, lines: list[str], procs: list[An
                     end_character=(name_pos + len(proc.name)) if proc.name in line else len(line),
                     severity=Severity.ERROR,
                     code="BSL172",
-                    message="Добавьте проверку признака ОбменДанными.Загрузка в самом начале процедуры",
                 )
             )
     return diags
@@ -697,10 +675,6 @@ def run_bsl173_deleting_collection_item(path: str, lines: list[str], procs: list
                                     end_character=dm.end(),
                                     severity=Severity.ERROR,
                                     code="BSL173",
-                                    message=(
-                                        "Удаление элемента коллекции внутри цикла "
-                                        "«Для Каждого» может привести к ошибке"
-                                    ),
                                 )
                             )
                 j += 1

@@ -9,102 +9,16 @@ from __future__ import annotations
 
 import re
 
-from onec_hbk_bsl.analysis.formatter_tokens import FormatToken, format_tokens
-
-_KEYWORDS: dict[str, str] = {
-    "процедура": "Процедура",
-    "конецпроцедуры": "КонецПроцедуры",
-    "функция": "Функция",
-    "конецфункции": "КонецФункции",
-    "если": "Если",
-    "иначеесли": "ИначеЕсли",
-    "иначе": "Иначе",
-    "конецесли": "КонецЕсли",
-    "тогда": "Тогда",
-    "для": "Для",
-    "каждого": "Каждого",
-    "из": "Из",
-    "по": "По",
-    "цикл": "Цикл",
-    "конеццикла": "КонецЦикла",
-    "пока": "Пока",
-    "попытка": "Попытка",
-    "исключение": "Исключение",
-    "конецпопытки": "КонецПопытки",
-    "возврат": "Возврат",
-    "прервать": "Прервать",
-    "продолжить": "Продолжить",
-    "перем": "Перем",
-    "экспорт": "Экспорт",
-    "новый": "Новый",
-    "выполнить": "Выполнить",
-    "асинх": "Асинх",
-    "знач": "Знач",
-    "вызватьисключение": "ВызватьИсключение",
-    "перейти": "Перейти",
-    "добавитьобработчик": "ДобавитьОбработчик",
-    "удалитьобработчик": "УдалитьОбработчик",
-    "ждать": "Ждать",
-    "и": "И",
-    "или": "ИЛИ",
-    "не": "НЕ",
-    "procedure": "Procedure",
-    "endprocedure": "EndProcedure",
-    "function": "Function",
-    "endfunction": "EndFunction",
-    "if": "If",
-    "elsif": "ElsIf",
-    "else": "Else",
-    "endif": "EndIf",
-    "then": "Then",
-    "for": "For",
-    "each": "Each",
-    "in": "In",
-    "to": "To",
-    "do": "Do",
-    "enddo": "EndDo",
-    "while": "While",
-    "try": "Try",
-    "except": "Except",
-    "endtry": "EndTry",
-    "return": "Return",
-    "break": "Break",
-    "continue": "Continue",
-    "var": "Var",
-    "export": "Export",
-    "new": "New",
-    "execute": "Execute",
-    "and": "AND",
-    "or": "OR",
-    "not": "NOT",
-    "async": "Async",
-    "val": "Val",
-    "raise": "Raise",
-    "goto": "Goto",
-    "addhandler": "AddHandler",
-    "removehandler": "RemoveHandler",
-    "await": "Await",
-}
-
-_DEDENT_BEFORE: frozenset[str] = frozenset(
-    {
-        "конецпроцедуры",
-        "endprocedure",
-        "конецфункции",
-        "endfunction",
-        "конецесли",
-        "endif",
-        "конеццикла",
-        "enddo",
-        "конецпопытки",
-        "endtry",
-        "иначеесли",
-        "elsif",
-        "иначе",
-        "else",
-        "исключение",
-        "except",
-    }
+from onec_hbk_bsl.analysis.formatter_tokens import (
+    FORMATTER_DECREMENT_TOKEN_TYPES,
+    FORMATTER_DEDENT_BEFORE,
+    FORMATTER_INCREMENT_TOKEN_TYPES,
+    FORMATTER_KEYWORD_TEXT,
+    FORMATTER_KEYWORD_TOKEN_TYPES,
+    FORMATTER_PRIMITIVE_TOKEN_TYPES,
+    FORMATTER_STRING_PART_TYPES,
+    FormatToken,
+    format_tokens,
 )
 
 _PP_CANONICAL: dict[str, str] = {
@@ -127,88 +41,7 @@ _PREPROCESSOR_PATTERN = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 
-_BSLLS_INCREMENT_TOKEN_TYPES = frozenset(
-    {
-        "(",
-        "?(",
-        "PROCEDURE_KEYWORD",
-        "FUNCTION_KEYWORD",
-        "IF_KEYWORD",
-        "ELSIF_KEYWORD",
-        "ELSE_KEYWORD",
-        "FOR_KEYWORD",
-        "WHILE_KEYWORD",
-        "TRY_KEYWORD",
-        "EXCEPT_KEYWORD",
-    }
-)
-_BSLLS_DECREMENT_TOKEN_TYPES = frozenset(
-    {
-        ")",
-        "ELSIF_KEYWORD",
-        "ELSE_KEYWORD",
-        "ENDPROCEDURE_KEYWORD",
-        "ENDFUNCTION_KEYWORD",
-        "ENDIF_KEYWORD",
-        "ENDDO_KEYWORD",
-        "EXCEPT_KEYWORD",
-        "ENDTRY_KEYWORD",
-    }
-)
-_BSLLS_KEYWORD_TOKEN_TYPES = frozenset(
-    {
-        "IF_KEYWORD",
-        "THEN_KEYWORD",
-        "ELSIF_KEYWORD",
-        "ELSE_KEYWORD",
-        "ENDIF_KEYWORD",
-        "FOR_KEYWORD",
-        "EACH_KEYWORD",
-        "IN_KEYWORD",
-        "TO_KEYWORD",
-        "WHILE_KEYWORD",
-        "DO_KEYWORD",
-        "ENDDO_KEYWORD",
-        "PROCEDURE_KEYWORD",
-        "FUNCTION_KEYWORD",
-        "ENDFUNCTION_KEYWORD",
-        "ENDPROCEDURE_KEYWORD",
-        "VAR_KEYWORD",
-        "GOTO_KEYWORD",
-        "RETURN_KEYWORD",
-        "BREAK_KEYWORD",
-        "CONTINUE_KEYWORD",
-        "AND_KEYWORD",
-        "OR_KEYWORD",
-        "NOT_KEYWORD",
-        "TRY_KEYWORD",
-        "EXCEPT_KEYWORD",
-        "RAISE_KEYWORD",
-        "ENDTRY_KEYWORD",
-        "NEW_KEYWORD",
-        "ADDHANDLER_KEYWORD",
-        "REMOVEHANDLER_KEYWORD",
-        "ASYNC_KEYWORD",
-        "AWAIT_KEYWORD",
-        "VAL_KEYWORD",
-        "EXECUTE_KEYWORD",
-        "EXPORT_KEYWORD",
-    }
-)
-_BSLLS_PRIMITIVE_TOKEN_TYPES = frozenset(
-    {
-        "NULL_KEYWORD",
-        "DATETIME",
-        "number",
-        "TRUE_KEYWORD",
-        "FALSE_KEYWORD",
-        "UNDEFINED_KEYWORD",
-        "FLOAT",
-        "string",
-        "string_content",
-    }
-)
-_BSLLS_STRING_PART_TYPES = frozenset({'"', "string_content", "|"})
+_DEDENT_BEFORE = FORMATTER_DEDENT_BEFORE
 
 
 def _get_stripped_keyword(stripped: str) -> str:
@@ -238,8 +71,8 @@ def _canonical_token_text(token: FormatToken) -> str:
         directive = _PP_CANONICAL.get(match.group(2)[1:].lower(), match.group(2))
         tail = match.group(3).strip()
         return f"{directive} {tail}" if tail else directive
-    if token.type in _BSLLS_KEYWORD_TOKEN_TYPES or token.type == "operator":
-        return _KEYWORDS.get(token.text.lower(), token.text)
+    if token.type in FORMATTER_KEYWORD_TOKEN_TYPES or token.type == "operator":
+        return FORMATTER_KEYWORD_TEXT.get(token.text.lower(), token.text)
     return token.text
 
 
@@ -276,7 +109,7 @@ def _bslls_need_add_space(
     kind = _bslls_token_kind(token)
     previous_kind = _bslls_token_kind(previous)
 
-    if token.type in _BSLLS_STRING_PART_TYPES and previous.type in _BSLLS_STRING_PART_TYPES:
+    if token.type in FORMATTER_STRING_PART_TYPES and previous.type in FORMATTER_STRING_PART_TYPES:
         return False
     if previous_kind in {".", "#", "&", "~", "["}:
         return False
@@ -349,7 +182,7 @@ def _format_bslls_token_stream(
             current_indent_level += 1
             additional_indent_level = current_indent_level
 
-        if kind in _BSLLS_DECREMENT_TOKEN_TYPES:
+        if kind in FORMATTER_DECREMENT_TOKEN_TYPES:
             current_indent_level -= 1
             if kind != ")" and current_indent_level == additional_indent_level:
                 current_indent_level -= 1
@@ -365,7 +198,7 @@ def _format_bslls_token_stream(
 
         out.append(_canonical_token_text(token))
 
-        if kind in _BSLLS_INCREMENT_TOKEN_TYPES:
+        if kind in FORMATTER_INCREMENT_TOKEN_TYPES:
             current_indent_level += 1
 
         if (
@@ -380,7 +213,7 @@ def _format_bslls_token_stream(
 
         if additional_indent_level > 0 and (
             kind == ";"
-            or (parameter_declaration_mode and token.type in _BSLLS_PRIMITIVE_TOKEN_TYPES)
+            or (parameter_declaration_mode and token.type in FORMATTER_PRIMITIVE_TOKEN_TYPES)
         ):
             current_indent_level -= 1
             additional_indent_level = -1

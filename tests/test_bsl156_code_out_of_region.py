@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
     path_has_known_bsl156_module_type,
 )
@@ -25,7 +26,7 @@ def test_bsl156_no_regions_flags_line1(tmp_path: Path) -> None:
     diags = [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
     assert len(diags) >= 1
     assert any(d.line == 1 for d in diags)
-    assert any(d.message == "Переместите код в область" for d in diags)
+    assert any(d.message == get_rule("BSL156").message for d in diags)
 
 
 def test_bsl156_proc_inside_region_clean(tmp_path: Path) -> None:

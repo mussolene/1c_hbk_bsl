@@ -5,6 +5,51 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+QUERY_METADATA_ROOTS: frozenset[str] = frozenset(
+    {
+        "бизнеспроцесс",
+        "businessprocess",
+        "документ",
+        "document",
+        "журналдокументов",
+        "documentjournal",
+        "справочник",
+        "catalog",
+        "перечисление",
+        "enum",
+        "планвидовхарактеристик",
+        "chartofcharacteristictypes",
+        "планывидовхарактеристик",
+        "chartsofcharacteristictypes",
+        "плансчетов",
+        "chartofaccounts",
+        "планысчетов",
+        "chartsofaccounts",
+        "планвидоврасчета",
+        "chartofcalculationtypes",
+        "регистрсведений",
+        "informationregister",
+        "регистрнакопления",
+        "accumulationregister",
+        "регистрбухгалтерии",
+        "accountingregister",
+        "регистррасчета",
+        "calculationregister",
+        "задача",
+        "task",
+        "планобмена",
+        "exchangeplan",
+        "внешнийисточникданных",
+        "externaldatasource",
+        "константа",
+        "constant",
+        "отчет",
+        "report",
+        "обработка",
+        "dataprocessor",
+    }
+)
+
 
 def node_text(node: Any) -> str:
     text = getattr(node, "text", b"")
@@ -115,6 +160,54 @@ class SelectTopWithoutOrder:
     limit: str
     query_has_union: bool
     select_has_where: bool
+
+
+@dataclass(frozen=True)
+class QuerySourceUse:
+    node: Any
+    source: str
+
+
+def _direct_named_child(node: Any, node_type: str) -> Any | None:
+    for child in getattr(node, "children", []) or []:
+        if getattr(child, "type", None) == node_type:
+            return child
+    return None
+
+
+def query_source_uses(root: Any) -> list[QuerySourceUse]:
+    result: list[QuerySourceUse] = []
+    for node in iter_nodes(root, "table_source"):
+        source_node = _direct_named_child(node, "dotted_identifier") or _direct_named_child(
+            node, "identifier"
+        )
+        if source_node is None:
+            continue
+        source = node_text(source_node).strip()
+        if source:
+            result.append(QuerySourceUse(node=source_node, source=source))
+    for node in iter_nodes(root, "join_clause"):
+        source_node = _direct_named_child(node, "dotted_identifier") or _direct_named_child(
+            node, "identifier"
+        )
+        if source_node is None:
+            continue
+        source = node_text(source_node).strip()
+        if source:
+            result.append(QuerySourceUse(node=source_node, source=source))
+    return result
+
+
+def query_temp_table_names(root: Any) -> frozenset[str]:
+    names: set[str] = set()
+    for into_clause in iter_nodes(root, "into_clause"):
+        ident = first_named_child(into_clause, "identifier")
+        if ident is None:
+            continue
+        name = node_text(ident).strip()
+        if name:
+            names.add(name.casefold())
+    return frozenset(names)
 
 
 def _join_kind(join_node: Any) -> str:

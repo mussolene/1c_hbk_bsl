@@ -13,11 +13,7 @@ import re
 from collections import OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
-from onec_hbk_bsl.analysis.bslls_parity import merge_default_with_select
 from onec_hbk_bsl.analysis.diagnostic.pipeline import AnalysisFrame, PipelineExecutor
-from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
-    is_split_module_fragment,
-)
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
     parse_suppressions,
@@ -45,22 +41,6 @@ _HOT_TS_NODE_TYPES: frozenset[str] = frozenset(
     }
 )
 
-_CHEAP_PREFILTER_CODES: frozenset[str] = frozenset(
-    {
-        "BSL017",
-        "BSL026",
-        "BSL040",
-        "BSL062",
-        "BSL155",
-        "BSL170",
-        "BSL245",
-    }
-)
-_PROC_KEYWORD_RE = re.compile(r"\b(?:Процедура|Функция|Procedure|Function)\b", re.IGNORECASE)
-_ANNOTATION_RE = re.compile(r"^\s*&\w+", re.IGNORECASE | re.MULTILINE)
-_EXPORT_RE = re.compile(r"\b(?:Экспорт|Export)\b", re.IGNORECASE)
-_REGION_RE = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE | re.MULTILINE)
-
 globals().update(
     {
         name: getattr(_diag, name)
@@ -85,25 +65,6 @@ class DiagnosticEngine:
         # Tune thresholds:
         engine = DiagnosticEngine(max_proc_lines=300, max_cognitive_complexity=20)
     """
-
-    # BSLLS-compatible rules disabled by default.
-    DEFAULT_DISABLED: frozenset[str] = frozenset(
-        {
-            "BSL008",
-            "BSL016",
-            "BSL042",
-            "BSL150",
-            "BSL154",
-            "BSL170",
-            "BSL174",
-            "BSL182",
-            "BSL211",
-            "BSL232",
-            "BSL241",
-            "BSL251",
-        }
-    )
-    PRODUCT_DEFAULT_ENABLED: frozenset[str] = frozenset({"BSL187", "BSL188", "BSL203", "BSL264"})
 
     # Default thresholds (class-level — can override in __init__)
     MAX_PROC_LINES: int = 200
@@ -148,20 +109,14 @@ class DiagnosticEngine:
         self._parser_tls = threading.local()
         self._symbol_index = symbol_index
         _user_select = normalize_rule_code_set(select) if select else None
-        self._select: set[str] | None = merge_default_with_select(
-            _user_select,
-            _BSLLS_NAME_TO_CODE,
-            default_disabled_codes=self.DEFAULT_DISABLED,
+        self._select: set[str] | None = (
+            None if _user_select is None else _user_select & set(_PUBLIC_RULE_CODES)
         )
-        if _user_select is None:
-            self._select |= self.PRODUCT_DEFAULT_ENABLED
         # Instrumentation for benchmarks/debug: per-thread (free-threading safe).
         self._metrics_tls = threading.local()
         self._current_snapshot: Any | None = None
-        # Merge user ignores with DEFAULT_DISABLED; select= overrides DEFAULT_DISABLED
         _user_ignore: set[str] = normalize_rule_code_set(ignore) if ignore else set()
-        _effective_defaults = self.DEFAULT_DISABLED - (self._select or set())
-        self._ignore: set[str] = _user_ignore | _effective_defaults
+        self._ignore: set[str] = _user_ignore & set(_PUBLIC_RULE_CODES)
         self._enabled_codes: frozenset[str] = frozenset(
             code
             for code in RULE_METADATA
@@ -234,49 +189,6 @@ class DiagnosticEngine:
     def _enabled_rule_codes(self) -> frozenset[str]:
         return self._enabled_codes
 
-    def _cheap_prefilter_allows_parse(self, path: str, content: str) -> bool:
-        enabled = self._enabled_rule_codes()
-        if not enabled or not enabled <= _CHEAP_PREFILTER_CODES:
-            return True
-        split_fragment = is_split_module_fragment(path)
-
-        for code in enabled:
-            if code == "BSL017":
-                if not split_fragment and _EXPORT_RE.search(content):
-                    return True
-                continue
-            if code == "BSL026":
-                if not split_fragment and _REGION_RE.search(content):
-                    return True
-                continue
-            if code == "BSL040":
-                if not split_fragment and re.search(r"\b(?:ЭтаФорма|ThisForm)\b", content):
-                    return True
-                continue
-            if code == "BSL062":
-                if not split_fragment and _PROC_KEYWORD_RE.search(content) and "(" in content:
-                    return True
-                continue
-            if code == "BSL155":
-                if not split_fragment and _PROC_KEYWORD_RE.search(content):
-                    return True
-                continue
-            if code == "BSL170":
-                if not split_fragment and _ANNOTATION_RE.search(content):
-                    return True
-                continue
-            if code == "BSL245":
-                if (
-                    not split_fragment
-                    and _diag.path_is_likely_form_module_bsl(path)
-                    and _EXPORT_RE.search(content)
-                    and _ANNOTATION_RE.search(content)
-                ):
-                    return True
-                continue
-            return True
-        return False
-
     def check_content(
         self,
         path: str,
@@ -301,12 +213,9 @@ class DiagnosticEngine:
                     self._content_diag_cache.move_to_end(cache_key)
                     return list(cached_entry[1])
 
-        if not self._cheap_prefilter_allows_parse(path, content):
-            return []
-
         try:
             tree = self._get_parser().parse_content(content, file_path=path)
-        except Exception as exc:
+        except Exception:
             return [
                 Diagnostic(
                     file=path,
@@ -316,7 +225,6 @@ class DiagnosticEngine:
                     end_character=0,
                     severity=Severity.ERROR,
                     code="BSL001",
-                    message=f"Не удалось разобрать содержимое: {exc}",
                 )
             ]
         diagnostics = self._run_rules(path, content, tree, symbol_index=symbol_index)
@@ -365,7 +273,7 @@ class DiagnosticEngine:
         if tree is None:
             try:
                 content = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-            except OSError as exc:
+            except OSError:
                 return [
                     Diagnostic(
                         file=path,
@@ -375,16 +283,12 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
-                        message=f"Не удалось прочитать файл: {exc}",
                     )
                 ]
 
-            if not self._cheap_prefilter_allows_parse(path, content):
-                return []
-
             try:
                 tree = self._get_parser().parse_content(content, file_path=path)
-            except Exception as exc:
+            except Exception:
                 return [
                     Diagnostic(
                         file=path,
@@ -394,13 +298,12 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
-                        message=f"Не удалось разобрать файл: {exc}",
                     )
                 ]
         else:
             try:
                 content = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-            except OSError as exc:
+            except OSError:
                 return [
                     Diagnostic(
                         file=path,
@@ -410,7 +313,6 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
-                        message=f"Не удалось прочитать файл: {exc}",
                     )
                 ]
         return self._run_rules(path, content, tree, symbol_index=symbol_index)
@@ -585,205 +487,3 @@ class DiagnosticEngine:
         if snapshot is not None and getattr(snapshot, "tree", None) is tree:
             snapshot.set_runtime_call_context(context)
         return context
-
-    # ------------------------------------------------------------------
-    # BSL001 — Parse errors
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL002 — Method too long
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL003 — Non-export method in API region
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL007 — Unused local variable
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL009 — Self-assignment
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL011 — Cognitive complexity
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL016 — Non-standard region name
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL019 — McCabe cyclomatic complexity
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL020 — Excessive nesting depth
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL022 — UsingModalWindows
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL030 — SemicolonPresence: «;» в конце выражения (BSLLS) + лишняя «;» в заголовке
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL029 — MagicNumber
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL148 — AllFunctionPathMustHaveReturn
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL033 — Query execution inside a loop
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL035 — Duplicate string literal
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL040 — ЭтаФорма / ThisForm outside event handler context
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL042 — Empty export method
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL051 — Unreachable code after Return/Raise
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _bsl051_all_branch_exit_end_if_lines(body_lines: list[tuple[int, str]]) -> set[int]:
-        if_start_re = re.compile(r"^\s*(?:Если|If)\b.*(?:Тогда|Then)\s*$", re.IGNORECASE)
-        elseif_re = re.compile(r"^\s*(?:ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE)
-        else_re = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
-        endif_re = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
-        try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-        endtry_re = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
-
-        stack: list[dict[str, Any]] = []
-        result: set[int] = set()
-        try_depth = 0
-
-        def current_exits() -> bool:
-            return bool(stack and stack[-1]["current_exit"])
-
-        for abs_idx, line in body_lines:
-            stripped = line.strip()
-            if not stripped or stripped.startswith("//"):
-                continue
-
-            if try_re.match(line):
-                try_depth += 1
-                continue
-            if endtry_re.match(line):
-                try_depth = max(0, try_depth - 1)
-                continue
-
-            if if_start_re.match(line):
-                stack.append({"branches": [], "current_exit": False, "has_else": False})
-                continue
-
-            if not stack:
-                continue
-
-            if try_depth == 0 and _RE_UNCONDITIONAL_EXIT.match(line) and ";" in line:
-                stack[-1]["current_exit"] = True
-                continue
-
-            if elseif_re.match(line):
-                stack[-1]["branches"].append(current_exits())
-                stack[-1]["current_exit"] = False
-                continue
-
-            if else_re.match(line):
-                stack[-1]["branches"].append(current_exits())
-                stack[-1]["current_exit"] = False
-                stack[-1]["has_else"] = True
-                continue
-
-            if endif_re.match(line):
-                finished = stack.pop()
-                finished["branches"].append(finished["current_exit"])
-                exits = bool(finished["has_else"] and all(finished["branches"]))
-                if exits:
-                    result.add(abs_idx)
-                    if stack:
-                        stack[-1]["current_exit"] = True
-                continue
-
-        return result
-
-    # ------------------------------------------------------------------
-    # BSL052 — Identical expressions
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL054 — Module-level Перем/Var (global state)
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL062 — Unused parameter
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL064 — Procedure returns value
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL077 — SelectTopWithoutOrderBy
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL190 — FormDataToValue
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL175 / BSL176 — deprecated API pool
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL215 — MissingParameterDescription
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL233 — PublicMethodsDescription
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL216 — MissingSpace
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL254 — TransferringParametersBetweenClientAndServer
-    # ------------------------------------------------------------------
-
-    # BSL208 — LatinAndCyrillicSymbolInWord
-    # BSL256 — Typo (BSLLS-style: pyspellchecker + pymorphy3, bundled BSLLS exceptions)
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL224 — NestedFunctionInParameters
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL202 / BSL223 / BSL243 / BSL249 — lightweight call pool
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL221 / BSL222 / BSL239 / BSL271 — lightweight mixed pool
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # BSL229 / BSL275 / BSL278 — local XML-backed pool
-    # ------------------------------------------------------------------

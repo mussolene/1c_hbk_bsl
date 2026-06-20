@@ -30,7 +30,6 @@ def _diag(file: str, line: int, code: str) -> Diagnostic:
         end_character=10,
         severity=Severity.WARNING,
         code=code,
-        message="test",
     )
 
 

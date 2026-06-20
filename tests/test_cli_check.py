@@ -51,7 +51,6 @@ def _make_diag(
         end_character=10,
         severity=severity,
         code=code,
-        message=message,
     )
 
 

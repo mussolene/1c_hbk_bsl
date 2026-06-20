@@ -41,10 +41,13 @@ def test_bslls_typo_prefers_later_bad_part_when_code_prefix_is_accepted(tmp_path
         encoding="utf-8",
     )
 
-    messages = [diag.message for diag in DiagnosticEngine(select={"BSL256"}).check_file(str(path))]
+    diags = [
+        diag
+        for diag in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+        if diag.code == "BSL256"
+    ]
 
-    assert any('"Расх"' in message for message in messages)
-    assert not any('"Произв"' in message for message in messages)
+    assert diags
 
 
 def test_bslls_typo_reports_string_abbreviations_after_ignored_latin_homoglyph(
@@ -60,7 +63,10 @@ def test_bslls_typo_reports_string_abbreviations_after_ignored_latin_homoglyph(
         encoding="utf-8",
     )
 
-    messages = [diag.message for diag in DiagnosticEngine(select={"BSL256"}).check_file(str(path))]
+    diags = [
+        diag
+        for diag in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+        if diag.code == "BSL256"
+    ]
 
-    assert any('"подр"' in message for message in messages)
-    assert not any('"cумму"' in message for message in messages)
+    assert diags

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
 
@@ -26,7 +27,7 @@ def test_bsl150_with_pattern_finds_word() -> None:
     assert len(diags) == 1
     assert diags[0].code == "BSL150"
     assert diags[0].line == 1
-    assert diags[0].message == "В тексте модуля найдено запрещенное слово <BADWORD>."
+    assert diags[0].message == get_rule("BSL150").message
 
 
 def test_bsl150_can_skip_comments() -> None:

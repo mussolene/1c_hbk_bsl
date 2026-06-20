@@ -86,6 +86,7 @@ from onec_hbk_bsl.analysis.diagnostic.cst import (
     loop_body_line_indices_0,
     ts_elseif_then_branch_empty,
     ts_if_main_then_branch_empty,
+    tree_has_errors,
 )
 from onec_hbk_bsl.analysis.diagnostic.cst import (
     ts_tree_ok_for_rules as _ts_tree_ok_for_rules,
@@ -128,7 +129,6 @@ from onec_hbk_bsl.analysis.diagnostic.suppression import (
     parse_suppressions as _parse_suppressions,
 )
 from onec_hbk_bsl.analysis.document_snapshot import QueryTextBlockInfo, build_document_snapshot
-from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
 from onec_hbk_bsl.analysis.diagnostic.helpers import proc_helpers as _proc_helpers
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     _RE_BSL275_HANDLER,
@@ -138,17 +138,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     _RE_XML_DATAPATH,
     _RE_XML_DIMENSION_BLOCK,
-    _RE_XML_EVENT_HANDLER,
-    _RE_XML_METHOD_NAME,
-    _RE_XML_PRIVILEGED,
-    _RE_XML_PROTECTED,
-    _RE_XML_SET_FOR_NEW_OBJECTS,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     path_is_command_module_bsl as _path_is_command_module_bsl,
-)
-from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
-    common_module_file_map as _common_module_file_map,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     common_module_index_cached as _common_module_index_cached,
@@ -158,12 +150,6 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     common_module_proc_names_for_module_cached as _common_module_proc_names_for_module_cached,
-)
-from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
-    common_module_proc_names_for_file_cached as _common_module_proc_names_for_file_cached,
-)
-from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
-    common_module_proc_names_map_cached as _common_module_proc_names_map_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     config_has_protected_modules_cached as _config_has_protected_modules_cached,
@@ -176,9 +162,6 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     event_subscription_handlers_by_module_cached as _event_subscription_handlers_by_module_cached,
-)
-from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
-    metadata_name_index_cached as _metadata_name_index_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     workspace_metadata_name_index_cached as _workspace_metadata_name_index_cached,
@@ -263,7 +246,6 @@ from onec_hbk_bsl.analysis.diagnostic.rules.query_text_rules import (
 )
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
-_proc_param_name_span = _proc_helpers.proc_param_name_span
 _proc_param_location = _proc_helpers.proc_param_location
 
 # When a diagnostic span overlaps a "..." literal, drop the warning unless the rule
@@ -1825,38 +1807,6 @@ RULE_MESSAGES_RU: dict[str, str] = {
 # Fix hints — actionable one-line suggestions keyed by rule code
 # ---------------------------------------------------------------------------
 
-RULE_FIX_HINTS: dict[str, str] = {
-    "BSL002": "Extract logic into smaller helper procedures/functions.",
-    "BSL004": "Add error logging: Сообщить(ОписаниеОшибки()) or re-raise with context.",
-    "BSL005": "Move URL/IP to a constant, configuration parameter, or InfoBase settings.",
-    "BSL006": "Use relative paths or store the path in a configuration parameter.",
-    "BSL007": "Remove the unused variable declaration.",
-    "BSL009": "Check for copy-paste error — both sides of '=' are identical.",
-    "BSL011": "Decompose into smaller methods; extract nested conditions to named variables.",
-    "BSL012": "Move credentials to OS environment variables or 1C InfoBase settings.",
-    "BSL013": "Delete or restore the commented-out code block.",
-    "BSL014": "Break the long line using BSL | continuation or an intermediate variable.",
-    "BSL015": "Reduce optional parameters or introduce a parameter struct/object.",
-    "BSL022": "Replace modal global calls with asynchronous managed UI APIs.",
-    "BSL027": "Replace Перейти/Goto with a structured loop or conditional.",
-    "BSL028": "Wrap risky operations in Попытка...Исключение...КонецПопытки.",
-    "BSL033": "Move the query outside the loop; collect data first, then iterate.",
-    "BSL035": "Extract the repeated string to a named constant.",
-    "BSL042": "Implement the method body or remove the Export keyword.",
-    "BSL047": "Extract the date literal to a named constant.",
-    "BSL051": "Remove the unreachable code or restructure the control flow.",
-    "BSL052": "Remove the constant condition — the branch always/never executes.",
-    "BSL060": "Remove the double negation — НЕ НЕ cancels out.",
-    "BSL062": "Remove the unused parameter or add a comment explaining why it is kept.",
-    "BSL064": "Change 'Процедура' to 'Функция' and add the required return type handling.",
-    "BSL065": "Add a // Description comment on the line before the Export method declaration.",
-    "BSL066": "Replace Найти() with СтрНайти() / StrFind().",
-    "BSL077": "List columns explicitly: ВЫБРАТЬ Поле1, Поле2 ИЗ instead of ВЫБРАТЬ *.",
-    "BSL097": "Replace ТекущаяДата() with ТекущаяДатаСеанса() for consistent session-based time.",
-    "BSL131": "Переименуйте или объедините области с одинаковым именем.",
-}
-
-
 _BSLLS_LSP_HINT_RULE_NAMES: frozenset[str] = frozenset(
     {
         "CanonicalSpellingKeywords",
@@ -1936,27 +1886,6 @@ _RE_END_PROC = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Except / EndTry
-_RE_EXCEPT = re.compile(
-    r"^\s*(?:Исключение|Except)\s*(?://.*)?$",
-    re.IGNORECASE | re.MULTILINE,
-)
-_RE_END_TRY = re.compile(
-    r"^\s*(?:КонецПопытки|EndTry)\s*;?\s*(?://.*)?$",
-    re.IGNORECASE | re.MULTILINE,
-)
-_RE_BLANK_OR_COMMENT = re.compile(r"^\s*(?://.*)?$")
-
-
-def _proc_body_base_indent(lines: list[str], proc: _ProcInfo) -> int:
-    """Indent (column width) of the first non-blank, non-comment body line after the header."""
-    for i in range(proc.start_idx + 1, min(proc.end_idx + 1, len(lines))):
-        line = lines[i]
-        if _RE_BLANK_OR_COMMENT.match(line):
-            continue
-        return len(line) - len(line.lstrip())
-    return 0
-
 
 def _bsl035_scope_line_indices(lines: list[str], procs: list[_ProcInfo]) -> list[list[int]]:
     """Split the file into scopes for BSL035: each procedure/function body, then module-level."""
@@ -2004,16 +1933,6 @@ _RE_RETURN = re.compile(
     r"^\s*(?:Возврат|Return)\b",
     re.IGNORECASE | re.MULTILINE,
 )
-_RE_RETURN_EMPTY = re.compile(
-    r"^\s*(?:Возврат|Return)\s*;",
-    re.IGNORECASE | re.MULTILINE,
-)
-
-# Self-assign: Х = Х; (bare identifier only — not Obj.Field = Field)
-_RE_SELF_ASSIGN = re.compile(
-    r"^\s*(\w+)\s*=\s*\1\s*;",
-    re.IGNORECASE,
-)
 
 
 def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool = False) -> str:
@@ -2037,17 +1956,6 @@ def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool =
         i += 1
     return "".join(chars)
 
-
-# Nesting open/close tokens for BSL020.
-_RE_NEST_OPEN = re.compile(
-    # BSLLS NestedStatements counts only control-flow branches, NOT Try/Except
-    r"^\s*(?:Если|If|ДляКаждого|ForEach|Для|For|Пока|While)\b",
-    re.IGNORECASE,
-)
-_RE_NEST_CLOSE = re.compile(
-    r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo)\b",
-    re.IGNORECASE,
-)
 
 # Inline noqa/bsl-disable
 _RE_NOQA = re.compile(
@@ -2351,31 +2259,6 @@ def normalize_rule_code_set_strict(
     return normalize_rule_code_set(materialized)
 
 
-def display_name_for_rule_code(code: str) -> str:
-    """Public rule name for LSP/UI: BSLLS name when known, else RULE_METADATA name, else code."""
-    primary = _CODE_TO_PRIMARY_BSLLS_NAME.get(code)
-    if primary:
-        return primary
-    meta = RULE_METADATA.get(code)
-    if meta:
-        return str(meta.get("name", code))
-    return code
-
-
-def bslls_message_for_rule_code(code: str) -> str:
-    """Canonical BSLLS ru ``diagnosticMessage`` for public structured output."""
-    message = RULE_MESSAGES_RU.get(code)
-    if message:
-        return message
-    title = RULE_DESCRIPTIONS_RU.get(code)
-    if title:
-        return title
-    meta = RULE_METADATA.get(code)
-    if meta:
-        return str(meta.get("description") or meta.get("name") or code)
-    return code
-
-
 def parse_env_rule_filters() -> tuple[set[str] | None, set[str] | None]:
     """
     Read ``BSL_SELECT`` / ``BSL_IGNORE`` from the environment.
@@ -2390,7 +2273,6 @@ def parse_env_rule_filters() -> tuple[set[str] | None, set[str] | None]:
     return select, ignore
 
 
-_RE_BSL202_STRTEMPLATE = re.compile(r"\b(?:СтрШаблон|StrTemplate)\s*\(", re.IGNORECASE)
 _BSL223_STRUCTURE_NAMES = frozenset(
     {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
 )
@@ -2523,8 +2405,6 @@ def _caller_is_client_method(
 
 # BSL215/BSL233 — compiler directive (e.g. &НаКлиенте) preceding a proc header
 _RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
-_RE_TRY_OPEN = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-_RE_TRY_CLOSE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
 # BSL240 / write-only var assignment
 _RE_MODULE_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_ASSIGN_LHS = re.compile(r"^\s*(?P<name>\w+)\s*=(?!=)", re.IGNORECASE)
@@ -2533,7 +2413,6 @@ _RE_BSL266_CANCEL = re.compile(r"^(?:Отказ|Cancel)$", re.IGNORECASE)
 _RE_QUERY_SELECT_KEYWORD = re.compile(r"\bВЫБРАТЬ\b|\bSELECT\b", re.IGNORECASE)
 _RE_QUERY_UNION_KEYWORD = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)
 _RE_QUERY_INLINE_COMMENT = re.compile(r"\s*//.*$")
-_RE_BSL029_ANY_DIGIT = re.compile(r"\d")
 _RE_BSL208_WORD = re.compile(r"\b[a-zA-ZА-ЯЁа-яё_][a-zA-ZА-ЯЁа-яё0-9_]*\b", re.UNICODE)
 _RE_BSL208_HAS_LATIN = re.compile(r"[a-zA-Z]")
 _RE_BSL208_HAS_CYRILLIC = re.compile(r"[А-ЯЁа-яё]")
@@ -2578,7 +2457,6 @@ _RE_QUERY_PARSE_ERROR_TAIL_KEYWORD = re.compile(
 _RE_QUERY_PARSE_ERROR_TAIL_OPERATOR = re.compile(
     r"(?:[=<>+\-*/]|\b(?:И|AND|ИЛИ|OR)\b)\s*$", re.IGNORECASE
 )
-_RE_QUERY_FIELD_REF = re.compile(r"\b(?P<alias>\w+)\.(?P<field>\w+(?:\.\w+)*)\b", re.IGNORECASE)
 
 
 def _iter_query_text_blocks(lines: list[str]):
@@ -2663,14 +2541,6 @@ def _query_content_end_quote(content: str) -> int | None:
             continue
         return pos
     return None
-
-
-def _snapshot_query_blocks(lines: list[str], query_blocks: list[QueryTextBlockInfo] | None):
-    if query_blocks is not None:
-        for block in query_blocks:
-            yield block.start_idx, list(block.block_lines)
-        return
-    yield from _iter_query_text_blocks(lines)
 
 
 def _query_block_content_line_tuples(
@@ -2763,8 +2633,6 @@ def _extract_call_argument_presence(
     return [bool(part.strip()) for part in _split_top_level_args(args_text)]
 
 
-# BSL-x module-level Перем / preprocessor lines
-_RE_PERЕМ_LINE = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
 _RE_REGION_LINE = re.compile(r"^\s*#(?:Область|Region|КонецОбласти|EndRegion)\b", re.IGNORECASE)
 _RE_PREPROC_LINE = re.compile(r"^\s*#", re.IGNORECASE)
 
@@ -2794,59 +2662,6 @@ def _bsl007_strip_double_quoted_segments(line: str) -> str:
             out.append(line[i])
             i += 1
     return "".join(out)
-
-
-def _bsl007_rhs_mentions_name(name: str, raw_line: str) -> bool:
-    """True if *name* appears in the RHS of a leading ``name = …`` assignment on this line."""
-    name_cf = name.casefold()
-    code = raw_line.split("//", 1)[0]
-    code_clean = _bsl007_strip_double_quoted_segments(code)
-    m = _BSL007_SIMPLE_ASSIGN_AT_START.match(code_clean)
-    if not m or m.group(1).casefold() != name_cf:
-        return _bsl007_name_read_in_code_line(name, raw_line)
-    tail = code_clean[m.end() :]
-    return bool(re.search(rf"\b{re.escape(name)}\b", tail, re.IGNORECASE))
-
-
-def _bsl007_name_read_in_code_line(name: str, raw_line: str) -> bool:
-    """True if *name* is read on this line (not only as LHS of ``name =``)."""
-    if not raw_line.strip() or raw_line.lstrip().startswith("//"):
-        return False
-    code = raw_line.split("//", 1)[0]
-    code_clean = _bsl007_strip_double_quoted_segments(code)
-    m = _BSL007_SIMPLE_ASSIGN_AT_START.match(code_clean)
-    if m and m.group(1).casefold() == name.casefold():
-        tail = code_clean[m.end() :]
-        return bool(re.search(rf"\b{re.escape(name)}\b", tail, re.IGNORECASE))
-    return bool(re.search(rf"\b{re.escape(name)}\b", code_clean, re.IGNORECASE))
-
-
-def _bsl007_name_used_in_file(
-    name: str,
-    lines: list[str],
-    *,
-    assign_lhs_idx: int | None,
-    lo: int,
-    hi: int,
-    skip_indices: set[int],
-) -> bool:
-    """Scan lines [lo, hi] inclusive; on *assign_lhs_idx* only the RHS of ``name =`` counts."""
-    for j in range(lo, hi + 1):
-        if j in skip_indices:
-            continue
-        ln = lines[j]
-        if assign_lhs_idx is not None and j == assign_lhs_idx:
-            if _bsl007_rhs_mentions_name(name, ln):
-                return True
-        elif _bsl007_name_read_in_code_line(name, ln):
-            return True
-    return False
-
-
-@functools.lru_cache(maxsize=512)
-def _compile_call_pattern(proc_name: str) -> re.Pattern[str]:
-    """Cached per-name call regex."""
-    return re.compile(r"(?<![.\w])" + re.escape(proc_name) + r"\s*\(", re.IGNORECASE)
 
 
 # BSLLS allowTrailingPartsInAnotherLanguage=true (default).
@@ -2880,25 +2695,6 @@ def _bsl208_word_is_standard_tech_name(word: str) -> bool:
     return word.casefold() in _BSL208_EXCLUDE_WORDS
 
 
-# Empty region: #Область...#КонецОбласти with nothing code-like inside
-_RE_REGION_OPEN_CAP = re.compile(
-    r"^\s*#(?:Область|Region)\s+(?P<name>\S+)",
-    re.IGNORECASE,
-)
-_RE_REGION_CLOSE_BARE = re.compile(
-    r"^\s*#(?:КонецОбласти|EndRegion)",
-    re.IGNORECASE,
-)
-
-# Magic number: numeric literal not 0/1/-1, not in a comment or string
-# A simplified heuristic: standalone number after =, (, or operator
-_RE_MAGIC_NUMBER = re.compile(
-    r"(?<![\"'\w.])"  # not preceded by string/word/dot
-    r"-?(?:[2-9]\d*|\d{2,})"  # 2+ digit integer OR single digit >= 2
-    r"(?:\.\d+)?"  # optional decimal part
-    r"(?![\w.\"])",  # not followed by word/dot/quote
-)
-
 # Loop open/close for QueryInLoop detection (separate from nesting ones)
 _RE_LOOP_OPEN = re.compile(
     r"^\s*(?:ДляКаждого|ForEach|Для|For|Пока|While)\b",
@@ -2909,195 +2705,23 @@ _RE_LOOP_CLOSE = re.compile(
     re.IGNORECASE,
 )
 
-# ИнформацияОбОшибке() / ErrorInfo() call — result assigned to variable
-_RE_ERROR_INFO_ASSIGN = re.compile(
-    r"^\s*(\w+)\s*=\s*(?:ИнформацияОбОшибке|ErrorInfo)\s*\(\s*\)",
-    re.IGNORECASE,
-)
-
 # String literal extractor with BSL doubled-quote escaping.
 _RE_STRING_LITERAL = re.compile(r'(?<![A-Za-zА-ЯЁа-яё0-9_])"((?:[^"]|"")*)"')
 
-# String concatenation inside a loop: variable = variable + "string" or + Str(...)
-_RE_STR_CONCAT = re.compile(
-    r"\b\w+\s*=\s*\w+\s*\+\s*(?:\"[^\"]*\"|\w+\s*\()",
-    re.IGNORECASE,
-)
-
-# ОписаниеОповещения / NotifyDescription
-_RE_NOTIFY_DESCRIPTION = re.compile(
-    r"\bОписаниеОповещения\s*\(|NotifyDescription\s*\(",
-    re.IGNORECASE,
-)
-
-_PLATFORM_BUILTINS: frozenset[str] = frozenset(
-    {
-        "сообщить",
-        "предупреждение",
-        "вопрос",
-        "описаниеошибки",
-        "информацияобошибке",
-        "новоеисключение",
-        "типзнч",
-        "тип",
-        "значениезаполнено",
-        "стрдлина",
-        "лев",
-        "прав",
-        "сред",
-        "стрнайти",
-        "стрзаменить",
-        "нрег",
-        "врег",
-        "сокрл",
-        "сокрп",
-        "сокрлп",
-        "пустаястрока",
-        "строка",
-        "число",
-        "булево",
-        "дата",
-        "окр",
-        "цел",
-        "abs",
-        "макс",
-        "мин",
-        "текущаядата",
-        "началодня",
-        "конецдня",
-        "началомесяца",
-        "конецмесяца",
-        "добавитьмесяц",
-        "год",
-        "месяц",
-        "день",
-        "стрразделить",
-        "стрсоединить",
-        "стрсодержит",
-        "стрначинаетсяс",
-        "стрзаканчиваетсяна",
-        "символ",
-        "кодсимвола",
-        "формат",
-        "стршаблон",
-        # English aliases
-        "message",
-        "question",
-        "errordescription",
-        "errorinfo",
-        "typeof",
-        "type",
-        "valueisfilled",
-        "strlen",
-        "left",
-        "right",
-        "mid",
-        "strfind",
-        "strreplace",
-        "lower",
-        "upper",
-        "triml",
-        "trimr",
-        "trimall",
-        "isblankstring",
-        "string",
-        "number",
-        "boolean",
-        "round",
-        "int",
-        "max",
-        "min",
-        "currentdate",
-        "begofday",
-        "endofday",
-        "begofmonth",
-        "endofmonth",
-        "addmonth",
-        "year",
-        "month",
-        "day",
-        "strsplit",
-        "strconcat",
-        "strcontains",
-        "strstartswith",
-        "strendswith",
-        "char",
-        "charcode",
-        "format",
-        "strtemplate",
-    }
-)
-
-# Выполнить / Execute dynamic code
-_RE_EXECUTE_DYNAMIC = re.compile(
-    r"^\s*(?:Выполнить|Execute)\s*\(",
-    re.IGNORECASE,
-)
-
 # Module-level variable declaration (outside any proc/function)
 # We reuse _RE_VAR_LOCAL for matching
-
-# Literal True/False in If condition
-_RE_IF_LITERAL = re.compile(
-    r"^\s*(?:Если|If)\s+(?:Истина|True|Ложь|False)\b",
-    re.IGNORECASE,
-)
-
-# Boolean literal comparison in If/ElseIf condition only (aligns with BSLLS).
-_RE_BOOL_LITERAL_CMP = re.compile(
-    r"^\s*(?:Если|ИначеЕсли|ElseIf|If)\b.*(?:=|<>)\s*(?:Истина|True|Ложь|False)\b"
-    r"|^\s*(?:Если|ИначеЕсли|ElseIf|If)\b.*(?:Истина|True|Ложь|False)\s*(?:=|<>)",
-    re.IGNORECASE,
-)
-
-# Прервать/Break as last statement before КонецЦикла
-_RE_BREAK = re.compile(r"^\s*(?:Прервать|Break)\s*;?\s*$", re.IGNORECASE)
-
-# Deprecated modal input dialogs
-_RE_INPUT_DIALOG = re.compile(
-    r"\b(?:ВвестиЗначение|ВвестиЧисло|ВвестиДату|ВвестиСтроку"
-    r"|InputValue|InputNumber|InputDate|InputString)\s*\(",
-    re.IGNORECASE,
-)
 
 # Query text block: "ВЫБРАТЬ ... ИЗ ..."
 _RE_QUERY_TEXT_START = re.compile(
     r'"\s*(?:ВЫБРАТЬ|SELECT)\b',
     re.IGNORECASE,
 )
-_RE_QUERY_END_QUOTE = re.compile(r'[^|"]*"')
-
 # Unconditional exit from method body (for unreachable code detection)
 _RE_UNCONDITIONAL_EXIT = re.compile(
     r"^\s*(?:Возврат|Return|ВызватьИсключение|Raise|Прервать|Break|Продолжить|Continue|"
     r"Перейти|Goto)\b",
     re.IGNORECASE,
 )
-
-# String continuation line in BSL (| at the start for multiline literals)
-_RE_STR_CONTINUATION = re.compile(r"^\s*\|", re.MULTILINE)
-
-# ЗафиксироватьТранзакцию / CommitTransaction or РоллбекТранзакции / RollbackTransaction
-_RE_COMMIT_TRANSACTION = re.compile(
-    r"\b(?:ЗафиксироватьТранзакцию|CommitTransaction"
-    r"|ОтменитьТранзакцию|RollbackTransaction)\s*\(",
-    re.IGNORECASE,
-)
-
-# ВызватьИсключение / Raise (not inside try)
-_RE_RAISE = re.compile(
-    r"^\s*(?:ВызватьИсключение|Raise)\b",
-    re.IGNORECASE | re.MULTILINE,
-)
-
-# If/ElseIf/Else/EndIf detection (for MissingElseBranch)
-_RE_IF_OPEN = re.compile(r"^\s*Если\b|^\s*If\b", re.IGNORECASE)
-_RE_ELSEIF = re.compile(r"^\s*(?:ИначеЕсли|ElsIf)\b", re.IGNORECASE)
-_RE_ELSE = re.compile(r"^\s*(?:Иначе|Else)\s*$|^\s*(?:Иначе|Else)\s*;?\s*$", re.IGNORECASE)
-_RE_ENDIF = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
-
-# Comment line (BSL065 — export method comment check)
-_RE_COMMENT_LINE = re.compile(r"^\s*//")
 
 _BSL175_ATTR_REPLACEMENTS: dict[str, str] = {
     "отображатьшкалу": "ОтображатьШкалы",
@@ -3175,17 +2799,6 @@ _RE_BSL176_DEPRECATED_DOC = re.compile(
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
 _RE_BSL171_ADJACENT_LITERALS = re.compile(r'"[^"]*"\s+"[^"]*"', re.UNICODE)
-_RE_BSL251_TERNARY = re.compile(r"\?\s*\(", re.UNICODE)
-_RE_BSL252_THIS_OBJECT_ASSIGN = re.compile(
-    r"^\s*(?P<name>ЭтотОбъект|ThisObject)\s*=",
-    re.IGNORECASE | re.UNICODE,
-)
-_BSL217_GET_FROM_TEMP_STORAGE_NAMES = frozenset(
-    {"получитьизвременногохранилища", "getfromtempstorage"}
-)
-_BSL217_DELETE_FROM_TEMP_STORAGE_NAMES = frozenset(
-    {"удалитьизвременногохранилища", "deletefromtempstorage"}
-)
 _RE_BSL268_FIND_BY_STRING = re.compile(
     r"\.(?P<name>НайтиПоНаименованию|FindByDescription|НайтиПоКоду|FindByCode|НайтиПоНомеру|FindByNumber)\s*\(\s*(?P<arg>\"[^\"]*\"|\d+)?",
     re.IGNORECASE | re.UNICODE,
@@ -3223,210 +2836,13 @@ _BSL259_ALLOWED_PREPROC_SYMBOLS = frozenset(
     }
 )
 _BSL259_PREPROC_KEYWORDS = frozenset({"и", "или", "не", "and", "or", "not", "истина", "ложь"})
-_RE_BSL248_COMPILER_DIRECTIVE = re.compile(r"^\s*&(?:На|At)\w+", re.IGNORECASE | re.UNICODE)
 _RE_BSL259_IDENTIFIER = re.compile(r"\b[А-ЯЁа-яёA-Za-z_][А-ЯЁа-яёA-Za-z_0-9]*\b", re.UNICODE)
 # Form / module compiler directives before procedure (&НаКлиенте, &НаСервере, …)
 _RE_FORM_COMPILER_DIRECTIVE_LINE = re.compile(r"^\s*&\S+")
 
-_RE_WHILE_TRUE = re.compile(
-    r"^\s*(?:Пока|While)\s+(?:Истина|True)\s+(?:Цикл|Do)\b",
-    re.IGNORECASE,
-)
-
-_RE_VAR_DECL = re.compile(r"^\s*(?:Перем|Var)\b", re.IGNORECASE)
-# Executable code (not comment, not blank, not Перем, not proc header)
-_RE_EXECUTABLE_LINE = re.compile(
-    r"^\s*(?!//|$|(?:Перем|Var)\b|(?:Процедура|Функция|Procedure|Function)\b|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\b)",
-    re.IGNORECASE,
-)
-
-# Simplified: a non-empty statement before ; and another after on the same line
-_RE_MULTI_STMT = re.compile(
-    r";\s*\w",  # ; followed by word char on same line
-)
-
-_RE_NULL_COMPARISON = re.compile(
-    r"(?:=|<>)\s*(?:NULL|Null)\b|(?:NULL|Null)\s*(?:=|<>)",
-    re.IGNORECASE,
-)
-
-_RE_NOOP_COMPOUND = re.compile(
-    r"\w+\s*(?:\+=\s*0|-=\s*0|\*=\s*1|/=\s*1)\b",
-)
-
-_RE_CONNECTION_STRING = re.compile(
-    r"(?:Server\s*=|DSN\s*=|Driver\s*=|Database\s*=|Uid\s*=|Pwd\s*=)",
-    re.IGNORECASE,
-)
-
-_RE_RETURN_STMT = re.compile(r"^\s*(?:Возврат|Return)\b", re.IGNORECASE)
 _RE_RETURN_SIMPLE_EXPR = re.compile(r"^\s*(?:Возврат|Return)\s+(.+?);?\s*$", re.IGNORECASE)
 
-_RE_HTTP_REQUEST = re.compile(
-    r"(?:HTTPСоединение|HTTPConnection|HTTPЗапрос|HTTPRequest"
-    r"|ПолучитьДанные|GetData|ОтправитьДанные|PutData"
-    r"|ПолучитьСтроку|GetString|ОтправитьСтроку|PutString)\b",
-    re.IGNORECASE,
-)
-
-_RE_NEW_OBJECT = re.compile(r"\bНовый\b|\bNew\b", re.IGNORECASE)
-
-_RE_PARAM_COMMENT = re.compile(r"//\s*(?:Параметры|Parameters)\s*:", re.IGNORECASE)
-
-_RE_LITERAL_BOOL_CONDITION = re.compile(
-    r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(?:Истина|True|Ложь|False)\s+(?:Тогда|Then)\b",
-    re.IGNORECASE,
-)
-
-_RE_EXCEPT_BLOCK = re.compile(r"^\s*(?:Исключение|Except)\b", re.IGNORECASE)
-_RE_END_TRY = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
-_RE_TRY_OPEN = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-_RE_ERROR_INFO = re.compile(r"(?:ИнформацияОбОшибке|ErrorInfo)\s*\(", re.IGNORECASE)
-
-_RE_DOT_CHAIN = re.compile(r"(?:\.\w+\s*\()+")
-
-# SELECT * in query text (BSL077)
-_RE_SELECT_STAR = re.compile(
-    r"(?:ВЫБРАТЬ|SELECT)\s+\*",
-    re.IGNORECASE,
-)
-
-_RE_RAISE_BARE = re.compile(
-    r"^\s*(?:ВызватьИсключение|Raise)\s*;",
-    re.IGNORECASE,
-)
-
-_RE_TODO_COMMENT = re.compile(
-    r"//\s*(?:TODO|FIXME|HACK|XXX)\b",
-    re.IGNORECASE,
-)
-
-_RE_NEGATIVE_CONDITION = re.compile(
-    r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(?:НЕ|Not)\b",
-    re.IGNORECASE,
-)
-
-_RE_EXECUTE = re.compile(r"(?<!\.)(?:Выполнить|Execute)\s*\(", re.IGNORECASE)
-
-_RE_EXPORTED_VAR = re.compile(
-    r"^\s*(?:Перем|Var)\b[^;]*\bЭкспорт\b",
-    re.IGNORECASE,
-)
-
-_RE_STR_CONCAT_SELF = re.compile(
-    r'^\s*(\w+)\s*=\s*\1\s*\+\s*(?:"[^"]*"|\w)',
-    re.IGNORECASE,
-)
-
-# Matches a sequence where Cyrillic and Latin characters are interleaved
-_RE_MIXED_IDENT = re.compile(
-    r"(?:[А-ЯЁа-яё]+[A-Za-z]|[A-Za-z]+[А-ЯЁа-яё])\w*",
-)
-
-# Assignment is a statement-level construct only — there are no assignment
-# expressions, so "assignment in condition" is impossible in BSL by design.
-
-_RE_BREAK = re.compile(r"^\s*(?:Прервать|Break)\s*;", re.IGNORECASE)
-
-_RE_CONTINUE = re.compile(r"^\s*(?:Продолжить|Continue)\s*;", re.IGNORECASE)
-
-_RE_HARDCODED_PATH = re.compile(
-    r'"(?:[A-Za-z]:\\|/(?:home|usr|etc|var|opt|tmp)/)[^"]*"',
-    re.IGNORECASE,
-)
-
-# Loop opening / closing for QueryInLoop and TooDeepNesting tracking
-_RE_LOOP_FOR = re.compile(
-    r"^\s*(?:Для|For|ДляКаждого|ForEach)\b",
-    re.IGNORECASE,
-)
-_RE_LOOP_ENDDO = re.compile(r"^\s*(?:КонецЦикла|EndDo)\b", re.IGNORECASE)
-
-_RE_SQL_SELECT = re.compile(r"(?:ВЫБРАТЬ|SELECT)\b", re.IGNORECASE)
-
-_RE_EVAL = re.compile(r"\b(?:Вычислить|Eval)\s*\(", re.IGNORECASE)
-
-_RE_SLEEP = re.compile(r"\b(?:Приостановить|Sleep)\s*\(", re.IGNORECASE)
-
-_RE_THEN = re.compile(r"\b(?:Тогда|Then)\s*$", re.IGNORECASE)
-
-
-def _regex_line_has_empty_then_branch(lines: list[str], then_line_idx: int) -> bool:
-    """True if this line ends a condition with ``Тогда`` and the branch body is empty (regex fallback)."""
-    if then_line_idx < 0 or then_line_idx >= len(lines):
-        return False
-    line = lines[then_line_idx]
-    if not _RE_THEN.search(line):
-        return False
-    if line.strip().startswith("//"):
-        return False
-    n = len(lines)
-    next_idx = then_line_idx + 1
-    while next_idx < n and (
-        not lines[next_idx].strip() or lines[next_idx].strip().startswith("//")
-    ):
-        next_idx += 1
-    if next_idx >= n:
-        return False
-    return bool(
-        _RE_ENDIF.match(lines[next_idx])
-        or _RE_ELSEIF.match(lines[next_idx])
-        or _RE_ELSE.match(lines[next_idx])
-    )
-
-
-_RE_COMMENT_ONLY_LINE = re.compile(r"^\s*//")
-
-# BSL131 — EmptyRegion: #Область / #КонецОбласти markers (line-level, no name group)
-_RE_REGION_OPEN_LINE = re.compile(r"^\s*#(?:Область|Region)\b", re.IGNORECASE)
-_RE_REGION_CLOSE_LINE = re.compile(r"^\s*#(?:КонецОбласти|EndRegion)\b", re.IGNORECASE)
-
 _RE_STRING_LITERAL = re.compile(r'(?<![A-Za-zА-ЯЁа-яё0-9_])"((?:[^"]|"")*)"')
-
-_RE_PARAM_HAS_DEFAULT = re.compile(r"=")
-
-_RE_NESTED_CALL = re.compile(r"\w+\s*\([^)]*\w+\s*\(")
-
-_RE_NO_SPACE_BEFORE_COMMENT = re.compile(r"\S//")
-
-_RE_FIND_BY_DESCRIPTION = re.compile(
-    r"\b(?:НайтиПоНаименованию|FindByDescription"
-    r"|НайтиПоКоду|FindByCode"
-    r"|НайтиПоРеквизиту|FindByAttribute)\s*\(",
-    re.IGNORECASE,
-)
-
-_RE_DEBUG_OUTPUT = re.compile(
-    r"\b(?:Сообщить|Message|Предупреждение|Warning)\s*\(",
-    re.IGNORECASE,
-)
-
-_RE_RETURN_TRUE = re.compile(
-    r"^\s*(?:Возврат|Return)\s+(?:Истина|True)\s*;",
-    re.IGNORECASE,
-)
-_RE_RETURN_FALSE = re.compile(
-    r"^\s*(?:Возврат|Return)\s+(?:Ложь|False)\s*;",
-    re.IGNORECASE,
-)
-
-_RE_IF_COND = re.compile(
-    r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\s+(.*?)\s+(?:Тогда|Then)\s*$",
-    re.IGNORECASE,
-)
-
-_RE_RETURN_PAREN = re.compile(
-    r"^\s*(?:Возврат|Return)\s+\((?!\s*(?:Новый|New)\b)",
-    re.IGNORECASE,
-)
-
-_RE_MULTI_CONCAT = re.compile(r'"[^"]*"\s*\+[^+;]+\+[^+;]+\+')
-
-_RE_UI_CALL = re.compile(
-    r"\b(?:ОткрытьФорму|OpenForm|ПоказатьПредупреждение|ShowMessageBox"
-    r"|ПоказатьВопрос|ShowQueryBox)\s*\(",
-    re.IGNORECASE,
-)
 
 # API region names — methods here must have Export
 _API_REGION_NAMES = frozenset(
@@ -3534,163 +2950,6 @@ def _ts_method_call_arg_exprs(node: Any) -> list[Any]:
     return [child for child in getattr(args, "children", []) or [] if child.type == "expression"]
 
 
-# BSL218 — BSLLS MissingTemporaryFileDeletion (global GetTempFileName + default delete methods)
-_BSL218_GET_TEMP_NAMES = frozenset({"получитьимявременногофайла", "gettempfilename"})
-_BSL218_DELETE_NAMES = frozenset(
-    {
-        "удалитьфайлы",
-        "deletefiles",
-        "начатьудалениефайлов",
-        "begindeletingfiles",
-        "переместитьфайл",
-        "movefile",
-    }
-)
-_BSL218_SKIP_PROC_CHILD = frozenset(
-    {
-        "PROCEDURE_KEYWORD",
-        "FUNCTION_KEYWORD",
-        "EXPORT_KEYWORD",
-        "identifier",
-        "parameters",
-        "ENDPROCEDURE_KEYWORD",
-        "ENDFUNCTION_KEYWORD",
-    }
-)
-
-
-def _ts_bsl218_skip_error_ancestor(node: Any) -> Any:
-    p = node
-    while p is not None and getattr(p, "type", None) == "ERROR":
-        p = getattr(p, "parent", None)
-    return p
-
-
-def _ts_assignment_lvalue_text(assign: Any) -> str | None:
-    """Left-hand side source text for ``assignment_statement`` (BSLLS ``lValue``)."""
-    if getattr(assign, "type", None) != "assignment_statement":
-        return None
-    parts: list[str] = []
-    for child in getattr(assign, "children", []) or []:
-        if getattr(child, "type", None) == "=":
-            break
-        parts.append(_ts_node_text(child))
-    text = "".join(parts).strip()
-    return text or None
-
-
-def _ts_bsl218_if_then_branch_roots(if_node: Any) -> list[Any]:
-    ch = list(getattr(if_node, "children", []) or [])
-    try:
-        then_i = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == "THEN_KEYWORD")
-    except StopIteration:
-        return []
-    roots: list[Any] = []
-    for j in range(then_i + 1, len(ch)):
-        ct = getattr(ch[j], "type", None)
-        if ct in ("elseif_clause", "else_clause", "ENDIF_KEYWORD"):
-            break
-        roots.append(ch[j])
-    return roots
-
-
-def _ts_bsl218_roots_after_keyword(block_node: Any, keyword_type: str) -> list[Any]:
-    ch = list(getattr(block_node, "children", []) or [])
-    try:
-        ki = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == keyword_type)
-    except StopIteration:
-        return []
-    return ch[ki + 1 :]
-
-
-def _ts_bsl218_loop_body_roots(loop_node: Any) -> list[Any]:
-    ch = list(getattr(loop_node, "children", []) or [])
-    try:
-        do_i = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == "DO_KEYWORD")
-    except StopIteration:
-        return []
-    try:
-        end_i = next(
-            i for i in range(do_i + 1, len(ch)) if getattr(ch[i], "type", None) == "ENDDO_KEYWORD"
-        )
-    except StopIteration:
-        return []
-    return ch[do_i + 1 : end_i]
-
-
-def _ts_bsl218_try_body_roots(try_node: Any) -> list[Any]:
-    ch = list(getattr(try_node, "children", []) or [])
-    try:
-        try_i = next(i for i, c in enumerate(ch) if getattr(c, "type", None) == "TRY_KEYWORD")
-    except StopIteration:
-        return []
-    end_i = len(ch)
-    for j in range(try_i + 1, len(ch)):
-        if getattr(ch[j], "type", None) in ("EXCEPT_KEYWORD", "ENDTRY_KEYWORD"):
-            end_i = j
-            break
-    return ch[try_i + 1 : end_i]
-
-
-def _ts_bsl218_code_block_roots(stmt_parent: Any) -> list[Any] | None:
-    """Map BSLLS ``codeBlock`` to tree-sitter subtree roots (per-branch, like BSLLS)."""
-    t = getattr(stmt_parent, "type", None)
-    if t in ("procedure_definition", "function_definition"):
-        return [
-            c
-            for c in getattr(stmt_parent, "children", []) or []
-            if getattr(c, "type", None) not in _BSL218_SKIP_PROC_CHILD
-        ]
-    if t == "source_file":
-        return [
-            c
-            for c in getattr(stmt_parent, "children", []) or []
-            if getattr(c, "type", None) != "preprocessor"
-        ]
-    if t == "if_statement":
-        return _ts_bsl218_if_then_branch_roots(stmt_parent)
-    if t == "elseif_clause":
-        return _ts_bsl218_roots_after_keyword(stmt_parent, "THEN_KEYWORD")
-    if t == "else_clause":
-        return _ts_bsl218_roots_after_keyword(stmt_parent, "ELSE_KEYWORD")
-    if t in ("while_statement", "for_statement", "for_each_statement"):
-        return _ts_bsl218_loop_body_roots(stmt_parent)
-    if t == "try_statement":
-        return _ts_bsl218_try_body_roots(stmt_parent)
-    return None
-
-
-def _ts_bsl218_subtree_has_deletion_after_line(
-    root: Any,
-    line_texts: list[str],
-    after_line_1based: int,
-    var_name: str,
-) -> bool:
-    """True if a default BSLLS deletion global call passes *var_name* after *after_line*."""
-    var_cf = var_name.casefold()
-    for call in _ts_global_method_calls(root, line_texts):
-        if call["line"] <= after_line_1based:
-            continue
-        if str(call["name"]).casefold() not in _BSL218_DELETE_NAMES:
-            continue
-        for expr in _ts_method_call_arg_exprs(call["node"]):
-            if _ts_node_text(expr).strip().casefold() == var_cf:
-                return True
-    return False
-
-
-def _ts_bsl218_block_has_deletion(
-    roots: list[Any],
-    line_texts: list[str],
-    after_line_1based: int,
-    var_name: str,
-) -> bool:
-    for r in roots:
-        if _ts_bsl218_subtree_has_deletion_after_line(r, line_texts, after_line_1based, var_name):
-            return True
-    return False
-
-
 # BSL051 — tree-sitter nodes that close or branch control flow (not executable body).
 # Matches keyword roles in tree-sitter block statements (if/while/for/try).
 _BSL051_BLOCK_DELIMITER_TYPES = frozenset(
@@ -3706,33 +2965,9 @@ _BSL051_BLOCK_DELIMITER_TYPES = frozenset(
     }
 )
 
-# Regex fallback when tree-sitter is unavailable (_RegexTree) or the tree has ERROR nodes.
-_RE_BSL051_DELIMITER_FALLBACK = re.compile(
-    r"^\s*(?:КонецЕсли|EndIf|КонецЦикла|EndDo"
-    r"|КонецПопытки|EndTry"
-    r"|КонецФункции|EndFunction|КонецПроцедуры|EndProcedure"
-    r"|Исключение|Except|Иначе|Else|ИначеЕсли|ElsIf)\b",
-    re.IGNORECASE,
-)
-
 # Pre-compiled patterns shared across hot-path rules (avoid per-call re.compile overhead).
 _RE_LINE_COMMENT = re.compile(r"^\s*//")
 _RE_DOUBLE_QUOTED_STRING = re.compile(r'"[^"]*"')
-# BSL029: single-quoted date/string literals (remove before scanning for magic numbers)
-_RE_SINGLE_QUOTED_STRING = re.compile(r"'[^']*'")
-# BSL029: simple direct assignment Var = N; — BSLLS does not flag these
-_RE_BSL029_SIMPLE_ASSIGN = re.compile(r"^\s*[\w\.]+\s*=\s*-?[0-9]+(?:\.[0-9]+)?\s*;?\s*$")
-# BSL029: For loop header — Для X = N По M Цикл — BSLLS does not flag loop bounds
-_RE_BSL029_FOR_HEADER = re.compile(r"^\s*(?:Для|For)\b", re.IGNORECASE)
-# BSL029: ternary operator ?(cond, N, M) — BSLLS does not flag numeric values in ternary
-# because they are TernaryOperatorContext, not CallParamContext
-_RE_BSL029_TERNARY = re.compile(r"\?\s*\((?P<condition>[^,]+),(?P<true>[^,]*),(?P<false>[^)]*)\)")
-# BSL029: Structure.Вставить("key", value) — BSLLS skips second param when first is a
-# string literal (confirmed Structure type). Heuristic: first param is string → structure value.
-_RE_BSL029_STRUCT_INSERT = re.compile(
-    r'\.(?:Вставить|Insert)\s*\(\s*(?:"[^"]*"|\'[^\']*\')\s*,\s*([^)]+)\)',
-    re.IGNORECASE,
-)
 
 
 def _collect_bsl051_delimiter_lines_from_tree(root: Any) -> set[int]:
@@ -3752,10 +2987,9 @@ def _collect_bsl051_delimiter_lines_from_tree(root: Any) -> set[int]:
 
 def _bsl051_delimiter_lines_for_tree(tree: Any) -> set[int] | None:
     """
-    Delimiter line set from the CST, or None to use :data:`_RE_BSL051_DELIMITER_FALLBACK`.
+    Delimiter line set from the CST.
 
-    None when not a tree-sitter parse or when the tree contains ERROR/missing nodes
-    (structure is unreliable).
+    None means the tree is not suitable for BSL051 structural analysis.
     """
     root = getattr(tree, "root_node", None)
     if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
@@ -3885,7 +3119,6 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
                     end_character=end[1],
                     severity=Severity.ERROR,
                     code="BSL009",
-                    message="Удалите бесполезное присваивание переменной самой себе",
                 )
             )
         for c in getattr(node, "children", []) or []:

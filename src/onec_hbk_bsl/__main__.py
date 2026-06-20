@@ -294,12 +294,10 @@ def _run_init(target_dir: str) -> None:
 # onec-hbk-bsl.toml — configuration for onec-hbk-bsl
 # See: https://github.com/mussolene/1c_hbk_bsl
 
-# Rules to add to the product default set
+# Optional exact rule set. Omit to run all public rules.
 # select = ["BSL001", "BSL002"]
 
-# Diagnostics use the product default rule set.
-
-# Rules to always skip
+# Rules to always skip.
 ignore = []
 
 # Directories / file patterns to exclude

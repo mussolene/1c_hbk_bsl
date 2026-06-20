@@ -153,12 +153,11 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     parameter_name_from_declaration_fragment,
     split_commas_outside_double_quotes,
 )
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
-    RULE_METADATA,
     DiagnosticEngine,
     Severity,
-    display_name_for_rule_code,
     lsp_compat_severity,
     parse_env_rule_filters,
 )
@@ -182,11 +181,7 @@ from onec_hbk_bsl.indexer.metadata_registry import (
     METADATA_ROOT_NAME_CF,
 )
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-from onec_hbk_bsl.lsp.diagnostics_ru import (
-    localize_rule_description,
-    localize_rule_title,
-    translate_message,
-)
+from onec_hbk_bsl.lsp.diagnostics_ru import translate_message
 from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -256,7 +251,7 @@ def _internal_rule_code_from_lsp_diagnostic(diag: LspDiagnostic) -> str:
 
 def _lsp_diagnostic_code_fields(internal_code: str) -> tuple[str, CodeDescription | None]:
     """Public ``code`` for Problems (BSLLS-style name) + optional URN for internal id."""
-    public = display_name_for_rule_code(internal_code)
+    public = get_rule(internal_code).name
     if internal_code == "BSL-DEAD":
         public = "UnusedPrivateMethod"
     elif internal_code == "BSL-LSP-ERR":
@@ -772,7 +767,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
                 message=msg,
                 source=_lsp_diagnostic_source(code),
                 related_information=related,
-                data={"bsl": code, "rule_description": localize_rule_description(code)},
+                data={"bsl": code, "rule_description": get_rule(code).description},
             )
         )
 
@@ -3452,9 +3447,8 @@ def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[Code
             line_end_char = len(line_text)
             # Match diagnostic line indent (tabs/spaces as in source), not N spaces.
             pad = line_text[: len(line_text) - len(line_text.lstrip())]
-            rule_name = RULE_METADATA.get(code, {}).get("name", "")
-            rule_desc_ru = localize_rule_title(code)
-            display_name = rule_desc_ru or rule_name or code
+            rule = get_rule(code)
+            display_name = rule.description or rule.name or code
 
             # ── 1. Игнорировать строку (noqa) ──────────────────────────────
             # If the line already has a noqa comment, append the code to it.

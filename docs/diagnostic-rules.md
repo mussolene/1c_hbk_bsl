@@ -26,14 +26,14 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL005` | `UsingHardcodeNetworkAddress` | Yes | WARNING | Хранение ip-адресов в коде | Using hardcode ip addresses in code | security, hardware-related |
 | `BSL006` | `UsingHardcodePath` | Yes | WARNING | Хранение путей к файлам в коде | Using hardcode file paths in code | security, hardware-related |
 | `BSL007` | `UnusedLocalVariable` | Yes | WARNING | Неиспользуемая локальная переменная | Unused local variable | unused |
-| `BSL008` | `TooManyReturns` | No | WARNING | Метод не должен содержать много возвратов | Methods should not have too many return statements | brain-overload |
+| `BSL008` | `TooManyReturns` | Yes | WARNING | Метод не должен содержать много возвратов | Methods should not have too many return statements | brain-overload |
 | `BSL009` | `SelfAssign` | Yes | WARNING | Присвоение переменной самой себе | Variable is assigned to itself | suspicious |
 | `BSL011` | `CognitiveComplexity` | Yes | WARNING | Когнитивная сложность | Cognitive complexity | brain-overload, complexity |
 | `BSL012` | `UsingHardcodeSecretInformation` | Yes | ERROR | Хранение конфиденциальной информации в коде | Storing confidential information in code | security, credentials |
 | `BSL013` | `CommentedCode` | Yes | WARNING | Закомментированный фрагмент кода | Commented out code | unused |
 | `BSL014` | `LineLength` | Yes | INFORMATION | Ограничение на длину строки | Line Length limit | design |
 | `BSL015` | `NumberOfOptionalParams` | Yes | WARNING | Ограничение на количество не обязательных параметров метода | Limit number of optional parameters in method | design, brain-overload |
-| `BSL016` | `NonStandardRegion` | No | INFORMATION | Нестандартные разделы модуля | Non-standard region of module | convention |
+| `BSL016` | `NonStandardRegion` | Yes | INFORMATION | Нестандартные разделы модуля | Non-standard region of module | convention |
 | `BSL017` | `CommandModuleExportMethods` | Yes | WARNING | Экспортные методы в модулях команд и общих команд | Export methods in command and general command modules | design |
 | `BSL019` | `CyclomaticComplexity` | Yes | WARNING | Цикломатическая сложность | Cyclomatic complexity | brain-overload, complexity |
 | `BSL020` | `NestedStatements` | Yes | WARNING | Управляющие конструкции не должны быть вложены слишком глубоко | Control flow statements should not be nested too deep | brain-overload |
@@ -54,7 +54,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL039` | `NestedTernaryOperator` | Yes | WARNING | Вложенный тернарный оператор | Nested ternary operator | brain-overload, readability |
 | `BSL040` | `UsingThisForm` | Yes | INFORMATION | Использование устаревшего свойства "ЭтаФорма" | Using deprecated property "ThisForm" | design, ui |
 | `BSL041` | `DeprecatedMessage` | Yes | WARNING | Ограничение на использование устаревшего метода "Сообщить" | Restriction on the use of deprecated "Message" method | deprecated, ui |
-| `BSL042` | `UnusedLocalMethod` | No | WARNING | Неиспользуемый локальный метод | Unused local method | design, api |
+| `BSL042` | `UnusedLocalMethod` | Yes | WARNING | Неиспользуемый локальный метод | Unused local method | design, api |
 | `BSL047` | `MagicDate` | Yes | INFORMATION | Магические даты | Magic dates | design, date-time |
 | `BSL051` | `UnreachableCode` | Yes | WARNING | Недостижимый код | Unreachable Code | suspicious, dead-code |
 | `BSL052` | `IdenticalExpressions` | Yes | WARNING | Одинаковые выражения слева и справа от "foo" оператора | There are identical sub-expressions to the left and to the right of the "foo" operator | suspicious, logic |
@@ -70,11 +70,11 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL131` | `DuplicateRegion` | Yes | INFORMATION | Повторяющиеся разделы модуля | Duplicate regions | style |
 | `BSL148` | `AllFunctionPathMustHaveReturn` | Yes | ERROR | Все возможные пути выполнения функции должны содержать оператор Возврат | All execution paths of a function must have a Return statement | error-handling, correctness |
 | `BSL149` | `AssignAliasFieldsInQuery` | Yes | INFORMATION | Назначение псевдонимов выбранным полям в запросе | Assigning aliases to selected fields in a query | convention, query |
-| `BSL150` | `BadWords` | No | WARNING | Запрещенные слова | Prohibited words | convention |
+| `BSL150` | `BadWords` | Yes | WARNING | Запрещенные слова | Prohibited words | convention |
 | `BSL151` | `BeginTransactionBeforeTryCatch` | Yes | ERROR | Нарушение правил работы с транзакциями для метода 'НачатьТранзакцию' | Violating transaction rules for the 'BeginTransaction' method | standard |
 | `BSL152` | `CachedPublic` | Yes | WARNING | Кеширование программного интерфейса | Cached public methods | design, performance |
 | `BSL153` | `CanonicalSpellingKeywords` | Yes | INFORMATION | Каноническое написание ключевых слов | Canonical keyword writing | convention, style |
-| `BSL154` | `CodeAfterAsyncCall` | No | WARNING | После вызова асинхронного метода есть строки кода | Lines of code after the asynchronous method call | async, correctness |
+| `BSL154` | `CodeAfterAsyncCall` | Yes | WARNING | После вызова асинхронного метода есть строки кода | Lines of code after the asynchronous method call | async, correctness |
 | `BSL155` | `CodeBlockBeforeSub` | Yes | ERROR | Определения методов должны размещаться перед операторами тела модуля | Method definitions must be placed before the module body operators | error |
 | `BSL156` | `CodeOutOfRegion` | Yes | INFORMATION | Код расположен вне области | Code out of region | convention, structure |
 | `BSL157` | `CommitTransactionOutsideTryCatch` | Yes | ERROR | Нарушение правил работы с транзакциями для метода 'ЗафиксироватьТранзакцию' | Violating transaction rules for the 'CommitTransaction' method | transaction, error-handling |
@@ -90,11 +90,11 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL167` | `CommonModuleNameServerCall` | Yes | INFORMATION | Пропущен постфикс "ВызовСервера" | Missed postfix "ServerCall" | convention, naming, module |
 | `BSL168` | `CommonModuleNameWords` | Yes | INFORMATION | Нерекомендуемое имя общего модуля | Unrecommended common module name | convention, naming, module |
 | `BSL169` | `CompilationDirectiveLost` | Yes | ERROR | Директивы компиляции методов | Methods compilation directive | correctness, directive |
-| `BSL170` | `CompilationDirectiveNeedLess` | No | INFORMATION | Лишняя директива компиляции | Needless compilation directive | redundant, directive |
+| `BSL170` | `CompilationDirectiveNeedLess` | Yes | INFORMATION | Лишняя директива компиляции | Needless compilation directive | redundant, directive |
 | `BSL171` | `CrazyMultilineString` | Yes | INFORMATION | Безумные многострочные литералы | Crazy multiline literals | style, readability |
 | `BSL172` | `DataExchangeLoading` | Yes | WARNING | Отсутствует проверка признака ОбменДанными.Загрузка в обработчике событий объекта | There is no check for the attribute DataExchange.Load in the object's event handler | correctness, data-exchange |
 | `BSL173` | `DeletingCollectionItem` | Yes | ERROR | Удаление элемента при обходе коллекции посредством оператора "Для каждого ... Из ... Цикл" | Deleting an item when iterating through collection using the operator "For each ... In ... Do" | correctness, loop |
-| `BSL174` | `DenyIncompleteValues` | No | WARNING | Запрет незаполненных значений у измерений регистров | Deny incomplete values for dimensions | transaction, error-handling |
+| `BSL174` | `DenyIncompleteValues` | Yes | WARNING | Запрет незаполненных значений у измерений регистров | Deny incomplete values for dimensions | transaction, error-handling |
 | `BSL175` | `DeprecatedAttributes8312` | Yes | INFORMATION | Устаревшие объекты платформы 8.3.12 | Deprecated 8.3.12 platform features. | deprecated, compatibility |
 | `BSL176` | `DeprecatedMethodCall` | Yes | INFORMATION | Устаревшие методы не должны использоваться | Deprecated methods should not be used | deprecated |
 | `BSL177` | `DeprecatedMethods8310` | Yes | INFORMATION | Использование устаревшего метода клиентского приложения | Deprecated client application method. | deprecated, compatibility |
@@ -102,7 +102,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL179` | `DeprecatedTypeManagedForm` | Yes | WARNING | Устаревшее использование типа "УправляемаяФорма" | Deprecated ManagedForm type | deprecated, ui |
 | `BSL180` | `DisableSafeMode` | Yes | WARNING | Отключение безопасного режима | Disable safe mode | security |
 | `BSL181` | `DuplicatedInsertionIntoCollection` | Yes | WARNING | Повторное добавление/вставка значений в коллекцию | Duplicate adding or pasting a value to a collection | correctness, suspicious |
-| `BSL182` | `ExcessiveAutoTestCheck` | No | INFORMATION | Избыточная проверка параметра АвтоТест | Excessive AutoTest Check | testing |
+| `BSL182` | `ExcessiveAutoTestCheck` | Yes | INFORMATION | Избыточная проверка параметра АвтоТест | Excessive AutoTest Check | testing |
 | `BSL183` | `ExecuteExternalCode` | Yes | WARNING | Выполнение произвольного кода на сервере | Executing of external code on the server | security |
 | `BSL184` | `ExecuteExternalCodeInCommonModule` | Yes | WARNING | Выполнение произвольного кода в общем модуле на сервере | Executing of external code in a common module on the server | security, module |
 | `BSL185` | `ExternalAppStarting` | Yes | WARNING | Запуск внешних приложений | External applications starting | security |
@@ -131,7 +131,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL208` | `LatinAndCyrillicSymbolInWord` | Yes | WARNING | Смешивание латинских и кириллических символов в одном идентификаторе | Mixing Latin and Cyrillic characters in one identifier | suspicious, naming |
 | `BSL209` | `LogicalOrInJoinQuerySection` | Yes | WARNING | Логическое 'ИЛИ' в соединениях запроса | Logical 'OR' in 'JOIN' query section | query, performance |
 | `BSL210` | `LogicalOrInTheWhereSectionOfQuery` | Yes | WARNING | Использование логического "ИЛИ" в секции "ГДЕ" запроса | Using a logical "OR" in the "WHERE" section of a query | query, performance, standard |
-| `BSL211` | `MetadataObjectNameLength` | No | WARNING | Имена объектов метаданных не должны превышать допустимой длины наименования | Metadata object names must not exceed the allowed length | naming, convention |
+| `BSL211` | `MetadataObjectNameLength` | Yes | WARNING | Имена объектов метаданных не должны превышать допустимой длины наименования | Metadata object names must not exceed the allowed length | naming, convention |
 | `BSL212` | `MissedRequiredParameter` | Yes | ERROR | Пропущен обязательный параметр метода | Missed a required method parameter | correctness |
 | `BSL213` | `MissingCommonModuleMethod` | Yes | ERROR | Обращение к отсутствующему методу общего модуля | Referencing a missing common module method | correctness, module |
 | `BSL214` | `MissingEventSubscriptionHandler` | Yes | ERROR | Отсутствует обработчик подписки на событие | Event subscription handler missing | correctness, events |
@@ -152,7 +152,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL229` | `OrdinaryAppSupport` | Yes | WARNING | Поддержка обычного приложения | Ordinary application support | compatibility, ui |
 | `BSL230` | `PairingBrokenTransaction` | Yes | ERROR | Нарушение парности использования методов "НачатьТранзакцию()" и "ЗафиксироватьТранзакцию()" / "ОтменитьТранзакцию()" | Violation of pairing using methods "BeginTransaction()" & "CommitTransaction()" / "RollbackTransaction()" | transaction, correctness |
 | `BSL231` | `PrivilegedModuleMethodCall` | Yes | WARNING | Обращение к методам привилегированных модулей | Accessing privileged module methods | security, access-control |
-| `BSL232` | `ProtectedModule` | No | INFORMATION | Защищенные модули | Protected modules | design |
+| `BSL232` | `ProtectedModule` | Yes | INFORMATION | Защищенные модули | Protected modules | design |
 | `BSL233` | `PublicMethodsDescription` | Yes | INFORMATION | Все методы программного интерфейса должны иметь описание | All public methods must have a description | documentation, api |
 | `BSL234` | `QueryNestedFieldsByDot` | Yes | WARNING | Разыменование ссылочных полей запроса через точку | Getting objects nested fields data by dot in database query text | query, performance |
 | `BSL235` | `QueryParseError` | Yes | WARNING | Ошибка разбора текста запроса | Query text parsing error | query, correctness |
@@ -161,7 +161,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL238` | `RefOveruse` | Yes | INFORMATION | Избыточное использование "Ссылка" в запросе | Overuse "Reference" in a query | performance, readability |
 | `BSL239` | `ReservedParameterNames` | Yes | WARNING | Зарезервированные имена параметров | Reserved parameter names | naming, suspicious |
 | `BSL240` | `RewriteMethodParameter` | Yes | WARNING | Перезапись параметров метода | Rewrite method parameter | suspicious, correctness |
-| `BSL241` | `SameMetadataObjectAndChildNames` | No | WARNING | Совпадает имя объекта метаданного и его дочернего | Same metadata object and child name | naming, design |
+| `BSL241` | `SameMetadataObjectAndChildNames` | Yes | WARNING | Совпадает имя объекта метаданного и его дочернего | Same metadata object and child name | naming, design |
 | `BSL242` | `ScheduledJobHandler` | Yes | ERROR | Обработчик регламентного задания | Scheduled job handler | correctness, scheduled-jobs |
 | `BSL243` | `SelfInsertion` | Yes | ERROR | Вставка коллекции в саму себя | Insert a collection into itself | correctness, suspicious |
 | `BSL244` | `ServerCallsInFormEvents` | Yes | WARNING | Серверные вызовы в событиях форм | Server calls in form events | correctness, ui, performance |
@@ -171,7 +171,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL248` | `SeveralCompilerDirectives` | Yes | ERROR | Ошибочное указание нескольких директив компиляции | Erroneous indication of several compilation directives | correctness, directive |
 | `BSL249` | `StyleElementConstructors` | Yes | ERROR | Конструктор элемента стиля | Style element constructor | ui, design |
 | `BSL250` | `TempFilesDir` | Yes | WARNING | Вызов функции КаталогВременныхФайлов() | TempFilesDir() method call | standard, badpractice |
-| `BSL251` | `TernaryOperatorUsage` | No | INFORMATION | Использование тернарного оператора | Ternary operator usage | style, readability |
+| `BSL251` | `TernaryOperatorUsage` | Yes | INFORMATION | Использование тернарного оператора | Ternary operator usage | style, readability |
 | `BSL252` | `ThisObjectAssign` | Yes | ERROR | Присвоение значения свойству ЭтотОбъект | ThisObject assign | correctness, suspicious |
 | `BSL253` | `TimeoutsInExternalResources` | Yes | WARNING | Таймауты при работе с внешними ресурсами | Timeouts working with external resources | robustness, performance |
 | `BSL254` | `TransferringParametersBetweenClientAndServer` | Yes | WARNING | Передача параметров между клиентом и сервером | Transferring parameters between the client and the server | performance, design |
@@ -203,8 +203,8 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 ## Maintenance
 
 Regenerate this file after changing `RULE_METADATA`,
-`RULE_DESCRIPTIONS_RU`, or default-enabled behavior:
+`RULE_DESCRIPTIONS_RU`, or diagnostic default behavior:
 
 ```bash
-python3 scripts/build_diagnostic_rules_doc.py
+./.venv/bin/python scripts/build_diagnostic_rules_doc.py
 ```

@@ -64,27 +64,18 @@ class TestBslLanguageServerInit:
         ls = BslLanguageServer()
         assert isinstance(ls.diagnostics_engine, DiagnosticEngine)
 
-    def test_server_defaults_diagnostics_to_product_rule_set(
+    def test_server_defaults_diagnostics_to_all_public_rules(
         self, tmp_path: Path, monkeypatch: object
     ) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
-        from onec_hbk_bsl.analysis.bslls_parity import bslls_rule_codes
-        from onec_hbk_bsl.analysis.diagnostics import _BSLLS_NAME_TO_CODE
+        from onec_hbk_bsl.analysis.diagnostics import _PUBLIC_RULE_CODES
         from onec_hbk_bsl.lsp.server import BslLanguageServer
 
         ls = BslLanguageServer()
-        expected = bslls_rule_codes(
-            _BSLLS_NAME_TO_CODE,
-            default_disabled_codes=ls.diagnostics_engine.DEFAULT_DISABLED,
-        )
-        expected = set(expected) | set(ls.diagnostics_engine.PRODUCT_DEFAULT_ENABLED)
-        assert ls.diagnostics_engine._select == set(expected)
-        assert "BSL156" in ls.diagnostics_engine._select
-        assert "BSL236" in ls.diagnostics_engine._select
-        assert "BSL187" in ls.diagnostics_engine._select
-        assert "BSL188" in ls.diagnostics_engine._select
-        assert "BSL203" in ls.diagnostics_engine._select
-        assert "BSL264" in ls.diagnostics_engine._select
+        assert ls.diagnostics_engine._select is None
+        assert ls.diagnostics_engine._enabled_rule_codes() == frozenset(_PUBLIC_RULE_CODES)
+        for code in ("BSL156", "BSL236", "BSL187", "BSL188", "BSL203", "BSL264"):
+            assert ls.diagnostics_engine._rule_enabled(code)
 
     def test_server_has_empty_docs_cache(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))

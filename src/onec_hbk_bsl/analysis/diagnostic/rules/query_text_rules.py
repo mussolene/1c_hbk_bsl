@@ -42,11 +42,10 @@ def _bsl235_diag_from_sdbl_tree(path: str, block: Any) -> Any | None:
         end_character=end_char,
         severity=_diag.Severity.WARNING,
         code="BSL235",
-        message="Текст запроса должен быть корректным и открываться конструктором запросов",
     )
 
 
-def _bsl235_diag_for_query_block(
+def _bsl235_diag_from_content_lines(
     path: str, content_lines: list[tuple[int, int, str, str, bool]]
 ) -> Any:
     _diag = _diag_module()
@@ -60,11 +59,10 @@ def _bsl235_diag_for_query_block(
         end_character=last_content_base + len(last_head),
         severity=_diag.Severity.WARNING,
         code="BSL235",
-        message="Текст запроса должен быть корректным и открываться конструктором запросов",
     )
 
 
-def _query_block_has_sdbl_tree(block: Any) -> bool:
+def _query_block_has_root(block: Any) -> bool:
     tree = getattr(block, "sdbl_tree", None)
     return getattr(tree, "root_node", None) is not None
 
@@ -122,11 +120,11 @@ def run_bsl220_235_269_query_text_diagnostics(
             ) or _has_plain_tail_parse_error(content_lines)
             sdbl_diag = _bsl235_diag_from_sdbl_tree(path, block)
             if has_legacy_parse_error and sdbl_diag is not None:
-                diags.append(_bsl235_diag_for_query_block(path, content_lines))
-            elif _query_block_has_sdbl_tree(block):
+                diags.append(_bsl235_diag_from_content_lines(path, content_lines))
+            elif _query_block_has_root(block):
                 pass
             elif has_legacy_parse_error:
-                diags.append(_bsl235_diag_for_query_block(path, content_lines))
+                diags.append(_bsl235_diag_from_content_lines(path, content_lines))
 
         for line_no, content_base, content, head, _ended_query in content_lines:
             if "BSL220" in enabled:
@@ -146,7 +144,6 @@ def run_bsl220_235_269_query_text_diagnostics(
                             end_character=content_base + multi_match.end(),
                             severity=_diag.Severity.INFORMATION,
                             code="BSL220",
-                            message="Многострочная строка внутри текста запроса",
                         )
                     )
 
@@ -161,10 +158,8 @@ def run_bsl220_235_269_query_text_diagnostics(
                             end_character=content_base + match.end(),
                             severity=_diag.Severity.INFORMATION,
                             code="BSL269",
-                            message="Оператор ПОДОБНО может привести к полному сканированию таблицы",
                         )
                     )
-
     if query_blocks is None:
         for start_idx, block_lines in _diag._iter_query_text_blocks(lines):
             content_lines = list(_diag._iter_query_text_content_lines(start_idx, block_lines))
@@ -196,10 +191,6 @@ def run_bsl220_235_269_query_text_diagnostics(
                         end_character=content_base + len(head),
                         severity=_diag.Severity.WARNING,
                         code="BSL235",
-                        message=(
-                            "Текст запроса должен быть корректным и открываться "
-                            "конструктором запросов"
-                        ),
                     )
                 )
 
@@ -221,7 +212,6 @@ def run_bsl220_235_269_query_text_diagnostics(
                                 end_character=content_base + multi_match.end(),
                                 severity=_diag.Severity.INFORMATION,
                                 code="BSL220",
-                                message="Многострочная строка внутри текста запроса",
                             )
                         )
 
@@ -236,7 +226,6 @@ def run_bsl220_235_269_query_text_diagnostics(
                                 end_character=content_base + match.end(),
                                 severity=_diag.Severity.INFORMATION,
                                 code="BSL269",
-                                message="Оператор ПОДОБНО может привести к полному сканированию таблицы",
                             )
                         )
 
@@ -286,7 +275,6 @@ def run_bsl191_201_query_text_diagnostics(
                             end_character=content_base + match.end(),
                             severity=_diag.Severity.WARNING,
                             code="BSL191",
-                            message="Полное внешнее соединение в запросе",
                         )
                     )
 
@@ -311,7 +299,6 @@ def run_bsl191_201_query_text_diagnostics(
                             end_character=content_base + match.end(),
                             severity=_diag.Severity.WARNING,
                             code="BSL201",
-                            message="Некорректное использование ПОДОБНО в запросе",
                         )
                     )
     return diags
@@ -409,7 +396,6 @@ def run_bsl206_207_209_query_join_diagnostics(
                                 end_character=content_base + subquery_match.end(),
                                 severity=_diag.Severity.WARNING,
                                 code="BSL206",
-                                message="Соединение с подзапросом в запросе",
                             )
                         )
                 if "BSL207" in enabled:
@@ -432,10 +418,8 @@ def run_bsl206_207_209_query_join_diagnostics(
                                 end_character=end_character,
                                 severity=_diag.Severity.WARNING,
                                 code="BSL207",
-                                message="Не следует использовать соединения с виртуальными таблицами",
                             )
                         )
-
             pending_datasource = bool(
                 re.search(r"\b(?:ИЗ|FROM)\s*$", head, re.IGNORECASE)
                 or re.search(r"\b(?:СОЕДИНЕНИЕ|JOIN)\s*$", head, re.IGNORECASE)
@@ -470,8 +454,6 @@ def run_bsl206_207_209_query_join_diagnostics(
                                 end_character=content_base + or_match.end(),
                                 severity=_diag.Severity.WARNING,
                                 code="BSL209",
-                                message="Обнаружен оператор 'ИЛИ' в условии соединения",
                             )
                         )
-
     return diags

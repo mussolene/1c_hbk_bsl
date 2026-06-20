@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from onec_hbk_bsl.analysis.bslls_parity import BSLLS_DEFAULT_DISABLED_NAMES
 from onec_hbk_bsl.analysis.diagnostic.registry import (
     RulePhase,
     build_enabled_invoke_snapshot,
@@ -38,32 +37,14 @@ def test_build_snapshot_respects_engine_select() -> None:
     assert "BSL014" in snap["codes_by_phase"].get("line", [])
 
 
-def test_server_side_export_form_method_is_not_bslls_default_disabled() -> None:
-    assert "ServerSideExportFormMethod" not in BSLLS_DEFAULT_DISABLED_NAMES
-    assert DiagnosticEngine()._rule_enabled("BSL245")
-
-
-def test_high_value_rules_are_default_enabled() -> None:
-    for code in (
-        "BSL187",
-        "BSL188",
-        "BSL189",
-        "BSL196",
-        "BSL203",
-        "BSL213",
-        "BSL214",
-        "BSL231",
-        "BSL244",
-        "BSL246",
-        "BSL253",
-        "BSL261",
-        "BSL264",
-        "BSL274",
-    ):
+def test_all_public_rules_are_default_enabled() -> None:
+    engine = DiagnosticEngine()
+    for code in RULE_METADATA:
         assert DiagnosticEngine()._rule_enabled(code)
+        assert engine._rule_enabled(code)
 
 
-def test_product_default_enabled_rules_do_not_leak_into_explicit_select() -> None:
+def test_explicit_select_runs_only_selected_rules() -> None:
     engine = DiagnosticEngine(select={"BSL014"})
 
     assert engine._rule_enabled("BSL014")

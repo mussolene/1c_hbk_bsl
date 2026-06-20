@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Literal
+
+RuleLocale = Literal["ru", "en"]
 
 
 class Severity(IntEnum):
@@ -22,7 +25,12 @@ class Diagnostic:
     end_character: int
     severity: Severity
     code: str
-    message: str
+
+    @property
+    def message(self) -> str:
+        from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
+
+        return get_rule(self.code).message
 
     def to_dict(self, *, include_rule_name: bool = False) -> dict:
         d = {
@@ -36,13 +44,12 @@ class Diagnostic:
             "message": self.message,
         }
         if include_rule_name:
-            from onec_hbk_bsl.analysis.diagnostics import (
-                bslls_message_for_rule_code,
-                display_name_for_rule_code,
-            )
+            from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 
-            d["rule_name"] = display_name_for_rule_code(self.code)
-            d["rule_message"] = bslls_message_for_rule_code(self.code)
+            rule = get_rule(self.code)
+            d["rule_name"] = rule.name
+            d["rule_description"] = rule.description
+            d["rule_message"] = rule.message
         return d
 
     def __str__(self) -> str:
@@ -50,6 +57,18 @@ class Diagnostic:
             f"{self.file}:{self.line}:{self.character}: "
             f"{self.severity.name[0]} {self.code} {self.message}"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class RuleDefinition:
+    code: str
+    name: str
+    description: str
+    message: str
+    severity: str
+    tags: tuple[str, ...]
+    implemented: bool
+    locale: RuleLocale = "ru"
 
 
 @dataclass

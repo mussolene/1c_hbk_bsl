@@ -7,7 +7,7 @@ from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 
 @dataclass
 class DiagnosticStorage:
-    """Diagnostic collector with small compatibility add helpers."""
+    """Diagnostic collector with range helpers."""
 
     path: str
     diagnostics: list[Diagnostic] = field(default_factory=list)
@@ -16,7 +16,6 @@ class DiagnosticStorage:
         self,
         *,
         code: str,
-        message: str,
         severity: Severity,
         line: int,
         character: int,
@@ -32,7 +31,6 @@ class DiagnosticStorage:
                 end_character=end_character,
                 severity=severity,
                 code=code,
-                message=message,
             )
         )
 
@@ -40,7 +38,6 @@ class DiagnosticStorage:
         self,
         *,
         code: str,
-        message: str,
         severity: Severity,
         line: int,
         start: int,
@@ -48,7 +45,6 @@ class DiagnosticStorage:
     ) -> None:
         self.add_range(
             code=code,
-            message=message,
             severity=severity,
             line=line,
             character=start,

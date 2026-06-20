@@ -21,6 +21,7 @@ from onec_hbk_bsl.analysis.bsl_string_split import (
     strip_leading_val_keywords,
 )
 from onec_hbk_bsl.analysis.call_graph import Call
+from onec_hbk_bsl.analysis.diagnostic.cst import tree_has_errors
 from onec_hbk_bsl.analysis.diagnostic.helpers.proc_helpers import (
     is_typical_client_command_handler,
     proc_containing_line,
@@ -34,7 +35,6 @@ from onec_hbk_bsl.analysis.diagnostic.string_state import (
     strip_inline_comment_preserve_strings,
 )
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
-from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
 from onec_hbk_bsl.analysis.sdbl_cst import select_top_without_order
 from onec_hbk_bsl.analysis.semantic import SemanticModel, extract_semantic_model
 from onec_hbk_bsl.analysis.symbols import Symbol

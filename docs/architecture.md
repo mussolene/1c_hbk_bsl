@@ -106,7 +106,7 @@ Formatted response (dict / LSP Location)
   from the token stream. Range formatting formats the full document first and
   then returns the requested lines, so the selected range keeps surrounding
   token context.
-- **Parse-tree helpers:** diagnostics and snapshots use `parse_tree.py` for CST
+- **CST helpers:** diagnostics and snapshots use `diagnostic/cst.py` for CST
   parse-error checks. Formatting no longer depends on CST indentation fallbacks.
 
 Совместимые diagnostic aliases поддерживаются в текущем наборе тестов и правилах движка.

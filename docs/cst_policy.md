@@ -30,8 +30,8 @@
 
 1. Внутренний код `BSL###` — запись в `RULE_METADATA` в `diagnostics.py` (имя, описание, severity, теги).
 2. Совместимый alias (если применимо) — `_BSLLS_NAME_TO_CODE`, поле `name` в `RULE_METADATA` согласовано с этим именем для `select`/`ignore` и suppression comments.
-3. Выключено по умолчанию — код в `DiagnosticEngine.DEFAULT_DISABLED` с комментарием.
-4. Реализация — в `DiagnosticEngine`; для структурных проверок — CST при валидном парсе, иначе осознанный fallback.
+3. По умолчанию все публичные правила включены; `select` сужает набор, `ignore` исключает правила из активного набора.
+4. Реализация — в runtime/domain modules; для структурных проверок — CST при валидном парсе, иначе осознанный fallback только там, где он явно нужен.
 5. Тесты — `tests/test_diagnostics*.py` или узкие фикстуры `.bsl`.
 6. Настройки VS Code — при новых ключах обновить `vscode-extension/package.json`.
 

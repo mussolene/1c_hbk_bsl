@@ -342,25 +342,6 @@ def translate_message(code: str, original_message: str) -> str:
     return msg
 
 
-def localize_rule_title(code: str) -> str:
-    """Русский заголовок правила для UI/CodeAction из canonical BSLLS ru-locale."""
-    title = RULE_DESCRIPTIONS_RU.get(code)
-    if title:
-        return title
-    return code
-
-
-def localize_rule_description(code: str) -> str:
-    """Русское описание правила для публичных UI/JSON/SARIF surfaces."""
-    title = RULE_DESCRIPTIONS_RU.get(code)
-    if title:
-        return title
-    info = DIAGNOSTICS_RU.get(code)
-    if info:
-        return info["title"]
-    return code
-
-
 # Шаблоны для извлечения специфических значений из английских сообщений.
 # Каждый элемент: (code, regex_pattern, lambda для форматирования)
 import re as _re  # noqa: E402

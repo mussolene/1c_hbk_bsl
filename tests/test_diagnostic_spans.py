@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
 
@@ -73,6 +74,18 @@ def test_bsl019_attaches_to_method_name_span(tmp_path: Path) -> None:
     start = header.index("СложнаяФункция")
     assert diag.character == start
     assert diag.end_character == start + len("СложнаяФункция")
+
+
+def test_bsl173_uses_catalog_message(tmp_path: Path) -> None:
+    content = """\
+Процедура Тест()
+    Для Каждого Элемент Из Коллекция Цикл
+        Коллекция.Удалить(Элемент);
+    КонецЦикла;
+КонецПроцедуры
+"""
+    diag = _single_diag(content, "BSL173", tmp_path)
+    assert diag.message == get_rule("BSL173").message
 
 
 def test_bsl036_uses_bslls_condition_parts_threshold(tmp_path: Path) -> None:

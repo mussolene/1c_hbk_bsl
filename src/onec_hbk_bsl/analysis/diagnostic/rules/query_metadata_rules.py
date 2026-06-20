@@ -4,59 +4,21 @@ import re
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.sdbl_cst import nullable_join_field_uses_without_isnull
-
-_QUERY_METADATA_ROOTS: frozenset[str] = frozenset(
-    {
-        "бизнеспроцесс",
-        "businessprocess",
-        "документ",
-        "document",
-        "журналдокументов",
-        "documentjournal",
-        "справочник",
-        "catalog",
-        "планвидовхарактеристик",
-        "chartofcharacteristictypes",
-        "плансчетов",
-        "chartofaccounts",
-        "планвидоврасчета",
-        "chartofcalculationtypes",
-        "регистрсведений",
-        "informationregister",
-        "регистрнакопления",
-        "accumulationregister",
-        "регистрбухгалтерии",
-        "accountingregister",
-        "регистррасчета",
-        "calculationregister",
-        "задача",
-        "task",
-        "планобмена",
-        "exchangeplan",
-        "внешнийисточникданных",
-        "externaldatasource",
-        "константа",
-        "constant",
-        "отчет",
-        "report",
-        "обработка",
-        "dataprocessor",
-    }
+from onec_hbk_bsl.analysis.sdbl_cst import (
+    QUERY_METADATA_ROOTS,
+    ancestor,
+    dotted_identifier_parts,
+    iter_nodes,
+    nullable_join_field_uses_without_isnull,
+    query_source_uses,
+    query_temp_table_names,
+    source_alias_name,
 )
+
 _QUERY_METADATA_ROOT_PATTERN = "|".join(
-    re.escape(root) for root in sorted(_QUERY_METADATA_ROOTS, key=len, reverse=True)
+    re.escape(root) for root in sorted(QUERY_METADATA_ROOTS, key=len, reverse=True)
 )
 
-_QUERY_SOURCE_RE = re.compile(
-    r"\b(?:ИЗ|FROM|СОЕДИНЕНИЕ|JOIN)\s+"
-    r"([A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)",
-    re.IGNORECASE,
-)
-_QUERY_TEMP_TABLE_RE = re.compile(
-    r"\b(?:ПОМЕСТИТЬ|INTO)\s+([A-Za-zА-Яа-яЁё_]\w*)",
-    re.IGNORECASE,
-)
 _QUERY_METADATA_TYPE_REF_RE = re.compile(
     r"\b(?:ССЫЛКА|REFS?)\s+"
     rf"(({_QUERY_METADATA_ROOT_PATTERN})\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)"
@@ -84,24 +46,6 @@ def _bsl242_proc_body_is_empty(lines: list[str], proc: Any) -> bool:
     return True
 
 
-_QUERY_SECTION_KEYWORDS: frozenset[str] = frozenset(
-    {
-        "где",
-        "where",
-        "сгруппировать",
-        "group",
-        "упорядочить",
-        "order",
-        "имеющие",
-        "having",
-        "объединить",
-        "union",
-        "итоги",
-        "totals",
-    }
-)
-
-
 def _diag_module() -> Any:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
@@ -111,7 +55,6 @@ def _diag_module() -> Any:
 def _missing_metadata_name(
     source: str,
     meta_names: set[str],
-    temp_table_names: set[str],
 ) -> str | None:
     parts = source.split(".")
     if not parts:
@@ -119,12 +62,52 @@ def _missing_metadata_name(
     if len(parts) == 1:
         return None
     root = parts[0].casefold()
-    if root not in _QUERY_METADATA_ROOTS:
+    if root not in QUERY_METADATA_ROOTS:
         return None
     object_name = parts[1]
     if object_name.casefold() in meta_names:
         return None
     return ".".join(parts[:2])
+
+
+def _bsl238_redundant_ref_nodes(root: Any) -> list[Any]:
+    simple_table_aliases: set[str] = set()
+    tabular_section_aliases: set[str] = set()
+    tabular_section_roots = {
+        "бизнеспроцесс",
+        "businessprocess",
+        "документ",
+        "document",
+        "справочник",
+        "catalog",
+    }
+    for source_use in query_source_uses(root):
+        source_parts = source_use.source.split(".")
+        parent = getattr(source_use.node, "parent", None)
+        alias = source_alias_name(parent) if parent is not None else None
+        if not alias:
+            continue
+        alias_cf = alias.casefold()
+        if len(source_parts) == 1 and source_use.source.casefold() == alias_cf:
+            simple_table_aliases.add(alias_cf)
+        elif len(source_parts) >= 3 and source_parts[0].casefold() in tabular_section_roots:
+            tabular_section_aliases.add(alias_cf)
+
+    out: list[Any] = []
+    for dotted in iter_nodes(root, "dotted_identifier"):
+        if ancestor(dotted, "from_clause") is not None:
+            continue
+        parts = dotted_identifier_parts(dotted)
+        if len(parts) < 3 or not any(
+            part.casefold() in {"ссылка", "reference", "ref"} for part in parts[1:]
+        ):
+            continue
+        if parts[0].casefold() in (simple_table_aliases | tabular_section_aliases) and parts[
+            1
+        ].casefold() in {"ссылка", "reference", "ref"}:
+            continue
+        out.append(dotted)
+    return out
 
 
 def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
@@ -157,7 +140,6 @@ def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
                 end_character=end_char,
                 severity=_diag.Severity.ERROR,
                 code="BSL187",
-                message="Поля из внешнего соединения должны использоваться с ЕСТЬNULL/ISNULL",
             )
         )
     return diags
@@ -222,17 +204,11 @@ def run_bsl174_187_236_238_query_metadata_pool(
                         end_character=max(len(line_text.rstrip()), 1),
                         severity=_diag.Severity.WARNING,
                         code="BSL174",
-                        message=(
-                            f"Измерение {match.group(1)} должно запрещать незаполненные значения"
-                        ),
                     )
                 )
 
     if query_blocks is None:
-        all_query_lines = [
-            list(_diag._iter_query_text_content_lines(start_idx, block_lines))
-            for start_idx, block_lines in _diag._iter_query_text_blocks(cleaned_lines or lines)
-        ]
+        all_query_lines = []
     else:
         all_query_lines = [_diag._query_block_content_line_tuples(block) for block in query_blocks]
     if "BSL187" in enabled_set and query_blocks is not None:
@@ -240,96 +216,73 @@ def run_bsl174_187_236_238_query_metadata_pool(
             diags.extend(_run_bsl187_on_sdbl_tree(path, block))
 
     temp_table_names: set[str] = set()
-    if "BSL236" in enabled_set:
-        for query_lines in all_query_lines:
-            for _line_no, _content_base, _content, head, _ended in query_lines:
-                for match in _QUERY_TEMP_TABLE_RE.finditer(head):
-                    temp_table_names.add(match.group(1).casefold())
+    if "BSL236" in enabled_set and query_blocks is not None:
+        for block in query_blocks:
+            root_node = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
+            if root_node is not None:
+                temp_table_names.update(query_temp_table_names(root_node))
 
-    for query_lines in all_query_lines:
+    for block_idx, query_lines in enumerate(all_query_lines):
         if not query_lines:
             continue
-        bsl236_pending_from = False
-        simple_table_aliases: set[str] = set()
-        tabular_section_aliases: set[str] = set()
-        prepass_in_from = False
-        tabular_section_roots = {
-            "бизнеспроцесс",
-            "businessprocess",
-            "документ",
-            "document",
-            "справочник",
-            "catalog",
-        }
-        for _line_no, _content_base, _content, head, _ended in query_lines:
-            if re.match(r"^(?:ИЗ|FROM)\b", head, re.IGNORECASE):
-                prepass_in_from = True
-            elif re.match(
-                r"^(?:ГДЕ|WHERE|СГРУППИРОВАТЬ\s+ПО|GROUP\s+BY|УПОРЯДОЧИТЬ\s+ПО|ORDER\s+BY|ИМЕЮЩИЕ|HAVING|;)\b",
-                head,
-                re.IGNORECASE,
-            ):
-                prepass_in_from = False
-            if not prepass_in_from:
-                continue
-            alias_match = re.match(
-                r"^\s*(?:(?:(?:ЛЕВОЕ|ПРАВОЕ|ПОЛНОЕ|ВНУТРЕННЕЕ)\s+)?(?:СОЕДИНЕНИЕ|JOIN)\s+)?"
-                r"([A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)\s+"
-                r"(?:КАК|AS)\s+([A-Za-zА-Яа-яЁё_]\w*)\b",
-                head,
-                re.IGNORECASE,
-            )
-            if alias_match:
-                source = alias_match.group(1)
-                alias = alias_match.group(2).casefold()
-                source_parts = source.split(".")
-                if len(source_parts) == 1 and source.casefold() == alias:
-                    simple_table_aliases.add(alias)
-                elif len(source_parts) >= 3 and source_parts[0].casefold() in tabular_section_roots:
-                    tabular_section_aliases.add(alias)
-
+        block = query_blocks[block_idx] if query_blocks is not None else None
+        root_node = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
+        if "BSL236" in enabled_set and root_node is not None:
+            for source_use in query_source_uses(root_node):
+                source = source_use.source
+                if source.casefold() in temp_table_names:
+                    continue
+                missing_name = _missing_metadata_name(source, meta_names)
+                if meta_names and missing_name is not None and block is not None:
+                    start_line, start_char = block.original_lsp_position(
+                        source_use.node.start_point[0],
+                        source_use.node.start_point[1],
+                    )
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=start_line + 1,
+                            character=start_char,
+                            end_line=start_line + 1,
+                            end_character=start_char + len(missing_name),
+                            severity=_diag.Severity.ERROR,
+                            code="BSL236",
+                        )
+                    )
+        if "BSL238" in enabled_set and root_node is not None and block is not None:
+            for node in _bsl238_redundant_ref_nodes(root_node):
+                start_line, start_char = block.original_lsp_position(
+                    node.start_point[0], node.start_point[1]
+                )
+                end_line, end_char = block.original_lsp_position(
+                    node.end_point[0], node.end_point[1]
+                )
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=start_line + 1,
+                        character=start_char,
+                        end_line=end_line + 1,
+                        end_character=end_char,
+                        severity=_diag.Severity.WARNING,
+                        code="BSL238",
+                    )
+                )
         for line_no, content_base, _content, head, _ended in query_lines:
             if 0 < line_no <= len(lines) and lines[line_no - 1].lstrip().startswith("//"):
                 continue
             if "BSL236" in enabled_set:
                 source_matches: list[tuple[str, int]] = []
-                for match in _QUERY_SOURCE_RE.finditer(head):
-                    source_matches.append((match.group(1), match.start(1)))
                 for match in _QUERY_METADATA_TYPE_REF_RE.finditer(head):
                     source = match.group(1) or match.group(3)
                     if source is None:
                         continue
                     source_start = match.start(1) if match.group(1) else match.start(3)
                     source_matches.append((source, source_start))
-                if bsl236_pending_from:
-                    source_match = re.match(
-                        r"^\s*([A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)",
-                        head,
-                        re.IGNORECASE,
-                    )
-                    if (
-                        source_match is not None
-                        and source_match.group(1).casefold() not in _QUERY_SECTION_KEYWORDS
-                    ):
-                        source_matches.append((source_match.group(1), source_match.start(1)))
-                        bsl236_pending_from = False
-                    elif head.strip():
-                        bsl236_pending_from = False
-                if re.match(r"^(?:ИЗ|FROM)\s*$", head, re.IGNORECASE):
-                    bsl236_pending_from = True
                 for source, source_start in source_matches:
-                    if source.casefold() in {
-                        "выбрать",
-                        "select",
-                        "как",
-                        "as",
-                        "левое",
-                        "правое",
-                        "полное",
-                        "внутреннее",
-                    }:
+                    if source.casefold() in temp_table_names:
                         continue
-                    missing_name = _missing_metadata_name(source, meta_names, temp_table_names)
+                    missing_name = _missing_metadata_name(source, meta_names)
                     if meta_names and missing_name is not None:
                         col = content_base + source_start
                         diags.append(
@@ -341,41 +294,8 @@ def run_bsl174_187_236_238_query_metadata_pool(
                                 end_character=col + len(missing_name),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL236",
-                                message=(
-                                    "Исправьте обращение к несуществующему метаданному "
-                                    f'"{missing_name}" в запросе'
-                                ),
                             )
                         )
-            if "BSL238" in enabled_set:
-                for match in re.finditer(
-                    r"\b[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)+",
-                    head,
-                    re.IGNORECASE,
-                ):
-                    chain = match.group(0)
-                    parts = chain.split(".")
-                    if len(parts) < 3 or not any(
-                        part.casefold() in {"ссылка", "reference", "ref"} for part in parts[1:]
-                    ):
-                        continue
-                    if parts[0].casefold() in (
-                        simple_table_aliases | tabular_section_aliases
-                    ) and parts[1].casefold() in {"ссылка", "reference", "ref"}:
-                        continue
-                    col = content_base + match.start()
-                    diags.append(
-                        _diag.Diagnostic(
-                            file=path,
-                            line=line_no,
-                            character=col,
-                            end_line=line_no,
-                            end_character=col + len(chain),
-                            severity=_diag.Severity.WARNING,
-                            code="BSL238",
-                            message='Избавьтесь от получения поля "Ссылка" в запросе.',
-                        )
-                    )
     return diags
 
 
@@ -478,7 +398,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         end_character=max(len(line_text.rstrip()), 1),
                         severity=_diag.Severity.ERROR,
                         code="BSL189",
-                        message=f"Запрещенное имя объекта метаданных {object_name}",
                     )
                 )
             if meta_obj is not None:
@@ -499,7 +418,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                                 end_character=max(len(line_text.rstrip()), 1),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL189",
-                                message=f"Запрещенное имя реквизита или части {check_name}",
                             )
                         )
                         break
@@ -513,7 +431,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     end_character=max(len(line_text.rstrip()), 1),
                     severity=_diag.Severity.WARNING,
                     code="BSL211",
-                    message="Имя объекта метаданных превышает допустимую длину 80",
                 )
             )
         if "BSL241" in enabled_set and meta_obj is not None:
@@ -530,7 +447,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL241",
-                            message=f"Имя дочернего объекта совпадает с именем {meta_obj.name}",
                         )
                     )
                     break
@@ -544,7 +460,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL241",
-                            message=f"Имя реквизита совпадает с именем табличной части {raw_name[0]}",
                         )
                     )
                     break
@@ -564,7 +479,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL274",
-                            message=f"Путь к данным элемента формы некорректен: {match.group(1)}",
                         )
                     )
                     break
@@ -574,7 +488,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         and low_path.endswith("/ext/managedapplicationmodule.bsl")
         and root is not None
     ):
-        for role_name in _diag._roles_with_new_objects_cached(root):
+        for _role_name in _diag._roles_with_new_objects_cached(root):
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -584,7 +498,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     end_character=max(len(line_text.rstrip()), 1),
                     severity=_diag.Severity.ERROR,
                     code="BSL246",
-                    message=f"Роль {role_name} задает права для новых объектов",
                 )
             )
 
@@ -599,10 +512,8 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     end_character=max(len(line_text.rstrip()), 1),
                     severity=_diag.Severity.WARNING,
                     code="BSL232",
-                    message="В конфигурации обнаружены защищенные модули",
                 )
             )
-
     if "BSL231" in enabled_set and root is not None:
         current_common = ""
         if "/commonmodules/" in low_path:
@@ -627,7 +538,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=match.end("meth"),
                             severity=_diag.Severity.WARNING,
                             code="BSL231",
-                            message=f"Вызов метода привилегированного модуля {info['name']}",
                         )
                     )
 
@@ -660,7 +570,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                                 end_character=match.end("meth"),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL213",
-                                message=f"Метод {match.group('meth')} отсутствует в общем модуле {match.group('mod')}",
                             )
                         )
         if "BSL214" in enabled_set:
@@ -678,7 +587,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL214",
-                            message=f"Обработчик подписки на событие {handler} не существует",
                         )
                     )
         if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
@@ -694,7 +602,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         end_character=max(len(line_text.rstrip()), 1),
                         severity=_diag.Severity.ERROR,
                         code="BSL242",
-                        message=f"Общий модуль {module_name} обработчика регламентного задания должен выполняться на сервере",
                     )
                 )
             for handler, job_name, predefined in _diag._scheduled_job_handlers_by_module_cached(
@@ -712,7 +619,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
-                            message=f"Обработчик регламентного задания {handler} не найден",
                         )
                     )
                     continue
@@ -727,7 +633,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=end_char,
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
-                            message=f"Обработчик регламентного задания {handler} должен быть экспортным",
                         )
                     )
                 if predefined and (proc.optional_count > 0 or proc.params):
@@ -741,7 +646,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=end_char,
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
-                            message=f"Обработчик регламентного задания {handler} не должен принимать параметры",
                         )
                     )
                 if _bsl242_proc_body_is_empty(lines, proc):
@@ -755,7 +659,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=end_char,
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
-                            message=f"Обработчик регламентного задания {handler} не должен быть пустым",
                         )
                     )
                 if handler in handlers_seen and handlers_seen[handler] != job_name:
@@ -768,7 +671,6 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
-                            message=f"Один и тот же обработчик {handler} используется несколькими заданиями",
                         )
                     )
                 handlers_seen[handler] = job_name
@@ -814,7 +716,6 @@ def run_bsl244_253_261_runtime_pool(
                             end_character=match.end("call"),
                             severity=_diag.Severity.ERROR,
                             code="BSL244",
-                            message="Серверный вызов в обработчике события формы",
                         )
                     )
 
@@ -853,10 +754,8 @@ def run_bsl244_253_261_runtime_pool(
                     end_character=match.end("args") + 1,
                     severity=_diag.Severity.ERROR,
                     code="BSL253",
-                    message="Внешний ресурс создается без явного таймаута",
                 )
             )
-
     if "BSL261" in enabled_set:
         for idx, line in enumerate(clean):
             if not re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE):
@@ -875,7 +774,6 @@ def run_bsl244_253_261_runtime_pool(
                             end_character=match.end(),
                             severity=_diag.Severity.ERROR,
                             code="BSL261",
-                            message="Небезопасное использование метода безопасного режима",
                         )
                     )
     return diags

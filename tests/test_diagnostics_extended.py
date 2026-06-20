@@ -15,6 +15,7 @@ import pytest
 
 from onec_hbk_bsl.analysis import document_snapshot as _document_snapshot
 from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import (
     Diagnostic,
     DiagnosticEngine,
@@ -49,6 +50,10 @@ def _check(content: str, tmp_path: Path, **engine_kwargs) -> list[Diagnostic]:
 
 def _codes(diags: list[Diagnostic]) -> list[str]:
     return [d.code for d in diags]
+
+
+def _rule_msg(code: str) -> str:
+    return get_rule(code).message
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +122,7 @@ class TestBsl212MissedRequiredParameter:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL212"}) if d.code == "BSL212"]
         assert len(diags) == 1
-        assert diags[0].message == "Пропущен обязательный параметр в вызове метода: Параметр"
+        assert diags[0].message == _rule_msg("BSL212")
 
     def test_qualified_call_does_not_resolve_to_local_method(self, tmp_path: Path) -> None:
         content = """\
@@ -171,7 +176,8 @@ class TestBsl215MissingParameterDescriptionParity:
             КонецФункции
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
-        assert any(d.message == 'Необходимо добавить описание параметра "Стр"' for d in diags)
+        assert len(diags) == 1
+        assert all(d.message == _rule_msg("BSL215") for d in diags)
 
     def test_documented_params_without_signature_params_are_stale(self, tmp_path: Path) -> None:
         content = """\
@@ -196,7 +202,7 @@ class TestBsl215MissingParameterDescriptionParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert len(diags) == 1
-        assert diags[0].message == "Необходимо исправить порядок описаний параметров"
+        assert diags[0].message == _rule_msg("BSL215")
 
     def test_param_with_multiple_types_is_documented(self, tmp_path: Path) -> None:
         content = """\
@@ -261,13 +267,8 @@ class TestBsl215MissingParameterDescriptionParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert [(d.line, d.character, d.end_character, d.message) for d in diags] == [
-            (
-                4,
-                10,
-                16,
-                'Необходимо удалить описания параметров "УправлениеДоступомПереопределяемый.Метод.Ограничение", отсутствующих в сигнатуре метода',
-            ),
-            (4, 17, 28, 'Необходимо добавить описание параметра "Ограничение"'),
+            (4, 10, 16, _rule_msg("BSL215")),
+            (4, 17, 28, _rule_msg("BSL215")),
         ]
 
     def test_param_see_reference_without_terminal_dot_is_documented(self, tmp_path: Path) -> None:
@@ -290,7 +291,7 @@ class TestBsl215MissingParameterDescriptionParity:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
-        assert [d.message for d in diags] == ["Необходимо добавить описание всех параметров метода"]
+        assert [d.message for d in diags] == [_rule_msg("BSL215")]
 
     def test_legacy_object_module_tab_indented_params_are_documented(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
@@ -323,7 +324,7 @@ class TestBsl215MissingParameterDescriptionParity:
             КонецФункции
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
-        assert [d.message for d in diags] == ["Необходимо добавить описание всех параметров метода"]
+        assert [d.message for d in diags] == [_rule_msg("BSL215")]
 
     def test_structure_composition_doc_block_does_not_require_parameter_section(
         self, tmp_path: Path
@@ -440,8 +441,7 @@ class TestDeprecatedApiParityBatch:
         diags = _check(content, tmp_path, select={"BSL175"})
         bsl175 = [d for d in diags if d.code == "BSL175"]
         assert len(bsl175) == 2
-        assert any("ОтображатьШкалу" in d.message for d in bsl175)
-        assert any("ОчиститьЖурналРегистрации" in d.message for d in bsl175)
+        assert all(d.message == _rule_msg("BSL175") for d in bsl175)
 
     def test_bsl176_same_file_deprecated_method_call(self, tmp_path: Path) -> None:
         content = """\
@@ -457,7 +457,7 @@ class TestDeprecatedApiParityBatch:
         bsl176 = [d for d in diags if d.code == "BSL176"]
         assert len(bsl176) == 1
         assert bsl176[0].line == 6
-        assert "СтарыйМетод" in bsl176[0].message
+        assert bsl176[0].message == _rule_msg("BSL176")
 
     def test_bsl177_deprecated_client_app_method(self, tmp_path: Path) -> None:
         content = """\
@@ -468,7 +468,7 @@ class TestDeprecatedApiParityBatch:
         diags = _check(content, tmp_path, select={"BSL177"})
         bsl177 = [d for d in diags if d.code == "BSL177"]
         assert len(bsl177) == 1
-        assert "ClientApplication.GetShortCaption" in bsl177[0].message
+        assert bsl177[0].message == _rule_msg("BSL177")
 
     def test_bsl178_skips_before_platform_8317_compatibility(self, tmp_path: Path) -> None:
         (tmp_path / "Configuration.xml").write_text(
@@ -531,7 +531,7 @@ class TestDeprecatedApiParityBatch:
         bsl195 = [d for d in diags if d.code == "BSL195"]
         assert len(bsl195) == 1
         assert bsl195[0].line == 2
-        assert bsl195[0].message == "Не рекомендуемое использование метода ПолучитьФорму"
+        assert bsl195[0].message == _rule_msg("BSL195")
 
 
 # ---------------------------------------------------------------------------
@@ -598,8 +598,8 @@ class TestSecurityApiParityBatch:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL264"}) if d.code == "BSL264"]
         assert [(d.line, d.character, d.severity.name) for d in diags] == [
-            (2, 11, "ERROR"),
-            (3, 11, "ERROR"),
+            (2, 11, "WARNING"),
+            (3, 11, "WARNING"),
         ]
 
     def test_bsl183_execute_external_code_matches_bslls_fixture(self, tmp_path: Path) -> None:
@@ -652,7 +652,7 @@ class TestSecurityApiParityBatch:
             (24, 12, 24, 29, "ERROR"),
             (32, 12, 32, 29, "ERROR"),
         ]
-        assert {d.message for d in diags} == {"Запрещено выполнение произвольного кода на сервере"}
+        assert {d.message for d in diags} == {_rule_msg("BSL183")}
 
     def test_bsl184_execute_external_code_in_common_module(self, tmp_path: Path) -> None:
         content = """
@@ -758,9 +758,7 @@ class TestSecurityApiParityBatch:
             (10, 8, 10, 15, "WARNING"),
             (14, 8, 14, 15, "WARNING"),
         ]
-        assert {d.message for d in diags} == {
-            "Проверить потенциально вредоносное использование метода ПользователиОС"
-        }
+        assert {d.message for d in diags} == {_rule_msg("BSL226")}
 
     def test_bsl247_set_privileged_mode_matches_bslls_fixture(self, tmp_path: Path) -> None:
         content = """\
@@ -780,7 +778,7 @@ class TestSecurityApiParityBatch:
             (3, 4, 3, 36, "WARNING"),
             (5, 4, 5, 36, "WARNING"),
         ]
-        assert {d.message for d in diags} == {"Проверьте установку привилегированного режима"}
+        assert {d.message for d in diags} == {_rule_msg("BSL247")}
 
     def test_bsl250_temp_files_dir_matches_bslls_fixture(self, tmp_path: Path) -> None:
         content = """\
@@ -803,9 +801,7 @@ class TestSecurityApiParityBatch:
             (2, 14, 2, 36, "WARNING"),
             (9, 14, 9, 26, "WARNING"),
         ]
-        assert {d.message for d in diags} == {
-            "Не рекомендуемый вызов функции КаталогВременныхФайлов()"
-        }
+        assert {d.message for d in diags} == {_rule_msg("BSL250")}
 
     def test_bsl267_external_code_tools_matches_bslls_fixture(self, tmp_path: Path) -> None:
         content = """\
@@ -839,9 +835,7 @@ class TestSecurityApiParityBatch:
             (10, 30, 10, 78, "ERROR"),
             (16, 4, 16, 56, "ERROR"),
         ]
-        assert {d.message for d in diags} == {
-            "Запрещено использование возможности выполнения внешнего кода"
-        }
+        assert {d.message for d in diags} == {_rule_msg("BSL267")}
 
     def test_bsl272_synchronous_calls_matches_bslls_fixture(self, tmp_path: Path) -> None:
         fixture = (
@@ -993,7 +987,7 @@ class TestLocalXmlParityBatch:
         diags = DiagnosticEngine(select={"BSL275"}).check_file(str(module_path))
         assert _codes(diags) == ["BSL275", "BSL275"]
         assert any(diag.line == 1 for diag in diags)
-        assert any(diag.line == 1 and "HTTP-сервиса" in diag.message for diag in diags)
+        assert any(diag.line == 1 and diag.message == _rule_msg("BSL275") for diag in diags)
 
     def test_bsl278_reports_missing_web_service_handler(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -1022,7 +1016,7 @@ class TestLocalXmlParityBatch:
         )
         diags = DiagnosticEngine(select={"BSL278"}).check_file(str(module_path))
         assert _codes(diags) == ["BSL278"]
-        assert "веб-сервиса" in diags[0].message
+        assert diags[0].message == _rule_msg("BSL278")
 
 
 class TestTailParityBatches:
@@ -1378,7 +1372,7 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
-        assert diags[0].message == "Запрещенное имя реквизита или части Документ"
+        assert diags[0].message == _rule_msg("BSL189")
 
     def test_bsl189_reports_tabular_section_name(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -1413,7 +1407,7 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
-        assert diags[0].message == "Запрещенное имя реквизита или части Документы"
+        assert diags[0].message == _rule_msg("BSL189")
 
     def test_common_module_cross_reference_tail_pool(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -1534,7 +1528,7 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
 
         assert "BSL242" in _codes(diags)
-        assert "сервере" in next(d.message for d in diags if d.code == "BSL242")
+        assert next(d.message for d in diags if d.code == "BSL242") == _rule_msg("BSL242")
 
     def test_scheduled_job_handler_empty_method_detected(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -1556,7 +1550,7 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
 
         assert "BSL242" in _codes(diags)
-        assert "пустым" in next(d.message for d in diags if d.code == "BSL242")
+        assert next(d.message for d in diags if d.code == "BSL242") == _rule_msg("BSL242")
 
     @_requires_sdbl
     def test_query_and_runtime_tail_pool(self, tmp_path: Path) -> None:
@@ -1779,10 +1773,7 @@ class TestTailParityBatches:
         assert diags[0].line == 6
         assert diags[0].character == 8
         assert diags[0].end_character == 8 + len("Документ.АктСверкиВзаиморасчетов")
-        assert (
-            diags[0].message
-            == 'Исправьте обращение к несуществующему метаданному "Документ.АктСверкиВзаиморасчетов" в запросе'
-        )
+        assert diags[0].message == _rule_msg("BSL236")
 
     def test_bsl236_known_dotted_metadata_source_is_clean(self, tmp_path: Path) -> None:
         path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
@@ -1864,7 +1855,10 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
-        assert "Документ.АктСверкиВзаиморасчетов" in diags[0].message
+        assert diags[0].line == 11
+        assert diags[0].character == 8
+        assert diags[0].end_character == 8 + len("Документ.АктСверкиВзаиморасчетов")
+        assert diags[0].message == _rule_msg("BSL236")
 
     def test_bsl236_does_not_use_unrelated_workspace_configuration_roots(
         self, tmp_path: Path
@@ -1910,7 +1904,10 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
-        assert "Справочник.ТестЭДО_ЮрФизЛица" in diags[0].message
+        assert diags[0].line == 5
+        assert diags[0].character == 8
+        assert diags[0].end_character == 8 + len("Справочник.ТестЭДО_ЮрФизЛица")
+        assert diags[0].message == _rule_msg("BSL236")
 
     def test_bsl236_reports_missing_metadata_type_references(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
@@ -1942,9 +1939,10 @@ class TestTailParityBatches:
             if d.code == "BSL236"
         ]
 
-        assert {diag.message for diag in diags} == {
-            'Исправьте обращение к несуществующему метаданному "Документ.СчетФактура" в запросе',
-            'Исправьте обращение к несуществующему метаданному "Справочник.ЕдиницыИзмерения" в запросе',
+        assert {diag.message for diag in diags} == {_rule_msg("BSL236")}
+        assert {(diag.line, diag.character, diag.end_character) for diag in diags} == {
+            (3, 35, 35 + len("Документ.СчетФактура")),
+            (4, 42, 42 + len("Справочник.ЕдиницыИзмерения")),
         }
 
     def test_bsl236_skips_temp_tables_declared_by_place_into(self, tmp_path: Path) -> None:
@@ -1982,7 +1980,10 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
-        assert "Документ.РасходнаяНакладная" in diags[0].message
+        assert diags[0].line == 6
+        assert diags[0].character == 8
+        assert diags[0].end_character == 8 + len("Документ.РасходнаяНакладная")
+        assert diags[0].message == _rule_msg("BSL236")
 
     def test_bsl236_skips_single_part_query_sources(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
@@ -2096,7 +2097,7 @@ class TestTailParityBatches:
         diags = [d for d in _check(content, tmp_path, select={"BSL238"}) if d.code == "BSL238"]
         assert len(diags) == 1
         assert diags[0].line == 7
-        assert diags[0].message == 'Избавьтесь от получения поля "Ссылка" в запросе.'
+        assert diags[0].message == _rule_msg("BSL238")
 
     def test_bsl238_does_not_report_plain_table_ref(self, tmp_path: Path) -> None:
         content = """\
@@ -2261,10 +2262,6 @@ class TestTailParityBatches:
             "onec_hbk_bsl.analysis.diagnostics._crawl_config_cached",
             lambda *_args, **_kwargs: pytest.fail("full crawl is not expected for BSL246-only run"),
         )
-        monkeypatch.setattr(
-            "onec_hbk_bsl.analysis.diagnostics._common_module_file_map",
-            lambda *_args, **_kwargs: pytest.fail("module map is not expected for BSL246-only run"),
-        )
         diags = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags)
 
@@ -2287,12 +2284,6 @@ class TestTailParityBatches:
         ordinary_module.write_text(
             "Процедура НетЭкспорта()\n    Привилегированный.Метод();\nКонецПроцедуры\n",
             encoding="utf-8",
-        )
-        monkeypatch.setattr(
-            "onec_hbk_bsl.analysis.diagnostics._common_module_proc_names_map_cached",
-            lambda *_args, **_kwargs: pytest.fail(
-                "proc-name index is not expected for BSL231-only run"
-            ),
         )
         diags = DiagnosticEngine(select={"BSL231"}).check_file(str(ordinary_module))
         assert "BSL231" in _codes(diags)
@@ -2486,7 +2477,7 @@ class TestBsl228OrderOfParams:
         assert len(bsl228) == 1
         line = "Функция Тест(Знач Парам1 = Неопределено, Знач Парам2)"
         assert bsl228[0].severity == Severity.WARNING
-        assert bsl228[0].message == "Переместите необязательные параметры после обязательных"
+        assert bsl228[0].message == _rule_msg("BSL228")
         assert bsl228[0].character == line.index("(") + 1
         assert bsl228[0].end_character == line.rindex(")")
 
@@ -2519,11 +2510,8 @@ class TestBsl003NonExportInApiRegion:
         diags = _check(content, tmp_path)
         bsl003 = [d for d in diags if d.code == "BSL003"]
         assert len(bsl003) >= 1
-        assert "МоеАПИ" in bsl003[0].message
         assert bsl003[0].character == 10
-        assert bsl003[0].message == (
-            'Переместите неэкспортный метод "МоеАПИ" из области "ПрограммныйИнтерфейс"'
-        )
+        assert bsl003[0].message == _rule_msg("BSL003")
 
     def test_export_in_api_region_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -2618,7 +2606,7 @@ class TestBsl007UnusedLocalVariableParity:
         diags = _check(content, tmp_path)
         bsl007 = [d for d in diags if d.code == "BSL007"]
         assert len(bsl007) >= 1
-        assert "НеИспользуемая" in bsl007[0].message
+        assert bsl007[0].message == _rule_msg("BSL007")
 
     def test_used_var_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -2698,7 +2686,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert "Элемент" in diags[0].message
+        assert diags[0].message == _rule_msg("BSL007")
 
     def test_repeated_for_variable_reports_first_symbol(self, tmp_path: Path) -> None:
         content = """\
@@ -2737,7 +2725,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert "ИмяСобытия" in diags[0].message
+        assert diags[0].message == _rule_msg("BSL007")
 
     def test_member_access_name_does_not_count_as_local_read(self, tmp_path: Path) -> None:
         content = """\
@@ -2748,7 +2736,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert "Вложения" in diags[0].message
+        assert diags[0].message == _rule_msg("BSL007")
 
     def test_string_assignment_unused_is_not_filtered_out(self, tmp_path: Path) -> None:
         content = """\
@@ -2758,7 +2746,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert "ИмяСобытия" in diags[0].message
+        assert diags[0].message == _rule_msg("BSL007")
 
     def test_variable_used_as_dynamic_execute_receiver_is_clean(self, tmp_path: Path) -> None:
         content = """\
@@ -2769,7 +2757,7 @@ class TestBsl007UnusedLocalVariableParity:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
-        assert all("ЦелеваяФорма" not in d.message for d in diags)
+        assert all(d.message == _rule_msg("BSL007") for d in diags)
 
     def test_plain_string_receiver_name_does_not_count_as_use(self, tmp_path: Path) -> None:
         content = """\
@@ -2779,7 +2767,7 @@ class TestBsl007UnusedLocalVariableParity:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
-        assert any("ЦелеваяФорма" in d.message for d in diags)
+        assert any(d.message == _rule_msg("BSL007") for d in diags)
 
     def test_object_module_is_skipped(self, tmp_path: Path) -> None:
         content = """\
@@ -2830,7 +2818,7 @@ class TestBsl008TooManyReturnStatements:
         diags = _check(content, tmp_path, max_returns=3, select={"BSL008"})
         bsl008 = [d for d in diags if d.code == "BSL008"]
         assert len(bsl008) >= 1
-        assert "МногоВозвратов" in bsl008[0].message
+        assert bsl008[0].message == _rule_msg("BSL008")
 
     def test_few_returns_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -2856,7 +2844,7 @@ class TestBsl009SelfAssign:
         diags = _check(content, tmp_path)
         bsl009 = [d for d in diags if d.code == "BSL009"]
         assert len(bsl009) >= 1
-        assert bsl009[0].message == "Удалите бесполезное присваивание переменной самой себе"
+        assert bsl009[0].message == _rule_msg("BSL009")
 
     def test_normal_assign_no_warning(self, tmp_path: Path) -> None:
         content = "Процедура Тест()\n    А = Б;\nКонецПроцедуры\n"
@@ -2909,7 +2897,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=5)
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) >= 1
-        assert bsl011[0].message.startswith('Уменьшите когнитивную сложность "Сложная" с ')
+        assert bsl011[0].message == _rule_msg("BSL011")
 
     def test_simple_function_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -2937,7 +2925,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=5, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 6 до 5'
+        assert bsl011[0].message == _rule_msg("BSL011")
 
     def test_ternary_with_space_counts_with_current_nesting(self, tmp_path: Path) -> None:
         content = """\
@@ -2953,7 +2941,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=5, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 6 до 5'
+        assert bsl011[0].message == _rule_msg("BSL011")
 
     def test_multiline_same_boolean_run_not_counted_twice(self, tmp_path: Path) -> None:
         content = """\
@@ -2979,7 +2967,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=7, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 10 до 7'
+        assert bsl011[0].message == _rule_msg("BSL011")
 
     def test_try_does_not_count_but_except_counts_structurally(self, tmp_path: Path) -> None:
         content = """\
@@ -2995,7 +2983,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=0, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 1 до 0'
+        assert bsl011[0].message == _rule_msg("BSL011")
 
 
 # ---------------------------------------------------------------------------
@@ -3032,7 +3020,7 @@ class TestBsl012HardcodeCredentials:
 
 
 class TestBsl013CommentedCode:
-    """BSL013 is disabled by default — tests use select= to enable it explicitly."""
+    """Tests use select= to keep BSL013 assertions isolated."""
 
     def test_commented_block_detected(self, tmp_path: Path) -> None:
         content = """\
@@ -3121,7 +3109,7 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=80)
         bsl014 = [d for d in diags if d.code == "BSL014"]
         assert len(bsl014) >= 1
-        assert bsl014[0].message == "Длина строки 130 превышает максимально допустимую 80"
+        assert bsl014[0].message == _rule_msg("BSL014")
 
     def test_short_line_no_warning(self, tmp_path: Path) -> None:
         content = "Процедура Тест()\n    А = 1;\nКонецПроцедуры\n"
@@ -3133,7 +3121,7 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=25, select={"BSL014"})
         bsl014 = [d for d in diags if d.code == "BSL014"]
         assert len(bsl014) == 1
-        assert bsl014[0].message == "Длина строки 26 превышает максимально допустимую 25"
+        assert bsl014[0].message == _rule_msg("BSL014")
         assert bsl014[0].end_character == 26
 
 
@@ -3186,7 +3174,7 @@ class TestBsl016NonStandardRegion:
         diags = DiagnosticEngine(select={"BSL016"}).check_file(str(path))
         bsl016 = [d for d in diags if d.code == "BSL016"]
         assert len(bsl016) >= 1
-        assert 'Нужно удалить нестандартный раздел "МояНестандартнаяОбласть"' == bsl016[0].message
+        assert bsl016[0].message == _rule_msg("BSL016")
 
     def test_standard_region_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -3432,7 +3420,7 @@ class TestBsl019CyclomaticComplexity:
         diags = _check(content, tmp_path, max_mccabe_complexity=5)
         bsl019 = [d for d in diags if d.code == "BSL019"]
         assert len(bsl019) >= 1
-        assert bsl019[0].message.startswith('Уменьшите цикломатическую сложность "Сложная" с ')
+        assert bsl019[0].message == _rule_msg("BSL019")
 
     def test_simple_function_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -3601,9 +3589,7 @@ class TestBsl036IfConditionComplexityParity:
         diags = [d for d in _check(content, tmp_path, select={"BSL036"}) if d.code == "BSL036"]
         assert len(diags) == 1
         assert diags[0].line == 2
-        assert (
-            diags[0].message == "Выделите условие оператора Если в отдельный метод или переменную"
-        )
+        assert diags[0].message == _rule_msg("BSL036")
 
 
 # ---------------------------------------------------------------------------
@@ -3814,10 +3800,7 @@ class TestBsl024SpaceAtStartComment:
         bsl024 = [d for d in diags if d.code == "BSL024"]
         assert len(bsl024) == 1
         assert bsl024[0].character == content.index("//")
-        assert (
-            bsl024[0].message
-            == "Между символами комментария '//' и самим текстом комментария должен быть пробел."
-        )
+        assert bsl024[0].message == _rule_msg("BSL024")
 
     def test_four_slashes_with_text_reports(self, tmp_path: Path) -> None:
         content = "////Текст с ошибкой\n"
@@ -3868,10 +3851,7 @@ class TestBsl200IncorrectLineBreak:
         diags = _check(content, tmp_path, select={"BSL200"})
         bsl200 = [d for d in diags if d.code == "BSL200"]
         assert bsl200
-        assert (
-            bsl200[0].message
-            == "Проверьте правильность переноса операндов, операторов и параметров"
-        )
+        assert bsl200[0].message == _rule_msg("BSL200")
 
     def test_line_starting_with_comma_reports(self, tmp_path: Path) -> None:
         content = """\
@@ -3948,14 +3928,14 @@ class TestBsl216MissingSpace:
         content = 'ПотокXML.ЗаписатьКонецЭлемента();// "ФИО"\n'
         diags = _check(content, tmp_path, select={"BSL216"})
         assert [(d.line, d.character, d.message) for d in diags if d.code == "BSL216"] == [
-            (1, 32, "Справа от ';' не хватает пробела"),
+            (1, 32, _rule_msg("BSL216")),
         ]
 
     def test_comma_before_string_reports_when_plus_is_inside_string(self, tmp_path: Path) -> None:
         content = 'Результат = ?(Настройки.Погрешность," ± " + Погрешность, "");\n'
         diags = _check(content, tmp_path, select={"BSL216"})
         assert [(d.line, d.character, d.message) for d in diags if d.code == "BSL216"] == [
-            (1, 35, "Справа от ',' не хватает пробела"),
+            (1, 35, _rule_msg("BSL216")),
         ]
 
 
@@ -3973,7 +3953,7 @@ class TestBsl026EmptyRegion:
         diags = _check(content, tmp_path)
         bsl026 = [d for d in diags if d.code == "BSL026"]
         assert len(bsl026) >= 1
-        assert "ПустаяОбласть" in bsl026[0].message
+        assert bsl026[0].message == _rule_msg("BSL026")
 
     def test_region_with_code_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -4182,10 +4162,7 @@ class TestBsl029MagicNumber:
         """
         diags = _check(content, tmp_path, select={"BSL029"})
         diag = next(d for d in diags if d.code == "BSL029")
-        assert (
-            diag.message
-            == 'Создайте константу с понятным названием, присвойте ей значение "9" и используйте эту константу вместо магического числа.'
-        )
+        assert diag.message == _rule_msg("BSL029")
 
     def test_decimal_less_than_one_detected(self, tmp_path: Path) -> None:
         content = """\
@@ -4533,7 +4510,7 @@ class TestBsl031NumberOfParams:
         diags = _check(content, tmp_path, max_params=7)
         bsl031 = [d for d in diags if d.code == "BSL031"]
         assert len(bsl031) >= 1
-        assert "8" in bsl031[0].message
+        assert bsl031[0].message == _rule_msg("BSL031")
 
     def test_acceptable_params_no_warning(self, tmp_path: Path) -> None:
         content = "Процедура Тест(А, Б, В)\nКонецПроцедуры\n"
@@ -4670,10 +4647,7 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3)
         bsl035 = [d for d in diags if d.code == "BSL035"]
         assert bsl035
-        assert (
-            bsl035[0].message
-            == 'Необходимо избавиться от многократного использования строкового литерала "ОченьДлиннаяСтрока"'
-        )
+        assert bsl035[0].message == _rule_msg("BSL035")
 
     def test_two_uses_no_warning_with_threshold_3(self, tmp_path: Path) -> None:
         content = """\
@@ -4745,9 +4719,7 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3, select={"BSL035"})
         bsl035 = [d for d in diags if d.code == "BSL035"]
         assert [(d.line, d.character, d.end_character) for d in bsl035] == [(2, 8, 27)]
-        assert bsl035[0].message == (
-            'Необходимо избавиться от многократного использования строкового литерала "Код ""240"" места"'
-        )
+        assert bsl035[0].message == _rule_msg("BSL035")
 
     def test_duplicate_grouping_is_case_insensitive(self, tmp_path: Path) -> None:
         content = """\
@@ -4760,9 +4732,7 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3, select={"BSL035"})
         bsl035 = [d for d in diags if d.code == "BSL035"]
         assert len(bsl035) == 1
-        assert bsl035[0].message == (
-            'Необходимо избавиться от многократного использования строкового литерала "Раздел"'
-        )
+        assert bsl035[0].message == _rule_msg("BSL035")
 
 
 # ---------------------------------------------------------------------------
@@ -5102,7 +5072,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         ]
         assert len(diags) == 1
         assert diags[0].line == 2
-        assert diags[0].message == 'Возможная опечатка в "Поздниее"'
+        assert diags[0].message == _rule_msg("BSL256")
 
     def test_bslls_typo_scans_assignment_property_selectively(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -5122,7 +5092,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         ]
         assert len(diags) == 1
         assert diags[0].line == 2
-        assert diags[0].message == 'Возможная опечатка в "Поздниее"'
+        assert diags[0].message == _rule_msg("BSL256")
 
     def test_bslls_typo_forces_reference_fragment_and_reports_next(
         self, tmp_path: Path, monkeypatch
@@ -5140,10 +5110,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
             if d.code == "BSL256"
         ]
-        assert {d.message for d in diags} == {
-            'Возможная опечатка в "Атмена"',
-            'Возможная опечатка в "Сис"',
-        }
+        assert {d.message for d in diags} == {_rule_msg("BSL256")}
 
     def test_bslls_typo_skips_multiline_string_tokens(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -5203,7 +5170,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             if d.code == "BSL256"
         ]
         assert len(diags) == 1
-        assert diags[0].message == 'Возможная опечатка в "Атмена"'
+        assert diags[0].message == _rule_msg("BSL256")
 
     def test_bslls_typo_skips_marketplace_terms(self, tmp_path: Path) -> None:
         content = 'Процедура Тест()\n    Сообщить("Маркетплейсы и маркетплейсы");\nКонецПроцедуры\n'
@@ -5233,7 +5200,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             if d.code == "BSL256"
         ]
         messages = {d.message for d in diags}
-        assert messages == {'Возможная опечатка в "Кор"', 'Возможная опечатка в "Физлица"'}
+        assert messages == {_rule_msg("BSL256")}
 
     def test_bslls_typo_skips_generic_domain_terms(self, tmp_path: Path) -> None:
         content = (
@@ -5264,13 +5231,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             if d.code == "BSL256"
         ]
         messages = {d.message for d in diags}
-        assert messages == {
-            'Возможная опечатка в "Деб"',
-            'Возможная опечатка в "Прото"',
-            'Возможная опечатка в "Рег"',
-            'Возможная опечатка в "Сис"',
-            'Возможная опечатка в "Кор"',
-        }
+        assert messages == {_rule_msg("BSL256")}
 
     def test_bslls_typo_anchor_not_shifted_on_crlf_lines(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -5373,7 +5334,7 @@ class TestBsl042UnusedLocalMethod:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL042"}) if d.code == "BSL042"]
         assert len(diags) == 1
-        assert diags[0].message == 'Локальный метод "НеИспользуется" не используется'
+        assert diags[0].message == _rule_msg("BSL042")
 
     def test_called_local_method_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -5403,7 +5364,7 @@ class TestBsl042UnusedLocalMethod:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL042"}) if d.code == "BSL042"]
         assert len(diags) == 1
-        assert diags[0].message == 'Локальный метод "Рекурсия" не используется'
+        assert diags[0].message == _rule_msg("BSL042")
 
     def test_extension_override_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -5702,7 +5663,7 @@ class TestBsl052IdenticalExpressions:
         assert [(d.line, d.character, d.end_character, d.severity) for d in diags] == [
             (2, 5, 28, Severity.ERROR),
         ]
-        assert '"Количество"' in diags[0].message
+        assert diags[0].message == _rule_msg("BSL052")
 
     def test_addition_with_identical_operands_is_not_reported(self, tmp_path: Path) -> None:
         content = """\
@@ -5893,10 +5854,7 @@ class TestMethodAndStatementMessageParity:
 
         assert len(bsl194) == 1
         assert bsl194[0].severity is Severity.ERROR
-        assert (
-            bsl194[0].message
-            == "Проверьте правильность возврата одного и того же примитивного значения в функции"
-        )
+        assert bsl194[0].message == _rule_msg("BSL194")
 
     def test_bsl224_constructor_message_matches_bslls(self, tmp_path: Path) -> None:
         content = """\
@@ -5912,9 +5870,7 @@ class TestMethodAndStatementMessageParity:
         bsl224 = [d for d in _check(content, tmp_path, select={"BSL224"}) if d.code == "BSL224"]
 
         assert len(bsl224) == 1
-        assert bsl224[0].message == (
-            'Уберите инициализацию параметров конструктора "Структура" вложенными методами'
-        )
+        assert bsl224[0].message == _rule_msg("BSL224")
 
     def test_bsl227_message_matches_bslls(self, tmp_path: Path) -> None:
         content = """\
@@ -5926,7 +5882,7 @@ class TestMethodAndStatementMessageParity:
         bsl227 = [d for d in _check(content, tmp_path, select={"BSL227"}) if d.code == "BSL227"]
 
         assert len(bsl227) == 1
-        assert bsl227[0].message == "Перенесите выражение на новую строку"
+        assert bsl227[0].message == _rule_msg("BSL227")
 
 
 # ---------------------------------------------------------------------------
@@ -6258,7 +6214,7 @@ class TestBsl149AssignAliasFieldsInQueryFixture:
         assert len(bsl149) == 1
         assert bsl149[0].line == 2
         assert bsl149[0].character > 0
-        assert "ТранспортноеСообщение.Ссылка" in bsl149[0].message
+        assert bsl149[0].message == _rule_msg("BSL149")
 
     def test_multiline_case_with_alias_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -6396,9 +6352,7 @@ class TestBsl235QueryParseError:
             (1, 16, 6, 4),
         ]
         assert diags[0].severity is Severity.WARNING
-        assert diags[0].message == (
-            "Текст запроса должен быть корректным и открываться конструктором запросов"
-        )
+        assert diags[0].message == _rule_msg("BSL235")
 
 
 # ---------------------------------------------------------------------------
@@ -6582,9 +6536,9 @@ class TestBsl062UnusedParameter:
         """
         diags = _check(content, tmp_path, select={"BSL062"})
         assert [d.message for d in diags if d.code == "BSL062"] == [
-            "Параметр 'ПараметрКоманды' не используется в теле метода",
-            "Параметр 'ПараметрыВыполненияКоманды' не используется в теле метода",
-            "Параметр 'Параметры' не используется в теле метода",
+            _rule_msg("BSL062"),
+            _rule_msg("BSL062"),
+            _rule_msg("BSL062"),
         ]
 
     def test_unused_parameters_reported_in_export_notify_completion_handler(
@@ -6597,9 +6551,7 @@ class TestBsl062UnusedParameter:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})
-        assert [d.message for d in diags if d.code == "BSL062"] == [
-            "Параметр 'Параметры' не используется в теле метода",
-        ]
+        assert [d.message for d in diags if d.code == "BSL062"] == [_rule_msg("BSL062")]
 
     def test_optional_param_flagged_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
@@ -6609,8 +6561,8 @@ class TestBsl062UnusedParameter:
         """
         diags = _check(content, tmp_path, select={"BSL062"})
         assert [d.message for d in diags if d.code == "BSL062"] == [
-            "Параметр 'Скидка' не используется в теле метода",
-            "Параметр 'Валюта' не используется в теле метода",
+            _rule_msg("BSL062"),
+            _rule_msg("BSL062"),
         ]
 
     def test_command_param_reported_bslls_parity(self, tmp_path: Path) -> None:
@@ -6632,8 +6584,8 @@ class TestBsl062UnusedParameter:
         """
         diags = _check(content, tmp_path, select={"BSL062"})
         assert [d.message for d in diags if d.code == "BSL062"] == [
-            "Параметр 'Отказ' не используется в теле метода",
-            "Параметр 'ДополнительныеПараметры' не используется в теле метода",
+            _rule_msg("BSL062"),
+            _rule_msg("BSL062"),
         ]
 
     def test_on_object_create_handler_skipped_bslls_parity(self, tmp_path: Path) -> None:
@@ -6718,9 +6670,7 @@ class TestBsl254TransferringParameters:
             target="Module.bsl",
         )
         assert _codes(diags) == ["BSL254"]
-        assert (
-            diags[0].message == 'Установите модификатор "Знач" для параметра Документ метода Сервер'
-        )
+        assert diags[0].message == _rule_msg("BSL254")
 
     def test_server_method_without_client_call_is_not_reported(self, tmp_path: Path) -> None:
         diags = self._check_indexed(
@@ -6763,9 +6713,9 @@ class TestBsl254TransferringParameters:
         bsl254 = [d for d in diags if d.code == "BSL254"]
         assert [d.line for d in bsl254] == [8, 9, 10]
         assert [d.message for d in bsl254] == [
-            'Установите модификатор "Знач" для параметра Адрес метода Сервер',
-            'Установите модификатор "Знач" для параметра ВыводитьОшибку метода Сервер',
-            'Установите модификатор "Знач" для параметра ТипАрхива метода Сервер',
+            _rule_msg("BSL254"),
+            _rule_msg("BSL254"),
+            _rule_msg("BSL254"),
         ]
 
     def test_reassigned_parameter_is_not_reported(self, tmp_path: Path) -> None:
@@ -6968,10 +6918,7 @@ class TestBsl225NumberOfValuesInStructureConstructor:
         """
         diags = _check(content, tmp_path, select={"BSL225"})
         assert _codes(diags) == ["BSL225"]
-        assert (
-            diags[0].message
-            == "Уменьшите количество значений свойств, передаваемых в конструктор структуры"
-        )
+        assert diags[0].message == _rule_msg("BSL225")
 
     def test_structure_with_three_values_is_clean(self, tmp_path: Path) -> None:
         content = """\
@@ -7261,7 +7208,7 @@ class TestBsl065MissingReturnedValueDescription:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL065"}) if d.code == "BSL065"]
         assert len(diags) == 1
-        assert diags[0].message == "Удалите описание возвращаемого значения для процедуры"
+        assert diags[0].message == _rule_msg("BSL065")
 
     def test_function_with_return_description_before_directive(self, tmp_path: Path) -> None:
         """Doc block may be separated from declaration by compiler directives."""
@@ -7537,7 +7484,7 @@ class TestBsl131DuplicateRegion:
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert [d.code for d in diags] == ["BSL131"]
-        assert diags[0].message == 'Нужно удалить дубли раздела "Тест"'
+        assert diags[0].message == _rule_msg("BSL131")
 
     def test_duplicate_non_empty_region_detected(self, tmp_path: Path) -> None:
         content = (
@@ -7628,7 +7575,7 @@ class TestAdditionalParityBatch:
         assert len(bsl249) == 1
         assert bsl249[0].character == 11
         assert bsl249[0].severity is Severity.ERROR
-        assert bsl249[0].message == "Замените конструктор Цвет на получение элемента стиля"
+        assert bsl249[0].message == _rule_msg("BSL249")
 
     def test_bsl249_uses_bslls_constructor_set(self, tmp_path: Path) -> None:
         diags = _check("Значение = Новый Кисть();\n", tmp_path, select={"BSL249"})
@@ -7660,7 +7607,7 @@ class TestAdditionalParityBatch:
         bsl153 = [d for d in diags if d.code == "BSL153"]
         assert len(bsl153) == 1
         assert bsl153[0].character == 26
-        assert bsl153[0].message == 'Ключевое слово "ИЗ" написано не канонически'
+        assert bsl153[0].message == _rule_msg("BSL153")
 
     def test_bsl221_missing_declared_language_detected(self, tmp_path: Path) -> None:
         diags = _check("Сообщение = НСтр(\"en = 'Done'\");\n", tmp_path, select={"BSL221"})

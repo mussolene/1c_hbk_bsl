@@ -1,11 +1,7 @@
-"""Compatibility-alias default-rule helpers.
+"""Development helpers for compatibility inventory.
 
-This module centralizes the mapping between the local diagnostics registry and
-compatible diagnostic aliases. It is the runtime source of truth for:
-
-- the default compatibility rule set
-- compatibility rows used by development tests/tools
-- categorisation of local-only and duplicate aliases
+This module is intentionally outside ``src``: it supports local audits and
+tests of the diagnostic registry, but it is not part of the runtime product.
 """
 
 from __future__ import annotations
@@ -15,36 +11,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-BSLLS_OS_ONLY_NAMES = frozenset(
-    {
-        "UnusedParameters",
-    }
-)
-BSLLS_DEFAULT_DISABLED_NAMES = frozenset(
-    {
-        "BadWords",
-        "CodeAfterAsyncCall",
-        "DenyIncompleteValues",
-        "FieldsFromJoinsWithoutIsNull",
-        "FileSystemAccess",
-        "FunctionNameStartsWithGet",
-        "FunctionOutParameter",
-        "InternetAccess",
-        "TernaryOperatorUsage",
-        "TooManyReturns",
-        "UseSystemInformation",
-        "UsingLikeInQuery",
-    }
-)
-
 
 def runtime_rule_codes_from_diagnostics_source(source: str) -> set[str]:
-    """Collect BSL rule codes registered via ``_rule_tasks.append`` in ``diagnostics.py``.
-
-    Ruff may break ``append`` calls across lines or place the ``\"BSLnnn\"`` token on its
-    own line inside a nested tuple; this must stay in sync with tests and
-    development inventory tooling.
-    """
+    """Collect BSL rule codes registered via ``_rule_tasks.append`` in source text."""
     raw_keys = set(
         re.findall(r'(?:_rule_tasks|tasks)\.append\(\s*\(\s*["\']([^"\']+)["\']', source)
     )
@@ -88,84 +57,26 @@ def runtime_rule_codes_from_paths(paths: list[str | Path]) -> set[str]:
 class CompatibilityRow:
     bsl_code: str | None
     current_name: str | None
-    bslls_name: str | None
-    exists_in_bslls: bool
+    compatible_name: str | None
+    exists_in_reference: bool
     has_runtime_branch: bool
     default_enabled: bool
     implemented_flag: bool | None
     category: str
 
 
-def default_bslls_rule_codes(
-    bslls_name_to_code: dict[str, str],
-    *,
-    default_disabled_codes: set[str] | frozenset[str] = frozenset(),
-) -> frozenset[str]:
-    """Canonical compatibility rule set aligned with historical defaults."""
-    return frozenset(
-        code
-        for name, code in bslls_name_to_code.items()
-        if code not in default_disabled_codes
-        and name not in BSLLS_OS_ONLY_NAMES
-        and name not in BSLLS_DEFAULT_DISABLED_NAMES
-    )
-
-
-def merge_default_with_select(
-    select: set[str] | None,
-    bslls_name_to_code: dict[str, str],
-    *,
-    default_disabled_codes: set[str] | frozenset[str] = frozenset(),
-) -> set[str]:
-    """
-    Combine explicit ``select`` with the canonical default rule set.
-
-    Without an explicit selection, only the canonical compatibility default
-    rule set is active. Explicit selection runs the requested public rules,
-    including rules disabled by default, but never exposes local-only rules as
-    selectable diagnostics.
-    """
-    default_select = set(
-        default_bslls_rule_codes(
-            bslls_name_to_code,
-            default_disabled_codes=default_disabled_codes,
-        )
-    )
-    if not select:
-        return default_select
-    return set(select) & set(bslls_name_to_code.values())
-
-
-# Backward-compatible helper name for tests/tools. It is not a runtime profile
-# or user mode.
-def bslls_rule_codes(
-    bslls_name_to_code: dict[str, str],
-    *,
-    default_disabled_codes: set[str] | frozenset[str] = frozenset(),
-) -> frozenset[str]:
-    return default_bslls_rule_codes(
-        bslls_name_to_code,
-        default_disabled_codes=default_disabled_codes,
-    )
-
-
 def build_compatibility_rows(
     *,
     rule_metadata: dict[str, dict[str, Any]],
-    bslls_name_to_code: dict[str, str],
+    reference_name_to_code: dict[str, str],
     runtime_rule_codes: set[str],
     default_disabled: set[str] | frozenset[str],
-    bslls_names: set[str] | None = None,
+    reference_names: set[str] | None = None,
 ) -> list[CompatibilityRow]:
-    """
-    Build machine-readable compatibility rows.
-
-    ``bslls_names`` may include externally discovered compatible aliases. If
-    omitted, the canonical mapping keys are used as the known alias set.
-    """
-    canonical_names = set(bslls_name_to_code)
-    if bslls_names:
-        canonical_names |= set(bslls_names)
+    """Build machine-readable compatibility rows for development audits."""
+    canonical_names = set(reference_name_to_code)
+    if reference_names:
+        canonical_names |= set(reference_names)
 
     rows: list[CompatibilityRow] = []
     seen_current_names = {
@@ -175,20 +86,20 @@ def build_compatibility_rows(
     for code in sorted(rule_metadata):
         meta = rule_metadata[code]
         current_name = str(meta.get("name", "")) or None
-        canonical_code = bslls_name_to_code.get(current_name or "")
-        exists_in_bslls = bool(current_name and current_name in canonical_names)
+        canonical_code = reference_name_to_code.get(current_name or "")
+        exists_in_reference = bool(current_name and current_name in canonical_names)
         has_runtime_branch = code in runtime_rule_codes
         default_enabled = code not in default_disabled
         implemented_flag = meta.get("implemented")
 
-        if exists_in_bslls and canonical_code == code:
+        if exists_in_reference and canonical_code == code:
             category = "compatible"
-        elif exists_in_bslls:
+        elif exists_in_reference:
             category = "alias/duplicate"
         else:
             category = "local-only"
 
-        if not has_runtime_branch and exists_in_bslls:
+        if not has_runtime_branch and exists_in_reference:
             category = "declared-not-run"
         elif has_runtime_branch and implemented_flag is False:
             category = "run-but-marked-false"
@@ -197,8 +108,8 @@ def build_compatibility_rows(
             CompatibilityRow(
                 bsl_code=code,
                 current_name=current_name,
-                bslls_name=current_name if exists_in_bslls else None,
-                exists_in_bslls=exists_in_bslls,
+                compatible_name=current_name if exists_in_reference else None,
+                exists_in_reference=exists_in_reference,
                 has_runtime_branch=has_runtime_branch,
                 default_enabled=default_enabled,
                 implemented_flag=implemented_flag if isinstance(implemented_flag, bool) else None,
@@ -212,12 +123,12 @@ def build_compatibility_rows(
             CompatibilityRow(
                 bsl_code=None,
                 current_name=None,
-                bslls_name=name,
-                exists_in_bslls=True,
+                compatible_name=name,
+                exists_in_reference=True,
                 has_runtime_branch=False,
                 default_enabled=False,
                 implemented_flag=None,
-                category="missing-vs-bslls",
+                category="missing-vs-reference",
             )
         )
 
@@ -229,8 +140,8 @@ def compatibility_rows_as_jsonable(rows: list[CompatibilityRow]) -> list[dict[st
     return [asdict(row) for row in rows]
 
 
-def discover_bslls_names_from_repo(root: str | Path) -> set[str]:
-    """Extract compatible diagnostic aliases from a local Java checkout."""
+def discover_reference_diagnostic_names(root: str | Path) -> set[str]:
+    """Extract diagnostic names from a local Java diagnostic source checkout."""
     diag_dir = Path(root) / "src/main/java/com/github/_1c_syntax/bsl/languageserver/diagnostics"
     names: set[str] = set()
     if not diag_dir.is_dir():

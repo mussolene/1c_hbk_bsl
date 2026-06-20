@@ -24,7 +24,6 @@ def _diag(file: str, code: str = "BSL009", line: int = 1) -> Diagnostic:
         end_character=10,
         severity=Severity.WARNING,
         code=code,
-        message="test",
     )
 
 

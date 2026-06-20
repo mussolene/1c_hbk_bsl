@@ -34,17 +34,16 @@ from rich.console import Console
 from rich.text import Text
 
 from onec_hbk_bsl import __version__
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import (
     RULE_METADATA,
     Diagnostic,
     DiagnosticEngine,
     Severity,
-    bslls_message_for_rule_code,
 )
 from onec_hbk_bsl.cli.config import _EMPTY, BslConfig, load_config
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-from onec_hbk_bsl.lsp.diagnostics_ru import localize_rule_description
 
 console = Console(stderr=True)
 
@@ -293,13 +292,14 @@ def list_rules(tag: str | None = None) -> None:
             continue
         sev = meta["severity"]
         fixable = "[green]✓[/green]" if code in FIXABLE_RULES else ""
+        rule = get_rule(code)
         table.add_row(
             code,
-            meta["name"],
+            rule.name,
             f"[{sev_colors.get(sev, 'white')}]{sev}[/]",
             fixable,
             ", ".join(tags),
-            localize_rule_description(code),
+            rule.description,
         )
         shown += 1
 
@@ -476,12 +476,13 @@ def _print_sarif(diagnostics: list[Diagnostic], project_root: str | None = None)
         if d.code not in seen_rules:
             seen_rules.add(d.code)
             meta = RULE_METADATA.get(d.code, {})
+            rule = get_rule(d.code)
             rules.append(
                 {
                     "id": d.code,
-                    "name": meta.get("name", d.code),
-                    "shortDescription": {"text": localize_rule_description(d.code)},
-                    "fullDescription": {"text": bslls_message_for_rule_code(d.code)},
+                    "name": rule.name,
+                    "shortDescription": {"text": rule.description},
+                    "fullDescription": {"text": rule.message},
                     "defaultConfiguration": {"level": _SARIF_LEVEL.get(d.severity, "warning")},
                     "properties": {"tags": meta.get("tags", [])},
                 }
@@ -502,7 +503,7 @@ def _print_sarif(diagnostics: list[Diagnostic], project_root: str | None = None)
                 "ruleId": d.code,
                 "level": _SARIF_LEVEL.get(d.severity, "warning"),
                 "message": {"text": d.message},
-                "properties": {"ruleMessage": bslls_message_for_rule_code(d.code)},
+                "properties": {"ruleMessage": get_rule(d.code).message},
                 "locations": [
                     {
                         "physicalLocation": {

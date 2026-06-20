@@ -12,7 +12,51 @@ from typing import Any
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
-from onec_hbk_bsl.analysis.parse_tree import tree_has_errors
+
+_TREE_ERROR_CACHE_MAX = 200_000
+_tree_error_cache: dict[tuple[int, int, int], bool] = {}
+
+
+def _tree_error_cache_key(node: Any) -> tuple[int, int, int] | None:
+    node_id = getattr(node, "id", None)
+    start_byte = getattr(node, "start_byte", None)
+    end_byte = getattr(node, "end_byte", None)
+    if not all(isinstance(value, int) for value in (node_id, start_byte, end_byte)):
+        return None
+    return (node_id, start_byte, end_byte)
+
+
+def tree_has_errors(node: Any) -> bool:
+    """True when a tree-sitter subtree contains ERROR or missing nodes."""
+
+    is_missing = getattr(node, "is_missing", False)
+    if is_missing:
+        return True
+
+    is_error = getattr(node, "is_error", False)
+    if is_error:
+        return True
+
+    has_error = getattr(node, "has_error", None)
+    if isinstance(has_error, bool):
+        return has_error
+
+    key = _tree_error_cache_key(node)
+    if key is not None:
+        cached = _tree_error_cache.get(key)
+        if cached is not None:
+            return cached
+
+    if node.type in ("ERROR", "error"):
+        result = True
+    else:
+        result = any(tree_has_errors(child) for child in node.children)
+
+    if key is not None:
+        if len(_tree_error_cache) >= _TREE_ERROR_CACHE_MAX:
+            _tree_error_cache.clear()
+        _tree_error_cache[key] = result
+    return result
 
 
 def ts_tree_ok_for_rules(tree: Any) -> bool:
@@ -93,7 +137,6 @@ def _diag(
         end_character=end_ch,
         severity=sev,
         code=code,
-        message=message,
     )
 
 
@@ -143,7 +186,6 @@ def _bsl004_append_empty_block(
             end_character=max(character + 1, end_character),
             severity=Severity.WARNING,
             code="BSL004",
-            message=message,
         )
     )
 

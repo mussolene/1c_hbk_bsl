@@ -13,7 +13,6 @@ DOC_OUT = REPO_ROOT / "docs" / "diagnostic-rules.md"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from onec_hbk_bsl.analysis.diagnostic.engine import DiagnosticEngine  # noqa: E402
 from onec_hbk_bsl.analysis.diagnostics import RULE_DESCRIPTIONS_RU, RULE_METADATA  # noqa: E402
 
 
@@ -54,12 +53,11 @@ def build_markdown() -> str:
 
     for code in sorted(RULE_METADATA, key=_rule_sort_key):
         meta = RULE_METADATA[code]
-        default = "No" if code in DiagnosticEngine.DEFAULT_DISABLED else "Yes"
         tags = ", ".join(str(tag) for tag in meta.get("tags", []))
         row = [
             f"`{code}`",
             f"`{meta.get('name', '')}`",
-            default,
+            "Yes",
             str(meta.get("severity", "")),
             RULE_DESCRIPTIONS_RU.get(code, str(meta.get("description", ""))),
             str(meta.get("description", "")),
@@ -73,10 +71,10 @@ def build_markdown() -> str:
             "## Maintenance",
             "",
             "Regenerate this file after changing `RULE_METADATA`,",
-            "`RULE_DESCRIPTIONS_RU`, or default-enabled behavior:",
+            "`RULE_DESCRIPTIONS_RU`, or diagnostic default behavior:",
             "",
             "```bash",
-            "python3 scripts/build_diagnostic_rules_doc.py",
+            "./.venv/bin/python scripts/build_diagnostic_rules_doc.py",
             "```",
         ]
     )

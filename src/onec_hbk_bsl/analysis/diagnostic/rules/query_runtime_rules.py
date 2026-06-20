@@ -8,6 +8,7 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import current_form
 from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
     is_split_module_fragment,
 )
+from onec_hbk_bsl.analysis.sdbl_cst import QUERY_METADATA_ROOTS
 
 
 def _diag_module() -> Any:
@@ -128,11 +129,6 @@ def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[An
         end_line, end_char = block.original_lsp_position(
             field_node.end_point[0], field_node.end_point[1]
         )
-        field_for_message = (
-            re.sub(r"\s+", "", field_text.strip())
-            if field_text.strip() and field_text.strip()[0].isdigit()
-            else field_text.strip()
-        )
         diags.append(
             _diag.Diagnostic(
                 file=path,
@@ -142,9 +138,6 @@ def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[An
                 end_character=end_char,
                 severity=_diag.Severity.WARNING,
                 code="BSL149",
-                message=(
-                    f'Полю "{field_for_message}" не назначен псевдоним или пропущено ключевое слово КАК'
-                ),
             )
         )
     return diags
@@ -184,28 +177,6 @@ def run_bsl234_query_nested_fields_by_dot(
     )
     one_dot_chain_re = re.compile(r"(?<![\w.])([A-Za-zА-Яа-я_]\w*\.[A-Za-zА-Яа-я_]\w*)(?![\w.])")
     value_re = re.compile(r"(?:ЗНАЧЕНИЕ|VALUE)\s*\(", re.IGNORECASE)
-    metadata_roots = {
-        "документ",
-        "document",
-        "справочник",
-        "catalog",
-        "перечисление",
-        "enum",
-        "регистрсведений",
-        "informationregister",
-        "регистрнакопления",
-        "accumulationregister",
-        "регистрбухгалтерии",
-        "accountingregister",
-        "плансчетов",
-        "chartofaccounts",
-        "планвидовхарактеристик",
-        "chartofcharacteristictypes",
-        "планрасчетавидов",
-        "chartofcalculationtypes",
-        "бизнеспроцесс",
-        "businessprocess",
-    }
 
     def mask_value_calls(text: str) -> str:
         chars = list(text)
@@ -249,28 +220,22 @@ def run_bsl234_query_nested_fields_by_dot(
                 end_character=end,
                 severity=_diag.Severity.WARNING,
                 code="BSL234",
-                message="Обнаружено разыменование ссылочного поля",
             )
         )
 
-    if query_blocks is not None:
-        content_lines = [
-            (line_no, lines[line_no - 1], head)
-            for block in query_blocks
-            for (
-                line_no,
-                _content_base,
-                _content,
-                head,
-                _ended_query,
-            ) in _diag._query_block_content_line_tuples(block)
-        ]
-    else:
-        content_lines = [
-            (line_no, line, line.lstrip()[1:].strip())
-            for line_no, line in enumerate(lines, start=1)
-            if line.lstrip().startswith("|")
-        ]
+    if query_blocks is None:
+        return []
+    content_lines = [
+        (line_no, lines[line_no - 1], head)
+        for block in query_blocks
+        for (
+            line_no,
+            _content_base,
+            _content,
+            head,
+            _ended_query,
+        ) in _diag._query_block_content_line_tuples(block)
+    ]
 
     for line_no, line, query_text in content_lines:
         if not query_text:
@@ -307,7 +272,7 @@ def run_bsl234_query_nested_fields_by_dot(
         if re.search(r"\)\s+(?:В|IN)\b", masked, re.IGNORECASE):
             for match in one_dot_chain_re.finditer(masked):
                 root = match.group(1).split(".", 1)[0].casefold()
-                if root in metadata_roots:
+                if root in QUERY_METADATA_ROOTS:
                     continue
                 add_diag(line_no, match.start(1), match.end(1))
 
@@ -326,7 +291,7 @@ def run_bsl234_query_nested_fields_by_dot(
             trailing = masked[match.end(1) :]
             if re.match(r"^\s+(?:КАК|AS)\b", trailing, re.IGNORECASE):
                 first = chain.split(".", 1)[0].casefold()
-                if first in metadata_roots:
+                if first in QUERY_METADATA_ROOTS:
                     continue
             if re.match(r"^\s*\(", trailing):
                 continue
@@ -370,7 +335,6 @@ def run_bsl237_redundant_access_to_object(path: str, lines: list[str]) -> list[A
                         end_character=match.end() - 1,
                         severity=_diag.Severity.INFORMATION,
                         code="BSL237",
-                        message="Избавьтесь от избыточного обращения внутри модуля через его имя или псевдоним ЭтотОбъект",
                     )
                 )
     return diags
@@ -400,7 +364,6 @@ def run_bsl245_server_side_export_form_method(
                 end_character=end_char,
                 severity=_diag.Severity.ERROR,
                 code="BSL245",
-                message="Запрещено создавать серверные экспортные методы в форме",
             )
         )
     return diags

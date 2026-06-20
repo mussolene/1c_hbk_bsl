@@ -83,7 +83,6 @@ class ProcedureModel:
                 end_character=end_character,
                 severity=Severity.INFORMATION,
                 code="BSL031",
-                message=f"Уменьшите количество параметров c {total} до допустимого {max_params}",
             )
         ]
 
@@ -102,10 +101,6 @@ class ProcedureModel:
                 end_character=end_character,
                 severity=Severity.INFORMATION,
                 code="BSL015",
-                message=(
-                    f"Уменьшите количество необязательных параметров c {self.optional_count} "
-                    f"до допустимого {max_optional_params}"
-                ),
             )
         ]
 
@@ -147,10 +142,6 @@ class ProcedureModel:
                 end_character=end_col,
                 severity=Severity.WARNING,
                 code="BSL002",
-                message=(
-                    f'Длина метода "{self.name}" равна {length}, '
-                    f"что больше установленного лимита в {max_proc_lines} строк"
-                ),
             )
         ]
 
@@ -162,7 +153,6 @@ class ProcedureModel:
         if len(returns) <= max_returns:
             return []
         line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
-        kind_ru = "Функция" if self.kind == "function" else "Процедура"
         return [
             Diagnostic(
                 file=self.path,
@@ -172,10 +162,6 @@ class ProcedureModel:
                 end_character=len(line_text),
                 severity=Severity.WARNING,
                 code="BSL008",
-                message=(
-                    f"{kind_ru} '{self.name}' содержит {len(returns)} операторов Возврат "
-                    f"(максимум {max_returns})"
-                ),
             )
         ]
 
@@ -203,7 +189,6 @@ class ProcedureModel:
                 end_character=end_col or len(line_text),
                 severity=Severity.ERROR,
                 code="BSL032",
-                message='Функция не содержит "Возврат"',
             )
         ]
 
@@ -220,7 +205,6 @@ class ProcedureModel:
         if has_code:
             return []
         header = lines[self.start_idx] if self.start_idx < len(lines) else ""
-        kind_ru = "Функция" if self.kind == "function" else "Процедура"
         return [
             Diagnostic(
                 file=self.path,
@@ -230,7 +214,6 @@ class ProcedureModel:
                 end_character=len(header),
                 severity=Severity.WARNING,
                 code="BSL042",
-                message=f"Экспортная {kind_ru.lower()} '{self.name}' не содержит тела",
             )
         ]
 
@@ -260,9 +243,6 @@ class ProcedureModel:
                     end_character=end_char or len(line_text),
                     severity=Severity.WARNING,
                     code="BSL003",
-                    message=(
-                        f'Переместите неэкспортный метод "{self.name}" из области "{region.name}"'
-                    ),
                 )
             ]
         return []
@@ -341,7 +321,6 @@ class ProcedureModel:
                     end_character=col + len(self.name),
                     severity=Severity.WARNING,
                     code="BSL065",
-                    message="Удалите описание возвращаемого значения для процедуры",
                 )
             ]
         if self.kind == "function" and (
@@ -356,7 +335,6 @@ class ProcedureModel:
                     end_character=col + len(self.name),
                     severity=Severity.WARNING,
                     code="BSL065",
-                    message="Добавьте описание возвращаемого значения функции",
                 )
             ]
         return []
@@ -402,7 +380,6 @@ class ProcedureModel:
                     end_character=end_character,
                     severity=Severity.WARNING,
                     code="BSL062",
-                    message=f"Параметр '{param_name}' не используется в теле метода",
                 )
             )
         return diags
@@ -443,10 +420,6 @@ class ProcedureModel:
                 end_character=end_col,
                 severity=Severity.WARNING,
                 code="BSL011",
-                message=(
-                    f'Уменьшите когнитивную сложность "{self.name}" '
-                    f"с {cognitive_complexity} до {max_cognitive_complexity}"
-                ),
             )
         ]
 
@@ -470,10 +443,6 @@ class ProcedureModel:
                 end_character=end_col,
                 severity=Severity.WARNING,
                 code="BSL019",
-                message=(
-                    f'Уменьшите цикломатическую сложность "{self.name}" '
-                    f"с {mccabe_complexity} до {max_mccabe_complexity}"
-                ),
             )
         ]
 
@@ -539,10 +508,6 @@ class ProcedureModel:
                             end_character=m.end(),
                             severity=Severity.WARNING,
                             code="BSL033",
-                            message=(
-                                "Query.Выполнить() inside a loop causes N database "
-                                "round-trips. Move the query outside the loop."
-                            ),
                         )
                     )
                 continue
@@ -571,10 +536,6 @@ class ProcedureModel:
                             end_character=m.end(),
                             severity=Severity.WARNING,
                             code="BSL033",
-                            message=(
-                                "Query.Выполнить() inside a loop causes N database "
-                                "round-trips. Move the query outside the loop."
-                            ),
                         )
                     )
         return diags

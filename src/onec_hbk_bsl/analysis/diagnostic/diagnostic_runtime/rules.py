@@ -246,7 +246,6 @@ def _diagnostics_bsl030_semicolon_presence(context: DiagnosticDocumentContext) -
                 end_character=end_character,
                 severity=Severity.INFORMATION,
                 code="BSL030",
-                message="Пропущена точка с запятой в конце выражения",
             )
         )
     return diags
@@ -287,7 +286,6 @@ def _add_node_range(
     storage: DiagnosticStorage,
     *,
     code: str,
-    message: str,
     severity: Severity,
     lines: list[str],
     start_node: Any,
@@ -297,7 +295,6 @@ def _add_node_range(
     end = end_node.end_point
     storage.add_range(
         code=code,
-        message=message,
         severity=severity,
         line=int(start[0]),
         character=_point_char(lines, start),
@@ -310,7 +307,6 @@ def _add_node_start_token_range(
     storage: DiagnosticStorage,
     *,
     code: str,
-    message: str,
     severity: Severity,
     lines: list[str],
     node: Any,
@@ -329,7 +325,6 @@ def _add_node_start_token_range(
         end = start
     storage.add_range(
         code=code,
-        message=message,
         severity=severity,
         line=int(start[0]),
         character=_point_char(lines, start),
@@ -382,7 +377,6 @@ def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) 
                 end_character=end_col or len(line_text),
                 severity=Severity.WARNING,
                 code="BSL042",
-                message=f'Локальный метод "{proc.name}" не используется',
             )
         )
     return diags
@@ -415,7 +409,6 @@ def _diagnostics_bsl052_identical_expressions(
             duplicate_key = _bsl052_transitive_duplicate_key(node, operator_text)
         if duplicate_key is None:
             continue
-        operand_text = _bsl052_operand_display(left if left_key == duplicate_key else right)
         storage.add_range(
             code="BSL052",
             line=int(node.start_point[0]) + 1,
@@ -427,10 +420,6 @@ def _diagnostics_bsl052_identical_expressions(
                 context.lines[int(node.end_point[0])], int(node.end_point[1])
             ),
             severity=Severity.ERROR,
-            message=(
-                f'Слева и справа от оператора "{_ts_node_text(operator)}" '
-                f'находятся одинаковые подвыражения: "{operand_text}"'
-            ),
         )
     return storage.diagnostics
 
@@ -563,7 +552,6 @@ def _diagnostics_bsl020_nested_statements(
                 _add_node_start_token_range(
                     storage,
                     code="BSL020",
-                    message="Превышен допустимый уровень вложенности управляющих конструкций",
                     severity=Severity.WARNING,
                     lines=context.lines,
                     node=node,
@@ -634,10 +622,6 @@ def _diagnostics_bsl173_deleting_collection_item(
                 _add_node_range(
                     storage,
                     code="BSL173",
-                    message=(
-                        f'Не следует удалять элементы коллекции "{collection_original}" '
-                        'при ее обходе оператором "Для каждого ... Из ... Цикл"'
-                    ),
                     severity=Severity.ERROR,
                     lines=context.lines,
                     start_node=call_statement,
@@ -1301,10 +1285,8 @@ class BadWordsRule(DiagnosticRuntimeRule):
             for match in rx.finditer(line):
                 if comment_start is not None and match.start() >= comment_start:
                     continue
-                word = match.group(0)
                 storage.add_match(
                     code=self.code,
-                    message=f"В тексте модуля найдено запрещенное слово <{word}>.",
                     severity=Severity.WARNING,
                     line=line_idx,
                     start=match.start(),
@@ -1463,7 +1445,6 @@ class CanonicalSpellingKeywordsRule(DiagnosticRuntimeRule):
                     start=match.start(),
                     end=match.end(),
                     severity=Severity.INFORMATION,
-                    message=f'Ключевое слово "{word}" написано не канонически',
                 )
         return storage.diagnostics
 
@@ -1501,7 +1482,6 @@ class UsingGotoRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message='Оператор "Перейти" не должен использоваться',
                 severity=Severity.WARNING,
                 lines=context.lines,
                 start_node=node,
@@ -1633,7 +1613,6 @@ class DoubleNegativesRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=_BSL060_MESSAGE,
                 severity=Severity.WARNING,
                 lines=context.lines,
                 start_node=start,
@@ -1688,7 +1667,6 @@ class DeprecatedMessageRule(DiagnosticRuntimeRule):
                 start=match.start(),
                 end=max(match.start(), match.end() - 1),
                 severity=Severity.INFORMATION,
-                message='Не следует использовать устаревший метод "Сообщить"',
             )
         return storage.diagnostics
 
@@ -1734,7 +1712,6 @@ class UsingHardcodeNetworkAddressRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=string_match.end(),
                     severity=Severity.ERROR,
-                    message="Используется хранение в коде ip-адреса",
                 )
         return storage.diagnostics
 
@@ -1771,7 +1748,6 @@ class UsingHardcodePathRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(),
                     severity=Severity.ERROR,
-                    message="Используется хранение в коде пути к файлу",
                 )
         return storage.diagnostics
 
@@ -1805,7 +1781,6 @@ class UsingServiceTagRule(DiagnosticRuntimeRule):
                 end_line=idx,
                 end_character=len(line),
                 severity=Severity.INFORMATION,
-                message=f'Найден служебный тег "{match.group(0)}"',
             )
         return storage.diagnostics
 
@@ -1829,10 +1804,6 @@ class SpaceAtStartCommentRule(DiagnosticRuntimeRule):
                 end_line=idx,
                 end_character=len(line),
                 severity=Severity.INFORMATION,
-                message=(
-                    "Между символами комментария '//' и самим текстом комментария "
-                    "должен быть пробел."
-                ),
             )
         return storage.diagnostics
 
@@ -1854,7 +1825,6 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message='Удалите ";"',
                 severity=Severity.HINT,
                 lines=context.lines,
                 start_node=node,
@@ -1895,7 +1865,6 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
 
 class MissingCodeTryCatchRule(DiagnosticRuntimeRule):
     code = "BSL028"
-    message = 'Конструкция "Попытка...Исключение...КонецПопытки" не содержит кода в исключении'
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(context.tree, "root_node", None)
@@ -1913,7 +1882,6 @@ class MissingCodeTryCatchRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self.message,
                 severity=Severity.ERROR,
                 lines=context.lines,
                 start_node=except_keyword,
@@ -1981,7 +1949,6 @@ class ConsecutiveEmptyLinesRule(DiagnosticRuntimeRule):
             end_line=end_line,
             end_character=0,
             severity=Severity.INFORMATION,
-            message="Удалите лишние последовательные пустые строки",
         )
 
 
@@ -2018,7 +1985,6 @@ class NestedTernaryOperatorRule(DiagnosticRuntimeRule):
                 end_line=span.end_line,
                 end_character=span.end_col,
                 severity=Severity.WARNING,
-                message="Не рекомендуется использовать вложенный тернарный оператор",
             )
         return storage.diagnostics
 
@@ -2083,11 +2049,6 @@ class MagicNumberRule(DiagnosticRuntimeRule):
         _add_node_range(
             storage,
             code=self.code,
-            message=(
-                "Создайте константу с понятным названием, "
-                f'присвойте ей значение "{value}" и используйте '
-                "эту константу вместо магического числа."
-            ),
             severity=Severity.INFORMATION,
             lines=lines,
             start_node=number,
@@ -2467,11 +2428,6 @@ class MagicDateRule(DiagnosticRuntimeRule):
                         start=match.start(),
                         end=match.end(),
                         severity=Severity.INFORMATION,
-                        message=(
-                            "Создайте переменную с понятным названием, присвойте ей "
-                            f'значение "{match.group(0)}" и используйте эту константу '
-                            "вместо магической даты."
-                        ),
                     )
         return storage.diagnostics
 
@@ -2610,7 +2566,6 @@ class UselessTernaryOperatorRule(DiagnosticRuntimeRule):
                     end_line=span.end_line,
                     end_character=span.end_col,
                     severity=Severity.INFORMATION,
-                    message="Бесполезный тернарный оператор",
                 )
         return storage.diagnostics
 
@@ -2618,7 +2573,6 @@ class UselessTernaryOperatorRule(DiagnosticRuntimeRule):
 class DeprecatedFindRule(DiagnosticRuntimeRule):
     code = "BSL066"
     _names = frozenset({"найти", "find"})
-    _message = 'Используйте "СтрНайти" вместо устаревшего "Найти"'
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(context.tree, "root_node", None)
@@ -2634,7 +2588,6 @@ class DeprecatedFindRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self._message,
                 severity=Severity.INFORMATION,
                 lines=context.lines,
                 start_node=ident,
@@ -2662,7 +2615,6 @@ class DeprecatedMethods8317Rule(DiagnosticRuntimeRule):
                 continue
             clean = _code_mask_without_strings_and_comments(line)
             for match in _BSL178_DEPRECATED_METHOD_RE.finditer(clean):
-                method_name = match.group(1)
                 storage.add_range(
                     code=self.code,
                     line=idx,
@@ -2670,10 +2622,6 @@ class DeprecatedMethods8317Rule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.INFORMATION,
-                    message=(
-                        f'Метод "{method_name}" устарел. Следует использовать одноименный '
-                        "метод объекта типа МенеджерОбработкиОшибок"
-                    ),
                 )
         return storage.diagnostics
 
@@ -2688,8 +2636,6 @@ class DeprecatedMethods8310Rule(DiagnosticRuntimeRule):
                 continue
             clean = _code_mask_without_strings_and_comments(line)
             for match in _BSL177_DEPRECATED_METHOD_RE.finditer(clean):
-                method_name = match.group(1)
-                replacement = _BSL177_METHOD_REPLACEMENTS.get(method_name.casefold(), "")
                 storage.add_range(
                     code=self.code,
                     line=idx,
@@ -2697,7 +2643,6 @@ class DeprecatedMethods8310Rule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=_single_line_call_end(clean, match.end() - 1),
                     severity=Severity.INFORMATION,
-                    message=f'Метод "{method_name}" устарел. Следует использовать "{replacement}".',
                 )
         return storage.diagnostics
 
@@ -2719,7 +2664,6 @@ class GetFormMethodRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.ERROR,
-                    message="Не рекомендуемое использование метода ПолучитьФорму",
                 )
         return storage.diagnostics
 
@@ -2742,7 +2686,6 @@ class DeprecatedTypeManagedFormRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.INFORMATION,
-                    message='Замените устаревшее использование типа "УправляемаяФорма"',
                 )
         return storage.diagnostics
 
@@ -2771,7 +2714,6 @@ class DisableSafeModeRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.ERROR,
-                    message="Проверьте отключение безопасного режима",
                 )
         return storage.diagnostics
 
@@ -2793,14 +2735,12 @@ class ExternalAppStartingRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.ERROR,
-                    message="Проверьте запуск внешнего приложения",
                 )
         return storage.diagnostics
 
 
 class FileSystemAccessRule(DiagnosticRuntimeRule):
     code = "BSL188"
-    message = "Проверьте обращение к файловой системе"
     severity = Severity.WARNING
     new_type_names = _BSL188_FILESYSTEM_NEW_NAMES
     global_method_names = _BSL188_FILESYSTEM_METHOD_NAMES
@@ -2828,7 +2768,6 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
                     end_line=int(call["line"]),
                     end_character=int(call["end_character"]),
                     severity=self.severity,
-                    message=self.message,
                 )
         return storage.diagnostics
 
@@ -2930,7 +2869,6 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
         _add_node_range(
             storage,
             code=self.code,
-            message=self.message,
             severity=self.severity,
             lines=context.lines,
             start_node=node,
@@ -2940,16 +2878,12 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
 
 class InternetAccessRule(FileSystemAccessRule):
     code = "BSL203"
-    message = "Проверьте обращение к Интернет-ресурсам"
-    severity = Severity.WARNING
     new_type_names = _BSL203_INTERNET_NEW_NAMES
     global_method_names = frozenset[str]()
 
 
 class UseSystemInformationRule(FileSystemAccessRule):
     code = "BSL264"
-    message = "Избавьтесь от использования объекта `СистемнаяИнформация`"
-    severity = Severity.ERROR
     new_type_names = _BSL264_SYSTEM_INFO_NEW_NAMES
     global_method_names = frozenset[str]()
 
@@ -3011,10 +2945,7 @@ class IsInRoleMethodRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=expression_start + _single_line_call_end(expression, open_paren),
                     severity=Severity.WARNING,
-                    message="Для проверки прав доступа в коде следует использовать метод ПравоДоступа",
                 )
-
-            if has_privileged_var:
                 continue
             for var in is_in_role_vars:
                 for match in re.finditer(rf"(?<!\w){re.escape(var)}(?!\w)", clean_expression):
@@ -3027,7 +2958,6 @@ class IsInRoleMethodRule(DiagnosticRuntimeRule):
                         end_line=idx,
                         end_character=expression_start + match.end(),
                         severity=Severity.WARNING,
-                        message="Для проверки прав доступа в коде следует использовать метод ПравоДоступа",
                     )
         return storage.diagnostics
 
@@ -3116,7 +3046,6 @@ class ExecuteExternalCodeRule(DiagnosticRuntimeRule):
                         end_line=idx,
                         end_character=_single_line_call_end(clean, open_paren),
                         severity=Severity.ERROR,
-                        message="Запрещено выполнение произвольного кода на сервере",
                     )
         return storage.diagnostics
 
@@ -3140,10 +3069,6 @@ class ExecuteExternalCodeInCommonModuleRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=_single_line_call_end(clean, open_paren),
                     severity=Severity.WARNING,
-                    message=(
-                        "Выполнение произвольного кода в общем модуле на сервере "
-                        "является потенциальной уязвимостью"
-                    ),
                 )
         return storage.diagnostics
 
@@ -3163,7 +3088,6 @@ class OSUsersMethodRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.WARNING,
-                    message="Проверить потенциально вредоносное использование метода ПользователиОС",
                 )
         return storage.diagnostics
 
@@ -3186,7 +3110,6 @@ class SetPrivilegedModeRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.WARNING,
-                    message="Проверьте установку привилегированного режима",
                 )
         return storage.diagnostics
 
@@ -3206,7 +3129,6 @@ class TempFilesDirRule(DiagnosticRuntimeRule):
                     end_line=idx,
                     end_character=match.end(1),
                     severity=Severity.WARNING,
-                    message="Не рекомендуемый вызов функции КаталогВременныхФайлов()",
                 )
         return storage.diagnostics
 
@@ -3231,7 +3153,6 @@ class UsingExternalCodeToolsRule(DiagnosticRuntimeRule):
                     end_line=end_line,
                     end_character=end_character,
                     severity=Severity.ERROR,
-                    message="Запрещено использование возможности выполнения внешнего кода",
                 )
         return storage.diagnostics
 
@@ -3288,8 +3209,6 @@ class UsingSynchronousCallsRule(DiagnosticRuntimeRule):
             if idx in skipped_lines:
                 continue
             for match in _BSL272_SYNC_RE.finditer(clean):
-                method_name = context.lines[idx][match.start("name") : match.end("name")]
-                replacement = _BSL272_SYNC_REPLACEMENTS.get(method_name.upper(), "")
                 open_paren = clean.find("(", match.start("name"))
                 end_line, end_character = _multi_line_call_end(clean_lines, idx, open_paren)
                 storage.add_range(
@@ -3299,17 +3218,12 @@ class UsingSynchronousCallsRule(DiagnosticRuntimeRule):
                     end_line=end_line,
                     end_character=end_character,
                     severity=Severity.WARNING,
-                    message=(
-                        f"Вместо синхронного метода `{method_name}` необходимо "
-                        f"использовать `{replacement}`"
-                    ),
                 )
         return storage.diagnostics
 
 
 class VirtualTableCallWithoutParametersRule(DiagnosticRuntimeRule):
     code = "BSL273"
-    message = "Не следует использовать виртуальные таблицы без параметров"
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
@@ -3319,7 +3233,6 @@ class VirtualTableCallWithoutParametersRule(DiagnosticRuntimeRule):
                 if open_match is None:
                     storage.add_range(
                         code=self.code,
-                        message=self.message,
                         severity=Severity.ERROR,
                         line=line_no - 1,
                         character=content_base + match.start("name"),
@@ -3346,7 +3259,6 @@ class VirtualTableCallWithoutParametersRule(DiagnosticRuntimeRule):
                 if violation:
                     storage.add_range(
                         code=self.code,
-                        message=self.message,
                         severity=Severity.ERROR,
                         line=line_no - 1,
                         character=content_base + match.start("name"),
@@ -3376,8 +3288,7 @@ class VirtualTableCallWithoutParametersRule(DiagnosticRuntimeRule):
 
 class NumberOfValuesInStructureConstructorRule(DiagnosticRuntimeRule):
     code = "BSL225"
-    message = "Уменьшите количество значений свойств, передаваемых в конструктор структуры"
-    _type_names = {"структура", "structure", "фиксированнаяструктура", "fixedstructure"}
+    _type_names = frozenset({"структура", "structure", "фиксированнаяструктура", "fixedstructure"})
     _max_values_count = 3
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
@@ -3404,7 +3315,6 @@ class NumberOfValuesInStructureConstructorRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self.message,
                 severity=Severity.INFORMATION,
                 lines=context.lines,
                 start_node=node,
@@ -3436,10 +3346,6 @@ class NumberOfValuesInStructureConstructorRule(DiagnosticRuntimeRule):
 
 class MissingTempStorageDeletionRule(DiagnosticRuntimeRule):
     code = "BSL217"
-    message = (
-        "Нужно добавить удаление данных из временного хранилища после использования, вызвав "
-        '"УдалитьИзВременногоХранилища"'
-    )
     _get_names = {"получитьизвременногохранилища", "getfromtempstorage"}
     _delete_names = {"удалитьизвременногохранилища", "deletefromtempstorage"}
 
@@ -3460,7 +3366,6 @@ class MissingTempStorageDeletionRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self.message,
                 severity=Severity.WARNING,
                 lines=context.lines,
                 start_node=call["node"],
@@ -3516,7 +3421,6 @@ class MissingTempStorageDeletionRule(DiagnosticRuntimeRule):
 
 class MissingTemporaryFileDeletionRule(DiagnosticRuntimeRule):
     code = "BSL218"
-    message = "Нужно добавить удаление временного файла после использования"
     _get_temp_names = frozenset({"получитьимявременногофайла", "gettempfilename"})
     _delete_names = frozenset(
         {
@@ -3729,7 +3633,6 @@ class MissingTemporaryFileDeletionRule(DiagnosticRuntimeRule):
         _add_node_range(
             storage,
             code=MissingTemporaryFileDeletionRule.code,
-            message=MissingTemporaryFileDeletionRule.message,
             severity=Severity.ERROR,
             lines=lines,
             start_node=call_node,
@@ -3815,7 +3718,6 @@ class PairingBrokenTransactionRule(DiagnosticRuntimeRule):
         pair_name: str,
         lines: list[str],
     ) -> None:
-        method_name = str(call["name"])
         line_idx = int(call["line"]) - 1
         end_character = int(call["end_character"])
         line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
@@ -3824,7 +3726,6 @@ class PairingBrokenTransactionRule(DiagnosticRuntimeRule):
             end_character += 2
         storage.add_range(
             code=self.code,
-            message=f'Отсутствует парный вызов "{pair_name}" для метода "{method_name}"',
             severity=Severity.ERROR,
             line=line_idx,
             character=int(call["character"]),
@@ -3835,10 +3736,6 @@ class PairingBrokenTransactionRule(DiagnosticRuntimeRule):
 
 class BeginTransactionBeforeTryCatchRule(DiagnosticRuntimeRule):
     code = "BSL151"
-    message = (
-        "Метод 'НачатьТранзакцию' должен быть за пределами блока "
-        "'Попытка-Исключение' непосредственно перед оператором 'Попытка'"
-    )
     _statement_types = frozenset(
         {
             "assignment_statement",
@@ -3920,7 +3817,6 @@ class BeginTransactionBeforeTryCatchRule(DiagnosticRuntimeRule):
         )
         storage.add_range(
             code=self.code,
-            message=self.message,
             severity=Severity.ERROR,
             line=start_line,
             character=start_character,
@@ -3931,7 +3827,6 @@ class BeginTransactionBeforeTryCatchRule(DiagnosticRuntimeRule):
 
 class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
     code = "BSL155"
-    message = "Необходимо разместить тело модуля после определения методов"
     _sub_types = {"procedure_definition", "function_definition"}
     _ignored_before_body_types = {"comment", "line_comment", "var_definition"}
 
@@ -3961,7 +3856,6 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
         _add_node_range(
             storage,
             code=self.code,
-            message=self.message,
             severity=Severity.ERROR,
             lines=context.lines,
             start_node=start_node,
@@ -4038,7 +3932,6 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
 
 class LogicalOrInTheWhereSectionOfQueryRule(DiagnosticRuntimeRule):
     code = "BSL210"
-    message = 'Не следует использовать логическое "ИЛИ" в секции "ГДЕ" запроса'
     _or_re = re.compile(r"\b(?:ИЛИ|OR)\b", re.IGNORECASE)
     _select_re = re.compile(r"\b(?:ВЫБРАТЬ|SELECT)\b", re.IGNORECASE)
     _where_re = re.compile(r"\b(?:ГДЕ|WHERE)\b", re.IGNORECASE)
@@ -4188,7 +4081,6 @@ class LogicalOrInTheWhereSectionOfQueryRule(DiagnosticRuntimeRule):
     ) -> None:
         storage.add_range(
             code=self.code,
-            message=self.message,
             severity=Severity.WARNING,
             line=line_idx,
             character=start,
@@ -4271,10 +4163,6 @@ class LogicalOrInTheWhereSectionOfQueryRule(DiagnosticRuntimeRule):
 
 class CommitTransactionOutsideTryCatchRule(DiagnosticRuntimeRule):
     code = "BSL157"
-    message = (
-        "Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке "
-        "'Попытка' перед оператором 'Исключение'"
-    )
     _commit_re = re.compile(
         r"^\s*(?:ЗафиксироватьТранзакцию|CommitTransaction)\s*\(", re.IGNORECASE
     )
@@ -4332,7 +4220,6 @@ class CommitTransactionOutsideTryCatchRule(DiagnosticRuntimeRule):
         line, character, end_character = pending
         storage.add_range(
             code=self.code,
-            message=self.message,
             severity=Severity.ERROR,
             line=line,
             character=character,
@@ -4355,7 +4242,6 @@ class IncorrectLineBreakRule(DiagnosticRuntimeRule):
                 end_character=fact.end_character,
                 severity=Severity.INFORMATION,
                 code=self.code,
-                message=fact.message,
             )
             for fact in context.snapshot.incorrect_line_break_facts
         ]
@@ -4363,7 +4249,6 @@ class IncorrectLineBreakRule(DiagnosticRuntimeRule):
 
 class AssignAliasFieldsInQueryRule(DiagnosticRuntimeRule):
     code = "BSL149"
-    message = "Полям запроса следует назначать псевдонимы"
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         from onec_hbk_bsl.analysis.diagnostic.rules.query_runtime_rules import (
@@ -4376,7 +4261,6 @@ class AssignAliasFieldsInQueryRule(DiagnosticRuntimeRule):
 
 class OneStatementPerLineRule(DiagnosticRuntimeRule):
     code = "BSL227"
-    message = "Перенесите выражение на новую строку"
     _then_re = re.compile(r"\b(?:тогда|then)\b", re.IGNORECASE)
     _end_if_re = re.compile(r"^(?:конецесли|endif)\s*;?\s*$", re.IGNORECASE)
 
@@ -4399,7 +4283,6 @@ class OneStatementPerLineRule(DiagnosticRuntimeRule):
             for start, end in spans[1:]:
                 storage.add_range(
                     code=self.code,
-                    message=self.message,
                     severity=Severity.INFORMATION,
                     line=idx,
                     character=start,
@@ -4460,7 +4343,6 @@ class OneStatementPerLineRule(DiagnosticRuntimeRule):
 
 class UnaryPlusInConcatenationRule(DiagnosticRuntimeRule):
     code = "BSL257"
-    message = "Унарный плюс в конкатенации строк потенциально приводит к ошибке времени выполнения"
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         source_bytes = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -4486,7 +4368,6 @@ class UnaryPlusInConcatenationRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self.message,
                 severity=Severity.ERROR,
                 lines=context.lines,
                 start_node=operator,
@@ -4518,7 +4399,6 @@ class UnaryPlusInConcatenationRule(DiagnosticRuntimeRule):
 
 class UnionAllRule(DiagnosticRuntimeRule):
     code = "BSL258"
-    message = "Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ"
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
@@ -4538,7 +4418,6 @@ class UnionAllRule(DiagnosticRuntimeRule):
                 continue
             storage.add_range(
                 code=self.code,
-                message=self.message,
                 severity=Severity.INFORMATION,
                 line=idx,
                 character=match.start(),
@@ -4558,13 +4437,6 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
     _simple_error_names = frozenset({"описаниеошибки", "errordescription"})
     _error_info_names = frozenset({"информацияобошибке", "errorinfo"})
     _raise_names = frozenset({"ВЫЗВАТЬИСКЛЮЧЕНИЕ_KEYWORD", "RAISE_KEYWORD"})
-    _message_wrong_number = "Неверное число параметров метода"
-    _message_no_second = 'Не указан 2й параметр с типом "УровеньЖурналаРегистрации"'
-    _message_no_comment = 'Не указан 5й параметр "Комментарий"'
-    _message_no_error_level = 'Нужно указывать уровень "Ошибка" при записи в журнал регистрации внутри блока Исключение-КонецПопытки'
-    _message_no_detail = (
-        'В тексте комментария нет вызова "ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())"'
-    )
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -4584,22 +4456,22 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
             call_node = call["node"]
             args = self._call_params(call_node)
             if len(args) < 5:
-                self._add_call(storage, context.lines, call_node, self._message_wrong_number)
+                self._add_call(storage, context.lines, call_node)
                 continue
             if args[1] is None:
-                self._add_call(storage, context.lines, call_node, self._message_no_second)
+                self._add_call(storage, context.lines, call_node)
                 continue
             if args[4] is None:
-                self._add_call(storage, context.lines, call_node, self._message_no_comment)
+                self._add_call(storage, context.lines, call_node)
                 continue
             except_roots = except_blocks.get(id(call_node))
             if except_roots is None:
                 continue
             if not self._has_error_log_level(args[1]):
-                self._add_call(storage, context.lines, call_node, self._message_no_error_level)
+                self._add_call(storage, context.lines, call_node)
                 continue
             if not self._is_comment_correct(except_roots, args[4]):
-                self._add_call(storage, context.lines, call_node, self._message_no_detail)
+                self._add_call(storage, context.lines, call_node)
         return storage.diagnostics
 
     @staticmethod
@@ -4806,13 +4678,10 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
         )
 
     @staticmethod
-    def _add_call(
-        storage: DiagnosticStorage, lines: list[str], call_node: Any, message: str
-    ) -> None:
+    def _add_call(storage: DiagnosticStorage, lines: list[str], call_node: Any) -> None:
         _add_node_range(
             storage,
             code=UsageWriteLogEventRule.code,
-            message=message,
             severity=Severity.INFORMATION,
             lines=lines,
             start_node=call_node,
@@ -4822,7 +4691,6 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
 
 class WrongUseOfRollbackTransactionMethodRule(DiagnosticRuntimeRule):
     code = "BSL277"
-    message = "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения"
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -4922,7 +4790,6 @@ class WrongUseOfRollbackTransactionMethodRule(DiagnosticRuntimeRule):
     def _add_call(self, storage: DiagnosticStorage, call: dict[str, Any]) -> None:
         storage.add_range(
             code=self.code,
-            message=self.message,
             severity=Severity.ERROR,
             line=int(call["line"]) - 1,
             character=int(call["character"]),
@@ -4933,10 +4800,6 @@ class WrongUseOfRollbackTransactionMethodRule(DiagnosticRuntimeRule):
 
 class WrongUseFunctionProceedWithCallRule(DiagnosticRuntimeRule):
     code = "BSL276"
-    message = (
-        "Использовать функцию ПродолжитьВызов() можно только в расширениях "
-        "и только в методах с аннотацией &Вместо."
-    )
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -4964,7 +4827,6 @@ class WrongUseFunctionProceedWithCallRule(DiagnosticRuntimeRule):
                 continue
             storage.add_range(
                 code=self.code,
-                message=self.message,
                 severity=Severity.ERROR,
                 line=line,
                 character=int(call["character"]),
@@ -4988,7 +4850,6 @@ class WrongUseFunctionProceedWithCallRule(DiagnosticRuntimeRule):
 
 class TryNumberRule(DiagnosticRuntimeRule):
     code = "BSL255"
-    message = "Не следует использовать исключения для приведения значения к типу"
     _NUMBER_CALL_RE = re.compile(r"\b(?:Число|Number)\s*\(", re.IGNORECASE)
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
@@ -5011,7 +4872,6 @@ class TryNumberRule(DiagnosticRuntimeRule):
                 _add_node_range(
                     storage,
                     code=self.code,
-                    message=self.message,
                     severity=Severity.WARNING,
                     lines=context.lines,
                     start_node=call_node,
@@ -5088,7 +4948,6 @@ class TryNumberRule(DiagnosticRuntimeRule):
                             break
                 storage.add_range(
                     code=cls.code,
-                    message=cls.message,
                     severity=Severity.WARNING,
                     line=line_idx,
                     character=match.start(),
@@ -5130,7 +4989,6 @@ class TryNumberRule(DiagnosticRuntimeRule):
 
 class UseLessForEachRule(DiagnosticRuntimeRule):
     code = "BSL263"
-    message = "Итератор не используется в теле цикла"
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -5156,7 +5014,6 @@ class UseLessForEachRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self.message,
                 severity=Severity.ERROR,
                 lines=context.lines,
                 start_node=iterator,
@@ -5230,10 +5087,6 @@ class UseLessForEachRule(DiagnosticRuntimeRule):
 
 class IfElseIfEndsWithElseRule(DiagnosticRuntimeRule):
     code = "BSL199"
-    message = (
-        'Синтаксическая конструкция вида "Если...Тогда...ИначеЕсли..." '
-        'должна содержать ветвь "Иначе".'
-    )
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -5259,7 +5112,6 @@ class IfElseIfEndsWithElseRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self.message,
                 severity=Severity.WARNING,
                 lines=context.lines,
                 start_node=endif_node,
@@ -5270,9 +5122,6 @@ class IfElseIfEndsWithElseRule(DiagnosticRuntimeRule):
 
 class IfElseDuplicatedConditionRule(DiagnosticRuntimeRule):
     code = "BSL198"
-    message = (
-        'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся условия'
-    )
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -5294,7 +5143,6 @@ class IfElseDuplicatedConditionRule(DiagnosticRuntimeRule):
                     _add_node_range(
                         storage,
                         code=self.code,
-                        message=self.message,
                         severity=Severity.WARNING,
                         lines=context.lines,
                         start_node=start_node,
@@ -5352,9 +5200,6 @@ class IfElseDuplicatedConditionRule(DiagnosticRuntimeRule):
 
 class IfElseDuplicatedCodeBlockRule(DiagnosticRuntimeRule):
     code = "BSL197"
-    message = (
-        'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода'
-    )
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
@@ -5376,7 +5221,6 @@ class IfElseDuplicatedCodeBlockRule(DiagnosticRuntimeRule):
                     _add_node_range(
                         storage,
                         code=self.code,
-                        message=self.message,
                         severity=Severity.INFORMATION,
                         lines=context.lines,
                         start_node=block[0],
@@ -5443,7 +5287,6 @@ class IfElseDuplicatedCodeBlockRule(DiagnosticRuntimeRule):
 class DeprecatedCurrentDateRule(DiagnosticRuntimeRule):
     code = "BSL097"
     _names = frozenset({"текущаядата", "currentdate"})
-    _message = 'Используйте "ТекущаяДатаСеанса" вместо устаревшего "ТекущаяДата"'
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(context.tree, "root_node", None)
@@ -5459,7 +5302,6 @@ class DeprecatedCurrentDateRule(DiagnosticRuntimeRule):
             _add_node_range(
                 storage,
                 code=self.code,
-                message=self._message,
                 severity=Severity.ERROR,
                 lines=context.lines,
                 start_node=ident,
@@ -5496,7 +5338,6 @@ class ExtraCommasRule(DiagnosticRuntimeRule):
                 end_line=idx,
                 end_character=match.start() + 1,
                 severity=Severity.WARNING,
-                message="Не используйте запятые для параметров по умолчанию в конце вызова метода.",
             )
         return storage.diagnostics
 
@@ -5513,12 +5354,11 @@ class YoLetterUsageRule(DiagnosticRuntimeRule):
             for match in _BSL279_IDENTIFIER_RE.finditer(clean):
                 storage.add_range(
                     code=self.code,
-                    message='В текстах модулях не допускается использовать букву "Ё".',
-                    severity=Severity.INFORMATION,
                     line=idx,
                     character=match.start(),
                     end_line=idx,
                     end_character=match.end(),
+                    severity=Severity.INFORMATION,
                 )
         return storage.diagnostics
 
@@ -5795,7 +5635,6 @@ def _run_bsl248_several_compiler_directives(
                             end_character=end_char,
                             severity=Severity.ERROR,
                             code="BSL248",
-                            message=_diag.RULE_DESCRIPTIONS_RU["BSL248"],
                         )
                     )
             else:
@@ -5810,7 +5649,6 @@ def _run_bsl248_several_compiler_directives(
                         end_character=len(line_text.rstrip()),
                         severity=Severity.ERROR,
                         code="BSL248",
-                        message=_diag.RULE_DESCRIPTIONS_RU["BSL248"],
                     )
                 )
         idx += 1
@@ -5946,7 +5784,6 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.ERROR,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.invalid_character_facts
             ]
@@ -6083,7 +5920,6 @@ class MissingSpaceRuntimeRule(DiagnosticRuntimeRule):
                 end_character=fact.end_character,
                 severity=Severity.INFORMATION,
                 code=self.code,
-                message=fact.message,
             )
             for fact in context.snapshot.missing_space_facts
         ]
@@ -6113,7 +5949,6 @@ class TypoRuntimeRule(DiagnosticRuntimeRule):
                 end_character=d["end_character"],
                 severity=Severity.INFORMATION,
                 code=d["code"],
-                message=d["message"],
             )
             for d in rows
         ]
@@ -6219,7 +6054,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.ERROR,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.hardcoded_credential_facts
             ]
@@ -6235,7 +6069,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.commented_code_facts
             ]
@@ -6250,7 +6083,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.line_too_long_facts(engine.max_line_length)
             ]
@@ -6275,7 +6107,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.non_standard_region_facts
             ]
@@ -6292,7 +6123,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.command_or_form_export_facts
             ]
@@ -6329,7 +6159,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.deprecated_warning_facts
             ]
@@ -6346,7 +6175,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.empty_region_facts
             ]
@@ -6406,7 +6234,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.complex_condition_facts(engine.max_bool_ops)
             ]
@@ -6423,7 +6250,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.this_form_usage_facts
             ]
@@ -6435,11 +6261,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 procs=procs,
                 tree=context.tree,
                 bsl051_delimiter_lines_for_tree_fn=_diag._bsl051_delimiter_lines_for_tree,
-                bsl051_all_branch_exit_end_if_lines_fn=(
-                    engine._bsl051_all_branch_exit_end_if_lines
-                ),
                 re_unconditional_exit=_diag._RE_UNCONDITIONAL_EXIT,
-                re_bsl051_delimiter_fallback=_diag._RE_BSL051_DELIMITER_FALLBACK,
             )
         if code == "BSL052":
             return _diagnostics_bsl052_identical_expressions(context)
@@ -6499,7 +6321,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.select_top_without_order_facts
             ]
@@ -6514,7 +6335,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
-                    message=fact.message,
                 )
                 for fact in snapshot.duplicate_region_facts
             ]
@@ -6573,7 +6393,6 @@ class FormDataToValueRule(DiagnosticRuntimeRule):
                 end_character=fact.end_character,
                 severity=Severity.INFORMATION,
                 code=self.code,
-                message=fact.message,
             )
             for fact in context.snapshot.form_data_to_value_facts
         ]
@@ -6615,7 +6434,6 @@ class MissingVariablesDescriptionRule(DiagnosticRuntimeRule):
                 end_character=fact.end_character,
                 severity=Severity.INFORMATION,
                 code=self.code,
-                message=fact.message,
             )
             for fact in context.snapshot.module_variable_description_facts
         ]
