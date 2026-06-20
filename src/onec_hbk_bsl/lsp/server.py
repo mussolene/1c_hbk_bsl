@@ -181,7 +181,6 @@ from onec_hbk_bsl.indexer.metadata_registry import (
     METADATA_ROOT_NAME_CF,
 )
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-from onec_hbk_bsl.lsp.diagnostics_ru import translate_message
 from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -748,12 +747,12 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
                             end=Position(line=d.end_line - 1, character=d.end_character),
                         ),
                     ),
-                    message=translate_message(code, d.message),
+                    message=get_rule(code).message,
                 )
                 for d in rest[:50]  # LSP spec: no hard limit, but 50 is practical
             ]
 
-        msg = translate_message(code, first.message)
+        msg = get_rule(code).message
         if rest:
             total = len(group)
             msg = f"{msg} ({total} вхождений)"

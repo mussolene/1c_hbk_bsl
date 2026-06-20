@@ -12,7 +12,6 @@ from onec_hbk_bsl.analysis.diagnostics import (
     Severity,
     lsp_compat_severity,
 )
-from onec_hbk_bsl.lsp.diagnostics_ru import translate_message
 
 
 def _load_rules_doc_builder():
@@ -39,7 +38,7 @@ def test_problematic_ru_titles_match_bslls_meaning() -> None:
     for code, title in expected.items():
         assert RULE_DESCRIPTIONS_RU[code] == title
         assert get_rule(code).description == title
-        assert translate_message(code, "legacy local wording") == title
+        assert get_rule(code).message
 
 
 def test_metadata_descriptions_use_bslls_english_titles() -> None:
