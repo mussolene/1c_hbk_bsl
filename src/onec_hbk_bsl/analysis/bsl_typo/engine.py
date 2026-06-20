@@ -23,7 +23,9 @@ _morph_ru: Any | None = None
 
 
 def _load_bslls_typo_properties_text() -> str:
-    ref = importlib.resources.files("onec_hbk_bsl.bslls_typo_data") / "TypoDiagnostic_ru.properties"
+    ref = importlib.resources.files("onec_hbk_bsl.analysis.bsl_typo") / (
+        "TypoDiagnostic_ru.properties"
+    )
     with ref.open(encoding="utf-8") as f:
         return f.read()
 

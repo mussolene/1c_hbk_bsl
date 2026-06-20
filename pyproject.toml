@@ -45,7 +45,7 @@ onec-hbk-bsl = "onec_hbk_bsl.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"onec_hbk_bsl.bslls_typo_data" = ["*.properties"]
+"onec_hbk_bsl.analysis.bsl_typo" = ["*.properties"]
 
 # Version from git tags (e.g. v0.7.2). See scripts/README.md.
 [tool.setuptools_scm]

@@ -1587,6 +1587,93 @@ class TestInlayHints:
 
 
 # ---------------------------------------------------------------------------
+# Rename Symbol
+# ---------------------------------------------------------------------------
+
+
+class TestRenameSymbol:
+    def _make_server(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer
+
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        return ls
+
+    def test_prepare_rename_uses_open_document_symbols_without_index(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_prepare_rename
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = (tmp_path / "module.bsl").as_uri()
+        content = "Процедура СтароеИмя()\nКонецПроцедуры\n"
+        ls._docs[uri] = content
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.splitlines()[0].index("СтароеИмя") + 2
+
+        result = on_prepare_rename(ls, params)
+
+        assert result is not None
+        assert result.start.character == content.splitlines()[0].index("СтароеИмя")
+        assert result.end.character == result.start.character + len("СтароеИмя")
+
+    def test_rename_open_document_method_and_calls_without_renaming_variables(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_rename
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = (tmp_path / "module.bsl").as_uri()
+        content = "Процедура СтароеИмя()\n\tСтароеИмя = 1;\n\tСтароеИмя();\nКонецПроцедуры\n"
+        ls._docs[uri] = content
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.splitlines()[0].index("СтароеИмя") + 2
+        params.new_name = "НовоеИмя"
+
+        result = on_rename(ls, params)
+
+        assert result is not None
+        edits = result.changes[uri]
+        ranges = {(edit.range.start.line, edit.range.start.character) for edit in edits}
+        assert ranges == {
+            (0, content.splitlines()[0].index("СтароеИмя")),
+            (2, content.splitlines()[2].index("СтароеИмя")),
+        }
+        assert {edit.new_text for edit in edits} == {"НовоеИмя"}
+
+    def test_rename_rejects_invalid_new_identifier(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_rename
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = (tmp_path / "module.bsl").as_uri()
+        content = "Процедура СтароеИмя()\nКонецПроцедуры\n"
+        ls._docs[uri] = content
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.splitlines()[0].index("СтароеИмя") + 2
+        params.new_name = "123Нельзя"
+
+        assert on_rename(ls, params) is None
+
+
+# ---------------------------------------------------------------------------
 # Code Action
 # ---------------------------------------------------------------------------
 
@@ -1695,6 +1782,71 @@ class TestCodeAction:
         changes = fix_edit.edit.changes[uri]
         assert len(changes) == 1
         assert "\t// коммент" in changes[0].new_text
+
+    def test_code_action_extracts_selected_statements_to_procedure(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import Position, Range
+
+        from onec_hbk_bsl.lsp.server import on_code_action
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = (tmp_path / "extract.bsl").as_uri()
+        content = "Процедура Тест()\n\tА = 1;\n\tСообщить(А);\nКонецПроцедуры\n"
+        ls._docs[uri] = content
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.context.diagnostics = []
+        params.range = Range(
+            start=Position(line=1, character=0),
+            end=Position(line=3, character=0),
+        )
+
+        result = on_code_action(ls, params)
+
+        assert result is not None
+        action = next(action for action in result if action.title == "Извлечь в процедуру")
+        edits = action.edit.changes[uri]
+        assert edits[0].new_text == "\tИзвлеченныйФрагмент();"
+        assert "Процедура ИзвлеченныйФрагмент()" in edits[1].new_text
+        assert "\tА = 1;" in edits[1].new_text
+        assert "\tСообщить(А);" in edits[1].new_text
+
+    def test_code_action_extracts_selected_expression_to_function(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import Position, Range
+
+        from onec_hbk_bsl.lsp.server import on_code_action
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = (tmp_path / "extract-function.bsl").as_uri()
+        content = "Процедура Тест()\n\tРезультат = А + Б;\nКонецПроцедуры\n"
+        ls._docs[uri] = content
+        line = content.splitlines()[1]
+        start = line.index("А + Б")
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.context.diagnostics = []
+        params.range = Range(
+            start=Position(line=1, character=start),
+            end=Position(line=1, character=start + len("А + Б")),
+        )
+
+        result = on_code_action(ls, params)
+
+        assert result is not None
+        action = next(action for action in result if action.title == "Извлечь в функцию")
+        edits = action.edit.changes[uri]
+        assert edits[0].new_text == "ИзвлеченнаяФункция()"
+        assert "Функция ИзвлеченнаяФункция()" in edits[1].new_text
+        assert "\tВозврат А + Б;" in edits[1].new_text
 
 
 # ---------------------------------------------------------------------------

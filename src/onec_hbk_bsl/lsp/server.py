@@ -167,7 +167,7 @@ from onec_hbk_bsl.analysis.formatter import (
     _get_stripped_keyword,
     default_formatter,
 )
-from onec_hbk_bsl.analysis.lsp_positions import utf16_len
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
 from onec_hbk_bsl.analysis.platform_api import PlatformApi, get_platform_api
 from onec_hbk_bsl.analysis.symbols import extract_symbols
 from onec_hbk_bsl.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
@@ -247,6 +247,14 @@ def _internal_rule_code_from_lsp_diagnostic(diag: LspDiagnostic) -> str:
     if s.upper() in ("BSL-DEAD",):
         return "BSL-DEAD"
     return _BSLLS_NAME_TO_CODE.get(s, s)
+
+
+def _is_bsl_identifier(text: str) -> bool:
+    """Return True when *text* can be used as a BSL identifier."""
+    if not text:
+        return False
+    first = text[0]
+    return (first.isalpha() or first == "_") and all(ch.isalnum() or ch == "_" for ch in text)
 
 
 def _lsp_diagnostic_code_fields(internal_code: str) -> tuple[str, CodeDescription | None]:
@@ -1474,6 +1482,83 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
 # ---------------------------------------------------------------------------
 
 
+def _open_document_method_symbols(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+) -> list[dict[str, Any]]:
+    path = _uri_to_path(uri)
+    context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+        source_path=path,
+    )
+    if context is None:
+        return []
+    return [
+        {
+            "name": symbol.name,
+            "kind": symbol.kind,
+            "file_path": path,
+            "line": symbol.line,
+            "character": symbol.character,
+            "end_line": symbol.end_line,
+            "end_character": symbol.end_character,
+        }
+        for symbol in extract_symbols(context.tree, path)
+        if symbol.kind in ("procedure", "function")
+    ]
+
+
+def _identifier_ranges_from_cst(content: str, name: str) -> list[Range]:
+    parser = BslParser()
+    tree = parser.parse_content(content)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+
+    lines = content.splitlines()
+    ranges: list[Range] = []
+
+    def visit(node: Any, parent_type: str = "") -> None:
+        node_type = getattr(node, "type", "")
+        if (
+            node_type == "identifier"
+            and parent_type in ("procedure_definition", "function_definition", "method_call")
+            and _ast_node_text(node).casefold() == name
+        ):
+            line0 = node.start_point[0]
+            line_text = lines[line0] if 0 <= line0 < len(lines) else ""
+            start = utf8_byte_offset_to_lsp_character(line_text, node.start_point[1])
+            ranges.append(
+                Range(
+                    start=Position(line=line0, character=start),
+                    end=Position(line=line0, character=start + utf16_len(_ast_node_text(node))),
+                )
+            )
+        for child in getattr(node, "children", []) or []:
+            visit(child, node_type)
+
+    visit(root)
+    return ranges
+
+
+def _add_rename_edit(
+    changes: dict[str, list[TextEdit]],
+    seen: set[tuple[str, int, int]],
+    uri: str,
+    edit_range: Range,
+    new_name: str,
+) -> None:
+    key = (uri, int(edit_range.start.line), int(edit_range.start.character))
+    if key in seen:
+        return
+    seen.add(key)
+    changes.setdefault(uri, []).append(TextEdit(range=edit_range, new_text=new_name))
+
+
 @server.feature(TEXT_DOCUMENT_PREPARE_RENAME)
 def on_prepare_rename(ls: BslLanguageServer, params: PrepareRenameParams) -> Range | None:
     """Check whether the symbol under the cursor can be renamed."""
@@ -1481,27 +1566,21 @@ def on_prepare_rename(ls: BslLanguageServer, params: PrepareRenameParams) -> Ran
     pos = params.position
     content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
-    if not word:
+    if not _is_bsl_identifier(word):
         return None
 
-    symbols = ls.symbol_index.find_symbol(word, limit=1)
+    open_symbols = _open_document_method_symbols(ls, uri, content) if content else []
+    symbols = [s for s in open_symbols if s["name"].casefold() == word.casefold()]
+    if not symbols:
+        symbols = [
+            s
+            for s in ls.symbol_index.find_symbol(word, limit=1)
+            if s.get("kind") in ("procedure", "function")
+        ]
     if not symbols:
         return None
 
-    # Return the range of the word under the cursor
-    lines = content.splitlines()
-    text = lines[pos.line] if pos.line < len(lines) else ""
-    start_ch = pos.character
-    while start_ch > 0 and (text[start_ch - 1].isalnum() or text[start_ch - 1] == "_"):
-        start_ch -= 1
-    end_ch = pos.character
-    while end_ch < len(text) and (text[end_ch].isalnum() or text[end_ch] == "_"):
-        end_ch += 1
-
-    return Range(
-        start=Position(line=pos.line, character=start_ch),
-        end=Position(line=pos.line, character=end_ch),
-    )
+    return _word_range_at_position(content, pos.line, pos.character)
 
 
 @server.feature(TEXT_DOCUMENT_RENAME)
@@ -1512,31 +1591,60 @@ def on_rename(ls: BslLanguageServer, params: RenameParams) -> WorkspaceEdit | No
     new_name = params.new_name
     content = ls._doc_get(uri, "")
     word = _word_at_position(content, pos.line, pos.character)
-    if not word:
+    if not _is_bsl_identifier(word) or not _is_bsl_identifier(new_name):
         return None
 
-    # Collect all locations: definitions + call sites
     changes: dict[str, list[TextEdit]] = {}
+    seen: set[tuple[str, int, int]] = set()
+    open_uris = set(ls._docs)
 
-    def _add_edit(file_uri: str, line: int, character: int) -> None:
-        edit = TextEdit(
-            range=Range(
-                start=Position(line=line, character=character),
-                end=Position(line=line, character=character + len(word)),
-            ),
-            new_text=new_name,
-        )
-        changes.setdefault(file_uri, []).append(edit)
+    open_symbols = _open_document_method_symbols(ls, uri, content) if content else []
+    indexed_symbols = [
+        s
+        for s in ls.symbol_index.find_symbol(word, limit=50)
+        if s.get("kind") in ("procedure", "function")
+    ]
+    if not any(s["name"].casefold() == word.casefold() for s in open_symbols + indexed_symbols):
+        return None
+
+    for open_uri, open_content in list(ls._docs.items()):
+        for r in _identifier_ranges_from_cst(open_content, word.casefold()):
+            _add_rename_edit(changes, seen, open_uri, r, new_name)
 
     # Definitions
-    for sym in ls.symbol_index.find_symbol(word, limit=50):
+    for sym in indexed_symbols:
+        file_uri = _path_to_uri(sym["file_path"])
+        if file_uri in open_uris:
+            continue
         line = max(0, sym["line"] - 1)
-        _add_edit(_path_to_uri(sym["file_path"]), line, sym["character"])
+        _add_rename_edit(
+            changes,
+            seen,
+            file_uri,
+            Range(
+                start=Position(line=line, character=sym["character"]),
+                end=Position(line=line, character=sym["character"] + utf16_len(word)),
+            ),
+            new_name,
+        )
 
     # Call sites
     for c in ls.symbol_index.find_callers(word, limit=500):
+        file_uri = _path_to_uri(c["caller_file"])
+        if file_uri in open_uris:
+            continue
         line = max(0, c["caller_line"] - 1)
-        _add_edit(_path_to_uri(c["caller_file"]), line, _call_char_from_row(c))
+        character = _call_char_from_row(c)
+        _add_rename_edit(
+            changes,
+            seen,
+            file_uri,
+            Range(
+                start=Position(line=line, character=character),
+                end=Position(line=line, character=character + utf16_len(word)),
+            ),
+            new_name,
+        )
 
     if not changes:
         return None
@@ -3419,6 +3527,145 @@ def _fix_bsl024_space_after_double_slash(line: str) -> str | None:
     return line[: col + 2] + " " + line[col + 2 :]
 
 
+def _selection_range_is_empty(rng: Range) -> bool:
+    return rng.start.line == rng.end.line and rng.start.character == rng.end.character
+
+
+def _line_indent(line: str) -> str:
+    return line[: len(line) - len(line.lstrip())]
+
+
+def _selected_text_from_range(lines: list[str], rng: Range) -> str:
+    start_line = int(rng.start.line)
+    end_line = int(rng.end.line)
+    start_char = int(rng.start.character)
+    end_char = int(rng.end.character)
+    if start_line < 0 or start_line >= len(lines) or end_line < start_line:
+        return ""
+    if end_line >= len(lines):
+        end_line = len(lines) - 1
+        end_char = len(lines[end_line])
+    if start_line == end_line:
+        return lines[start_line][start_char:end_char]
+    selected = [lines[start_line][start_char:]]
+    selected.extend(lines[start_line + 1 : end_line])
+    if end_char > 0:
+        selected.append(lines[end_line][:end_char])
+    return "\n".join(selected)
+
+
+def _build_extract_procedure_action(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+    rng: Range,
+) -> CodeAction | None:
+    if not content or _selection_range_is_empty(rng):
+        return None
+    lines = content.splitlines()
+    selected = _selected_text_from_range(lines, rng).strip("\n")
+    if not selected.strip():
+        return None
+
+    start_line = int(rng.start.line)
+    context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+        source_path=_uri_to_path(uri),
+    )
+    if context is None or getattr(context.tree, "root_node", None) is None:
+        return None
+    proc_node = _find_proc_at_line(context.tree.root_node, start_line)
+    if proc_node is None:
+        return None
+
+    insert_line = min(proc_node.end_point[0] + 1, len(lines))
+    call_indent = _line_indent(lines[start_line]) if 0 <= start_line < len(lines) else ""
+    body_lines = selected.splitlines()
+    body_indent = _line_indent(body_lines[0]) if body_lines else ""
+    if body_indent and all(
+        (not line.strip()) or line.startswith(body_indent) for line in body_lines
+    ):
+        body_lines = [
+            line[len(body_indent) :] if line.startswith(body_indent) else line
+            for line in body_lines
+        ]
+    body = "\n".join(f"\t{line}" if line.strip() else "" for line in body_lines)
+    procedure_name = "ИзвлеченныйФрагмент"
+    procedure_text = f"\nПроцедура {procedure_name}()\n{body}\nКонецПроцедуры\n"
+
+    return CodeAction(
+        title="Извлечь в процедуру",
+        kind=CodeActionKind.RefactorExtract,
+        edit=WorkspaceEdit(
+            changes={
+                uri: [
+                    TextEdit(range=rng, new_text=f"{call_indent}{procedure_name}();"),
+                    TextEdit(
+                        range=Range(
+                            start=Position(line=insert_line, character=0),
+                            end=Position(line=insert_line, character=0),
+                        ),
+                        new_text=procedure_text,
+                    ),
+                ]
+            }
+        ),
+    )
+
+
+def _build_extract_function_action(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+    rng: Range,
+) -> CodeAction | None:
+    if not content or _selection_range_is_empty(rng):
+        return None
+    lines = content.splitlines()
+    selected = _selected_text_from_range(lines, rng).strip()
+    if not selected or "\n" in selected or selected.endswith(";"):
+        return None
+
+    start_line = int(rng.start.line)
+    context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+        source_path=_uri_to_path(uri),
+    )
+    if context is None or getattr(context.tree, "root_node", None) is None:
+        return None
+    proc_node = _find_proc_at_line(context.tree.root_node, start_line)
+    if proc_node is None:
+        return None
+
+    insert_line = min(proc_node.end_point[0] + 1, len(lines))
+    function_name = "ИзвлеченнаяФункция"
+    function_text = f"\nФункция {function_name}()\n\tВозврат {selected};\nКонецФункции\n"
+    return CodeAction(
+        title="Извлечь в функцию",
+        kind=CodeActionKind.RefactorExtract,
+        edit=WorkspaceEdit(
+            changes={
+                uri: [
+                    TextEdit(range=rng, new_text=f"{function_name}()"),
+                    TextEdit(
+                        range=Range(
+                            start=Position(line=insert_line, character=0),
+                            end=Position(line=insert_line, character=0),
+                        ),
+                        new_text=function_text,
+                    ),
+                ]
+            }
+        ),
+    )
+
+
 @server.feature(TEXT_DOCUMENT_CODE_ACTION)
 def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[CodeAction] | None:
     """
@@ -3434,6 +3681,14 @@ def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[Code
     uri = params.text_document.uri
     content = ls._doc_get(uri, "")
     doc_lines = content.splitlines()
+
+    if content and isinstance(params.range, Range):
+        extract_action = _build_extract_procedure_action(ls, uri, content, params.range)
+        if extract_action is not None:
+            actions.append(extract_action)
+        extract_function_action = _build_extract_function_action(ls, uri, content, params.range)
+        if extract_function_action is not None:
+            actions.append(extract_function_action)
 
     for diag in params.context.diagnostics:
         code = _internal_rule_code_from_lsp_diagnostic(diag)
@@ -3630,7 +3885,7 @@ def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[Code
             actions.append(
                 CodeAction(
                     title="Сгенерировать комментарий к методу",
-                    kind=CodeActionKind.RefactorExtract,
+                    kind=CodeActionKind.RefactorRewrite,
                     edit=WorkspaceEdit(
                         changes={
                             uri: [

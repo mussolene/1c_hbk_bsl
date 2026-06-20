@@ -90,7 +90,7 @@ build-fast:
 		--paths src \
 		--add-data "data:data" \
 		--add-data "$(SPELLCHECKER_RES):spellchecker/resources" \
-		--collect-data onec_hbk_bsl.bslls_typo_data \
+		--collect-data onec_hbk_bsl.analysis.bsl_typo \
 		--hidden-import spellchecker \
 		--copy-metadata mcp \
 		--copy-metadata onec-hbk-bsl \
@@ -99,7 +99,6 @@ build-fast:
 		--hidden-import uvicorn.protocols.http.auto \
 		--hidden-import uvicorn.protocols.websockets.auto \
 		--hidden-import uvicorn.lifespan.on \
-		--hidden-import onec_hbk_bsl.bslls_typo_data \
 		$(ENTRY)
 	@echo "✓ Готово: $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)"
 	@ls -lh $(DIST_DIR)/$(BIN_NAME)/$(BIN_NAME)$(BIN_SUFFIX)

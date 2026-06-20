@@ -174,7 +174,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BSL256 (Typo):** вместо LanguageTool — `pyspellchecker` + `pymorphy3` и исключения из `bslls_typo_data` / `TypoDiagnostic_ru.properties`; зависимость `language-tool-python` убрана.
+- **BSL256 (Typo):** вместо LanguageTool — `pyspellchecker` + `pymorphy3` и исключения из `TypoDiagnostic_ru.properties`; зависимость `language-tool-python` убрана.
 - **BSL254:** включён compatibility-режим через индекс вызовов клиент/сервер.
 - **Форматтер (`strict-bslls`):** табы по умолчанию, пробел после `,` в коде, пустые строки с отступом; профиль `compat` по-прежнему с пробелами при явном выборе.
 - **LSP / MCP:** `insertSpaces` из запроса форматирования или профиль по умолчанию (для `[bsl]` в расширении — табы); убран принудительный режим «только пробелы» в code action и MCP.

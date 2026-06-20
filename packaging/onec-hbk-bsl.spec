@@ -29,7 +29,7 @@ datas += copy_metadata("mcp")
 # falls back to generated _version.py when frozen.
 datas += copy_metadata("onec-hbk-bsl-core")
 # Typo parity uses importlib.resources against this package at runtime.
-datas += collect_data_files("onec_hbk_bsl.bslls_typo_data")
+datas += collect_data_files("onec_hbk_bsl.analysis.bsl_typo")
 # BSL256 uses SpellChecker(language="ru"); keep only that dictionary in the bundle.
 SPELLCHECKER_ROOT = Path(spellchecker.__file__).resolve().parent
 datas += [
@@ -49,7 +49,6 @@ hiddenimports: list = [
     "uvicorn.protocols.http.auto",
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan.on",
-    "onec_hbk_bsl.bslls_typo_data",
     "spellchecker",
 ]
 hiddenimports += collect_submodules("onec_hbk_bsl.analysis.diagnostic")
