@@ -186,3 +186,17 @@ def test_validate_rule_contract_accepts_complete_contract(tmp_path: Path) -> Non
     )
 
     assert validator.validate_contract(contract) == []
+
+
+def test_bsl040_contract_is_complete() -> None:
+    validator = _load_validator()
+    contract = (
+        ROOT
+        / ".codex"
+        / "skills"
+        / "bsl-diagnostic-rule-development"
+        / "contracts"
+        / "BSL040.md"
+    )
+
+    assert validator.validate_contract(contract) == []

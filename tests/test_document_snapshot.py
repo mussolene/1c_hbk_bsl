@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 
 from onec_hbk_bsl.analysis.document_snapshot import (
+    LineDiagnosticFact,
     build_document_snapshot,
     find_procedure_names_from_tree,
     find_procedure_names_in_content,
@@ -34,6 +36,15 @@ def test_snapshot_collects_core_document_views(tmp_path: Path) -> None:
     assert ("Тест", snapshot.procedures[0].start_idx, "procedure") in snapshot.proc_node_map
     assert any(call.callee_name == "Сообщить" for call in snapshot.calls)
     assert any(symbol.name == "Тест" and symbol.kind == "procedure" for symbol in snapshot.symbols)
+
+
+def test_line_diagnostic_fact_has_no_user_message_payload() -> None:
+    assert {field.name for field in fields(LineDiagnosticFact)} == {
+        "line_idx",
+        "character",
+        "end_character",
+        "end_line_idx",
+    }
 
 
 def test_cst_string_ranges_skip_line_comment() -> None:

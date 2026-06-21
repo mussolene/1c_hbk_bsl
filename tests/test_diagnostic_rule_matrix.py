@@ -33,8 +33,36 @@ def test_rule_matrix_covers_every_public_rule_once() -> None:
 
 
 def test_rule_matrix_maps_core_snapshot_fact_rules() -> None:
-    row = _rows_by_code()["BSL040"]
+    rows = _rows_by_code()
+    core_codes = {
+        code
+        for code, row in rows.items()
+        if row.recommended_batch == "01-core-snapshot-facts"
+    }
 
+    assert core_codes == {
+        "BSL011",
+        "BSL012",
+        "BSL013",
+        "BSL014",
+        "BSL016",
+        "BSL017",
+        "BSL019",
+        "BSL022",
+        "BSL026",
+        "BSL036",
+        "BSL040",
+        "BSL077",
+        "BSL131",
+        "BSL190",
+        "BSL204",
+        "BSL216",
+        "BSL219",
+    }
+    assert all(rows[code].runner_group == "core_snapshot_fact" for code in core_codes)
+    assert all(rows[code].execution_mode == "process_safe_fact_task" for code in core_codes)
+
+    row = rows["BSL040"]
     assert row.runner_group == "core_snapshot_fact"
     assert row.execution_mode == "process_safe_fact_task"
     assert row.snapshot_features == ("this_form_usage_facts",)
