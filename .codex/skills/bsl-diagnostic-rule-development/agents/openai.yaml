@@ -1,0 +1,4 @@
+interface:
+  display_name: "BSL Rule Development"
+  short_description: "Semantic workflow for BSL diagnostics"
+  default_prompt: "Use $bsl-diagnostic-rule-development to implement or review a BSL diagnostic rule by language semantics, CST behavior, performance, and BSLLS parity."
