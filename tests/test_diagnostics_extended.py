@@ -8,6 +8,7 @@ Each test class covers one rule, with:
 
 from __future__ import annotations
 
+import re
 import textwrap
 from pathlib import Path
 
@@ -4497,6 +4498,22 @@ class TestBsl030HeaderSemicolon:
         )
         diags = [d for d in _check(content, tmp_path, select={"BSL030"}) if d.code == "BSL030"]
         assert not diags
+
+    def test_synthetic_semicolon_presence_contract(self) -> None:
+        fixture = Path("tests/fixtures/diag_synthetic/bsl030_semicolon_presence.bsl")
+        lines = fixture.read_text(encoding="utf-8").splitlines()
+        expected: list[int] = []
+        for idx, line in enumerate(lines, start=1):
+            match = re.search(r"EXPECT:\s*BSL030(?:\s*\+(\d+))?", line)
+            if match:
+                expected.append(idx + int(match.group(1) or "1"))
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL030"}).check_file(str(fixture))
+            if d.code == "BSL030"
+        ]
+        assert [d.line for d in diags] == expected
 
 
 # ---------------------------------------------------------------------------

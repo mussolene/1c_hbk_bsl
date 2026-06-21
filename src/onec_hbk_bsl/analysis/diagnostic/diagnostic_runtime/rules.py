@@ -193,22 +193,42 @@ _BSL030_STATEMENT_TYPES = frozenset(
 )
 
 
-def _bsl030_statement_has_semicolon(node: Any) -> bool:
-    return any(getattr(child, "type", None) == ";" for child in _ts_children(node))
+def _bsl030_statement_has_semicolon(node: Any, lines: list[str]) -> bool:
+    if any(getattr(child, "type", None) == ";" for child in _ts_children(node)):
+        return True
+    if getattr(node, "type", None) != "while_statement":
+        return False
+    row, byte_col = node.end_point
+    if not (0 <= row < len(lines)):
+        return False
+    line_bytes = lines[row].encode("utf-8")
+    return byte_col < len(line_bytes) and line_bytes[byte_col : byte_col + 1] == b";"
 
 
 def _bsl030_anchor_node(node: Any) -> Any:
     punctuation = {"(", ")", "[", "]", ",", ".", "=", "+", "-", "*", "/", "%"}
     leaves: list[Any] = []
-    for child in _ts_walk(node):
+
+    def collect(child: Any) -> None:
+        if getattr(child, "type", None) == "string":
+            if child.start_point[0] == child.end_point[0]:
+                leaves.append(child)
+            else:
+                for nested in _ts_children(child):
+                    collect(nested)
+            return
         children = _ts_children(child)
         if children:
-            continue
+            for nested in children:
+                collect(nested)
+            return
         child_type = str(getattr(child, "type", ""))
         text = _ts_node_text(child).strip()
         if not text or child_type in punctuation or text in punctuation or text == ";":
-            continue
+            return
         leaves.append(child)
+
+    collect(node)
     return leaves[-1] if leaves else node
 
 
@@ -221,7 +241,7 @@ def _diagnostics_bsl030_semicolon_presence(context: DiagnosticDocumentContext) -
     for node in _ts_walk(root):
         if getattr(node, "type", None) not in _BSL030_STATEMENT_TYPES:
             continue
-        if _bsl030_statement_has_semicolon(node):
+        if _bsl030_statement_has_semicolon(node, context.lines):
             continue
         if _diag.tree_has_errors(node):
             continue

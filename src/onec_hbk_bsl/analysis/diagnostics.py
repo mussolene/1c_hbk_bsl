@@ -244,6 +244,9 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
     {
         # Line-length spans the whole line; overlap with trailing string literals must not drop the rule.
         "BSL014",
+        # SemicolonPresence is structural: the anchor may be a string literal when the
+        # whole assignment/call/return statement misses its trailing semicolon.
+        "BSL030",
         # CodeBlockBeforeSub spans the whole module-body block, including string literals.
         "BSL155",
         # Duplicated-branch diagnostics may span statements containing string literals.
