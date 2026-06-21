@@ -69,10 +69,6 @@ from pathlib import Path
 from typing import Any
 
 from onec_hbk_bsl.analysis import bslls_typo
-from onec_hbk_bsl.analysis.bsl_source_fragments import (
-    split_commas_outside_double_quotes,
-    strip_leading_val_keywords,
-)
 from onec_hbk_bsl.analysis.source_positions import line_start_offsets
 from onec_hbk_bsl.analysis.diagnostic.rules.control_flow_rules import (
     bsl148_function_name_spans,
@@ -92,9 +88,7 @@ from onec_hbk_bsl.analysis.diagnostic.discovery import (
     collect_identifier_casefolds_in_proc_body as _collect_identifier_casefolds_in_proc_body,
     export_description_anchor_line_idx as _export_description_anchor_line_idx,
     find_proc_definition_node as _find_proc_definition_node,
-    find_procedures as _find_procedures,
     find_procedures_from_tree as _find_procedures_from_tree,
-    find_regions as _find_regions,
     find_regions_from_tree as _find_regions_from_tree,
     proc_body_start_line_idx_fallback as _proc_body_start_line_idx_fallback,
     ts_first_body_statement_line_idx as _ts_first_body_statement_line_idx,
@@ -2368,7 +2362,7 @@ def _parse_procs_cached(
     try:
         cache[path] = list(build_document_snapshot(path, content=content).procedures)
     except Exception:
-        cache[path] = _find_procedures(content)
+        cache[path] = []
     return cache[path]
 
 
@@ -2856,27 +2850,6 @@ _API_REGION_NAMES = frozenset(
 # ---------------------------------------------------------------------------
 
 
-def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
-    """
-    Parse a procedure parameter list string.
-
-    Returns list of (name, is_val, is_optional) tuples.
-    Handles: ``Знач Param``, ``Param = "Default"``, and combinations.
-    """
-    result: list[tuple[str, bool, bool]] = []
-    for raw in split_commas_outside_double_quotes(params_str):
-        raw = raw.strip()
-        if not raw:
-            continue
-        is_val = bool(re.match(r"^(?:Знач|Val)\s+", raw, re.IGNORECASE))
-        clean = strip_leading_val_keywords(raw)
-        is_optional = "=" in clean
-        name = clean.split("=")[0].strip()
-        if name and re.match(r"^\w+$", name):
-            result.append((name, is_val, is_optional))
-    return result
-
-
 def _ts_node_text(node: Any) -> str:
     """Decode tree-sitter node text to str."""
     t = getattr(node, "text", None)
@@ -3031,16 +3004,6 @@ def _ts_node_to_proc_info(node: Any) -> _ProcInfo | None:
                     if has_default:
                         optional_count += 1
                         optional_params_list.append(param_name)
-
-    header_match = _RE_PROC_HEADER.search(_ts_node_text(node))
-    if header_match is not None:
-        name = header_match.group("name")
-        is_export = bool(header_match.group("export"))
-        parsed = _parse_params(header_match.group("params") or "")
-        params = [p[0] for p in parsed]
-        val_params = [p[0] for p in parsed if p[1]]
-        optional_count = sum(1 for p in parsed if p[2])
-        optional_params_list = [p[0] for p in parsed if p[2]]
 
     if not name:
         return None

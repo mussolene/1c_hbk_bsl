@@ -21,39 +21,19 @@ from typing import Any
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
 from onec_hbk_bsl.analysis.semantic import extract_semantic_model
+from onec_hbk_bsl.indexer.discovery import is_discovery_dir
 from onec_hbk_bsl.indexer.metadata_parser import (
     crawl_config,
     find_config_root,
     find_edt_configuration_marker,
+    iter_metadata_input_xmls,
 )
-from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
 
 BSL_EXTENSIONS = {".bsl", ".os"}
-_DEFAULT_EXCLUDED_DIRS = {
-    ".agent",
-    ".agents",
-    ".cache",
-    ".codex",
-    ".cursor",
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".svn",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "node_modules",
-    "out",
-    "target",
-    "vendor",
-}
 
 # Upper bound for BSL_INDEX_PARSE_WORKERS — each worker holds a Tree-sitter parser
 # and parsed AST payloads; unbounded queues previously allowed RAM to grow to 100+ GB
@@ -234,20 +214,8 @@ class IncrementalIndexer:
         root = Path(config_root)
         digest = hashlib.blake2b(digest_size=20)
 
-        config_xml = root / "Configuration.xml"
-        IncrementalIndexer._fingerprint_file(digest, root, config_xml)
-
-        for folder_name in FOLDER_TO_KIND:
-            folder = root / folder_name
-            if not folder.is_dir():
-                continue
-            for xml_file in sorted(folder.glob("*.xml")):
-                IncrementalIndexer._fingerprint_file(digest, root, xml_file)
-                forms_dir = folder / xml_file.stem / "Forms"
-                if not forms_dir.is_dir():
-                    continue
-                for form_xml in sorted(forms_dir.glob("*/Ext/Form.xml")):
-                    IncrementalIndexer._fingerprint_file(digest, root, form_xml)
+        for xml_file in iter_metadata_input_xmls(root):
+            IncrementalIndexer._fingerprint_file(digest, root, xml_file)
         return digest.hexdigest()
 
     @staticmethod
@@ -528,11 +496,7 @@ class IncrementalIndexer:
         root = os.path.abspath(workspace)
         result: list[str] = []
         for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-            dirnames[:] = [
-                name
-                for name in dirnames
-                if name not in _DEFAULT_EXCLUDED_DIRS and not name.endswith(".egg-info")
-            ]
+            dirnames[:] = [name for name in dirnames if is_discovery_dir(name)]
             for name in filenames:
                 suf = Path(name).suffix.lower()
                 if suf in BSL_EXTENSIONS:

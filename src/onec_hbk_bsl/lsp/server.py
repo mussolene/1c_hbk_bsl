@@ -149,10 +149,6 @@ try:
 except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
-from onec_hbk_bsl.analysis.bsl_source_fragments import (
-    parameter_name_from_declaration_fragment,
-    split_commas_outside_double_quotes,
-)
 from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
@@ -161,7 +157,11 @@ from onec_hbk_bsl.analysis.diagnostics import (
     lsp_compat_severity,
     parse_env_rule_filters,
 )
-from onec_hbk_bsl.analysis.document_snapshot import DocumentSnapshot, build_document_snapshot
+from onec_hbk_bsl.analysis.document_snapshot import (
+    DocumentSnapshot,
+    ProcInfo,
+    build_document_snapshot,
+)
 from onec_hbk_bsl.analysis.formatter import (
     _DEDENT_BEFORE,
     _get_stripped_keyword,
@@ -182,6 +182,10 @@ from onec_hbk_bsl.indexer.metadata_registry import (
 )
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+from onec_hbk_bsl.lsp.source_fragments import (
+    parameter_name_from_declaration_fragment,
+    split_commas_outside_double_quotes,
+)
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -2012,43 +2016,42 @@ def _last_identifier(text: str) -> str:
     return m.group(0) if m else ""
 
 
-_RE_PROC_HEADER = _re.compile(
-    r"^\s*(?:Процедура|Функция|Procedure|Function)\s+(\w+)\s*\(([^)]*)\)",
-    _re.IGNORECASE | _re.UNICODE,
-)
-
-
-def _generate_doc_comment(header_line: str, line_idx: int, all_lines: list[str]) -> str | None:
-    """Generate a documentation comment block for a Procedure/Function header line.
-
-    Returns ``None`` if the line is not a procedure/function header, or if it is
-    already preceded by a ``//`` comment.
-
-    Функция gets an extra ``// Возвращаемое значение:`` section; Процедура does not.
-    Comment format matches BSL024 (space after //) and BSL215 (3-space entry indent).
-    """
-    m = _RE_PROC_HEADER.match(header_line)
-    if not m:
-        return None
-    if line_idx > 0 and all_lines[line_idx - 1].strip().startswith("//"):
+def _generate_doc_comment_for_proc(proc: ProcInfo, all_lines: list[str]) -> str | None:
+    """Generate a documentation comment block for a CST procedure/function model."""
+    if proc.start_idx > 0 and all_lines[proc.start_idx - 1].strip().startswith("//"):
         return None  # already documented
-    # Preserve exact leading whitespace (tabs vs spaces) — do not replace with spaces.
+    header_line = all_lines[proc.start_idx] if proc.start_idx < len(all_lines) else ""
     prefix = header_line[: len(header_line) - len(header_line.lstrip())]
-    keyword = header_line.lstrip().split()[0]
-    is_function = keyword.casefold() in ("функция", "function")
-    func_name, params_str = m.group(1), m.group(2).strip()
-    lines = [f"{prefix}// Описание {func_name}."]
-    if params_str:
+    lines = [f"{prefix}// Описание {proc.name}."]
+    if proc.params:
         lines += [f"{prefix}//", f"{prefix}// Параметры:"]
-        for p in split_commas_outside_double_quotes(params_str):
-            name = parameter_name_from_declaration_fragment(p)
-            if name:
-                lines.append(f"{prefix}//   {name} - Тип - Описание")
-    if is_function:
+        for name in proc.params:
+            lines.append(f"{prefix}//   {name} - Тип - Описание")
+    if proc.kind == "function":
         lines += [f"{prefix}//", f"{prefix}// Возвращаемое значение:"]
         lines.append(f"{prefix}//   Тип - Описание")
     lines.append(f"{prefix}//")
     return "\n".join(lines) + "\n"
+
+
+def _generate_doc_comment_at_line(
+    ls: BslLanguageServer,
+    uri: str,
+    content: str,
+    line_idx: int,
+) -> str | None:
+    context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+    )
+    if context is None:
+        return None
+    for proc in context.snapshot.procedures:
+        if proc.start_idx == line_idx:
+            return _generate_doc_comment_for_proc(proc, content.splitlines(keepends=True))
+    return None
 
 
 _META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, object] = {}  # unused; placeholder
@@ -3823,7 +3826,7 @@ def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[Code
 
             # ── BSL065: вставить блок описания экспортного метода ─────────────
             if code == "BSL065":
-                doc_fix = _generate_doc_comment(doc_lines[diag_line], diag_line, doc_lines)
+                doc_fix = _generate_doc_comment_at_line(ls, uri, content, diag_line)
                 if doc_fix:
                     actions.append(
                         CodeAction(
@@ -3879,7 +3882,7 @@ def on_code_action(ls: BslLanguageServer, params: CodeActionParams) -> list[Code
     except (TypeError, ValueError, AttributeError):
         cursor_line = -1
     if 0 <= cursor_line < len(doc_lines):
-        doc_block = _generate_doc_comment(doc_lines[cursor_line], cursor_line, doc_lines)
+        doc_block = _generate_doc_comment_at_line(ls, uri, content, cursor_line)
         if doc_block:
             actions.append(
                 CodeAction(

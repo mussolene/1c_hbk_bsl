@@ -24,53 +24,6 @@ def find_procedures_from_tree(tree: Any) -> list[Any]:
     return result
 
 
-def find_procedures(content: str) -> list[Any]:
-    from onec_hbk_bsl.analysis import diagnostics as _diag
-
-    ends: list[int] = []
-    for m in _diag._RE_END_PROC.finditer(content):
-        ends.append(content[: m.start()].count("\n"))
-    ends.sort()
-
-    result: list[Any] = []
-    for m in _diag._RE_PROC_HEADER.finditer(content):
-        start_idx = content[: m.start()].count("\n")
-        kw = m.group("kw").lower()
-        name = m.group("name")
-        params_str = m.group("params") or ""
-        is_export = bool(m.group("export"))
-        kind = "function" if kw in ("функция", "function") else "procedure"
-        header_col = len(m.group("indent"))
-
-        parsed = _diag._parse_params(params_str)
-        params = [p[0] for p in parsed]
-        val_params = [p[0] for p in parsed if p[1]]
-        optional_count = sum(1 for p in parsed if p[2])
-        optional_params = frozenset(p[0] for p in parsed if p[2])
-
-        end_idx = start_idx + 5
-        for e in ends:
-            if e > start_idx:
-                end_idx = e
-                break
-
-        result.append(
-            _diag._ProcInfo(
-                name=name,
-                kind=kind,
-                start_idx=start_idx,
-                end_idx=end_idx,
-                is_export=is_export,
-                params=params,
-                val_params=val_params,
-                optional_count=optional_count,
-                header_col=header_col,
-                optional_params=optional_params,
-            )
-        )
-    return result
-
-
 def find_regions(content: str) -> list[Any]:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 

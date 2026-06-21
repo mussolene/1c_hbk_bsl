@@ -10,16 +10,12 @@ from __future__ import annotations
 
 import re
 import threading
-from bisect import bisect_left, bisect_right
+from bisect import bisect_left
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.bsl_source_fragments import (
-    split_commas_outside_double_quotes,
-    strip_leading_val_keywords,
-)
 from onec_hbk_bsl.analysis.call_graph import Call
 from onec_hbk_bsl.analysis.diagnostic.cst import tree_has_errors
 from onec_hbk_bsl.analysis.diagnostic.helpers.proc_helpers import (
@@ -34,7 +30,7 @@ from onec_hbk_bsl.analysis.diagnostic.string_state import (
     span_is_inside_double_quoted_string,
     strip_inline_comment_preserve_strings,
 )
-from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
 from onec_hbk_bsl.analysis.sdbl_cst import select_top_without_order
 from onec_hbk_bsl.analysis.semantic import SemanticModel, extract_semantic_model
 from onec_hbk_bsl.analysis.source_positions import line_start_offsets
@@ -51,15 +47,6 @@ except Exception:  # pragma: no cover - optional parser dependency fallback
     _TsParser = None  # type: ignore[assignment]
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
-_RE_PROC_HEADER = re.compile(
-    r"^(?P<indent>[ \t]*)(?:(?:Асинх|Async)\s+)?(?P<kw>Процедура|Procedure|Функция|Function)\s+"
-    r"(?P<name>\w+)\s*\((?P<params>[^)]*)\)\s*(?P<export>Экспорт|Export)?",
-    re.IGNORECASE | re.MULTILINE,
-)
-_RE_END_PROC = re.compile(
-    r"^\s*(?:КонецПроцедуры|EndProcedure|КонецФункции|EndFunction)\s*(?://.*)?$",
-    re.IGNORECASE | re.MULTILINE,
-)
 _RE_REGION_OPEN = re.compile(
     r"^\s*#(?:Область|Region)\s+(?P<name>.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
@@ -887,49 +874,6 @@ def _parse_sdbl_query_text(query_text: str) -> tuple[Any | None, bool]:
     return tree, bool(root is not None and tree_has_errors(root))
 
 
-def _parse_params(params_str: str) -> list[tuple[str, bool, bool]]:
-    result: list[tuple[str, bool, bool]] = []
-    for raw in split_commas_outside_double_quotes(params_str):
-        raw = raw.strip()
-        if not raw:
-            continue
-        is_val = bool(re.match(r"^(?:Знач|Val)\s+", raw, re.IGNORECASE))
-        clean = strip_leading_val_keywords(raw)
-        is_optional = "=" in clean
-        name = clean.split("=")[0].strip()
-        if name and re.match(r"^\w+$", name):
-            result.append((name, is_val, is_optional))
-    return result
-
-
-def _param_ranges_from_params_string(
-    content: str,
-    line_breaks: list[int],
-    params_str: str,
-    params_start_offset: int,
-) -> tuple[tuple[str, int, int, int, int], ...]:
-    ranges: list[tuple[str, int, int, int, int]] = []
-    offset = 0
-    for raw_part in split_commas_outside_double_quotes(params_str):
-        part_start = params_start_offset + offset
-        offset += len(raw_part) + 1
-        clean = strip_leading_val_keywords(raw_part.strip())
-        if not clean:
-            continue
-        name = clean.split("=", 1)[0].strip()
-        if not name or not re.match(r"^\w+$", name):
-            continue
-        relative = raw_part.find(name)
-        if relative < 0:
-            continue
-        start_offset = part_start + relative
-        end_offset = start_offset + len(name)
-        start_idx, start_character = _lsp_point_for_offset(content, line_breaks, start_offset)
-        end_idx, end_character = _lsp_point_for_offset(content, line_breaks, end_offset)
-        ranges.append((name, start_idx, start_character, end_idx, end_character))
-    return tuple(ranges)
-
-
 def _ts_node_text(node: Any) -> str:
     text = getattr(node, "text", None)
     if text is None:
@@ -1103,17 +1047,6 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
                         optional_count += 1
                         optional_params_list.append(param_name)
 
-    node_text = _ts_node_text(node)
-    header_match = _RE_PROC_HEADER.search(node_text)
-    if header_match is not None:
-        name = header_match.group("name")
-        is_export = bool(header_match.group("export"))
-        parsed = _parse_params(header_match.group("params") or "")
-        params = [param[0] for param in parsed]
-        val_params = [param[0] for param in parsed if param[1]]
-        optional_count = sum(1 for param in parsed if param[2])
-        optional_params_list = [param[0] for param in parsed if param[2]]
-
     if not name:
         return None
 
@@ -1180,7 +1113,8 @@ def find_procedure_names_from_tree(tree: Any) -> frozenset[str]:
 
 
 def find_procedure_names_in_content(content: str) -> frozenset[str]:
-    return frozenset(proc.name.casefold() for proc in _find_procedures(content))
+    tree = BslParser().parse_content(content)
+    return find_procedure_names_from_tree(tree)
 
 
 def _line_break_positions(content: str) -> list[int]:
@@ -1221,77 +1155,6 @@ def _char_offset_for_ts_point(
 
 def _line_index_for_offset(line_breaks: list[int], offset: int) -> int:
     return bisect_left(line_breaks, offset)
-
-
-def _lsp_point_for_offset(content: str, line_breaks: list[int], offset: int) -> tuple[int, int]:
-    line_idx = _line_index_for_offset(line_breaks, offset)
-    line_start = 0 if line_idx == 0 else line_breaks[line_idx - 1] + 1
-    line_end = line_breaks[line_idx] if line_idx < len(line_breaks) else len(content)
-    line_text = content[line_start:line_end].rstrip("\r")
-    character = utf16_len(line_text[: max(0, offset - line_start)])
-    return line_idx, character
-
-
-def _find_procedures(content: str) -> list[ProcInfo]:
-    line_breaks = _line_break_positions(content)
-    ends = [
-        _line_index_for_offset(line_breaks, match.start())
-        for match in _RE_END_PROC.finditer(content)
-    ]
-
-    result: list[ProcInfo] = []
-    for match in _RE_PROC_HEADER.finditer(content):
-        start_idx = _line_index_for_offset(line_breaks, match.start())
-        kw = match.group("kw").lower()
-        name = match.group("name")
-        params_str = match.group("params") or ""
-        is_export = bool(match.group("export"))
-        kind = "function" if kw in ("функция", "function") else "procedure"
-        header_col = len(match.group("indent"))
-
-        parsed = _parse_params(params_str)
-        params = [param[0] for param in parsed]
-        val_params = [param[0] for param in parsed if param[1]]
-        optional_count = sum(1 for param in parsed if param[2])
-        optional_params = frozenset(param[0] for param in parsed if param[2])
-        param_ranges = _param_ranges_from_params_string(
-            content,
-            line_breaks,
-            params_str,
-            match.start("params"),
-        )
-        params_start_idx, params_start_character = _lsp_point_for_offset(
-            content, line_breaks, match.start("params")
-        )
-        params_end_idx, params_end_character = _lsp_point_for_offset(
-            content, line_breaks, match.end("params")
-        )
-
-        end_idx = start_idx + 5
-        end_pos = bisect_right(ends, start_idx)
-        if end_pos < len(ends):
-            end_idx = ends[end_pos]
-
-        result.append(
-            ProcInfo(
-                name=name,
-                kind=kind,
-                start_idx=start_idx,
-                end_idx=end_idx,
-                is_export=is_export,
-                params=params,
-                val_params=val_params,
-                optional_count=optional_count,
-                header_col=header_col,
-                optional_params=optional_params,
-                params_start_idx=params_start_idx,
-                params_start_character=params_start_character,
-                params_end_idx=params_end_idx,
-                params_end_character=params_end_character,
-                param_ranges=param_ranges,
-            )
-        )
-    return result
 
 
 def _find_regions(content: str) -> list[RegionInfo]:
@@ -1611,11 +1474,7 @@ class DocumentSnapshot:
     @property
     def procedures(self) -> list[ProcInfo]:
         if self._procs is None:
-            self._procs = (
-                _find_procedures_from_tree(self.tree)
-                if self.is_tree_sitter
-                else _find_procedures(self.content)
-            )
+            self._procs = _find_procedures_from_tree(self.tree) if self.is_tree_sitter else []
         return self._procs
 
     @property

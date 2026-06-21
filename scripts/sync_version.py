@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Sync ``vscode-extension/package.json`` (and lockfile) to the **git-based** version.
+Sync release metadata to the git tag version.
 
-Uses setuptools-scm (same as the Python package) or ``git describe`` as fallback.
-Run from the repo root after tagging, or in CI on a tag checkout.
+The Python package itself is versioned dynamically by setuptools-scm. This script
+updates files that must contain literal versions in release artifacts:
+``src/onec_hbk_bsl/_version.py`` and VS Code extension manifests.
+
+The version source is intentionally stable: explicit release env first, then the
+latest ``v*`` git tag. It does not use setuptools-scm's dirty/dev version because
+that string is not what should be written into VSIX/runtime release metadata.
 
 Usage::
 
@@ -15,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -22,26 +29,44 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXT = ROOT / "vscode-extension"
 PY_VERSION = ROOT / "src" / "onec_hbk_bsl" / "_version.py"
+_VERSION_RE = re.compile(r"^v?(?P<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$")
 
 
-def _version_from_scm() -> str:
-    try:
-        from setuptools_scm import get_version
+def _normalize_version(raw: str) -> str:
+    value = raw.strip()
+    if value.startswith("refs/tags/"):
+        value = value.removeprefix("refs/tags/")
+    match = _VERSION_RE.fullmatch(value)
+    if not match:
+        raise ValueError(f"unsupported release version: {raw!r}")
+    return match.group("version")
 
-        return get_version(root=str(ROOT))
-    except ImportError as e:
-        raise RuntimeError("install setuptools-scm: uv pip install setuptools-scm") from e
+
+def _version_from_env() -> str | None:
+    for name in ("SETUPTOOLS_SCM_PRETEND_VERSION", "GITHUB_REF_NAME", "GITHUB_REF"):
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        try:
+            return _normalize_version(raw)
+        except ValueError:
+            if name in {"GITHUB_REF_NAME", "GITHUB_REF"}:
+                continue
+            raise
+    return None
 
 
-def _version_from_git_describe() -> str:
+def _version_from_latest_tag() -> str:
     out = subprocess.check_output(
         ["git", "describe", "--tags", "--match", "v*", "--abbrev=0"],
         cwd=str(ROOT),
         text=True,
     ).strip()
-    if out.startswith("v"):
-        return out[1:]
-    return out
+    return _normalize_version(out)
+
+
+def _release_version() -> str:
+    return _version_from_env() or _version_from_latest_tag()
 
 
 def _parse_args() -> argparse.Namespace:
@@ -57,13 +82,10 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     try:
-        ver = _version_from_scm()
-    except (RuntimeError, LookupError):
-        try:
-            ver = _version_from_git_describe()
-        except (OSError, subprocess.CalledProcessError) as e:
-            print("setuptools-scm failed and git describe failed:", e, file=sys.stderr)
-            return 1
+        ver = _release_version()
+    except (OSError, subprocess.CalledProcessError, ValueError) as e:
+        print("failed to resolve release version:", e, file=sys.stderr)
+        return 1
 
     PY_VERSION.write_text(
         f'"""Generated version metadata for runtime use."""\n\n__version__ = "{ver}"\n',

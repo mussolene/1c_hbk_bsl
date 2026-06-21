@@ -6760,15 +6760,7 @@ class TestBsl254TransferringParameters:
         )
         assert _codes(diags) == ["BSL254"]
 
-    def test_external_caller_uses_snapshot_procedure_cache(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import onec_hbk_bsl.analysis.diagnostics as diagnostics_module
-
-        def fail_legacy_text_parse(_content: str) -> list[object]:
-            raise AssertionError("legacy text procedure discovery should not run")
-
-        monkeypatch.setattr(diagnostics_module, "_find_procedures", fail_legacy_text_parse)
+    def test_external_caller_uses_snapshot_procedure_cache(self, tmp_path: Path) -> None:
         diags = self._check_indexed(
             tmp_path,
             {

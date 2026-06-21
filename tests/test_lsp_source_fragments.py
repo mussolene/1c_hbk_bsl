@@ -1,37 +1,12 @@
-"""Tests for BSL source-fragment helpers and CST string ranges."""
+"""Tests for LSP signature/argument snippet helpers."""
 
 from __future__ import annotations
 
-from onec_hbk_bsl.analysis.bsl_source_fragments import (
+from onec_hbk_bsl.lsp.source_fragments import (
     parameter_name_from_declaration_fragment,
     split_commas_outside_double_quotes,
     strip_leading_val_keywords,
 )
-from onec_hbk_bsl.analysis.document_snapshot import DocumentSnapshot
-from onec_hbk_bsl.analysis.source_positions import line_start_offsets
-from onec_hbk_bsl.parser.bsl_parser import BslParser
-
-
-def _snapshot(content: str) -> DocumentSnapshot:
-    return DocumentSnapshot("<test>", content, BslParser().parse_content(content))
-
-
-def test_cst_string_ranges_skip_line_comment() -> None:
-    content = '// "fake" string\nА = 1;\n'
-    assert _snapshot(content).string_literal_ranges == ()
-
-
-def test_cst_string_ranges_include_multiline_literal() -> None:
-    content = 'П = "строка\n|Если внутри\n|конец";\n'
-    ranges = _snapshot(content).string_literal_ranges
-    assert len(ranges) == 1
-    start, end = ranges[0]
-    assert content[start] == '"'
-    assert content[end - 1] == '"'
-
-
-def test_line_start_offsets() -> None:
-    assert line_start_offsets("А\nБ\n") == [0, 2, 4]
 
 
 def test_comma_inside_default_string() -> None:

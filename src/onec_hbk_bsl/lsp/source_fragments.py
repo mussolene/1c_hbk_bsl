@@ -1,4 +1,4 @@
-"""Utilities for BSL source fragments that are not standalone CST trees."""
+"""Utilities for LSP signature and argument text snippets."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def parameter_name_from_declaration_fragment(param_chunk: str) -> str:
 
 
 def split_commas_outside_double_quotes(segment: str) -> list[str]:
-    """Split a signature/argument fragment on commas outside BSL string literals."""
+    """Split a signature/argument snippet on commas outside BSL string literals."""
     segment = segment.strip()
     if not segment:
         return []

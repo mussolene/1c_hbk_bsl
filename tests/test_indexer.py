@@ -448,6 +448,25 @@ class TestIncrementalIndexerExtended:
 
         assert find_config_root(tmp_path) == real
 
+    def test_metadata_input_xmls_include_objects_and_forms(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.indexer.metadata_parser import iter_metadata_input_xmls
+
+        config = tmp_path / "config"
+        catalog_dir = config / "Catalogs"
+        form_ext = catalog_dir / "Контрагенты" / "Forms" / "ФормаЭлемента" / "Ext"
+        form_ext.mkdir(parents=True)
+        (config / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (catalog_dir / "Контрагенты.xml").write_text("<Catalog/>", encoding="utf-8")
+        (form_ext / "Form.xml").write_text("<Form/>", encoding="utf-8")
+
+        files = [path.relative_to(config).as_posix() for path in iter_metadata_input_xmls(config)]
+
+        assert files == [
+            "Configuration.xml",
+            "Catalogs/Контрагенты.xml",
+            "Catalogs/Контрагенты/Forms/ФормаЭлемента/Ext/Form.xml",
+        ]
+
     def test_metadata_indexing_skips_unchanged_fingerprint(
         self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
     ) -> None:

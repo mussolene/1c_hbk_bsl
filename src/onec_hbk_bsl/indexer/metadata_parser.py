@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from onec_hbk_bsl.indexer.discovery import iter_discovery_dirs
 from onec_hbk_bsl.indexer.metadata_registry import (
     FOLDER_TO_KIND,
     xml_root_tags_for_kind,
@@ -27,41 +28,6 @@ except ImportError:
     import xml.etree.ElementTree as ET  # noqa: S405  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
-
-_DISCOVERY_EXCLUDED_DIRS = {
-    ".agent",
-    ".agents",
-    ".cache",
-    ".codex",
-    ".cursor",
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".svn",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "node_modules",
-    "out",
-    "target",
-    "vendor",
-}
-
-
-def _iter_discovery_dirs(path: Path) -> list[Path]:
-    try:
-        return [
-            child
-            for child in path.iterdir()
-            if child.is_dir()
-            and child.name not in _DISCOVERY_EXCLUDED_DIRS
-            and not child.name.endswith(".egg-info")
-        ]
-    except PermissionError:
-        return []
 
 
 # -----------------------------------------------------------------------
@@ -391,7 +357,7 @@ def find_config_root(workspace: str | Path, *, max_depth: int = 12) -> Path | No
         current, depth = queue.pop(0)
         if depth > max_depth:
             continue
-        for child in _iter_discovery_dirs(current):
+        for child in iter_discovery_dirs(current):
             if (child / "Configuration.xml").exists():
                 return child
             queue.append((child, depth + 1))
@@ -414,9 +380,48 @@ def find_edt_configuration_marker(workspace: str | Path, *, max_depth: int = 14)
         mdo = current / "Configuration" / "Configuration.mdo"
         if mdo.is_file():
             return mdo
-        for child in _iter_discovery_dirs(current):
+        for child in iter_discovery_dirs(current):
             queue.append((child, depth + 1))
     return None
+
+
+def iter_metadata_object_xmls(config_root: str | Path) -> list[tuple[Path, str, str]]:
+    """Return object XML files as ``(xml_path, kind, object_name)`` tuples."""
+    root = Path(config_root)
+    result: list[tuple[Path, str, str]] = []
+    for folder_name, kind in FOLDER_TO_KIND.items():
+        folder = root / folder_name
+        if not folder.is_dir():
+            continue
+        for xml_file in sorted(folder.glob("*.xml")):
+            result.append((xml_file, kind, xml_file.stem))
+    return result
+
+
+def iter_metadata_form_xmls(object_xml: str | Path) -> list[tuple[Path, str]]:
+    """Return form XML files for one object XML as ``(form_xml, form_name)`` tuples."""
+    xml_path = Path(object_xml)
+    forms_dir = xml_path.with_suffix("") / "Forms"
+    if not forms_dir.is_dir():
+        return []
+    result: list[tuple[Path, str]] = []
+    for form_dir in sorted(forms_dir.iterdir()):
+        if not form_dir.is_dir():
+            continue
+        form_xml = form_dir / "Ext" / "Form.xml"
+        if form_xml.exists():
+            result.append((form_xml, form_dir.name))
+    return result
+
+
+def iter_metadata_input_xmls(config_root: str | Path) -> list[Path]:
+    """Return XML files that affect metadata indexing and fingerprinting."""
+    root = Path(config_root)
+    result = [root / "Configuration.xml"]
+    for xml_file, _, _ in iter_metadata_object_xmls(root):
+        result.append(xml_file)
+        result.extend(form_xml for form_xml, _ in iter_metadata_form_xmls(xml_file))
+    return result
 
 
 def crawl_config(config_root: str | Path) -> list[MetaObject]:
@@ -432,36 +437,21 @@ def crawl_config(config_root: str | Path) -> list[MetaObject]:
     config_root = Path(config_root)
     objects: list[MetaObject] = []
 
-    for folder_name, kind in FOLDER_TO_KIND.items():
-        folder = config_root / folder_name
-        if not folder.exists():
+    for xml_file, kind, obj_name in iter_metadata_object_xmls(config_root):
+        try:
+            meta_obj = parse_object_xml(xml_file, kind, obj_name)
+        except Exception as exc:
+            logger.debug("Error parsing %s: %s", xml_file, exc)
             continue
 
-        # Each object is represented by Name.xml + optional Name/ subdir
-        for xml_file in sorted(folder.glob("*.xml")):
-            obj_name = xml_file.stem
+        for form_xml, form_name in iter_metadata_form_xmls(xml_file):
             try:
-                meta_obj = parse_object_xml(xml_file, kind, obj_name)
+                form_members = parse_form_xml(form_xml, obj_name, kind, form_name)
+                meta_obj.members.extend(form_members)
             except Exception as exc:
-                logger.debug("Error parsing %s: %s", xml_file, exc)
-                continue
+                logger.debug("Error parsing form %s: %s", form_xml, exc)
 
-            # Parse forms from Name/Forms/FormName/Ext/Form.xml
-            obj_dir = folder / obj_name
-            forms_dir = obj_dir / "Forms" if obj_dir.is_dir() else None
-            if forms_dir and forms_dir.is_dir():
-                for form_dir in sorted(forms_dir.iterdir()):
-                    if not form_dir.is_dir():
-                        continue
-                    form_xml = form_dir / "Ext" / "Form.xml"
-                    if form_xml.exists():
-                        try:
-                            form_members = parse_form_xml(form_xml, obj_name, kind, form_dir.name)
-                            meta_obj.members.extend(form_members)
-                        except Exception as exc:
-                            logger.debug("Error parsing form %s: %s", form_xml, exc)
-
-            objects.append(meta_obj)
+        objects.append(meta_obj)
 
     logger.info(
         "Crawled config at %s: %d objects, %d total members",

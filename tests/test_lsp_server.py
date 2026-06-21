@@ -2171,11 +2171,19 @@ class TestNodeToDict:
 
 
 class TestGenerateDocComment:
-    def test_generates_for_procedure(self) -> None:
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
+    def _generate(self, content: str, line_idx: int = 0) -> str | None:
+        from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
+        from onec_hbk_bsl.lsp.server import _generate_doc_comment_for_proc
 
-        lines = ["Процедура МойМетод(А, Б)\n", "КонецПроцедуры\n"]
-        result = _generate_doc_comment(lines[0], 0, lines)
+        snapshot = build_document_snapshot("<test>", content=content)
+        lines = content.splitlines(keepends=True)
+        proc = next((item for item in snapshot.procedures if item.start_idx == line_idx), None)
+        if proc is None:
+            return None
+        return _generate_doc_comment_for_proc(proc, lines)
+
+    def test_generates_for_procedure(self) -> None:
+        result = self._generate("Процедура МойМетод(А, Б)\nКонецПроцедуры\n")
         assert result is not None
         assert "МойМетод" in result
         assert "Параметры" in result
@@ -2183,41 +2191,26 @@ class TestGenerateDocComment:
         assert "Б" in result
 
     def test_skips_if_already_documented(self) -> None:
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
-
-        lines = ["// Уже есть\n", "Процедура МойМетод(А)\n", "КонецПроцедуры\n"]
-        result = _generate_doc_comment(lines[1], 1, lines)
+        result = self._generate("// Уже есть\nПроцедура МойМетод(А)\nКонецПроцедуры\n", 1)
         assert result is None
 
     def test_returns_none_for_non_header(self) -> None:
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
-
-        lines = ["А = 1;\n"]
-        result = _generate_doc_comment(lines[0], 0, lines)
+        result = self._generate("А = 1;\n")
         assert result is None
 
     def test_no_params_no_params_section(self) -> None:
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
-
-        lines = ["Функция БезПараметров()\n", "КонецФункции\n"]
-        result = _generate_doc_comment(lines[0], 0, lines)
+        result = self._generate("Функция БезПараметров()\nКонецФункции\n")
         assert result is not None
         assert "Параметры" not in result
 
     def test_function_gets_return_value_section(self) -> None:
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
-
-        lines = ["Функция МойМетод(А)\n", "КонецФункции\n"]
-        result = _generate_doc_comment(lines[0], 0, lines)
+        result = self._generate("Функция МойМетод(А)\nКонецФункции\n")
         assert result is not None
         assert "Возвращаемое значение" in result
         assert "Параметры" in result
 
     def test_procedure_has_no_return_value_section(self) -> None:
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
-
-        lines = ["Процедура МойМетод(А)\n", "КонецПроцедуры\n"]
-        result = _generate_doc_comment(lines[0], 0, lines)
+        result = self._generate("Процедура МойМетод(А)\nКонецПроцедуры\n")
         assert result is not None
         assert "Возвращаемое значение" not in result
 
@@ -2226,19 +2219,14 @@ class TestGenerateDocComment:
         from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
             bsl024_should_report_line,
         )
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
 
-        lines = ["Функция Тест(П1, П2)\n", "КонецФункции\n"]
-        result = _generate_doc_comment(lines[0], 0, lines)
+        result = self._generate("Функция Тест(П1, П2)\nКонецФункции\n")
         assert result is not None
         for line in result.splitlines():
             assert not bsl024_should_report_line(line), f"BSL024 fires on: {line!r}"
 
     def test_preserves_tab_indent(self) -> None:
-        from onec_hbk_bsl.lsp.server import _generate_doc_comment
-
-        lines = ["\tПроцедура МойМетод(А)\n", "\tКонецПроцедуры\n"]
-        result = _generate_doc_comment(lines[0], 0, lines)
+        result = self._generate("\tПроцедура МойМетод(А)\n\tКонецПроцедуры\n")
         assert result is not None
         assert result.startswith("\t//")
         assert "\n\t//" in result

@@ -7,6 +7,7 @@ from onec_hbk_bsl.analysis.document_snapshot import (
     find_procedure_names_from_tree,
     find_procedure_names_in_content,
 )
+from onec_hbk_bsl.analysis.source_positions import line_start_offsets
 
 
 def test_snapshot_collects_core_document_views(tmp_path: Path) -> None:
@@ -35,7 +36,27 @@ def test_snapshot_collects_core_document_views(tmp_path: Path) -> None:
     assert any(symbol.name == "Тест" and symbol.kind == "procedure" for symbol in snapshot.symbols)
 
 
-def test_non_tree_sitter_snapshot_keeps_procedure_fallback_but_not_regions(tmp_path: Path) -> None:
+def test_cst_string_ranges_skip_line_comment() -> None:
+    content = '// "fake" string\nА = 1;\n'
+    snapshot = build_document_snapshot("<test>", content=content)
+    assert snapshot.string_literal_ranges == ()
+
+
+def test_cst_string_ranges_include_multiline_literal() -> None:
+    content = 'П = "строка\n|Если внутри\n|конец";\n'
+    snapshot = build_document_snapshot("<test>", content=content)
+    ranges = snapshot.string_literal_ranges
+    assert len(ranges) == 1
+    start, end = ranges[0]
+    assert content[start] == '"'
+    assert content[end - 1] == '"'
+
+
+def test_line_start_offsets() -> None:
+    assert line_start_offsets("А\nБ\n") == [0, 2, 4]
+
+
+def test_non_tree_sitter_snapshot_does_not_build_procedure_model(tmp_path: Path) -> None:
     content = """\
 #Область Test
 Функция Имя(Парам = 1)
@@ -49,7 +70,7 @@ def test_non_tree_sitter_snapshot_keeps_procedure_fallback_but_not_regions(tmp_p
         tree=object(),
     )
 
-    assert snapshot.procedures[0].name == "Имя"
+    assert snapshot.procedures == []
     assert snapshot.regions == []
 
 
@@ -127,7 +148,7 @@ def test_procedure_name_extractors_handle_async_declarations(tmp_path: Path) -> 
     assert find_procedure_names_in_content(content) == frozenset({"получитьасинх", "записатьасинх"})
 
 
-def test_regex_fallback_snapshot_collects_async_procedures(tmp_path: Path) -> None:
+def test_non_tree_sitter_snapshot_skips_async_procedure_model(tmp_path: Path) -> None:
     content = """\
 Асинх Функция ВерсияАсинх() Экспорт
     Возврат 1;
@@ -135,7 +156,7 @@ def test_regex_fallback_snapshot_collects_async_procedures(tmp_path: Path) -> No
 """
     snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content, tree=object())
 
-    assert [proc.name for proc in snapshot.procedures] == ["ВерсияАсинх"]
+    assert snapshot.procedures == []
 
 
 def test_regions_require_tree_sitter_snapshot(tmp_path: Path) -> None:
