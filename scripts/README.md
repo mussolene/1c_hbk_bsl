@@ -40,3 +40,19 @@ python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 - throughput по файлам, строкам и мегабайтам
 
 Это именно исследовательский / development-only прогон, не тестовый fixture pipeline.
+
+## Матрица диагностических правил
+
+**`diagnostic_rule_matrix.py`** строит development-only карту правил по текущей
+топологии исполнения:
+
+```bash
+./.venv/bin/python scripts/diagnostic_rule_matrix.py --format summary
+./.venv/bin/python scripts/diagnostic_rule_matrix.py --format csv > /tmp/rules.csv
+```
+
+Матрица связывает `BSL###` с `registry phase`, фактической группой в
+`diagnostic_runtime.runner`, используемыми `DocumentSnapshot`-фактами,
+режимом исполнения и рекомендуемой пачкой доработки. Ее нужно использовать
+перед изменением семейства правил, чтобы планировать работу по shared runtime
+facts, а не по красивым, но неисполнительным фазам.
