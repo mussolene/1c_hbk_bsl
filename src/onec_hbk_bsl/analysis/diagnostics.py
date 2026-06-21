@@ -8,7 +8,7 @@ Built-in rules
 BSL001  ParseError              — Syntax error detected by tree-sitter
 BSL002  MethodSize              — Procedure/function longer than N lines (default 200)
 BSL003  NonExportMethodsInApiRegion — Method in API region without Export keyword
-BSL004  EmptyCodeBlock          — Empty handler / empty «Тогда» branch
+BSL004  EmptyCodeBlock          — Empty control-flow branch or loop body
 BSL005  UsingHardcodeNetworkAddress — Hardcoded IP address or URL (BSLLS name)
 BSL006  UsingHardcodePath           — Hardcoded file system path (BSLLS name)
 BSL007  UnusedLocalVariable         — Local variable declared but never referenced
@@ -26,8 +26,8 @@ Suppression
 -----------
 Inline suppression on a specific line::
 
-    Исключение  // noqa: BSL004
-    Исключение  // bsl-disable: BSL004
+    Если Условие Тогда  // noqa: BSL004
+    Исключение  // bsl-disable: BSL028
     Исключение  // noqa            ← suppresses ALL rules on this line
 
 BSL Language Server (BSLLS) block suppression — compatible with existing

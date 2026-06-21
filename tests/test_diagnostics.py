@@ -4,7 +4,7 @@ Tests for DiagnosticEngine.
 Covers:
   - BSL001: syntax error detection
   - BSL002: long procedure detection
-  - BSL004: empty exception handler detection
+  - BSL004: empty control-flow block detection
   - Clean file produces no diagnostics
 """
 
@@ -83,6 +83,18 @@ class TestBsl001SyntaxErrors:
         issues = DiagnosticEngine(select={"BSL001"}).check_file(str(bsl_file))
         assert not [d for d in issues if d.code == "BSL001"]
 
+    def test_top_level_region_directive_has_no_syntax_error(self, tmp_path: Path) -> None:
+        bsl_file = tmp_path / "region.bsl"
+        bsl_file.write_text(
+            "#КонецОбласти\n"
+            "#Область СлужебныйПрограммныйИнтерфейс\n"
+            "Процедура Тест()\n"
+            "КонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        issues = DiagnosticEngine(select={"BSL001"}).check_file(str(bsl_file))
+        assert not [d for d in issues if d.code == "BSL001"]
+
     def test_unreadable_file_produces_bsl001(self, tmp_path: Path) -> None:
         """DiagnosticEngine on a missing file returns a BSL001 error."""
         engine = DiagnosticEngine()
@@ -129,7 +141,7 @@ class TestBsl002LongProcedure:
 
 
 class TestBsl004EmptyExceptHandler:
-    def test_empty_except_does_not_trigger_bsl004_bslls_parity(self, tmp_path: Path) -> None:
+    def test_empty_except_is_bsl028_not_bsl004(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Попытка
@@ -139,9 +151,33 @@ class TestBsl004EmptyExceptHandler:
                 КонецПопытки;
             КонецПроцедуры
         """
-        issues = _check_content(content, tmp_path)
+        bsl_file = tmp_path / "test.bsl"
+        bsl_file.write_text(textwrap.dedent(content), encoding="utf-8")
+
+        issues = DiagnosticEngine(select={"BSL004", "BSL028"}).check_file(str(bsl_file))
         bsl004 = [d for d in issues if d.code == "BSL004"]
+        bsl028 = [d for d in issues if d.code == "BSL028"]
         assert bsl004 == []
+        assert [(d.line, d.character, d.end_character) for d in bsl028] == [(4, 4, 14)]
+
+    def test_exception_with_empty_statement_is_bsl025_not_bsl028(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    Сообщить("OK");
+                Исключение
+                    ;
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        bsl_file = tmp_path / "test.bsl"
+        bsl_file.write_text(textwrap.dedent(content), encoding="utf-8")
+
+        issues = DiagnosticEngine(select={"BSL025", "BSL028"}).check_file(str(bsl_file))
+        assert [(d.line, d.character, d.end_character) for d in issues if d.code == "BSL025"] == [
+            (5, 8, 9)
+        ]
+        assert [d for d in issues if d.code == "BSL028"] == []
 
     def test_nonempty_except_no_bsl004(self, tmp_path: Path) -> None:
         content = """\
@@ -178,6 +214,7 @@ class TestBsl004EmptyExceptHandler:
         bsl004 = [d for d in issues if d.code == "BSL004"]
         assert len(bsl004) >= 1
         assert bsl004[0].line == 2
+        assert bsl004[0].character == content.splitlines()[1].index("Если")
 
     def test_bsl004_reports_multiline_if_on_then_token(self, tmp_path: Path) -> None:
         content = """\
@@ -265,6 +302,69 @@ class TestBsl004EmptyExceptHandler:
         bsl004 = [d for d in issues if d.code == "BSL004"]
         assert len(bsl004) == 1
         assert bsl004[0].line == 4
+
+    def test_bsl004_reports_empty_loop_bodies(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока А Цикл
+    КонецЦикла;
+
+    Для Счетчик = 1 По 3 Цикл
+    КонецЦикла;
+
+    Для Каждого Элемент Из Коллекция Цикл
+    КонецЦикла;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        bsl004 = [d for d in issues if d.code == "BSL004"]
+        assert [(d.line, d.character) for d in bsl004] == [
+            (2, content.splitlines()[1].index("Пока")),
+            (5, content.splitlines()[4].index("Для")),
+            (8, content.splitlines()[7].index("Для")),
+        ]
+
+    def test_bsl004_treats_comment_only_loop_as_empty_body(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Пока А Цикл
+        // TODO
+    КонецЦикла;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        bsl004 = [d for d in issues if d.code == "BSL004"]
+        assert len(bsl004) == 1
+        assert bsl004[0].line == 2
+
+    def test_bsl004_does_not_report_nonempty_control_blocks(self, tmp_path: Path) -> None:
+        content = """\
+Процедура Тест()
+    Если А Тогда
+        Сообщить("A");
+    Иначе
+        Возврат;
+    КонецЕсли;
+
+    Пока Б Цикл
+        Прервать;
+    КонецЦикла;
+КонецПроцедуры
+"""
+        bsl_file = tmp_path / "t.bsl"
+        bsl_file.write_text(content, encoding="utf-8")
+
+        engine = DiagnosticEngine(select={"BSL004"})
+        issues = engine.check_file(str(bsl_file))
+        assert [d for d in issues if d.code == "BSL004"] == []
 
 
 # ---------------------------------------------------------------------------

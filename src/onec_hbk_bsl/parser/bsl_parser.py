@@ -238,6 +238,10 @@ class BslParser:
                 for child in node.children:
                     self._collect_errors(child, errors)
                 return
+            if node.type in ("ERROR", "error") and self._is_region_directive_wrapper_error(node):
+                for child in node.children:
+                    self._collect_errors(child, errors)
+                return
             errors.append(
                 {
                     "line": node.start_point[0] + 1,
@@ -249,6 +253,44 @@ class BslParser:
             )
         for child in node.children:
             self._collect_errors(child, errors)
+
+    def _is_region_directive_wrapper_error(self, node: Any) -> bool:
+        """
+        tree-sitter-bsl may wrap region directives and their sibling module
+        declarations in ERROR nodes. BSLLS does not report ParseError for those
+        CST wrappers; region correctness is handled by region diagnostics.
+        """
+        children = list(getattr(node, "children", ()))
+        if not children:
+            return False
+        return self._region_wrapper_has_directive(children) and all(
+            self._is_region_wrapper_child(child) for child in children
+        )
+
+    def _region_wrapper_has_directive(self, children: list[Any]) -> bool:
+        return any(
+            child.type in {"PREPROC_REGION_KEYWORD", "PREPROC_ENDREGION_KEYWORD"}
+            or (
+                child.type in {"ERROR", "error"}
+                and self._region_wrapper_has_directive(list(getattr(child, "children", ())))
+            )
+            for child in children
+        )
+
+    def _is_region_wrapper_child(self, node: Any) -> bool:
+        if node.is_missing:
+            return False
+        if node.type in {"ERROR", "error"}:
+            return self._is_region_directive_wrapper_error(node)
+        return node.type in {
+            "PREPROC_REGION_KEYWORD",
+            "PREPROC_ENDREGION_KEYWORD",
+            "identifier",
+            "line_comment",
+            "block_comment",
+            "procedure_definition",
+            "function_definition",
+        }
 
     @staticmethod
     def _is_identifier_with_yo_error(node: Any) -> bool:

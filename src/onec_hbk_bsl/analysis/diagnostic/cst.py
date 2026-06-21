@@ -159,7 +159,7 @@ def ts_clause_body_is_empty(body: list[Any]) -> bool:
     """True if clause body has no executable statements (only comments / bare ``;``)."""
     for c in body:
         ct = getattr(c, "type", None)
-        if ct in (None, "line_comment", ";"):
+        if ct in (None, "line_comment", "block_comment", ";"):
             continue
         return False
     return True
@@ -169,11 +169,10 @@ def _bsl004_append_empty_block(
     path: str,
     diags: list[Any],
     anchor_node: Any,
-    message: str,
+    lines: list[str],
     *,
     end_node: Any | None = None,
 ) -> None:
-    lines = _root_source_lines(anchor_node)
     line = anchor_node.start_point[0] + 1
     character = _point_char(lines, anchor_node.start_point)
     end_character = _point_char(lines, (end_node or anchor_node).end_point)
@@ -184,6 +183,33 @@ def _bsl004_append_empty_block(
             character=character,
             end_line=line,
             end_character=max(character + 1, end_character),
+            severity=Severity.WARNING,
+            code="BSL004",
+        )
+    )
+
+
+def _bsl004_append_empty_opening_block(
+    path: str,
+    diags: list[Any],
+    opener_node: Any,
+    delimiter_node: Any,
+    lines: list[str],
+) -> None:
+    """Append a diagnostic range for an empty block opener."""
+    if opener_node.start_point[0] == delimiter_node.start_point[0]:
+        start_point = opener_node.start_point
+        end_point = delimiter_node.end_point
+    else:
+        start_point = delimiter_node.start_point
+        end_point = delimiter_node.end_point
+    diags.append(
+        Diagnostic(
+            file=path,
+            line=start_point[0] + 1,
+            character=_point_char(lines, start_point),
+            end_line=end_point[0] + 1,
+            end_character=_point_char(lines, end_point),
             severity=Severity.WARNING,
             code="BSL004",
         )
@@ -251,7 +277,7 @@ def _bsl004_else_internal_body(else_node: Any) -> list[Any]:
 
 
 def _bsl004_emit_empty_then_for_if_statement(
-    if_stmt: Any, path: str, diags: list[Any], empty_msg: str
+    if_stmt: Any, path: str, diags: list[Any], lines: list[str]
 ) -> None:
     ch = list(getattr(if_stmt, "children", []) or [])
     if not ch or getattr(ch[0], "type", None) != "IF_KEYWORD":
@@ -263,6 +289,7 @@ def _bsl004_emit_empty_then_for_if_statement(
     )
     if then_index is None:
         return
+    opener_node = ch[0]
     then_node = ch[then_index]
     i = then_index + 1
     start = i
@@ -274,7 +301,7 @@ def _bsl004_emit_empty_then_for_if_statement(
         i += 1
     body = ch[start:i]
     if ts_clause_body_is_empty(body):
-        _bsl004_append_empty_block(path, diags, then_node, empty_msg)
+        _bsl004_append_empty_opening_block(path, diags, opener_node, then_node, lines)
 
     while i < len(ch):
         node = ch[i]
@@ -283,18 +310,65 @@ def _bsl004_emit_empty_then_for_if_statement(
             body = _bsl004_elseif_internal_body(node)
             j = i + 1
             if ts_clause_body_is_empty(body):
+                opener_node = next(
+                    (
+                        child
+                        for child in getattr(node, "children", []) or []
+                        if getattr(child, "type", None) == "ELSIF_KEYWORD"
+                    ),
+                    node,
+                )
                 then_node = _bsl004_elseif_then_node(node)
-                _bsl004_append_empty_block(path, diags, then_node, empty_msg)
+                _bsl004_append_empty_opening_block(path, diags, opener_node, then_node, lines)
             i = j
             continue
         if nt == "else_clause":
             body = _bsl004_else_internal_body(node)
             j = i + 1
             if ts_clause_body_is_empty(body):
-                _bsl004_append_empty_block(path, diags, node, empty_msg, end_node=node)
+                else_keyword = next(
+                    (
+                        child
+                        for child in getattr(node, "children", []) or []
+                        if getattr(child, "type", None) == "ELSE_KEYWORD"
+                    ),
+                    node,
+                )
+                _bsl004_append_empty_block(path, diags, else_keyword, lines, end_node=else_keyword)
             i = j
             continue
         i += 1
+
+
+def _bsl004_emit_empty_loop_body(
+    loop_node: Any, path: str, diags: list[Any], lines: list[str]
+) -> None:
+    ch = list(getattr(loop_node, "children", []) or [])
+    if not ch:
+        return
+    do_index = next(
+        (idx for idx, child in enumerate(ch) if getattr(child, "type", None) == "DO_KEYWORD"),
+        None,
+    )
+    end_index = next(
+        (
+            idx
+            for idx, child in enumerate(ch)
+            if idx > (do_index if do_index is not None else -1)
+            and getattr(child, "type", None) == "ENDDO_KEYWORD"
+        ),
+        None,
+    )
+    if do_index is None or end_index is None:
+        return
+    body = ch[do_index + 1 : end_index]
+    if not ts_clause_body_is_empty(body):
+        return
+    opener_node = next(
+        (child for child in ch if getattr(child, "type", None) in {"WHILE_KEYWORD", "FOR_KEYWORD"}),
+        loop_node,
+    )
+    _bsl004_append_empty_opening_block(path, diags, opener_node, ch[do_index], lines)
 
 
 def _try_except_has_only_comments_or_empty(
@@ -321,15 +395,17 @@ def _try_except_has_only_comments_or_empty(
     return True
 
 
-def diagnostics_bsl004_from_tree(path: str, root: Any) -> list[Any]:
-    """BSL004 — empty code blocks (BSLLS ``EmptyCodeBlock``): empty Except, empty Тогда."""
+def diagnostics_bsl004_from_tree(path: str, root: Any, lines: list[str] | None = None) -> list[Any]:
+    """BSL004 — empty executable bodies in control-flow branches and loops."""
     diags: list[Any] = []
-    empty_then_msg = "Наполните блок кодом или удалите его"
+    source_lines = lines if lines is not None else _root_source_lines(root)
 
     def visit(node: Any) -> None:
         nt = getattr(node, "type", None)
         if nt == "if_statement":
-            _bsl004_emit_empty_then_for_if_statement(node, path, diags, empty_then_msg)
+            _bsl004_emit_empty_then_for_if_statement(node, path, diags, source_lines)
+        elif nt in {"while_statement", "for_statement", "for_each_statement"}:
+            _bsl004_emit_empty_loop_body(node, path, diags, source_lines)
 
     ts_walk_preorder(root, visit)
     return diags

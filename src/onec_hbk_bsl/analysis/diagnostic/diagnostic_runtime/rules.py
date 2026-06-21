@@ -1907,7 +1907,9 @@ class MissingCodeTryCatchRule(DiagnosticRuntimeRule):
             child_type = getattr(child, "type", None)
             if getattr(child, "start_byte", 0) < except_start:
                 continue
-            if child_type in {"EXCEPT_KEYWORD", "ENDTRY_KEYWORD", ";", "line_comment", "comment"}:
+            if child_type == "ENDTRY_KEYWORD":
+                return False
+            if child_type in {"EXCEPT_KEYWORD", "line_comment", "comment"}:
                 continue
             return True
         return False
@@ -5997,7 +5999,9 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
 
             if context.tree is None:
                 return []
-            return diagnostics_bsl004_from_tree(context.path, context.tree.root_node)
+            return diagnostics_bsl004_from_tree(
+                context.path, context.tree.root_node, lines=context.lines
+            )
         if code == "BSL007":
             return model.validate_bsl007_unused_local_variable(
                 lines=context.lines,
