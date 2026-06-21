@@ -150,15 +150,7 @@ _RE_VAR_MODULE = re.compile(
     r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s*(?:Экспорт|Export)?\s*;",
     re.IGNORECASE,
 )
-_BSL204_ILLEGAL_CHARS = {
-    "\u00ad": 'Нужно исправить на правильный символ "-"',
-    "\u2012": 'Нужно исправить на правильный символ "-"',
-    "\u2013": 'Нужно исправить на правильный символ "-"',
-    "\u2014": 'Нужно исправить на правильный символ "-"',
-    "\u2015": 'Нужно исправить на правильный символ "-"',
-    "\u2212": 'Нужно исправить на правильный символ "-"',
-    "\u00a0": "Нужно заменить символ неразрывного пробела на обычный пробел",
-}
+_BSL204_ILLEGAL_CHARS = frozenset({"\u00ad", "\u2012", "\u2013", "\u2014", "\u2015", "\u2212", "\u00a0"})
 _RE_COMPLEX_CONDITION_HEAD = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b",
     re.IGNORECASE,
@@ -811,7 +803,6 @@ class LineDiagnosticFact:
     line_idx: int
     character: int
     end_character: int
-    message: str
     end_line_idx: int | None = None
 
 
@@ -911,13 +902,6 @@ def _ts_point_to_line_lsp_character(lines: list[str], point: Any) -> tuple[int, 
     return row, utf8_byte_offset_to_lsp_character(lines[row], point[1])
 
 
-def _bsl022_message(method_name: str) -> str:
-    return (
-        f"{method_name}() is a modal global method deprecated in managed UI. "
-        "Use asynchronous APIs instead."
-    )
-
-
 def _bsl022_modal_facts_from_tree(
     root: Any,
     lines: list[str],
@@ -946,7 +930,6 @@ def _bsl022_modal_facts_from_tree(
                 character=character,
                 end_line_idx=end_line_idx,
                 end_character=end_character,
-                message=_bsl022_message(method_name),
             )
         )
     return facts
@@ -968,13 +951,11 @@ def _bsl022_modal_facts_from_lines(
         proc = proc_containing_line(procedures, idx)
         if proc is not None and is_typical_client_command_handler(proc, lines):
             continue
-        method_name = match.group("name")
         facts.append(
             LineDiagnosticFact(
                 line_idx=idx,
                 character=match.start("name"),
                 end_character=match.end("name"),
-                message=_bsl022_message(method_name),
             )
         )
     return facts
@@ -1747,20 +1728,13 @@ class DocumentSnapshot:
     ) -> list[LineDiagnosticFact]:
         facts: list[LineDiagnosticFact] = []
         for match in _RE_BSL216_COMPARISON_OP.finditer(clean):
-            op = match.group(0)
             start = match.start()
             end = match.end()
             left_missing = start > 0 and clean[start - 1] not in " \t"
             right_missing = end < len(clean) and clean[end] not in " \t"
             if not left_missing and not right_missing:
                 continue
-            if left_missing and right_missing:
-                msg = f"Слева и справа от '{op}' не хватает пробела"
-            elif left_missing:
-                msg = f"Слева от '{op}' не хватает пробела"
-            else:
-                msg = f"Справа от '{op}' не хватает пробела"
-            facts.append(LineDiagnosticFact(line_idx, start, end, msg))
+            facts.append(LineDiagnosticFact(line_idx, start, end))
         return facts
 
     def _missing_arithmetic_space_facts(
@@ -1779,16 +1753,7 @@ class DocumentSnapshot:
             arithmetic_cols = sorted(set(arithmetic_cols) | {len(line) - len(stripped_line)})
         facts: list[LineDiagnosticFact] = []
         for col in arithmetic_cols:
-            op = line[col]
-            left_missing = col > 0 and line[col - 1] not in " \t"
-            right_missing = col + 1 < len(line) and line[col + 1] not in " \t"
-            if left_missing and right_missing:
-                msg = f"Слева и справа от '{op}' не хватает пробела"
-            elif left_missing:
-                msg = f"Слева от '{op}' не хватает пробела"
-            else:
-                msg = f"Справа от '{op}' не хватает пробела"
-            facts.append(LineDiagnosticFact(line_idx, col, col + 1, msg))
+            facts.append(LineDiagnosticFact(line_idx, col, col + 1))
         return facts
 
     def _missing_comma_space_facts(
@@ -1802,7 +1767,9 @@ class DocumentSnapshot:
             comma_cols = sorted(set(comma_cols) | extra_comma_cols)
         return [
             LineDiagnosticFact(
-                line_idx, comma_col, comma_col + 1, "Справа от ',' не хватает пробела"
+                line_idx,
+                comma_col,
+                comma_col + 1,
             )
             for comma_col in comma_cols
         ]
@@ -1831,7 +1798,6 @@ class DocumentSnapshot:
                     line_idx,
                     semicolon_col,
                     semicolon_col + 1,
-                    "Справа от ';' не хватает пробела",
                 )
             )
         if m_semicolon:
@@ -1840,7 +1806,6 @@ class DocumentSnapshot:
                     line_idx,
                     m_semicolon.start(),
                     m_semicolon.end(),
-                    "Справа от ';' не хватает пробела",
                 )
             )
         return facts
@@ -1859,32 +1824,19 @@ class DocumentSnapshot:
             right_missing = end < len(clean) and clean[end] not in " \t"
             if not left_missing and not right_missing:
                 continue
-            kw = line[start:end]
-            if left_missing and right_missing:
-                msg = f"Слева и справа от '{kw}' не хватает пробела"
-            elif left_missing:
-                msg = f"Слева от '{kw}' не хватает пробела"
-            else:
-                msg = f"Справа от '{kw}' не хватает пробела"
-            facts.append(LineDiagnosticFact(line_idx, start, end, msg))
+            facts.append(LineDiagnosticFact(line_idx, start, end))
         for m_kw in _RE_BSL216_LEFT_KEYWORDS.finditer(clean):
             start = m_kw.start(1)
             end = m_kw.end(1)
             if start <= 0 or clean[start - 1] in " \t":
                 continue
-            kw = line[start:end]
-            facts.append(
-                LineDiagnosticFact(line_idx, start, end, f"Слева от '{kw}' не хватает пробела")
-            )
+            facts.append(LineDiagnosticFact(line_idx, start, end))
         for m_kw in _RE_BSL216_RIGHT_KEYWORDS.finditer(clean):
             start = m_kw.start(1)
             end = m_kw.end(1)
             if end >= len(clean) or clean[end] in " \t":
                 continue
-            kw = line[start:end]
-            facts.append(
-                LineDiagnosticFact(line_idx, start, end, f"Справа от '{kw}' не хватает пробела")
-            )
+            facts.append(LineDiagnosticFact(line_idx, start, end))
         return facts
 
     @property
@@ -1936,7 +1888,6 @@ class DocumentSnapshot:
             line_idx,
             start,
             end,
-            "Проверьте правильность переноса операндов, операторов и параметров",
         )
 
     @property
@@ -1956,7 +1907,6 @@ class DocumentSnapshot:
                     line_idx=idx,
                     character=match.start(),
                     end_character=match.end(),
-                    message=f"Возможное хранение секрета в коде: {match.group()!r}",
                 )
             )
         self._hardcoded_credential_facts = facts
@@ -1989,7 +1939,6 @@ class DocumentSnapshot:
                     character=max(start_character, 0),
                     end_character=end_character,
                     end_line_idx=group_end,
-                    message="Программные модули не должны иметь закомментированных фрагментов кода",
                 )
             )
 
@@ -2030,10 +1979,6 @@ class DocumentSnapshot:
                             line_idx=idx,
                             character=comment_pos,
                             end_character=len(line.rstrip()),
-                            message=(
-                                "Программные модули не должны иметь "
-                                "закомментированных фрагментов кода"
-                            ),
                         )
                     )
 
@@ -2064,7 +2009,6 @@ class DocumentSnapshot:
                     line_idx=line_idx,
                     character=start_char,
                     end_character=len(line_text),
-                    message=f'Нужно удалить нестандартный раздел "{region.name}"',
                 )
             )
         self._non_standard_region_facts = facts
@@ -2091,7 +2035,6 @@ class DocumentSnapshot:
                     line_idx=line_idx,
                     character=0,
                     end_character=len(line_text),
-                    message=f'Область "{region.name}" не содержит функций или процедур',
                 )
             )
         self._empty_region_facts = facts
@@ -2118,7 +2061,6 @@ class DocumentSnapshot:
                     line_idx=region.start_idx,
                     character=len(line) - len(line.lstrip()),
                     end_character=len(line.rstrip()),
-                    message=f'Нужно удалить дубли раздела "{region.name}"',
                 )
             )
             seen[key] = region
@@ -2165,10 +2107,6 @@ class DocumentSnapshot:
                     line_idx=proc.start_idx,
                     character=proc.header_col,
                     end_character=len(line_text),
-                    message=(
-                        f"Модификатор Экспорт запрещен в модулях команд и форм "
-                        f"({proc.kind} '{proc.name}')"
-                    ),
                 )
             )
         self._command_or_form_export_facts = facts
@@ -2201,10 +2139,6 @@ class DocumentSnapshot:
                         line_idx=idx,
                         character=match.start(),
                         end_character=match.end(),
-                        message=(
-                            "Избегайте использования ЭтаФорма/ThisForm, "
-                            "передавайте форму в параметрах метода"
-                        ),
                     )
                 )
         self._this_form_usage_facts = facts
@@ -2232,7 +2166,6 @@ class DocumentSnapshot:
                     line_idx=idx,
                     character=match.start("name"),
                     end_character=match.end("name"),
-                    message="Не рекомендуемое использование метода ДанныеФормыВЗначение",
                 )
             )
         self._form_data_to_value_facts = facts
@@ -2248,7 +2181,7 @@ class DocumentSnapshot:
         for line_idx, line in enumerate(self.lines):
             hit = next(
                 (
-                    (pos, _BSL204_ILLEGAL_CHARS[ch])
+                    pos
                     for pos, ch in enumerate(line)
                     if ch in _BSL204_ILLEGAL_CHARS
                 ),
@@ -2256,7 +2189,7 @@ class DocumentSnapshot:
             )
             if hit is None:
                 continue
-            pos, message = hit
+            pos = hit
             string_span = _double_quoted_span_containing(line, pos)
             if string_span is None:
                 anchor = len(line) - len(line.lstrip())
@@ -2268,7 +2201,6 @@ class DocumentSnapshot:
                     line_idx=line_idx,
                     character=anchor,
                     end_character=end_character,
-                    message=message,
                 )
             )
         self._invalid_character_facts = facts
@@ -2304,7 +2236,6 @@ class DocumentSnapshot:
                     line_idx=idx,
                     character=match.start("names"),
                     end_character=len(code_part.rstrip().rstrip(";").rstrip()),
-                    message="Добавьте описание переменной",
                 )
             )
         self._module_variable_description_facts = facts
@@ -2341,7 +2272,6 @@ class DocumentSnapshot:
                     character=char,
                     end_line_idx=end_line_idx,
                     end_character=end_char,
-                    message="Выделите условие оператора Если в отдельный метод или переменную",
                 )
             )
         self._complex_condition_facts_cache[max_bool_ops] = facts
@@ -2423,7 +2353,6 @@ class DocumentSnapshot:
                         character=start_char,
                         end_character=end_char,
                         end_line_idx=end_line,
-                        message="Нужно изменить запрос, добавив упорядочивание",
                     )
                 )
         self._select_top_without_order_facts = facts
@@ -2467,10 +2396,6 @@ class DocumentSnapshot:
                     line_idx=idx,
                     character=0,
                     end_character=reported_length,
-                    message=(
-                        f"Длина строки {reported_length} превышает максимально допустимую "
-                        f"{max_line_length}"
-                    ),
                 )
             )
         self._line_too_long_facts_cache[max_line_length] = facts
