@@ -188,15 +188,18 @@ def test_validate_rule_contract_accepts_complete_contract(tmp_path: Path) -> Non
     assert validator.validate_contract(contract) == []
 
 
-def test_bsl040_contract_is_complete() -> None:
+def test_rule_contracts_are_complete() -> None:
     validator = _load_validator()
-    contract = (
+    contracts_dir = (
         ROOT
         / ".codex"
         / "skills"
         / "bsl-diagnostic-rule-development"
         / "contracts"
-        / "BSL040.md"
     )
+    contracts = sorted(contracts_dir.glob("BSL*.md"))
 
-    assert validator.validate_contract(contract) == []
+    assert contracts
+    assert {contract.name for contract in contracts} >= {"BSL040.md", "BSL077.md"}
+    for contract in contracts:
+        assert validator.validate_contract(contract) == []
