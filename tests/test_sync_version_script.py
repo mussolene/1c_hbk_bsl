@@ -47,6 +47,43 @@ def test_runtime_only_updates_python_version_without_touching_extension(
     run.assert_not_called()
 
 
+def test_sync_version_updates_extension_manifest_and_lock_without_npm(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_sync_version_module()
+
+    ext = tmp_path / "vscode-extension"
+    ext.mkdir()
+    package_json = ext / "package.json"
+    package_json.write_text(json.dumps({"version": "0.0.0"}) + "\n", encoding="utf-8")
+    package_lock = ext / "package-lock.json"
+    package_lock.write_text(
+        json.dumps({"version": "0.0.0", "packages": {"": {"version": "0.0.0"}}}) + "\n",
+        encoding="utf-8",
+    )
+
+    py_version = tmp_path / "src" / "onec_hbk_bsl" / "_version.py"
+    py_version.parent.mkdir(parents=True)
+    py_version.write_text('__version__ = "0.0.0"\n', encoding="utf-8")
+
+    run = MagicMock()
+    monkeypatch.setattr(module, "EXT", ext)
+    monkeypatch.setattr(module, "PY_VERSION", py_version)
+    monkeypatch.setattr(module, "_release_version", lambda: "5.6.7")
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(sys, "argv", ["sync_version.py"])
+
+    assert module.main() == 0
+
+    assert '__version__ = "5.6.7"' in py_version.read_text(encoding="utf-8")
+    assert json.loads(package_json.read_text(encoding="utf-8"))["version"] == "5.6.7"
+    lock = json.loads(package_lock.read_text(encoding="utf-8"))
+    assert lock["version"] == "5.6.7"
+    assert lock["packages"][""]["version"] == "5.6.7"
+    run.assert_not_called()
+
+
 def test_release_version_prefers_explicit_release_env(monkeypatch) -> None:
     module = _load_sync_version_module()
 

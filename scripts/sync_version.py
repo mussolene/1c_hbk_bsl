@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Sync release metadata to the git tag version.
+Generate build-time version metadata from the git tag.
 
-The Python package itself is versioned dynamically by setuptools-scm. This script
-updates files that must contain literal versions in release artifacts:
-``src/onec_hbk_bsl/_version.py`` and VS Code extension manifests.
+Committed sources keep placeholder versions. Python package versions are resolved
+by setuptools-scm, while frozen binaries and VSIX packages need literal metadata
+during the build. This script writes those generated values into the working tree
+for the current build only; do not commit its output as a release bump.
 
 The version source is intentionally stable: explicit release env first, then the
 latest ``v*`` git tag. It does not use setuptools-scm's dirty/dev version because
-that string is not what should be written into VSIX/runtime release metadata.
+that string is not suitable for published VSIX/runtime release metadata.
 
 Usage::
 
@@ -101,17 +102,16 @@ def main() -> int:
     old = pkg.get("version")
     pkg["version"] = ver
     pkg_path.write_text(json.dumps(pkg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"vscode-extension/package.json: {old!r} → {ver!r}")
+    print(f"vscode-extension/package.json: {old!r} -> {ver!r}")
 
-    r = subprocess.run(
-        ["npm", "install", "--package-lock-only", "--ignore-scripts"],
-        cwd=str(EXT),
-        check=False,
-    )
-    if r.returncode != 0:
-        print("npm install --package-lock-only failed", file=sys.stderr)
-        return r.returncode
-    print("vscode-extension/package-lock.json refreshed")
+    lock_path = EXT / "package-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["version"] = ver
+    root_package = lock.get("packages", {}).get("")
+    if isinstance(root_package, dict):
+        root_package["version"] = ver
+    lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print("vscode-extension/package-lock.json: root version refreshed")
     return 0
 
 
