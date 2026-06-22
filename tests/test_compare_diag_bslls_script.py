@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_script_module():
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "compare_diag_bslls.py"
@@ -162,6 +164,34 @@ def test_write_bslls_config_uses_only_mode_and_bslls_names(tmp_path: Path) -> No
         "  }\n"
         "}\n"
     )
+
+
+def test_find_bslls_jar_prefers_latest_autodiscovered_exec_jar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mod = _load_script_module()
+    repo_root = tmp_path / "repo"
+    local_dir = repo_root / ".nosync" / "bsl-language-server"
+    local_dir.mkdir(parents=True)
+    old_jar = local_dir / "bsl-language-server-0.29.0-exec.jar"
+    new_jar = local_dir / "bsl-language-server-1.0.0-exec.jar"
+    old_jar.write_text("", encoding="utf-8")
+    new_jar.write_text("", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("BSLLS_JAR", raising=False)
+
+    assert mod.find_bslls_jar(repo_root) == new_jar.resolve()
+
+
+def test_find_bslls_jar_keeps_explicit_path_priority(tmp_path: Path) -> None:
+    mod = _load_script_module()
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    explicit = tmp_path / "custom.jar"
+    explicit.write_text("", encoding="utf-8")
+
+    assert mod.find_bslls_jar(repo_root, explicit) == explicit.resolve()
 
 
 def test_copy_inputs_preserves_workspace_relative_paths(tmp_path: Path) -> None:

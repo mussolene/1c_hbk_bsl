@@ -2986,6 +2986,77 @@ class TestBsl011CognitiveComplexity:
         assert len(bsl011) == 1
         assert bsl011[0].message == _rule_msg("BSL011")
 
+    def test_bslls_block_on_closes_cognitive_complexity_suppression(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        content = """\
+            // BSLLS:CognitiveComplexity-off
+            Функция Простая()
+                Возврат 1;
+            КонецФункции
+            // BSLLS:CognitiveComplexity-on
+
+            Функция Сложная(А, Б, В)
+                Если А Тогда
+                    Если Б Тогда
+                        Если В Тогда
+                            Если А И Б Тогда
+                                Если В И А Тогда
+                                    Возврат 1;
+                                КонецЕсли;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+                Возврат 0;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=5, select={"BSL011"})
+        bsl011 = [d for d in diags if d.code == "BSL011"]
+        assert len(bsl011) == 1
+        assert bsl011[0].line == 7
+
+    def test_bslls_trailing_off_suppresses_only_current_line_for_bsl011(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        content = """\
+            Функция Первая(А, Б, В) // BSLLS:CognitiveComplexity-off
+                Если А Тогда
+                    Если Б Тогда
+                        Если В Тогда
+                            Если А И Б Тогда
+                                Если В И А Тогда
+                                    Возврат 1;
+                                КонецЕсли;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+                Возврат 0;
+            КонецФункции
+
+            Функция Вторая(А, Б, В)
+                Если А Тогда
+                    Если Б Тогда
+                        Если В Тогда
+                            Если А И Б Тогда
+                                Если В И А Тогда
+                                    Возврат 1;
+                                КонецЕсли;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+                Возврат 0;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=5, select={"BSL011"})
+        bsl011 = [d for d in diags if d.code == "BSL011"]
+        assert len(bsl011) == 1
+        assert bsl011[0].line == 16
+
     def test_complex_module_body_reports_like_bslls(self, tmp_path: Path) -> None:
         content = """\
             Если Истина Тогда

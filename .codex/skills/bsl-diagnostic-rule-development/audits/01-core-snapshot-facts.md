@@ -141,15 +141,22 @@ restart from chat memory.
 
 9. BSL011 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL011`
-   with BSLLS 0.29.0 `CognitiveComplexity` JSON output. Method-level high and
+   with BSLLS `CognitiveComplexity` JSON output. Method-level high and
    low complexity cases matched exactly. The sampled BSLLS-only category was a
    complex module-body code block because BSLLS has `checkModuleBody=true` by
    default while the previous BSL011 contract treated module-level code as a
    non-goal. onec now emits BSL011 for module-body cognitive complexity using
    the existing line-level complexity calculator and keeps method metrics
    shared with BSL019. The sampled module-body cases now match BSLLS exactly.
-   No synthetic ours-only or range-only category was reproduced; the private
-   batch still has unsampled semantic/file-layout deltas.
+   A later BSLLS 1.0.0 preserved-source-root rerun found that 38 private-batch
+   BSLLS-only diagnostics were actually raw onec BSL011 facts incorrectly
+   suppressed by onec's line-state BSLLS comment handling after a closed
+   `CognitiveComplexity-off/on` range. `parse_suppressions` now mirrors BSLLS
+   `DiagnosticIgnoranceComputer` range-stack behavior: standalone `off` opens a
+   keyed range until matching `on`, trailing `off` on a code line suppresses
+   only that line, and unclosed ranges extend to the last token line. Current
+   BSL011 private-batch parity is onec 1314, BSLLS 1314, with 2 BSLLS-only and
+   2 onec-only diagnostics remaining in a sampled file-layout/algorithm bucket.
 
 10. BSL219 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL219`
@@ -177,7 +184,7 @@ restart from chat memory.
 
    | Code | only BSLLS | only onec | status |
    | --- | ---: | ---: | --- |
-   | BSL011 | 40 | 2 | still sampled/file-layout delta |
+   | BSL011 | 2 after range-stack suppression fix | 2 | remaining sampled file-layout/algorithm bucket |
    | BSL013 | 664 after inline-expression fix | 192 | inline call-expression category fixed; directive/documentation categories intentionally not broadened |
    | BSL014 | 243 | 108 | next high-volume semantic/range bucket |
    | BSL022 | 0 | 0 | exact in preserved-source-root batch |

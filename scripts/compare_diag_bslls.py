@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -66,18 +67,32 @@ def bslls_rule_name(code: str) -> str:
 
 
 def find_bslls_jar(repo_root: Path, explicit: Path | None = None) -> Path | None:
-    candidates: list[Path] = []
     if explicit is not None:
-        candidates.append(explicit.expanduser())
+        candidate = explicit.expanduser()
+        return candidate.resolve() if candidate.is_file() else None
     env = os.environ.get("BSLLS_JAR", "").strip()
     if env:
-        candidates.append(Path(env).expanduser())
-    candidates.extend(sorted((repo_root / ".nosync" / "bsl-language-server").glob("**/*.jar")))
-    candidates.extend(sorted(Path.home().glob(".cache/onec-hbk-bsl/bslls/bsl-language-server*-exec.jar")))
-    for candidate in candidates:
+        candidate = Path(env).expanduser()
+        return candidate.resolve() if candidate.is_file() else None
+
+    candidates = [
+        *list((repo_root / ".nosync" / "bsl-language-server").glob("**/*-exec.jar")),
+        *list(Path.home().glob(".cache/onec-hbk-bsl/bslls/bsl-language-server*-exec.jar")),
+    ]
+    for candidate in sorted(candidates, key=_bslls_jar_sort_key, reverse=True):
         if candidate.is_file():
             return candidate.resolve()
     return None
+
+
+def _bslls_jar_sort_key(path: Path) -> tuple[tuple[int, ...], float, str]:
+    match = re.search(r"bsl-language-server-(\d+(?:\.\d+)*)-exec\.jar$", path.name)
+    version = tuple(int(part) for part in match.group(1).split(".")) if match else ()
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return version, mtime, path.as_posix()
 
 
 def _relative_file_key(path: Path, workspace: Path) -> str:
