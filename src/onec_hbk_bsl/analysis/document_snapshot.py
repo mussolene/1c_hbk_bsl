@@ -147,7 +147,7 @@ _RE_BSL190_FORM_DATA = re.compile(
     re.IGNORECASE,
 )
 _RE_VAR_MODULE = re.compile(
-    r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s*(?:Экспорт|Export)?\s*;",
+    r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s*(?P<export>Экспорт|Export)?\s*;",
     re.IGNORECASE,
 )
 _BSL204_ILLEGAL_CHARS = frozenset({"\u00ad", "\u2012", "\u2013", "\u2014", "\u2015", "\u2212", "\u00a0"})
@@ -624,6 +624,16 @@ def _has_previous_inline_variable_description(lines: list[str], var_line_idx: in
             return _has_inline_variable_description(lines[prev_idx])
         return False
     return False
+
+
+def _module_var_name_ranges(match: re.Match[str]) -> list[tuple[int, int]]:
+    names = match.group("names")
+    base = match.start("names")
+    ranges = [(base + item.start(), base + item.end()) for item in re.finditer(r"\w+", names)]
+    if ranges and match.group("export"):
+        start, _end = ranges[-1]
+        ranges[-1] = (start, match.end("export"))
+    return ranges
 
 
 def _standard_regions_for_path(path: str) -> frozenset[str]:
@@ -2295,12 +2305,13 @@ class DocumentSnapshot:
                 or _has_previous_inline_variable_description(self.lines, idx)
             ):
                 continue
-            facts.append(
+            facts.extend(
                 LineDiagnosticFact(
                     line_idx=idx,
-                    character=match.start("names"),
-                    end_character=len(code_part.rstrip().rstrip(";").rstrip()),
+                    character=start,
+                    end_character=end,
                 )
+                for start, end in _module_var_name_ranges(match)
             )
         self._module_variable_description_facts = facts
         return facts

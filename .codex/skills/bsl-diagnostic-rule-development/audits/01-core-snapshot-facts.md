@@ -151,6 +151,18 @@ restart from chat memory.
    No synthetic ours-only or range-only category was reproduced; the private
    batch still has unsampled semantic/file-layout deltas.
 
+10. BSL219 sampled taxonomy:
+   A local synthetic taxonomy probe compared onec `--no-config --select BSL219`
+   with BSLLS 0.29.0 `MissingVariablesDescription` JSON output. Single variable,
+   exported variable, multi-name, multi-export, described variable,
+   previous-inline group description, and local-variable cases matched BSLLS.
+   The sampled range/granularity category was multi-name module declarations:
+   onec previously emitted one diagnostic spanning the whole names list, while
+   BSLLS emits one diagnostic per variable name and extends the last exported
+   variable range through `Экспорт`. `DocumentSnapshot.module_variable_description_facts`
+   now emits matching per-name facts. No sampled ours-only or BSLLS-only category
+   was reproduced; the private batch still has unsampled semantic/range deltas.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
@@ -173,10 +185,9 @@ restart from chat memory.
 
 ## Next Cheap Tests
 
-1. Classify `BSL219` and `BSL131` in that order by semantic facts, not by
-   count-chasing. BSL014 and BSL011 synthetic sampled taxonomy is closed for
-   this iteration; revisit only with private-corpus sanitized samples for the
-   remaining batch deltas.
+1. Classify `BSL131` by semantic facts, not by count-chasing. BSL014, BSL011,
+   and BSL219 synthetic sampled taxonomy is closed for this iteration; revisit
+   only with private-corpus sanitized samples for the remaining batch deltas.
 2. Continue `BSL013` only with sampled semantic categories, not broad
    directive/comment punctuation expansion.
 3. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract

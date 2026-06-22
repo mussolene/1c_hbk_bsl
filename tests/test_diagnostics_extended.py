@@ -6035,6 +6035,7 @@ class TestBsl219MissingVariablesDescription:
         bsl219 = [d for d in diags if d.code == "BSL219"]
         assert len(bsl219) == 1
         assert bsl219[0].character == 6
+        assert bsl219[0].end_character == 18
 
     def test_export_var_with_preceding_comment_no_bsl219(self, tmp_path: Path) -> None:
         content = """\
@@ -6092,6 +6093,32 @@ class TestBsl219MissingVariablesDescription:
         """
         diags = _check(content, tmp_path, select={"BSL219"})
         assert "BSL219" in _codes(diags)
+
+    def test_multiple_module_vars_without_description_report_each_name(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Перем Первый, Второй;
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        bsl219 = [d for d in diags if d.code == "BSL219"]
+        assert [(d.character, d.end_character) for d in bsl219] == [(6, 12), (14, 20)]
+
+    def test_multiple_export_module_vars_include_export_in_last_range(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Перем Первый, Второй Экспорт;
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        bsl219 = [d for d in diags if d.code == "BSL219"]
+        assert [(d.character, d.end_character) for d in bsl219] == [(6, 12), (14, 28)]
 
 
 # ---------------------------------------------------------------------------
