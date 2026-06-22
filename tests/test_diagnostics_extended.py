@@ -7609,7 +7609,10 @@ class TestBsl131DuplicateRegion:
         from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
-        assert "BSL131" in [d.code for d in diags]
+        bsl131 = [d for d in diags if d.code == "BSL131"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl131] == [
+            (1, 1, 1, 18)
+        ]
 
     def test_unique_region_names_no_warning(self, tmp_path: Path) -> None:
         content = "#Область Первая\nА = 1;\n#КонецОбласти\n#Область Вторая\nБ = 2;\n#КонецОбласти\n"
@@ -7636,6 +7639,12 @@ class TestBsl131DuplicateRegion:
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert [d.code for d in diags] == ["BSL131"]
         assert diags[0].message == _rule_msg("BSL131")
+        assert (diags[0].line, diags[0].character, diags[0].end_line, diags[0].end_character) == (
+            1,
+            1,
+            1,
+            13,
+        )
 
     def test_duplicate_non_empty_region_detected(self, tmp_path: Path) -> None:
         content = (
@@ -7654,6 +7663,12 @@ class TestBsl131DuplicateRegion:
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert [d.code for d in diags] == ["BSL131"]
+        assert (diags[0].line, diags[0].character, diags[0].end_line, diags[0].end_character) == (
+            1,
+            1,
+            1,
+            13,
+        )
 
     def test_standard_region_aliases_detected(self, tmp_path: Path) -> None:
         content = (
@@ -7670,6 +7685,33 @@ class TestBsl131DuplicateRegion:
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert [d.code for d in diags] == ["BSL131"]
+        assert (diags[0].line, diags[0].character, diags[0].end_line, diags[0].end_character) == (
+            1,
+            1,
+            1,
+            27,
+        )
+
+    def test_third_duplicate_reports_first_region_once(self, tmp_path: Path) -> None:
+        content = (
+            "#Область Тест\n"
+            "А = 1;\n"
+            "#КонецОбласти\n"
+            "#Область Тест\n"
+            "Б = 2;\n"
+            "#КонецОбласти\n"
+            "#Область Тест\n"
+            "В = 3;\n"
+            "#КонецОбласти\n"
+        )
+        p = tmp_path / "test.bsl"
+        p.write_text(content, encoding="utf-8")
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+
+        diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 1, 1, 13)
+        ]
 
     def test_nested_duplicate_regions_are_not_module_level(self, tmp_path: Path) -> None:
         content = (

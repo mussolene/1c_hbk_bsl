@@ -163,6 +163,18 @@ restart from chat memory.
    now emits matching per-name facts. No sampled ours-only or BSLLS-only category
    was reproduced; the private batch still has unsampled semantic/range deltas.
 
+11. BSL131 sampled taxonomy:
+   A local synthetic taxonomy probe compared onec `--no-config --select BSL131`
+   with BSLLS 0.29.0 `DuplicateRegion` JSON output. Unique region and nested
+   same-name region cases produced no diagnostics in both tools. Plain duplicate,
+   standard-alias duplicate, and third duplicate groups matched BSLLS after
+   aligning the representative fact: BSLLS reports the first region opening once
+   per duplicate group, with a range from after `#` through the region name.
+   `DocumentSnapshot.duplicate_region_facts` now emits that same representative
+   fact instead of reporting later duplicate openings. No sampled ours-only or
+   BSLLS-only category was reproduced; private batch exact parity should be
+   rerun when the batch completes.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
@@ -185,10 +197,7 @@ restart from chat memory.
 
 ## Next Cheap Tests
 
-1. Classify `BSL131` by semantic facts, not by count-chasing. BSL014, BSL011,
-   and BSL219 synthetic sampled taxonomy is closed for this iteration; revisit
-   only with private-corpus sanitized samples for the remaining batch deltas.
-2. Continue `BSL013` only with sampled semantic categories, not broad
+1. Continue `BSL013` only with sampled semantic categories, not broad
    directive/comment punctuation expansion.
-3. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
+2. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
    so invalid dossiers cannot silently accumulate.

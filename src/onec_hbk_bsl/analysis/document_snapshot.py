@@ -696,6 +696,13 @@ def _normalize_duplicate_region_name(name: str) -> str:
     return _DUPLICATE_REGION_ALIASES.get(raw, raw)
 
 
+def _region_directive_name_range(line: str) -> tuple[int, int]:
+    start = len(line) - len(line.lstrip())
+    if start < len(line) and line[start] == "#":
+        start += 1
+    return start, len(line.rstrip())
+
+
 def _module_level_regions(regions: list[RegionInfo]) -> list[RegionInfo]:
     return [
         region
@@ -2122,6 +2129,7 @@ class DocumentSnapshot:
 
         facts: list[LineDiagnosticFact] = []
         seen: dict[str, RegionInfo] = {}
+        reported: set[str] = set()
         for region in _module_level_regions(self.regions):
             key = _normalize_duplicate_region_name(region.name)
             if not key:
@@ -2129,15 +2137,19 @@ class DocumentSnapshot:
             if key not in seen:
                 seen[key] = region
                 continue
-            line = self.lines[region.start_idx] if 0 <= region.start_idx < len(self.lines) else ""
+            if key in reported:
+                continue
+            first = seen[key]
+            line = self.lines[first.start_idx] if 0 <= first.start_idx < len(self.lines) else ""
+            start, end = _region_directive_name_range(line)
             facts.append(
                 LineDiagnosticFact(
-                    line_idx=region.start_idx,
-                    character=len(line) - len(line.lstrip()),
-                    end_character=len(line.rstrip()),
+                    line_idx=first.start_idx,
+                    character=start,
+                    end_character=end,
                 )
             )
-            seen[key] = region
+            reported.add(key)
         self._duplicate_region_facts = facts
         return facts
 
