@@ -656,19 +656,18 @@ def _path_is_likely_form_module_bsl(path: str) -> bool:
         p = Path(path).resolve()
     except OSError:
         return False
-    parts = [x.lower() for x in p.parts]
     if p.suffix.lower() != ".bsl":
         return False
-    form_indexes = [idx for idx, part in enumerate(parts) if part in {"forms", "формы"}]
-    if not any("ext" in parts[idx + 1 :] for idx in form_indexes):
+    normalized = p.as_posix().lower()
+    if p.name.lower() != "module.bsl":
         return False
-    if p.name.lower() == "module.bsl":
-        return True
-    try:
-        lower_siblings = {sibling.name.lower() for sibling in p.parent.iterdir()}
-    except OSError:
-        return False
-    return bool({"module.bsl", "module.header", "form.xml", "form.prettydata"} & lower_siblings)
+    return (
+        "/forms/" in normalized
+        and (
+            normalized.endswith("/ext/module.bsl")
+            or normalized.endswith("/ext/form/module.bsl")
+        )
+    )
 
 
 def _is_standard_region_name_for_path(path: str, region_name: str) -> bool:
@@ -2008,7 +2007,7 @@ class DocumentSnapshot:
                 LineDiagnosticFact(
                     line_idx=line_idx,
                     character=start_char,
-                    end_character=len(line_text),
+                    end_character=len(line_text.rstrip()),
                 )
             )
         self._non_standard_region_facts = facts

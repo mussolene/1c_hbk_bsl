@@ -1,6 +1,7 @@
 # 01 Core Snapshot Facts Audit
 
-Status: batch gate closed, 17/17 rule contracts present, rule-by-rule parity audit pending.
+Status: batch gate closed, 17/17 rule contracts present, original-workspace
+BSLLS parity classified at batch level; rule-by-rule semantic deltas remain.
 
 This audit records the current falsification-test state for the
 `01-core-snapshot-facts` batch. It does not claim that every rule is
@@ -90,33 +91,66 @@ restart from chat memory.
    BSL013/BSL040 can be called BSLLS-classified.
 
 6. Parity tooling correction:
-   `scripts/compare_diag_bslls.py` is now the project parity entry point for
-   BSLLS-backed diagnostic audits. It requires explicit `--select`, runs onec
-   through `onec-hbk-bsl check --format json --select ...`, generates a BSLLS
-   `diagnostics.mode=ONLY` configuration for the compatible rule names, runs
-   BSLLS `analyze`, proves the same temporary file set was analyzed, normalizes
-   BSLLS rule names back to `BSL###`, and compares
-   `file,line,column,end,code`. It also preserves the workspace-relative input
-   path in the temporary BSLLS source root so path-sensitive rules are not
-   tested as flat basename-only files.
+   The temporary `scripts/compare_diag_bslls.py` runner was removed because its
+   temp-copy source root changes workspace and metadata context for
+   path-sensitive rules. BSLLS-backed parity audits must use the original
+   source root/workspace root and run onec through
+   `onec-hbk-bsl check --no-config --format json --select ...` when comparing
+   raw rule semantics. Project config parity is a separate product check.
+
+7. Original-workspace core17 parity run:
+   onec was run with `check --no-config --format json --select` for all 17
+   batch rules, and BSLLS was run with `diagnostics.mode=ONLY` for the matching
+   BSLLS names on the same source/workspace roots. The sanitized batch result:
+
+   | Code | onec | BSLLS | exact common | status |
+   | --- | ---: | ---: | ---: | --- |
+   | BSL011 | 1276 | 1314 | 1274 | semantic/file-layout delta |
+   | BSL012 | 4 | 0 | 0 | onec-only vs BSLLS |
+   | BSL013 | 714 | 1198 | 528 | semantic delta; standalone directive trigger rejected as overbroad |
+   | BSL014 | 13138 | 13178 | 12986 | semantic/range delta |
+   | BSL016 | 100 | 100 | 100 | exact match |
+   | BSL017 | 0 | 0 | 0 | exact match |
+   | BSL019 | 426 | 426 | 426 | exact match |
+   | BSL022 | 150 | 150 | 0 | range-only: same file/line, different anchor |
+   | BSL026 | 0 | 0 | 0 | exact match |
+   | BSL036 | 458 | 458 | 406 | range-only: same file/line, different anchor |
+   | BSL040 | 1919 | 1081 | 1081 | onec reports additional legacy `Forms/.../Ext/Module.bsl` layout |
+   | BSL077 | 14 | 16 | 14 | BSLLS-only 2 are parse-error/order-present query blocks |
+   | BSL131 | 6 | 6 | 0 | semantic delta: same files, different regions/lines |
+   | BSL190 | 0 | 0 | 0 | exact match |
+   | BSL204 | 8 | 8 | 8 | exact match |
+   | BSL216 | 4524 | 4552 | 4524 | BSLLS-only 28 unary `-` after `[` |
+   | BSL219 | 478 | 492 | 452 | semantic/range delta |
+
+   `BSL016` was corrected after the run to trim trailing whitespace from the
+   diagnostic range, closing its one-character BSLLS range delta.
 
 ## Known Gaps
 
-- Full BSLLS parity taxonomy has not been rerun for the whole batch in this
-  audit step.
-- The current coverage signal is based on existing synthetic tests plus
-  contract-level semantic oracles, not a fresh per-rule corpus parity run.
-- External BSLLS parity for `BSL013` and `BSL040` is not closed in this pass.
-  The local BSLLS jar is available and runnable, and selected-code comparison
-  tooling is fixed, so the blocker is now valid sanitized fixtures for those
-  rules, not analyzer availability or neighbouring diagnostics.
+- Full BSLLS parity taxonomy is now available at batch-count level. The
+  remaining open work is rule-specific semantic taxonomy and owner decisions
+  for the non-exact rules.
+- `BSL022` and `BSL036` are count/line parity but not exact-range parity. They
+  should not block semantic completion unless the product decision is to match
+  BSLLS anchor ranges exactly.
+- `BSL040` keeps additional `Forms/.../Ext/Module.bsl` findings unless the
+  product decision drops that legacy full form module layout.
+- `BSL216` does not intentionally match BSLLS on unary `-` after `[` because
+  unary minus should not require surrounding spaces.
+- `BSL013` does not accept standalone commented annotation/preprocessor
+  directives as enough evidence by itself. A probe that did so overreported
+  thousands of comment groups on the corpus; annotations remain included when
+  adjacent to an already code-like commented method/query block.
+- `BSL077` keeps skipping SDBL parse-error blocks. The two remaining BSLLS-only
+  reports are in parse-error query blocks that also contain an order clause, so
+  they are not accepted as a rule bug without a narrower semantic example.
 
 ## Next Cheap Tests
 
-1. Build a valid sanitized EDT/form-module fixture for BSL040 and a BSLLS-known
-   commented-code fixture for BSL013, then rerun the rule-contract parity
-   procedure through `scripts/compare_diag_bslls.py --select ...`.
-2. Continue the same semantic-first audit with the next highest-risk rules in
-   this batch.
+1. Classify `BSL014`, `BSL011`, `BSL219`, and `BSL131` in that order
+   by semantic facts, not by count-chasing.
+2. Continue `BSL013` only with sampled semantic categories, not broad
+   directive/comment punctuation expansion.
 3. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
    so invalid dossiers cannot silently accumulate.

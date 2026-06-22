@@ -3097,6 +3097,42 @@ class TestBsl013CommentedCode:
         assert bsl013[0].line == 2
         assert bsl013[0].end_line == 3
 
+    def test_commented_annotation_is_included_with_commented_method(self, tmp_path: Path) -> None:
+        content = """\
+            // &НаКлиенте
+            // Процедура СтарыйКод()
+            // КонецПроцедуры
+            Процедура Тест()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        bsl013 = [d for d in diags if d.code == "BSL013"]
+        assert len(bsl013) == 1
+        assert bsl013[0].line == 1
+        assert bsl013[0].end_line == 3
+
+    def test_commented_directive_without_code_is_not_commented_code(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            // #Если Сервер Тогда
+            // #КонецЕсли
+            Процедура Тест()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        assert "BSL013" not in _codes(diags)
+
+    def test_markdown_heading_comment_is_not_commented_code(self, tmp_path: Path) -> None:
+        content = """\
+            // # Настройка формы
+            // Описание поведения команды.
+            Процедура Тест()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        assert "BSL013" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL014 — LineTooLong
@@ -3117,6 +3153,13 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=120)
         assert "BSL014" not in _codes(diags)
 
+    def test_line_exactly_at_limit_no_warning(self, tmp_path: Path) -> None:
+        line = "А = " + ("1" * 20) + ";\n"
+        assert len(line.rstrip()) == 25
+        content = f"Процедура Тест()\n{line}КонецПроцедуры\n"
+        diags = _check(content, tmp_path, max_line_length=25, select={"BSL014"})
+        assert "BSL014" not in _codes(diags)
+
     def test_trailing_spaces_do_not_count_in_bslls_message(self, tmp_path: Path) -> None:
         content = "Процедура Тест()\n\tА = 12345678901234567890;   \nКонецПроцедуры\n"
         diags = _check(content, tmp_path, max_line_length=25, select={"BSL014"})
@@ -3124,6 +3167,23 @@ class TestBsl014LineTooLong:
         assert len(bsl014) == 1
         assert bsl014[0].message == _rule_msg("BSL014")
         assert bsl014[0].end_character == 26
+
+    def test_query_text_keyword_line_exception_no_warning(self, tmp_path: Path) -> None:
+        query_line = "|" + "ВЫБРАТЬ " + ("Поле, " * 30) + "\n"
+        assert len(query_line.rstrip()) > 80
+        content = f'Запрос.Текст = "\n{query_line}";\n'
+        diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
+        assert "BSL014" not in _codes(diags)
+
+    def test_query_text_non_keyword_line_reports_only_after_140(self, tmp_path: Path) -> None:
+        query_line = "|" + ("x" * 141) + "\n"
+        content = f'Запрос.Текст = "\n{query_line}";\n'
+        diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
+        bsl014 = [d for d in diags if d.code == "BSL014"]
+        assert len(bsl014) == 1
+        assert bsl014[0].line == 2
+        assert bsl014[0].character == 0
+        assert bsl014[0].end_character == 142
 
 
 # ---------------------------------------------------------------------------
@@ -5834,7 +5894,7 @@ class TestBsl040UsingThisForm:
         split_form = tmp_path / "Forms" / "SomeForm" / "Ext" / "Команда.bsl"
         split_form.write_text("// ok\n", encoding="utf-8")
         (split_form.parent / "module.header").write_text("// ok\n", encoding="utf-8")
-        assert path_is_likely_form_module_bsl(str(split_form))
+        assert not path_is_likely_form_module_bsl(str(split_form))
         plain = tmp_path / "CommonModules" / "Foo" / "Ext" / "Module.bsl"
         plain.parent.mkdir(parents=True)
         plain.write_text("// ok\n", encoding="utf-8")

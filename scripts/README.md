@@ -56,27 +56,3 @@ python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 режимом исполнения и рекомендуемой пачкой доработки. Ее нужно использовать
 перед изменением семейства правил, чтобы планировать работу по shared runtime
 facts, а не по красивым, но неисполнительным фазам.
-
-## BSLLS parity для диагностик
-
-**`compare_diag_bslls.py`** сравнивает выбранные правила onec-hbk-bsl и BSLLS:
-
-```bash
-BSLLS_JAR=/path/to/bsl-language-server-*-exec.jar \
-  ./.venv/bin/python scripts/compare_diag_bslls.py \
-  --workspace /path/to/workspace \
-  --select BSL216,CommentedCode \
-  /path/to/workspace/src
-```
-
-Правило для audit-итераций: всегда задавайте `--select`. Скрипт запускает наш
-CLI как `onec-hbk-bsl check --format json --select ...`, генерирует для BSLLS
-конфигурацию `diagnostics.mode=ONLY` с совместимыми именами правил, запускает
-BSLLS `analyze`, проверяет что оба инструмента анализировали один и тот же
-временный набор файлов, нормализует BSLLS diagnostics обратно в `BSL###`, затем
-сравнивает выбранные правила по `file,line,column,end,code`.
-
-Входные файлы копируются во временный source root с сохранением относительного
-пути от `--workspace`; это важно для правил, завязанных на EDT/module kind
-path, например form-module diagnostics. Скрипт ищет jar в `--jar`, `BSLLS_JAR`,
-`.nosync/bsl-language-server/**`, затем в локальном пользовательском cache.

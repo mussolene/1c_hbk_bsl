@@ -18,6 +18,7 @@ Check mode flags:
     --ignore BSL002                Skip these rules
     --format text|json|sarif       Output format (default: text)
     --jobs N                       Parallel workers (0 = auto, 1 = serial)
+    --no-config                    Do not load project configuration
     --exit-zero                    Always exit 0 (don't fail CI on issues)
     --baseline FILE                Suppress issues listed in baseline
     --update-baseline FILE         Save current issues as new baseline, exit 0
@@ -170,16 +171,17 @@ def _run_check(
     since: str | None,
     fix: bool,
     paths_from: str | None,
+    no_config: bool,
 ) -> int:
     from onec_hbk_bsl.cli.check import check, read_paths_from_file
-    from onec_hbk_bsl.cli.config import load_config
+    from onec_hbk_bsl.cli.config import _EMPTY, load_config
 
     if paths_from:
         paths.extend(read_paths_from_file(paths_from))
 
     # Load config from the first checked path (or cwd)
     search_from = paths[0] if paths else os.getcwd()
-    cfg = load_config(search_from)
+    cfg = _EMPTY if no_config else load_config(search_from)
 
     # --diff: resolve paths to git-changed BSL files
     if diff:
@@ -459,6 +461,12 @@ Examples:
         help="Number of parallel worker threads (0 = auto, 1 = serial; default: 0)",
     )
     check_parser.add_argument(
+        "--no-config",
+        action="store_true",
+        default=False,
+        help="Do not load onec-hbk-bsl.toml or pyproject.toml configuration",
+    )
+    check_parser.add_argument(
         "--exit-zero",
         action="store_true",
         default=False,
@@ -637,6 +645,7 @@ Examples:
                 since=args.since,
                 fix=args.fix,
                 paths_from=args.paths_from,
+                no_config=args.no_config,
             )
         except ValueError as exc:
             parser.error(str(exc))

@@ -2283,34 +2283,27 @@ _RE_BSL215_PARAM_ENTRY = re.compile(r"^\s*//\s{1,4}(\w+)\s*-", re.UNICODE)
 _RE_BSL215_COMMENT_LINE = re.compile(r"^\s*//")
 
 
-@functools.lru_cache(maxsize=32_768)
-def _casefolded_sibling_names(parent: str) -> frozenset[str]:
-    try:
-        return frozenset(sibling.name.lower() for sibling in Path(parent).iterdir())
-    except OSError:
-        return frozenset()
-
-
 @functools.lru_cache(maxsize=131_072)
 def path_is_likely_form_module_bsl(path: str) -> bool:
     """
-    True for EDT-style form modules and HBK split fragments below
-    ``.../Forms/<form>/Ext/...``.
+    True for full EDT-style form modules below ``.../Forms/<form>/Ext/...``.
     """
     try:
         p = Path(path).resolve()
     except OSError:
         return False
-    parts = [x.lower() for x in p.parts]
     if p.suffix.lower() != ".bsl":
         return False
-    form_indexes = [idx for idx, part in enumerate(parts) if part in {"forms", "формы"}]
-    if not any("ext" in parts[idx + 1 :] for idx in form_indexes):
+    normalized = p.as_posix().lower()
+    if p.name.lower() != "module.bsl":
         return False
-    if p.name.lower() == "module.bsl":
-        return True
-    lower_siblings = _casefolded_sibling_names(str(p.parent))
-    return bool({"module.bsl", "module.header", "form.xml", "form.prettydata"} & lower_siblings)
+    return (
+        "/forms/" in normalized
+        and (
+            normalized.endswith("/ext/module.bsl")
+            or normalized.endswith("/ext/form/module.bsl")
+        )
+    )
 
 
 def _redundant_access_prefix_patterns(path: str) -> list[re.Pattern[str]]:
