@@ -69,6 +69,65 @@ def test_bslls_keys_filters_to_selected_rules_and_keeps_ranges(tmp_path: Path) -
     }
 
 
+def test_onec_keys_filters_cli_json_to_selected_rules(tmp_path: Path) -> None:
+    mod = _load_script_module()
+    source = tmp_path / "src"
+    source.mkdir()
+    file_path = source / "Module.bsl"
+    file_path.write_text("", encoding="utf-8")
+    raw = [
+        {
+            "file": str(file_path),
+            "line": 2,
+            "character": 5,
+            "end_line": 2,
+            "end_character": 6,
+            "code": "BSL216",
+        },
+        {
+            "file": str(file_path),
+            "line": 2,
+            "character": 4,
+            "end_line": 2,
+            "end_character": 5,
+            "code": "BSL007",
+        },
+    ]
+
+    keys = mod.onec_keys(raw, source, frozenset({"BSL216"}))
+
+    assert keys == {
+        mod.DiagnosticKey(
+            file_key="Module.bsl",
+            line=2,
+            character=5,
+            end_line=2,
+            end_character=6,
+            code="BSL216",
+        )
+    }
+
+
+def test_write_bslls_config_uses_only_mode_and_bslls_names(tmp_path: Path) -> None:
+    mod = _load_script_module()
+    config_path = tmp_path / "bslls.json"
+
+    mod._write_bslls_config(config_path, frozenset({"BSL216", "BSL040"}))
+
+    assert config_path.read_text(encoding="utf-8") == (
+        "{\n"
+        '  "language": "en",\n'
+        '  "diagnostics": {\n'
+        '    "mode": "ONLY",\n'
+        '    "parameters": {\n'
+        '      "UsingThisForm": true,\n'
+        '      "MissingSpace": true\n'
+        "    }\n"
+        "  }\n"
+        "}\n"
+    )
+
+
 def test_copy_inputs_preserves_workspace_relative_paths(tmp_path: Path) -> None:
     mod = _load_script_module()
     workspace = tmp_path / "workspace"

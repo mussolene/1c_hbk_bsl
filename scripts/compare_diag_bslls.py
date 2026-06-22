@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Compare selected onec-hbk-bsl diagnostics with BSLLS ``analyze`` JSON.
+"""Compare onec-hbk-bsl CLI JSON with BSLLS ``analyze`` JSON.
 
-This is a development-only parity helper. It deliberately compares only the
-requested rule set on both sides, so neighbouring BSLLS diagnostics cannot
-pollute a focused rule audit.
+This is a development-only parity helper that implements the rule-contract
+parity procedure: onec runs with exact ``--select`` JSON output, BSLLS runs
+with ``diagnostics.mode=ONLY`` for the compatible rule names, both tools analyze
+the same temporary file set, and coordinates are normalized before comparison.
 """
 
 from __future__ import annotations
@@ -25,10 +26,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from onec_hbk_bsl.analysis.diagnostics import (  # noqa: E402
-    DiagnosticEngine,
+    RULE_METADATA,
     resolve_rule_token_to_code,
 )
-from onec_hbk_bsl.parser.bsl_parser import BslParser  # noqa: E402
 
 
 @dataclass(frozen=True, order=True)
@@ -52,6 +52,16 @@ def normalize_rule_codes(raw: str) -> frozenset[str]:
     if not codes:
         raise ValueError("--select must contain at least one rule code or BSLLS name")
     return frozenset(codes)
+
+
+def bslls_rule_name(code: str) -> str:
+    metadata = RULE_METADATA.get(code)
+    if not metadata:
+        raise ValueError(f"unknown diagnostic code: {code}")
+    name = str(metadata.get("name", "")).strip()
+    if not name:
+        raise ValueError(f"diagnostic has no BSLLS-compatible name: {code}")
+    return name
 
 
 def find_bslls_jar(repo_root: Path, explicit: Path | None = None) -> Path | None:
@@ -100,24 +110,24 @@ def _bslls_file_key(fileinfo: dict, source_root: Path, workspace: Path) -> str:
     return Path(str(fileinfo.get("path", ""))).name
 
 
-def onec_keys(files: list[Path], workspace: Path, select: frozenset[str]) -> set[DiagnosticKey]:
-    engine = DiagnosticEngine(parser=BslParser(), select=select)
+def onec_keys(raw: list[dict], workspace: Path, select: frozenset[str]) -> set[DiagnosticKey]:
     keys: set[DiagnosticKey] = set()
-    for path in files:
-        for issue in engine.check_file(str(path)):
-            code = resolve_rule_token_to_code(issue.code) or str(issue.code).upper()
-            if code not in select:
-                continue
-            keys.add(
-                DiagnosticKey(
-                    file_key=_relative_file_key(Path(issue.file), workspace),
-                    line=issue.line,
-                    character=issue.character,
-                    end_line=issue.end_line,
-                    end_character=issue.end_character,
-                    code=code,
-                )
+    for item in raw:
+        code = resolve_rule_token_to_code(str(item.get("code", "")).strip()) or str(
+            item.get("code", "")
+        ).upper()
+        if code not in select:
+            continue
+        keys.add(
+            DiagnosticKey(
+                file_key=_relative_file_key(Path(str(item.get("file", ""))), workspace),
+                line=int(item.get("line", 0)),
+                character=int(item.get("character", 0)),
+                end_line=int(item.get("end_line", item.get("line", 0))),
+                end_character=int(item.get("end_character", item.get("character", 0))),
+                code=code,
             )
+        )
     return keys
 
 
@@ -172,22 +182,64 @@ def _copy_inputs(files: list[Path], workspace: Path, source_root: Path) -> list[
     return copied
 
 
-def run_bslls(jar: Path, source_root: Path, output_dir: Path) -> dict:
+def run_onec_cli(files: list[Path], source_root: Path, select: frozenset[str]) -> list[dict]:
+    command = [
+        sys.executable,
+        "-m",
+        "onec_hbk_bsl",
+        "check",
+        "--format",
+        "json",
+        "--select",
+        ",".join(sorted(select)),
+        "--exit-zero",
+        "--jobs",
+        "1",
+        *[str(path) for path in files],
+    ]
+    result = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=240,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "onec-hbk-bsl check failed"
+        raise RuntimeError(message)
+    return json.loads(result.stdout)
+
+
+def _write_bslls_config(path: Path, select: frozenset[str]) -> None:
+    parameters = {bslls_rule_name(code): True for code in sorted(select)}
+    payload = {
+        "language": "en",
+        "diagnostics": {
+            "mode": "ONLY",
+            "parameters": parameters,
+        },
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def run_bslls(jar: Path, source_root: Path, output_dir: Path, config_path: Path) -> dict:
     java = os.environ.get("BSLLS_JAVA", "java")
     command = [
         java,
         "-jar",
         str(jar),
         "analyze",
-        "-s",
+        "--silent",
+        "--configuration",
+        str(config_path),
+        "--srcDir",
         str(source_root),
-        "-w",
+        "--workspaceDir",
         str(source_root),
-        "-o",
+        "--outputDir",
         str(output_dir),
-        "-r",
+        "--reporter",
         "json",
-        "-q",
     ]
     result = subprocess.run(command, capture_output=True, text=True, timeout=240)
     if result.returncode != 0:
@@ -197,6 +249,13 @@ def run_bslls(jar: Path, source_root: Path, output_dir: Path) -> dict:
     if not json_path.is_file():
         raise RuntimeError("BSLLS did not produce bsl-json.json")
     return json.loads(json_path.read_text(encoding="utf-8"))
+
+
+def bslls_file_set(raw: dict, source_root: Path) -> set[str]:
+    result: set[str] = set()
+    for fileinfo in raw.get("fileinfos", []):
+        result.add(_bslls_file_key(fileinfo, source_root, source_root))
+    return result
 
 
 def _print_delta(label: str, values: set[DiagnosticKey], *, limit: int) -> None:
@@ -239,11 +298,23 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory(prefix="bslls-parity-") as td:
             source_root = Path(td) / "src"
             output_dir = Path(td) / "out"
+            config_path = Path(td) / "bslls-only.json"
             source_root.mkdir(parents=True)
             output_dir.mkdir()
             copied = _copy_inputs(files, workspace, source_root)
-            ours = onec_keys(copied, source_root, select)
-            raw = run_bslls(jar, source_root, output_dir)
+            _write_bslls_config(config_path, select)
+            onec_raw = run_onec_cli(copied, source_root, select)
+            ours = onec_keys(onec_raw, source_root, select)
+            raw = run_bslls(jar, source_root, output_dir, config_path)
+            expected_files = {_relative_file_key(path, source_root) for path in copied}
+            actual_files = bslls_file_set(raw, source_root)
+            if actual_files != expected_files:
+                missing = sorted(expected_files - actual_files)
+                extra = sorted(actual_files - expected_files)
+                raise RuntimeError(
+                    "BSLLS analyzed a different file set: "
+                    f"missing={missing[:10]} extra={extra[:10]}"
+                )
             theirs = bslls_keys(raw, source_root, source_root, select)
     except Exception as exc:  # noqa: BLE001 - CLI boundary
         print(str(exc), file=sys.stderr)

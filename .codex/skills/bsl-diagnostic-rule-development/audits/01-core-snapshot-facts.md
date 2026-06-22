@@ -92,10 +92,12 @@ restart from chat memory.
 6. Parity tooling correction:
    `scripts/compare_diag_bslls.py` is now the project parity entry point for
    BSLLS-backed diagnostic audits. It requires explicit `--select`, runs onec
-   with that selected rule set, runs BSLLS `analyze`, normalizes BSLLS rule
-   names back to `BSL###`, filters both sides to the selected codes, and
-   compares `file,line,column,end,code`. It also preserves the workspace-relative
-   input path in the temporary BSLLS source root so path-sensitive rules are not
+   through `onec-hbk-bsl check --format json --select ...`, generates a BSLLS
+   `diagnostics.mode=ONLY` configuration for the compatible rule names, runs
+   BSLLS `analyze`, proves the same temporary file set was analyzed, normalizes
+   BSLLS rule names back to `BSL###`, and compares
+   `file,line,column,end,code`. It also preserves the workspace-relative input
+   path in the temporary BSLLS source root so path-sensitive rules are not
    tested as flat basename-only files.
 
 ## Known Gaps
