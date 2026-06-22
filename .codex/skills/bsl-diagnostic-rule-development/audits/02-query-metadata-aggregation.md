@@ -17,7 +17,7 @@ This audit is the durable routing checklist for
 - [ ] BSL207 - open
 - [ ] BSL209 - open
 - [x] BSL211 - exact no-signal; strict 80-character metadata-name contract
-- [ ] BSL213 - open
+- [x] BSL213 - exact no-signal; exported common-module method contract
 - [ ] BSL214 - open
 - [ ] BSL220 - open
 - [ ] BSL231 - open

@@ -142,6 +142,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     common_module_proc_names_for_module_cached as _common_module_proc_names_for_module_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    common_module_exported_proc_names_for_module_cached as _common_module_exported_proc_names_for_module_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     config_has_protected_modules_cached as _config_has_protected_modules_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (

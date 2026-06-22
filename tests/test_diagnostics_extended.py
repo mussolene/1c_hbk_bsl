@@ -2557,7 +2557,7 @@ class TestTailParityBatches:
 
         import onec_hbk_bsl.analysis.diagnostics as diagnostics_mod
 
-        original = diagnostics_mod._common_module_proc_names_for_module_cached
+        original = diagnostics_mod._common_module_exported_proc_names_for_module_cached
         calls: set[str] = set()
 
         def spy(config_root: str, module_name_cf: str) -> frozenset[str]:
@@ -2565,13 +2565,65 @@ class TestTailParityBatches:
             return original(config_root, module_name_cf)
 
         monkeypatch.setattr(
-            "onec_hbk_bsl.analysis.diagnostics._common_module_proc_names_for_module_cached",
+            "onec_hbk_bsl.analysis.diagnostics._common_module_exported_proc_names_for_module_cached",
             spy,
         )
         diags = DiagnosticEngine(select={"BSL213"}).check_file(str(caller_module))
         assert "BSL213" in _codes(diags)
         assert "target" in calls
         assert "unused" not in calls
+
+    def test_bsl213_reports_external_non_exported_common_module_method(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        for module_name in ("Caller", "Target"):
+            (root / "CommonModules" / module_name / "Ext").mkdir(parents=True)
+            (root / "CommonModules" / f"{module_name}.xml").write_text(
+                f"<CommonModule><Name>{module_name}</Name></CommonModule>", encoding="utf-8"
+            )
+        caller_module = root / "CommonModules" / "Caller" / "Ext" / "Module.bsl"
+        caller_module.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Run()
+                    Target.PrivateMethod();
+                    Target.Absent();
+                    Target.Exists();
+                    Caller.PrivateSelf();
+                КонецПроцедуры
+
+                Процедура PrivateSelf()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "Target" / "Ext" / "Module.bsl").write_text(
+            textwrap.dedent(
+                """\
+                Процедура Exists() Экспорт
+                КонецПроцедуры
+
+                Процедура PrivateMethod()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL213"}).check_file(str(caller_module))
+            if diag.code == "BSL213"
+        ]
+
+        assert [(diag.line, diag.character, diag.end_character) for diag in diags] == [
+            (2, 4, 24),
+            (3, 4, 17),
+        ]
 
     def test_external_resource_timeout_tail_rule(self, tmp_path: Path) -> None:
         diags = _check(

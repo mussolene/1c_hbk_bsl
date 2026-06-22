@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from onec_hbk_bsl.analysis.document_snapshot import (
+    find_exported_procedure_names_from_tree,
+    find_exported_procedure_names_in_content,
     find_procedure_names_from_tree,
     find_procedure_names_in_content,
 )
@@ -250,6 +252,18 @@ def common_module_proc_names_for_file_cached(module_file: str) -> frozenset[str]
 
 
 @functools.lru_cache(maxsize=4096)
+def common_module_exported_proc_names_for_file_cached(module_file: str) -> frozenset[str]:
+    content = read_text_cached(module_file)
+    if not content:
+        return frozenset()
+    tree = BslParser().parse_content(content, file_path=module_file)
+    names = find_exported_procedure_names_from_tree(tree)
+    if names:
+        return names
+    return find_exported_procedure_names_in_content(content)
+
+
+@functools.lru_cache(maxsize=4096)
 def common_module_proc_names_for_module_cached(
     config_root: str, module_name_cf: str
 ) -> frozenset[str]:
@@ -260,6 +274,19 @@ def common_module_proc_names_for_module_cached(
     if not module_file:
         return frozenset()
     return common_module_proc_names_for_file_cached(module_file)
+
+
+@functools.lru_cache(maxsize=4096)
+def common_module_exported_proc_names_for_module_cached(
+    config_root: str, module_name_cf: str
+) -> frozenset[str]:
+    info = common_module_index_cached(config_root).get(module_name_cf)
+    if info is None:
+        return frozenset()
+    module_file = str(info.get("module_file") or "")
+    if not module_file:
+        return frozenset()
+    return common_module_exported_proc_names_for_file_cached(module_file)
 
 
 @functools.lru_cache(maxsize=128)

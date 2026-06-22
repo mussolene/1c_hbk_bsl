@@ -1352,9 +1352,20 @@ def find_procedure_names_from_tree(tree: Any) -> frozenset[str]:
     return frozenset(result)
 
 
+def find_exported_procedure_names_from_tree(tree: Any) -> frozenset[str]:
+    return frozenset(
+        proc.name.casefold() for proc in _find_procedures_from_tree(tree) if proc.is_export
+    )
+
+
 def find_procedure_names_in_content(content: str) -> frozenset[str]:
     tree = BslParser().parse_content(content)
     return find_procedure_names_from_tree(tree)
+
+
+def find_exported_procedure_names_in_content(content: str) -> frozenset[str]:
+    tree = BslParser().parse_content(content)
+    return find_exported_procedure_names_from_tree(tree)
 
 
 def _line_break_positions(content: str) -> list[int]:

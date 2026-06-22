@@ -641,7 +641,12 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         continue
                     info = proc_names_by_module.get(mod_cf)
                     if info is None:
-                        info = _diag._common_module_proc_names_for_module_cached(root, mod_cf)
+                        if mod_cf == module_name.casefold():
+                            info = _diag._common_module_proc_names_for_module_cached(root, mod_cf)
+                        else:
+                            info = _diag._common_module_exported_proc_names_for_module_cached(
+                                root, mod_cf
+                            )
                         proc_names_by_module[mod_cf] = info
                     if match.group("meth").casefold() not in info:
                         diags.append(
