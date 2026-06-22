@@ -3281,9 +3281,26 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
         assert "BSL014" not in _codes(diags)
 
-    def test_query_text_non_keyword_line_exception_no_warning(self, tmp_path: Path) -> None:
+    def test_query_text_non_keyword_continuation_exception_no_warning(
+        self, tmp_path: Path
+    ) -> None:
         query_line = "|" + ("x" * 141) + "\n"
-        content = f'Запрос.Текст = "\n{query_line}";\n'
+        content = f'Запрос.Текст = "\n|ВЫБРАТЬ\n{query_line}";\n'
+        diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
+        assert "BSL014" not in _codes(diags)
+
+    def test_ordinary_multiline_string_pipe_line_detected(self, tmp_path: Path) -> None:
+        string_line = "|" + ("x" * 90) + "\n"
+        content = f'Сообщение = "\n{string_line}";\n'
+        diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
+        bsl014 = [d for d in diags if d.code == "BSL014"]
+        assert len(bsl014) == 1
+        assert bsl014[0].line == 2
+        assert bsl014[0].end_character == 91
+
+    def test_query_text_pipe_line_still_excluded(self, tmp_path: Path) -> None:
+        query_line = "|" + ("Поле, " * 20) + "\n"
+        content = f'Запрос.Текст = "\n|ВЫБРАТЬ\n{query_line}";\n'
         diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
         assert "BSL014" not in _codes(diags)
 

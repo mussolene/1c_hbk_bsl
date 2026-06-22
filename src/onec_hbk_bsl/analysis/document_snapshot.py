@@ -1605,34 +1605,16 @@ class DocumentSnapshot:
 
     @property
     def reported_line_lengths(self) -> list[int]:
-        """Return BSLLS-compatible visible line lengths used by BSL014."""
+        """Return significant row ends used by BSL014.
+
+        BSL014 is a readability rule: trailing spaces and tabs after the last
+        visible source character do not make the row harder to read.
+        """
         if self._reported_line_lengths is not None:
             return self._reported_line_lengths
 
-        if "\r" not in self.content and Path(self.path).is_file():
-            try:
-                raw_line_source = [
-                    raw.decode("utf-8", errors="ignore")
-                    for raw in Path(self.path).read_bytes().splitlines(True)
-                ]
-            except OSError:
-                raw_line_source = self.content.splitlines(True)
-            if len(raw_line_source) != len(self.content.splitlines()):
-                raw_line_source = self.content.splitlines(True)
-        else:
-            raw_line_source = self.content.splitlines(True)
-
-        reported_lengths: list[int] = []
-        for raw in raw_line_source:
-            raw_no_lf = raw.rstrip("\n")
-            raw_no_eol = raw_no_lf.rstrip("\r")
-            if raw_no_lf.endswith("\r") and raw_no_eol.lstrip().startswith("//"):
-                visible_len = len(raw_no_eol.rstrip("\t"))
-            else:
-                visible_len = len(raw_no_eol.rstrip())
-            reported_lengths.append(visible_len)
-        self._reported_line_lengths = reported_lengths
-        return reported_lengths
+        self._reported_line_lengths = [len(line.rstrip(" \t")) for line in self.lines]
+        return self._reported_line_lengths
 
     @property
     def blank_line_flags(self) -> list[bool]:
@@ -2485,13 +2467,24 @@ class DocumentSnapshot:
         if cached is not None:
             return cached
 
-        facts: list[LineDiagnosticFact] = []
         reported_lengths = self.reported_line_lengths
-        for idx, line in enumerate(self.lines):
-            if line.lstrip().startswith("|"):
+        candidate_indices = [
+            idx for idx, reported_length in enumerate(reported_lengths) if reported_length > max_line_length
+        ]
+        if not candidate_indices:
+            self._line_too_long_facts_cache[max_line_length] = []
+            return []
+
+        facts: list[LineDiagnosticFact] = []
+        needs_query_exclusion = any(
+            self.lines[idx].lstrip().startswith("|") or _RE_QUERY_TEXT_START.search(self.lines[idx])
+            for idx in candidate_indices
+        )
+        query_line_indices = self.query_line_indices if needs_query_exclusion else frozenset()
+        for idx in candidate_indices:
+            if idx in query_line_indices:
                 continue
-            length = len(line.rstrip())
-            reported_length = reported_lengths[idx] if idx < len(reported_lengths) else length
+            reported_length = reported_lengths[idx]
             if reported_length <= max_line_length:
                 continue
             facts.append(
