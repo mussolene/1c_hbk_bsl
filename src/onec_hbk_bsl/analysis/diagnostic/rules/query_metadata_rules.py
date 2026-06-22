@@ -35,6 +35,75 @@ _BSL174_REGISTER_FOLDERS: frozenset[str] = frozenset(
         "CalculationRegisters",
     }
 )
+_BSL189_FORBIDDEN_NAMES: frozenset[str] = frozenset(
+    name.casefold()
+    for name in (
+        "AccountingRegister",
+        "AccountingRegisters",
+        "AccumulationRegister",
+        "AccumulationRegisters",
+        "BusinessProcess",
+        "BusinessProcesses",
+        "CalculationRegister",
+        "CalculationRegisters",
+        "Catalog",
+        "Catalogs",
+        "ChartOfAccounts",
+        "ChartOfCalculationTypes",
+        "ChartOfCharacteristicTypes",
+        "ChartsOfAccounts",
+        "ChartsOfCalculationTypes",
+        "ChartsOfCharacteristicTypes",
+        "Constant",
+        "Constants",
+        "Document",
+        "DocumentJournal",
+        "DocumentJournals",
+        "Documents",
+        "Enum",
+        "Enums",
+        "ExchangePlan",
+        "ExchangePlans",
+        "FilterCriteria",
+        "FilterCriterion",
+        "InformationRegister",
+        "InformationRegisters",
+        "Task",
+        "Tasks",
+        "БизнесПроцесс",
+        "БизнесПроцессы",
+        "Документ",
+        "Документы",
+        "ЖурналДокументов",
+        "ЖурналыДокументов",
+        "Задача",
+        "Задачи",
+        "Константа",
+        "Константы",
+        "КритерииОтбора",
+        "КритерийОтбора",
+        "Перечисление",
+        "Перечисления",
+        "ПланВидовРасчета",
+        "ПланВидовХарактеристик",
+        "ПланОбмена",
+        "ПланСчетов",
+        "ПланыВидовРасчета",
+        "ПланыВидовХарактеристик",
+        "ПланыОбмена",
+        "ПланыСчетов",
+        "РегистрБухгалтерии",
+        "РегистрНакопления",
+        "РегистрРасчета",
+        "РегистрСведений",
+        "РегистрыБухгалтерии",
+        "РегистрыНакопления",
+        "РегистрыРасчета",
+        "РегистрыСведений",
+        "Справочник",
+        "Справочники",
+    )
+)
 
 
 def _bsl174_owner_module_matches(path: str, object_xml: Path) -> bool:
@@ -57,6 +126,10 @@ def _bsl174_owner_module_matches(path: str, object_xml: Path) -> bool:
 
 
 def _bsl174_owner_range_end(line_text: str) -> int:
+    return max(1, min(len(line_text.rstrip()), 9))
+
+
+def _metadata_owner_range_end(line_text: str) -> int:
     return max(1, min(len(line_text.rstrip()), 9))
 
 
@@ -394,34 +467,18 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         else {}
     )
 
-    forbidden_names = {
-        "catalog",
-        "catalogs",
-        "document",
-        "documents",
-        "справочник",
-        "справочники",
-        "документ",
-        "документы",
-        "enum",
-        "enums",
-        "перечисление",
-        "перечисления",
-        "tasks",
-        "задачи",
-    }
     bsl189_storage_member_kinds = {"attribute", "tabular_section"}
 
     if object_xml is not None:
         if "BSL189" in enabled_set:
-            if object_name.casefold() in forbidden_names:
+            if object_name.casefold() in _BSL189_FORBIDDEN_NAMES:
                 diags.append(
                     _diag.Diagnostic(
                         file=path,
                         line=1,
                         character=0,
                         end_line=1,
-                        end_character=max(len(line_text.rstrip()), 1),
+                        end_character=_metadata_owner_range_end(line_text),
                         severity=_diag.Severity.ERROR,
                         code="BSL189",
                     )
@@ -434,14 +491,14 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     ):
                         continue
                     check_name = member.name.split(".")[-1]
-                    if check_name.casefold() in forbidden_names:
+                    if check_name.casefold() in _BSL189_FORBIDDEN_NAMES:
                         diags.append(
                             _diag.Diagnostic(
                                 file=path,
                                 line=1,
                                 character=0,
                                 end_line=1,
-                                end_character=max(len(line_text.rstrip()), 1),
+                                end_character=_metadata_owner_range_end(line_text),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL189",
                             )

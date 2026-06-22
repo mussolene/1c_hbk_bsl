@@ -10,7 +10,7 @@ This audit is the durable routing checklist for
 
 - [x] BSL174 - exact; owner-module metadata contract
 - [x] BSL187 - mini exact; private CST recovery deltas classified
-- [ ] BSL189 - open
+- [x] BSL189 - exact; forbidden metadata names contract
 - [ ] BSL191 - open
 - [ ] BSL201 - open
 - [ ] BSL206 - open

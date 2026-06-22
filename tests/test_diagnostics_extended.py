@@ -1397,6 +1397,12 @@ class TestTailParityBatches:
 
         assert len(diags) == 1
         assert diags[0].message == _rule_msg("BSL189")
+        assert (diags[0].line, diags[0].character, diags[0].end_line, diags[0].end_character) == (
+            1,
+            0,
+            1,
+            9,
+        )
 
     def test_bsl189_reports_tabular_section_name(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -1432,6 +1438,40 @@ class TestTailParityBatches:
 
         assert len(diags) == 1
         assert diags[0].message == _rule_msg("BSL189")
+
+    def test_bsl189_reports_register_dimension_forbidden_name(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        obj_dir = root / "InformationRegisters" / "Регистр" / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "InformationRegisters" / "Регистр.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                    <InformationRegister>
+                        <Properties><Name>Регистр</Name></Properties>
+                        <ChildObjects>
+                            <Dimension>
+                                <Properties><Name>РегистрСведений</Name></Properties>
+                            </Dimension>
+                        </ChildObjects>
+                    </InformationRegister>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path = obj_dir / "ManagerModule.bsl"
+        module_path.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL189"}).check_file(str(module_path))
+            if d.code == "BSL189"
+        ]
+
+        assert len(diags) == 1
 
     def test_common_module_cross_reference_tail_pool(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
