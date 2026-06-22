@@ -208,6 +208,16 @@ restart from chat memory.
    reproduced; remaining private batch range-only entries need sanitized
    examples before any runtime edit.
 
+15. BSL040 product taxonomy:
+   BSL040 remains an intentional product divergence from BSLLS counts for legacy
+   full form modules. The private batch had 1081 exact common facts and
+   additional onec facts in `Forms/.../Ext/Module.bsl` layout. Those findings
+   are retained because the project treats that path as a semantically valid
+   full form module, while split fragments and side `.bsl` files under the same
+   `Ext` directory remain excluded. Local synthetic path fixtures cover common
+   module skip, full form module report, parameter shadowing, and split fragment
+   skip. Do not remove the legacy layout without an explicit product decision.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
@@ -216,8 +226,9 @@ restart from chat memory.
 - `BSL036` private batch still has unsampled range-only entries; sampled
   single-line and multiline cases match BSLLS exactly, so do not edit runtime
   without sanitized private examples.
-- `BSL040` keeps additional `Forms/.../Ext/Module.bsl` findings unless the
-  product decision drops that legacy full form module layout.
+- `BSL040` intentionally keeps additional `Forms/.../Ext/Module.bsl` findings;
+  this is closed as a product decision unless that legacy full form module layout
+  is explicitly dropped later.
 - `BSL216` does not intentionally match BSLLS on unary `-` after `[` because
   unary minus should not require surrounding spaces.
 - `BSL013` does not accept standalone commented annotation/preprocessor
