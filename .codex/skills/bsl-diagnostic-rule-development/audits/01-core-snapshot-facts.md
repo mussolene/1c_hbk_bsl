@@ -49,18 +49,52 @@ restart from chat memory.
    all 17 rules now have validator-backed contract dossiers. Diagnostic logic
    was not changed by this contract completion step.
 
+5. Semantic/parity audit pass 1:
+   `BSL013`, `BSL216`, and `BSL040` were checked against their contracts and
+   current implementation topology. The semantic pass is closed for this
+   iteration; external BSLLS parity is still open because this workspace does
+   not currently contain a runnable BSLLS analyzer artifact or checked-out
+   upstream fixture tree.
+
+   - `BSL013` remains a textual/comment-group rule. It is implemented through
+     `DocumentSnapshot.commented_code_facts`; prose comments are ignored,
+     commented procedure blocks are reported as one grouped diagnostic, example
+     markers suppress the group, and inline commented assignments are reported
+     from the inline comment span.
+   - `BSL216` remains a lexical style rule. It is implemented through
+     `DocumentSnapshot.missing_space_facts`; string/comment spans are masked or
+     excluded before comparison, comma, semicolon, keyword, and arithmetic
+     spacing checks produce facts.
+   - `BSL040` remains a form-module-only rule. It is implemented through
+     `DocumentSnapshot.this_form_usage_facts`; non-form modules are skipped,
+     split module fragments are excluded by runtime guards, string/comment spans
+     are ignored, and a local `ЭтаФорма`/`ThisForm` parameter suppresses
+     reports inside that procedure.
+
+   The targeted oracle produced the expected facts: BSL013 prose `[]`,
+   BSL013 commented procedure block one diagnostic, BSL216 string literal `[]`,
+   BSL216 `А=1;Б=2` three spacing diagnostics, BSL040 full form module one
+   diagnostic, BSL040 shadowing parameter `[]`, and BSL040 split fragment `[]`.
+   The repository fixtures CLI sample with only these three selected rules
+   produced zero diagnostics, which is acceptable for smoke coverage because
+   the targeted oracle is the positive/negative semantic source for this pass.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy has not been rerun for the whole batch in this
   audit step.
 - The current coverage signal is based on existing synthetic tests plus
   contract-level semantic oracles, not a fresh per-rule corpus parity run.
+- External BSLLS parity for `BSL013`, `BSL216`, and `BSL040` is not closed in
+  this pass. No `bsl-language-server`/`bslls` executable or local upstream
+  fixture checkout was available in the workspace during this audit.
 
 ## Next Cheap Tests
 
-1. Run a sanitized parity sample only after the rule contract names the exact
-   semantic fact and expected coordinate model.
-2. Start with the highest-risk remaining semantic checks: `BSL013`, `BSL216`,
-   and `BSL040` path/module-kind behavior.
+1. Provide or restore a local runnable BSLLS artifact outside the product tree,
+   then run the rule-contract parity procedure for `BSL013`, `BSL216`, and
+   `BSL040` with normalized file keys and LSP-to-onec coordinate conversion.
+2. Continue the same semantic-first audit with the next highest-risk rules in
+   this batch.
 3. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
    so invalid dossiers cannot silently accumulate.
