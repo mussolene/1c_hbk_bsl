@@ -1845,6 +1845,38 @@ class TestTailParityBatches:
 
         assert [(diag.line, diag.character) for diag in diags] == [(12, 5)]
 
+    def test_bsl191_reports_full_outer_join_phrase(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  Левое.Ссылка КАК Ссылка
+            |ИЗ Справочник.Тест КАК Левое
+            |    ПОЛНОЕ ВНЕШНЕЕ СОЕДИНЕНИЕ Справочник.Тест КАК Правое
+            |    ПО Левое.Ссылка = Правое.Ссылка";
+        """
+
+        diags = [
+            diag for diag in _check(content, tmp_path, select={"BSL191"}) if diag.code == "BSL191"
+        ]
+
+        assert [(diag.line, diag.character, diag.end_line, diag.end_character) for diag in diags] == [
+            (5, 5, 5, 30)
+        ]
+
+    def test_bsl191_skips_left_join(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  Левое.Ссылка КАК Ссылка
+            |ИЗ Справочник.Тест КАК Левое
+            |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Правое
+            |    ПО Левое.Ссылка = Правое.Ссылка";
+        """
+
+        diags = _check(content, tmp_path, select={"BSL191"})
+
+        assert "BSL191" not in _codes(diags)
+
     def test_bsl236_uses_full_metadata_source_name(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
         path.parent.mkdir(parents=True)
