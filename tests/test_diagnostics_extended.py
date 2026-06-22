@@ -3742,8 +3742,9 @@ class TestBsl036IfConditionComplexityParity:
 class TestBsl022UsingModalWindows:
     def test_preduprezhdenie_detected(self, tmp_path: Path) -> None:
         content = 'Предупреждение("Внимание!");\n'
-        diags = _check(content, tmp_path)
-        assert "BSL022" in _codes(diags)
+        diags = _check(content, tmp_path, select={"BSL022"})
+        bsl022 = [d for d in diags if d.code == "BSL022"]
+        assert [(d.line, d.character, d.end_character) for d in bsl022] == [(1, 0, 27)]
 
     def test_warning_detected(self, tmp_path: Path) -> None:
         content = 'Warning("Alert!");\n'
@@ -3788,7 +3789,7 @@ class TestBsl022UsingModalWindows:
         content = 'Если Вопрос("Продолжить?", РежимДиалогаВопрос.ДаНет) Тогда\nКонецЕсли;\n'
         diags = _check(content, tmp_path, select={"BSL022"})
         bsl022 = [d for d in diags if d.code == "BSL022"]
-        assert [(d.line, d.character, d.end_character) for d in bsl022] == [(1, 5, 11)]
+        assert [(d.line, d.character, d.end_character) for d in bsl022] == [(1, 5, 52)]
 
     def test_async_replacement_no_warning(self, tmp_path: Path) -> None:
         content = 'ПоказатьВопрос("Продолжить?");\nПоказатьПредупреждение(, "Внимание");\n'

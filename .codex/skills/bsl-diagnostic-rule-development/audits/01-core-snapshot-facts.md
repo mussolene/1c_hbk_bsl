@@ -188,14 +188,24 @@ restart from chat memory.
    comment groups remain rejected because they overreported heavily on the
    corpus and lack executable-code structure by themselves.
 
+13. BSL022 sampled taxonomy:
+   A local synthetic taxonomy probe compared onec `--no-config --select BSL022`
+   with BSLLS 0.29.0 `UsingModalWindows` JSON output using
+   `forceModalityMode=true` for standalone rule semantics. BSLLS reports modal
+   global method calls on the full `globalMethodCall` range, from method
+   identifier through the closing parenthesis. `DocumentSnapshot.deprecated_warning_facts`
+   now uses the same full-call range in the CST path and the line fallback.
+   Sampled simple modal call, nested modal call, object call, string, and
+   inline-comment cases match BSLLS exactly.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
   remaining open work is rule-specific semantic taxonomy and owner decisions
   for the non-exact rules.
-- `BSL022` and `BSL036` are count/line parity but not exact-range parity. They
-  should not block semantic completion unless the product decision is to match
-  BSLLS anchor ranges exactly.
+- `BSL036` is count/line parity but not exact-range parity. It should not block
+  semantic completion unless the product decision is to match BSLLS anchor ranges
+  exactly.
 - `BSL040` keeps additional `Forms/.../Ext/Module.bsl` findings unless the
   product decision drops that legacy full form module layout.
 - `BSL216` does not intentionally match BSLLS on unary `-` after `[` because

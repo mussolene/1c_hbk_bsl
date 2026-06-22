@@ -918,6 +918,28 @@ def _ts_point_to_line_lsp_character(lines: list[str], point: Any) -> tuple[int, 
     return row, utf8_byte_offset_to_lsp_character(lines[row], point[1])
 
 
+def _call_end_character(line: str, open_paren_idx: int) -> int:
+    depth = 0
+    in_string = False
+    idx = open_paren_idx
+    while idx < len(line):
+        ch = line[idx]
+        if ch == '"':
+            if in_string and idx + 1 < len(line) and line[idx + 1] == '"':
+                idx += 2
+                continue
+            in_string = not in_string
+        elif not in_string:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return idx + 1
+        idx += 1
+    return len(line.rstrip())
+
+
 def _bsl022_modal_facts_from_tree(
     root: Any,
     lines: list[str],
@@ -935,8 +957,8 @@ def _bsl022_modal_facts_from_tree(
         method_name = _ts_node_text(ident)
         if method_name.casefold() not in _BSL022_MODAL_GLOBAL_METHODS:
             continue
-        line_idx, character = _ts_point_to_line_lsp_character(lines, ident.start_point)
-        end_line_idx, end_character = _ts_point_to_line_lsp_character(lines, ident.end_point)
+        line_idx, character = _ts_point_to_line_lsp_character(lines, node.start_point)
+        end_line_idx, end_character = _ts_point_to_line_lsp_character(lines, node.end_point)
         proc = proc_containing_line(procedures, line_idx)
         if proc is not None and is_typical_client_command_handler(proc, lines):
             continue
@@ -971,7 +993,7 @@ def _bsl022_modal_facts_from_lines(
             LineDiagnosticFact(
                 line_idx=idx,
                 character=match.start("name"),
-                end_character=match.end("name"),
+                end_character=_call_end_character(line, match.end() - 1),
             )
         )
     return facts
