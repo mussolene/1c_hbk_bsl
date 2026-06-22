@@ -1,7 +1,8 @@
 # 01 Core Snapshot Facts Audit
 
 Status: batch gate closed, 17/17 rule contracts present, original-workspace
-BSLLS parity classified at batch level; rule-by-rule semantic deltas remain.
+BSLLS parity classified at batch level; rule closure is tracked in the
+checklist below.
 
 This audit records the current falsification-test state for the
 `01-core-snapshot-facts` batch. It does not claim that every rule is
@@ -30,6 +31,34 @@ restart from chat memory.
 | BSL204 | InvalidCharacterInFile | `invalid_character_facts` | `BSL204.md` | synthetic tests present |
 | BSL216 | MissingSpace | `missing_space_facts` | `BSL216.md` | synthetic tests present |
 | BSL219 | MissingVariablesDescription | `module_variable_description_facts` | `BSL219.md` | synthetic tests present |
+
+## Closure Checklist
+
+Use this table as the first routing source before reopening a rule. `exact`
+means current preserved-source-root parity is closed. `product-decision` means
+the rule intentionally differs from BSLLS and should not be changed without a
+new owner decision. `known-BSLLS` means the remaining delta is classified as a
+BSLLS/parser artifact and is not actionable for onec rule logic.
+
+| Done | Code | Closure state | Next action |
+| --- | --- | --- | --- |
+| [x] | BSL011 | product-decision | Do not reopen unless cognitive complexity standard or BSLLS string-content behavior changes. |
+| [x] | BSL012 | exact | None. |
+| [x] | BSL013 | product-decision | Do not broaden beyond full-line CST parse evidence without owner decision. |
+| [x] | BSL014 | product-decision | Do not reopen for BSLLS token/trailing-whitespace range parity. |
+| [x] | BSL016 | exact | None. |
+| [x] | BSL017 | exact | None. |
+| [x] | BSL019 | exact | None. |
+| [x] | BSL022 | exact | None. |
+| [x] | BSL026 | exact | None. |
+| [x] | BSL036 | exact | None. |
+| [x] | BSL040 | product-decision | Keep legacy ordinary-form full form module layout unless product policy changes. |
+| [x] | BSL077 | known-BSLLS | Keep skipping malformed SDBL structural rules unless a valid narrower example appears. |
+| [x] | BSL131 | exact | None. |
+| [x] | BSL190 | exact | None. |
+| [x] | BSL204 | exact | None. |
+| [x] | BSL216 | product-decision | Keep unary signs in syntactic unary positions clean. |
+| [x] | BSL219 | exact | None. |
 
 ## Falsification Tests Run
 
@@ -195,7 +224,7 @@ restart from chat memory.
    | BSL011 | 2 known BSLLS string-content ternary bucket | 0 after inline empty-except nesting fix | product-correct residual divergence |
    | BSL012 | 0 | 0 | exact in current preserved-source-root BSLLS 1.0 rerun |
    | BSL013 | 702 | 170 | product-correct residual divergence: onec requires full-line CST parse evidence, BSLLS lexical/inline recognizer is broader |
-   | BSL014 | 243 | 108 | next high-volume semantic/range bucket |
+   | BSL014 | 243 | 108 | product-correct divergence: readable source rows/trailing whitespace policy differs from BSLLS token ranges |
    | BSL022 | 0 | 0 | exact in preserved-source-root batch |
    | BSL036 | 0 | 0 | exact after condition range alignment |
    | BSL040 | 0 | 838 | product divergence: legacy ordinary-form `Forms/.../Ext/module.bsl` retained |
@@ -302,6 +331,10 @@ restart from chat memory.
 - `BSL012` current preserved-source-root BSLLS 1.0 rerun is exact after moving
   from broad line-regex matching to CST structural facts with BSLLS-compatible
   default `searchWords`.
+- `BSL014` is closed as a product decision: onec reports significant readable
+  source rows, keeps ordinary multiline string continuation rows in scope,
+  excludes embedded query content rows, and trims trailing spaces/tabs from the
+  diagnostic range instead of copying BSLLS token-end behavior.
 - `BSL036` private batch range-only entries are closed in the current
   preserved-source-root BSLLS 1.0 rerun.
 - `BSL131` private batch is exact in the current preserved-source-root BSLLS
