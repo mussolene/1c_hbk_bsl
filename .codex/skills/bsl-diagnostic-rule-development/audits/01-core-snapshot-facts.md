@@ -193,14 +193,15 @@ restart from chat memory.
    | Code | only BSLLS | only onec | status |
    | --- | ---: | ---: | --- |
    | BSL011 | 2 known BSLLS string-content ternary bucket | 0 after inline empty-except nesting fix | product-correct residual divergence |
-   | BSL013 | 664 after inline-expression fix | 192 | inline call-expression category fixed; directive/documentation categories intentionally not broadened |
+   | BSL012 | 0 | 0 | exact in current preserved-source-root BSLLS 1.0 rerun |
+   | BSL013 | 702 | 170 | product-correct residual divergence: onec requires full-line CST parse evidence, BSLLS lexical/inline recognizer is broader |
    | BSL014 | 243 | 108 | next high-volume semantic/range bucket |
    | BSL022 | 0 | 0 | exact in preserved-source-root batch |
-   | BSL036 | 52 | 52 | range/identity bucket remains |
+   | BSL036 | 0 | 0 | exact after condition range alignment |
    | BSL040 | 0 | 838 | product divergence: legacy ordinary-form `Forms/.../Ext/module.bsl` retained |
    | BSL077 | 2 | 0 | known BSLLS-only parse-error/order-present query blocks |
    | BSL216 | 28 | 0 | known BSLLS unary-minus defect/product divergence |
-   | BSL219 | 36 | 40 | semantic/range bucket closed in later current rerun |
+   | BSL219 | 0 | 0 | exact in later current rerun |
 
    BSL013 runtime changed narrowly to report inline commented call-expression
    tails after live code, matching BSLLS-recognized samples without accepting
@@ -280,11 +281,25 @@ restart from chat memory.
    indexing/bracket contexts such as `Массив[-1]` do not require a space before
    the unary sign. A local regression fixture now covers this product decision.
 
+18. BSL012 structural taxonomy:
+   BSLLS `UsingHardcodeSecretInformation` is not a raw line scan. It visits
+   assignment, property/index access, `Insert` method calls, and container or
+   connection constructors, then applies the configured `searchWords` predicate
+   to structural key/name text. The default predicate is `Пароль|Password`.
+   onec `hardcoded_credential_facts` now follows the same CST-first shape:
+   values must be single non-empty string literals, all-asterisk placeholders
+   are skipped, comments and ordinary string content are not scanned, and
+   broad names such as `token` are not reported by default. Current
+   preserved-source-root BSLLS 1.0 batch is exact: onec 0, BSLLS 0.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is available at batch-count level, and the
   non-exact rules in this core batch now have rule-specific sampled taxonomy or
   explicit owner decisions recorded below.
+- `BSL012` current preserved-source-root BSLLS 1.0 rerun is exact after moving
+  from broad line-regex matching to CST structural facts with BSLLS-compatible
+  default `searchWords`.
 - `BSL036` private batch range-only entries are closed in the current
   preserved-source-root BSLLS 1.0 rerun.
 - `BSL040` intentionally keeps additional `Forms/.../Ext/Module.bsl` findings;

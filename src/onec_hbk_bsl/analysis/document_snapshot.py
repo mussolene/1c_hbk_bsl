@@ -174,11 +174,29 @@ _RE_QUERY_WHERE = re.compile(
 _RE_QUERY_TOP = re.compile(r"\b(?:ПЕРВЫЕ|TOP)\s+(\d+)\b", re.IGNORECASE)
 _RE_QUERY_ORDER_BY = re.compile(r"\b(?:УПОРЯДОЧИТЬ|ORDER\s+BY)\b", re.IGNORECASE)
 _RE_QUERY_UNION = re.compile(r"\b(?:ОБЪЕДИНИТЬ|UNION)\b", re.IGNORECASE)
-_RE_CREDENTIALS = re.compile(
-    r"(?:пароль|password|passwd|pwd|secret|credential(?:s)?|token"
-    r'|логин|login|auth|apikey|api_key|accesskey|access_key)\s*=\s*"[^"]{2,}"',
-    re.IGNORECASE,
+_RE_CREDENTIAL_SEARCH_WORD = re.compile(r"^(?:пароль|password)$", re.IGNORECASE)
+_CREDENTIAL_CONTAINER_TYPES = frozenset(
+    {
+        "структура",
+        "structure",
+        "соответствие",
+        "map",
+        "ftpсоединение",
+        "ftpconnection",
+        "httpсоединение",
+        "httpconnection",
+    }
 )
+_CREDENTIAL_CONNECTION_TYPES = frozenset(
+    {
+        "ftpсоединение",
+        "ftpconnection",
+        "httpсоединение",
+        "httpconnection",
+    }
+)
+_CREDENTIAL_INSERT_METHODS = frozenset({"вставить", "insert"})
+_RE_CREDENTIAL_MASKED_VALUE = re.compile(r"^\*+$")
 _RE_COMMENTED_CODE = re.compile(
     r"^\s*//\s*(?:"
     r"(?:(?:Процедура|Функция|Procedure|Function)\s+\w+\s*\([^)]*\)\s*(?:Экспорт|Export)?\s*$"
@@ -985,6 +1003,123 @@ def _ts_child_of_type(node: Any, child_type: str) -> Any | None:
         if getattr(child, "type", None) == child_type:
             return child
     return None
+
+
+def _ts_children(node: Any) -> list[Any]:
+    return list(getattr(node, "children", []) or [])
+
+
+def _credential_clear_string(text: str) -> str:
+    return text.replace('"', "").replace(" ", "")
+
+
+def _credential_key_matches(text: str) -> bool:
+    return bool(_RE_CREDENTIAL_SEARCH_WORD.fullmatch(_credential_clear_string(text)))
+
+
+def _credential_string_value(text: str) -> str | None:
+    stripped = text.strip()
+    if len(stripped) <= 2 or not (stripped.startswith('"') and stripped.endswith('"')):
+        return None
+    value = stripped[1:-1]
+    if not value or _RE_CREDENTIAL_MASKED_VALUE.fullmatch(value):
+        return None
+    return value
+
+
+def _credential_single_string_expression(expression: Any | None) -> Any | None:
+    if expression is None:
+        return None
+    strings = [
+        node
+        for node in _ts_walk(expression)
+        if getattr(node, "type", None) == "string"
+    ]
+    if len(strings) != 1:
+        return None
+    string_node = strings[0]
+    if _ts_node_text(expression).strip() != _ts_node_text(string_node):
+        return None
+    return string_node if _credential_string_value(_ts_node_text(string_node)) else None
+
+
+def _credential_argument_expressions(arguments_node: Any | None) -> list[Any | None]:
+    if arguments_node is None:
+        return []
+    params: list[Any | None] = []
+    current: Any | None = None
+    for child in _ts_children(arguments_node):
+        child_type = getattr(child, "type", None)
+        if child_type in {"(", ")", "line_comment", "comment"}:
+            continue
+        if child_type == ",":
+            params.append(current)
+            current = None
+            continue
+        if child_type == "omitted_argument":
+            params.append(current)
+            current = None
+            continue
+        if child_type == "expression":
+            current = child
+    params.append(current)
+    return params
+
+
+def _credential_assignment_parts(assignment: Any) -> tuple[Any | None, Any | None]:
+    left: Any | None = None
+    value: Any | None = None
+    for child in _ts_children(assignment):
+        child_type = getattr(child, "type", None)
+        if child_type in {"=", ";", "line_comment", "comment"}:
+            continue
+        if child_type == "expression":
+            value = child
+            continue
+        if left is None:
+            left = child
+    return left, value
+
+
+def _credential_property_key(access_node: Any) -> str | None:
+    text = _ts_node_text(access_node)
+    if "[" in text and "]" in text:
+        strings = [
+            node
+            for node in _ts_walk(access_node)
+            if getattr(node, "type", None) == "string"
+        ]
+        return _ts_node_text(strings[-1]) if strings else None
+    if "." in text:
+        return text.rsplit(".", 1)[-1]
+    return None
+
+
+def _credential_first_identifier(node: Any) -> Any | None:
+    for child in _ts_children(node):
+        if getattr(child, "type", None) == "identifier":
+            return child
+    return None
+
+
+def _credential_ancestor_of_type(node: Any, node_types: set[str]) -> Any | None:
+    current = node
+    while current is not None:
+        if getattr(current, "type", None) in node_types:
+            return current
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _credential_fact_for_node(node: Any, lines: list[str]) -> LineDiagnosticFact:
+    start_line, start_char = _ts_point_to_line_lsp_character(lines, node.start_point)
+    end_line, end_char = _ts_point_to_line_lsp_character(lines, node.end_point)
+    return LineDiagnosticFact(
+        line_idx=start_line,
+        character=start_char,
+        end_line_idx=end_line,
+        end_character=end_char,
+    )
 
 
 def _ts_point_to_lsp_character(container_node: Any, point: Any) -> int:
@@ -2067,19 +2202,88 @@ class DocumentSnapshot:
         if self._hardcoded_credential_facts is not None:
             return self._hardcoded_credential_facts
         facts: list[LineDiagnosticFact] = []
-        for idx, line in enumerate(self.lines):
-            if line.strip().startswith("//"):
-                continue
-            match = _RE_CREDENTIALS.search(line)
-            if match is None:
-                continue
-            facts.append(
-                LineDiagnosticFact(
-                    line_idx=idx,
-                    character=match.start(),
-                    end_character=match.end(),
-                )
+        if not self.tree_ok:
+            self._hardcoded_credential_facts = facts
+            return facts
+
+        emitted: set[tuple[int, int, int, int]] = set()
+
+        def add_fact(node: Any) -> None:
+            key = (
+                node.start_point[0],
+                node.start_point[1],
+                node.end_point[0],
+                node.end_point[1],
             )
+            if key in emitted:
+                return
+            emitted.add(key)
+            facts.append(_credential_fact_for_node(node, self.lines))
+
+        nodes = self.ts_nodes_for_types(
+            {"assignment_statement", "method_call", "new_expression"},
+            hot_node_types=(
+                "assignment_statement",
+                "method_call",
+                "new_expression",
+            ),
+            walker=_ts_walk,
+        )
+
+        for assignment in nodes["assignment_statement"]:
+            left, value = _credential_assignment_parts(assignment)
+            if _credential_single_string_expression(value) is None:
+                continue
+            if getattr(left, "type", None) == "identifier":
+                if _credential_key_matches(_ts_node_text(left)):
+                    add_fact(assignment)
+                continue
+            if getattr(left, "type", None) == "property_access":
+                key = _credential_property_key(left)
+                if key is not None and _credential_key_matches(key):
+                    add_fact(assignment)
+
+        for method_call in nodes["method_call"]:
+            name = _credential_first_identifier(method_call)
+            if name is None or _ts_node_text(name).casefold() not in _CREDENTIAL_INSERT_METHODS:
+                continue
+            args = _credential_argument_expressions(_ts_child_of_type(method_call, "arguments"))
+            if (
+                len(args) > 1
+                and args[0] is not None
+                and args[1] is not None
+                and _credential_single_string_expression(args[1]) is not None
+                and _credential_key_matches(_ts_node_text(args[0]))
+            ):
+                statement = _credential_ancestor_of_type(method_call, {"call_statement"})
+                add_fact(statement or method_call)
+
+        for new_expression in nodes["new_expression"]:
+            type_node = _credential_first_identifier(new_expression)
+            type_name = _ts_node_text(type_node).casefold() if type_node is not None else ""
+            if type_name not in _CREDENTIAL_CONTAINER_TYPES:
+                continue
+            args = _credential_argument_expressions(_ts_child_of_type(new_expression, "arguments"))
+            assignment = _credential_ancestor_of_type(new_expression, {"assignment_statement"})
+            if assignment is None:
+                continue
+            if type_name in _CREDENTIAL_CONNECTION_TYPES:
+                if len(args) >= 4 and _credential_single_string_expression(args[3]) is not None:
+                    add_fact(assignment)
+                continue
+            if not args or args[0] is None:
+                continue
+            keys = _credential_clear_string(_ts_node_text(args[0])).split(",")
+            for index, key in enumerate(keys):
+                value_index = index + 1
+                if (
+                    _credential_key_matches(key)
+                    and len(args) > value_index
+                    and _credential_single_string_expression(args[value_index]) is not None
+                ):
+                    add_fact(assignment)
+                    break
+
         self._hardcoded_credential_facts = facts
         return facts
 

@@ -3148,15 +3148,40 @@ class TestBsl012HardcodeCredentials:
         bsl012 = [d for d in diags if d.code == "BSL012"]
         assert len(bsl012) >= 1
 
-    def test_token_detected(self, tmp_path: Path) -> None:
-        content = 'token = "abcdefghij0123456789";\n'
+    def test_password_detected_english(self, tmp_path: Path) -> None:
+        content = 'Password = "abcdefghij0123456789";\n'
         diags = _check(content, tmp_path)
         assert "BSL012" in _codes(diags)
+
+    def test_token_not_detected_by_default_search_words(self, tmp_path: Path) -> None:
+        content = 'token = "abcdefghij0123456789";\n'
+        diags = _check(content, tmp_path)
+        assert "BSL012" not in _codes(diags)
 
     def test_empty_string_no_warning(self, tmp_path: Path) -> None:
         content = 'Пароль = "";\n'
         diags = _check(content, tmp_path)
         assert "BSL012" not in _codes(diags)
+
+    def test_masked_password_no_warning(self, tmp_path: Path) -> None:
+        content = 'Пароль = "**********";\n'
+        diags = _check(content, tmp_path)
+        assert "BSL012" not in _codes(diags)
+
+    def test_secure_storage_read_no_warning(self, tmp_path: Path) -> None:
+        content = 'Пароль = Пароли.Пароль;\n'
+        diags = _check(content, tmp_path)
+        assert "BSL012" not in _codes(diags)
+
+    def test_structure_key_detected(self, tmp_path: Path) -> None:
+        content = 'Структура = Новый Структура("Пароль", "12345");\n'
+        diags = _check(content, tmp_path)
+        assert "BSL012" in _codes(diags)
+
+    def test_insert_key_detected(self, tmp_path: Path) -> None:
+        content = 'Структура.Вставить("Пароль", "12345");\n'
+        diags = _check(content, tmp_path)
+        assert "BSL012" in _codes(diags)
 
     def test_in_comment_ignored(self, tmp_path: Path) -> None:
         content = '// Пароль = "секрет";\n'
