@@ -161,6 +161,10 @@ _RE_COMPLEX_CONDITION_HEAD = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b",
     re.IGNORECASE,
 )
+_RE_COMPLEX_CONDITION_HEAD_PREFIX = re.compile(
+    r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b\s*",
+    re.IGNORECASE,
+)
 _RE_COMPLEX_CONDITION_THEN = re.compile(r"\b(?:Тогда|Then)\b", re.IGNORECASE)
 _RE_COMPLEX_CONDITION_BOOL_OP = re.compile(r"\b(?:И|And|ИЛИ|Or)\b", re.IGNORECASE)
 _RE_QUERY_WHERE = re.compile(
@@ -2588,17 +2592,8 @@ class DocumentSnapshot:
             if span is None:
                 continue
             end_line_idx, end_char = span
-            char = len(line) - len(line.lstrip())
-            keyword = line.lstrip()
-            keyword_lower = keyword.lower()
-            if keyword_lower.startswith("если "):
-                char += len("Если ")
-            elif keyword_lower.startswith("if "):
-                char += len("If ")
-            elif keyword_lower.startswith("иначеесли "):
-                char += len("ИначеЕсли ")
-            elif keyword_lower.startswith("elsif "):
-                char += len("ElsIf ")
+            match = _RE_COMPLEX_CONDITION_HEAD_PREFIX.match(line)
+            char = match.end() if match is not None else len(line) - len(line.lstrip())
             facts.append(
                 LineDiagnosticFact(
                     line_idx=idx,
@@ -2643,12 +2638,19 @@ class DocumentSnapshot:
         max_idx = min(len(self.lines), line_idx + 48)
         while idx < max_idx:
             masked_next = re.sub(r"//.*", "", self.lines[idx])
+            if re.match(r"^\s*(?:Тогда|Then)\b", masked_next, re.IGNORECASE):
+                previous_idx = idx - 1
+                while previous_idx > line_idx:
+                    previous = re.sub(r"//.*", "", self.lines[previous_idx])
+                    if previous.strip():
+                        return "\n".join(parts), previous_idx, len(previous.rstrip())
+                    previous_idx -= 1
+                previous = re.sub(r"//.*", "", self.lines[previous_idx])
+                return "\n".join(parts), previous_idx, len(previous.rstrip())
             parts.append(masked_next)
             then_match = _RE_COMPLEX_CONDITION_THEN.search(masked_next)
             if then_match is not None:
                 return "\n".join(parts), idx, len(masked_next[: then_match.start()].rstrip())
-            if re.match(r"^\s*(?:Тогда|Then)\b", masked_next, re.IGNORECASE):
-                break
             idx += 1
         return (
             "\n".join(parts),

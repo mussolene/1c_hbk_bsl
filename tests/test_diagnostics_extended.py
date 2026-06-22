@@ -5085,6 +5085,76 @@ class TestBsl036ComplexCondition:
             (3, 14, 7, 11)
         ]
 
+    def test_condition_range_starts_after_keyword_alignment_whitespace(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "Процедура Тест()\n"
+            "\tЕсли \tА И Б И В И Г Тогда\n"
+            "\tКонецЕсли;\n"
+            "КонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
+        bsl036 = [d for d in diags if d.code == "BSL036"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl036] == [
+            (2, 7, 2, 20)
+        ]
+
+    def test_elsif_range_starts_after_tab_separator(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Тест()\n"
+            "\tЕсли Ложь Тогда\n"
+            "\tИначеЕсли\tА И Б И В И Г Тогда\n"
+            "\tКонецЕсли;\n"
+            "КонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
+        bsl036 = [d for d in diags if d.code == "BSL036"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl036] == [
+            (3, 11, 3, 24)
+        ]
+
+    def test_multiline_condition_range_ends_before_standalone_then(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "Процедура Тест()\n"
+            "\tЕсли А = 1\n"
+            "\t\tИли Б = 2\n"
+            "\t\tИли В = 3\n"
+            "\t\tИли Г = 4\n"
+            "\t\tТогда\n"
+            "\tКонецЕсли;\n"
+            "КонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
+        bsl036 = [d for d in diags if d.code == "BSL036"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl036] == [
+            (2, 6, 5, 11)
+        ]
+
+    def test_multiline_condition_range_skips_blank_lines_before_standalone_then(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "Процедура Тест()\n"
+            "\tЕсли Ложь\n"
+            "\t\tИЛИ А = 1\n"
+            "\t\tИ Б = 2\n"
+            "\t\t\n"
+            "\t\tИЛИ В = 3\n"
+            "\t\tИ Г = 4\n"
+            "\t\t\n"
+            "\t\tТогда\n"
+            "\tКонецЕсли;\n"
+            "КонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
+        bsl036 = [d for d in diags if d.code == "BSL036"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl036] == [
+            (2, 6, 7, 9)
+        ]
+
     def test_bsl153_suppressed_on_continuation_of_bsl036_condition(self, tmp_path: Path) -> None:
         """CanonicalSpelling must not fire on ``и`` continuation lines when IfConditionComplexity applies."""
         content = """\

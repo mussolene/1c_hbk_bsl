@@ -257,9 +257,11 @@ restart from chat memory.
    `allowedComplexity=3`. Sampled single-line high-complexity condition,
    multiline `ИначеЕсли`, and below-threshold cases matched BSLLS exactly,
    including the expression range after `Если` / `ИначеЕсли` and before
-   `Тогда`. No sampled ours-only, BSLLS-only, or range-only category was
-   reproduced; remaining private batch range-only entries need sanitized
-   examples before any runtime edit.
+   `Тогда`. The later BSLLS 1.0 preserved-source-root rerun closed the private
+   range-only bucket: start anchors now skip alignment whitespace after
+   `Если` / `ИначеЕсли`, and end anchors stop before standalone `Тогда`, using
+   the previous nonblank condition row when blank rows precede `Тогда`. Current
+   aggregate: onec 458, BSLLS 458, exact match by file, range, and code.
 
 16. BSL040 product taxonomy:
    BSL040 remains an intentional product divergence from BSLLS counts for legacy
@@ -283,9 +285,8 @@ restart from chat memory.
 - Full BSLLS parity taxonomy is available at batch-count level, and the
   non-exact rules in this core batch now have rule-specific sampled taxonomy or
   explicit owner decisions recorded below.
-- `BSL036` private batch still has unsampled range-only entries; sampled
-  single-line and multiline cases match BSLLS exactly, so do not edit runtime
-  without sanitized private examples.
+- `BSL036` private batch range-only entries are closed in the current
+  preserved-source-root BSLLS 1.0 rerun.
 - `BSL040` intentionally keeps additional `Forms/.../Ext/Module.bsl` findings;
   this is closed as a product decision unless that legacy full form module layout
   is explicitly dropped later.
