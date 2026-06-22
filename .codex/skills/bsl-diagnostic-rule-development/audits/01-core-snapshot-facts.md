@@ -198,14 +198,24 @@ restart from chat memory.
    Sampled simple modal call, nested modal call, object call, string, and
    inline-comment cases match BSLLS exactly.
 
+14. BSL036 sampled taxonomy:
+   A local synthetic taxonomy probe compared onec `--no-config --select BSL036`
+   with BSLLS 0.29.0 `IfConditionComplexity` JSON output using
+   `allowedComplexity=3`. Sampled single-line high-complexity condition,
+   multiline `ИначеЕсли`, and below-threshold cases matched BSLLS exactly,
+   including the expression range after `Если` / `ИначеЕсли` and before
+   `Тогда`. No sampled ours-only, BSLLS-only, or range-only category was
+   reproduced; remaining private batch range-only entries need sanitized
+   examples before any runtime edit.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
   remaining open work is rule-specific semantic taxonomy and owner decisions
   for the non-exact rules.
-- `BSL036` is count/line parity but not exact-range parity. It should not block
-  semantic completion unless the product decision is to match BSLLS anchor ranges
-  exactly.
+- `BSL036` private batch still has unsampled range-only entries; sampled
+  single-line and multiline cases match BSLLS exactly, so do not edit runtime
+  without sanitized private examples.
 - `BSL040` keeps additional `Forms/.../Ext/Module.bsl` findings unless the
   product decision drops that legacy full form module layout.
 - `BSL216` does not intentionally match BSLLS on unary `-` after `[` because

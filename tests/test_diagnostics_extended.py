@@ -4910,7 +4910,10 @@ class TestBsl036ComplexCondition:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, max_bool_ops=3)
-        assert "BSL036" in _codes(diags)
+        bsl036 = [d for d in diags if d.code == "BSL036"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl036] == [
+            (2, 9, 2, 30)
+        ]
 
     def test_simple_condition_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -4948,7 +4951,10 @@ class TestBsl036ComplexCondition:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
-        assert "BSL036" in _codes(diags)
+        bsl036 = [d for d in diags if d.code == "BSL036"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl036] == [
+            (3, 14, 7, 11)
+        ]
 
     def test_bsl153_suppressed_on_continuation_of_bsl036_condition(self, tmp_path: Path) -> None:
         """CanonicalSpelling must not fire on ``и`` continuation lines when IfConditionComplexity applies."""
