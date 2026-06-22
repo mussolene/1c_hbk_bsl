@@ -4081,6 +4081,11 @@ class TestBsl216MissingSpace:
             (1, 35, _rule_msg("BSL216")),
         ]
 
+    def test_unary_minus_after_indexer_open_bracket_no_warning(self, tmp_path: Path) -> None:
+        content = "Значение = Массив[-1];\n"
+        diags = _check(content, tmp_path, select={"BSL216"})
+        assert "BSL216" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL026 — EmptyRegion

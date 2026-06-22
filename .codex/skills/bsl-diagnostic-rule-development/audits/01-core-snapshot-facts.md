@@ -218,6 +218,13 @@ restart from chat memory.
    module skip, full form module report, parameter shadowing, and split fragment
    skip. Do not remove the legacy layout without an explicit product decision.
 
+16. BSL216 product taxonomy:
+   BSL216 remains a lexical spacing rule, but unary signs in syntactic unary
+   positions are not missing-space defects. The private batch has 28 BSLLS-only
+   reports for unary `-` after `[`. onec intentionally keeps those clean because
+   indexing/bracket contexts such as `Массив[-1]` do not require a space before
+   the unary sign. A local regression fixture now covers this product decision.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
@@ -229,8 +236,8 @@ restart from chat memory.
 - `BSL040` intentionally keeps additional `Forms/.../Ext/Module.bsl` findings;
   this is closed as a product decision unless that legacy full form module layout
   is explicitly dropped later.
-- `BSL216` does not intentionally match BSLLS on unary `-` after `[` because
-  unary minus should not require surrounding spaces.
+- `BSL216` intentionally does not match BSLLS on unary `-` after `[` because
+  unary minus should not require surrounding spaces in indexer/bracket contexts.
 - `BSL013` does not accept standalone commented annotation/preprocessor
   directives as enough evidence by itself. A probe that did so overreported
   thousands of comment groups on the corpus; annotations remain included when
