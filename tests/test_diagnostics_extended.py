@@ -1323,6 +1323,77 @@ class TestTailParityBatches:
         diags_app = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags_app)
 
+    def test_metadata_object_name_length_uses_strict_80_character_threshold(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        long_name = "X" * 81
+        long_dir = root / "Catalogs" / long_name / "Ext"
+        long_dir.mkdir(parents=True)
+        (root / "Catalogs" / f"{long_name}.xml").write_text(
+            f"<MetaDataObject><Catalog><Properties><Name>{long_name}</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        long_module = long_dir / "ManagerModule.bsl"
+        long_module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        exact_name = "Y" * 80
+        exact_dir = root / "Catalogs" / exact_name / "Ext"
+        exact_dir.mkdir(parents=True)
+        (root / "Catalogs" / f"{exact_name}.xml").write_text(
+            f"<MetaDataObject><Catalog><Properties><Name>{exact_name}</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        exact_module = exact_dir / "ManagerModule.bsl"
+        exact_module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        long_diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL211"}).check_file(str(long_module))
+            if diag.code == "BSL211"
+        ]
+        assert len(long_diags) == 1
+        assert (
+            long_diags[0].line,
+            long_diags[0].character,
+            long_diags[0].end_line,
+            long_diags[0].end_character,
+        ) == (1, 0, 1, 9)
+        assert "BSL211" not in _codes(
+            DiagnosticEngine(select={"BSL211"}).check_file(str(exact_module))
+        )
+
+    def test_metadata_object_name_length_ignores_long_child_names(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        object_name = "ShortObject"
+        obj_dir = root / "Catalogs" / object_name / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "Catalogs" / f"{object_name}.xml").write_text(
+            textwrap.dedent(
+                f"""\
+                <MetaDataObject>
+                    <Catalog>
+                        <Properties><Name>{object_name}</Name></Properties>
+                        <ChildObjects>
+                            <Attribute><Properties><Name>{"Z" * 81}</Name></Properties></Attribute>
+                        </ChildObjects>
+                    </Catalog>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module = obj_dir / "ManagerModule.bsl"
+        module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        assert "BSL211" not in _codes(DiagnosticEngine(select={"BSL211"}).check_file(str(module)))
+
     def test_deny_incomplete_values_skips_non_register_metadata(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)

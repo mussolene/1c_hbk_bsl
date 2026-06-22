@@ -511,7 +511,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     line=1,
                     character=0,
                     end_line=1,
-                    end_character=max(len(line_text.rstrip()), 1),
+                    end_character=_metadata_owner_range_end(line_text),
                     severity=_diag.Severity.WARNING,
                     code="BSL211",
                 )
