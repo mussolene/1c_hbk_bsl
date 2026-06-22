@@ -3094,6 +3094,32 @@ class TestBsl013CommentedCode:
         bsl013 = [d for d in diags if d.code == "BSL013"]
         assert len(bsl013) >= 1
 
+    def test_bslls_documented_if_block_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередУдалением(Отказ)
+            //    Если Истина Тогда
+            //        Сообщить("Для отладки");
+            //    КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        bsl013 = [d for d in diags if d.code == "BSL013"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl013] == [
+            (2, 0, 4, 16)
+        ]
+
+    def test_bslls_like_single_commented_call_detected(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+            // Сообщить("Для отладки");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        bsl013 = [d for d in diags if d.code == "BSL013"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl013] == [
+            (2, 0, 2, 27)
+        ]
+
     def test_single_comment_no_warning(self, tmp_path: Path) -> None:
         content = """\
             // TODO: реализовать

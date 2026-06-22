@@ -175,6 +175,19 @@ restart from chat memory.
    BSLLS-only category was reproduced; private batch exact parity should be
    rerun when the batch completes.
 
+12. BSL013 sampled taxonomy:
+   A local synthetic taxonomy probe compared onec `--no-config --select BSL013`
+   with BSLLS 0.29.0 `CommentedCode` JSON output and the decompiled
+   `CommentedCodeDiagnostic` contract. BSLLS applies `CodeRecognizer` with
+   threshold `0.9` to individual comment tokens, then reports the whole adjacent
+   comment group when one token is recognized as code. Sampled BSLLS-recognized
+   `Если` block, single `Сообщить(...)`, and long assignment cases match onec
+   exactly. Sampled ours-only categories are intentionally retained: short or
+   generic commented procedure groups, inline assignment comments, embedded
+   prose/expression groups, and annotation+method groups. Standalone directive
+   comment groups remain rejected because they overreported heavily on the
+   corpus and lack executable-code structure by themselves.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
@@ -197,7 +210,5 @@ restart from chat memory.
 
 ## Next Cheap Tests
 
-1. Continue `BSL013` only with sampled semantic categories, not broad
-   directive/comment punctuation expansion.
-2. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
+1. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
    so invalid dossiers cannot silently accumulate.
