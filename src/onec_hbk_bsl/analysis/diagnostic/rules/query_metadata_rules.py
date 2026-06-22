@@ -56,6 +56,10 @@ def _bsl174_owner_module_matches(path: str, object_xml: Path) -> bool:
     )
 
 
+def _bsl174_owner_range_end(line_text: str) -> int:
+    return max(1, min(len(line_text.rstrip()), 9))
+
+
 def _bsl242_proc_body_is_empty(lines: list[str], proc: Any) -> bool:
     for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
         stripped = lines[idx].strip()
@@ -225,7 +229,7 @@ def run_bsl174_187_236_238_query_metadata_pool(
                         line=1,
                         character=0,
                         end_line=1,
-                        end_character=max(len(line_text.rstrip()), 1),
+                        end_character=_bsl174_owner_range_end(line_text),
                         severity=_diag.Severity.WARNING,
                         code="BSL174",
                     )

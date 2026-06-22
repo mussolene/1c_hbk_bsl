@@ -1311,6 +1311,13 @@ class TestTailParityBatches:
         assert "BSL174" not in _codes(diags_form)
         diags_manager = DiagnosticEngine(select={"BSL174"}).check_file(str(manager_module))
         assert "BSL174" in _codes(diags_manager)
+        manager_diag = next(diag for diag in diags_manager if diag.code == "BSL174")
+        assert (manager_diag.line, manager_diag.character, manager_diag.end_line, manager_diag.end_character) == (
+            1,
+            0,
+            1,
+            9,
+        )
         diags_record_set = DiagnosticEngine(select={"BSL174"}).check_file(str(record_set_module))
         assert "BSL174" not in _codes(diags_record_set)
         diags_app = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
