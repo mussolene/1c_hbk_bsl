@@ -200,6 +200,7 @@ restart from chat memory.
    | BSL036 | 0 | 0 | exact after condition range alignment |
    | BSL040 | 0 | 838 | product divergence: legacy ordinary-form `Forms/.../Ext/module.bsl` retained |
    | BSL077 | 2 | 0 | known BSLLS-only parse-error/order-present query blocks |
+   | BSL131 | 0 | 0 | exact in current preserved-source-root BSLLS 1.0 rerun |
    | BSL216 | 28 | 0 | known BSLLS unary-minus defect/product divergence |
    | BSL219 | 0 | 0 | exact in later current rerun |
 
@@ -225,8 +226,9 @@ restart from chat memory.
    per duplicate group, with a range from after `#` through the region name.
    `DocumentSnapshot.duplicate_region_facts` now emits that same representative
    fact instead of reporting later duplicate openings. No sampled ours-only or
-   BSLLS-only category was reproduced; private batch exact parity should be
-   rerun when the batch completes.
+   BSLLS-only category was reproduced. Current preserved-source-root BSLLS 1.0
+   batch exact parity is closed: onec 6, BSLLS 6, matching by file, range, and
+   code.
 
 13. BSL013 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL013`
@@ -302,6 +304,8 @@ restart from chat memory.
   default `searchWords`.
 - `BSL036` private batch range-only entries are closed in the current
   preserved-source-root BSLLS 1.0 rerun.
+- `BSL131` private batch is exact in the current preserved-source-root BSLLS
+  1.0 rerun.
 - `BSL040` intentionally keeps additional `Forms/.../Ext/Module.bsl` findings;
   this is closed as a product decision unless that legacy full form module layout
   is explicitly dropped later.
