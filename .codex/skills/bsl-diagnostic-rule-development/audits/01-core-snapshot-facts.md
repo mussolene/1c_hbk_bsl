@@ -227,9 +227,9 @@ restart from chat memory.
 
 ## Known Gaps
 
-- Full BSLLS parity taxonomy is now available at batch-count level. The
-  remaining open work is rule-specific semantic taxonomy and owner decisions
-  for the non-exact rules.
+- Full BSLLS parity taxonomy is available at batch-count level, and the
+  non-exact rules in this core batch now have rule-specific sampled taxonomy or
+  explicit owner decisions recorded below.
 - `BSL036` private batch still has unsampled range-only entries; sampled
   single-line and multiline cases match BSLLS exactly, so do not edit runtime
   without sanitized private examples.
