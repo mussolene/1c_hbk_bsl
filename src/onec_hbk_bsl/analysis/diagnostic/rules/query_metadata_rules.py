@@ -138,15 +138,13 @@ def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
     root = getattr(tree, "root_node", None)
     if root is None:
         return []
-    if getattr(block, "sdbl_has_errors", False):
-        return []
 
     _diag = _diag_module()
     diags: list[Any] = []
-    seen: set[tuple[int, str]] = set()
+    seen: set[int] = set()
     for usage in nullable_join_field_uses_without_isnull(root):
-        node = usage.node
-        key = (getattr(usage.scope_node, "id", 0), usage.alias.casefold())
+        node = usage.join_node
+        key = getattr(node, "id", 0)
         if key in seen:
             continue
         seen.add(key)

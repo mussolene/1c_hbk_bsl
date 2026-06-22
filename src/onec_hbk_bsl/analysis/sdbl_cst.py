@@ -151,6 +151,7 @@ def is_inside_is_null_predicate(node: Any) -> bool:
 class NullableJoinFieldUse:
     node: Any
     alias: str
+    join_node: Any
     scope_node: Any
 
 
@@ -240,7 +241,7 @@ def _base_alias(join_node: Any) -> str | None:
 
 def _has_not_keyword(node: Any) -> bool:
     return any(
-        getattr(child, "type", None) == "NOT_KEYWORD"
+        getattr(child, "type", None) in {"NOT_KEYWORD", "not_operator"}
         for child in getattr(node, "children", []) or []
     )
 
@@ -291,29 +292,95 @@ def nullable_join_aliases(select_section_node: Any) -> set[str]:
     return aliases
 
 
+def _nullable_join_alias_nodes(select_section_node: Any) -> dict[str, Any]:
+    aliases: dict[str, Any] = {}
+    for join_node in iter_nodes(select_section_node, "join_clause"):
+        kind = _join_kind(join_node)
+        joined_alias = _joined_alias(join_node)
+        base_alias = _base_alias(join_node)
+        if "левое" in kind or "left" in kind:
+            if joined_alias:
+                aliases[joined_alias] = join_node
+        elif "правое" in kind or "right" in kind:
+            if base_alias:
+                aliases[base_alias] = join_node
+        elif "полное" in kind or "full" in kind:
+            if joined_alias:
+                aliases[joined_alias] = join_node
+            if base_alias:
+                aliases[base_alias] = join_node
+    return aliases
+
+
+def _unsafe_nullable_alias_uses(
+    scope_node: Any,
+    nullable_alias_nodes: dict[str, Any],
+    *,
+    skip_null_predicate: bool,
+) -> list[NullableJoinFieldUse]:
+    result: list[NullableJoinFieldUse] = []
+    for dotted in iter_nodes(scope_node, "dotted_identifier"):
+        parts = dotted_identifier_parts(dotted)
+        if len(parts) < 2:
+            continue
+        alias = parts[0].casefold()
+        join_node = nullable_alias_nodes.get(alias)
+        if join_node is None:
+            continue
+        if is_inside_isnull_function(dotted):
+            continue
+        if skip_null_predicate and is_inside_is_null_predicate(dotted):
+            continue
+        result.append(
+            NullableJoinFieldUse(
+                node=dotted,
+                alias=parts[0],
+                join_node=join_node,
+                scope_node=scope_node,
+            )
+        )
+    return result
+
+
 def nullable_join_field_uses_without_isnull(root: Any) -> list[NullableJoinFieldUse]:
     result: list[NullableJoinFieldUse] = []
     for select_section in iter_nodes(root, "select_section"):
-        nullable_aliases = nullable_join_aliases(select_section)
-        if not nullable_aliases:
+        nullable_alias_nodes = _nullable_join_alias_nodes(select_section)
+        if not nullable_alias_nodes:
             continue
         field_list = first_named_child(select_section, "field_list")
         where_clause = first_named_child(select_section, "where_clause")
-        nullable_aliases -= _null_checked_aliases(where_clause, nullable_aliases)
-        if not nullable_aliases:
+        checked_aliases = _null_checked_aliases(where_clause, set(nullable_alias_nodes))
+        for alias in checked_aliases:
+            nullable_alias_nodes.pop(alias, None)
+        if not nullable_alias_nodes:
             continue
         for scope_node in [field_list, where_clause]:
             if scope_node is None:
                 continue
-            for dotted in iter_nodes(scope_node, "dotted_identifier"):
-                parts = dotted_identifier_parts(dotted)
-                if len(parts) < 2 or parts[0].casefold() not in nullable_aliases:
-                    continue
-                if is_inside_isnull_function(dotted) or is_inside_is_null_predicate(dotted):
-                    continue
-                result.append(
-                    NullableJoinFieldUse(node=dotted, alias=parts[0], scope_node=select_section)
+            result.extend(
+                _unsafe_nullable_alias_uses(
+                    scope_node,
+                    nullable_alias_nodes,
+                    skip_null_predicate=True,
                 )
+            )
+        for join_node in iter_nodes(select_section, "join_clause"):
+            condition = first_named_child(join_node, "query_expression")
+            if condition is None:
+                continue
+            scoped_alias_nodes = {
+                alias: alias_join
+                for alias, alias_join in nullable_alias_nodes.items()
+                if getattr(alias_join, "id", None) != getattr(join_node, "id", None)
+            }
+            result.extend(
+                _unsafe_nullable_alias_uses(
+                    condition,
+                    scoped_alias_nodes,
+                    skip_null_predicate=False,
+                )
+            )
     return result
 
 

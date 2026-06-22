@@ -1689,7 +1689,7 @@ class TestTailParityBatches:
 
         bsl187 = [diag for diag in diags if diag.code == "BSL187"]
         assert len(bsl187) == 1
-        assert bsl187[0].line == 4
+        assert bsl187[0].line == 6
 
     @_requires_sdbl
     def test_bsl187_skips_field_inside_isnull(self, tmp_path: Path) -> None:
@@ -1716,6 +1716,24 @@ class TestTailParityBatches:
             |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Левое
             |    ПО Основание.Ссылка = Левое.Ссылка
             |ГДЕ Левое.Ссылка ЕСТЬ НЕ NULL";
+        """
+
+        diags = _check(content, tmp_path, select={"BSL187"})
+
+        assert "BSL187" not in _codes(diags)
+
+    @_requires_sdbl
+    def test_bsl187_skips_alias_checked_not_null_by_parenthesized_not(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  Левое.Тест КАК Поле
+            |ИЗ Справочник.Тест КАК Основание
+            |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Левое
+            |    ПО Основание.Ссылка = Левое.Ссылка
+            |ГДЕ (НЕ (Левое.Ссылка ЕСТЬ NULL))";
         """
 
         diags = _check(content, tmp_path, select={"BSL187"})
@@ -1761,7 +1779,31 @@ class TestTailParityBatches:
             diag for diag in _check(content, tmp_path, select={"BSL187"}) if diag.code == "BSL187"
         ]
 
-        assert [(diag.line, diag.character) for diag in diags] == [(3, 3), (11, 3), (12, 3)]
+        assert [(diag.line, diag.character) for diag in diags] == [(6, 5), (14, 5)]
+
+    @_requires_sdbl
+    def test_bsl187_reports_union_join_from_recovered_sdbl_tree(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |  Таблица.Ссылка КАК Ссылка
+            |ИЗ Таблица КАК Таблица
+            |
+            |ОБЪЕДИНИТЬ ВСЕ
+            |
+            |ВЫБРАТЬ
+            |  Таблица.Ссылка КАК Ссылка,
+            |  Левое.Ссылка КАК Ссылка1
+            |ИЗ Справочник.Тест КАК Таблица
+            |    ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК Левое
+            |    ПО Таблица.Ссылка = Левое.Ссылка";
+        """
+
+        diags = [
+            diag for diag in _check(content, tmp_path, select={"BSL187"}) if diag.code == "BSL187"
+        ]
+
+        assert [(diag.line, diag.character) for diag in diags] == [(12, 5)]
 
     def test_bsl236_uses_full_metadata_source_name(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
