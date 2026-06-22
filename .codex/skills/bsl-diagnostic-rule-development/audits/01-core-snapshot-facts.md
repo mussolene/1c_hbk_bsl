@@ -52,9 +52,10 @@ restart from chat memory.
 5. Semantic/parity audit pass 1:
    `BSL013`, `BSL216`, and `BSL040` were checked against their contracts and
    current implementation topology. The semantic pass is closed for this
-   iteration; external BSLLS parity is still open because this workspace does
-   not currently contain a runnable BSLLS analyzer artifact or checked-out
-   upstream fixture tree.
+   iteration. External BSLLS parity is partially probed but still open for
+   `BSL013` and `BSL040`; a runnable local BSLLS artifact exists, but the
+   parity harness still needs valid rule-profile configuration and/or proper
+   form-module fixture metadata for these two rules.
 
    - `BSL013` remains a textual/comment-group rule. It is implemented through
      `DocumentSnapshot.commented_code_facts`; prose comments are ignored,
@@ -79,22 +80,34 @@ restart from chat memory.
    produced zero diagnostics, which is acceptable for smoke coverage because
    the targeted oracle is the positive/negative semantic source for this pass.
 
+   Corrective BSLLS probe: local
+   `bsl-language-server-0.29.0-exec.jar` is available under the user cache and
+   runs `analyze`. On sanitized synthetic modules, BSLLS and onec match BSL216
+   exactly for `А=1;Б=2`: three diagnostics at the same line/columns. BSLLS did
+   not report BSL013 or BSL040 on the minimal synthetic modules in default,
+   `ALL`, or attempted `ONLY` mode; this is not a semantic conclusion about the
+   rules. It means the parity harness/profile and the minimal form fixture need
+   to be repaired before BSL013/BSL040 can be called BSLLS-classified.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy has not been rerun for the whole batch in this
   audit step.
 - The current coverage signal is based on existing synthetic tests plus
   contract-level semantic oracles, not a fresh per-rule corpus parity run.
-- External BSLLS parity for `BSL013`, `BSL216`, and `BSL040` is not closed in
-  this pass. No `bsl-language-server`/`bslls` executable or local upstream
-  fixture checkout was available in the workspace during this audit.
+- External BSLLS parity for `BSL013` and `BSL040` is not closed in this pass.
+  The local BSLLS jar is available and runnable, so the blocker is parity
+  harness/profile correctness, not analyzer availability.
 
 ## Next Cheap Tests
 
-1. Provide or restore a local runnable BSLLS artifact outside the product tree,
-   then run the rule-contract parity procedure for `BSL013`, `BSL216`, and
-   `BSL040` with normalized file keys and LSP-to-onec coordinate conversion.
-2. Continue the same semantic-first audit with the next highest-risk rules in
+1. Fix or document the BSLLS rule-profile invocation so `mode=ONLY` actually
+   restricts BSLLS to the compatible diagnostic name; until then compare
+   selected diagnostics only and mark profile-dependent rules open.
+2. Build a valid sanitized EDT/form-module fixture for BSL040 and a BSLLS-known
+   commented-code fixture for BSL013, then rerun the rule-contract parity
+   procedure with normalized file keys and LSP-to-onec coordinate conversion.
+3. Continue the same semantic-first audit with the next highest-risk rules in
    this batch.
-3. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
+4. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
    so invalid dossiers cannot silently accumulate.
