@@ -37,6 +37,25 @@ _BSL174_REGISTER_FOLDERS: frozenset[str] = frozenset(
 )
 
 
+def _bsl174_owner_module_matches(path: str, object_xml: Path) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    if "/forms/" in normalized:
+        return False
+
+    manager_module = object_xml.parent / object_xml.stem / "Ext" / "ManagerModule.bsl"
+    if manager_module.exists():
+        try:
+            return Path(path).resolve() == manager_module.resolve()
+        except OSError:
+            return normalized.endswith(
+                f"/{object_xml.parent.name.lower()}/{object_xml.stem.lower()}/ext/managermodule.bsl"
+            )
+
+    return normalized.endswith("/ext/managermodule.bsl") or normalized.endswith(
+        "/ext/recordsetmodule.bsl"
+    )
+
+
 def _bsl242_proc_body_is_empty(lines: list[str], proc: Any) -> bool:
     for idx in range(proc.start_idx + 1, min(proc.end_idx, len(lines))):
         stripped = lines[idx].strip()
@@ -157,7 +176,11 @@ def applicable_bsl174_187_236_238_codes(
     if "BSL174" in enabled_set:
         object_xml = _diag._current_object_xml_path(path)
         object_context = _diag._current_module_xml_context(path)
-        if object_xml is not None and object_context.get("folder") in _BSL174_REGISTER_FOLDERS:
+        if (
+            object_xml is not None
+            and object_context.get("folder") in _BSL174_REGISTER_FOLDERS
+            and _bsl174_owner_module_matches(path, object_xml)
+        ):
             out.append("BSL174")
 
     if query_blocks and "BSL187" in enabled_set:
@@ -190,6 +213,7 @@ def run_bsl174_187_236_238_query_metadata_pool(
         "BSL174" in enabled_set
         and object_xml is not None
         and object_context.get("folder") in _BSL174_REGISTER_FOLDERS
+        and _bsl174_owner_module_matches(path, object_xml)
     ):
         xml_text = _diag._read_text_cached(str(object_xml))
         for match in _diag._RE_XML_DIMENSION_BLOCK.finditer(xml_text):

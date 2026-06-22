@@ -1,6 +1,6 @@
 # 02 Query Metadata Aggregation Audit
 
-Status: not started.
+Status: in progress.
 
 This audit is the durable routing checklist for
 `02-query-metadata-aggregation`. Rule membership comes from
@@ -8,7 +8,7 @@ This audit is the durable routing checklist for
 
 ## Closure Checklist
 
-- [ ] BSL174 - open
+- [x] BSL174 - exact; owner-module metadata contract
 - [ ] BSL187 - open
 - [ ] BSL189 - open
 - [ ] BSL191 - open

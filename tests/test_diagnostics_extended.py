@@ -1293,10 +1293,26 @@ class TestTailParityBatches:
         app_module.write_text(
             "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n", encoding="utf-8"
         )
+        manager_module = obj_dir / "Ext" / "ManagerModule.bsl"
+        manager_module.parent.mkdir(parents=True, exist_ok=True)
+        manager_module.write_text(
+            "Процедура Метод()\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        record_set_module = obj_dir / "Ext" / "RecordSetModule.bsl"
+        record_set_module.write_text(
+            "Процедура Метод()\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
         diags_form = DiagnosticEngine(select={"BSL174", "BSL211", "BSL241", "BSL274"}).check_file(
             str(module_path)
         )
-        assert {"BSL174", "BSL211", "BSL241", "BSL274"} <= set(_codes(diags_form))
+        assert {"BSL211", "BSL241", "BSL274"} <= set(_codes(diags_form))
+        assert "BSL174" not in _codes(diags_form)
+        diags_manager = DiagnosticEngine(select={"BSL174"}).check_file(str(manager_module))
+        assert "BSL174" in _codes(diags_manager)
+        diags_record_set = DiagnosticEngine(select={"BSL174"}).check_file(str(record_set_module))
+        assert "BSL174" not in _codes(diags_record_set)
         diags_app = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags_app)
 
