@@ -1398,6 +1398,7 @@ class DocumentSnapshot:
     _complexity_metrics_cache: dict[tuple[tuple[int, int], ...], list[tuple[int, int]]] | None = (
         None
     )
+    _module_body_cognitive_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _missing_space_facts: list[LineDiagnosticFact] | None = None
     _incorrect_line_break_facts: list[LineDiagnosticFact] | None = None
     _hardcoded_credential_facts: list[LineDiagnosticFact] | None = None
@@ -1673,6 +1674,70 @@ class DocumentSnapshot:
         ]
         self._complexity_metrics_cache[key] = metrics
         return metrics
+
+    def module_body_cognitive_complexity_facts(
+        self,
+        max_cognitive_complexity: int,
+    ) -> list[LineDiagnosticFact]:
+        """Return cached BSL011 facts for complex module-body code blocks."""
+        if self._module_body_cognitive_facts_cache is None:
+            self._module_body_cognitive_facts_cache = {}
+        cached = self._module_body_cognitive_facts_cache.get(max_cognitive_complexity)
+        if cached is not None:
+            return cached
+
+        facts: list[LineDiagnosticFact] = []
+        cursor = 0
+        for proc in sorted(self.procedures, key=lambda item: item.start_idx):
+            facts.extend(
+                self._module_body_cognitive_complexity_facts_for_range(
+                    cursor,
+                    proc.start_idx - 1,
+                    max_cognitive_complexity,
+                )
+            )
+            cursor = max(cursor, proc.end_idx + 1)
+        facts.extend(
+            self._module_body_cognitive_complexity_facts_for_range(
+                cursor,
+                len(self.lines) - 1,
+                max_cognitive_complexity,
+            )
+        )
+        self._module_body_cognitive_facts_cache[max_cognitive_complexity] = facts
+        return facts
+
+    def _module_body_cognitive_complexity_facts_for_range(
+        self,
+        start_idx: int,
+        end_idx: int,
+        max_cognitive_complexity: int,
+    ) -> list[LineDiagnosticFact]:
+        if start_idx > end_idx:
+            return []
+        cognitive, _mccabe = _calc_complexity_metrics_from_lines(
+            self.lines,
+            start_idx - 1,
+            end_idx + 1,
+            masked_lines=self.counter_lines,
+        )
+        if cognitive <= max_cognitive_complexity:
+            return []
+        for idx in range(start_idx, min(end_idx + 1, len(self.lines))):
+            line = self.lines[idx]
+            if not line.strip() or line.lstrip().startswith(("//", "|")):
+                continue
+            match = re.search(r"\S+", line)
+            if match is None:
+                continue
+            return [
+                LineDiagnosticFact(
+                    line_idx=idx,
+                    character=match.start(),
+                    end_character=match.end(),
+                )
+            ]
+        return []
 
     @property
     def missing_space_facts(self) -> list[LineDiagnosticFact]:
@@ -2377,15 +2442,7 @@ class DocumentSnapshot:
         reported_lengths = self.reported_line_lengths
         for idx, line in enumerate(self.lines):
             if line.lstrip().startswith("|"):
-                content = line.lstrip()[1:].lstrip()
-                if re.search(
-                    r"\b(?:ВЫБРАТЬ|SELECT|ИЗ|FROM|ГДЕ|WHERE|КАК|AS|ЗНАЧЕНИЕ|VALUE|ВЫРАЗИТЬ|CAST|СОЕДИНЕНИЕ|JOIN)\b",
-                    content,
-                    re.IGNORECASE,
-                ):
-                    continue
-                if len(line.rstrip()) <= 140:
-                    continue
+                continue
             length = len(line.rstrip())
             reported_length = reported_lengths[idx] if idx < len(reported_lengths) else length
             if reported_length <= max_line_length:

@@ -126,6 +126,31 @@ restart from chat memory.
    `BSL016` was corrected after the run to trim trailing whitespace from the
    diagnostic range, closing its one-character BSLLS range delta.
 
+8. BSL014 sampled taxonomy:
+   A local synthetic taxonomy probe compared onec `--no-config --select BSL014`
+   with BSLLS 0.29.0 `LineLength` JSON output. Exact common cases include
+   threshold behavior, long comments, method-description comments, trailing
+   comments, trailing spaces, and long single-line string literals. The sampled
+   onec-only category was long multiline string/query content lines starting
+   with `|`; BSLLS `LineLength` is token-line based and does not report those
+   content lines. `DocumentSnapshot.line_too_long_facts` now skips all `|`
+   multiline content lines, which removes the sampled onec-only category and
+   removes the previous keyword regex from that hot path. No BSLLS-only or
+   range-only category was reproduced by the synthetic BSL014 sample; the
+   private batch still has unsampled semantic/range deltas.
+
+9. BSL011 sampled taxonomy:
+   A local synthetic taxonomy probe compared onec `--no-config --select BSL011`
+   with BSLLS 0.29.0 `CognitiveComplexity` JSON output. Method-level high and
+   low complexity cases matched exactly. The sampled BSLLS-only category was a
+   complex module-body code block because BSLLS has `checkModuleBody=true` by
+   default while the previous BSL011 contract treated module-level code as a
+   non-goal. onec now emits BSL011 for module-body cognitive complexity using
+   the existing line-level complexity calculator and keeps method metrics
+   shared with BSL019. The sampled module-body cases now match BSLLS exactly.
+   No synthetic ours-only or range-only category was reproduced; the private
+   batch still has unsampled semantic/file-layout deltas.
+
 ## Known Gaps
 
 - Full BSLLS parity taxonomy is now available at batch-count level. The
@@ -148,8 +173,10 @@ restart from chat memory.
 
 ## Next Cheap Tests
 
-1. Classify `BSL014`, `BSL011`, `BSL219`, and `BSL131` in that order
-   by semantic facts, not by count-chasing.
+1. Classify `BSL219` and `BSL131` in that order by semantic facts, not by
+   count-chasing. BSL014 and BSL011 synthetic sampled taxonomy is closed for
+   this iteration; revisit only with private-corpus sanitized samples for the
+   remaining batch deltas.
 2. Continue `BSL013` only with sampled semantic categories, not broad
    directive/comment punctuation expansion.
 3. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract

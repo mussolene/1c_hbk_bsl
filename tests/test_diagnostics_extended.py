@@ -2986,6 +2986,65 @@ class TestBsl011CognitiveComplexity:
         assert len(bsl011) == 1
         assert bsl011[0].message == _rule_msg("BSL011")
 
+    def test_complex_module_body_reports_like_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Если Истина Тогда
+                Если Истина Тогда
+                    Если Истина Тогда
+                        Если Истина Тогда
+                            Если Истина Тогда
+                                Если Истина Тогда
+                                    А = 1;
+                                КонецЕсли;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+            КонецЕсли;
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=15, select={"BSL011"})
+        bsl011 = [d for d in diags if d.code == "BSL011"]
+        assert len(bsl011) == 1
+        assert bsl011[0].line == 1
+        assert bsl011[0].character == 0
+        assert bsl011[0].end_character == 4
+
+    def test_complex_module_body_before_method_reports_once(self, tmp_path: Path) -> None:
+        content = """\
+            Если Истина Тогда
+                Если Истина Тогда
+                    Если Истина Тогда
+                        Если Истина Тогда
+                            Если Истина Тогда
+                                Если Истина Тогда
+                                    А = 1;
+                                КонецЕсли;
+                            КонецЕсли;
+                        КонецЕсли;
+                    КонецЕсли;
+                КонецЕсли;
+            КонецЕсли;
+
+            Процедура Простая()
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=15, select={"BSL011"})
+        bsl011 = [d for d in diags if d.code == "BSL011"]
+        assert len(bsl011) == 1
+        assert bsl011[0].line == 1
+
+    def test_module_body_comment_tokens_do_not_count(self, tmp_path: Path) -> None:
+        content = """\
+            // Если Истина Тогда Если Истина Тогда Если Истина Тогда
+            // Если Истина Тогда Если Истина Тогда Если Истина Тогда
+            Процедура Простая()
+                А = 1;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=0, select={"BSL011"})
+        assert "BSL011" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL012 — HardcodeCredentials
@@ -3175,15 +3234,11 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
         assert "BSL014" not in _codes(diags)
 
-    def test_query_text_non_keyword_line_reports_only_after_140(self, tmp_path: Path) -> None:
+    def test_query_text_non_keyword_line_exception_no_warning(self, tmp_path: Path) -> None:
         query_line = "|" + ("x" * 141) + "\n"
         content = f'Запрос.Текст = "\n{query_line}";\n'
         diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
-        bsl014 = [d for d in diags if d.code == "BSL014"]
-        assert len(bsl014) == 1
-        assert bsl014[0].line == 2
-        assert bsl014[0].character == 0
-        assert bsl014[0].end_character == 142
+        assert "BSL014" not in _codes(diags)
 
 
 # ---------------------------------------------------------------------------

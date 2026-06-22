@@ -6065,6 +6065,21 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                         lines=context.lines,
                     )
                 )
+            assert snapshot is not None
+            diags.extend(
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.WARNING,
+                    code="BSL011",
+                )
+                for fact in snapshot.module_body_cognitive_complexity_facts(
+                    engine.max_cognitive_complexity
+                )
+            )
             return diags
         if code == "BSL012":
             assert snapshot is not None

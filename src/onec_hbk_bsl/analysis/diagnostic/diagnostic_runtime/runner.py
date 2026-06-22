@@ -455,6 +455,7 @@ def _run_bsl011_175_snapshot_facts(
     lines: list[str],
     procs: list[Any],
     complexity_metrics: list[tuple[int, int]],
+    module_body_cognitive_facts: list[Any],
     symbols: list[Any],
     calls: list[Any],
     enabled_codes: tuple[str, ...],
@@ -476,6 +477,18 @@ def _run_bsl011_175_snapshot_facts(
                     lines=lines,
                 )
             )
+        out.extend(
+            Diagnostic(
+                file=path,
+                line=fact.line_idx + 1,
+                character=fact.character,
+                end_line=fact.line_idx + 1,
+                end_character=fact.end_character,
+                severity=Severity.WARNING,
+                code="BSL011",
+            )
+            for fact in module_body_cognitive_facts
+        )
     if "BSL175" in enabled:
         model = ModuleModel(path=path)
         out.extend(
@@ -616,6 +629,19 @@ def _run_core_fact_rule(
                         lines=lines,
                     )
                 )
+        if code == "BSL011":
+            diags.extend(
+                Diagnostic(
+                    file=path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.WARNING,
+                    code="BSL011",
+                )
+                for fact in facts
+            )
         return diags
 
     severity_by_code = {
@@ -809,6 +835,11 @@ def append_diagnostic_runtime_rule_tasks(
                     complexity_metrics=list(
                         snapshot.complexity_metrics_for_procs(context.procedures)
                     ),
+                    module_body_cognitive_facts=list(
+                        snapshot.module_body_cognitive_complexity_facts(
+                            engine.max_cognitive_complexity
+                        )
+                    ),
                     symbols=list(snapshot.symbols),
                     calls=list(snapshot.calls),
                     enabled_codes=fact_group_011_175,
@@ -846,6 +877,11 @@ def append_diagnostic_runtime_rule_tasks(
             if "BSL011" in enabled_core_fact_codes or "BSL019" in enabled_core_fact_codes:
                 complexity_metrics = list(snapshot.complexity_metrics_for_procs(context.procedures))
             facts_by_code: dict[str, list[Any]] = {
+                "BSL011": list(
+                    snapshot.module_body_cognitive_complexity_facts(
+                        engine.max_cognitive_complexity
+                    )
+                ),
                 "BSL012": list(snapshot.hardcoded_credential_facts),
                 "BSL013": list(snapshot.commented_code_facts),
                 "BSL014": list(snapshot.line_too_long_facts(engine.max_line_length)),
