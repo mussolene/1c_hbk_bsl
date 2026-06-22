@@ -163,7 +163,35 @@ restart from chat memory.
    now emits matching per-name facts. No sampled ours-only or BSLLS-only category
    was reproduced; the private batch still has unsampled semantic/range deltas.
 
-11. BSL131 sampled taxonomy:
+11. BSLLS 1.0 preserved-source-root parity refresh:
+   `scripts/compare_diag_bslls.py` was restored as the governed development
+   parity runner and corrected for large/private workspaces: onec input now
+   uses `--paths-from`, onec raw parity uses `--no-config`, path-sensitive
+   comparisons can use `--preserve-source-root`, and BSLLS 1.0 absolute URI
+   paths are normalized by EDT/root-`Ext` suffixes. The user-local BSLLS
+   artifact used for this run was `bsl-language-server-1.0.0-exec.jar`.
+
+   Sanitized preserved-source-root batch for selected rules
+   `BSL011,BSL013,BSL014,BSL022,BSL036,BSL040,BSL077,BSL131,BSL216,BSL219`
+   over 31,797 files:
+
+   | Code | only BSLLS | only onec | status |
+   | --- | ---: | ---: | --- |
+   | BSL011 | 40 | 2 | still sampled/file-layout delta |
+   | BSL013 | 664 after inline-expression fix | 192 | inline call-expression category fixed; directive/documentation categories intentionally not broadened |
+   | BSL014 | 243 | 108 | next high-volume semantic/range bucket |
+   | BSL022 | 0 | 0 | exact in preserved-source-root batch |
+   | BSL036 | 52 | 52 | range/identity bucket remains |
+   | BSL040 | 0 | 838 | product divergence: legacy ordinary-form `Forms/.../Ext/module.bsl` retained |
+   | BSL077 | 2 | 0 | known BSLLS-only parse-error/order-present query blocks |
+   | BSL216 | 28 | 0 | known BSLLS unary-minus defect/product divergence |
+   | BSL219 | 36 | 40 | semantic/range bucket remains |
+
+   BSL013 runtime changed narrowly to report inline commented call-expression
+   tails after live code, matching BSLLS-recognized samples without accepting
+   standalone directive-only comment groups.
+
+12. BSL131 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL131`
    with BSLLS 0.29.0 `DuplicateRegion` JSON output. Unique region and nested
    same-name region cases produced no diagnostics in both tools. Plain duplicate,
@@ -175,20 +203,21 @@ restart from chat memory.
    BSLLS-only category was reproduced; private batch exact parity should be
    rerun when the batch completes.
 
-12. BSL013 sampled taxonomy:
+13. BSL013 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL013`
    with BSLLS 0.29.0 `CommentedCode` JSON output and the decompiled
    `CommentedCodeDiagnostic` contract. BSLLS applies `CodeRecognizer` with
    threshold `0.9` to individual comment tokens, then reports the whole adjacent
    comment group when one token is recognized as code. Sampled BSLLS-recognized
-   `Если` block, single `Сообщить(...)`, and long assignment cases match onec
-   exactly. Sampled ours-only categories are intentionally retained: short or
-   generic commented procedure groups, inline assignment comments, embedded
-   prose/expression groups, and annotation+method groups. Standalone directive
-   comment groups remain rejected because they overreported heavily on the
-   corpus and lack executable-code structure by themselves.
+   `Если` block, single `Сообщить(...)`, long assignment, and inline call
+   expression cases match onec. Sampled ours-only categories are intentionally
+   retained: short or generic commented procedure groups, inline assignment
+   comments, embedded prose/expression groups, and annotation+method groups.
+   Standalone directive comment groups remain rejected because they
+   overreported heavily on the corpus and lack executable-code structure by
+   themselves.
 
-13. BSL022 sampled taxonomy:
+14. BSL022 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL022`
    with BSLLS 0.29.0 `UsingModalWindows` JSON output using
    `forceModalityMode=true` for standalone rule semantics. BSLLS reports modal
@@ -198,7 +227,7 @@ restart from chat memory.
    Sampled simple modal call, nested modal call, object call, string, and
    inline-comment cases match BSLLS exactly.
 
-14. BSL036 sampled taxonomy:
+15. BSL036 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL036`
    with BSLLS 0.29.0 `IfConditionComplexity` JSON output using
    `allowedComplexity=3`. Sampled single-line high-complexity condition,
@@ -208,7 +237,7 @@ restart from chat memory.
    reproduced; remaining private batch range-only entries need sanitized
    examples before any runtime edit.
 
-15. BSL040 product taxonomy:
+16. BSL040 product taxonomy:
    BSL040 remains an intentional product divergence from BSLLS counts for legacy
    full form modules. The private batch had 1081 exact common facts and
    additional onec facts in `Forms/.../Ext/Module.bsl` layout. Those findings
@@ -218,7 +247,7 @@ restart from chat memory.
    module skip, full form module report, parameter shadowing, and split fragment
    skip. Do not remove the legacy layout without an explicit product decision.
 
-16. BSL216 product taxonomy:
+17. BSL216 product taxonomy:
    BSL216 remains a lexical spacing rule, but unary signs in syntactic unary
    positions are not missing-space defects. The private batch has 28 BSLLS-only
    reports for unary `-` after `[`. onec intentionally keeps those clean because

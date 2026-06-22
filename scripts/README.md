@@ -56,3 +56,32 @@ python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 режимом исполнения и рекомендуемой пачкой доработки. Ее нужно использовать
 перед изменением семейства правил, чтобы планировать работу по shared runtime
 facts, а не по красивым, но неисполнительным фазам.
+
+## BSLLS parity для диагностик
+
+**`compare_diag_bslls.py`** сравнивает выбранные правила onec-hbk-bsl и BSLLS:
+
+```bash
+BSLLS_JAR=/path/to/bsl-language-server-*-exec.jar \
+  ./.venv/bin/python scripts/compare_diag_bslls.py \
+  --workspace /path/to/workspace \
+  --preserve-source-root \
+  --select BSL216,CommentedCode \
+  /path/to/workspace/src
+```
+
+Правило для audit-итераций: всегда задавайте `--select`. Скрипт запускает наш
+CLI как `onec-hbk-bsl check --no-config --format json --select ...`,
+генерирует для BSLLS конфигурацию `diagnostics.mode=ONLY` с совместимыми
+именами правил, запускает BSLLS `analyze`, нормализует BSLLS diagnostics
+обратно в `BSL###`, затем сравнивает выбранные правила по
+`file,line,column,end,code`.
+
+Для path-sensitive правил, завязанных на EDT layout/metadata, используйте
+`--preserve-source-root`, чтобы BSLLS анализировал исходный workspace, а не
+временную копию `.bsl` файлов. Для небольших синтетических наборов можно
+оставить режим временной копии: входные файлы копируются с сохранением
+относительного пути от `--workspace`.
+
+Скрипт ищет jar в `--jar`, `BSLLS_JAR`, `.nosync/bsl-language-server/**`,
+затем в локальном пользовательском cache.

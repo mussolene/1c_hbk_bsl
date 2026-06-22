@@ -2076,7 +2076,9 @@ class DocumentSnapshot:
             comment_pos = line.find("//")
             if comment_pos >= 0:
                 inline_comment = line[comment_pos:]
-                if _RE_COMMENTED_INLINE_ASSIGNMENT.search(inline_comment):
+                if _RE_COMMENTED_INLINE_ASSIGNMENT.search(inline_comment) or _RE_COMMENTED_CODE.match(
+                    inline_comment
+                ):
                     facts.append(
                         LineDiagnosticFact(
                             line_idx=idx,

@@ -3143,6 +3143,27 @@ class TestBsl013CommentedCode:
         assert bsl013[0].line == 3
         assert bsl013[0].character == 4
 
+    def test_inline_commented_call_expression_detected_like_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ПолныйКод = Код + 1; // shl(ПолныйКод, 6) + (Код & 0x3F)
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        bsl013 = [d for d in diags if d.code == "BSL013"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl013] == [
+            (2, 25, 2, 60)
+        ]
+
+    def test_inline_prose_comment_after_code_is_not_commented_code(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = Код + 1; // смещение байта для следующего шага
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL013"})
+        assert "BSL013" not in _codes(diags)
+
     def test_query_keyword_prefix_is_not_code(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
