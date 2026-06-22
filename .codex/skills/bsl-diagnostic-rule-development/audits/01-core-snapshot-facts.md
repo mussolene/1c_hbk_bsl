@@ -86,8 +86,17 @@ restart from chat memory.
    exactly for `А=1;Б=2`: three diagnostics at the same line/columns. BSLLS did
    not report BSL013 or BSL040 on the minimal synthetic modules in default,
    `ALL`, or attempted `ONLY` mode; this is not a semantic conclusion about the
-   rules. It means the parity harness/profile and the minimal form fixture need
-   to be repaired before BSL013/BSL040 can be called BSLLS-classified.
+   rules. It means the minimal form/comment fixtures need to be repaired before
+   BSL013/BSL040 can be called BSLLS-classified.
+
+6. Parity tooling correction:
+   `scripts/compare_diag_bslls.py` is now the project parity entry point for
+   BSLLS-backed diagnostic audits. It requires explicit `--select`, runs onec
+   with that selected rule set, runs BSLLS `analyze`, normalizes BSLLS rule
+   names back to `BSL###`, filters both sides to the selected codes, and
+   compares `file,line,column,end,code`. It also preserves the workspace-relative
+   input path in the temporary BSLLS source root so path-sensitive rules are not
+   tested as flat basename-only files.
 
 ## Known Gaps
 
@@ -96,18 +105,16 @@ restart from chat memory.
 - The current coverage signal is based on existing synthetic tests plus
   contract-level semantic oracles, not a fresh per-rule corpus parity run.
 - External BSLLS parity for `BSL013` and `BSL040` is not closed in this pass.
-  The local BSLLS jar is available and runnable, so the blocker is parity
-  harness/profile correctness, not analyzer availability.
+  The local BSLLS jar is available and runnable, and selected-code comparison
+  tooling is fixed, so the blocker is now valid sanitized fixtures for those
+  rules, not analyzer availability or neighbouring diagnostics.
 
 ## Next Cheap Tests
 
-1. Fix or document the BSLLS rule-profile invocation so `mode=ONLY` actually
-   restricts BSLLS to the compatible diagnostic name; until then compare
-   selected diagnostics only and mark profile-dependent rules open.
-2. Build a valid sanitized EDT/form-module fixture for BSL040 and a BSLLS-known
+1. Build a valid sanitized EDT/form-module fixture for BSL040 and a BSLLS-known
    commented-code fixture for BSL013, then rerun the rule-contract parity
-   procedure with normalized file keys and LSP-to-onec coordinate conversion.
-3. Continue the same semantic-first audit with the next highest-risk rules in
+   procedure through `scripts/compare_diag_bslls.py --select ...`.
+2. Continue the same semantic-first audit with the next highest-risk rules in
    this batch.
-4. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
+3. Keep `tests/test_rule_contract_gate.py` validating every `BSL*.md` contract
    so invalid dossiers cannot silently accumulate.
