@@ -1,17 +1,45 @@
 ---
-name: oacs-codex-runtime
-description: Use when Codex should work as an OACS-aware development client: rebuild task context from OACS instead of relying on chat history, record command outputs as evidence, checkpoint iterations, coordinate explicitly requested subagents through one shared OACS database, and close subagents when their goals are done.
+name: codex-oacs-runtime
+description: Use when Codex should work on a repository with OACS-backed development memory: build repo context, record command results as evidence, checkpoint iterations, capture D1 repo episodes, coordinate explicitly requested subagents through one shared OACS database, and close subagents when their goals are done.
 ---
 
-# OACS-Aware Codex Runtime
+# Codex OACS Runtime
 
-Use this skill when a task should survive chat compaction, a new chat, long
-development sessions, or multi-agent delegation. Treat Codex chat history as a
-cache. Treat repository files, git state, OACS evidence, OACS memory, OACS audit,
-and OACS checkpoints as the source of truth.
+This is a non-standard optional implementation/dogfood layer. It combines the
+existing repo development memory adapter with an OACS-aware Codex runtime
+workflow. It shows how repository development memory can live as a removable
+skill layer without making Codex, Python, SQLite, or this workflow part of the
+OACS portable standard.
 
-OACS is the standard/contract layer. Python `acs` CLI/API/SQLite behavior is a
+Treat Codex chat history as a cache. Treat repository files, git state, OACS
+evidence, OACS memory, OACS audit, and OACS checkpoints as the source of truth.
+OACS is the standard/contract layer; Python `acs` CLI/API/SQLite behavior is a
 reference implementation and must not be described as the standard itself.
+
+## Script Actions
+
+The `skill.json` entrypoint keeps the repo-local script adapter:
+
+- `context`: build a repo-scoped Context Capsule.
+- `capture`: commit a manual D1 repository episode.
+- `auto_start`: build context and audit metadata without writing memory.
+- `auto_finish`: commit a D1 repository episode for the completed iteration.
+- `autorun`: build context, run a bounded local command, and commit a D1
+  repository episode with command outcome metadata.
+
+Policy:
+
+- Auto mode commits only D1 `episode` memory.
+- D2 facts, D2 procedures, rules, and D3-D5 patterns require explicit review
+  through `memory propose`, `memory commit`, and `memory sharpen`.
+- Standalone tool-result evidence does not enter context by itself; attach the
+  evidence ref to reviewed memory if it should guide future context builds.
+- Preserve attribution when distilling memory: user instructions, agent
+  decisions, tool observations, project policies, and human approvals are
+  different roles in the standard and should not be collapsed into plain text.
+- In strict policy mode, the actor running this skill needs ordinary
+  `context.build`, `context.explain`, memory, evidence, checkpoint, and audit
+  grants; the skill must not rely on `system` bootstrap authority.
 
 ## Start or Resume
 

@@ -1,0 +1,42 @@
+{
+  "id": "skill_codex_oacs_runtime",
+  "name": "codex_oacs_runtime",
+  "description": "Optional non-standard repo development runtime layer that combines OACS-backed development memory with Codex context, evidence, checkpoint, and multi-agent coordination workflow.",
+  "version": "0.2.0",
+  "entrypoint": "script:scripts/repo_memory.py",
+  "instructions": "Use OACS records as the durable source of truth for repository development sessions. Keep this as a reference/dogfood client workflow, not part of the OACS portable standard. The script entrypoint captures D1 repo episodes with attribution; reviewed D2+ memory requires explicit evidence-backed lifecycle commands.",
+  "required_memory_types": ["episode", "fact", "procedure"],
+  "required_rules": ["rule_fuzzy_memory_not_fact"],
+  "required_tools": [],
+  "input_schema": {
+    "type": "object",
+    "required": ["action", "task"],
+    "properties": {
+      "action": {
+        "enum": ["capture", "context", "auto_start", "auto_finish", "autorun"]
+      },
+      "task": { "type": "string" },
+      "summary": { "type": "string" },
+      "outcome": { "type": "string" },
+      "command": { "type": "string" }
+    }
+  },
+  "output_schema": {
+    "type": "object"
+  },
+  "permissions": {
+    "memory.propose": true,
+    "memory.commit": true,
+    "memory.correct": true,
+    "memory.query": true,
+    "context.build": true,
+    "context.explain": true,
+    "evidence.ingest": true,
+    "evidence.inspect": true,
+    "checkpoint.add": true,
+    "audit.write": true
+  },
+  "namespace": "repo_dogfood",
+  "scope": [],
+  "status": "active"
+}
