@@ -150,6 +150,8 @@ _RE_VAR_MODULE = re.compile(
     r"^\s*(?:Перем|Var)\s+(?P<names>[\w\s,]+?)\s*(?P<export>Экспорт|Export)?\s*;",
     re.IGNORECASE,
 )
+_RE_VAR_MODULE_HEAD = re.compile(r"^\s*(?:Перем|Var)\b(?P<tail>.*)$", re.IGNORECASE)
+_RE_VAR_MODULE_CONT = re.compile(r"^\s*(?P<names>[\w\s,]+?)\s*(?P<export>Экспорт|Export)?\s*[;,]\s*$", re.IGNORECASE)
 _BSL204_ILLEGAL_CHARS = frozenset({"\u00ad", "\u2012", "\u2013", "\u2014", "\u2015", "\u2212", "\u00a0"})
 _RE_COMPLEX_CONDITION_HEAD = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b",
@@ -596,6 +598,8 @@ def _double_quoted_span_containing(line: str, pos: int) -> tuple[int, int] | Non
 
 def _has_preceding_variable_description(lines: list[str], var_line_idx: int) -> bool:
     prev_idx = var_line_idx - 1
+    while prev_idx >= 0 and lines[prev_idx].strip().startswith("&"):
+        prev_idx -= 1
     if prev_idx < 0:
         return False
     stripped = lines[prev_idx].strip()
@@ -617,9 +621,11 @@ def _has_previous_inline_variable_description(lines: list[str], var_line_idx: in
     prev_idx = var_line_idx - 1
     while prev_idx >= 0:
         stripped = lines[prev_idx].strip()
-        if not stripped or stripped.startswith("&"):
+        if stripped.startswith("&"):
             prev_idx -= 1
             continue
+        if not stripped:
+            return False
         if _RE_VAR_MODULE.match(stripped):
             return _has_inline_variable_description(lines[prev_idx])
         return False
@@ -634,6 +640,40 @@ def _module_var_name_ranges(match: re.Match[str]) -> list[tuple[int, int]]:
         start, _end = ranges[-1]
         ranges[-1] = (start, match.end("export"))
     return ranges
+
+
+def _module_var_multiline_name_ranges(
+    lines: list[str],
+    start_idx: int,
+) -> tuple[int, list[LineDiagnosticFact]] | None:
+    """Extract names from a multiline module variable declaration."""
+    head = _RE_VAR_MODULE_HEAD.match(lines[start_idx])
+    if head is None or ";" in head.group("tail"):
+        return None
+
+    facts: list[LineDiagnosticFact] = []
+    idx = start_idx + 1
+    while idx < len(lines):
+        line = lines[idx]
+        stripped = line.strip()
+        if not stripped or stripped.startswith("&"):
+            idx += 1
+            continue
+        match = _RE_VAR_MODULE_CONT.match(line)
+        if match is None:
+            return None
+        facts.extend(
+            LineDiagnosticFact(
+                line_idx=idx,
+                character=start,
+                end_character=end,
+            )
+            for start, end in _module_var_name_ranges(match)
+        )
+        if ";" in line:
+            return idx, facts
+        idx += 1
+    return None
 
 
 def _standard_regions_for_path(path: str) -> frozenset[str]:
@@ -2309,12 +2349,37 @@ class DocumentSnapshot:
             inside_procedure_lines.update(range(proc.start_idx, proc.end_idx + 1))
 
         facts: list[LineDiagnosticFact] = []
-        for idx, clean_line in enumerate(self.code_lines_without_comments):
+        idx = 0
+        clean_lines = self.code_lines_without_comments
+        while idx < len(clean_lines):
+            clean_line = clean_lines[idx]
             if idx in inside_procedure_lines:
+                idx += 1
                 continue
             code_part = clean_line.rstrip()
             if not code_part.strip():
+                idx += 1
                 continue
+            if (
+                _RE_VAR_MODULE_HEAD.match(code_part) is not None
+                and _RE_VAR_MODULE.match(code_part) is None
+            ):
+                multiline = _module_var_multiline_name_ranges(clean_lines, idx)
+                if multiline is not None:
+                    end_idx, multiline_facts = multiline
+                    if not (
+                        _has_preceding_variable_description(self.lines, idx)
+                        or _has_inline_variable_description(self.lines[idx])
+                        or _has_previous_inline_variable_description(self.lines, idx)
+                    ):
+                        facts.extend(
+                            fact
+                            for fact in multiline_facts
+                            if fact.line_idx not in inside_procedure_lines
+                            and not _has_inline_variable_description(self.lines[fact.line_idx])
+                        )
+                    idx = end_idx + 1
+                    continue
             match = _RE_VAR_MODULE.match(code_part)
             if (
                 match is None
@@ -2322,6 +2387,7 @@ class DocumentSnapshot:
                 or _has_inline_variable_description(self.lines[idx])
                 or _has_previous_inline_variable_description(self.lines, idx)
             ):
+                idx += 1
                 continue
             facts.extend(
                 LineDiagnosticFact(
@@ -2331,6 +2397,7 @@ class DocumentSnapshot:
                 )
                 for start, end in _module_var_name_ranges(match)
             )
+            idx += 1
         self._module_variable_description_facts = facts
         return facts
 

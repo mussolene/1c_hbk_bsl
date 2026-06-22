@@ -6148,6 +6148,23 @@ class TestBsl219MissingVariablesDescription:
         diags = _check(content, tmp_path, select={"BSL219"})
         assert "BSL219" not in _codes(diags)
 
+    def test_previous_inline_group_description_does_not_cross_blank_line(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Перем ОткрытаФорма; // Описание группы переменных
+
+            &НаКлиенте
+            Перем КонтекстВыбора;
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        bsl219 = [d for d in diags if d.code == "BSL219"]
+        assert len(bsl219) == 1
+        assert bsl219[0].line == 4
+
     def test_export_var_with_preceding_triple_comment_no_bsl219(self, tmp_path: Path) -> None:
         content = """\
             /// Описание
@@ -6195,6 +6212,52 @@ class TestBsl219MissingVariablesDescription:
         diags = _check(content, tmp_path, select={"BSL219"})
         bsl219 = [d for d in diags if d.code == "BSL219"]
         assert [(d.character, d.end_character) for d in bsl219] == [(6, 12), (14, 28)]
+
+    def test_multiline_module_vars_report_each_continuation_name(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Перем
+            Первый,
+            Второй Экспорт;
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        bsl219 = [d for d in diags if d.code == "BSL219"]
+        assert [(d.line, d.character, d.end_character) for d in bsl219] == [
+            (2, 0, 6),
+            (3, 0, 14),
+        ]
+
+    def test_multiline_module_vars_with_inline_descriptions_do_not_report(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Перем
+            Первый, // Описание первой переменной
+            Второй Экспорт; // Описание второй переменной
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        assert "BSL219" not in _codes(diags)
+
+    def test_variable_description_before_compiler_directive_satisfies_rule(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            // Описание переменной
+            &НаКлиенте
+            Перем Глоб;
+            Процедура Тест()
+                Возврат;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL219"})
+        assert "BSL219" not in _codes(diags)
 
 
 # ---------------------------------------------------------------------------

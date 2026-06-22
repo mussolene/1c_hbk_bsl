@@ -185,11 +185,20 @@ restart from chat memory.
    | BSL040 | 0 | 838 | product divergence: legacy ordinary-form `Forms/.../Ext/module.bsl` retained |
    | BSL077 | 2 | 0 | known BSLLS-only parse-error/order-present query blocks |
    | BSL216 | 28 | 0 | known BSLLS unary-minus defect/product divergence |
-   | BSL219 | 36 | 40 | semantic/range bucket remains |
+   | BSL219 | 36 | 40 | semantic/range bucket closed in later current rerun |
 
    BSL013 runtime changed narrowly to report inline commented call-expression
    tails after live code, matching BSLLS-recognized samples without accepting
    standalone directive-only comment groups.
+
+   Later BSL219-specific rerun on the same 31,797-file preserved-source-root
+   corpus produced onec 492, BSLLS 492, exact match by file, range, and code.
+   The closed categories were multiline module variable declarations,
+   description comments adjacent through compiler directives, inline
+   descriptions on multiline continuation rows, and blank-line boundaries for
+   previous-inline group descriptions. The durable taxonomy is expressed only
+   as structural line/layout classes; no private path, source text, or variable
+   name is needed.
 
 12. BSL131 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL131`
@@ -274,6 +283,8 @@ restart from chat memory.
 - `BSL077` keeps skipping SDBL parse-error blocks. The two remaining BSLLS-only
   reports are in parse-error query blocks that also contain an order clause, so
   they are not accepted as a rule bug without a narrower semantic example.
+- `BSL219` is exact in the current preserved-source-root rerun and should not be
+  reopened unless a new corpus or BSLLS version produces a failed contract gate.
 
 ## Next Cheap Tests
 
