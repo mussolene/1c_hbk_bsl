@@ -69,6 +69,10 @@ _CC_ELSE = re.compile(
     r"^\s*(?:ИначеЕсли|ElsIf|Иначе|Else)\b",
     re.IGNORECASE,
 )
+_CC_INLINE_EXCEPT_CLOSE = re.compile(
+    r"^\s*(?:Исключение|Except)\b.*\b(?:КонецПопытки|EndTry)\b",
+    re.IGNORECASE,
+)
 _RE_MCCABE_BRANCH = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf|Иначе|Else|Для|For|ДляКаждого|ForEach|Пока|While|Исключение|Except|Перейти|Goto)\b",
     re.IGNORECASE,
@@ -816,6 +820,8 @@ def _calc_complexity_metrics_from_lines(
         if _CC_OPEN.match(line):
             cognitive += 1 + nesting
             nesting += 1
+            if _CC_INLINE_EXCEPT_CLOSE.match(line_no_strings):
+                nesting = max(0, nesting - 1)
         elif _CC_CLOSE.match(line):
             nesting = max(0, nesting - 1)
         elif _CC_ELSE.match(line):

@@ -155,8 +155,16 @@ restart from chat memory.
    `DiagnosticIgnoranceComputer` range-stack behavior: standalone `off` opens a
    keyed range until matching `on`, trailing `off` on a code line suppresses
    only that line, and unclosed ranges extend to the last token line. Current
-   BSL011 private-batch parity is onec 1314, BSLLS 1314, with 2 BSLLS-only and
-   2 onec-only diagnostics remaining in a sampled file-layout/algorithm bucket.
+   A follow-up synthetic BSLLS 1.0 probe showed that inline empty
+   `Исключение КонецПопытки;` should count the `Исключение` branch but close
+   the nesting on the same line. onec previously leaked that nesting into later
+   statements; `_calc_complexity_metrics_from_lines` now closes inline
+   except/endtry on the same line. Current BSL011 private-batch parity is onec
+   1312, BSLLS 1314, with 2 BSLLS-only diagnostics remaining. The remaining
+   bucket is a known BSLLS string-content issue: BSLLS counts ternary-looking
+   `?(` tokens inside multiline string/query concatenation content, while onec
+   intentionally excludes multiline string content from BSL cognitive
+   complexity.
 
 10. BSL219 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL219`
@@ -184,7 +192,7 @@ restart from chat memory.
 
    | Code | only BSLLS | only onec | status |
    | --- | ---: | ---: | --- |
-   | BSL011 | 2 after range-stack suppression fix | 2 | remaining sampled file-layout/algorithm bucket |
+   | BSL011 | 2 known BSLLS string-content ternary bucket | 0 after inline empty-except nesting fix | product-correct residual divergence |
    | BSL013 | 664 after inline-expression fix | 192 | inline call-expression category fixed; directive/documentation categories intentionally not broadened |
    | BSL014 | 243 | 108 | next high-volume semantic/range bucket |
    | BSL022 | 0 | 0 | exact in preserved-source-root batch |

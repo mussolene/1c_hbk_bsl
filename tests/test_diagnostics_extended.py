@@ -2986,6 +2986,25 @@ class TestBsl011CognitiveComplexity:
         assert len(bsl011) == 1
         assert bsl011[0].message == _rule_msg("BSL011")
 
+    def test_inline_empty_except_closes_nesting_on_same_line(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Простая(Условие)
+                Если Условие Тогда
+                    Если Условие Тогда
+                        Попытка
+                            Результат = 1;
+                        Исключение КонецПопытки;
+                    КонецЕсли;
+                КонецЕсли;
+                Если Условие Тогда
+                    Результат = 2;
+                КонецЕсли;
+                Возврат Результат;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, max_cognitive_complexity=7, select={"BSL011"})
+        assert "BSL011" not in _codes(diags)
+
     def test_bslls_block_on_closes_cognitive_complexity_suppression(
         self,
         tmp_path: Path,
