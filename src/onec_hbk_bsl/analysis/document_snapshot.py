@@ -575,6 +575,42 @@ def _comment_looks_like_embedded_code(text: str) -> bool:
     )
 
 
+def _uncomment_line_text(text: str) -> str:
+    result = text.strip()
+    while result.startswith("//"):
+        result = result[2:].strip()
+    return result
+
+
+def _bsl_text_parses_without_errors(text: str, parser: BslParser) -> bool:
+    tree = parser.parse_content(text)
+    root = getattr(tree, "root_node", None)
+    return bool(
+        root is not None
+        and not getattr(root, "has_error", True)
+        and not parser.extract_errors(tree)
+    )
+
+
+def _comment_lines_node_types(texts: list[str], parser: BslParser) -> set[str]:
+    uncommented = "\n".join(_uncomment_line_text(text) for text in texts).strip()
+    if not uncommented:
+        return set()
+    tree = parser.parse_content(uncommented)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return set()
+    return {getattr(node, "type", "") for node in _ts_walk(root)}
+
+
+def _comment_lines_parse_as_bsl(texts: list[str], parser: BslParser) -> bool:
+    uncommented_lines = [_uncomment_line_text(text) for text in texts]
+    uncommented = "\n".join(uncommented_lines).strip()
+    if not uncommented:
+        return False
+    return _bsl_text_parses_without_errors(uncommented, parser)
+
+
 def _double_quoted_span_containing(line: str, pos: int) -> tuple[int, int] | None:
     idx = 0
     while idx < len(line):
@@ -2049,6 +2085,138 @@ class DocumentSnapshot:
         if self._commented_code_facts is not None:
             return self._commented_code_facts
 
+        if self.is_tree_sitter:
+            self._commented_code_facts = self._commented_code_facts_from_cst()
+            return self._commented_code_facts
+
+        self._commented_code_facts = self._commented_code_facts_from_lines()
+        return self._commented_code_facts
+
+    def _commented_code_facts_from_cst(self) -> list[LineDiagnosticFact]:
+        facts: list[LineDiagnosticFact] = []
+        nodes = self.ts_nodes_for_types({"line_comment"}, walker=_ts_walk)["line_comment"]
+        if not nodes:
+            return facts
+
+        parser = BslParser()
+        group: list[Any] = []
+        group_texts: list[str] = []
+        group_has_example_marker = False
+        in_query_comment = False
+
+        def node_start(node: Any) -> tuple[int, int]:
+            return _ts_point_to_line_lsp_character(self.lines, node.start_point)
+
+        def node_end(node: Any) -> tuple[int, int]:
+            return _ts_point_to_line_lsp_character(self.lines, node.end_point)
+
+        def is_full_line_comment(node: Any) -> bool:
+            row, character = node_start(node)
+            if row < 0 or row >= len(self.lines):
+                return False
+            return self.lines[row][:character].strip() == ""
+
+        def is_before_method_description_group() -> bool:
+            if not group:
+                return False
+            node_types = _comment_lines_node_types(group_texts, parser)
+            if node_types & {
+                "procedure_definition",
+                "function_definition",
+                "PREPROC_IF_KEYWORD",
+                "PREPROC_REGION_KEYWORD",
+            }:
+                return False
+            end_row, _ = node_end(group[-1])
+            idx = end_row + 1
+            while idx < len(self.lines):
+                stripped = self.lines[idx].strip()
+                if not stripped or stripped.startswith("&"):
+                    idx += 1
+                    continue
+                return bool(
+                    re.match(
+                        r"^(?:Процедура|Функция|Procedure|Function)\b",
+                        stripped,
+                        re.IGNORECASE,
+                    )
+                )
+            return False
+
+        def flush_group() -> None:
+            nonlocal group, group_texts, group_has_example_marker, in_query_comment
+            group_has_code = (
+                _comment_lines_parse_as_bsl(group_texts, parser)
+                or in_query_comment
+            )
+            if (
+                not group
+                or not group_has_code
+                or group_has_example_marker
+                or is_before_method_description_group()
+            ):
+                group = []
+                group_texts = []
+                group_has_example_marker = False
+                in_query_comment = False
+                return
+            start_row, start_character = node_start(group[0])
+            end_row, end_character = node_end(group[-1])
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx=start_row,
+                    character=start_character,
+                    end_line_idx=end_row,
+                    end_character=end_character,
+                )
+            )
+            group = []
+            group_texts = []
+            group_has_example_marker = False
+            in_query_comment = False
+
+        def start_group(node: Any, text: str, comment_text: str) -> None:
+            nonlocal group, group_texts, group_has_example_marker, in_query_comment
+            group = [node]
+            group_texts = [text]
+            group_has_example_marker = bool(_RE_COMMENTED_EXAMPLE_MARKER.match(comment_text))
+            is_query_comment = bool(comment_text and _RE_COMMENTED_QUERY_LINE.match(comment_text))
+            in_query_comment = is_query_comment
+
+        for node in sorted(nodes, key=lambda item: item.start_point):
+            text = _ts_node_text(node)
+            comment_text = _uncomment_line_text(text)
+            full_line = is_full_line_comment(node)
+            if not full_line:
+                flush_group()
+                in_query_comment = False
+                continue
+
+            if not group:
+                start_group(node, text, comment_text)
+                continue
+
+            prev = group[-1]
+            prev_row, _ = node_end(prev)
+            row, _ = node_start(node)
+            if row != prev_row + 1:
+                flush_group()
+                in_query_comment = False
+                start_group(node, text, comment_text)
+                continue
+
+            group.append(node)
+            group_texts.append(text)
+            group_has_example_marker = group_has_example_marker or bool(
+                _RE_COMMENTED_EXAMPLE_MARKER.match(comment_text)
+            )
+            is_query_comment = bool(comment_text and _RE_COMMENTED_QUERY_LINE.match(comment_text))
+            in_query_comment = in_query_comment or is_query_comment
+
+        flush_group()
+        return facts
+
+    def _commented_code_facts_from_lines(self) -> list[LineDiagnosticFact]:
         facts: list[LineDiagnosticFact] = []
         group_start: int | None = None
         group_end: int | None = None
@@ -2116,7 +2284,6 @@ class DocumentSnapshot:
                     )
 
         add_group()
-        self._commented_code_facts = facts
         return facts
 
     @property

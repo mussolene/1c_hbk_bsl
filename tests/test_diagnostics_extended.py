@@ -3219,7 +3219,7 @@ class TestBsl013CommentedCode:
         diags = _check(content, tmp_path, select={"BSL013"})
         assert "BSL013" not in _codes(diags)
 
-    def test_single_commented_expression_detected(self, tmp_path: Path) -> None:
+    def test_incomplete_expression_fragment_is_not_commented_code(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Результат = НСтр("ru='До '") +
@@ -3228,22 +3228,18 @@ class TestBsl013CommentedCode:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL013"})
-        bsl013 = [d for d in diags if d.code == "BSL013"]
-        assert len(bsl013) == 1
-        assert bsl013[0].line == 3
-        assert bsl013[0].character == 4
+        assert "BSL013" not in _codes(diags)
 
-    def test_inline_commented_call_expression_detected_like_bslls(self, tmp_path: Path) -> None:
+    def test_inline_non_bsl_expression_fragment_is_not_commented_code(
+        self, tmp_path: Path
+    ) -> None:
         content = """\
             Процедура Тест()
                 ПолныйКод = Код + 1; // shl(ПолныйКод, 6) + (Код & 0x3F)
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL013"})
-        bsl013 = [d for d in diags if d.code == "BSL013"]
-        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl013] == [
-            (2, 25, 2, 60)
-        ]
+        assert "BSL013" not in _codes(diags)
 
     def test_inline_prose_comment_after_code_is_not_commented_code(self, tmp_path: Path) -> None:
         content = """\
@@ -3279,7 +3275,7 @@ class TestBsl013CommentedCode:
         diags = _check(content, tmp_path, select={"BSL013"})
         assert "BSL013" not in _codes(diags)
 
-    def test_embedded_expression_in_comment_group_detected(self, tmp_path: Path) -> None:
+    def test_prose_with_embedded_expression_is_not_commented_code(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 // Специальная обработка автоматически задаваемого номера:
@@ -3288,10 +3284,7 @@ class TestBsl013CommentedCode:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL013"})
-        bsl013 = [d for d in diags if d.code == "BSL013"]
-        assert len(bsl013) == 1
-        assert bsl013[0].line == 2
-        assert bsl013[0].end_line == 3
+        assert "BSL013" not in _codes(diags)
 
     def test_commented_annotation_is_included_with_commented_method(self, tmp_path: Path) -> None:
         content = """\
@@ -3307,7 +3300,7 @@ class TestBsl013CommentedCode:
         assert bsl013[0].line == 1
         assert bsl013[0].end_line == 3
 
-    def test_commented_directive_without_code_is_not_commented_code(
+    def test_commented_preprocessor_block_is_commented_code(
         self, tmp_path: Path
     ) -> None:
         content = """\
@@ -3317,7 +3310,10 @@ class TestBsl013CommentedCode:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL013"})
-        assert "BSL013" not in _codes(diags)
+        bsl013 = [d for d in diags if d.code == "BSL013"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl013] == [
+            (1, 0, 2, 13)
+        ]
 
     def test_markdown_heading_comment_is_not_commented_code(self, tmp_path: Path) -> None:
         content = """\

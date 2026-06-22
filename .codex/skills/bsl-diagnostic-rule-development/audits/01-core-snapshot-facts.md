@@ -233,13 +233,13 @@ restart from chat memory.
    `CommentedCodeDiagnostic` contract. BSLLS applies `CodeRecognizer` with
    threshold `0.9` to individual comment tokens, then reports the whole adjacent
    comment group when one token is recognized as code. Sampled BSLLS-recognized
-   `Если` block, single `Сообщить(...)`, long assignment, and inline call
-   expression cases match onec. Sampled ours-only categories are intentionally
-   retained: short or generic commented procedure groups, inline assignment
-   comments, embedded prose/expression groups, and annotation+method groups.
-   Standalone directive comment groups remain rejected because they
-   overreported heavily on the corpus and lack executable-code structure by
-   themselves.
+   complete full-line `Если` block, single `Сообщить(...)`, assignment, method
+   body, and preprocessor block cases match onec when the uncommented group
+   parses as BSL without `BSL001` or CST root errors. onec intentionally rejects
+   BSLLS lexical/inline recognizer positives, incomplete expression fragments,
+   embedded prose/expression documentation, markdown-style headings, and method
+   description groups. Private BSLLS 1.0 batch after CST parse alignment:
+   onec 666, BSLLS 1198, only-BSLLS 702, only-onec 170.
 
 14. BSL022 sampled taxonomy:
    A local synthetic taxonomy probe compared onec `--no-config --select BSL022`
