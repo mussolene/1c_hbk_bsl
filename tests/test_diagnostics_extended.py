@@ -2564,13 +2564,49 @@ class TestTailParityBatches:
             "<CommonModule><Name>Привилегированный</Name><Privileged>true</Privileged></CommonModule>",
             encoding="utf-8",
         )
+        (root / "CommonModules" / "Привилегированный" / "Ext" / "Module.bsl").write_text(
+            "Процедура Метод() Экспорт\nКонецПроцедуры\n"
+            "Процедура Приватный()\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
         ordinary_module = root / "CommonModules" / "Обычный" / "Ext" / "Module.bsl"
         ordinary_module.write_text(
-            "Процедура НетЭкспорта()\n    Привилегированный.Метод();\nКонецПроцедуры\n",
+            "Процедура НетЭкспорта()\n"
+            "    Привилегированный.Метод();\n"
+            "    Привилегированный.Приватный();\n"
+            "КонецПроцедуры\n",
             encoding="utf-8",
         )
         diags = DiagnosticEngine(select={"BSL231"}).check_file(str(ordinary_module))
-        assert "BSL231" in _codes(diags)
+        bsl231 = [diag for diag in diags if diag.code == "BSL231"]
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [
+            (2, 22, 27)
+        ]
+
+    def test_bsl231_reports_nested_public_calls_inside_privileged_module(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Привилегированный" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Привилегированный.xml").write_text(
+            "<CommonModule><Name>Привилегированный</Name><Privileged>true</Privileged></CommonModule>",
+            encoding="utf-8",
+        )
+        privileged_module = root / "CommonModules" / "Привилегированный" / "Ext" / "Module.bsl"
+        privileged_module.write_text(
+            "Функция ПубличнаяФункция() Экспорт\nКонецФункции\n"
+            "Процедура ПриватнаяПроцедура()\n"
+            "    ПубличнаяФункция();\n"
+            "КонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        diags = DiagnosticEngine(select={"BSL231"}).check_file(str(privileged_module))
+        bsl231 = [diag for diag in diags if diag.code == "BSL231"]
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [
+            (4, 4, 20)
+        ]
 
     def test_bsl213_skips_privileged_index(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

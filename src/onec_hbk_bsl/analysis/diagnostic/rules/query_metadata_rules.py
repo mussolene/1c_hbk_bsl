@@ -425,13 +425,18 @@ def applicable_bsl189_211_213_214_231_232_241_242_246_274_codes(
     if "BSL214" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl"):
         if root is not None:
             out.append("BSL214")
-    if "BSL231" in enabled_set and root is not None and "." in content and "(" in content:
-        out.append("BSL231")
     if root is not None and "/commonmodules/" in low_path:
+        if "BSL231" in enabled_set and "(" in content:
+            current_common = Path(path).parent.parent.name.casefold()
+            privileged_map = _diag._common_module_privileged_map_cached(root)
+            if "." in content or privileged_map.get(current_common, {}).get("privileged"):
+                out.append("BSL231")
         if "BSL213" in enabled_set and "." in content and "(" in content:
             out.append("BSL213")
         if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
             out.append("BSL242")
+    elif "BSL231" in enabled_set and root is not None and "." in content and "(" in content:
+        out.append("BSL231")
 
     return tuple(code for code in enabled if code in out)
 
@@ -645,19 +650,45 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         current_privileged = bool(
             current_common and privileged_map.get(current_common, {}).get("privileged")
         )
+        exported_names_by_module: dict[str, frozenset[str]] = {}
+
+        def exported_names(module_cf: str) -> frozenset[str]:
+            cached = exported_names_by_module.get(module_cf)
+            if cached is None:
+                cached = _diag._common_module_exported_proc_names_for_module_cached(root, module_cf)
+                exported_names_by_module[module_cf] = cached
+            return cached
+
         for idx, _raw_line in enumerate(lines):
             line = clean[idx]
             for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
                 mod_cf = match.group("mod").casefold()
-                if mod_cf == current_common:
-                    continue
+                meth_cf = match.group("meth").casefold()
                 info = privileged_map.get(mod_cf)
-                if info and info.get("privileged") and not current_privileged:
+                if info and info.get("privileged") and meth_cf in exported_names(mod_cf):
                     diags.append(
                         _diag.Diagnostic(
                             file=path,
                             line=idx + 1,
-                            character=match.start("mod"),
+                            character=match.start("meth"),
+                            end_line=idx + 1,
+                            end_character=match.end("meth"),
+                            severity=_diag.Severity.WARNING,
+                            code="BSL231",
+                        )
+                    )
+            if current_privileged and current_common:
+                if re.match(r"\s*(?:Процедура|Функция|Procedure|Function)\b", line, re.IGNORECASE):
+                    continue
+                for match in re.finditer(r"(?<!\.)\b(?P<meth>\w+)\s*\(", line):
+                    meth_cf = match.group("meth").casefold()
+                    if meth_cf not in exported_names(current_common):
+                        continue
+                    diags.append(
+                        _diag.Diagnostic(
+                            file=path,
+                            line=idx + 1,
+                            character=match.start("meth"),
                             end_line=idx + 1,
                             end_character=match.end("meth"),
                             severity=_diag.Severity.WARNING,
