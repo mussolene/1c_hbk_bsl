@@ -32,7 +32,7 @@ This audit is the durable routing checklist for
 - [x] BSL253 - exact private no-signal; CST timeout constructor/assignment contract
 - [x] BSL261 - exact private no-signal; CST SafeMode boolean-use contract
 - [x] BSL269 - parsed LIKE expression contract; private parity classified tail
-- [ ] BSL274 - open
+- [x] BSL274 - exact private no-signal; form data path metadata contract
 
 ## Done Criteria
 
@@ -90,7 +90,7 @@ Routing:
 | BSL253 | metadata runtime | exact no-signal | Closed with CST constructor facts, BSLLS-compatible timeout argument positions, later timeout-property assignment suppression, and private parity `onec=0`, `bslls=0`. |
 | BSL261 | metadata runtime | exact no-signal | Closed with CST SafeMode call facts, implicit boolean-use contract, synthetic positives/negatives, and private parity `onec=0`, `bslls=0`. |
 | BSL269 | query text | parity-classified | Closed with unescaped SDBL `like_expression` facts, original-CST range mapping for matching starts, and private parity improved to `onec=310`, `bslls=304`, `only_bslls=114`, `only_onec=120`. |
-| BSL274 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
+| BSL274 | metadata XML | exact no-signal | Closed with form `DataPath` unresolved-marker contract, managed-application scan for forms without modules, synthetic positives/negatives, and private parity `onec=0`, `bslls=0`. |
 
 Next-order policy:
 - Close no-signal metadata rules only through contract plus mini fixture; do not

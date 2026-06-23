@@ -1323,6 +1323,93 @@ class TestTailParityBatches:
         diags_app = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags_app)
 
+    def test_bsl274_reports_form_module_wrong_data_path(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        form_ext = root / "Catalogs" / "CatalogA" / "Forms" / "FormA" / "Ext"
+        form_ext.mkdir(parents=True)
+        (root / "Catalogs" / "CatalogA.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>CatalogA</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        (form_ext / "Form.xml").write_text(
+            "<Form><Items><Item><DataPath>~Object.Description</DataPath></Item></Items></Form>",
+            encoding="utf-8",
+        )
+        module = form_ext / "Module.bsl"
+        module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = [d for d in DiagnosticEngine(select={"BSL274"}).check_file(str(module)) if d.code == "BSL274"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 0, 1, 17),
+        ]
+        assert diags[0].severity is Severity.ERROR
+
+    def test_bsl274_skips_valid_data_path_and_non_form_module(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        form_ext = root / "Catalogs" / "CatalogA" / "Forms" / "FormA" / "Ext"
+        form_ext.mkdir(parents=True)
+        (root / "Catalogs" / "CatalogA.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>CatalogA</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        (form_ext / "Form.xml").write_text(
+            "<Form><Items><Item><DataPath>Object.Description</DataPath></Item></Items></Form>",
+            encoding="utf-8",
+        )
+        form_module = form_ext / "Module.bsl"
+        form_module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+        manager_module = root / "Catalogs" / "CatalogA" / "Ext" / "ManagerModule.bsl"
+        manager_module.parent.mkdir(parents=True)
+        manager_module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        assert "BSL274" not in _codes(DiagnosticEngine(select={"BSL274"}).check_file(str(form_module)))
+        assert "BSL274" not in _codes(DiagnosticEngine(select={"BSL274"}).check_file(str(manager_module)))
+
+    def test_bsl274_reports_managed_application_module_for_form_without_module(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        with_module_ext = root / "Catalogs" / "CatalogA" / "Forms" / "WithModule" / "Ext"
+        without_module_ext = root / "Catalogs" / "CatalogA" / "Forms" / "WithoutModule" / "Ext"
+        with_module_ext.mkdir(parents=True)
+        without_module_ext.mkdir(parents=True)
+        (root / "Catalogs" / "CatalogA.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>CatalogA</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        for form_ext in (with_module_ext, without_module_ext):
+            (form_ext / "Form.xml").write_text(
+                "<Form><Items><Item><DataPath>~Object.Description</DataPath></Item></Items></Form>",
+                encoding="utf-8",
+            )
+        (with_module_ext / "Module.bsl").write_text(
+            "Процедура Метод()\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        app_module = root / "Ext" / "ManagedApplicationModule.bsl"
+        app_module.parent.mkdir(parents=True)
+        app_module.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL274"}).check_file(str(app_module))
+            if d.code == "BSL274"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 0, 1, 34),
+        ]
+
     def test_metadata_object_name_length_uses_strict_80_character_threshold(
         self, tmp_path: Path
     ) -> None:

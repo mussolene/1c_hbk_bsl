@@ -818,6 +818,27 @@ def run_bsl174_187_236_238_query_metadata_pool(
     return diags
 
 
+def _bsl274_form_xml_has_wrong_data_path(_diag: Any, form_xml: Path) -> bool:
+    form_text = _diag._read_text_cached(str(form_xml))
+    return any(
+        match.group(1).strip().startswith("~")
+        for match in _diag._RE_XML_DATAPATH.finditer(form_text)
+    )
+
+
+def _bsl274_form_xmls_without_modules(config_root: str) -> list[Path]:
+    root = Path(config_root)
+    form_xmls = [
+        *root.glob("*/**/Forms/*/Ext/Form.xml"),
+        *root.glob("CommonForms/*/Ext/Form.xml"),
+    ]
+    result: list[Path] = []
+    for form_xml in sorted(set(form_xmls)):
+        if not (form_xml.parent / "Module.bsl").exists():
+            result.append(form_xml)
+    return result
+
+
 def applicable_bsl189_211_213_214_231_232_241_242_246_274_codes(
     path: str,
     content: str,
@@ -834,8 +855,11 @@ def applicable_bsl189_211_213_214_231_232_241_242_246_274_codes(
         if code in enabled_set and object_xml is not None:
             out.append(code)
 
-    if "BSL274" in enabled_set and _diag.path_is_likely_form_module_bsl(path):
-        out.append("BSL274")
+    if "BSL274" in enabled_set:
+        if _diag.path_is_likely_form_module_bsl(path):
+            out.append("BSL274")
+        elif low_path.endswith("/ext/managedapplicationmodule.bsl") and root is not None:
+            out.append("BSL274")
     if "BSL246" in enabled_set and low_path.endswith("/ext/managedapplicationmodule.bsl"):
         if root is not None:
             out.append("BSL246")
@@ -975,24 +999,30 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     )
                     break
 
-    if "BSL274" in enabled_set and _diag.path_is_likely_form_module_bsl(path):
-        form_xml = _diag._current_form_xml_path(path)
-        if form_xml is not None:
-            form_text = _diag._read_text_cached(str(form_xml))
-            for match in _diag._RE_XML_DATAPATH.finditer(form_text):
-                if match.group(1).startswith("~"):
-                    diags.append(
-                        _diag.Diagnostic(
-                            file=path,
-                            line=1,
-                            character=0,
-                            end_line=1,
-                            end_character=max(len(line_text.rstrip()), 1),
-                            severity=_diag.Severity.ERROR,
-                            code="BSL274",
-                        )
-                    )
-                    break
+    if "BSL274" in enabled_set:
+        has_wrong_data_path = False
+        if _diag.path_is_likely_form_module_bsl(path):
+            form_xml = _diag._current_form_xml_path(path)
+            has_wrong_data_path = form_xml is not None and _bsl274_form_xml_has_wrong_data_path(
+                _diag, form_xml
+            )
+        elif low_path.endswith("/ext/managedapplicationmodule.bsl") and root is not None:
+            has_wrong_data_path = any(
+                _bsl274_form_xml_has_wrong_data_path(_diag, form_xml)
+                for form_xml in _bsl274_form_xmls_without_modules(root)
+            )
+        if has_wrong_data_path:
+            diags.append(
+                _diag.Diagnostic(
+                    file=path,
+                    line=1,
+                    character=0,
+                    end_line=1,
+                    end_character=max(len(line_text.rstrip()), 1),
+                    severity=_diag.Severity.ERROR,
+                    code="BSL274",
+                )
+            )
 
     if (
         "BSL246" in enabled_set
