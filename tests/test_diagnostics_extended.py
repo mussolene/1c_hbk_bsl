@@ -2960,6 +2960,48 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
         assert "BSL246" in _codes(diags)
 
+    def test_bsl246_full_access_roles_are_clean(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        roles = root / "Roles"
+        roles.mkdir()
+        (roles / "FullAccess.xml").write_text(
+            "<Role><SetForNewObjects>true</SetForNewObjects></Role>",
+            encoding="utf-8",
+        )
+        (roles / "ПолныеПрава.xml").write_text(
+            "<Role><SetForNewObjects>true</SetForNewObjects></Role>",
+            encoding="utf-8",
+        )
+        app_module = root / "Ext" / "ManagedApplicationModule.bsl"
+        app_module.parent.mkdir(parents=True)
+        app_module.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n", encoding="utf-8"
+        )
+
+        diags = DiagnosticEngine(select={"BSL246"}).check_file(str(app_module))
+
+        assert "BSL246" not in _codes(diags)
+
+    def test_bsl246_non_managed_module_is_clean(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        roles = root / "Roles"
+        roles.mkdir()
+        (roles / "Users.xml").write_text(
+            "<Role><SetForNewObjects>true</SetForNewObjects></Role>",
+            encoding="utf-8",
+        )
+        ordinary_module = root / "CommonModules" / "Обычный" / "Ext" / "Module.bsl"
+        ordinary_module.parent.mkdir(parents=True)
+        ordinary_module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL246"}).check_file(str(ordinary_module))
+
+        assert "BSL246" not in _codes(diags)
+
     def test_bsl231_skips_proc_name_index(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

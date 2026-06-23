@@ -1328,7 +1328,7 @@ RULE_METADATA: dict[str, dict] = {
         "name": "SetPermissionsForNewObjects",
         "description": "The check box «Set permissions for new objects» should only be "
         "selected for the FullAccess role",
-        "severity": "WARNING",
+        "severity": "ERROR",
         "tags": ["security", "access-control"],
         "implemented": True,
     },
