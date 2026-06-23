@@ -7280,6 +7280,40 @@ class TestBsl235QueryParseError:
         assert diags[0].severity is Severity.WARNING
         assert diags[0].message == _rule_msg("BSL235")
 
+    def test_incomplete_bare_select_is_not_a_query_parse_candidate(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ ";
+        """
+        assert "BSL235" not in _codes(_check(content, tmp_path, select={"BSL235"}))
+
+    def test_partial_sdbl_query_candidate_with_trailing_comma_reports(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка,
+            |ИЗ
+            |   Документ.РасходнаяНакладная КАК Т";
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL235"}) if d.code == "BSL235"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 16, 4, 37),
+        ]
+
+    def test_dynamic_select_prefix_without_candidate_body_is_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ "
+                + Поля
+                + " ИЗ " + Источник;
+        """
+        assert "BSL235" not in _codes(_check(content, tmp_path, select={"BSL235"}))
+
+    def test_from_fragment_without_select_candidate_is_skipped(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "Документ.РасходнаяНакладная КАК Т";
+        """
+        assert "BSL235" not in _codes(_check(content, tmp_path, select={"BSL235"}))
+
 
 # ---------------------------------------------------------------------------
 # BSL210 — LogicalOrInTheWhereSectionOfQuery

@@ -21,15 +21,23 @@ def _query_block_has_escaped_empty_comparison_tail(last_content: str) -> bool:
 
 
 def _bsl235_diag_from_sdbl_tree(path: str, block: Any) -> Any | None:
-    if not getattr(block, "sdbl_has_errors", False):
-        return None
-    tree = getattr(block, "sdbl_tree", None)
+    tree, byte_maps = _parse_unescaped_sdbl_query_text(block)
     root = getattr(tree, "root_node", None)
     if root is None:
         return None
+    if not getattr(root, "has_error", False):
+        return None
+    if not _sdbl_error_tree_has_query_candidate(root):
+        return None
+    if not _sdbl_error_tree_has_relevant_error(root):
+        return None
 
-    start_line, start_char = block.original_lsp_position(root.start_point[0], root.start_point[1])
-    end_line, end_char = block.original_lsp_position(root.end_point[0], root.end_point[1])
+    start_line, start_char = _unescaped_lsp_position(
+        block, byte_maps, root.start_point[0], root.start_point[1]
+    )
+    end_line, end_char = _unescaped_lsp_position(
+        block, byte_maps, root.end_point[0], root.end_point[1]
+    )
     if (end_line, end_char) <= (start_line, start_char):
         return None
 
@@ -43,6 +51,122 @@ def _bsl235_diag_from_sdbl_tree(path: str, block: Any) -> Any | None:
         severity=_diag.Severity.WARNING,
         code="BSL235",
     )
+
+
+def _sdbl_error_tree_has_query_candidate(root: Any) -> bool:
+    """Return whether a broken SDBL CST still contains a meaningful query shape."""
+
+    def walk(node: Any):
+        yield node
+        for child in getattr(node, "children", ()) or ():
+            yield from walk(child)
+
+    def has_non_missing_descendant(node: Any, node_type: str) -> bool:
+        return any(
+            getattr(child, "type", None) == node_type and not getattr(child, "is_missing", False)
+            for child in walk(node)
+        )
+
+    def has_present_descendant(node: Any, node_type: str) -> bool:
+        return any(
+            getattr(child, "type", None) == node_type
+            and not getattr(child, "is_missing", False)
+            and getattr(child, "end_point", (0, 0)) > getattr(child, "start_point", (0, 0))
+            for child in walk(node)
+        )
+
+    first_present_child = next(
+        (
+            child
+            for child in getattr(root, "children", ()) or ()
+            if getattr(child, "end_point", (0, 0)) > getattr(child, "start_point", (0, 0))
+        ),
+        None,
+    )
+    if getattr(first_present_child, "type", None) != "query":
+        return False
+
+    for node in walk(root):
+        if getattr(node, "type", None) != "query":
+            continue
+        if not has_non_missing_descendant(node, "SELECT_KEYWORD"):
+            continue
+        if has_present_descendant(node, "from_clause"):
+            return True
+        if has_present_descendant(node, "field"):
+            return True
+    return False
+
+
+def _sdbl_error_tree_has_relevant_error(root: Any) -> bool:
+    unsupported_error_keywords = {
+        "VALUE_KEYWORD",
+        "TYPE_KEYWORD",
+        "REFERENCE_KEYWORD",
+        "IN_KEYWORD",
+        "DESTROY_KEYWORD",
+        "NOT_KEYWORD",
+        "AND_KEYWORD",
+        "UNION_KEYWORD",
+        "JOIN_KEYWORD",
+        "INNER_KEYWORD",
+        "AS_KEYWORD",
+        "GROUP_KEYWORD",
+        "BY_KEYWORD",
+        "DATE_TYPE_KEYWORD",
+        "IS_KEYWORD",
+        "NULL_KEYWORD",
+    }
+    allowed_error_keywords = {
+        "FROM_KEYWORD",
+        "WHERE_KEYWORD",
+        "STRING_TYPE_KEYWORD",
+    }
+    punctuation_noise = {";", "%", "[", "]"}
+
+    errors: list[Any] = []
+    missing = False
+    error_keywords: set[str] = set()
+    relevant_visible_error = False
+
+    def walk(node: Any):
+        yield node
+        for child in getattr(node, "children", ()) or ():
+            yield from walk(child)
+
+    for node in walk(root):
+        if getattr(node, "is_missing", False):
+            missing = True
+        if getattr(node, "type", None) == "ERROR":
+            errors.append(node)
+
+    if missing:
+        return True
+
+    for error in errors:
+        text = getattr(error, "text", b"")
+        if isinstance(text, bytes):
+            error_text = text.decode("utf-8", errors="replace")
+        else:
+            error_text = str(text)
+        error_text_upper = error_text.upper()
+        if "%" in error_text or "РАЗРЕШЕННЫЕ" in error_text_upper or "ALLOWED" in error_text_upper:
+            continue
+        if error_text.strip() and set(error_text.strip()) <= punctuation_noise:
+            continue
+        relevant_visible_error = True
+        for node in walk(error):
+            node_type = getattr(node, "type", None)
+            if node_type and node_type.endswith("_KEYWORD"):
+                error_keywords.add(node_type)
+
+    if not relevant_visible_error:
+        return False
+    if error_keywords & allowed_error_keywords:
+        return True
+    if error_keywords and error_keywords <= unsupported_error_keywords:
+        return False
+    return True
 
 
 def _bsl235_diag_from_content_lines(
@@ -219,7 +343,7 @@ def run_bsl220_235_269_query_text_diagnostics(
                 [head for _, _, _, head, _ in content_lines]
             ) or _has_plain_tail_parse_error(content_lines)
             sdbl_diag = _bsl235_diag_from_sdbl_tree(path, block)
-            if has_legacy_parse_error and sdbl_diag is not None:
+            if sdbl_diag is not None:
                 diags.append(_bsl235_diag_from_content_lines(path, content_lines))
             elif _query_block_has_root(block):
                 pass
@@ -248,34 +372,6 @@ def run_bsl220_235_269_query_text_diagnostics(
             content_lines = list(_diag._iter_query_text_content_lines(start_idx, block_lines))
             if not content_lines:
                 continue
-
-            has_escaped_empty_query_string = _query_block_has_escaped_empty_query_string(
-                content_lines
-            )
-            last_content = content_lines[-1][2]
-            if (
-                "BSL235" in enabled
-                and not has_escaped_empty_query_string
-                and not _query_block_has_escaped_empty_comparison_tail(last_content)
-                and (
-                    not _diag._query_has_balanced_parens(
-                        [head for _, _, _, head, _ in content_lines]
-                    )
-                    or _has_plain_tail_parse_error(content_lines)
-                )
-            ):
-                line_no, content_base, _content, head, _ = content_lines[-1]
-                diags.append(
-                    _diag.Diagnostic(
-                        file=path,
-                        line=line_no,
-                        character=content_base,
-                        end_line=line_no,
-                        end_character=content_base + len(head),
-                        severity=_diag.Severity.WARNING,
-                        code="BSL235",
-                    )
-                )
 
             for line_no, content_base, _content, head, _ended_query in content_lines:
                 if "BSL269" in enabled:
