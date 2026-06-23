@@ -430,6 +430,75 @@ def _bsl201_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
     return diags
 
 
+def _sdbl_bsl206_nested_query_source_nodes(root: Any) -> list[Any]:
+    out: list[Any] = []
+
+    def has_child_type(node: Any, node_type: str) -> bool:
+        return any(getattr(child, "type", None) == node_type for child in getattr(node, "children", ()) or ())
+
+    def walk(node: Any, ancestors: tuple[Any, ...]) -> None:
+        if getattr(node, "type", None) == "nested_query_source":
+            parent = ancestors[-1] if ancestors else None
+            join_clause = next(
+                (ancestor for ancestor in reversed(ancestors) if getattr(ancestor, "type", None) == "join_clause"),
+                None,
+            )
+            in_join_clause = join_clause is not None
+            table_source_has_join = (
+                getattr(parent, "type", None) == "table_source" and has_child_type(parent, "join_clause")
+            )
+            if join_clause is not None and has_child_type(join_clause, "ERROR"):
+                return
+            if in_join_clause or table_source_has_join:
+                out.append(node)
+                return
+        next_ancestors = (*ancestors, node)
+        for child in getattr(node, "children", ()) or ():
+            walk(child, next_ancestors)
+
+    walk(root, ())
+    return out
+
+
+def _sdbl_nested_query_source_range_node(node: Any) -> Any:
+    for child in getattr(node, "children", ()) or ():
+        if getattr(child, "type", None) == "query":
+            return child
+    return node
+
+
+def _bsl206_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
+    tree, byte_maps = _parse_unescaped_sdbl_query_text(block)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+
+    _diag = _diag_module()
+    diags: list[Any] = []
+    for node in _sdbl_bsl206_nested_query_source_nodes(root):
+        range_node = _sdbl_nested_query_source_range_node(node)
+        start_line, start_character = _unescaped_lsp_position(
+            block, byte_maps, range_node.start_point[0], range_node.start_point[1]
+        )
+        end_line, end_character = _unescaped_lsp_position(
+            block, byte_maps, range_node.end_point[0], range_node.end_point[1]
+        )
+        if (end_line, end_character) <= (start_line, start_character):
+            continue
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line + 1,
+                character=start_character,
+                end_line=end_line + 1,
+                end_character=end_character,
+                severity=_diag.Severity.WARNING,
+                code="BSL206",
+            )
+        )
+    return diags
+
+
 def _query_block_has_root(block: Any) -> bool:
     tree = getattr(block, "sdbl_tree", None)
     return getattr(tree, "root_node", None) is not None
@@ -623,6 +692,7 @@ def run_bsl206_207_209_query_join_diagnostics(
                 start_idx,
                 list(block_lines),
                 list(_diag._iter_query_text_content_lines(start_idx, block_lines)),
+                None,
             )
             for start_idx, block_lines in _diag._iter_query_text_blocks(lines)
         )
@@ -632,13 +702,16 @@ def run_bsl206_207_209_query_join_diagnostics(
                 block.start_idx,
                 list(block.block_lines),
                 _diag._query_block_content_line_tuples(block),
+                block,
             )
             for block in query_blocks
         )
 
-    for _start_idx, block_lines, content_lines in blocks:
+    for _start_idx, block_lines, content_lines, block in blocks:
         if not any(_diag._RE_QUERY_JOIN_KEYWORD.search(line) for line in block_lines):
             continue
+        if "BSL206" in enabled and block is not None:
+            diags.extend(_bsl206_diags_from_sdbl_tree(path, block))
 
         pending_datasource = False
         pending_join_datasource = False
@@ -684,7 +757,7 @@ def run_bsl206_207_209_query_join_diagnostics(
             )
 
             if pending_datasource or same_line_datasource:
-                if "BSL206" in enabled and join_datasource:
+                if "BSL206" in enabled and join_datasource and block is None:
                     subquery_match = _diag._RE_QUERY_DATASOURCE_SUBQUERY.search(head)
                     if subquery_match:
                         diags.append(
