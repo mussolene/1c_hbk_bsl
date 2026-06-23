@@ -19,7 +19,7 @@ This audit is the durable routing checklist for
 - [x] BSL211 - exact no-signal; strict 80-character metadata-name contract
 - [x] BSL213 - exact no-signal; exported common-module method contract
 - [x] BSL214 - exact no-signal; session-module event subscription contract
-- [ ] BSL220 - open
+- [x] BSL220 - exact private parity; unescaped SDBL cross-line string contract
 - [ ] BSL231 - open
 - [ ] BSL232 - open
 - [ ] BSL235 - open
@@ -77,7 +77,7 @@ Routing:
 | BSL211 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL213 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL214 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
-| BSL220 | query text | ours-only mismatch | Investigate multiline query string semantics. |
+| BSL220 | query text | exact | Closed with BSL-unescaped SDBL cross-line string facts; private parity 31,797 files exact. |
 | BSL231 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL232 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL235 | query text | two-sided mismatch | Investigate query parse error recovery and range policy. |

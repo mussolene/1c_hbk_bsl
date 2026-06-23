@@ -62,6 +62,106 @@ def _bsl235_diag_from_content_lines(
     )
 
 
+def _unescape_bsl_query_head(head: str) -> tuple[str, list[int]]:
+    """Return SDBL text for a query line and UTF-8 byte offset to BSL column map."""
+
+    out: list[str] = []
+    byte_to_original_col = [0]
+    idx = 0
+    while idx < len(head):
+        if head[idx] == '"' and idx + 1 < len(head) and head[idx + 1] == '"':
+            char = '"'
+            original_end = idx + 1
+            idx += 2
+        else:
+            char = head[idx]
+            original_end = idx + 1
+            idx += 1
+        out.append(char)
+        encoded_len = len(char.encode("utf-8"))
+        byte_to_original_col.extend([original_end] * encoded_len)
+    return "".join(out), byte_to_original_col
+
+
+def _parse_unescaped_sdbl_query_text(block: Any) -> tuple[Any | None, list[list[int]]]:
+    from onec_hbk_bsl.analysis import document_snapshot as _snapshot
+
+    if _snapshot._SDBL_LANGUAGE is None or _snapshot._TsParser is None:
+        return None, []
+
+    unescaped_lines: list[str] = []
+    byte_maps: list[list[int]] = []
+    for line in getattr(block, "content_lines", ()) or ():
+        unescaped, byte_map = _unescape_bsl_query_head(line.head)
+        unescaped_lines.append(unescaped)
+        byte_maps.append(byte_map)
+    query_text = "\n".join(unescaped_lines)
+    if not query_text.strip():
+        return None, []
+
+    parser = _snapshot._TsParser(_snapshot._SDBL_LANGUAGE)
+    return parser.parse(query_text.encode("utf-8")), byte_maps
+
+
+def _unescaped_lsp_position(
+    block: Any,
+    byte_maps: list[list[int]],
+    row: int,
+    utf8_col: int,
+) -> tuple[int, int]:
+    if row < 0 or row >= len(getattr(block, "content_lines", ())):
+        return getattr(block, "start_idx", 0), 0
+    line = block.content_lines[row]
+    byte_map = byte_maps[row] if row < len(byte_maps) else []
+    original_col = byte_map[min(max(utf8_col, 0), len(byte_map) - 1)] if byte_map else 0
+    return line.line_no - 1, line.content_base + original_col
+
+
+def _sdbl_string_nodes_from_root(root: Any) -> list[Any]:
+    out: list[Any] = []
+
+    def walk(node: Any) -> None:
+        if getattr(node, "type", None) == "string":
+            out.append(node)
+            return
+        for child in getattr(node, "children", ()) or ():
+            walk(child)
+
+    walk(root)
+    return out
+
+
+def _bsl220_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
+    tree, byte_maps = _parse_unescaped_sdbl_query_text(block)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+
+    _diag = _diag_module()
+    diags: list[Any] = []
+    for node in _sdbl_string_nodes_from_root(root):
+        if node.start_point[0] == node.end_point[0]:
+            continue
+        start_line, start_character = _unescaped_lsp_position(
+            block, byte_maps, node.start_point[0], node.start_point[1] + 1
+        )
+        end_line, end_character = _unescaped_lsp_position(
+            block, byte_maps, node.end_point[0], node.end_point[1]
+        )
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line + 1,
+                character=start_character,
+                end_line=end_line + 1,
+                end_character=end_character,
+                severity=_diag.Severity.INFORMATION,
+                code="BSL220",
+            )
+        )
+    return diags
+
+
 def _query_block_has_root(block: Any) -> bool:
     tree = getattr(block, "sdbl_tree", None)
     return getattr(tree, "root_node", None) is not None
@@ -126,27 +226,10 @@ def run_bsl220_235_269_query_text_diagnostics(
             elif has_legacy_parse_error:
                 diags.append(_bsl235_diag_from_content_lines(path, content_lines))
 
-        for line_no, content_base, content, head, _ended_query in content_lines:
-            if "BSL220" in enabled:
-                multi_match = re.search(r'"{4,}', content)
-                if multi_match:
-                    if _query_block_has_escaped_empty_comparison_tail(content):
-                        continue
-                    run = multi_match.group(0)
-                    if len(run) == 4:
-                        continue
-                    diags.append(
-                        _diag.Diagnostic(
-                            file=path,
-                            line=line_no,
-                            character=content_base + multi_match.start(),
-                            end_line=line_no,
-                            end_character=content_base + multi_match.end(),
-                            severity=_diag.Severity.INFORMATION,
-                            code="BSL220",
-                        )
-                    )
+        if "BSL220" in enabled:
+            diags.extend(_bsl220_diags_from_sdbl_tree(path, block))
 
+        for line_no, content_base, _content, head, _ended_query in content_lines:
             if "BSL269" in enabled:
                 for match in _diag._RE_QUERY_LIKE_OPERATOR.finditer(head):
                     diags.append(
@@ -194,27 +277,7 @@ def run_bsl220_235_269_query_text_diagnostics(
                     )
                 )
 
-            for line_no, content_base, content, head, _ended_query in content_lines:
-                if "BSL220" in enabled:
-                    multi_match = re.search(r'"{4,}', content)
-                    if multi_match:
-                        if _query_block_has_escaped_empty_comparison_tail(content):
-                            continue
-                        run = multi_match.group(0)
-                        if len(run) == 4:
-                            continue
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=content_base + multi_match.start(),
-                                end_line=line_no,
-                                end_character=content_base + multi_match.end(),
-                                severity=_diag.Severity.INFORMATION,
-                                code="BSL220",
-                            )
-                        )
-
+            for line_no, content_base, _content, head, _ended_query in content_lines:
                 if "BSL269" in enabled:
                     for match in _diag._RE_QUERY_LIKE_OPERATOR.finditer(head):
                         diags.append(

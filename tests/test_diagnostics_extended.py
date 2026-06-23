@@ -6974,6 +6974,52 @@ class TestBsl055ConsecutiveBlankLines:
 
 
 # ---------------------------------------------------------------------------
+# BSL220 — MultilineStringInQuery
+# ---------------------------------------------------------------------------
+
+
+class TestBsl220MultilineStringInQuery:
+    def test_upstream_shaped_multiline_string_facts(self, tmp_path: Path) -> None:
+        content = '''\
+            Процедура Тест()
+                ТекстЗапроса =
+                "ВЫБРАТь
+                |   Поле КАК Поле,
+                |   "" КАК ПустаяСтрока,
+                |   "" КАК ЕщеПустаяСтрока,
+                |   "" как ТретьяПустаяСтрока,
+                |   ЕСТЬNULL(Поле, """") КАК ПолеНеВСтроке
+                |ИЗ
+                |   Справочник.Справочник";
+
+                Запрос = Новый Запрос;
+                Запрос.Текст = "ВЫБРАТЬ
+                |   Таблица.Ссылка КАК Ссылка,
+                |   ЕСТЬNULL(Таблица.Код, "") КАК Код,
+                |   ЕСТЬNULL(Таблица.Наименование, "") КАК Наименование
+                |ИЗ
+                |   Справочник.Номенклатура КАК Таблица";
+            КонецПроцедуры
+        '''
+        diags = [diag for diag in _check(content, tmp_path, select={"BSL220"}) if diag.code == "BSL220"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (5, 9, 6, 9),
+        ]
+
+    def test_escaped_empty_query_string_is_not_multiline_string(self, tmp_path: Path) -> None:
+        content = '''\
+            Процедура Тест()
+                ТекстЗапроса =
+                "ВЫБРАТЬ
+                |   """""""" КАК Пусто,
+                |   0 КАК Количество";
+            КонецПроцедуры
+        '''
+        assert "BSL220" not in _codes(_check(content, tmp_path, select={"BSL220"}))
+
+
+# ---------------------------------------------------------------------------
 # BSL149 — AssignAliasFieldsInQuery
 # ---------------------------------------------------------------------------
 
