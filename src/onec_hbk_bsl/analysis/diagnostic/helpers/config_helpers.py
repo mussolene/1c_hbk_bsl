@@ -29,7 +29,7 @@ _RE_XML_SET_FOR_NEW_OBJECTS = re.compile(
 )
 _RE_XML_METHOD_NAME = re.compile(r"<MethodName>\s*([^<]+?)\s*</MethodName>", re.IGNORECASE)
 _RE_XML_EVENT_HANDLER = re.compile(
-    r"<Handler>\s*([^<]+?)\s*</Handler>|<Method>\s*([^<]+?)\s*</Method>",
+    r"<Handler>\s*([^<]*)\s*</Handler>|<Method>\s*([^<]*)\s*</Method>",
     re.IGNORECASE,
 )
 _RE_XML_DATAPATH = re.compile(r"<DataPath>\s*([^<]+?)\s*</DataPath>", re.IGNORECASE)
@@ -320,19 +320,36 @@ def config_has_protected_modules_cached(config_root: str) -> bool:
 @functools.lru_cache(maxsize=128)
 def event_subscription_handlers_by_module_cached(config_root: str) -> dict[str, tuple[str, ...]]:
     handlers: dict[str, list[str]] = defaultdict(list)
+    for _name, handler in event_subscription_handlers_cached(config_root):
+        split = split_common_module_method_path(handler)
+        if split is None:
+            continue
+        module_name, _meth = split
+        handlers[module_name.casefold()].append(handler)
+    return {module_name: tuple(values) for module_name, values in handlers.items()}
+
+
+@functools.lru_cache(maxsize=128)
+def event_subscription_handlers_cached(config_root: str) -> tuple[tuple[str, str], ...]:
+    handlers: list[tuple[str, str]] = []
     subs_dir = Path(config_root) / "EventSubscriptions"
     if not subs_dir.exists():
-        return {}
+        return ()
     for xml_file in subs_dir.glob("*.xml"):
         text = read_text_cached(str(xml_file))
-        for match in _RE_XML_EVENT_HANDLER.finditer(text):
-            handler = (match.group(1) or match.group(2) or "").strip()
-            if "." not in handler:
-                continue
-            module_name, meth = handler.split(".", 1)
-            if module_name and meth:
-                handlers[module_name.casefold()].append(handler)
-    return {module_name: tuple(values) for module_name, values in handlers.items()}
+        match = _RE_XML_EVENT_HANDLER.search(text)
+        handler = (match.group(1) or match.group(2) or "").strip() if match else ""
+        handlers.append((xml_file.stem, handler))
+    return tuple(handlers)
+
+
+def split_common_module_method_path(value: str) -> tuple[str, str] | None:
+    parts = [part.strip() for part in value.split(".") if part.strip()]
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    if len(parts) == 3 and parts[0].casefold() in {"commonmodule", "общиймодуль"}:
+        return parts[1], parts[2]
+    return None
 
 
 @functools.lru_cache(maxsize=128)

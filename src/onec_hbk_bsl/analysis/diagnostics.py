@@ -157,6 +157,12 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     event_subscription_handlers_by_module_cached as _event_subscription_handlers_by_module_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    event_subscription_handlers_cached as _event_subscription_handlers_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    split_common_module_method_path as _split_common_module_method_path,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     workspace_metadata_name_index_cached as _workspace_metadata_name_index_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (

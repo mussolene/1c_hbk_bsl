@@ -1591,9 +1591,84 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL213", "BSL214", "BSL231", "BSL242"}).check_file(
             str(ordinary_module)
         )
-        assert {"BSL213", "BSL214", "BSL231", "BSL242"} <= set(_codes(diags))
+        assert {"BSL213", "BSL231", "BSL242"} <= set(_codes(diags))
+        assert "BSL214" not in _codes(diags)
         session_diags = DiagnosticEngine(select={"BSL232"}).check_file(str(session_module))
         assert "BSL232" in _codes(session_diags)
+
+    def test_bsl214_reports_event_subscription_handler_defects_on_session_module(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "EventSubscriptions").mkdir(parents=True)
+        for module_name, server in (
+            ("ValidTarget", True),
+            ("NonServerTarget", False),
+            ("PrivateTarget", True),
+        ):
+            (root / "CommonModules" / module_name / "Ext").mkdir(parents=True)
+            server_xml = "<Server>true</Server>" if server else ""
+            (root / "CommonModules" / f"{module_name}.xml").write_text(
+                f"<CommonModule><Name>{module_name}</Name>{server_xml}</CommonModule>",
+                encoding="utf-8",
+            )
+        (root / "CommonModules" / "ValidTarget" / "Ext" / "Module.bsl").write_text(
+            "Процедура Exists() Экспорт\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "NonServerTarget" / "Ext" / "Module.bsl").write_text(
+            "Процедура Exists() Экспорт\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "PrivateTarget" / "Ext" / "Module.bsl").write_text(
+            "Процедура Hidden()\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        subscriptions = {
+            "Empty": "<EventSubscription><Handler></Handler></EventSubscription>",
+            "Malformed": "<EventSubscription><Handler>Broken</Handler></EventSubscription>",
+            "MissingModule": (
+                "<EventSubscription><Handler>MissingTarget.Exists</Handler></EventSubscription>"
+            ),
+            "NonServer": (
+                "<EventSubscription><Handler>NonServerTarget.Exists</Handler></EventSubscription>"
+            ),
+            "MissingMethod": (
+                "<EventSubscription><Handler>ValidTarget.Absent</Handler></EventSubscription>"
+            ),
+            "PrivateMethod": (
+                "<EventSubscription><Handler>PrivateTarget.Hidden</Handler></EventSubscription>"
+            ),
+            "Valid": (
+                "<EventSubscription><Handler>CommonModule.ValidTarget.Exists</Handler></EventSubscription>"
+            ),
+        }
+        for name, xml in subscriptions.items():
+            (root / "EventSubscriptions" / f"{name}.xml").write_text(xml, encoding="utf-8")
+
+        session_module = root / "Ext" / "SessionModule.bsl"
+        session_module.parent.mkdir(parents=True)
+        session_module.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n", encoding="utf-8"
+        )
+        common_module = root / "CommonModules" / "ValidTarget" / "Ext" / "Module.bsl"
+
+        session_diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL214"}).check_file(str(session_module))
+            if diag.code == "BSL214"
+        ]
+
+        assert len(session_diags) == 6
+        assert {
+            (diag.line, diag.character, diag.end_line, diag.end_character)
+            for diag in session_diags
+        } == {(1, 0, 1, 9)}
+        assert "BSL214" not in _codes(
+            DiagnosticEngine(select={"BSL214"}).check_file(str(common_module))
+        )
 
     def test_scheduled_job_handler_skips_split_common_module_file(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"

@@ -422,13 +422,14 @@ def applicable_bsl189_211_213_214_231_232_241_242_246_274_codes(
     if "BSL232" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl"):
         if root is not None:
             out.append("BSL232")
+    if "BSL214" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl"):
+        if root is not None:
+            out.append("BSL214")
     if "BSL231" in enabled_set and root is not None and "." in content and "(" in content:
         out.append("BSL231")
     if root is not None and "/commonmodules/" in low_path:
         if "BSL213" in enabled_set and "." in content and "(" in content:
             out.append("BSL213")
-        if "BSL214" in enabled_set:
-            out.append("BSL214")
         if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
             out.append("BSL242")
 
@@ -463,7 +464,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     )
     common_module_index = (
         _diag._common_module_index_cached(root)
-        if root is not None and ({"BSL213", "BSL242"} & enabled_set)
+        if root is not None and ({"BSL213", "BSL214", "BSL242"} & enabled_set)
         else {}
     )
 
@@ -597,6 +598,46 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     code="BSL232",
                 )
             )
+    if "BSL214" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl") and root is not None:
+        proc_names_by_module: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+        for _subscription_name, handler in _diag._event_subscription_handlers_cached(root):
+            invalid = False
+            split = _diag._split_common_module_method_path(handler)
+            if split is None:
+                invalid = True
+            else:
+                module_name, meth = split
+                module_cf = module_name.casefold()
+                module_info = common_module_index.get(module_cf)
+                if not module_info:
+                    invalid = True
+                else:
+                    if not module_info.get("server"):
+                        invalid = True
+                    proc_sets = proc_names_by_module.get(module_cf)
+                    if proc_sets is None:
+                        all_names = _diag._common_module_proc_names_for_module_cached(root, module_cf)
+                        exported_names = _diag._common_module_exported_proc_names_for_module_cached(
+                            root, module_cf
+                        )
+                        proc_sets = (all_names, exported_names)
+                        proc_names_by_module[module_cf] = proc_sets
+                    all_names, exported_names = proc_sets
+                    meth_cf = meth.casefold()
+                    if meth_cf not in all_names or meth_cf not in exported_names:
+                        invalid = True
+            if invalid:
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=1,
+                        character=0,
+                        end_line=1,
+                        end_character=_metadata_owner_range_end(line_text),
+                        severity=_diag.Severity.ERROR,
+                        code="BSL214",
+                    )
+                )
     if "BSL231" in enabled_set and root is not None:
         current_common = ""
         if "/commonmodules/" in low_path:
