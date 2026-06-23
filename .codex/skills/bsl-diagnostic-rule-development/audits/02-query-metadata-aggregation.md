@@ -26,7 +26,7 @@ This audit is the durable routing checklist for
 - [x] BSL236 - type-aware active-config metadata lookup; virtual-table sources
 - [x] BSL238 - scoped query alias contract; private parity classified tail
 - [x] BSL241 - exact no-signal; object/child metadata contract
-- [ ] BSL242 - open
+- [x] BSL242 - referenced scheduled-job handler contract; exact private parity
 - [ ] BSL244 - open
 - [ ] BSL246 - open
 - [ ] BSL253 - open
@@ -84,7 +84,7 @@ Routing:
 | BSL236 | query metadata | parity-classified | Closed with type-aware active-config metadata lookup and virtual-table source extraction; private parity improved to `onec=7078`, `bslls=7054`, `only_bslls=130`, `only_onec=154`. |
 | BSL238 | query metadata | parity-classified | Closed with scoped query alias facts and tabular/simple source suppression; private parity improved to `onec=224`, `bslls=222`, `only_bslls=2`, `only_onec=4`. |
 | BSL241 | metadata XML | exact no-signal | Closed with synthetic object-child fixtures, form-only exclusion, severity surface fix, and private parity `onec=0`, `bslls=0`. |
-| BSL242 | metadata XML | ours-only mismatch | Investigate scheduled job handler metadata edge cases. |
+| BSL242 | metadata XML | exact | Closed with referenced-handler gating for unreferenced common modules; private parity improved to `onec=0`, `bslls=0`. |
 | BSL244 | metadata runtime | two-sided mismatch | Investigate form event server-call fact model. |
 | BSL246 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL253 | metadata runtime | ours-only mismatch | Investigate external resource timeout call facts. |

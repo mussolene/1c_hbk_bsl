@@ -847,7 +847,10 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
             handlers_seen: dict[str, str] = {}
             module_info = common_module_index.get(module_name.casefold()) or {}
-            if module_info and not module_info.get("server"):
+            module_handlers = _diag._scheduled_job_handlers_by_module_cached(root).get(
+                module_name.casefold(), ()
+            )
+            if module_handlers and module_info and not module_info.get("server"):
                 diags.append(
                     _diag.Diagnostic(
                         file=path,
@@ -859,9 +862,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         code="BSL242",
                     )
                 )
-            for handler, job_name, predefined in _diag._scheduled_job_handlers_by_module_cached(
-                root
-            ).get(module_name.casefold(), ()):
+            for handler, job_name, predefined in module_handlers:
                 meth = handler.split(".")[-1]
                 proc = proc_names.get(meth.casefold())
                 if proc is None:

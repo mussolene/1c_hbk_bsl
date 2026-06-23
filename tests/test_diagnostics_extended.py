@@ -1896,6 +1896,32 @@ class TestTailParityBatches:
         assert "BSL242" in _codes(diags)
         assert next(d.message for d in diags if d.code == "BSL242") == _rule_msg("BSL242")
 
+    def test_scheduled_job_handler_skips_unreferenced_client_common_module(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Клиентский" / "Ext").mkdir(parents=True)
+        (root / "ScheduledJobs").mkdir(parents=True)
+        (root / "CommonModules" / "Клиентский.xml").write_text(
+            "<CommonModule><Name>Клиентский</Name><Server>false</Server><ClientManagedApplication>true</ClientManagedApplication></CommonModule>",
+            encoding="utf-8",
+        )
+        (root / "ScheduledJobs" / "Задание.xml").write_text(
+            "<ScheduledJob><MethodName>CommonModule.Другой.Выполнить</MethodName></ScheduledJob>",
+            encoding="utf-8",
+        )
+        module = root / "CommonModules" / "Клиентский" / "Ext" / "Module.bsl"
+        module.write_text(
+            "Процедура Вспомогательный() Экспорт\n    Сообщить(1);\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
+
+        assert "BSL242" not in _codes(diags)
+
     def test_scheduled_job_handler_empty_method_detected(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)
