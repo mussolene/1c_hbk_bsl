@@ -15,7 +15,7 @@ This audit is the durable routing checklist for
 - [x] BSL201 - exact private parity; parsed LIKE operand contract
 - [x] BSL206 - exact private parity; nested query join CST contract
 - [x] BSL207 - exact private parity; virtual table join CST contract
-- [ ] BSL209 - open
+- [x] BSL209 - exact private parity; join OR field-identity CST contract
 - [x] BSL211 - exact no-signal; strict 80-character metadata-name contract
 - [x] BSL213 - exact no-signal; exported common-module method contract
 - [x] BSL214 - exact no-signal; session-module event subscription contract
@@ -73,7 +73,7 @@ Routing:
 | BSL201 | query text | exact | Closed with SDBL `like_expression` operand-shape facts and exact private parity `onec=2`, `bslls=2`. |
 | BSL206 | query join | exact | Closed with SDBL `nested_query_source` join facts and exact private parity `onec=22`, `bslls=22`. |
 | BSL207 | query join | exact | Closed with SDBL `virtual_table_source` join facts and exact private parity `onec=16`, `bslls=16`. |
-| BSL209 | query join | ours-only mismatch | Investigate JOIN ON logical OR boundaries. |
+| BSL209 | query join | exact | Closed with SDBL `OR_KEYWORD` join-condition facts and exact private parity `onec=136`, `bslls=136`. |
 | BSL211 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL213 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL214 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |

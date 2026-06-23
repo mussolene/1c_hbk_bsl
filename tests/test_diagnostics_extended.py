@@ -8016,6 +8016,60 @@ class TestBsl207JoinWithVirtualTable:
 
 
 # ---------------------------------------------------------------------------
+# BSL209 — LogicalOrInJoinQuerySection
+# ---------------------------------------------------------------------------
+
+
+class TestBsl209LogicalOrInJoinQuerySection:
+    @_requires_sdbl
+    def test_bsl209_reports_join_or_for_different_fields(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   T.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК T
+            |   ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Другой КАК S
+            |   ПО T.Ссылка = S.Ссылка
+            |      И (T.Код = S.Код ИЛИ T.Наименование = S.Наименование)";
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL209"}) if d.code == "BSL209"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (7, 24, 7, 27),
+        ]
+        assert diags[0].severity is Severity.WARNING
+
+    @_requires_sdbl
+    def test_bsl209_skips_join_or_for_same_field(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   T.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК T
+            |   ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Другой КАК S
+            |   ПО T.Ссылка = S.Ссылка
+            |      И (T.Код = 1 ИЛИ T.Код = 2)";
+        """
+
+        assert "BSL209" not in _codes(_check(content, tmp_path, select={"BSL209"}))
+
+    @_requires_sdbl
+    def test_bsl209_skips_where_or(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   T.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК T
+            |   ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Другой КАК S
+            |   ПО T.Ссылка = S.Ссылка
+            |ГДЕ T.Код = 1 ИЛИ T.Наименование = &Имя";
+        """
+
+        assert "BSL209" not in _codes(_check(content, tmp_path, select={"BSL209"}))
+
+
+# ---------------------------------------------------------------------------
 # BSL201 — IncorrectUseLikeInQuery
 # ---------------------------------------------------------------------------
 

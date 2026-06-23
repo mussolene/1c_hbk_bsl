@@ -434,6 +434,13 @@ def _sdbl_has_child_type(node: Any, node_type: str) -> bool:
     return any(getattr(child, "type", None) == node_type for child in getattr(node, "children", ()) or ())
 
 
+def _sdbl_node_text(node: Any) -> str:
+    text = getattr(node, "text", b"")
+    if isinstance(text, (bytes, bytearray)):
+        return bytes(text).decode("utf-8", errors="ignore")
+    return str(text)
+
+
 def _sdbl_bsl206_nested_query_source_nodes(root: Any) -> list[Any]:
     out: list[Any] = []
 
@@ -586,6 +593,88 @@ def _bsl207_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
                 end_character=end_character,
                 severity=_diag.Severity.WARNING,
                 code="BSL207",
+            )
+        )
+    return diags
+
+
+def _sdbl_bsl209_field_identities(node: Any) -> set[str]:
+    values: set[str] = set()
+
+    def is_reference_type(current: Any, ancestors: tuple[Any, ...]) -> bool:
+        parent = ancestors[-1] if ancestors else None
+        if getattr(parent, "type", None) != "reference_check_expression":
+            return False
+        siblings = list(getattr(parent, "children", ()) or ())
+        current_index = next((index for index, sibling in enumerate(siblings) if sibling is current), -1)
+        return any(getattr(sibling, "type", None) == "REFERENCE_KEYWORD" for sibling in siblings[:current_index])
+
+    def walk(current: Any, ancestors: tuple[Any, ...]) -> None:
+        if getattr(current, "type", None) == "dotted_identifier":
+            if is_reference_type(current, ancestors):
+                return
+            value = _sdbl_node_text(current).strip().casefold().rsplit(".", 1)[-1]
+            if value:
+                values.add(value)
+            return
+        for child in getattr(current, "children", ()) or ():
+            walk(child, (*ancestors, current))
+
+    walk(node, ())
+    return values
+
+
+def _sdbl_bsl209_or_token_nodes(root: Any) -> list[Any]:
+    out: list[Any] = []
+
+    def walk(node: Any, ancestors: tuple[Any, ...]) -> None:
+        if getattr(node, "type", None) == "OR_KEYWORD" and any(
+            getattr(ancestor, "type", None) == "join_clause" for ancestor in ancestors
+        ):
+            nearest_binary = next(
+                (
+                    ancestor
+                    for ancestor in reversed(ancestors)
+                    if getattr(ancestor, "type", None) == "binary_expression"
+                ),
+                None,
+            )
+            if nearest_binary is not None and len(_sdbl_bsl209_field_identities(nearest_binary)) > 1:
+                out.append(node)
+        next_ancestors = (*ancestors, node)
+        for child in getattr(node, "children", ()) or ():
+            walk(child, next_ancestors)
+
+    walk(root, ())
+    return out
+
+
+def _bsl209_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
+    tree, byte_maps = _parse_unescaped_sdbl_query_text(block)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+
+    _diag = _diag_module()
+    diags: list[Any] = []
+    for node in _sdbl_bsl209_or_token_nodes(root):
+        start_line, start_character = _unescaped_lsp_position(
+            block, byte_maps, node.start_point[0], node.start_point[1]
+        )
+        end_line, end_character = _unescaped_lsp_position(
+            block, byte_maps, node.end_point[0], node.end_point[1]
+        )
+        if (end_line, end_character) <= (start_line, start_character):
+            continue
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line + 1,
+                character=start_character,
+                end_line=end_line + 1,
+                end_character=end_character,
+                severity=_diag.Severity.WARNING,
+                code="BSL209",
             )
         )
     return diags
@@ -806,6 +895,8 @@ def run_bsl206_207_209_query_join_diagnostics(
             diags.extend(_bsl206_diags_from_sdbl_tree(path, block))
         if "BSL207" in enabled and block is not None:
             diags.extend(_bsl207_diags_from_sdbl_tree(path, block))
+        if "BSL209" in enabled and block is not None:
+            diags.extend(_bsl209_diags_from_sdbl_tree(path, block))
 
         pending_datasource = False
         pending_join_datasource = False
@@ -908,7 +999,7 @@ def run_bsl206_207_209_query_join_diagnostics(
                 else:
                     join_buffer += " " + head
 
-            if join_on_active and "BSL209" in enabled:
+            if join_on_active and "BSL209" in enabled and block is None:
                 fields = set(_diag._RE_QUERY_COLUMN_REF.findall(join_buffer))
                 if len(fields) > 1:
                     for or_match in _diag._RE_BSL210_OR.finditer(head):
