@@ -211,7 +211,46 @@ def _missing_metadata_name(
 
 
 def _bsl238_redundant_ref_nodes(root: Any) -> list[Any]:
-    simple_table_aliases: set[str] = set()
+    query_scopes = list(iter_nodes(root, "query"))
+    if not query_scopes:
+        query_scopes = [root]
+
+    out: list[Any] = []
+    for scope in query_scopes:
+        out.extend(_bsl238_redundant_ref_nodes_in_scope(scope))
+    return out
+
+
+def _bsl238_nearest_query(node: Any) -> Any | None:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) == "query":
+            return parent
+        parent = getattr(parent, "parent", None)
+    return None
+
+
+def _bsl238_same_node(left: Any | None, right: Any | None) -> bool:
+    return (
+        left is not None
+        and right is not None
+        and getattr(left, "id", None) == getattr(right, "id", None)
+    )
+
+
+def _bsl238_source_owner(node: Any) -> Any | None:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) in {"table_source", "join_clause"}:
+            return parent
+        if getattr(parent, "type", None) in {"from_clause", "query", "source_file"}:
+            return None
+        parent = getattr(parent, "parent", None)
+    return None
+
+
+def _bsl238_redundant_ref_nodes_in_scope(scope: Any) -> list[Any]:
+    simple_source_aliases: set[str] = set()
     tabular_section_aliases: set[str] = set()
     tabular_section_roots = {
         "бизнеспроцесс",
@@ -221,30 +260,40 @@ def _bsl238_redundant_ref_nodes(root: Any) -> list[Any]:
         "справочник",
         "catalog",
     }
-    for source_use in query_source_uses(root):
+    for source_use in query_source_uses(scope):
+        if not _bsl238_same_node(_bsl238_nearest_query(source_use.node), scope):
+            continue
         source_parts = source_use.source.split(".")
-        parent = getattr(source_use.node, "parent", None)
-        alias = source_alias_name(parent) if parent is not None else None
+        source_owner = _bsl238_source_owner(source_use.node)
+        alias = source_alias_name(source_owner) if source_owner is not None else None
         if not alias:
             continue
         alias_cf = alias.casefold()
-        if len(source_parts) == 1 and source_use.source.casefold() == alias_cf:
-            simple_table_aliases.add(alias_cf)
+        if len(source_parts) == 1:
+            simple_source_aliases.add(alias_cf)
         elif len(source_parts) >= 3 and source_parts[0].casefold() in tabular_section_roots:
             tabular_section_aliases.add(alias_cf)
 
     out: list[Any] = []
-    for dotted in iter_nodes(root, "dotted_identifier"):
-        if ancestor(dotted, "from_clause") is not None:
+    for dotted in iter_nodes(scope, "dotted_identifier"):
+        if not _bsl238_same_node(_bsl238_nearest_query(dotted), scope):
+            continue
+        from_clause = ancestor(dotted, "from_clause")
+        if from_clause is not None and _bsl238_same_node(_bsl238_nearest_query(from_clause), scope):
             continue
         parts = dotted_identifier_parts(dotted)
-        if len(parts) < 3 or not any(
-            part.casefold() in {"ссылка", "reference", "ref"} for part in parts[1:]
-        ):
+        if len(parts) < 3:
             continue
-        if parts[0].casefold() in (simple_table_aliases | tabular_section_aliases) and parts[
-            1
-        ].casefold() in {"ссылка", "reference", "ref"}:
+        ref_indexes = [
+            idx
+            for idx, part in enumerate(parts[1:], start=1)
+            if part.casefold() in {"ссылка", "reference", "ref"}
+        ]
+        if not ref_indexes:
+            continue
+        root_alias = parts[0].casefold()
+        last_ref_index = ref_indexes[-1]
+        if root_alias in (simple_source_aliases | tabular_section_aliases) and last_ref_index == 1:
             continue
         out.append(dotted)
     return out

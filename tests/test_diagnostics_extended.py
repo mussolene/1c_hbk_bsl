@@ -2513,12 +2513,27 @@ class TestTailParityBatches:
         diags = _check(content, tmp_path, select={"BSL238"})
         assert "BSL238" not in _codes(diags)
 
+    def test_bsl238_skips_aliased_simple_source_ref_field_like_bslls(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос = Новый Запрос;
+                Запрос.Текст = "ВЫБРАТЬ
+                |  Данные.Ссылка.МоментВремени КАК МоментВремени
+                |ИЗ
+                |  ВременнаяТаблица КАК Данные";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL238"})
+        assert "BSL238" not in _codes(diags)
+
     def test_bsl238_skips_tabular_section_ref_field_like_bslls(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Запрос = Новый Запрос;
                 Запрос.Текст = "ВЫБРАТЬ
-                |  Таблица.Ссылка
+                |  Документ.Ссылка
                 |ИЗ
                 |  Документ.ОтчетОРозничныхПродажах КАК Документ
                 |    ЛЕВОЕ СОЕДИНЕНИЕ Документ.ОтчетОРозничныхПродажах.Товары КАК Товары
@@ -2527,6 +2542,54 @@ class TestTailParityBatches:
         """
         diags = _check(content, tmp_path, select={"BSL238"})
         assert "BSL238" not in _codes(diags)
+
+    def test_bsl238_reports_nested_ref_after_tabular_section_ref_like_bslls(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос = Новый Запрос;
+                Запрос.Текст = "ВЫБРАТЬ
+                |  Товары.Ссылка.Номенклатура.Ссылка КАК Номенклатура
+                |ИЗ
+                |  Документ.Тест.Товары КАК Товары";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL238"}) if d.code == "BSL238"]
+        assert len(diags) == 1
+        assert diags[0].line == 4
+
+    def test_bsl238_reports_unknown_source_ref_chain_like_bslls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос = Новый Запрос;
+                Запрос.Текст = "ВЫБРАТЬ
+                |  СтарыйИсточник.Ссылка.Код КАК Код
+                |ИЗ
+                |  Документ.Тест.Товары КАК Товары";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL238"}) if d.code == "BSL238"]
+        assert len(diags) == 1
+        assert diags[0].line == 4
+
+    def test_bsl238_keeps_source_aliases_scoped_to_query(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос = Новый Запрос;
+                Запрос.Текст = "ВЫБРАТЬ
+                |  Товары.Ссылка
+                |ИЗ
+                |  Документ.Тест.Товары КАК Товары
+                |;
+                |ВЫБРАТЬ
+                |  Товары.Ссылка.Код
+                |ИЗ
+                |  Документ.ДругойТест.Товары КАК ДругиеТовары";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL238"}) if d.code == "BSL238"]
+        assert [(d.line, d.character) for d in diags] == [(9, 7)]
 
     @_requires_sdbl
     def test_bsl077_reports_top_in_package_before_later_order_by(self, tmp_path: Path) -> None:
