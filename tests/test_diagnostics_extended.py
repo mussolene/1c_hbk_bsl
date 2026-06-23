@@ -7910,6 +7910,75 @@ class TestBsl235QueryParseError:
 
 
 # ---------------------------------------------------------------------------
+# BSL201 — IncorrectUseLikeInQuery
+# ---------------------------------------------------------------------------
+
+
+class TestBsl201IncorrectUseLikeInQuery:
+    @_requires_sdbl
+    def test_bsl201_reports_non_parameter_non_string_rhs(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т
+            |ГДЕ Т.Код ПОДОБНО ДругаяКолонка
+            |   И Т.Имя ПОДОБНО Неопределено
+            |   И Т.Номер ПОДОБНО 1";
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL201"}) if d.code == "BSL201"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (5, 5, 5, 32),
+            (6, 6, 6, 32),
+            (7, 6, 7, 23),
+        ]
+        assert {diag.severity for diag in diags} == {Severity.WARNING}
+
+    @_requires_sdbl
+    def test_bsl201_allows_parameter_and_string_rhs(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т
+            |ГДЕ Т.Код ПОДОБНО &Шаблон
+            |   И Т.Имя ПОДОБНО ""ABC%""
+            |   И Т.Номер LIKE &Pattern";
+        """
+
+        assert "BSL201" not in _codes(_check(content, tmp_path, select={"BSL201"}))
+
+    @_requires_sdbl
+    def test_bsl201_matches_bslls_first_primitive_behavior(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т
+            |ГДЕ Т.Код ПОДОБНО СтрЗаменить(&Шаблон, ""*"", ""%"")
+            |   И Т.Имя ПОДОБНО &Шаблон + ""%""
+            |   И Т.Номер ПОДОБНО ""%"" + &Шаблон";
+        """
+
+        assert "BSL201" not in _codes(_check(content, tmp_path, select={"BSL201"}))
+
+    @_requires_sdbl
+    def test_bsl201_skips_like_inside_query_string_literal(self, tmp_path: Path) -> None:
+        content = '''\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т
+            |ГДЕ Т.Код = &Код
+            |   И Т.Имя = ""LIKE Поле""";
+        '''
+
+        assert "BSL201" not in _codes(_check(content, tmp_path, select={"BSL201"}))
+
+
+# ---------------------------------------------------------------------------
 # BSL269 — UsingLikeInQuery
 # ---------------------------------------------------------------------------
 

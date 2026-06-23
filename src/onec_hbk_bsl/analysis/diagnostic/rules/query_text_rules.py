@@ -300,6 +300,39 @@ def _sdbl_like_expression_nodes_from_root(root: Any) -> list[Any]:
     return out
 
 
+def _sdbl_node_text(node: Any) -> str:
+    node_text = getattr(node, "text", b"")
+    if isinstance(node_text, bytes):
+        return node_text.decode("utf-8", errors="replace")
+    return str(node_text)
+
+
+def _sdbl_like_expression_start_utf8_col(node: Any) -> int:
+    start_utf8_col = node.start_point[1]
+    raw_text = _sdbl_node_text(node)
+    if raw_text.casefold().startswith("не "):
+        start_utf8_col += len("НЕ ".encode())
+    elif raw_text.casefold().startswith("not "):
+        start_utf8_col += len(b"NOT ")
+    return start_utf8_col
+
+
+def _sdbl_like_expression_source_ranges_by_start(block: Any) -> dict[tuple[int, int], tuple[int, int]]:
+    source_ranges_by_start: dict[tuple[int, int], tuple[int, int]] = {}
+    source_root = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
+    if source_root is None:
+        return source_ranges_by_start
+    for source_node in _sdbl_like_expression_nodes_from_root(source_root):
+        source_start = block.original_lsp_position(
+            source_node.start_point[0], _sdbl_like_expression_start_utf8_col(source_node)
+        )
+        source_end = block.original_lsp_position(
+            source_node.end_point[0], source_node.end_point[1]
+        )
+        source_ranges_by_start[source_start] = source_end
+    return source_ranges_by_start
+
+
 def _bsl269_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
     tree, byte_maps = _parse_unescaped_sdbl_query_text(block)
     root = getattr(tree, "root_node", None)
@@ -307,42 +340,11 @@ def _bsl269_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
         return []
 
     _diag = _diag_module()
-    source_ranges_by_start: dict[tuple[int, int], tuple[int, int]] = {}
-    source_root = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
-    if source_root is not None:
-        for source_node in _sdbl_like_expression_nodes_from_root(source_root):
-            source_start_utf8_col = source_node.start_point[1]
-            source_node_text = getattr(source_node, "text", b"")
-            if isinstance(source_node_text, bytes):
-                source_raw_text = source_node_text.decode("utf-8", errors="replace")
-            else:
-                source_raw_text = str(source_node_text)
-            if source_raw_text.casefold().startswith("не "):
-                source_start_utf8_col += len("НЕ ".encode())
-            elif source_raw_text.casefold().startswith("not "):
-                source_start_utf8_col += len(b"NOT ")
-            source_start = block.original_lsp_position(
-                source_node.start_point[0], source_start_utf8_col
-            )
-            source_end = block.original_lsp_position(
-                source_node.end_point[0], source_node.end_point[1]
-            )
-            source_ranges_by_start[source_start] = source_end
-
+    source_ranges_by_start = _sdbl_like_expression_source_ranges_by_start(block)
     diags: list[Any] = []
     for node in _sdbl_like_expression_nodes_from_root(root):
-        start_utf8_col = node.start_point[1]
-        node_text = getattr(node, "text", b"")
-        if isinstance(node_text, bytes):
-            raw_text = node_text.decode("utf-8", errors="replace")
-        else:
-            raw_text = str(node_text)
-        if raw_text.casefold().startswith("не "):
-            start_utf8_col += len("НЕ ".encode())
-        elif raw_text.casefold().startswith("not "):
-            start_utf8_col += len(b"NOT ")
         start_line, start_character = _unescaped_lsp_position(
-            block, byte_maps, node.start_point[0], start_utf8_col
+            block, byte_maps, node.start_point[0], _sdbl_like_expression_start_utf8_col(node)
         )
         end_line, end_character = source_ranges_by_start.get(
             (start_line, start_character),
@@ -359,6 +361,70 @@ def _bsl269_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
                 end_character=end_character,
                 severity=_diag.Severity.INFORMATION,
                 code="BSL269",
+            )
+        )
+    return diags
+
+
+def _bsl201_right_query_expression(node: Any) -> Any | None:
+    expressions = [
+        child for child in getattr(node, "children", ()) or () if getattr(child, "type", None) == "query_expression"
+    ]
+    return expressions[1] if len(expressions) > 1 else None
+
+
+def _bsl201_first_primitive_kind(node: Any) -> str | None:
+    node_type = getattr(node, "type", None)
+    if node_type in {"parameter", "string", "number", "undefined", "identifier", "dotted_identifier"}:
+        return str(node_type)
+    children = tuple(getattr(node, "children", ()) or ())
+    for index, child in enumerate(children):
+        if node_type == "function_call" and index == 0 and getattr(child, "type", None) == "identifier":
+            continue
+        primitive = _bsl201_first_primitive_kind(child)
+        if primitive is not None:
+            return primitive
+    return None
+
+
+def _bsl201_like_expression_is_invalid(node: Any) -> bool:
+    right = _bsl201_right_query_expression(node)
+    if right is None:
+        return False
+    primitive = _bsl201_first_primitive_kind(right)
+    return primitive not in {"parameter", "string"}
+
+
+def _bsl201_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
+    tree, byte_maps = _parse_unescaped_sdbl_query_text(block)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+
+    _diag = _diag_module()
+    source_ranges_by_start = _sdbl_like_expression_source_ranges_by_start(block)
+    diags: list[Any] = []
+    for node in _sdbl_like_expression_nodes_from_root(root):
+        if not _bsl201_like_expression_is_invalid(node):
+            continue
+        start_line, start_character = _unescaped_lsp_position(
+            block, byte_maps, node.start_point[0], _sdbl_like_expression_start_utf8_col(node)
+        )
+        end_line, end_character = source_ranges_by_start.get(
+            (start_line, start_character),
+            _unescaped_lsp_position(block, byte_maps, node.end_point[0], node.end_point[1]),
+        )
+        if (end_line, end_character) <= (start_line, start_character):
+            continue
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line + 1,
+                character=start_character,
+                end_line=end_line + 1,
+                end_character=end_character,
+                severity=_diag.Severity.WARNING,
+                code="BSL201",
             )
         )
     return diags
@@ -484,11 +550,19 @@ def run_bsl191_201_query_text_diagnostics(
             (
                 block.start_idx,
                 _diag._query_block_content_line_tuples(block),
+                block,
             )
             for block in query_blocks
         )
 
-    for _start_idx, content_lines in blocks:
+    for block_item in blocks:
+        if query_blocks is None:
+            _start_idx, content_lines = block_item
+            block = None
+        else:
+            _start_idx, content_lines, block = block_item
+            if "BSL201" in enabled and block is not None:
+                diags.extend(_bsl201_diags_from_sdbl_tree(path, block))
         for line_no, content_base, _content, head, _ended_query in content_lines:
             if "BSL191" in enabled:
                 for match in _diag._RE_QUERY_FULL_OUTER_JOIN.finditer(head):
@@ -504,7 +578,7 @@ def run_bsl191_201_query_text_diagnostics(
                         )
                     )
 
-            if "BSL201" in enabled:
+            if "BSL201" in enabled and block is None:
                 for match in _diag._RE_QUERY_LIKE_OPERATOR.finditer(head):
                     rhs = head[match.end() :].lstrip()
                     if not rhs:
