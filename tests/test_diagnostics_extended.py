@@ -7823,6 +7823,59 @@ class TestBsl235QueryParseError:
 
 
 # ---------------------------------------------------------------------------
+# BSL269 — UsingLikeInQuery
+# ---------------------------------------------------------------------------
+
+
+class TestBsl269UsingLikeInQuery:
+    @_requires_sdbl
+    def test_bsl269_reports_full_like_expression_range(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т
+            |ГДЕ Т.Код ПОДОБНО &Шаблон";
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL269"}) if d.code == "BSL269"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (5, 5, 5, 26),
+        ]
+        assert diags[0].severity is Severity.INFORMATION
+
+    @_requires_sdbl
+    def test_bsl269_reports_english_like_expression(self, tmp_path: Path) -> None:
+        content = """\
+            QueryText = "SELECT
+            |   T.Ref
+            |FROM
+            |   Catalog.Test AS T
+            |WHERE T.Code LIKE &Pattern";
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL269"}) if d.code == "BSL269"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (5, 7, 5, 27),
+        ]
+
+    @_requires_sdbl
+    def test_bsl269_skips_non_like_and_like_inside_string(self, tmp_path: Path) -> None:
+        content = '''\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т
+            |ГДЕ Т.Код = &Код
+            |   И Т.Имя = ""LIKE""";
+        '''
+
+        assert "BSL269" not in _codes(_check(content, tmp_path, select={"BSL269"}))
+
+
+# ---------------------------------------------------------------------------
 # BSL210 — LogicalOrInTheWhereSectionOfQuery
 # ---------------------------------------------------------------------------
 
