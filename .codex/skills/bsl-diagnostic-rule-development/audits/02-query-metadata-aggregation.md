@@ -21,7 +21,7 @@ This audit is the durable routing checklist for
 - [x] BSL214 - exact no-signal; session-module event subscription contract
 - [x] BSL220 - exact private parity; unescaped SDBL cross-line string contract
 - [x] BSL231 - exact private parity; exported privileged common-module method contract
-- [ ] BSL232 - open
+- [x] BSL232 - exact private parity; per-protected-module session diagnostic contract
 - [ ] BSL235 - open
 - [ ] BSL236 - open
 - [ ] BSL238 - open
@@ -79,7 +79,7 @@ Routing:
 | BSL214 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL220 | query text | exact | Closed with BSL-unescaped SDBL cross-line string facts; private parity 31,797 files exact. |
 | BSL231 | metadata XML | exact | Closed with exported-method filtering and nested privileged-module call coverage. |
-| BSL232 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
+| BSL232 | metadata XML | exact | Closed with per-protected-module session diagnostics and exact private parity. |
 | BSL235 | query text | two-sided mismatch | Investigate query parse error recovery and range policy. |
 | BSL236 | query metadata | high-volume two-sided mismatch | Defer until fact taxonomy; largest semantic delta. |
 | BSL238 | query metadata | two-sided mismatch | Investigate after BSL236 because it shares query metadata facts. |

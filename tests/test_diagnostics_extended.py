@@ -1596,6 +1596,36 @@ class TestTailParityBatches:
         session_diags = DiagnosticEngine(select={"BSL232"}).check_file(str(session_module))
         assert "BSL232" in _codes(session_diags)
 
+    def test_bsl232_reports_each_protected_module_on_session_module(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Первый" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Второй" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Первый.xml").write_text(
+            "<CommonModule><Name>Первый</Name><Protected>true</Protected></CommonModule>",
+            encoding="utf-8",
+        )
+        (root / "CommonModules" / "Второй.xml").write_text(
+            "<CommonModule><Name>Второй</Name><IsProtected>true</IsProtected></CommonModule>",
+            encoding="utf-8",
+        )
+        session_module = root / "Ext" / "SessionModule.bsl"
+        session_module.parent.mkdir(parents=True)
+        session_module.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n", encoding="utf-8"
+        )
+
+        diags = DiagnosticEngine(select={"BSL232"}).check_file(str(session_module))
+        bsl232 = [diag for diag in diags if diag.code == "BSL232"]
+
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl232] == [
+            (1, 0, 34),
+            (1, 0, 34),
+        ]
+
     def test_bsl214_reports_event_subscription_handler_defects_on_session_module(
         self, tmp_path: Path
     ) -> None:

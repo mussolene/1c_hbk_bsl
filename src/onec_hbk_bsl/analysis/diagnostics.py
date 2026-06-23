@@ -148,6 +148,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     config_has_protected_modules_cached as _config_has_protected_modules_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    config_protected_module_refs_cached as _config_protected_module_refs_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     config_root_for_file as _config_root_for_file,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (

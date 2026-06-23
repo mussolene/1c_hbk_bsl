@@ -307,14 +307,20 @@ def roles_with_new_objects_cached(config_root: str) -> tuple[str, ...]:
 
 
 @functools.lru_cache(maxsize=32)
-def config_has_protected_modules_cached(config_root: str) -> bool:
+def config_protected_module_refs_cached(config_root: str) -> tuple[str, ...]:
     root = Path(config_root)
+    refs: list[str] = []
     for xml_file in root.rglob("*.xml"):
         if xml_file.name in {"Configuration.xml", "ConfigDumpInfo.xml"}:
             continue
         if _RE_XML_PROTECTED.search(read_text_cached(str(xml_file))):
-            return True
-    return False
+            refs.append(xml_file.with_suffix("").relative_to(root).as_posix())
+    return tuple(refs)
+
+
+@functools.lru_cache(maxsize=32)
+def config_has_protected_modules_cached(config_root: str) -> bool:
+    return bool(config_protected_module_refs_cached(config_root))
 
 
 @functools.lru_cache(maxsize=128)
