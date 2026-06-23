@@ -1394,6 +1394,132 @@ class TestTailParityBatches:
 
         assert "BSL211" not in _codes(DiagnosticEngine(select={"BSL211"}).check_file(str(module)))
 
+    def test_bsl241_reports_object_child_name_equal_to_owner(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        object_name = "ТестовыйОбъект"
+        obj_dir = root / "Catalogs" / object_name / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "Catalogs" / f"{object_name}.xml").write_text(
+            textwrap.dedent(
+                f"""\
+                <MetaDataObject>
+                    <Catalog>
+                        <Properties><Name>{object_name}</Name></Properties>
+                        <ChildObjects>
+                            <Attribute><Properties><Name>{object_name}</Name></Properties></Attribute>
+                        </ChildObjects>
+                    </Catalog>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module = obj_dir / "ManagerModule.bsl"
+        module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL241"}).check_file(str(module))
+            if diag.code == "BSL241"
+        ]
+        assert len(diags) == 1
+        assert diags[0].severity is Severity.ERROR
+        assert (diags[0].line, diags[0].character, diags[0].end_line, diags[0].end_character) == (
+            1,
+            0,
+            1,
+            17,
+        )
+
+    def test_bsl241_reports_tabular_section_attribute_equal_to_section(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        object_name = "ДокументТест"
+        section_name = "Строки"
+        obj_dir = root / "Documents" / object_name / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "Documents" / f"{object_name}.xml").write_text(
+            textwrap.dedent(
+                f"""\
+                <MetaDataObject>
+                    <Document>
+                        <Properties><Name>{object_name}</Name></Properties>
+                        <ChildObjects>
+                            <TabularSection>
+                                <Properties><Name>{section_name}</Name></Properties>
+                                <ChildObjects>
+                                    <Attribute>
+                                        <Properties><Name>{section_name}</Name></Properties>
+                                    </Attribute>
+                                </ChildObjects>
+                            </TabularSection>
+                        </ChildObjects>
+                    </Document>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module = obj_dir / "ObjectModule.bsl"
+        module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        diags = [
+            diag
+            for diag in DiagnosticEngine(select={"BSL241"}).check_file(str(module))
+            if diag.code == "BSL241"
+        ]
+        assert len(diags) == 1
+        assert diags[0].severity is Severity.ERROR
+
+    def test_bsl241_skips_near_miss_and_form_only_child_names(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        object_name = "Склад"
+        obj_dir = root / "Catalogs" / object_name / "Forms" / "Форма" / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "Catalogs" / f"{object_name}.xml").write_text(
+            textwrap.dedent(
+                f"""\
+                <MetaDataObject>
+                    <Catalog>
+                        <Properties><Name>{object_name}</Name></Properties>
+                        <ChildObjects>
+                            <Attribute><Properties><Name>{object_name}Основной</Name></Properties></Attribute>
+                            <TabularSection>
+                                <Properties><Name>Товары</Name></Properties>
+                                <ChildObjects>
+                                    <Attribute>
+                                        <Properties><Name>Номенклатура</Name></Properties>
+                                    </Attribute>
+                                </ChildObjects>
+                            </TabularSection>
+                        </ChildObjects>
+                    </Catalog>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        (root / "Catalogs" / object_name / "Forms" / "Форма" / "Ext" / "Form.xml").write_text(
+            f'<Form><Attributes><Attribute name="{object_name}"/></Attributes></Form>',
+            encoding="utf-8",
+        )
+        module = obj_dir / "Module.bsl"
+        module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+
+        assert "BSL241" not in _codes(
+            DiagnosticEngine(select={"BSL241"}).check_file(str(module))
+        )
+
     def test_deny_incomplete_values_skips_non_register_metadata(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)

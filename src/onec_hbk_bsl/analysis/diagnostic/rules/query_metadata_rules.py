@@ -618,6 +618,8 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         if "BSL241" in enabled_set and meta_obj is not None:
             obj_cf = meta_obj.name.casefold()
             for member in meta_obj.members:
+                if member.kind not in {"attribute", "tabular_section", "ts_attribute"}:
+                    continue
                 raw_name = member.name.split(".")
                 if len(raw_name) == 1 and raw_name[0].casefold() == obj_cf:
                     diags.append(

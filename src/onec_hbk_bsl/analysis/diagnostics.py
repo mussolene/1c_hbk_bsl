@@ -1292,7 +1292,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL241": {
         "name": "SameMetadataObjectAndChildNames",
         "description": "Same metadata object and child name",
-        "severity": "WARNING",
+        "severity": "ERROR",
         "tags": ["naming", "design"],
         "implemented": True,
     },

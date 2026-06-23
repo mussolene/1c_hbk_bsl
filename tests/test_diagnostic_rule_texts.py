@@ -103,6 +103,13 @@ def test_rule_catalog_can_return_english_rule_text() -> None:
     assert rule.message == 'Overuse "Reference" in a query'
 
 
+def test_bsl241_rule_catalog_severity_matches_emitted_error() -> None:
+    rule = get_rule("BSL241")
+
+    assert rule.name == "SameMetadataObjectAndChildNames"
+    assert rule.severity == "ERROR"
+
+
 def test_diagnostic_uses_i18n_message_by_default() -> None:
     diag = Diagnostic(
         file="m.bsl",

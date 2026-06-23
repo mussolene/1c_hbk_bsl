@@ -161,7 +161,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL238` | `RefOveruse` | Yes | INFORMATION | Избыточное использование "Ссылка" в запросе | Overuse "Reference" in a query | performance, readability |
 | `BSL239` | `ReservedParameterNames` | Yes | WARNING | Зарезервированные имена параметров | Reserved parameter names | naming, suspicious |
 | `BSL240` | `RewriteMethodParameter` | Yes | WARNING | Перезапись параметров метода | Rewrite method parameter | suspicious, correctness |
-| `BSL241` | `SameMetadataObjectAndChildNames` | Yes | WARNING | Совпадает имя объекта метаданного и его дочернего | Same metadata object and child name | naming, design |
+| `BSL241` | `SameMetadataObjectAndChildNames` | Yes | ERROR | Совпадает имя объекта метаданного и его дочернего | Same metadata object and child name | naming, design |
 | `BSL242` | `ScheduledJobHandler` | Yes | ERROR | Обработчик регламентного задания | Scheduled job handler | correctness, scheduled-jobs |
 | `BSL243` | `SelfInsertion` | Yes | ERROR | Вставка коллекции в саму себя | Insert a collection into itself | correctness, suspicious |
 | `BSL244` | `ServerCallsInFormEvents` | Yes | WARNING | Серверные вызовы в событиях форм | Server calls in form events | correctness, ui, performance |
