@@ -3245,6 +3245,46 @@ class TestTailParityBatches:
 
         assert "BSL253" not in _codes(diags)
 
+    def test_bsl261_reports_implicit_safe_mode_conditions(self, tmp_path: Path) -> None:
+        diags = _check(
+            """\
+            Процедура Метод()
+                Если БезопасныйРежим() Тогда
+                КонецЕсли;
+                Если Не БезопасныйРежим() Тогда
+                КонецЕсли;
+                Если Флаг Или SafeMode() Тогда
+                КонецЕсли;
+            КонецПроцедуры
+            """,
+            tmp_path,
+            select={"BSL261"},
+        )
+
+        assert _codes(diags).count("BSL261") == 3
+
+    def test_bsl261_explicit_comparison_assignment_setter_comment_and_string_are_clean(
+        self, tmp_path: Path
+    ) -> None:
+        diags = _check(
+            """\
+            Процедура Метод()
+                Если БезопасныйРежим() = Истина Тогда
+                КонецЕсли;
+                Если БезопасныйРежим() <> Ложь И Флаг Тогда
+                КонецЕсли;
+                Значение = БезопасныйРежим();
+                УстановитьБезопасныйРежим(Истина);
+                Текст = "Если БезопасныйРежим() Тогда";
+                // Если БезопасныйРежим() Тогда
+            КонецПроцедуры
+            """,
+            tmp_path,
+            select={"BSL261"},
+        )
+
+        assert "BSL261" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268

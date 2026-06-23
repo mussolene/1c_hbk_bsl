@@ -30,7 +30,7 @@ This audit is the durable routing checklist for
 - [x] BSL244 - exact private parity; BSLLS-compatible forbidden form event server-call contract
 - [x] BSL246 - exact private no-signal; cached role-index contract and synthetic coverage
 - [x] BSL253 - exact private no-signal; CST timeout constructor/assignment contract
-- [ ] BSL261 - open
+- [x] BSL261 - exact private no-signal; CST SafeMode boolean-use contract
 - [ ] BSL269 - open
 - [ ] BSL274 - open
 
@@ -88,7 +88,7 @@ Routing:
 | BSL244 | metadata runtime | exact | Closed with BSLLS-compatible forbidden form event suffixes, exact `&НаСервере` target filtering, call-expression ranges, and private parity `onec=32`, `bslls=32`. |
 | BSL246 | metadata XML | exact no-signal | Closed with cached role-index contract, default full-access role allowlist, synthetic positives/negatives, and private parity `onec=0`, `bslls=0`. |
 | BSL253 | metadata runtime | exact no-signal | Closed with CST constructor facts, BSLLS-compatible timeout argument positions, later timeout-property assignment suppression, and private parity `onec=0`, `bslls=0`. |
-| BSL261 | metadata runtime | no signal | Fast-close candidate only with synthetic/mini fixture. |
+| BSL261 | metadata runtime | exact no-signal | Closed with CST SafeMode call facts, implicit boolean-use contract, synthetic positives/negatives, and private parity `onec=0`, `bslls=0`. |
 | BSL269 | query text | two-sided mismatch | Investigate after BSL201 because LIKE facts overlap. |
 | BSL274 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 

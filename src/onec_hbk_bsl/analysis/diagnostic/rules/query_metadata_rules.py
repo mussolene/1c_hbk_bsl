@@ -402,6 +402,116 @@ def _bsl253_timeout_diagnostics_from_cst(
     return diags
 
 
+def _bsl261_parent_of_type(node: Any, node_types: set[str]) -> Any | None:
+    current = getattr(node, "parent", None)
+    while current is not None:
+        if getattr(current, "type", None) in node_types:
+            return current
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _bsl261_enclosing_if_statement(node: Any) -> Any | None:
+    current = getattr(node, "parent", None)
+    while current is not None:
+        if getattr(current, "type", None) == "if_statement":
+            return current
+        if getattr(current, "type", None) in {"procedure_definition", "function_definition"}:
+            return None
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _bsl261_identifier_node(_diag: Any, method_call: Any) -> Any | None:
+    return _diag._ts_child_of_type(method_call, "identifier")
+
+
+def _bsl261_is_explicit_comparison(text: str) -> bool:
+    return bool(re.search(r"(?:<>|<=|>=|=|(?<![<>=])[<>](?![<>=]))", text))
+
+
+def _bsl261_has_bool_operator(text: str) -> bool:
+    return bool(re.search(r"\b(?:И|Или|And|Or)\b", text, re.IGNORECASE))
+
+
+def _bsl261_is_unsafe_safe_mode_call(_diag: Any, method_call: Any) -> bool:
+    if _bsl261_enclosing_if_statement(method_call) is None:
+        return False
+    call_text = _diag._ts_node_text(method_call).strip()
+    expression = _bsl261_parent_of_type(method_call, {"expression"})
+    if expression is None:
+        return False
+    expression_text = _diag._ts_node_text(expression).strip()
+    if expression_text == call_text:
+        parent = getattr(expression, "parent", None)
+        if getattr(parent, "type", None) == "unary_expression":
+            return True
+        if getattr(parent, "type", None) == "binary_expression":
+            root_text = _diag._ts_node_text(parent)
+            return _bsl261_has_bool_operator(root_text) and not _bsl261_is_explicit_comparison(
+                root_text
+            )
+        return True
+
+    root = expression
+    while getattr(getattr(root, "parent", None), "type", None) in {
+        "expression",
+        "binary_expression",
+        "unary_expression",
+    }:
+        root = root.parent
+    root_text = _diag._ts_node_text(root)
+    if _bsl261_is_explicit_comparison(root_text):
+        return False
+    return _bsl261_has_bool_operator(root_text) or getattr(root, "type", None) == "unary_expression"
+
+
+def _bsl261_diagnostics_from_cst(
+    path: str,
+    lines: list[str],
+    tree: Any | None,
+    snapshot: Any | None,
+) -> list[Any] | None:
+    _diag = _diag_module()
+    if tree is None or getattr(tree, "root_node", None) is None:
+        return None
+    if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+        nodes = snapshot.ts_nodes_for_types({"method_call"}, walker=_diag._ts_walk)
+    else:
+        nodes = {"method_call": []}
+        for node in _diag._ts_walk(tree.root_node):
+            if getattr(node, "type", None) == "method_call":
+                nodes["method_call"].append(node)
+    if not nodes["method_call"]:
+        return None
+
+    diags: list[Any] = []
+    for method_call in nodes["method_call"]:
+        ident = _bsl261_identifier_node(_diag, method_call)
+        if ident is None:
+            continue
+        if _diag._ts_node_text(ident).casefold() not in {"безопасныйрежим", "safemode"}:
+            continue
+        if not _bsl261_is_unsafe_safe_mode_call(_diag, method_call):
+            continue
+        line_idx = ident.start_point[0]
+        line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+        character = _diag.utf8_byte_offset_to_lsp_character(line_text, ident.start_point[1])
+        end_character = _diag.utf8_byte_offset_to_lsp_character(line_text, ident.end_point[1])
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=line_idx + 1,
+                character=character,
+                end_line=line_idx + 1,
+                end_character=end_character,
+                severity=_diag.Severity.ERROR,
+                code="BSL261",
+            )
+        )
+    return diags
+
+
 def _diag_module() -> Any:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
@@ -1229,23 +1339,31 @@ def run_bsl244_253_261_runtime_pool(
                     )
                 )
     if "BSL261" in enabled_set:
-        for idx, line in enumerate(clean):
-            if not re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE):
-                continue
-            if re.search(
-                r"\b(?:Если|If)\b.*\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE
-            ) or re.search(r"\b(?:И|And|Или|Or)\b", line, re.IGNORECASE):
-                match = re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE)
-                if match is not None:
-                    diags.append(
-                        _diag.Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start(),
-                            end_line=idx + 1,
-                            end_character=match.end(),
-                            severity=_diag.Severity.ERROR,
-                            code="BSL261",
-                        )
+        cst_diags = _bsl261_diagnostics_from_cst(path, lines, tree, snapshot)
+        if cst_diags is not None:
+            diags.extend(cst_diags)
+        else:
+            for idx, line in enumerate(clean):
+                if not re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE):
+                    continue
+                if re.search(
+                    r"\b(?:Если|If|Не|Not)\b.*\b(?:БезопасныйРежим|SafeMode)\s*\(",
+                    line,
+                    re.IGNORECASE,
+                ) or re.search(r"\b(?:И|And|Или|Or)\b", line, re.IGNORECASE):
+                    match = re.search(
+                        r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE
                     )
+                    if match is not None and not re.search(r"(?:<>|<=|>=|=)", line):
+                        diags.append(
+                            _diag.Diagnostic(
+                                file=path,
+                                line=idx + 1,
+                                character=match.start(),
+                                end_line=idx + 1,
+                                end_character=match.end(),
+                                severity=_diag.Severity.ERROR,
+                                code="BSL261",
+                            )
+                        )
     return diags
