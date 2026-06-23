@@ -3201,6 +3201,50 @@ class TestTailParityBatches:
         )
         assert "BSL253" in _codes(diags)
 
+    def test_bsl253_http_timeout_argument_is_clean(self, tmp_path: Path) -> None:
+        diags = _check(
+            """\
+            Процедура Метод()
+                Соединение = Новый HTTPСоединение(Сервер,,,,, 30, Защита);
+            КонецПроцедуры
+            """,
+            tmp_path,
+            select={"BSL253"},
+        )
+
+        assert "BSL253" not in _codes(diags)
+
+    def test_bsl253_later_timeout_assignment_is_clean(self, tmp_path: Path) -> None:
+        diags = _check(
+            """\
+            Процедура Метод()
+                Соединение = Новый HTTPСоединение(Сервер);
+                Соединение.Таймаут = Таймаут;
+            КонецПроцедуры
+            """,
+            tmp_path,
+            select={"BSL253"},
+        )
+
+        assert "BSL253" not in _codes(diags)
+
+    def test_bsl253_unsupported_constructor_comment_and_string_are_clean(
+        self, tmp_path: Path
+    ) -> None:
+        diags = _check(
+            """\
+            Процедура Метод()
+                Запрос = Новый HTTPЗапрос("x");
+                Текст = "Новый HTTPСоединение(""x"")";
+                // Новый FTPСоединение("x");
+            КонецПроцедуры
+            """,
+            tmp_path,
+            select={"BSL253"},
+        )
+
+        assert "BSL253" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL171 / BSL204 / BSL217 / BSL248 / BSL251 / BSL252 / BSL259 / BSL268

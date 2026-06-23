@@ -226,6 +226,182 @@ def _bsl244_call_end_character(line: str, open_paren_idx: int) -> int:
     return open_paren_idx
 
 
+_BSL253_TIMEOUT_ARG_INDEXES = {
+    "httpсоединение": 5,
+    "httpconnection": 5,
+    "ftpсоединение": 6,
+    "ftpconnection": 6,
+    "wsопределения": 4,
+    "wsdefinitions": 4,
+    "wsпрокси": 5,
+    "wsproxy": 5,
+    "интернетпочтовыйпрофиль": 5,
+    "internetmailprofile": 5,
+}
+
+
+def _bsl253_first_identifier_node(_diag: Any, node: Any) -> Any | None:
+    for child in getattr(node, "children", []) or []:
+        if getattr(child, "type", None) == "identifier":
+            return child
+    return None
+
+
+def _bsl253_ancestor_of_type(node: Any, node_types: set[str]) -> Any | None:
+    current = node
+    while current is not None:
+        if getattr(current, "type", None) in node_types:
+            return current
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _bsl253_argument_presence(_diag: Any, new_expression: Any) -> list[bool]:
+    args_node = _diag._ts_child_of_type(new_expression, "arguments")
+    if args_node is None:
+        return []
+    text = _diag._ts_node_text(args_node).strip()
+    if len(text) >= 2 and text[0] == "(" and text[-1] == ")":
+        text = text[1:-1]
+    if not text.strip():
+        return []
+    return [bool(part.strip()) for part in _diag._split_top_level_args(text)]
+
+
+def _bsl253_assignment_lhs_text(_diag: Any, assignment: Any) -> str:
+    for child in getattr(assignment, "children", []) or []:
+        if getattr(child, "type", None) in {"identifier", "property_access"}:
+            return _diag._ts_node_text(child).strip()
+    text = _diag._ts_node_text(assignment)
+    return text.split("=", 1)[0].strip() if "=" in text else ""
+
+
+def _bsl253_assignment_rhs_is_number_or_variable(_diag: Any, assignment: Any) -> bool:
+    seen_equals = False
+    for child in getattr(assignment, "children", []) or []:
+        if _diag._ts_node_text(child) == "=":
+            seen_equals = True
+            continue
+        if not seen_equals or getattr(child, "type", None) != "expression":
+            continue
+        expr_text = _diag._ts_node_text(child).strip()
+        return bool(re.fullmatch(r"\d+(?:[.,]\d+)?|\w+", expr_text, re.IGNORECASE))
+    rhs = _diag._ts_node_text(assignment).split("=", 1)[-1].strip().rstrip(";")
+    return bool(re.fullmatch(r"\d+(?:[.,]\d+)?|\w+", rhs, re.IGNORECASE))
+
+
+def _bsl253_assignment_variable(_diag: Any, assignment: Any) -> str:
+    lhs = _bsl253_assignment_lhs_text(_diag, assignment)
+    return lhs if "." not in lhs else ""
+
+
+def _bsl253_timeout_assignment_target(_diag: Any, assignment: Any) -> str:
+    lhs = _bsl253_assignment_lhs_text(_diag, assignment)
+    if "." not in lhs:
+        return ""
+    obj, prop = lhs.rsplit(".", 1)
+    if prop.strip().casefold() not in {"таймаут", "timeout"}:
+        return ""
+    if not _bsl253_assignment_rhs_is_number_or_variable(_diag, assignment):
+        return ""
+    return obj.strip()
+
+
+def _bsl253_proc_for_line(procs: list[Any], line_idx: int) -> Any | None:
+    for proc in procs:
+        if proc.start_idx <= line_idx <= proc.end_idx:
+            return proc
+    return None
+
+
+def _bsl253_has_later_timeout_assignment(
+    _diag: Any,
+    *,
+    assignments: list[Any],
+    procs: list[Any],
+    variable_name: str,
+    new_expression_line_idx: int,
+) -> bool:
+    if not variable_name:
+        return False
+    proc = _bsl253_proc_for_line(procs, new_expression_line_idx)
+    for assignment in assignments:
+        assignment_line_idx = assignment.start_point[0] + 1
+        if assignment_line_idx <= new_expression_line_idx:
+            continue
+        if proc is not None and not (proc.start_idx <= assignment_line_idx <= proc.end_idx):
+            continue
+        target = _bsl253_timeout_assignment_target(_diag, assignment)
+        if target.casefold() == variable_name.casefold():
+            return True
+    return False
+
+
+def _bsl253_timeout_diagnostics_from_cst(
+    path: str,
+    lines: list[str],
+    procs: list[Any],
+    tree: Any | None,
+    snapshot: Any | None,
+) -> list[Any] | None:
+    _diag = _diag_module()
+    if tree is None or getattr(tree, "root_node", None) is None:
+        return None
+    if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+        nodes = snapshot.ts_nodes_for_types(
+            {"new_expression", "assignment_statement"},
+            walker=_diag._ts_walk,
+        )
+    else:
+        nodes = {"new_expression": [], "assignment_statement": []}
+        for node in _diag._ts_walk(tree.root_node):
+            node_type = getattr(node, "type", None)
+            if node_type in nodes:
+                nodes[node_type].append(node)
+    if not nodes["new_expression"] and not nodes["assignment_statement"]:
+        return None
+
+    diags: list[Any] = []
+    assignments = nodes["assignment_statement"]
+    for new_expression in nodes["new_expression"]:
+        type_node = _bsl253_first_identifier_node(_diag, new_expression)
+        if type_node is None:
+            continue
+        type_name_cf = _diag._ts_node_text(type_node).casefold()
+        need_idx = _BSL253_TIMEOUT_ARG_INDEXES.get(type_name_cf)
+        if need_idx is None:
+            continue
+        args = _bsl253_argument_presence(_diag, new_expression)
+        if len(args) > need_idx and args[need_idx]:
+            continue
+        assignment = _bsl253_ancestor_of_type(new_expression, {"assignment_statement"})
+        variable_name = _bsl253_assignment_variable(_diag, assignment) if assignment else ""
+        if _bsl253_has_later_timeout_assignment(
+            _diag,
+            assignments=assignments,
+            procs=procs,
+            variable_name=variable_name,
+            new_expression_line_idx=new_expression.start_point[0] + 1,
+        ):
+            continue
+        line_idx = type_node.start_point[0]
+        line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+        character = _diag.utf8_byte_offset_to_lsp_character(line_text, type_node.start_point[1])
+        end_character = _diag.utf8_byte_offset_to_lsp_character(line_text, type_node.end_point[1])
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=line_idx + 1,
+                character=character,
+                end_line=line_idx + 1,
+                end_character=end_character,
+                severity=_diag.Severity.ERROR,
+                code="BSL253",
+            )
+        )
+    return diags
+
+
 def _diag_module() -> Any:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
@@ -980,6 +1156,9 @@ def run_bsl244_253_261_runtime_pool(
     procs: list[Any],
     enabled: tuple[str, ...],
     cleaned_lines: list[str] | None = None,
+    *,
+    tree: Any | None = None,
+    snapshot: Any | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     enabled_set = set(enabled)
@@ -1018,43 +1197,37 @@ def run_bsl244_253_261_runtime_pool(
                         )
                     )
 
-    timeout_types = {
-        "httpсоединение": 4,
-        "httpconnection": 4,
-        "ftpсоединение": 5,
-        "ftpconnection": 5,
-        "wsопределения": 3,
-        "wsdefinitions": 3,
-        "wsпрокси": 4,
-        "wsproxy": 4,
-        "интернетпочтовыйпрофиль": 5,
-        "internetmailprofile": 5,
-    }
     if "BSL253" in enabled_set:
-        for idx, line in enumerate(clean):
-            match = re.search(
-                r"\b(?:Новый|New)\s+(?P<type>\w+)\s*\((?P<args>.*)\)", line, re.IGNORECASE
-            )
-            if match is None:
-                continue
-            type_cf = match.group("type").casefold()
-            need_idx = timeout_types.get(type_cf)
-            if need_idx is None:
-                continue
-            args = _diag._split_top_level_args(match.group("args"))
-            if len(args) > need_idx and args[need_idx].strip():
-                continue
-            diags.append(
-                _diag.Diagnostic(
-                    file=path,
-                    line=idx + 1,
-                    character=match.start("type"),
-                    end_line=idx + 1,
-                    end_character=match.end("args") + 1,
-                    severity=_diag.Severity.ERROR,
-                    code="BSL253",
+        cst_diags = _bsl253_timeout_diagnostics_from_cst(path, lines, procs, tree, snapshot)
+        if cst_diags is not None:
+            diags.extend(cst_diags)
+        else:
+            for idx, line in enumerate(clean):
+                match = re.search(
+                    r"\b(?:Новый|New)\s+(?P<type>\w+)\s*\((?P<args>.*)\)",
+                    line,
+                    re.IGNORECASE,
                 )
-            )
+                if match is None:
+                    continue
+                type_cf = match.group("type").casefold()
+                need_idx = _BSL253_TIMEOUT_ARG_INDEXES.get(type_cf)
+                if need_idx is None:
+                    continue
+                args = _diag._split_top_level_args(match.group("args"))
+                if len(args) > need_idx and args[need_idx].strip():
+                    continue
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=idx + 1,
+                        character=match.start("type"),
+                        end_line=idx + 1,
+                        end_character=match.end("args") + 1,
+                        severity=_diag.Severity.ERROR,
+                        code="BSL253",
+                    )
+                )
     if "BSL261" in enabled_set:
         for idx, line in enumerate(clean):
             if not re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE):

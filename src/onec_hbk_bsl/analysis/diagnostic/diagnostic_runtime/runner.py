@@ -790,6 +790,8 @@ def append_diagnostic_runtime_rule_tasks(
                     context.procedures,
                     codes,
                     context.lines,
+                    tree=context.tree,
+                    snapshot=context.snapshot,
                 ),
             )
         if metadata_pool:

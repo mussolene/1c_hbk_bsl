@@ -5586,6 +5586,8 @@ class QueryMetadataDiagnosticsRule(DiagnosticRuntimeRule):
                 procs,
                 (code,),
                 context.lines,
+                tree=context.tree,
+                snapshot=context.snapshot,
             )
         return run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
             context.path,
