@@ -185,6 +185,47 @@ def _bsl242_proc_body_is_empty(lines: list[str], proc: Any) -> bool:
     return True
 
 
+def _bsl244_forbidden_form_event_name(name: str) -> bool:
+    name_cf = name.strip().casefold()
+    return name_cf.endswith(
+        (
+            "приактивизациистроки",
+            "onactivaterow",
+            "началовыбора",
+            "onstartchoice",
+        )
+    )
+
+
+def _bsl244_proc_has_context_server_directive(lines: list[str], proc: Any) -> bool:
+    idx = proc.start_idx - 1
+    while idx >= 0:
+        stripped = lines[idx].strip()
+        if not stripped or stripped.startswith("//"):
+            idx -= 1
+            continue
+        if not stripped.startswith("&"):
+            return False
+        directive = stripped[1:].casefold().replace(" ", "")
+        if directive in {"насервере", "atserver"}:
+            return True
+        idx -= 1
+    return False
+
+
+def _bsl244_call_end_character(line: str, open_paren_idx: int) -> int:
+    depth = 0
+    for idx in range(open_paren_idx, len(line)):
+        char = line[idx]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return idx + 1
+    return open_paren_idx
+
+
 def _diag_module() -> Any:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
@@ -947,7 +988,7 @@ def run_bsl244_253_261_runtime_pool(
     server_proc_names = {
         proc.name.casefold()
         for proc in procs
-        if _diag._procedure_compiler_execution_context(lines, proc) == "server"
+        if _bsl244_proc_has_context_server_directive(lines, proc)
     }
 
     if "BSL244" in enabled_set and _diag.path_is_likely_form_module_bsl(path):
@@ -955,21 +996,23 @@ def run_bsl244_253_261_runtime_pool(
             proc = _diag._proc_containing_line(procs, idx)
             if proc is None:
                 continue
-            name_cf = proc.name.casefold()
-            is_form_event = name_cf.startswith("при") or name_cf.startswith("on")
-            if not is_form_event:
+            line_cf = line.lstrip().casefold()
+            if line_cf.startswith(("процедура ", "функция ", "procedure ", "function ")):
                 continue
-            if _diag._procedure_compiler_execution_context(lines, proc) == "server":
+            if not _bsl244_forbidden_form_event_name(proc.name):
                 continue
             for match in re.finditer(r"\b(?P<call>\w+)\s*\(", line):
+                if match.start("call") > 0 and line[match.start("call") - 1] == ".":
+                    continue
                 if match.group("call").casefold() in server_proc_names:
+                    open_paren_idx = match.end() - 1
                     diags.append(
                         _diag.Diagnostic(
                             file=path,
                             line=idx + 1,
                             character=match.start("call"),
                             end_line=idx + 1,
-                            end_character=match.end("call"),
+                            end_character=_bsl244_call_end_character(line, open_paren_idx),
                             severity=_diag.Severity.ERROR,
                             code="BSL244",
                         )

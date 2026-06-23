@@ -1958,7 +1958,7 @@ class TestTailParityBatches:
             textwrap.dedent(
                 """\
                 &НаКлиенте
-                Процедура ПриОткрытии()
+                Процедура ТоварыПриАктивизацииСтроки()
                     СерверныйМетод();
                     Соединение = Новый HTTPСоединение("x", 80, "u", "p");
                     Если БезопасныйРежим() И Истина Тогда
@@ -2017,6 +2017,29 @@ class TestTailParityBatches:
             textwrap.dedent(
                 """\
                 &НаКлиенте
+                Процедура ТоварыПриАктивизацииСтроки()
+                    ЗаполнитьДанныеФормы();
+                КонецПроцедуры
+
+                &НаСервере
+                Процедура ЗаполнитьДанныеФормы()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL244"}).check_file(str(path))
+
+        assert "BSL244" in _codes(diags)
+
+    def test_bsl244_other_form_event_calling_server_helper_is_clean(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаКлиенте
                 Процедура ПриОткрытии()
                     ЗаполнитьДанныеФормы();
                 КонецПроцедуры
@@ -2024,6 +2047,75 @@ class TestTailParityBatches:
                 &НаСервере
                 Процедура ЗаполнитьДанныеФормы()
                 КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL244"}).check_file(str(path))
+
+        assert "BSL244" not in _codes(diags)
+
+    def test_bsl244_server_no_context_target_is_clean(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаКлиенте
+                Процедура ТоварыНачалоВыбора()
+                    ЗаполнитьДанныеФормы();
+                КонецПроцедуры
+
+                &НаСервереБезКонтекста
+                Процедура ЗаполнитьДанныеФормы()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL244"}).check_file(str(path))
+
+        assert "BSL244" not in _codes(diags)
+
+    def test_bsl244_qualified_call_is_clean(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &НаКлиенте
+                Процедура ТоварыНачалоВыбора()
+                    ОбщегоНазначения.ЗаполнитьДанныеФормы();
+                КонецПроцедуры
+
+                &НаСервере
+                Процедура ЗаполнитьДанныеФормы()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL244"}).check_file(str(path))
+
+        assert "BSL244" not in _codes(diags)
+
+    def test_bsl244_english_forbidden_event_reports(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            textwrap.dedent(
+                """\
+                &AtClient
+                Procedure ItemsOnStartChoice()
+                    FillData();
+                EndProcedure
+
+                &AtServer
+                Procedure FillData()
+                EndProcedure
                 """
             ),
             encoding="utf-8",

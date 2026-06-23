@@ -164,7 +164,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL241` | `SameMetadataObjectAndChildNames` | Yes | ERROR | Совпадает имя объекта метаданного и его дочернего | Same metadata object and child name | naming, design |
 | `BSL242` | `ScheduledJobHandler` | Yes | ERROR | Обработчик регламентного задания | Scheduled job handler | correctness, scheduled-jobs |
 | `BSL243` | `SelfInsertion` | Yes | ERROR | Вставка коллекции в саму себя | Insert a collection into itself | correctness, suspicious |
-| `BSL244` | `ServerCallsInFormEvents` | Yes | WARNING | Серверные вызовы в событиях форм | Server calls in form events | correctness, ui, performance |
+| `BSL244` | `ServerCallsInFormEvents` | Yes | ERROR | Серверные вызовы в событиях форм | Server calls in form events | correctness, ui, performance |
 | `BSL245` | `ServerSideExportFormMethod` | Yes | WARNING | Серверный экспортный метод формы | Server-side export form method | correctness, ui |
 | `BSL246` | `SetPermissionsForNewObjects` | Yes | WARNING | Флажок «Устанавливать права для новых объектов» должен быть установлен только у роли ПолныеПрава | The check box «Set permissions for new objects» should only be selected for the FullAccess role | security, access-control |
 | `BSL247` | `SetPrivilegedMode` | Yes | WARNING | Использование привилегированного режима | Using privileged mode | security |

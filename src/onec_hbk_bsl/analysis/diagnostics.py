@@ -1313,7 +1313,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL244": {
         "name": "ServerCallsInFormEvents",
         "description": "Server calls in form events",
-        "severity": "WARNING",
+        "severity": "ERROR",
         "tags": ["correctness", "ui", "performance"],
         "implemented": True,
     },
