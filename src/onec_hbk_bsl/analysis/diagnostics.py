@@ -169,6 +169,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     workspace_metadata_name_index_cached as _workspace_metadata_name_index_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    metadata_typed_name_index_cached as _metadata_typed_name_index_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     current_form_xml_path as _current_form_xml_path,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (

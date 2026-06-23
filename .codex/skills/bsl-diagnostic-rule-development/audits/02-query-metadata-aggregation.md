@@ -23,7 +23,7 @@ This audit is the durable routing checklist for
 - [x] BSL231 - exact private parity; exported privileged common-module method contract
 - [x] BSL232 - exact private parity; per-protected-module session diagnostic contract
 - [x] BSL235 - CST partial-query recovery policy; parser-gap deltas classified
-- [ ] BSL236 - open
+- [x] BSL236 - type-aware active-config metadata lookup; virtual-table sources
 - [ ] BSL238 - open
 - [ ] BSL241 - open
 - [ ] BSL242 - open
@@ -81,7 +81,7 @@ Routing:
 | BSL231 | metadata XML | exact | Closed with exported-method filtering and nested privileged-module call coverage. |
 | BSL232 | metadata XML | exact | Closed with per-protected-module session diagnostics and exact private parity. |
 | BSL235 | query text | owner decision | Closed with unescaped SDBL parse, recovered query-candidate evidence, and parser-gap suppression; private parity remains classified at `onec=94`, `bslls=92`, `only_onec=30`, `only_bslls=28`. |
-| BSL236 | query metadata | high-volume two-sided mismatch | Defer until fact taxonomy; largest semantic delta. |
+| BSL236 | query metadata | parity-classified | Closed with type-aware active-config metadata lookup and virtual-table source extraction; private parity improved to `onec=7078`, `bslls=7054`, `only_bslls=130`, `only_onec=154`. |
 | BSL238 | query metadata | two-sided mismatch | Investigate after BSL236 because it shares query metadata facts. |
 | BSL241 | metadata XML | no signal | Fast-close candidate only with synthetic/mini fixture. |
 | BSL242 | metadata XML | ours-only mismatch | Investigate scheduled job handler metadata edge cases. |

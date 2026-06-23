@@ -2121,7 +2121,44 @@ class TestTailParityBatches:
 
         assert diags == []
 
-    def test_bsl236_uses_workspace_metadata_roots(self, tmp_path: Path) -> None:
+    def test_bsl236_same_name_in_different_metadata_type_does_not_satisfy_reference(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "Catalogs").mkdir(exist_ok=True)
+        (tmp_path / "Catalogs" / "Тест.xml").write_text(
+            "<MetaDataObject><Catalog><Properties><Name>Тест</Name></Properties></Catalog></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос = Новый Запрос;
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ИЗ
+                    |   Документ.Тест КАК Таблица";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
+
+        assert len(diags) == 1
+        assert diags[0].line == 6
+        assert diags[0].character == 8
+        assert diags[0].end_character == 8 + len("Документ.Тест")
+
+    def test_bsl236_uses_active_configuration_root_only(self, tmp_path: Path) -> None:
         workspace = tmp_path
         (workspace / ".git").mkdir()
         extension_root = workspace / "src" / "extension"
@@ -2168,11 +2205,12 @@ class TestTailParityBatches:
             if d.code == "BSL236"
         ]
 
-        assert len(diags) == 1
-        assert diags[0].line == 11
-        assert diags[0].character == 8
-        assert diags[0].end_character == 8 + len("Документ.АктСверкиВзаиморасчетов")
-        assert diags[0].message == _rule_msg("BSL236")
+        assert len(diags) == 2
+        assert [(diag.line, diag.character, diag.end_character) for diag in diags] == [
+            (6, 8, 8 + len("Документ.РеализацияТоваровУслуг")),
+            (11, 8, 8 + len("Документ.АктСверкиВзаиморасчетов")),
+        ]
+        assert {diag.message for diag in diags} == {_rule_msg("BSL236")}
 
     def test_bsl236_does_not_use_unrelated_workspace_configuration_roots(
         self, tmp_path: Path
@@ -2258,6 +2296,42 @@ class TestTailParityBatches:
             (3, 35, 35 + len("Документ.СчетФактура")),
             (4, 42, 42 + len("Справочник.ЕдиницыИзмерения")),
         }
+
+    def test_bsl236_reports_missing_virtual_table_metadata_source(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
+        path.parent.mkdir(parents=True)
+        (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (tmp_path / "DataProcessors").mkdir(exist_ok=True)
+        (tmp_path / "DataProcessors" / "Обработка.xml").write_text(
+            "<MetaDataObject><DataProcessor><Properties><Name>Обработка</Name></Properties></DataProcessor></MetaDataObject>",
+            encoding="utf-8",
+        )
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Запрос.Текст = "ВЫБРАТЬ
+                    |   Таблица.Ссылка
+                    |ИЗ
+                    |   РегистрСведений.УдаленныйРегистр.СрезПоследних(&Дата) КАК Таблица";
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL236"}).check_file(str(path))
+            if d.code == "BSL236"
+        ]
+
+        assert len(diags) == 1
+        assert diags[0].line == 5
+        assert diags[0].character == 8
+        assert diags[0].end_character == 8 + len("РегистрСведений.УдаленныйРегистр")
 
     def test_bsl236_skips_temp_tables_declared_by_place_into(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"

@@ -15,6 +15,49 @@ from onec_hbk_bsl.analysis.sdbl_cst import (
     source_alias_name,
 )
 
+_QUERY_METADATA_ROOT_TO_KIND: dict[str, str] = {
+    "бизнеспроцесс": "BusinessProcess",
+    "businessprocess": "BusinessProcess",
+    "документ": "Document",
+    "document": "Document",
+    "журналдокументов": "DocumentJournal",
+    "documentjournal": "DocumentJournal",
+    "справочник": "Catalog",
+    "catalog": "Catalog",
+    "перечисление": "Enum",
+    "enum": "Enum",
+    "планвидовхарактеристик": "ChartOfCharacteristicTypes",
+    "chartofcharacteristictypes": "ChartOfCharacteristicTypes",
+    "планывидовхарактеристик": "ChartOfCharacteristicTypes",
+    "chartsofcharacteristictypes": "ChartOfCharacteristicTypes",
+    "плансчетов": "ChartOfAccounts",
+    "chartofaccounts": "ChartOfAccounts",
+    "планысчетов": "ChartOfAccounts",
+    "chartsofaccounts": "ChartOfAccounts",
+    "планвидоврасчета": "ChartOfCalculationTypes",
+    "chartofcalculationtypes": "ChartOfCalculationTypes",
+    "регистрсведений": "InformationRegister",
+    "informationregister": "InformationRegister",
+    "регистрнакопления": "AccumulationRegister",
+    "accumulationregister": "AccumulationRegister",
+    "регистрбухгалтерии": "AccountingRegister",
+    "accountingregister": "AccountingRegister",
+    "регистррасчета": "CalculationRegister",
+    "calculationregister": "CalculationRegister",
+    "задача": "Task",
+    "task": "Task",
+    "планобмена": "ExchangePlan",
+    "exchangeplan": "ExchangePlan",
+    "внешнийисточникданных": "ExternalDataSource",
+    "externaldatasource": "ExternalDataSource",
+    "константа": "Constant",
+    "constant": "Constant",
+    "отчет": "Report",
+    "report": "Report",
+    "обработка": "DataProcessor",
+    "dataprocessor": "DataProcessor",
+}
+
 _QUERY_METADATA_ROOT_PATTERN = "|".join(
     re.escape(root) for root in sorted(QUERY_METADATA_ROOTS, key=len, reverse=True)
 )
@@ -150,7 +193,7 @@ def _diag_module() -> Any:
 
 def _missing_metadata_name(
     source: str,
-    meta_names: set[str],
+    meta_names: set[tuple[str, str]],
 ) -> str | None:
     parts = source.split(".")
     if not parts:
@@ -158,10 +201,11 @@ def _missing_metadata_name(
     if len(parts) == 1:
         return None
     root = parts[0].casefold()
-    if root not in QUERY_METADATA_ROOTS:
+    kind = _QUERY_METADATA_ROOT_TO_KIND.get(root)
+    if kind is None:
         return None
     object_name = parts[1]
-    if object_name.casefold() in meta_names:
+    if (kind.casefold(), object_name.casefold()) in meta_names:
         return None
     return ".".join(parts[:2])
 
@@ -278,9 +322,9 @@ def run_bsl174_187_236_238_query_metadata_pool(
     enabled_set = set(enabled)
     diags: list[Any] = []
     root = _diag._config_root_for_file(path)
-    meta_names: set[str] = set()
+    meta_names: set[tuple[str, str]] = set()
     if "BSL236" in enabled_set and root is not None:
-        meta_names = set(_diag._workspace_metadata_name_index_cached(root))
+        meta_names = set(_diag._metadata_typed_name_index_cached(root))
 
     object_xml = _diag._current_object_xml_path(path)
     object_context = _diag._current_module_xml_context(path)

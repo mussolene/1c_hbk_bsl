@@ -90,7 +90,21 @@ def metadata_name_index_cached(config_root: str) -> frozenset[str]:
         if not folder.exists():
             continue
         for xml_file in folder.glob("*.xml"):
-            names.add(xml_file.stem.casefold())
+                names.add(xml_file.stem.casefold())
+    return frozenset(names)
+
+
+@functools.lru_cache(maxsize=16)
+def metadata_typed_name_index_cached(config_root: str) -> frozenset[tuple[str, str]]:
+    root = Path(config_root)
+    names: set[tuple[str, str]] = set()
+    for folder_name, kind in FOLDER_TO_KIND.items():
+        folder = root / folder_name
+        if not folder.exists():
+            continue
+        kind_cf = kind.casefold()
+        for xml_file in folder.glob("*.xml"):
+            names.add((kind_cf, xml_file.stem.casefold()))
     return frozenset(names)
 
 
