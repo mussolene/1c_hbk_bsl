@@ -430,11 +430,12 @@ def _bsl201_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
     return diags
 
 
+def _sdbl_has_child_type(node: Any, node_type: str) -> bool:
+    return any(getattr(child, "type", None) == node_type for child in getattr(node, "children", ()) or ())
+
+
 def _sdbl_bsl206_nested_query_source_nodes(root: Any) -> list[Any]:
     out: list[Any] = []
-
-    def has_child_type(node: Any, node_type: str) -> bool:
-        return any(getattr(child, "type", None) == node_type for child in getattr(node, "children", ()) or ())
 
     def walk(node: Any, ancestors: tuple[Any, ...]) -> None:
         if getattr(node, "type", None) == "nested_query_source":
@@ -445,9 +446,9 @@ def _sdbl_bsl206_nested_query_source_nodes(root: Any) -> list[Any]:
             )
             in_join_clause = join_clause is not None
             table_source_has_join = (
-                getattr(parent, "type", None) == "table_source" and has_child_type(parent, "join_clause")
+                getattr(parent, "type", None) == "table_source" and _sdbl_has_child_type(parent, "join_clause")
             )
-            if join_clause is not None and has_child_type(join_clause, "ERROR"):
+            if join_clause is not None and _sdbl_has_child_type(join_clause, "ERROR"):
                 return
             if in_join_clause or table_source_has_join:
                 out.append(node)
@@ -494,6 +495,97 @@ def _bsl206_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
                 end_character=end_character,
                 severity=_diag.Severity.WARNING,
                 code="BSL206",
+            )
+        )
+    return diags
+
+
+def _sdbl_bsl207_virtual_table_source_nodes(root: Any) -> list[tuple[Any, bool]]:
+    out: list[tuple[Any, bool]] = []
+
+    def walk(node: Any, ancestors: tuple[Any, ...]) -> None:
+        if getattr(node, "type", None) == "virtual_table_source":
+            parent = ancestors[-1] if ancestors else None
+            join_clause = next(
+                (ancestor for ancestor in reversed(ancestors) if getattr(ancestor, "type", None) == "join_clause"),
+                None,
+            )
+            in_join_clause = join_clause is not None
+            table_source_has_join = (
+                getattr(parent, "type", None) == "table_source" and _sdbl_has_child_type(parent, "join_clause")
+            )
+            if in_join_clause or table_source_has_join:
+                out.append((node, parent is not None and getattr(parent, "type", None) == "ERROR"))
+                return
+        next_ancestors = (*ancestors, node)
+        for child in getattr(node, "children", ()) or ():
+            walk(child, next_ancestors)
+
+    walk(root, ())
+    return out
+
+
+def _sdbl_virtual_table_call_end_point(block: Any, node: Any) -> tuple[int, int]:
+    query_lines = [line.head.encode("utf-8") for line in getattr(block, "content_lines", ()) or ()]
+    start_row = node.start_point[0]
+    if start_row < 0 or start_row >= len(query_lines):
+        return node.end_point
+
+    open_row = -1
+    open_col = -1
+    for row in range(start_row, len(query_lines)):
+        col = node.start_point[1] if row == start_row else 0
+        found = query_lines[row].find(b"(", col)
+        if found >= 0:
+            open_row = row
+            open_col = found
+            break
+    if open_row < 0:
+        return node.end_point
+
+    depth = 0
+    for row in range(open_row, len(query_lines)):
+        col = open_col if row == open_row else 0
+        line = query_lines[row]
+        while col < len(line):
+            char = line[col : col + 1]
+            if char == b"(":
+                depth += 1
+            elif char == b")":
+                depth -= 1
+                if depth == 0:
+                    return (row, col + 1)
+            col += 1
+    return node.end_point
+
+
+def _bsl207_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
+    tree, byte_maps = _parse_unescaped_sdbl_query_text(block)
+    root = getattr(tree, "root_node", None)
+    if root is None:
+        return []
+
+    _diag = _diag_module()
+    diags: list[Any] = []
+    for node, recover_call_range in _sdbl_bsl207_virtual_table_source_nodes(root):
+        end_point = _sdbl_virtual_table_call_end_point(block, node) if recover_call_range else node.end_point
+        start_line, start_character = _unescaped_lsp_position(
+            block, byte_maps, node.start_point[0], node.start_point[1]
+        )
+        end_line, end_character = _unescaped_lsp_position(
+            block, byte_maps, end_point[0], end_point[1]
+        )
+        if (end_line, end_character) <= (start_line, start_character):
+            continue
+        diags.append(
+            _diag.Diagnostic(
+                file=path,
+                line=start_line + 1,
+                character=start_character,
+                end_line=end_line + 1,
+                end_character=end_character,
+                severity=_diag.Severity.WARNING,
+                code="BSL207",
             )
         )
     return diags
@@ -712,6 +804,8 @@ def run_bsl206_207_209_query_join_diagnostics(
             continue
         if "BSL206" in enabled and block is not None:
             diags.extend(_bsl206_diags_from_sdbl_tree(path, block))
+        if "BSL207" in enabled and block is not None:
+            diags.extend(_bsl207_diags_from_sdbl_tree(path, block))
 
         pending_datasource = False
         pending_join_datasource = False
@@ -771,7 +865,7 @@ def run_bsl206_207_209_query_join_diagnostics(
                                 code="BSL206",
                             )
                         )
-                if "BSL207" in enabled:
+                if "BSL207" in enabled and block is None:
                     virtual_match = _diag._RE_QUERY_VIRTUAL_TABLE.search(head)
                     if virtual_match and (
                         join_datasource or has_join_before_query_end(content_lines, pos)

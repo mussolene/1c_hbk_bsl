@@ -7963,6 +7963,59 @@ class TestBsl206JoinWithSubQuery:
 
 
 # ---------------------------------------------------------------------------
+# BSL207 — JoinWithVirtualTable
+# ---------------------------------------------------------------------------
+
+
+class TestBsl207JoinWithVirtualTable:
+    @_requires_sdbl
+    def test_bsl207_reports_joined_virtual_table_source(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   T.Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК S
+            |   ЛЕВОЕ СОЕДИНЕНИЕ РегистрНакопления.Товары.Остатки(&Дата) КАК T
+            |   ПО T.Ссылка = S.Ссылка";
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL207"}) if d.code == "BSL207"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (5, 21, 5, 60),
+        ]
+        assert diags[0].severity is Severity.WARNING
+
+    @_requires_sdbl
+    def test_bsl207_reports_initial_virtual_table_source_with_join(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   T.Ссылка
+            |ИЗ
+            |   РегистрНакопления.Товары.Остатки(&Дата) КАК T
+            |   ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Тест КАК S
+            |   ПО T.Ссылка = S.Ссылка";
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL207"}) if d.code == "BSL207"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 4, 4, 43),
+        ]
+
+    @_requires_sdbl
+    def test_bsl207_skips_standalone_virtual_table_source(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   T.Ссылка
+            |ИЗ
+            |   РегистрНакопления.Товары.Остатки(&Дата) КАК T";
+        """
+
+        assert "BSL207" not in _codes(_check(content, tmp_path, select={"BSL207"}))
+
+
+# ---------------------------------------------------------------------------
 # BSL201 — IncorrectUseLikeInQuery
 # ---------------------------------------------------------------------------
 
