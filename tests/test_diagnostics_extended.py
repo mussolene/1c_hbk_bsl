@@ -4610,6 +4610,41 @@ class TestBsl015NumberOfOptionalParams:
             (1, 15, 3, 16)
         ]
 
+    def test_multiline_param_list_open_paren_line_range_starts_at_first_param(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест(
+                А,
+                Б = 2,
+                В = 3,
+                Г = 4,
+                Д = 5) Экспорт
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, max_optional_params=3) if d.code == "BSL015"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 4, 6, 9)
+        ]
+
+    def test_multiline_param_list_closing_paren_line_range_ends_at_last_param(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Функция Тест(А
+                , Б = 2
+                , В = 3
+                , Г = 4
+                , Д = 5
+                )
+                Возврат А;
+            КонецФункции
+        """
+        diags = [d for d in _check(content, tmp_path, max_optional_params=3) if d.code == "BSL015"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 13, 5, 11)
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL016 — NonStandardRegion

@@ -10,7 +10,7 @@ This audit is the durable routing checklist for
 
 - [x] BSL007 - parity-classified; current private batch has no ours-only deltas and seven classified BSLLS-only runtime/state divergences
 - [x] BSL008 - exact private parity after method-name range alignment
-- [ ] BSL015 - open
+- [x] BSL015 - exact private parity after parameter-list range alignment
 - [ ] BSL031 - open
 - [ ] BSL062 - open
 - [ ] BSL148 - open

@@ -1242,20 +1242,31 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
         elif child_type == "parameters":
             open_node = None
             close_node = None
+            parameter_nodes: list[Any] = []
             for param_child in getattr(child, "children", []) or []:
                 param_child_type = getattr(param_child, "type", None)
                 if param_child_type == "(":
                     open_node = param_child
                 elif param_child_type == ")":
                     close_node = param_child
+                elif param_child_type == "parameter":
+                    parameter_nodes.append(param_child)
             if open_node is not None and close_node is not None:
-                params_start_idx = open_node.end_point[0]
-                params_start_character = _ts_point_to_lsp_character(node, open_node.end_point)
-                params_end_idx = close_node.start_point[0]
-                params_end_character = _ts_point_to_lsp_character(node, close_node.start_point)
-            for param in getattr(child, "children", []) or []:
-                if getattr(param, "type", None) != "parameter":
-                    continue
+                if parameter_nodes:
+                    first_param = parameter_nodes[0]
+                    last_param = parameter_nodes[-1]
+                    params_start_idx = first_param.start_point[0]
+                    params_start_character = _ts_point_to_lsp_character(
+                        node, first_param.start_point
+                    )
+                    params_end_idx = last_param.end_point[0]
+                    params_end_character = _ts_point_to_lsp_character(node, last_param.end_point)
+                else:
+                    params_start_idx = open_node.end_point[0]
+                    params_start_character = _ts_point_to_lsp_character(node, open_node.end_point)
+                    params_end_idx = close_node.start_point[0]
+                    params_end_character = _ts_point_to_lsp_character(node, close_node.start_point)
+            for param in parameter_nodes:
                 param_name = ""
                 param_identifier = None
                 is_val = False
