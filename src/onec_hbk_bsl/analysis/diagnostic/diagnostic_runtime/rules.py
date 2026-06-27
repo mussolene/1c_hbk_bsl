@@ -5525,7 +5525,17 @@ class MethodContractDiagnosticsRule(DiagnosticRuntimeRule):
                 context.path, context.content, context.lines, procs, calls
             )
         if code == "BSL215":
-            return run_bsl215_missing_parameter_description(context.path, context.lines, procs)
+            line_comment_nodes = None
+            if context.ts_nodes_for_types is not None:
+                line_comment_nodes = context.ts_nodes_for_types(context.tree, {"line_comment"})[
+                    "line_comment"
+                ]
+            return run_bsl215_missing_parameter_description(
+                context.path,
+                context.lines,
+                procs,
+                line_comment_nodes,
+            )
         if code == "BSL224":
             nodes_by_type = None
             if context.ts_nodes_for_types is not None:

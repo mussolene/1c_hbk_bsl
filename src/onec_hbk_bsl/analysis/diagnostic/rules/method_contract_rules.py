@@ -269,22 +269,46 @@ def run_bsl215_missing_parameter_description(
     path: str,
     lines: list[str],
     procs: list[_ProcInfo],
+    line_comment_nodes: list[Any] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
     legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", path))
+    comment_lines_by_idx: dict[int, str] | None = None
+    if line_comment_nodes is not None:
+        comment_lines_by_idx = {}
+        for node in line_comment_nodes:
+            row = getattr(node, "start_point", (None, None))[0]
+            if row is None:
+                continue
+            text = getattr(node, "text", b"")
+            if isinstance(text, bytes):
+                comment_lines_by_idx[int(row)] = text.decode("utf-8", errors="replace")
+            else:
+                comment_lines_by_idx[int(row)] = str(text)
+
+    def _is_comment_line(idx: int) -> bool:
+        if comment_lines_by_idx is not None:
+            return idx in comment_lines_by_idx
+        return _diag._RE_BSL215_COMMENT_LINE.match(lines[idx]) is not None
+
+    def _comment_line(idx: int) -> str:
+        if comment_lines_by_idx is not None:
+            return comment_lines_by_idx[idx]
+        return lines[idx]
+
     for proc in procs:
         block_end = proc.start_idx - 1
         while block_end >= 0 and _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end]):
             block_end -= 1
-        if block_end < 0 or not _diag._RE_BSL215_COMMENT_LINE.match(lines[block_end]):
+        if block_end < 0 or not _is_comment_line(block_end):
             continue
 
         block_start = block_end
-        while block_start > 0 and _diag._RE_BSL215_COMMENT_LINE.match(lines[block_start - 1]):
+        while block_start > 0 and _is_comment_line(block_start - 1):
             block_start -= 1
 
-        comment_block = lines[block_start : block_end + 1]
+        comment_block = [_comment_line(idx) for idx in range(block_start, block_end + 1)]
         if legacy_doc_path:
             comment_block = [
                 re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ") for cl in comment_block
@@ -406,7 +430,7 @@ def run_bsl215_missing_parameter_description(
             if re.match(r"^\s*//\s+\*", cl):
                 continue
             m = re.match(
-                r"^\s*//(?P<indent>[ \t]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                r"^\s*//(?P<indent>[ \t]{0,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
                 cl,
                 re.UNICODE,
             )
@@ -423,7 +447,7 @@ def run_bsl215_missing_parameter_description(
             entry_indent: int = param_entry_indent,
         ) -> tuple[str, bool, str | None] | None:
             m = re.match(
-                r"^\s*//(?P<indent>[ \t]{1,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
+                r"^\s*//(?P<indent>[ \t]{0,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
                 line,
                 re.UNICODE,
             )
@@ -461,6 +485,19 @@ def run_bsl215_missing_parameter_description(
                 break
             if re.match(r"^\s*//\s+\*", cl):
                 continue
+            raw_entry = re.match(
+                r"^\s*//(?P<indent>[ \t]{0,8})(?P<name>\w+)\s*-\s*(?P<tail>.*?)\s*$",
+                cl,
+                re.UNICODE,
+            )
+            if raw_entry and (legacy_doc_path or not raw_entry.group("indent").startswith("\t")):
+                raw_name = raw_entry.group("name")
+                if (not param_entry_indent or len(raw_entry.group("indent")) == param_entry_indent) and (
+                    not _has_bslls_type_description(raw_entry.group("tail"))
+                ):
+                    documented_entries.append(raw_name)
+                    empty_description_entries.add(raw_name.casefold())
+                    continue
             entry = _param_entry(cl)
             if entry:
                 pname, has_type_description, stale_reference = entry
@@ -555,8 +592,6 @@ def run_bsl215_missing_parameter_description(
                 pl = lines[param_line_idx]
                 m = re.search(r"\b" + re.escape(pname) + r"\b", pl, re.IGNORECASE)
                 col = m.start() if m else header_col
-                if param_line_idx != proc.start_idx and pl.startswith("\t\t") and col > 0:
-                    col -= 1
                 diags.append(
                     _diag.Diagnostic(
                         file=path,

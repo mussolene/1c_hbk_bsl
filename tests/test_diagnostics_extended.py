@@ -451,6 +451,18 @@ class TestBsl215MissingParameterDescriptionParity:
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert diags == []
 
+    def test_param_entry_without_space_after_comment_marker_is_documented(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            // Описание метода.
+            // Параметры:
+            //Параметр - Строка - описание
+            Процедура Пример(Параметр)
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
+        assert diags == []
 
 # ---------------------------------------------------------------------------
 # BSL237 — RedundantAccessToObject
