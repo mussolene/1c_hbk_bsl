@@ -1902,6 +1902,30 @@ class ModuleModel:
                 return reads
             return read_words_ignoring_member_access(code_clean)
 
+        def read_names_by_unmasked_fragment(raw_fragment: str) -> set[str]:
+            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_fragment)
+            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
+            return read_words_ignoring_member_access(code_clean)
+
+        def tail_after_query_string_close(raw_line: str) -> str:
+            idx = 0
+            while idx < len(raw_line):
+                quote_pos = raw_line.find('"', idx)
+                if quote_pos < 0:
+                    return ""
+                if quote_pos + 1 < len(raw_line) and raw_line[quote_pos + 1] == '"':
+                    idx = quote_pos + 2
+                    continue
+                return raw_line[quote_pos + 1 :]
+            return ""
+
+        def query_line_read_names(idx: int, line: str) -> set[str]:
+            if idx not in query_line_indices:
+                return read_names_by_line(line)
+            if line.lstrip().startswith("|"):
+                return read_names_by_unmasked_fragment(tail_after_query_string_close(lines[idx]))
+            return read_names_by_line(line)
+
         def double_quoted_segments(raw_line: str) -> list[str]:
             segments: list[str] = []
             i, n = 0, len(raw_line)
@@ -1948,22 +1972,13 @@ class ModuleModel:
             )
 
         query_line_indices = snapshot.query_line_indices if snapshot is not None else frozenset()
-        line_read_names = [
-            (
-                set()
-                if (idx in query_line_indices and line.lstrip().startswith("|"))
-                else read_names_by_line(line.split('"', 1)[0])
-                if idx in query_line_indices
-                else read_names_by_line(line)
-            )
-            for idx, line in enumerate(code_lines)
-        ]
+        line_read_names = [query_line_read_names(idx, line) for idx, line in enumerate(code_lines)]
         file_read_counts: Counter[str] = Counter()
         for names in line_read_names:
             file_read_counts.update(names)
 
-        def module_var_declarations() -> list[tuple[str, int, int]]:
-            declarations: list[tuple[str, int, int]] = []
+        def module_var_declarations() -> list[tuple[str, int, int, bool]]:
+            declarations: list[tuple[str, int, int, bool]] = []
             idx = 0
             while idx < len(lines):
                 if idx in inside_proc:
@@ -1994,9 +2009,9 @@ class ModuleModel:
                     block.append((end_idx, lines[end_idx], 0))
 
                 block_text = "\n".join(item[1] for item in block)
-                if re.search(r"\b(?:Экспорт|Export)\b", block_text, re.IGNORECASE):
-                    idx = end_idx + 1
-                    continue
+                exported_block = bool(
+                    re.search(r"\b(?:Экспорт|Export)\b", block_text, re.IGNORECASE)
+                )
 
                 for abs_idx, raw_line, start_col in block:
                     code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
@@ -2004,19 +2019,23 @@ class ModuleModel:
                         code_no_comments = code_no_comments.split(";", 1)[0]
                     for match in re.finditer(r"\b\w+\b", code_no_comments[start_col:], re.IGNORECASE):
                         var_name = match.group(0)
-                        if var_name.casefold() in {"перем", "var"}:
+                        if var_name.casefold() in {"перем", "var", "экспорт", "export"}:
                             continue
-                        declarations.append((var_name, abs_idx, start_col + match.start()))
+                        declarations.append(
+                            (var_name, abs_idx, start_col + match.start(), exported_block)
+                        )
 
                 idx = end_idx + 1
             return declarations
 
         module_declared_cf: set[str] = set()
         module_declarations = module_var_declarations()
-        for var_name, _abs_idx, _char_pos in module_declarations:
+        for var_name, _abs_idx, _char_pos, _exported in module_declarations:
             module_declared_cf.add(var_name.casefold())
 
-        for var_name, abs_idx, char_pos in module_declarations:
+        for var_name, abs_idx, char_pos, exported in module_declarations:
+            if exported:
+                continue
             var_cf = var_name.casefold()
             uses = file_read_counts.get(var_cf, 0) - (1 if var_cf in line_read_names[abs_idx] else 0)
             if uses > 0:

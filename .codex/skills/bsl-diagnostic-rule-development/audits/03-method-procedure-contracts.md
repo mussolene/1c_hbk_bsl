@@ -8,7 +8,7 @@ This audit is the durable routing checklist for
 
 ## Closure Checklist
 
-- [ ] BSL007 - open
+- [x] BSL007 - parity-classified; current private batch has no ours-only deltas and seven classified BSLLS-only runtime/state divergences
 - [ ] BSL008 - open
 - [ ] BSL015 - open
 - [ ] BSL031 - open

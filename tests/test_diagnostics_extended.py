@@ -3715,6 +3715,17 @@ class TestBsl007UnusedLocalVariableParity:
 
         assert "BSL007" not in _codes(_check(content, tmp_path, select={"BSL007"}))
 
+    def test_exported_module_var_assignment_is_not_implicit_local(self, tmp_path: Path) -> None:
+        content = """\
+            Перем КэшЗначений Экспорт;
+
+            Процедура Тест()
+                КэшЗначений = 1;
+            КонецПроцедуры
+        """
+
+        assert "BSL007" not in _codes(_check(content, tmp_path, select={"BSL007"}))
+
     def test_module_level_assign_unused(self, tmp_path: Path) -> None:
         content = "А = 1;\n"
         diags = _check(content, tmp_path, select={"BSL007"})
@@ -3836,6 +3847,30 @@ class TestBsl007UnusedLocalVariableParity:
                 Результат = Результат + Разделитель + "ВЫБРАТЬ
                 |   Истина КАК Значение";
                 Возврат Результат;
+            КонецФункции
+        """
+
+        assert "BSL007" not in _codes(_check(content, tmp_path, select={"BSL007"}))
+
+    def test_query_text_concatenation_keeps_bsl_tail_reads(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                ИмяТаблицы = "Справочник.Номенклатура";
+                ТекстЗапроса = "ВЫБРАТЬ * ИЗ " + ИмяТаблицы + " КАК Данные";
+                Возврат ТекстЗапроса;
+            КонецФункции
+        """
+
+        assert "BSL007" not in _codes(_check(content, tmp_path, select={"BSL007"}))
+
+    def test_query_text_pipe_concatenation_keeps_bsl_tail_reads(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                ИмяТаблицы = "Справочник.Номенклатура";
+                ТекстЗапроса =
+                "ВЫБРАТЬ
+                |ИЗ " + ИмяТаблицы + " КАК Данные";
+                Возврат ТекстЗапроса;
             КонецФункции
         """
 
