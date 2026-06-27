@@ -19,7 +19,7 @@ This audit is the durable routing checklist for
 - [x] BSL194 - exact private parity zero; contract-only closure
 - [x] BSL212 - exact private parity after omitted-position detection and full-call range alignment
 - [x] BSL215 - parity-classified; CST comment-block extraction and continuation range fixes applied, exact parity deferred to a dedicated BSLLS description-parser layer
-- [ ] BSL224 - open
+- [x] BSL224 - contract and synthetic coverage closure; runtime unchanged, external parity deferred
 - [ ] BSL228 - open
 - [ ] BSL233 - open
 - [ ] BSL240 - open

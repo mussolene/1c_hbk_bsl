@@ -7598,6 +7598,72 @@ class TestMethodAndStatementMessageParity:
         assert bsl227[0].message == _rule_msg("BSL227")
 
 
+class TestBsl224NestedFunctionInParameters:
+    def test_multiline_argument_with_nested_call_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = ВыполнитьКоманду(
+                    ПодготовитьПараметр(
+                        Источник));
+            КонецПроцедуры
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL224"}) if d.code == "BSL224"]
+
+        assert len(diags) == 1
+        assert diags[0].line == 2
+        assert diags[0].message == _rule_msg("BSL224")
+
+    def test_oneline_nested_call_is_allowed_by_default(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = ВыполнитьКоманду(ПодготовитьПараметр(Источник));
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL224"})
+
+        assert "BSL224" not in _codes(diags)
+
+    def test_allowed_nstr_call_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = ВыполнитьКоманду(
+                    НСтр(
+                        "ru = 'Текст'"));
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL224"})
+
+        assert "BSL224" not in _codes(diags)
+
+    def test_allowed_predefined_value_call_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = ВыполнитьКоманду(
+                    ПредопределенноеЗначение(
+                        "Перечисление.Виды.Значение"));
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL224"})
+
+        assert "BSL224" not in _codes(diags)
+
+    def test_call_like_text_inside_string_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Результат = ВыполнитьКоманду(
+                    "ПодготовитьПараметр(Источник)");
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL224"})
+
+        assert "BSL224" not in _codes(diags)
+
+
 # ---------------------------------------------------------------------------
 # BSL219 — MissingVariablesDescription
 # ---------------------------------------------------------------------------
