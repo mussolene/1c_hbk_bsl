@@ -146,20 +146,21 @@ class ProcedureModel:
         ]
 
     def validate_max_returns(
-        self, lines: list[str], *, max_returns: int, return_re
+        self, lines: list[str], *, max_returns: int, return_re, proc_name_span
     ) -> list[Diagnostic]:
         proc_body = "\n".join(lines[self.start_idx : self.end_idx + 1])
         returns = list(return_re.finditer(proc_body))
         if len(returns) <= max_returns:
             return []
         line_text = lines[self.start_idx] if self.start_idx < len(lines) else ""
+        start_col, end_col = proc_name_span(lines, self._to_proc_info())
         return [
             Diagnostic(
                 file=self.path,
                 line=self.start_idx + 1,
-                character=self.header_col,
+                character=start_col,
                 end_line=self.start_idx + 1,
-                end_character=len(line_text),
+                end_character=end_col or len(line_text),
                 severity=Severity.WARNING,
                 code="BSL008",
             )

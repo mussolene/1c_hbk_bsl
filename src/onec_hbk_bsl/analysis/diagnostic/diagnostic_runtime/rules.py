@@ -6048,6 +6048,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                         context.lines,
                         max_returns=engine.max_returns,
                         return_re=_diag._RE_RETURN,
+                        proc_name_span=_diag._proc_name_span,
                     )
                 )
             return diags

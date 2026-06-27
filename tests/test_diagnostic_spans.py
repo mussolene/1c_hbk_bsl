@@ -76,6 +76,28 @@ def test_bsl019_attaches_to_method_name_span(tmp_path: Path) -> None:
     assert diag.end_character == start + len("СложнаяФункция")
 
 
+def test_bsl008_attaches_to_method_name_span(tmp_path: Path) -> None:
+    content = """\
+Функция МногоВыходов(Знач А) Экспорт
+    Если А = 1 Тогда
+        Возврат 1;
+    КонецЕсли;
+    Если А = 2 Тогда
+        Возврат 2;
+    КонецЕсли;
+    Если А = 3 Тогда
+        Возврат 3;
+    КонецЕсли;
+    Возврат 0;
+КонецФункции
+"""
+    diag = _single_diag(content, "BSL008", tmp_path, max_returns=3)
+    header = content.splitlines()[0]
+    start = header.index("МногоВыходов")
+    assert diag.character == start
+    assert diag.end_character == start + len("МногоВыходов")
+
+
 def test_bsl173_uses_catalog_message(tmp_path: Path) -> None:
     content = """\
 Процедура Тест()
