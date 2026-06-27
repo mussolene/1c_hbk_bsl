@@ -9130,6 +9130,66 @@ class TestBsl254TransferringParameters:
         assert _codes(diags) == ["BSL254"]
 
 
+class TestBsl266UsingCancelParameter:
+    def test_assigning_false_to_cancel_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ)
+                Отказ = Ложь;
+            КонецПроцедуры
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL266"}) if d.code == "BSL266"]
+
+        assert len(diags) == 1
+        assert diags[0].message == _rule_msg("BSL266")
+        assert (diags[0].line, diags[0].character) == (2, 4)
+
+    def test_assigning_true_to_cancel_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ)
+                Отказ = Истина;
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL266"})
+
+        assert "BSL266" not in _codes(diags)
+
+    def test_accumulating_cancel_with_or_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Отказ)
+                Отказ = Отказ Или Не Проверить();
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL266"})
+
+        assert "BSL266" not in _codes(diags)
+
+    def test_assignment_without_cancel_parameter_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПередЗаписью(Результат)
+                Результат = Ложь;
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL266"})
+
+        assert "BSL266" not in _codes(diags)
+
+    def test_english_cancel_false_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Procedure BeforeWrite(Cancel)
+                Cancel = False;
+            EndProcedure
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL266"}) if d.code == "BSL266"]
+
+        assert len(diags) == 1
+        assert diags[0].message == _rule_msg("BSL266")
+
+
 # ---------------------------------------------------------------------------
 # BSL218 — MissingTemporaryFileDeletion
 # ---------------------------------------------------------------------------

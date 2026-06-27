@@ -24,7 +24,7 @@ This audit is the durable routing checklist for
 - [x] BSL233 - contract and synthetic coverage closure; shared method-doc-comment layer reused, runtime unchanged
 - [x] BSL240 - contract-only closure; existing CST assignment coverage retained, runtime unchanged
 - [x] BSL254 - contract-only closure; existing indexed client/server synthetic coverage retained, runtime unchanged
-- [ ] BSL266 - open
+- [x] BSL266 - contract and synthetic coverage closure; assignment anchor range aligned
 
 ## Done Criteria
 
