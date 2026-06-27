@@ -3635,7 +3635,31 @@ class TestBsl007UnusedLocalVariableParity:
         diags = _check(content, tmp_path, select={"BSL007"})
         assert "BSL007" in _codes(diags)
 
-    def test_module_var_assignment_is_not_local_unused(self, tmp_path: Path) -> None:
+    def test_implicit_local_self_call_initializer_is_unused(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Кэш = Кэш();
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert "BSL007" in _codes(diags)
+
+    def test_bare_function_call_name_does_not_count_as_variable_read(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Кэш = Неопределено;
+                Результат = Кэш();
+                Сообщить(Результат);
+            КонецПроцедуры
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 4, 7),
+        ]
+
+    def test_module_var_assignment_without_read_is_unused(self, tmp_path: Path) -> None:
         content = """\
             Перем КоординатыВыделения;
 
@@ -3644,7 +3668,52 @@ class TestBsl007UnusedLocalVariableParity:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL007"})
-        assert "BSL007" not in _codes(diags)
+        assert "BSL007" in _codes(diags)
+
+    def test_module_var_declaration_unused_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Перем КэшЗначений;
+
+            Процедура Тест()
+                Сообщение("ок");
+            КонецПроцедуры
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (1, 6, 17),
+        ]
+
+    def test_module_var_multiline_declaration_reports_each_name(self, tmp_path: Path) -> None:
+        content = """\
+            Перем
+                ПервыйКэш,
+                ВторойКэш;
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 4, 13),
+            (3, 4, 13),
+        ]
+
+    def test_module_var_declaration_used_no_warning(self, tmp_path: Path) -> None:
+        content = """\
+            Перем КэшЗначений;
+
+            Процедура Тест()
+                Сообщить(КэшЗначений);
+            КонецПроцедуры
+        """
+
+        assert "BSL007" not in _codes(_check(content, tmp_path, select={"BSL007"}))
+
+    def test_module_var_export_declaration_no_warning(self, tmp_path: Path) -> None:
+        content = "Перем КэшЗначений Экспорт;\n"
+
+        assert "BSL007" not in _codes(_check(content, tmp_path, select={"BSL007"}))
 
     def test_module_level_assign_unused(self, tmp_path: Path) -> None:
         content = "А = 1;\n"
@@ -3744,6 +3813,34 @@ class TestBsl007UnusedLocalVariableParity:
         assert len(diags) == 1
         assert diags[0].message == _rule_msg("BSL007")
 
+    def test_query_text_does_not_mark_variable_as_used(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                ВидПакетаID = 1;
+                Результат =
+                "ВЫБРАТЬ
+                |   &ВидПакетаID КАК ВидПакетаID";
+                Возврат Результат;
+            КонецФункции
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 4, 15),
+        ]
+
+    def test_query_text_line_keeps_bsl_prefix_reads(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест()
+                Разделитель = "";
+                Результат = Результат + Разделитель + "ВЫБРАТЬ
+                |   Истина КАК Значение";
+                Возврат Результат;
+            КонецФункции
+        """
+
+        assert "BSL007" not in _codes(_check(content, tmp_path, select={"BSL007"}))
+
     def test_variable_used_as_dynamic_execute_receiver_is_clean(self, tmp_path: Path) -> None:
         content = """\
             Процедура ВыполнитьДинамическийОбработчик(ПараметрыКоманды, ИмяОбработчика)
@@ -3788,6 +3885,44 @@ class TestBsl007UnusedLocalVariableParity:
         path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL007"}).check_file(str(path))
         assert "BSL007" in _codes(diags)
+
+    def test_ordinary_form_module_is_checked(self, tmp_path: Path) -> None:
+        form_dir = tmp_path / "DataProcessors" / "Обработка" / "Forms" / "Форма" / "Ext"
+        form_dir.mkdir(parents=True)
+        (form_dir / "Form.xml").write_text("<UseManagedForm>false</UseManagedForm>", encoding="utf-8")
+        path = form_dir / "Module.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    НеИспользуется = 1;
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL007"}).check_file(str(path))
+        assert "BSL007" in _codes(diags)
+
+    def test_managed_form_module_is_skipped(self, tmp_path: Path) -> None:
+        form_dir = tmp_path / "DataProcessors" / "Обработка" / "Forms" / "Форма" / "Ext"
+        form_dir.mkdir(parents=True)
+        (form_dir / "Form.xml").write_text("<UseManagedForm>true</UseManagedForm>", encoding="utf-8")
+        path = form_dir / "Module.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    НеИспользуется = 1;
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL007"}).check_file(str(path))
+        assert "BSL007" not in _codes(diags)
 
 
 # ---------------------------------------------------------------------------

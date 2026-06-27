@@ -83,7 +83,7 @@ def _path_matches_bsl007_module_types(path: str) -> bool:
         return True
 
     if "/forms/" in low and low.endswith("/module.bsl"):
-        return False
+        return _path_is_unmanaged_form_module(path)
     if low.endswith(
         (
             "objectmodule.bsl",
@@ -1879,6 +1879,8 @@ class ModuleModel:
             for match in re.finditer(r"\b\w+\b", code_fragment, re.IGNORECASE):
                 if match.start() > 0 and code_fragment[match.start() - 1] == ".":
                     continue
+                if re.match(r"\s*\(", code_fragment[match.end() :]):
+                    continue
                 reads.add(match.group(0).casefold())
             return reads
 
@@ -1893,7 +1895,11 @@ class ModuleModel:
             match = bsl007_simple_assign_at_start_re.match(code_clean)
             if match:
                 tail = code_clean[match.end() :]
-                return read_words_ignoring_member_access(tail)
+                reads = read_words_ignoring_member_access(tail)
+                lhs = match.group(1).casefold()
+                if re.match(rf"^\s*{re.escape(match.group(1))}\s*\(", tail, re.IGNORECASE):
+                    reads.discard(lhs)
+                return reads
             return read_words_ignoring_member_access(code_clean)
 
         def double_quoted_segments(raw_line: str) -> list[str]:
@@ -1941,20 +1947,90 @@ class ModuleModel:
                 re.search(r"(?<![\w.])(?:Выполнить|Execute)\s*\(", code_clean, re.IGNORECASE)
             )
 
-        line_read_names = [read_names_by_line(line) for line in code_lines]
+        query_line_indices = snapshot.query_line_indices if snapshot is not None else frozenset()
+        line_read_names = [
+            (
+                set()
+                if (idx in query_line_indices and line.lstrip().startswith("|"))
+                else read_names_by_line(line.split('"', 1)[0])
+                if idx in query_line_indices
+                else read_names_by_line(line)
+            )
+            for idx, line in enumerate(code_lines)
+        ]
         file_read_counts: Counter[str] = Counter()
         for names in line_read_names:
             file_read_counts.update(names)
 
+        def module_var_declarations() -> list[tuple[str, int, int]]:
+            declarations: list[tuple[str, int, int]] = []
+            idx = 0
+            while idx < len(lines):
+                if idx in inside_proc:
+                    idx += 1
+                    continue
+                line = lines[idx]
+                stripped = line.strip()
+                if not stripped or stripped.startswith("//"):
+                    idx += 1
+                    continue
+                if region_line_re.match(line) or preproc_line_re.match(line):
+                    idx += 1
+                    continue
+                if compiler_directive_re.match(stripped):
+                    idx += 1
+                    continue
+                start_match = re.match(r"^\s*(?:Перем|Var)\b", line, re.IGNORECASE)
+                if not start_match:
+                    idx += 1
+                    continue
+
+                block: list[tuple[int, str, int]] = [(idx, line, start_match.end())]
+                end_idx = idx
+                while ";" not in lines[end_idx] and end_idx + 1 < len(lines):
+                    end_idx += 1
+                    if end_idx in inside_proc:
+                        break
+                    block.append((end_idx, lines[end_idx], 0))
+
+                block_text = "\n".join(item[1] for item in block)
+                if re.search(r"\b(?:Экспорт|Export)\b", block_text, re.IGNORECASE):
+                    idx = end_idx + 1
+                    continue
+
+                for abs_idx, raw_line, start_col in block:
+                    code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
+                    if abs_idx == end_idx:
+                        code_no_comments = code_no_comments.split(";", 1)[0]
+                    for match in re.finditer(r"\b\w+\b", code_no_comments[start_col:], re.IGNORECASE):
+                        var_name = match.group(0)
+                        if var_name.casefold() in {"перем", "var"}:
+                            continue
+                        declarations.append((var_name, abs_idx, start_col + match.start()))
+
+                idx = end_idx + 1
+            return declarations
+
         module_declared_cf: set[str] = set()
-        for idx, line in enumerate(lines):
-            if idx in inside_proc:
+        module_declarations = module_var_declarations()
+        for var_name, _abs_idx, _char_pos in module_declarations:
+            module_declared_cf.add(var_name.casefold())
+
+        for var_name, abs_idx, char_pos in module_declarations:
+            var_cf = var_name.casefold()
+            uses = file_read_counts.get(var_cf, 0) - (1 if var_cf in line_read_names[abs_idx] else 0)
+            if uses > 0:
                 continue
-            m_decl = var_local_re.match(line)
-            if not m_decl:
-                continue
-            module_declared_cf.update(
-                n.strip().casefold() for n in m_decl.group("names").split(",") if n.strip()
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=abs_idx + 1,
+                    character=char_pos,
+                    end_line=abs_idx + 1,
+                    end_character=char_pos + len(var_name),
+                    severity=Severity.WARNING,
+                    code="BSL007",
+                )
             )
 
         for idx, line in enumerate(lines):
