@@ -3646,6 +3646,79 @@ class TestBsl228OrderOfParams:
         assert (diags[0].end_line, diags[0].end_character) == (3, 10)
 
 
+class TestBsl233PublicMethodsDescription:
+    def test_export_method_in_public_region_without_description_reports(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            #Область ПрограммныйИнтерфейс
+            Процедура Команда() Экспорт
+            КонецПроцедуры
+            #КонецОбласти
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL233"}) if d.code == "BSL233"]
+
+        assert len(diags) == 1
+        assert diags[0].message == _rule_msg("BSL233")
+        assert (diags[0].line, diags[0].character, diags[0].end_character) == (2, 10, 17)
+
+    def test_documented_export_method_in_public_region_does_not_report(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            #Область ПрограммныйИнтерфейс
+            // Описание метода.
+            Процедура Команда() Экспорт
+            КонецПроцедуры
+            #КонецОбласти
+        """
+
+        diags = _check(content, tmp_path, select={"BSL233"})
+
+        assert "BSL233" not in _codes(diags)
+
+    def test_non_export_method_in_public_region_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            #Область ПрограммныйИнтерфейс
+            Процедура Команда()
+            КонецПроцедуры
+            #КонецОбласти
+        """
+
+        diags = _check(content, tmp_path, select={"BSL233"})
+
+        assert "BSL233" not in _codes(diags)
+
+    def test_export_method_outside_public_region_does_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            #Область СлужебныеПроцедурыИФункции
+            Процедура Команда() Экспорт
+            КонецПроцедуры
+            #КонецОбласти
+        """
+
+        diags = _check(content, tmp_path, select={"BSL233"})
+
+        assert "BSL233" not in _codes(diags)
+
+    def test_compiler_directive_between_description_and_method_is_allowed(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            #Область ПрограммныйИнтерфейс
+            // Описание метода.
+            &НаКлиенте
+            Процедура Команда() Экспорт
+            КонецПроцедуры
+            #КонецОбласти
+        """
+
+        diags = _check(content, tmp_path, select={"BSL233"})
+
+        assert "BSL233" not in _codes(diags)
+
+
 # ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
 # ---------------------------------------------------------------------------

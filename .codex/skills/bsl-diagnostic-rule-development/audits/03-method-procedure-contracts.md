@@ -21,7 +21,7 @@ This audit is the durable routing checklist for
 - [x] BSL215 - parity-classified; CST comment-block extraction and continuation range fixes applied, exact parity deferred to a dedicated BSLLS description-parser layer
 - [x] BSL224 - contract and synthetic coverage closure; runtime unchanged, external parity deferred
 - [x] BSL228 - contract and synthetic coverage closure; severity metadata aligned with runtime/BSLLS important defect level
-- [ ] BSL233 - open
+- [x] BSL233 - contract and synthetic coverage closure; shared method-doc-comment layer reused, runtime unchanged
 - [ ] BSL240 - open
 - [ ] BSL254 - open
 - [ ] BSL266 - open
