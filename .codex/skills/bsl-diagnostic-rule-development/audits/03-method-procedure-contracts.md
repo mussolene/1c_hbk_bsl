@@ -22,7 +22,7 @@ This audit is the durable routing checklist for
 - [x] BSL224 - contract and synthetic coverage closure; runtime unchanged, external parity deferred
 - [x] BSL228 - contract and synthetic coverage closure; severity metadata aligned with runtime/BSLLS important defect level
 - [x] BSL233 - contract and synthetic coverage closure; shared method-doc-comment layer reused, runtime unchanged
-- [ ] BSL240 - open
+- [x] BSL240 - contract-only closure; existing CST assignment coverage retained, runtime unchanged
 - [ ] BSL254 - open
 - [ ] BSL266 - open
 
