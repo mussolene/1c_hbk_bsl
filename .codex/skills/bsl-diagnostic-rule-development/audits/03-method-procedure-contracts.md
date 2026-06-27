@@ -24,7 +24,7 @@ This audit is the durable routing checklist for
 - [x] BSL233 - exact private parity after structured comment `См.` reference fix
 - [x] BSL240 - exact private parity after CST read-before-write tracking
 - [x] BSL254 - parity-classified; indexed parity harness fixed, remaining deltas are EDT aggregate/split source identity
-- [ ] BSL266 - reopened; block parity has unclassified onec-only deltas
+- [x] BSL266 - exact private parity after multiline signature body-start fix
 
 ## Done Criteria
 

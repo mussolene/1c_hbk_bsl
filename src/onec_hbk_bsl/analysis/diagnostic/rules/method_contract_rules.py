@@ -167,7 +167,11 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
         if "BSL266" in enabled:
             cancel_params = {p.casefold() for p in proc.params if _diag._RE_BSL266_CANCEL.match(p)}
             if cancel_params:
-                for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+                params_end_idx = getattr(proc, "params_end_idx", None)
+                body_start_idx = (
+                    params_end_idx + 1 if params_end_idx is not None else proc.start_idx + 1
+                )
+                for idx in range(body_start_idx, proc.end_idx + 1):
                     code_line = lines[idx].split("//", 1)[0]
                     m_assign = _diag._RE_ASSIGN_LHS.match(code_line)
                     if not m_assign:

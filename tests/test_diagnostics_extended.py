@@ -9194,6 +9194,20 @@ class TestBsl266UsingCancelParameter:
 
         assert "BSL266" not in _codes(diags)
 
+    def test_multiline_cancel_default_is_not_body_assignment(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Сообщение(
+                    Текст,
+                    Отказ = Ложь)
+                Отказ = Истина;
+                Возврат Текст;
+            КонецФункции
+        """
+
+        diags = _check(content, tmp_path, select={"BSL266"})
+
+        assert "BSL266" not in _codes(diags)
+
     def test_accumulating_cancel_with_or_does_not_report(self, tmp_path: Path) -> None:
         content = """\
             Процедура ПередЗаписью(Отказ)
