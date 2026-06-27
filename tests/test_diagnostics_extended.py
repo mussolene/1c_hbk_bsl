@@ -8579,6 +8579,15 @@ class TestBsl060DoubleNegation:
 
 
 class TestBsl062UnusedParameter:
+    def test_synthetic_fixture_reports_unused_param_exact_range(self) -> None:
+        path = Path("tests/fixtures/diag_synthetic/bsl062_unused_parameter.bsl")
+        diags = [d for d in DiagnosticEngine(select={"BSL062"}).check_file(str(path)) if d.code == "BSL062"]
+
+        assert len(diags) == 1
+        assert diags[0].line == 1
+        assert diags[0].character == 15
+        assert diags[0].end_character == 29
+
     def test_unused_param_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест(НеИспользуемый)
