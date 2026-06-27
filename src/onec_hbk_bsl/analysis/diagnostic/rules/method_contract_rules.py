@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from onec_hbk_bsl.analysis.diagnostic.domain.method_doc_comment import (
+    build_method_doc_comment,
+)
+
 if TYPE_CHECKING:
     from onec_hbk_bsl.analysis.diagnostic.models import ProcInfo as _ProcInfo
 
@@ -274,83 +278,16 @@ def run_bsl215_missing_parameter_description(
     _diag = _diag_module()
     diags: list[Any] = []
     legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", path))
-    comment_lines_by_idx: dict[int, str] | None = None
-    if line_comment_nodes is not None:
-        comment_lines_by_idx = {}
-        for node in line_comment_nodes:
-            row = getattr(node, "start_point", (None, None))[0]
-            if row is None:
-                continue
-            text = getattr(node, "text", b"")
-            if isinstance(text, bytes):
-                comment_lines_by_idx[int(row)] = text.decode("utf-8", errors="replace")
-            else:
-                comment_lines_by_idx[int(row)] = str(text)
-
-    def _is_comment_line(idx: int) -> bool:
-        if comment_lines_by_idx is not None:
-            return idx in comment_lines_by_idx
-        return _diag._RE_BSL215_COMMENT_LINE.match(lines[idx]) is not None
-
-    def _comment_line(idx: int) -> str:
-        if comment_lines_by_idx is not None:
-            return comment_lines_by_idx[idx]
-        return lines[idx]
 
     for proc in procs:
-        block_end = proc.start_idx - 1
-        while block_end >= 0 and _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end]):
-            block_end -= 1
-        if block_end < 0 or not _is_comment_line(block_end):
+        doc_comment = build_method_doc_comment(
+            lines,
+            proc,
+            line_comment_nodes=line_comment_nodes,
+            legacy_doc_path=legacy_doc_path,
+        )
+        if doc_comment is None or not doc_comment.has_method_documentation:
             continue
-
-        block_start = block_end
-        while block_start > 0 and _is_comment_line(block_start - 1):
-            block_start -= 1
-
-        comment_block = [_comment_line(idx) for idx in range(block_start, block_end + 1)]
-        if legacy_doc_path:
-            comment_block = [
-                re.sub(r"^(\s*//)\t ?", r"\1  ", cl).replace("\t", " ") for cl in comment_block
-            ]
-        re_separator = re.compile(r"^\s*/{10,}\s*$")
-        if any(re_separator.match(cl) for cl in comment_block):
-            continue
-        if any(
-            re.match(r"^\s*//\s*ВозвращаемоеЗначение\s*:?\s*$", cl, re.IGNORECASE)
-            for cl in comment_block
-        ):
-            continue
-
-        re_see_link = re.compile(r"^\s*//\s*(?:См\.|See)\s+\S", re.IGNORECASE)
-        if any(re_see_link.match(cl) for cl in comment_block):
-            continue
-
-        # BSLLS treats any adjacent comment block as method documentation.
-        # Blank/service one-line comments still establish the presence of a doc block,
-        # after which missing parameter descriptions should be reported.
-        if not any(cl.strip().startswith("//") for cl in comment_block):
-            continue
-        params_section_start = None
-        for ci, cl in enumerate(comment_block):
-            if _diag._RE_BSL215_PARAMS_SECTION.match(cl):
-                params_section_start = ci
-                break
-        if params_section_start is None and any(
-            re.match(
-                r"^\s*//\s*(?:Состав\s+структуры)\s*:?\s*$",
-                cl,
-                re.IGNORECASE,
-            )
-            for cl in comment_block
-        ):
-            continue
-        if params_section_start is None and len(comment_block) == 1:
-            text = re.sub(r"^\s*//\s*", "", comment_block[0]).strip()
-            if re.match(r"^(?:Конец|End)\b", text, re.IGNORECASE):
-                continue
-            if text and text[0].islower():
-                continue
 
         actual_params_cf = {p.casefold() for p in proc.params}
         try:
@@ -358,7 +295,7 @@ def run_bsl215_missing_parameter_description(
         except ValueError:
             header_col = 0
 
-        if params_section_start is None:
+        if not doc_comment.has_params_section:
             if not proc.params:
                 continue
             diags.append(
@@ -374,136 +311,9 @@ def run_bsl215_missing_parameter_description(
             )
             continue
 
-        def _has_bslls_type_description(tail: str) -> bool:
-            if legacy_doc_path:
-                tail = re.sub(r"\t+", " ", tail)
-            if re.match(
-                r"^\s*(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)[.;]?\s*$",
-                tail,
-                re.IGNORECASE,
-            ):
-                return True
-            type_text = re.split(r"\s+-\s+", tail, maxsplit=1)[0].strip()
-            if not type_text or "\t" in type_text:
-                return False
-            type_text = type_text.rstrip()
-            if type_text.endswith(","):
-                type_text = type_text[:-1].rstrip()
-            if legacy_doc_path and type_text.endswith("-"):
-                type_text = type_text[:-1].rstrip()
-            if type_text.endswith(":"):
-                type_text = type_text[:-1].rstrip()
-            elif type_text.rstrip() != type_text.rstrip(".;"):
-                return False
-            if type_text.casefold() in {"структура", "structure"}:
-                return True
-            if re.fullmatch(
-                r"(?:Массив|Array)\s+(?:Из|Of)\s+[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*",
-                type_text,
-                re.IGNORECASE,
-            ):
-                return legacy_doc_path or bool(
-                    re.fullmatch(
-                        r"(?:Массив|Array)\s+(?:Из|Of)\s+(?:Структура|Structure)",
-                        type_text,
-                        re.IGNORECASE,
-                    )
-                )
-            if re.search(r"\b(?:или|or|элементов|element)\b", type_text, re.IGNORECASE):
-                return False
-            if re.search(r"[A-Za-zА-ЯЁа-яё0-9_]\s+[A-Za-zА-ЯЁа-яё0-9_]", type_text):
-                return False
-            type_name = r"[A-ZА-ЯЁ][\w]*(?:\.[A-ZА-ЯЁ]\w*)*"
-            return bool(
-                re.fullmatch(rf"{type_name}(?:\s*,\s*{type_name})*", type_text)
-                or re.fullmatch(r"[a-zа-яё]+", type_text)
-            )
-
-        raw_param_entries: list[tuple[int, str, str]] = []
-        for cl in comment_block[params_section_start + 1 :]:
-            stripped = cl.strip()
-            if stripped == "//" or (
-                re.match(r"^\s*//\s*\w[\w\s]*:\s*$", cl)
-                and not _diag._RE_BSL215_PARAM_ENTRY.match(cl)
-            ):
-                break
-            if re.match(r"^\s*//\s+\*", cl):
-                continue
-            m = re.match(
-                r"^\s*//(?P<indent>[ \t]{0,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
-                cl,
-                re.UNICODE,
-            )
-            if (
-                m
-                and (legacy_doc_path or not m.group("indent").startswith("\t"))
-                and _has_bslls_type_description(m.group("tail"))
-            ):
-                raw_param_entries.append((len(m.group("indent")), m.group("name"), m.group("tail")))
-        param_entry_indent = min((indent for indent, _name, _tail in raw_param_entries), default=0)
-
-        def _param_entry(
-            line: str,
-            entry_indent: int = param_entry_indent,
-        ) -> tuple[str, bool, str | None] | None:
-            m = re.match(
-                r"^\s*//(?P<indent>[ \t]{0,8})(?P<name>\w+)\s*-\s*(?P<tail>.+?)\s*$",
-                line,
-                re.UNICODE,
-            )
-            if not m:
-                return None
-            if m.group("indent").startswith("\t") and not legacy_doc_path:
-                return None
-            if entry_indent and len(m.group("indent")) != entry_indent:
-                return None
-            tail = m.group("tail")
-            if not _has_bslls_type_description(tail):
-                return None
-            reference_match = re.match(
-                r"^\s*(?:см\.|see)\s+([A-Za-zА-ЯЁа-яё_]\w*(?:\.\w+)+)[.;]?\s*$",
-                tail,
-                re.IGNORECASE,
-            )
-            if reference_match is not None and tail.rstrip().endswith((".", ";")):
-                return (
-                    reference_match.group(1).rstrip(".;"),
-                    True,
-                    reference_match.group(1).rstrip(".;"),
-                )
-            return m.group("name"), True, None
-
-        documented_entries: list[str] = []
-        empty_description_entries: set[str] = set()
-        stale_reference_entries: list[str] = []
-        for cl in comment_block[params_section_start + 1 :]:
-            stripped = cl.strip()
-            if stripped == "//" or (
-                re.match(r"^\s*//\s*\w[\w\s]*:\s*$", cl)
-                and not _diag._RE_BSL215_PARAM_ENTRY.match(cl)
-            ):
-                break
-            if re.match(r"^\s*//\s+\*", cl):
-                continue
-            raw_entry = re.match(
-                r"^\s*//(?P<indent>[ \t]{0,8})(?P<name>\w+)\s*-\s*(?P<tail>.*?)\s*$",
-                cl,
-                re.UNICODE,
-            )
-            if raw_entry and (legacy_doc_path or not raw_entry.group("indent").startswith("\t")):
-                raw_name = raw_entry.group("name")
-                if (not param_entry_indent or len(raw_entry.group("indent")) == param_entry_indent) and (
-                    not _has_bslls_type_description(raw_entry.group("tail"))
-                ):
-                    documented_entries.append(raw_name)
-                    empty_description_entries.add(raw_name.casefold())
-                    continue
-            entry = _param_entry(cl)
-            if entry:
-                pname, has_type_description, stale_reference = entry
-                if not has_type_description:
-                    empty_description_entries.add(pname.casefold())
-                documented_entries.append(pname)
+        documented_entries = list(doc_comment.documented_names)
+        empty_description_entries = set(doc_comment.empty_description_names)
+        stale_reference_entries = list(doc_comment.stale_reference_entries)
 
         documented_cf = {p.casefold(): p for p in documented_entries}
         for actual_param in proc.params:
@@ -512,14 +322,10 @@ def run_bsl215_missing_parameter_description(
             if legacy_doc_path and any(
                 re.search(r"^\s*// [ \t]*" + re.escape(actual_param) + r"\s*-", cl, re.IGNORECASE)
                 and not re.search(r"\s-\s*(?:см\.|see)\s+\S+[.;]\s*$", cl, re.IGNORECASE)
-                for cl in comment_block[params_section_start + 1 :]
+                for cl in doc_comment.lines[(doc_comment.params_section_offset or 0) + 1 :]
             ):
                 documented_entries.append(actual_param)
                 documented_cf[actual_param.casefold()] = actual_param
-        force_all_params_missing = bool(
-            proc.params
-            and any(re.search(r"\(\s*пример\s+см\.", cl, re.IGNORECASE) for cl in comment_block)
-        )
 
         param_lines: dict[str, int] = {}
         scan_idx = proc.start_idx
@@ -548,14 +354,18 @@ def run_bsl215_missing_parameter_description(
             not missing_params
             and len(proc.params) == 1
             and len(documented_entries) == 1
-            and raw_param_entries
-            and " - " not in raw_param_entries[0][2]
-            and "," not in raw_param_entries[0][2]
-            and not re.match(r"^\s*(?:см\.|see)\s+", raw_param_entries[0][2], re.IGNORECASE)
-            and not raw_param_entries[0][2].strip().endswith(":")
+            and doc_comment.documented_entries
+            and " - " not in doc_comment.documented_entries[0].tail
+            and "," not in doc_comment.documented_entries[0].tail
+            and not re.match(
+                r"^\s*(?:см\.|see)\s+",
+                doc_comment.documented_entries[0].tail,
+                re.IGNORECASE,
+            )
+            and not doc_comment.documented_entries[0].tail.strip().endswith(":")
             and (
                 not legacy_doc_path
-                or raw_param_entries[0][2].strip().casefold()
+                or doc_comment.documented_entries[0].tail.strip().casefold()
                 not in {
                     "дата",
                     "date",
@@ -570,7 +380,7 @@ def run_bsl215_missing_parameter_description(
         ):
             missing_params = list(proc.params)
             documented_cf = {}
-        if force_all_params_missing:
+        if doc_comment.force_all_params_missing:
             missing_params = list(proc.params)
             documented_cf = {}
         if missing_params and not documented_cf:
@@ -700,20 +510,10 @@ def run_bsl233_public_methods_description(
         if not _RE_BSL233_API_REGION.match(f"#Область {root_region}" if root_region else ""):
             continue
 
-        block_end = proc.start_idx - 1
-        while block_end >= 0 and (
-            lines[block_end].strip() == "" or _diag._RE_COMPILER_DIRECTIVE.match(lines[block_end])
-        ):
-            block_end -= 1
-
-        has_description = block_end >= 0 and _diag._RE_BSL215_COMMENT_LINE.match(lines[block_end])
-        if has_description:
-            blk_s = block_end
-            while blk_s > 0 and _diag._RE_BSL215_COMMENT_LINE.match(lines[blk_s - 1]):
-                blk_s -= 1
-            block = lines[blk_s : block_end + 1]
-            if any(re.match(r"^\s*/{10,}\s*$", cl) for cl in block):
-                has_description = False
+        doc_comment = build_method_doc_comment(lines, proc, skip_blank_lines=True)
+        has_description = (
+            doc_comment is not None and doc_comment.has_method_documentation
+        )
 
         if not has_description:
             header_line = lines[proc.start_idx]
