@@ -1202,7 +1202,7 @@ RULE_METADATA: dict[str, dict] = {
     "BSL228": {
         "name": "OrderOfParams",
         "description": "Order of Parameters in method",
-        "severity": "INFORMATION",
+        "severity": "WARNING",
         "tags": ["design", "convention"],
         "implemented": True,
     },

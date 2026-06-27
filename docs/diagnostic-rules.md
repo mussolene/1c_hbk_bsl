@@ -148,7 +148,7 @@ LSP, MCP, SARIF/JSON output, and suppression comments.
 | `BSL225` | `NumberOfValuesInStructureConstructor` | Yes | INFORMATION | Ограничение на количество значений свойств, передаваемых в конструктор структуры | Limit on the number of property values passed to the structure constructor | design, readability |
 | `BSL226` | `OSUsersMethod` | Yes | WARNING | Использование метода ПользователиОС | Using method OSUsers | security |
 | `BSL227` | `OneStatementPerLine` | Yes | INFORMATION | Одно выражение в одной строке | One statement per line | style, convention |
-| `BSL228` | `OrderOfParams` | Yes | INFORMATION | Порядок параметров метода | Order of Parameters in method | design, convention |
+| `BSL228` | `OrderOfParams` | Yes | WARNING | Порядок параметров метода | Order of Parameters in method | design, convention |
 | `BSL229` | `OrdinaryAppSupport` | Yes | WARNING | Поддержка обычного приложения | Ordinary application support | compatibility, ui |
 | `BSL230` | `PairingBrokenTransaction` | Yes | ERROR | Нарушение парности использования методов "НачатьТранзакцию()" и "ЗафиксироватьТранзакцию()" / "ОтменитьТранзакцию()" | Violation of pairing using methods "BeginTransaction()" & "CommitTransaction()" / "RollbackTransaction()" | transaction, correctness |
 | `BSL231` | `PrivilegedModuleMethodCall` | Yes | WARNING | Обращение к методам привилегированных модулей | Accessing privileged module methods | security, access-control |

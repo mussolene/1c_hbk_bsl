@@ -3610,6 +3610,41 @@ class TestBsl228OrderOfParams:
         diags = _check(content, tmp_path, select={"BSL228"})
         assert [d.code for d in diags] == ["BSL228"]
 
+    def test_required_parameters_before_optional_do_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Парам1, Парам2 = Неопределено)
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL228"})
+
+        assert "BSL228" not in _codes(diags)
+
+    def test_all_optional_parameters_do_not_report(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Парам1 = Неопределено, Парам2 = 1)
+            КонецПроцедуры
+        """
+
+        diags = _check(content, tmp_path, select={"BSL228"})
+
+        assert "BSL228" not in _codes(diags)
+
+    def test_multiline_parameter_list_reports_parameter_range(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(
+                Парам1 = Неопределено,
+                Парам2)
+                Возврат Парам2;
+            КонецФункции
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL228"}) if d.code == "BSL228"]
+
+        assert len(diags) == 1
+        assert (diags[0].line, diags[0].character) == (2, 4)
+        assert (diags[0].end_line, diags[0].end_character) == (3, 10)
+
 
 # ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion
