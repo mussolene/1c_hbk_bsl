@@ -4920,7 +4920,7 @@ class TestRuleSelection:
             "// BSLLS:UsingHardcodeSecretInformation-off\n"  # line 1 → BSL012 off
             'Пароль = "СуперСекрет2024!";\n'  # line 2 → suppressed
             "// BSLLS:UsingHardcodeSecretInformation-on\n"  # line 3 → re-enable
-            'ТоженПароль = "МойПароль123@#";\n'  # line 4 → reported
+            'Пароль = "МойПароль123@#";\n'  # line 4 → reported
         )
         diags = _check(content, tmp_path)
         lines_bsl012 = {d.line for d in diags if d.code == "BSL012"}
@@ -4972,7 +4972,7 @@ class TestRuleSelection:
             "// BSLLS:LineLength-off\n"  # BSL014 off
             'Пароль = "секрет123";\n'  # both suppressed
             "// BSLLS:UsingHardcodeSecretInformation-on\n"  # BSL012 back on
-            'Токен = "abc";\n'  # BSL012 fires, BSL014 still off
+            'Пароль = "abc";\n'  # BSL012 fires, BSL014 still off
             "// BSLLS:LineLength-on\n"
         )
         diags = _check(content, tmp_path)
