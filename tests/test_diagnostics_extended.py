@@ -212,6 +212,43 @@ class TestBsl212MissedRequiredParameter:
         diags = _check(content, tmp_path, select={"BSL212"})
         assert "BSL212" not in _codes(diags)
 
+    def test_omitted_middle_required_parameter_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Обработать(Первый, , Третий);
+            КонецПроцедуры
+
+            Процедура Обработать(Первый, Второй, Третий)
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL212"}) if d.code == "BSL212"]
+        assert len(diags) == 1
+
+    def test_call_range_excludes_statement_semicolon(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Обработать();
+            КонецПроцедуры
+
+            Процедура Обработать(Параметр)
+            КонецПроцедуры
+        """
+        diag = [d for d in _check(content, tmp_path, select={"BSL212"}) if d.code == "BSL212"][0]
+        assert diag.character == 4
+        assert diag.end_character == 16
+
+    def test_call_range_may_include_string_arguments(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Обработать(, "Имя", Значение);
+            КонецПроцедуры
+
+            Процедура Обработать(Первый, Второй, Третий)
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL212"}) if d.code == "BSL212"]
+        assert len(diags) == 1
+
 
 class TestBsl215MissingParameterDescriptionParity:
     def test_service_comment_still_requires_parameter_descriptions(self, tmp_path: Path) -> None:

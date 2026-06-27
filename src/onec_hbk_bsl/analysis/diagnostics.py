@@ -270,6 +270,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         # Method-signature rules span the whole signature line which may contain default-value strings.
         "BSL015",
         "BSL031",
+        # MissedRequiredParameter spans the full call; supplied arguments may be string literals.
+        "BSL212",
         "BSL005",
         "BSL006",
         "BSL012",

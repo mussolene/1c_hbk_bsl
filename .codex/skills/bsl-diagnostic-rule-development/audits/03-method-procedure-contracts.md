@@ -17,7 +17,7 @@ This audit is the durable routing checklist for
 - [x] BSL192 - exact private parity after narrowing predicate to Russian `Получить*`
 - [x] BSL193 - exact private parity after limiting out-parameter scan to function body
 - [x] BSL194 - exact private parity zero; contract-only closure
-- [ ] BSL212 - open
+- [x] BSL212 - exact private parity after omitted-position detection and full-call range alignment
 - [ ] BSL215 - open
 - [ ] BSL224 - open
 - [ ] BSL228 - open

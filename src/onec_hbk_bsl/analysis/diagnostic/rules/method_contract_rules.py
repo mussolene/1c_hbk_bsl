@@ -224,8 +224,6 @@ def run_bsl212_missed_required_parameter(
         required_params = required_params_by_name.get(callee_name, ())
         if not required_params:
             continue
-        if call.callee_args_count >= len(callee.params):
-            continue
         arg_presence = _diag._extract_call_argument_presence(
             content,
             line_starts,
@@ -245,13 +243,21 @@ def run_bsl212_missed_required_parameter(
 
         if not missed:
             continue
+        start = line_starts[call.caller_line - 1] + call.caller_character
+        match = re.match(rf"{re.escape(call.callee_name)}\s*\(", content[start:], re.IGNORECASE)
+        end_character = len(line_text.rstrip())
+        if match:
+            open_idx = start + match.end() - 1
+            close_idx = _diag._find_matching_paren(content, open_idx)
+            if close_idx >= 0:
+                end_character = close_idx - line_starts[call.caller_line - 1] + 1
         diags.append(
             _diag.Diagnostic(
                 file=path,
                 line=call.caller_line,
                 character=call.caller_character,
                 end_line=call.caller_line,
-                end_character=len(line_text.rstrip()),
+                end_character=end_character,
                 severity=_diag.Severity.ERROR,
                 code="BSL212",
             )
