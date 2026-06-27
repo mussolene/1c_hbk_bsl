@@ -1,6 +1,6 @@
 # 03 Method Procedure Contracts Audit
 
-Status: not started.
+Status: completed.
 
 This audit is the durable routing checklist for
 `03-method-procedure-contracts`. Rule membership comes from
