@@ -1,6 +1,6 @@
 # 03 Method Procedure Contracts Audit
 
-Status: completed.
+Status: in progress; BSL224+ require preserved-source-root BSLLS parity taxonomy before closure.
 
 This audit is the durable routing checklist for
 `03-method-procedure-contracts`. Rule membership comes from
@@ -19,12 +19,12 @@ This audit is the durable routing checklist for
 - [x] BSL194 - exact private parity zero; contract-only closure
 - [x] BSL212 - exact private parity after omitted-position detection and full-call range alignment
 - [x] BSL215 - parity-classified; CST comment-block extraction and continuation range fixes applied, exact parity deferred to a dedicated BSLLS description-parser layer
-- [x] BSL224 - contract and synthetic coverage closure; runtime unchanged, external parity deferred
-- [x] BSL228 - contract and synthetic coverage closure; severity metadata aligned with runtime/BSLLS important defect level
-- [x] BSL233 - contract and synthetic coverage closure; shared method-doc-comment layer reused, runtime unchanged
-- [x] BSL240 - contract-only closure; existing CST assignment coverage retained, runtime unchanged
-- [x] BSL254 - contract-only closure; existing indexed client/server synthetic coverage retained, runtime unchanged
-- [x] BSL266 - contract and synthetic coverage closure; assignment anchor range aligned
+- [ ] BSL224 - reopened; block parity has unclassified BSLLS/onec deltas
+- [ ] BSL228 - reopened; requires preserved-source-root parity confirmation after metadata change
+- [ ] BSL233 - reopened; block parity has unclassified onec-only deltas
+- [ ] BSL240 - reopened; block parity has unclassified onec-only deltas
+- [ ] BSL254 - reopened; block parity has high-volume unclassified BSLLS-only deltas
+- [ ] BSL266 - reopened; block parity has unclassified onec-only deltas
 
 ## Done Criteria
 
