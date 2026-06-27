@@ -29,8 +29,11 @@ if str(SRC) not in sys.path:
 
 from onec_hbk_bsl.analysis.diagnostics import (  # noqa: E402
     RULE_METADATA,
+    DiagnosticEngine,
     resolve_rule_token_to_code,
 )
+
+INDEXED_ONEC_RULES = frozenset({"BSL254"})
 
 
 @dataclass(frozen=True, order=True)
@@ -288,6 +291,29 @@ def run_onec_cli(
     return json.loads(result.stdout)
 
 
+def run_onec_indexed_engine(
+    files: list[Path],
+    scratch_dir: Path,
+    select: frozenset[str],
+) -> list[dict]:
+    from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+    from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+
+    index_path = scratch_dir / "onec-index.sqlite"
+    index = SymbolIndex(db_path=str(index_path))
+    indexer = IncrementalIndexer(index=index, quiet=True)
+    try:
+        for path in files:
+            indexer.index_file(str(path))
+        engine = DiagnosticEngine(select=set(select), symbol_index=index)
+        diagnostics = []
+        for path in files:
+            diagnostics.extend(engine.check_file(str(path)))
+        return [diag.to_dict(include_rule_name=True) for diag in diagnostics]
+    finally:
+        index.close()
+
+
 def _write_bslls_config(path: Path, select: frozenset[str]) -> None:
     parameters = {bslls_rule_name(code): True for code in sorted(select)}
     payload = {
@@ -402,7 +428,16 @@ def main(argv: list[str] | None = None) -> int:
             output_dir.mkdir()
             copied = files if args.preserve_source_root else _copy_inputs(files, workspace, source_root)
             _write_bslls_config(config_path, select)
-            onec_raw = run_onec_cli(copied, temp_root, select, jobs=args.jobs, timeout=args.timeout)
+            if select & INDEXED_ONEC_RULES:
+                onec_raw = run_onec_indexed_engine(copied, temp_root, select)
+            else:
+                onec_raw = run_onec_cli(
+                    copied,
+                    temp_root,
+                    select,
+                    jobs=args.jobs,
+                    timeout=args.timeout,
+                )
             ours = onec_keys(onec_raw, source_root, select)
             raw = run_bslls(jar, source_root, output_dir, config_path, timeout=args.timeout)
             expected_files = {_relative_file_key(path, source_root) for path in copied}
