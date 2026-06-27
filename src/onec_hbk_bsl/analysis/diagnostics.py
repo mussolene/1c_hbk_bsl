@@ -2409,7 +2409,7 @@ _RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
 # BSL240 / write-only var assignment
 _RE_MODULE_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_ASSIGN_LHS = re.compile(r"^\s*(?P<name>\w+)\s*=(?!=)", re.IGNORECASE)
-_RE_BSL192_GET = re.compile(r"^(?:Получить|Get)\w*$", re.IGNORECASE)
+_RE_BSL192_GET = re.compile(r"^Получить.*$", re.IGNORECASE)
 _RE_BSL266_CANCEL = re.compile(r"^(?:Отказ|Cancel)$", re.IGNORECASE)
 _RE_QUERY_SELECT_KEYWORD = re.compile(r"\bВЫБРАТЬ\b|\bSELECT\b", re.IGNORECASE)
 _RE_QUERY_UNION_KEYWORD = re.compile(r"\bОБЪЕДИНИТЬ\b|\bUNION\b", re.IGNORECASE)

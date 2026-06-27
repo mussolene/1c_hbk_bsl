@@ -107,6 +107,42 @@ class TestBsl172DataExchangeLoadingParity:
 
 
 # ---------------------------------------------------------------------------
+# BSL192 — FunctionNameStartsWithGet
+# ---------------------------------------------------------------------------
+
+
+class TestBsl192FunctionNameStartsWithGet:
+    def test_function_name_starts_with_get_russian_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Функция ПолучитьДанные()
+                Возврат 1;
+            КонецФункции
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL192"}) if d.code == "BSL192"]
+        assert len(diags) == 1
+        assert diags[0].line == 1
+        assert diags[0].character == 8
+        assert diags[0].message == _rule_msg("BSL192")
+
+    def test_function_name_starts_with_get_english_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Function GetData()
+                Return 1;
+            EndFunction
+        """
+        diags = _check(content, tmp_path, select={"BSL192"})
+        assert "BSL192" not in _codes(diags)
+
+    def test_procedure_name_starts_with_get_russian_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура ПолучитьДанные()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL192"})
+        assert "BSL192" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL215 — MissingParameterDescription
 # ---------------------------------------------------------------------------
 
