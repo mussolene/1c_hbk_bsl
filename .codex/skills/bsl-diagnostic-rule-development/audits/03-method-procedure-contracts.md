@@ -12,7 +12,7 @@ This audit is the durable routing checklist for
 - [x] BSL008 - exact private parity after method-name range alignment
 - [x] BSL015 - exact private parity after parameter-list range alignment
 - [x] BSL031 - exact private parity via shared parameter-list range facts
-- [ ] BSL062 - open
+- [x] BSL062 - parity-classified; BSLLS CLI/runtime emits zero UnusedParameters diagnostics in current environment
 - [ ] BSL148 - open
 - [ ] BSL192 - open
 - [ ] BSL193 - open
