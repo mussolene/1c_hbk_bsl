@@ -7771,6 +7771,24 @@ class TestBsl224NestedFunctionInParameters:
 
         assert "BSL224" not in _codes(diags)
 
+    def test_constructor_anchor_uses_cst_name_not_first_text_match(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                Запрос = Новый Запрос(
+                    ПодготовитьТекст(
+                        Источник));
+            КонецПроцедуры
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL224"}) if d.code == "BSL224"]
+
+        assert len(diags) == 1
+        line = "    Запрос = Новый Запрос("
+        assert diags[0].character == line.rindex("Запрос")
+        assert diags[0].end_character == line.rindex("Запрос") + len("Запрос")
+
 
 # ---------------------------------------------------------------------------
 # BSL219 — MissingVariablesDescription

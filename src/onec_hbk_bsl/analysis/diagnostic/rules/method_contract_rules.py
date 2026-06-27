@@ -692,11 +692,8 @@ def run_bsl224_nested_function_in_parameters(
             end_line_idx = name_node.end_point[0]
             start_line_text = lines[start_line_idx] if start_line_idx < len(lines) else ""
             end_line_text = lines[end_line_idx] if end_line_idx < len(lines) else ""
-            exact_start = start_line_text.find(name)
-            start_char = (
-                exact_start
-                if exact_start >= 0
-                else _diag.utf8_byte_offset_to_lsp_character(start_line_text, anchor.start_point[1])
+            start_char = _diag.utf8_byte_offset_to_lsp_character(
+                start_line_text, anchor.start_point[1]
             )
             diags.append(
                 _diag.Diagnostic(
@@ -714,126 +711,6 @@ def run_bsl224_nested_function_in_parameters(
                 )
             )
             seen.add((start_line_idx, start_char))
-
-    fallback_names = {"стрзаменить", "strreplace", "вставить", "insert"}
-    call_start_re = re.compile(r"(?:(?P<dot>\.)\s*)?(?P<name>[A-Za-zА-Яа-яЁё_]\w*)\s*\(")
-    nested_call_re = re.compile(r"\b([A-Za-zА-Яа-яЁё_]\w*)\s*\(", re.IGNORECASE)
-
-    def strip_strings(text: str) -> str:
-        chars = list(text)
-        pos = 0
-        in_string = False
-        while pos < len(chars):
-            ch = chars[pos]
-            if in_string:
-                chars[pos] = " "
-                if ch == '"':
-                    if pos + 1 < len(chars) and chars[pos + 1] == '"':
-                        chars[pos + 1] = " "
-                        pos += 2
-                        continue
-                    in_string = False
-                pos += 1
-                continue
-            if ch == '"':
-                chars[pos] = " "
-                in_string = True
-            pos += 1
-        return "".join(chars)
-
-    def call_text_from(line_idx: int, open_col: int) -> str:
-        depth = 0
-        parts: list[str] = []
-        for idx in range(line_idx, min(len(lines), line_idx + 40)):
-            text = lines[idx]
-            start = open_col if idx == line_idx else 0
-            segment = text[start:]
-            parts.append(segment)
-            clean = strip_strings(segment.split("//", 1)[0])
-            for ch in clean:
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                    if depth <= 0:
-                        return "\n".join(parts)
-            if depth <= 0 and idx > line_idx:
-                return "\n".join(parts)
-        return "\n".join(parts)
-
-    def top_level_args(text: str) -> list[str]:
-        body = text[text.find("(") + 1 :]
-        args: list[str] = []
-        start = 0
-        depth = 0
-        in_string = False
-        pos = 0
-        while pos < len(body):
-            ch = body[pos]
-            if in_string:
-                if ch == '"':
-                    if pos + 1 < len(body) and body[pos + 1] == '"':
-                        pos += 2
-                        continue
-                    in_string = False
-                pos += 1
-                continue
-            if ch == '"':
-                in_string = True
-            elif ch == "(":
-                depth += 1
-            elif ch == ")":
-                if depth == 0:
-                    args.append(body[start:pos])
-                    return args
-                depth -= 1
-            elif ch == "," and depth == 0:
-                args.append(body[start:pos])
-                start = pos + 1
-            pos += 1
-        args.append(body[start:])
-        return args
-
-    for line_idx, line in enumerate(lines):
-        if line.lstrip().startswith("//"):
-            continue
-        line_folded = line.casefold()
-        if not (
-            "стрзаменить" in line_folded
-            or "strreplace" in line_folded
-            or "вставить" in line_folded
-            or "insert" in line_folded
-        ):
-            continue
-        for match in call_start_re.finditer(line):
-            name = match.group("name")
-            if name.casefold() not in fallback_names:
-                continue
-            if (line_idx, match.start("name")) in seen:
-                continue
-            text = call_text_from(line_idx, match.end() - 1)
-            if "\n" not in text:
-                continue
-            multiline_params = [arg for arg in top_level_args(text) if "\n" in arg.strip()]
-            if not multiline_params:
-                continue
-            if not any(
-                nested_match.group(1).casefold() not in allowed_names
-                for param in multiline_params
-                for nested_match in nested_call_re.finditer(strip_strings(param))
-            ):
-                continue
-            diags.append(
-                _diag.Diagnostic(
-                    file=path,
-                    line=line_idx + 1,
-                    character=match.start("name"),
-                    end_line=line_idx + 1,
-                    end_character=match.end("name"),
-                    severity=_diag.Severity.INFORMATION,
-                    code="BSL224",
-                )
-            )
     return diags
 
 
