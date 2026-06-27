@@ -396,7 +396,7 @@ class ModuleModel:
                     character=col0,
                     end_line=line0,
                     end_character=col1,
-                    severity=Severity.WARNING,
+                    severity=Severity.ERROR,
                     code="BSL148",
                 )
             )

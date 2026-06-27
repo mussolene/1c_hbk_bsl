@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine, Severity
 
 _FIXTURE = (
     Path(__file__).resolve().parent
@@ -91,6 +91,7 @@ def test_bsl148_anchor_points_to_function_identifier(tmp_path: Path) -> None:
     assert diags[0].line == 1
     assert diags[0].character == 8
     assert diags[0].end_character > diags[0].character
+    assert diags[0].severity == Severity.ERROR
 
 
 def test_bsl148_simple_trailing_if_without_else_is_not_reported(tmp_path: Path) -> None:
@@ -149,6 +150,25 @@ def test_bsl148_try_except_missing_except_return_is_reported(tmp_path: Path) -> 
     assert [d.line for d in diags] == [1]
 
 
+def test_bsl148_try_except_followed_by_return_is_not_reported(tmp_path: Path) -> None:
+    content = (
+        "Функция Тест()\n"
+        "    Попытка\n"
+        "        Значение = ПолучитьЗначение();\n"
+        "    Исключение\n"
+        "        ВызватьИсключение;\n"
+        "    КонецПопытки;\n"
+        "    Возврат Значение;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "try_except_then_return.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert diags == []
+
+
 def test_bsl148_branch_with_statements_before_return_is_not_reported(tmp_path: Path) -> None:
     content = (
         "Функция Тест(Флаг)\n"
@@ -188,7 +208,7 @@ def test_bsl148_branch_with_comments_before_return_is_not_reported(tmp_path: Pat
     assert diags == []
 
 
-def test_bsl148_terminal_loop_branch_uses_default_bslls_loop_assumption(
+def test_bsl148_terminal_loop_branch_reports_when_body_can_continue(
     tmp_path: Path,
 ) -> None:
     content = (
@@ -209,7 +229,7 @@ def test_bsl148_terminal_loop_branch_uses_default_bslls_loop_assumption(
     diags = [
         d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
     ]
-    assert diags == []
+    assert [d.line for d in diags] == [1]
 
 
 def test_bsl148_terminal_loop_branch_can_report_when_loop_assumption_is_disabled(
@@ -236,6 +256,24 @@ def test_bsl148_terminal_loop_branch_can_report_when_loop_assumption_is_disabled
     )
     diags = [d for d in engine.check_file(str(path)) if d.code == "BSL148"]
     assert [d.line for d in diags] == [1]
+
+
+def test_bsl148_terminal_loop_with_guaranteed_body_return_is_not_reported(
+    tmp_path: Path,
+) -> None:
+    content = (
+        "Функция Первый(Коллекция)\n"
+        "    Для Каждого Элемент Из Коллекция Цикл\n"
+        "        Возврат Элемент;\n"
+        "    КонецЦикла;\n"
+        "КонецФункции\n"
+    )
+    path = tmp_path / "terminal_loop_body_returns.bsl"
+    path.write_text(content, encoding="utf-8")
+    diags = [
+        d for d in DiagnosticEngine(select={"BSL148"}).check_file(str(path)) if d.code == "BSL148"
+    ]
+    assert diags == []
 
 
 def test_bsl148_preprocessor_branches_with_total_returns_are_not_reported(

@@ -146,7 +146,7 @@ def _stmt_list_always_returns(
     if not stmts:
         return False
     meaningful = [st for st in stmts if _is_meaningful_stmt(st)]
-    for index, st in enumerate(meaningful):
+    for st in meaningful:
         t = getattr(st, "type", None)
         if t in ("return_statement", "rise_error_statement"):
             return True
@@ -163,7 +163,9 @@ def _stmt_list_always_returns(
         if t in ("while_statement", "for_statement", "for_each_statement"):
             if t == "while_statement" and _while_literal_true(st):
                 return True
-            if loops_executed_at_least_once and index + 1 >= len(meaningful):
+            if loops_executed_at_least_once and _loop_body_always_returns(
+                st, loops_executed_at_least_once=loops_executed_at_least_once
+            ):
                 return True
             if _loop_body_always_returns(
                 st, loops_executed_at_least_once=loops_executed_at_least_once
@@ -324,19 +326,15 @@ def implicit_exit_reachable(
         if t in ("while_statement", "for_statement", "for_each_statement"):
             if t == "while_statement" and _while_literal_true(s):
                 return False
-            if (
-                loops_executed_at_least_once
-                and at_top_level
-                and t in ("for_statement", "for_each_statement")
-                and i + 1 >= len(stmts)
-            ):
+            body_always_returns = _loop_body_always_returns(
+                s,
+                loops_executed_at_least_once=loops_executed_at_least_once,
+            )
+            if loops_executed_at_least_once and body_always_returns:
                 return False
             if loops_executed_at_least_once and at_top_level:
                 return walk(i + 1)
-            if not _loop_body_always_returns(
-                s,
-                loops_executed_at_least_once=loops_executed_at_least_once,
-            ):
+            if not body_always_returns:
                 return walk(i + 1)
             return walk(i + 1)
         if t == "try_statement":
@@ -344,7 +342,7 @@ def implicit_exit_reachable(
                 s,
                 loops_executed_at_least_once=loops_executed_at_least_once,
             ):
-                return True
+                return walk(i + 1)
             return False
         return walk(i + 1)
 
