@@ -3718,6 +3718,27 @@ class TestBsl233PublicMethodsDescription:
 
         assert "BSL233" not in _codes(diags)
 
+    def test_see_reference_inside_structured_description_is_allowed(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            #Область ПрограммныйИнтерфейс
+            // Возвращает данные.
+            //
+            // Параметры:
+            //  Параметр - Структура - данные. См. НовыйПараметр()
+            //
+            // Возвращаемое значение:
+            // см. НовыйРезультат() - результат.
+            Функция Данные(Параметр) Экспорт
+            КонецФункции
+            #КонецОбласти
+        """
+
+        diags = _check(content, tmp_path, select={"BSL233"})
+
+        assert "BSL233" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # BSL003 — NonExportMethodsInApiRegion

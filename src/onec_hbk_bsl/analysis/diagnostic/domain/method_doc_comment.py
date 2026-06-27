@@ -188,7 +188,7 @@ def _is_ignored_block(lines: tuple[str, ...], params_section_offset: int | None)
         return True
     if any(_RE_LEGACY_RETURN_HEADER.match(line) for line in lines):
         return True
-    if any(_RE_SEE_LINK.match(line) for line in lines):
+    if params_section_offset is None and any(_RE_SEE_LINK.match(line) for line in lines):
         return True
     if params_section_offset is None and any(_RE_STRUCTURE_COMPOSITION.match(line) for line in lines):
         return True
