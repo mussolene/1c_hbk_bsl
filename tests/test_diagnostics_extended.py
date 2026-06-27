@@ -143,6 +143,45 @@ class TestBsl192FunctionNameStartsWithGet:
 
 
 # ---------------------------------------------------------------------------
+# BSL193 — FunctionOutParameter
+# ---------------------------------------------------------------------------
+
+
+class TestBsl193FunctionOutParameter:
+    def test_function_out_parameter_assignment_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(Параметр)
+                Параметр = 1;
+                Возврат Параметр;
+            КонецФункции
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL193"}) if d.code == "BSL193"]
+        assert len(diags) == 1
+        assert diags[0].line == 2
+        assert diags[0].character == 4
+
+    def test_function_val_parameter_assignment_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(Знач Параметр)
+                Параметр = 1;
+                Возврат Параметр;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL193"})
+        assert "BSL193" not in _codes(diags)
+
+    def test_multiline_signature_default_is_not_assignment(self, tmp_path: Path) -> None:
+        content = """\
+            Функция Тест(Первый = Неопределено,
+                Второй = Неопределено)
+                Возврат Второй;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL193"})
+        assert "BSL193" not in _codes(diags)
+
+
+# ---------------------------------------------------------------------------
 # BSL215 — MissingParameterDescription
 # ---------------------------------------------------------------------------
 

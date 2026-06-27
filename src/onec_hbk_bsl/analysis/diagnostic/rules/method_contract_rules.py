@@ -105,7 +105,8 @@ def run_bsl192_193_194_228_266_method_contract_diagnostics(
                 if p.casefold() not in {n.casefold() for n in proc.val_params}
             }
             seen_out: set[str] = set()
-            for idx in range(proc.start_idx + 1, proc.end_idx + 1):
+            body_start_idx = _diag._proc_body_start_line_idx_fallback(lines, proc)
+            for idx in range(body_start_idx, proc.end_idx + 1):
                 code_line = lines[idx].split("//", 1)[0]
                 m_assign = _diag._RE_ASSIGN_LHS.match(code_line)
                 if not m_assign:
