@@ -9747,6 +9747,17 @@ class TestBsl240RewriteMethodParameter:
         diags = _check(content, tmp_path, select={"BSL240"})
         assert "BSL240" not in _codes(diags)
 
+    def test_val_param_condition_read_before_write_not_flagged(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Знач П)
+                Если П = Неопределено Тогда
+                    П = 1;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL240"})
+        assert "BSL240" not in _codes(diags)
+
     def test_optional_val_param_overwrite_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест(Знач П = 1)

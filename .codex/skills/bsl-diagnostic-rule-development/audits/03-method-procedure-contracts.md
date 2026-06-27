@@ -22,7 +22,7 @@ This audit is the durable routing checklist for
 - [x] BSL224 - exact private parity after CST anchor range fix and regex fallback removal
 - [x] BSL228 - exact private parity after preserved-source-root confirmation
 - [x] BSL233 - exact private parity after structured comment `См.` reference fix
-- [ ] BSL240 - reopened; block parity has unclassified onec-only deltas
+- [x] BSL240 - exact private parity after CST read-before-write tracking
 - [ ] BSL254 - reopened; block parity has high-volume unclassified BSLLS-only deltas
 - [ ] BSL266 - reopened; block parity has unclassified onec-only deltas
 

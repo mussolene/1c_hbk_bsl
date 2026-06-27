@@ -743,32 +743,39 @@ def run_bsl240_rewrite_method_parameter(
             continue
         used_before_assign: set[str] = set()
 
-        assignment_items = _bsl240_assignment_items_from_cst(_diag, pnode)
+        assignment_items = _bsl240_assignment_events_from_cst(_diag, pnode)
 
-        for li, lhs_text, rhs_text, start_char, end_char, line_text in assignment_items:
+        for event in assignment_items:
+            if event["line"] < body_start:
+                continue
+            if event["kind"] == "read":
+                name = str(event["name"]).casefold()
+                if name in val_cf:
+                    used_before_assign.add(name)
+                continue
+            li = int(event["line"])
             if li >= len(lines):
                 break
-            lhs = lhs_text.casefold()
+            lhs = str(event["lhs"]).casefold()
+            rhs_identifiers = {
+                str(name).casefold() for name in event.get("rhs_identifiers", ())
+            }
             if lhs in val_cf:
-                if lhs not in rhs_text.casefold() and lhs not in used_before_assign:
+                if lhs not in rhs_identifiers and lhs not in used_before_assign:
                     diags.append(
                         _diag.Diagnostic(
                             file=path,
                             line=li + 1,
-                            character=start_char,
+                            character=int(event["start_char"]),
                             end_line=li + 1,
-                            end_character=end_char,
+                            end_character=int(event["end_char"]),
                             severity=_diag.Severity.WARNING,
                             code="BSL240",
                         )
                     )
-                elif lhs in rhs_text.casefold():
+                elif lhs in rhs_identifiers:
                     used_before_assign.add(lhs)
-            for param_cf in val_cf:
-                if param_cf != lhs and re.search(
-                    rf"\b{re.escape(param_cf)}\b", line_text, re.IGNORECASE
-                ):
-                    used_before_assign.add(param_cf)
+            used_before_assign.update(param for param in rhs_identifiers if param in val_cf)
     return diags
 
 
@@ -787,33 +794,66 @@ def _method_proc_node(
 
 
 def _assigned_names_from_cst(_diag: Any, proc_node: Any) -> set[str]:
-    return {item[1].casefold() for item in _bsl240_assignment_items_from_cst(_diag, proc_node)}
+    return {
+        str(event["lhs"]).casefold()
+        for event in _bsl240_assignment_events_from_cst(_diag, proc_node)
+        if event["kind"] == "assignment"
+    }
 
 
-def _bsl240_assignment_items_from_cst(
-    _diag: Any, proc_node: Any
-) -> list[tuple[int, str, str, int, int, str]]:
-    items: list[tuple[int, str, str, int, int, str]] = []
+def _bsl240_assignment_events_from_cst(_diag: Any, proc_node: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
     for node in _diag._ts_walk(proc_node):
-        if getattr(node, "type", None) != "assignment_statement":
-            continue
-        children = list(getattr(node, "children", []) or [])
-        if not children or getattr(children[0], "type", None) != "identifier":
-            continue
-        lhs_node = children[0]
-        rhs_node = next((c for c in children if getattr(c, "type", None) == "expression"), None)
-        lhs_text = _diag._ts_node_text(lhs_node)
-        rhs_text = _diag._ts_node_text(rhs_node) if rhs_node is not None else ""
-        line_idx = lhs_node.start_point[0]
-        line_text = _diag._ts_node_text(node)
-        items.append(
-            (
-                line_idx,
-                lhs_text,
-                rhs_text,
-                lhs_node.start_point[1],
-                lhs_node.end_point[1],
-                line_text,
+        node_type = getattr(node, "type", None)
+        if node_type == "assignment_statement":
+            children = list(getattr(node, "children", []) or [])
+            if not children or getattr(children[0], "type", None) != "identifier":
+                continue
+            lhs_node = children[0]
+            rhs_node = next(
+                (c for c in children if getattr(c, "type", None) == "expression"),
+                None,
             )
+            items.append(
+                {
+                    "kind": "assignment",
+                    "line": lhs_node.start_point[0],
+                    "column": lhs_node.start_point[1],
+                    "lhs": _diag._ts_node_text(lhs_node),
+                    "rhs_identifiers": _identifier_texts(_diag, rhs_node),
+                    "start_char": lhs_node.start_point[1],
+                    "end_char": lhs_node.end_point[1],
+                }
+            )
+            continue
+
+        if node_type != "identifier" or _has_ancestor_type(node, "assignment_statement"):
+            continue
+        items.append(
+            {
+                "kind": "read",
+                "line": node.start_point[0],
+                "column": node.start_point[1],
+                "name": _diag._ts_node_text(node),
+            }
         )
-    return sorted(items, key=lambda item: (item[0], item[3]))
+    return sorted(items, key=lambda item: (int(item["line"]), int(item["column"])))
+
+
+def _identifier_texts(_diag: Any, node: Any | None) -> tuple[str, ...]:
+    if node is None:
+        return ()
+    return tuple(
+        _diag._ts_node_text(child)
+        for child in _diag._ts_walk(node)
+        if getattr(child, "type", None) == "identifier"
+    )
+
+
+def _has_ancestor_type(node: Any, node_type: str) -> bool:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) == node_type:
+            return True
+        parent = getattr(parent, "parent", None)
+    return False
