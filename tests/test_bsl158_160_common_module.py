@@ -93,6 +93,9 @@ def test_bsl159_invalid_all_flags_false(tmp_path: Path) -> None:
     engine = DiagnosticEngine(select={"BSL159"})
     diags = [d for d in engine.check_file(str(bsl)) if d.code == "BSL159"]
     assert len(diags) == 1
+    assert diags[0].line == 1
+    assert diags[0].character == 0
+    assert diags[0].end_character == 1
     assert diags[0].message == "Общий модуль недопустимого типа"
 
 

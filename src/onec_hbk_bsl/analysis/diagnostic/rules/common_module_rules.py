@@ -488,15 +488,13 @@ def run_bsl159_common_module_invalid_type(path: str, lines: list[str]) -> list[A
     inv = common_module_xml_flags_invalid(path)
     if inv is not True:
         return []
-    span = bsl160_module_line1_span(lines)
-    c0, c1 = span if span is not None else (0, 1)
     return [
         Diagnostic(
             file=path,
             line=1,
-            character=c0,
+            character=0,
             end_line=1,
-            end_character=c1,
+            end_character=1,
             severity=Severity.ERROR,
             code="BSL159",
         )

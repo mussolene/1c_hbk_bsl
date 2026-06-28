@@ -11,7 +11,7 @@ Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL154 - parity-classified; full-call range aligned, 1 BSLLS-only end-of-branch false positive retained
 - [x] BSL156 - semantic parity aligned; 105 paired BSLLS range-only deltas retained
 - [x] BSL158 - exact-zero private parity; contract-only closure
-- [ ] BSL159 - open
+- [x] BSL159 - exact private parity after line 1 single-character anchor alignment
 - [ ] BSL160 - open
 - [ ] BSL161 - open
 - [ ] BSL162 - open
