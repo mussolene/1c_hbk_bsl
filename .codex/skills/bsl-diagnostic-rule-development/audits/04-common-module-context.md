@@ -1,13 +1,13 @@
 # 04 Common Module Context Audit
 
-Status: not started.
+Status: in progress.
 
 This audit is the durable routing checklist for `04-common-module-context`.
 Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
 
 ## Closure Checklist
 
-- [ ] BSL152 - open
+- [x] BSL152 - exact private parity; contract-only closure
 - [ ] BSL154 - open
 - [ ] BSL156 - open
 - [ ] BSL158 - open
