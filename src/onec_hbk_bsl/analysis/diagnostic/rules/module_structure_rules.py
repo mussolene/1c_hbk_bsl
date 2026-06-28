@@ -8,6 +8,8 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+
 _BSL154_ASYNC_PIPE = (
     "ПОКАЗАТЬВОПРОС|SHOWQUERYBOX|ПОКАЗАТЬЗНАЧЕНИЕ|SHOWVALUE|"
     "ПОКАЗАТЬПРЕДУПРЕЖДЕНИЕ|SHOWMESSAGEBOX|ПОКАЗАТЬВВОДДАТЫ|SHOWINPUTDATE|"
@@ -131,6 +133,19 @@ def _node_children(node: object) -> list[object]:
     return list(getattr(node, "children", []) or [])
 
 
+def _root_lines(root: object) -> list[str]:
+    text = getattr(root, "text", b"")
+    if isinstance(text, bytes):
+        return text.decode("utf-8", errors="replace").splitlines()
+    return str(text).splitlines()
+
+
+def _point_character(lines: list[str], row: int, byte_col: int) -> int:
+    if not (0 <= row < len(lines)):
+        return int(byte_col)
+    return utf8_byte_offset_to_lsp_character(lines[row], int(byte_col))
+
+
 def _walk(node: object):
     yield node
     for child in _node_children(node):
@@ -147,6 +162,8 @@ def _nearest_ancestor(node: object, types: frozenset[str]) -> object | None:
 
 
 def _bsl154_method_name(method_call: object) -> str:
+    if getattr(getattr(method_call, "parent", None), "type", None) != "call_statement":
+        return ""
     for child in _node_children(method_call):
         if getattr(child, "type", None) == "identifier":
             return _node_text(child)
@@ -185,14 +202,15 @@ def _bsl154_has_blocking_followup(statement: object) -> bool:
 def bsl154_code_after_async_spans_cst(
     path: str,
     tree: object | None,
-) -> list[tuple[int, int, int, str]]:
+) -> list[tuple[int, int, int, int, str]]:
     if not path_matches_bsl154_module_types(path):
         return []
     root = getattr(tree, "root_node", None)
     if root is None:
         return []
 
-    out: list[tuple[int, int, int, str]] = []
+    lines = _root_lines(root)
+    out: list[tuple[int, int, int, int, str]] = []
     for node in _walk(root):
         if getattr(node, "type", None) != "method_call":
             continue
@@ -208,7 +226,18 @@ def bsl154_code_after_async_spans_cst(
         if statement is None or not _bsl154_has_blocking_followup(statement):
             continue
         start = getattr(node, "start_point", (0, 0))
-        out.append((int(start[0]) + 1, int(start[1]), int(start[1]) + len(method), method))
+        end = getattr(node, "end_point", (start[0], start[1] + len(method)))
+        start_row = int(start[0])
+        end_row = int(end[0])
+        out.append(
+            (
+                start_row + 1,
+                _point_character(lines, start_row, int(start[1])),
+                end_row + 1,
+                _point_character(lines, end_row, int(end[1])),
+                method,
+            )
+        )
     return out
 
 

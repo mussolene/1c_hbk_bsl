@@ -272,6 +272,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL031",
         # MissedRequiredParameter spans the full call; supplied arguments may be string literals.
         "BSL212",
+        # CodeAfterAsyncCall spans the full async call; arguments may be string literals.
+        "BSL154",
         "BSL005",
         "BSL006",
         "BSL012",

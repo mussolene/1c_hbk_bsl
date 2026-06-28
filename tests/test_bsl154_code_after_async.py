@@ -34,6 +34,8 @@ def test_bsl154_fires_when_code_follows_async(tmp_path: Path) -> None:
     diags = [d for d in engine.check_file(str(p)) if d.code == "BSL154"]
     assert len(diags) == 1
     assert diags[0].line == 2
+    assert diags[0].character == 4
+    assert diags[0].end_character == 23
     assert "ПоказатьВопрос" in p.read_text(encoding="utf-8")
 
 

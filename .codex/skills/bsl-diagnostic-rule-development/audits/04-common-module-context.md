@@ -8,7 +8,7 @@ Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
 ## Closure Checklist
 
 - [x] BSL152 - exact private parity; contract-only closure
-- [ ] BSL154 - open
+- [x] BSL154 - parity-classified; full-call range aligned, 1 BSLLS-only end-of-branch false positive retained
 - [ ] BSL156 - open
 - [ ] BSL158 - open
 - [ ] BSL159 - open

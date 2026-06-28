@@ -431,13 +431,13 @@ def run_bsl152_cached_public(
 def run_bsl154_code_after_async(path: str, tree: object | None) -> list[Any]:
     Diagnostic, Severity = _diag_types()
     diags: list[Any] = []
-    for line_1, c0, c1, _method in bsl154_code_after_async_spans_cst(path, tree):
+    for line_1, c0, end_line_1, c1, _method in bsl154_code_after_async_spans_cst(path, tree):
         diags.append(
             Diagnostic(
                 file=path,
                 line=line_1,
                 character=c0,
-                end_line=line_1,
+                end_line=end_line_1,
                 end_character=c1,
                 severity=Severity.WARNING,
                 code="BSL154",
