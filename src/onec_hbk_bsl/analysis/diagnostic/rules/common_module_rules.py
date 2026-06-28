@@ -450,13 +450,13 @@ def run_bsl156_code_out_of_region(path: str, lines: list[str], procs: list[_Proc
     Diagnostic, Severity = _diag_types()
     triples = [(p.start_idx, p.end_idx, p.name) for p in procs]
     diags: list[Any] = []
-    for line_1, c0, c1, _msg in bsl156_diagnostics(path, lines, triples):
+    for line_1, c0, end_line_1, c1, _msg in bsl156_diagnostics(path, lines, triples):
         diags.append(
             Diagnostic(
                 file=path,
                 line=line_1,
                 character=c0,
-                end_line=line_1,
+                end_line=end_line_1,
                 end_character=c1,
                 severity=Severity.INFORMATION,
                 code="BSL156",

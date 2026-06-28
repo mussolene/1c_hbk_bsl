@@ -81,7 +81,7 @@ _MODULE_TYPE_FOLDERS = frozenset(
     }
 )
 _FORM_FOLDERS = frozenset({"forms", "формы"})
-_COMMAND_FOLDERS = frozenset({"commands", "команды"})
+_COMMAND_FOLDERS = frozenset({"commands", "команды", "commoncommands", "общиекоманды"})
 _EXT_FOLDERS = frozenset({"ext"})
 
 
@@ -274,7 +274,7 @@ def path_has_known_bsl156_module_type(path: str) -> bool:
     if name == "module.bsl" and parent == "form":
         return "ext" in parts and any(part in _FORM_FOLDERS for part in parts)
     if name == "module.bsl" and parent in _EXT_FOLDERS:
-        return any(part in _MODULE_TYPE_FOLDERS or part in _FORM_FOLDERS for part in parts)
+        return any(part in _MODULE_TYPE_FOLDERS for part in parts)
     return False
 
 
@@ -343,11 +343,63 @@ def _line_span_non_ws(line: str) -> tuple[int, int]:
     return c0, c1
 
 
+def _declaration_start_with_directives(lines: list[str], start_idx: int) -> int:
+    idx = start_idx
+    while idx > 0 and _RE_COMPILER.match(lines[idx - 1]):
+        idx -= 1
+    return idx
+
+
+def _semicolon_statement_end(lines: list[str], start_idx: int) -> int:
+    for idx in range(start_idx, len(lines)):
+        if ";" in _strip_line_comment(lines[idx]):
+            return idx
+    return start_idx
+
+
+def _next_module_var_start(lines: list[str], start_idx: int) -> int | None:
+    idx = start_idx
+    while idx < len(lines):
+        raw = _raw_without_bom(lines[idx])
+        if not raw or raw.startswith("//"):
+            idx += 1
+            continue
+        while idx < len(lines) and _RE_COMPILER.match(lines[idx]):
+            idx += 1
+        if idx < len(lines) and _RE_MODULE_VAR.match(lines[idx]):
+            return idx
+        return None
+    return None
+
+
+def _module_vars_block_end(lines: list[str], start_idx: int) -> int:
+    end_idx = _semicolon_statement_end(lines, start_idx)
+    next_start = _next_module_var_start(lines, end_idx + 1)
+    while next_start is not None:
+        end_idx = _semicolon_statement_end(lines, next_start)
+        next_start = _next_module_var_start(lines, end_idx + 1)
+    return end_idx
+
+
+def _module_var_range(lines: list[str], start_idx: int) -> tuple[int, int, int, int]:
+    range_start = _declaration_start_with_directives(lines, start_idx)
+    code = _strip_line_comment(lines[start_idx]).strip()
+    keyword_only = code.casefold() in {"перем", "var"}
+    range_end = (
+        _module_vars_block_end(lines, start_idx)
+        if keyword_only
+        else _semicolon_statement_end(lines, start_idx)
+    )
+    c0, _ = _line_span_non_ws(lines[range_start])
+    _, c1 = _line_span_non_ws(lines[range_end])
+    return range_start + 1, c0, range_end + 1, c1
+
+
 def bsl156_diagnostics(
     path: str,
     lines: list[str],
     procedures: list[tuple[int, int, str]],
-) -> list[tuple[int, int, int, str]]:
+) -> list[tuple[int, int, int, int, str]]:
     if not path_has_known_bsl156_module_type(path) or _is_split_module_fragment(path):
         return []
 
@@ -368,13 +420,13 @@ def bsl156_diagnostics(
         for idx in range(start, end + 1):
             inside_region[idx] = True
 
-    out: list[tuple[int, int, int, str]] = []
+    out: list[tuple[int, int, int, int, str]] = []
     msg = "Переместите код в область"
 
     if not intervals:
-        first_module_var: tuple[int, int, int] | None = None
-        first_module_stmt: tuple[int, int, int] | None = None
-        first_proc: tuple[int, int, int] | None = None
+        first_module_var: tuple[int, int, int, int] | None = None
+        first_module_stmt: tuple[int, int, int, int] | None = None
+        first_proc: tuple[int, int, int, int] | None = None
 
         for i, line in enumerate(lines):
             if inside_proc[i]:
@@ -382,12 +434,11 @@ def bsl156_diagnostics(
             if not _is_significant_module_line_raw(line):
                 continue
             if _RE_MODULE_VAR.match(line) and first_module_var is None:
-                c0, c1 = _line_span_non_ws(line)
-                first_module_var = (i + 1, c0, c1)
+                first_module_var = _module_var_range(lines, i)
                 continue
             if _is_executable_module_statement_line(line) and first_module_stmt is None:
                 c0, c1 = _line_span_non_ws(line)
-                first_module_stmt = (i + 1, c0, c1)
+                first_module_stmt = (i + 1, c0, i + 1, c1)
 
         for s, _e, _name in procedures:
             if not (0 <= s < n):
@@ -399,16 +450,16 @@ def bsl156_diagnostics(
                 re.IGNORECASE,
             )
             if m:
-                first_proc = (s + 1, m.start(1), m.end(1))
+                first_proc = (s + 1, m.start(1), s + 1, m.end(1))
             else:
                 c0, c1 = _line_span_non_ws(line)
-                first_proc = (s + 1, c0, c1 if c1 > c0 else max(1, len(line)))
+                first_proc = (s + 1, c0, s + 1, c1 if c1 > c0 else max(1, len(line)))
             break
 
         first = first_module_var or first_module_stmt or first_proc
         if first is not None:
-            line_1, c0, c1 = first
-            out.append((line_1, c0, c1, msg))
+            line_1, c0, end_line_1, c1 = first
+            out.append((line_1, c0, end_line_1, c1, msg))
         return out
 
     for s, e, _name in procedures:
@@ -425,7 +476,7 @@ def bsl156_diagnostics(
                 c0, c1 = _line_span_non_ws(line)
                 if c1 <= c0:
                     c0, c1 = 0, max(1, len(line))
-            out.append((s + 1, c0, c1, msg))
+            out.append((s + 1, c0, s + 1, c1, msg))
 
     for i, line in enumerate(lines):
         if inside_proc[i]:
@@ -434,11 +485,11 @@ def bsl156_diagnostics(
             continue
         if _RE_MODULE_VAR.match(line):
             if not inside_region[i]:
-                c0, c1 = _line_span_non_ws(line)
-                out.append((i + 1, c0, c1, msg))
+                line_1, c0, end_line_1, c1 = _module_var_range(lines, i)
+                out.append((line_1, c0, end_line_1, c1, msg))
             continue
         if _is_executable_module_statement_line(line) and not inside_region[i]:
             c0, c1 = _line_span_non_ws(line)
-            out.append((i + 1, c0, c1, msg))
+            out.append((i + 1, c0, i + 1, c1, msg))
 
     return out

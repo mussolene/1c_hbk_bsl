@@ -88,6 +88,28 @@ def test_bsl156_module_var_outside_region(tmp_path: Path) -> None:
     assert 5 in lines
 
 
+def test_bsl156_multiline_module_vars_use_whole_block_range(tmp_path: Path) -> None:
+    p = _common_module_path(tmp_path)
+    p.parent.mkdir(parents=True)
+    p.write_text(
+        "&НаСервере\n"
+        "Перем\n"
+        "А,\n"
+        "Б;\n"
+        "\n"
+        "// group\n"
+        "&НаКлиенте\n"
+        "Перем\n"
+        "В;\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL156"})
+    diags = [d for d in engine.check_file(str(p)) if d.code == "BSL156"]
+    assert len(diags) == 1
+    assert diags[0].line == 1
+    assert diags[0].end_line == 9
+
+
 def test_bsl156_form_module_without_regions_reports_procedure(tmp_path: Path) -> None:
     p = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
     p.parent.mkdir(parents=True)
@@ -132,13 +154,13 @@ def test_bsl156_unknown_module_type_is_skipped_by_default(tmp_path: Path) -> Non
 def test_bsl156_known_module_type_paths_match_bslls_fixtures() -> None:
     known_paths = [
         "Catalogs/Справочник1/Commands/Команда1/Ext/CommandModule.bsl",
+        "CommonCommands/Открыть/Ext/CommandModule.bsl",
         "Catalogs/Справочник1/Ext/ObjectModule.bsl",
         "Catalogs/Справочник1/Ext/ManagerModule.bsl",
         "Ext/ManagedApplicationModule.bsl",
         "Ext/SessionModule.bsl",
         "Ext/ExternalConnectionModule.bsl",
         "Catalogs/Справочник1/Forms/ФормаЭлемента/Ext/Form/Module.bsl",
-        "Catalogs/Справочник1/Forms/ФормаЭлемента/Ext/Module.bsl",
         "CommonModules/ПервыйОбщийМодуль/Ext/Module.bsl",
         "InformationRegisters/РегистрСведений1/Ext/RecordSetModule.bsl",
         "HTTPServices/HTTPСервис1/Ext/Module.bsl",
@@ -151,6 +173,7 @@ def test_bsl156_known_module_type_paths_match_bslls_fixtures() -> None:
         "Module.bsl",
         "AnySnippet.bsl",
         "Catalogs/Справочник1/SomeMethod.bsl",
+        "Catalogs/Справочник1/Forms/ФормаЭлемента/Ext/Module.bsl",
         "CommonModules/ПервыйОбщийМодуль/Ext/SomeMethod.bsl",
     ]
     for path in unknown_paths:
