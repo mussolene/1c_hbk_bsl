@@ -551,13 +551,14 @@ def run_bsl161_168_common_module_names(
     for code, _message in issues:
         if code not in enabled:
             continue
+        diag_c0, diag_c1 = (0, 1) if code == "BSL168" else (c0, c1)
         out.append(
             Diagnostic(
                 file=path,
                 line=line_1,
-                character=c0,
+                character=diag_c0,
                 end_line=line_1,
-                end_character=c1,
+                end_character=diag_c1,
                 severity=Severity.INFORMATION,
                 code=code,
             )

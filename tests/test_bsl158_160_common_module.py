@@ -287,4 +287,8 @@ def test_bsl168_forbidden_word_in_name(tmp_path: Path) -> None:
     )
     assert "BSL168" in {c for c, _ in common_module_name_convention_issues(str(bsl))}
     engine = DiagnosticEngine(select={"BSL168"})
-    assert [d for d in engine.check_file(str(bsl)) if d.code == "BSL168"]
+    diags = [d for d in engine.check_file(str(bsl)) if d.code == "BSL168"]
+    assert len(diags) == 1
+    assert diags[0].line == 1
+    assert diags[0].character == 0
+    assert diags[0].end_character == 1
