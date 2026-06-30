@@ -141,6 +141,25 @@ def test_bsl160_fires_without_api_region(tmp_path: Path) -> None:
     assert len(diags) == 1
 
 
+def test_bsl160_skips_bom_only_first_line_for_anchor(tmp_path: Path) -> None:
+    bsl = _write_module_xml(tmp_path, server="true")
+    bsl.write_text(
+        "\ufeff\n"
+        "////////////////////////////////////////////////////////////////////////////////\n"
+        "#Область Прочее\n"
+        "Процедура П() Экспорт\n"
+        "КонецПроцедуры\n"
+        "#КонецОбласти\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL160"})
+    diags = [d for d in engine.check_file(str(bsl)) if d.code == "BSL160"]
+    assert len(diags) == 1
+    assert diags[0].line == 2
+    assert diags[0].character == 0
+    assert diags[0].end_character == 80
+
+
 def test_bsl160_clean_with_public_and_export(tmp_path: Path) -> None:
     bsl = _write_module_xml(tmp_path, server="true")
     bsl.write_text(

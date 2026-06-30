@@ -317,15 +317,18 @@ def bsl160_common_module_missing_api(
     return no_export or no_api_region
 
 
-def bsl160_module_line1_span(lines: list[str]) -> tuple[int, int] | None:
-    if not lines:
+def bsl160_module_line1_span(lines: list[str]) -> tuple[int, int, int] | None:
+    line_idx = 0
+    while line_idx < len(lines) and not lines[line_idx].strip().lstrip("\ufeff"):
+        line_idx += 1
+    if line_idx >= len(lines):
         return None
-    line = lines[0]
+    line = lines[line_idx]
     c0 = len(line) - len(line.lstrip())
     c1 = len(line.rstrip())
     if c1 <= c0:
-        return 0, 1
-    return c0, c1
+        return line_idx + 1, 0, 1
+    return line_idx + 1, c0, c1
 
 
 def _diag_types() -> tuple[type[Any], Any]:
@@ -517,13 +520,13 @@ def run_bsl160_common_module_missing_api(
     span = bsl160_module_line1_span(lines)
     if span is None:
         return []
-    c0, c1 = span
+    line_1, c0, c1 = span
     return [
         Diagnostic(
             file=path,
-            line=1,
+            line=line_1,
             character=c0,
-            end_line=1,
+            end_line=line_1,
             end_character=c1,
             severity=Severity.INFORMATION,
             code="BSL160",
@@ -542,7 +545,7 @@ def run_bsl161_168_common_module_names(
     if not issues:
         return []
     span = bsl160_module_line1_span(lines)
-    c0, c1 = span if span is not None else (0, 1)
+    line_1, c0, c1 = span if span is not None else (1, 0, 1)
     enabled = {c for c in codes if rule_enabled(c)}
     out: list[Any] = []
     for code, _message in issues:
@@ -551,9 +554,9 @@ def run_bsl161_168_common_module_names(
         out.append(
             Diagnostic(
                 file=path,
-                line=1,
+                line=line_1,
                 character=c0,
-                end_line=1,
+                end_line=line_1,
                 end_character=c1,
                 severity=Severity.INFORMATION,
                 code=code,
