@@ -880,9 +880,7 @@ def append_diagnostic_runtime_rule_tasks(
                 complexity_metrics = list(snapshot.complexity_metrics_for_procs(context.procedures))
             facts_by_code: dict[str, list[Any]] = {
                 "BSL011": list(
-                    snapshot.module_body_cognitive_complexity_facts(
-                        engine.max_cognitive_complexity
-                    )
+                    snapshot.module_body_cognitive_complexity_facts(engine.max_cognitive_complexity)
                 ),
                 "BSL012": list(snapshot.hardcoded_credential_facts),
                 "BSL013": list(snapshot.commented_code_facts),

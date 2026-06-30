@@ -2017,7 +2017,9 @@ class ModuleModel:
                     code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
                     if abs_idx == end_idx:
                         code_no_comments = code_no_comments.split(";", 1)[0]
-                    for match in re.finditer(r"\b\w+\b", code_no_comments[start_col:], re.IGNORECASE):
+                    for match in re.finditer(
+                        r"\b\w+\b", code_no_comments[start_col:], re.IGNORECASE
+                    ):
                         var_name = match.group(0)
                         if var_name.casefold() in {"перем", "var", "экспорт", "export"}:
                             continue
@@ -2037,7 +2039,9 @@ class ModuleModel:
             if exported:
                 continue
             var_cf = var_name.casefold()
-            uses = file_read_counts.get(var_cf, 0) - (1 if var_cf in line_read_names[abs_idx] else 0)
+            uses = file_read_counts.get(var_cf, 0) - (
+                1 if var_cf in line_read_names[abs_idx] else 0
+            )
             if uses > 0:
                 continue
             diags.append(

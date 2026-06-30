@@ -17,9 +17,9 @@ def _load_validator():
 
 
 def test_bsl_rule_skill_contains_anti_loop_gate() -> None:
-    skill = (
-        ROOT / ".codex" / "skills" / "bsl-diagnostic-rule-development" / "SKILL.md"
-    ).read_text(encoding="utf-8")
+    skill = (ROOT / ".codex" / "skills" / "bsl-diagnostic-rule-development" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "## Anti-Loop Rule Gate" in skill
     assert "scripts/validate_rule_contract.py" in skill
@@ -190,13 +190,7 @@ def test_validate_rule_contract_accepts_complete_contract(tmp_path: Path) -> Non
 
 def test_rule_contracts_are_complete() -> None:
     validator = _load_validator()
-    contracts_dir = (
-        ROOT
-        / ".codex"
-        / "skills"
-        / "bsl-diagnostic-rule-development"
-        / "contracts"
-    )
+    contracts_dir = ROOT / ".codex" / "skills" / "bsl-diagnostic-rule-development" / "contracts"
     contracts = sorted(contracts_dir.glob("BSL*.md"))
 
     assert contracts

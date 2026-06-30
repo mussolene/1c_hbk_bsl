@@ -35,9 +35,7 @@ def test_rule_matrix_covers_every_public_rule_once() -> None:
 def test_rule_matrix_maps_core_snapshot_fact_rules() -> None:
     rows = _rows_by_code()
     core_codes = {
-        code
-        for code, row in rows.items()
-        if row.recommended_batch == "01-core-snapshot-facts"
+        code for code, row in rows.items() if row.recommended_batch == "01-core-snapshot-facts"
     }
 
     assert core_codes == {

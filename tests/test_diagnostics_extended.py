@@ -464,6 +464,7 @@ class TestBsl215MissingParameterDescriptionParity:
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert diags == []
 
+
 # ---------------------------------------------------------------------------
 # BSL237 — RedundantAccessToObject
 # ---------------------------------------------------------------------------
@@ -1436,7 +1437,12 @@ class TestTailParityBatches:
         diags_manager = DiagnosticEngine(select={"BSL174"}).check_file(str(manager_module))
         assert "BSL174" in _codes(diags_manager)
         manager_diag = next(diag for diag in diags_manager if diag.code == "BSL174")
-        assert (manager_diag.line, manager_diag.character, manager_diag.end_line, manager_diag.end_character) == (
+        assert (
+            manager_diag.line,
+            manager_diag.character,
+            manager_diag.end_line,
+            manager_diag.end_character,
+        ) == (
             1,
             0,
             1,
@@ -1464,7 +1470,11 @@ class TestTailParityBatches:
         module = form_ext / "Module.bsl"
         module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
 
-        diags = [d for d in DiagnosticEngine(select={"BSL274"}).check_file(str(module)) if d.code == "BSL274"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL274"}).check_file(str(module))
+            if d.code == "BSL274"
+        ]
 
         assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
             (1, 0, 1, 17),
@@ -1491,8 +1501,12 @@ class TestTailParityBatches:
         manager_module.parent.mkdir(parents=True)
         manager_module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
 
-        assert "BSL274" not in _codes(DiagnosticEngine(select={"BSL274"}).check_file(str(form_module)))
-        assert "BSL274" not in _codes(DiagnosticEngine(select={"BSL274"}).check_file(str(manager_module)))
+        assert "BSL274" not in _codes(
+            DiagnosticEngine(select={"BSL274"}).check_file(str(form_module))
+        )
+        assert "BSL274" not in _codes(
+            DiagnosticEngine(select={"BSL274"}).check_file(str(manager_module))
+        )
 
     def test_bsl274_reports_managed_application_module_for_form_without_module(
         self, tmp_path: Path
@@ -1727,9 +1741,7 @@ class TestTailParityBatches:
         module = obj_dir / "Module.bsl"
         module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
 
-        assert "BSL241" not in _codes(
-            DiagnosticEngine(select={"BSL241"}).check_file(str(module))
-        )
+        assert "BSL241" not in _codes(DiagnosticEngine(select={"BSL241"}).check_file(str(module)))
 
     def test_deny_incomplete_values_skips_non_register_metadata(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -1933,9 +1945,7 @@ class TestTailParityBatches:
         session_diags = DiagnosticEngine(select={"BSL232"}).check_file(str(session_module))
         assert "BSL232" in _codes(session_diags)
 
-    def test_bsl232_reports_each_protected_module_on_session_module(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bsl232_reports_each_protected_module_on_session_module(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)
         (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
@@ -2030,8 +2040,7 @@ class TestTailParityBatches:
 
         assert len(session_diags) == 6
         assert {
-            (diag.line, diag.character, diag.end_line, diag.end_character)
-            for diag in session_diags
+            (diag.line, diag.character, diag.end_line, diag.end_character) for diag in session_diags
         } == {(1, 0, 1, 9)}
         assert "BSL214" not in _codes(
             DiagnosticEngine(select={"BSL214"}).check_file(str(common_module))
@@ -2394,9 +2403,7 @@ class TestTailParityBatches:
         assert "BSL187" not in _codes(diags)
 
     @_requires_sdbl
-    def test_bsl187_skips_alias_checked_not_null_by_parenthesized_not(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bsl187_skips_alias_checked_not_null_by_parenthesized_not(self, tmp_path: Path) -> None:
         content = """\
             Запрос.Текст =
             "ВЫБРАТЬ
@@ -2490,9 +2497,9 @@ class TestTailParityBatches:
             diag for diag in _check(content, tmp_path, select={"BSL191"}) if diag.code == "BSL191"
         ]
 
-        assert [(diag.line, diag.character, diag.end_line, diag.end_character) for diag in diags] == [
-            (5, 5, 5, 30)
-        ]
+        assert [
+            (diag.line, diag.character, diag.end_line, diag.end_character) for diag in diags
+        ] == [(5, 5, 5, 30)]
 
     def test_bsl191_skips_left_join(self, tmp_path: Path) -> None:
         content = """\
@@ -2752,9 +2759,7 @@ class TestTailParityBatches:
             (4, 42, 42 + len("Справочник.ЕдиницыИзмерения")),
         }
 
-    def test_bsl236_reports_missing_virtual_table_metadata_source(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bsl236_reports_missing_virtual_table_metadata_source(self, tmp_path: Path) -> None:
         path = tmp_path / "DataProcessors" / "Обработка" / "Ext" / "ObjectModule.bsl"
         path.parent.mkdir(parents=True)
         (tmp_path / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
@@ -2968,9 +2973,7 @@ class TestTailParityBatches:
         diags = _check(content, tmp_path, select={"BSL238"})
         assert "BSL238" not in _codes(diags)
 
-    def test_bsl238_skips_aliased_simple_source_ref_field_like_bslls(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bsl238_skips_aliased_simple_source_ref_field_like_bslls(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Запрос = Новый Запрос;
@@ -3229,8 +3232,7 @@ class TestTailParityBatches:
             encoding="utf-8",
         )
         (root / "CommonModules" / "Привилегированный" / "Ext" / "Module.bsl").write_text(
-            "Процедура Метод() Экспорт\nКонецПроцедуры\n"
-            "Процедура Приватный()\nКонецПроцедуры\n",
+            "Процедура Метод() Экспорт\nКонецПроцедуры\nПроцедура Приватный()\nКонецПроцедуры\n",
             encoding="utf-8",
         )
         ordinary_module = root / "CommonModules" / "Обычный" / "Ext" / "Module.bsl"
@@ -3243,9 +3245,7 @@ class TestTailParityBatches:
         )
         diags = DiagnosticEngine(select={"BSL231"}).check_file(str(ordinary_module))
         bsl231 = [diag for diag in diags if diag.code == "BSL231"]
-        assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [
-            (2, 22, 27)
-        ]
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [(2, 22, 27)]
 
     def test_bsl231_reports_nested_public_calls_inside_privileged_module(
         self, tmp_path: Path
@@ -3268,9 +3268,7 @@ class TestTailParityBatches:
         )
         diags = DiagnosticEngine(select={"BSL231"}).check_file(str(privileged_module))
         bsl231 = [diag for diag in diags if diag.code == "BSL231"]
-        assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [
-            (4, 4, 20)
-        ]
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [(4, 4, 20)]
 
     def test_bsl213_skips_privileged_index(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -3718,9 +3716,7 @@ class TestBsl233PublicMethodsDescription:
 
         assert "BSL233" not in _codes(diags)
 
-    def test_see_reference_inside_structured_description_is_allowed(
-        self, tmp_path: Path
-    ) -> None:
+    def test_see_reference_inside_structured_description_is_allowed(self, tmp_path: Path) -> None:
         content = """\
             #Область ПрограммныйИнтерфейс
             // Возвращает данные.
@@ -4177,7 +4173,9 @@ class TestBsl007UnusedLocalVariableParity:
     def test_ordinary_form_module_is_checked(self, tmp_path: Path) -> None:
         form_dir = tmp_path / "DataProcessors" / "Обработка" / "Forms" / "Форма" / "Ext"
         form_dir.mkdir(parents=True)
-        (form_dir / "Form.xml").write_text("<UseManagedForm>false</UseManagedForm>", encoding="utf-8")
+        (form_dir / "Form.xml").write_text(
+            "<UseManagedForm>false</UseManagedForm>", encoding="utf-8"
+        )
         path = form_dir / "Module.bsl"
         path.write_text(
             textwrap.dedent(
@@ -4196,7 +4194,9 @@ class TestBsl007UnusedLocalVariableParity:
     def test_managed_form_module_is_skipped(self, tmp_path: Path) -> None:
         form_dir = tmp_path / "DataProcessors" / "Обработка" / "Forms" / "Форма" / "Ext"
         form_dir.mkdir(parents=True)
-        (form_dir / "Form.xml").write_text("<UseManagedForm>true</UseManagedForm>", encoding="utf-8")
+        (form_dir / "Form.xml").write_text(
+            "<UseManagedForm>true</UseManagedForm>", encoding="utf-8"
+        )
         path = form_dir / "Module.bsl"
         path.write_text(
             textwrap.dedent(
@@ -4587,7 +4587,7 @@ class TestBsl012HardcodeCredentials:
         assert "BSL012" not in _codes(diags)
 
     def test_secure_storage_read_no_warning(self, tmp_path: Path) -> None:
-        content = 'Пароль = Пароли.Пароль;\n'
+        content = "Пароль = Пароли.Пароль;\n"
         diags = _check(content, tmp_path)
         assert "BSL012" not in _codes(diags)
 
@@ -4673,9 +4673,7 @@ class TestBsl013CommentedCode:
         diags = _check(content, tmp_path, select={"BSL013"})
         assert "BSL013" not in _codes(diags)
 
-    def test_inline_non_bsl_expression_fragment_is_not_commented_code(
-        self, tmp_path: Path
-    ) -> None:
+    def test_inline_non_bsl_expression_fragment_is_not_commented_code(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 ПолныйКод = Код + 1; // shl(ПолныйКод, 6) + (Код & 0x3F)
@@ -4743,9 +4741,7 @@ class TestBsl013CommentedCode:
         assert bsl013[0].line == 1
         assert bsl013[0].end_line == 3
 
-    def test_commented_preprocessor_block_is_commented_code(
-        self, tmp_path: Path
-    ) -> None:
+    def test_commented_preprocessor_block_is_commented_code(self, tmp_path: Path) -> None:
         content = """\
             // #Если Сервер Тогда
             // #КонецЕсли
@@ -4810,9 +4806,7 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
         assert "BSL014" not in _codes(diags)
 
-    def test_query_text_non_keyword_continuation_exception_no_warning(
-        self, tmp_path: Path
-    ) -> None:
+    def test_query_text_non_keyword_continuation_exception_no_warning(self, tmp_path: Path) -> None:
         query_line = "|" + ("x" * 141) + "\n"
         content = f'Запрос.Текст = "\n|ВЫБРАТЬ\n{query_line}";\n'
         diags = _check(content, tmp_path, max_line_length=80, select={"BSL014"})
@@ -4876,9 +4870,7 @@ class TestBsl015NumberOfOptionalParams:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, max_optional_params=3) if d.code == "BSL015"]
-        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
-            (2, 4, 6, 9)
-        ]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [(2, 4, 6, 9)]
 
     def test_multiline_param_list_closing_paren_line_range_ends_at_last_param(
         self, tmp_path: Path
@@ -6566,12 +6558,7 @@ class TestBsl036ComplexCondition:
     def test_condition_range_starts_after_keyword_alignment_whitespace(
         self, tmp_path: Path
     ) -> None:
-        content = (
-            "Процедура Тест()\n"
-            "\tЕсли \tА И Б И В И Г Тогда\n"
-            "\tКонецЕсли;\n"
-            "КонецПроцедуры\n"
-        )
+        content = "Процедура Тест()\n\tЕсли \tА И Б И В И Г Тогда\n\tКонецЕсли;\nКонецПроцедуры\n"
         diags = _check(content, tmp_path, max_bool_ops=3, select={"BSL036"})
         bsl036 = [d for d in diags if d.code == "BSL036"]
         assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl036] == [
@@ -6592,9 +6579,7 @@ class TestBsl036ComplexCondition:
             (3, 11, 3, 24)
         ]
 
-    def test_multiline_condition_range_ends_before_standalone_then(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiline_condition_range_ends_before_standalone_then(self, tmp_path: Path) -> None:
         content = (
             "Процедура Тест()\n"
             "\tЕсли А = 1\n"
@@ -7792,9 +7777,7 @@ class TestBsl224NestedFunctionInParameters:
 
         assert "BSL224" not in _codes(diags)
 
-    def test_constructor_anchor_uses_cst_name_not_first_text_match(
-        self, tmp_path: Path
-    ) -> None:
+    def test_constructor_anchor_uses_cst_name_not_first_text_match(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Запрос = Новый Запрос(
@@ -7918,9 +7901,7 @@ class TestBsl219MissingVariablesDescription:
         bsl219 = [d for d in diags if d.code == "BSL219"]
         assert [(d.character, d.end_character) for d in bsl219] == [(6, 12), (14, 20)]
 
-    def test_multiple_export_module_vars_include_export_in_last_range(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiple_export_module_vars_include_export_in_last_range(self, tmp_path: Path) -> None:
         content = """\
             Перем Первый, Второй Экспорт;
             Процедура Тест()
@@ -7931,9 +7912,7 @@ class TestBsl219MissingVariablesDescription:
         bsl219 = [d for d in diags if d.code == "BSL219"]
         assert [(d.character, d.end_character) for d in bsl219] == [(6, 12), (14, 28)]
 
-    def test_multiline_module_vars_report_each_continuation_name(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiline_module_vars_report_each_continuation_name(self, tmp_path: Path) -> None:
         content = """\
             Перем
             Первый,
@@ -8203,7 +8182,9 @@ class TestBsl220MultilineStringInQuery:
                 |   Справочник.Номенклатура КАК Таблица";
             КонецПроцедуры
         '''
-        diags = [diag for diag in _check(content, tmp_path, select={"BSL220"}) if diag.code == "BSL220"]
+        diags = [
+            diag for diag in _check(content, tmp_path, select={"BSL220"}) if diag.code == "BSL220"
+        ]
 
         assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
             (5, 9, 6, 9),
@@ -8422,9 +8403,7 @@ class TestBsl235QueryParseError:
         """
         assert "BSL235" not in _codes(_check(content, tmp_path, select={"BSL235"}))
 
-    def test_partial_sdbl_query_candidate_with_trailing_comma_reports(
-        self, tmp_path: Path
-    ) -> None:
+    def test_partial_sdbl_query_candidate_with_trailing_comma_reports(self, tmp_path: Path) -> None:
         content = """\
             ТекстЗапроса = "ВЫБРАТЬ
             |   Т.Ссылка,
@@ -8843,7 +8822,11 @@ class TestBsl060DoubleNegation:
 class TestBsl062UnusedParameter:
     def test_synthetic_fixture_reports_unused_param_exact_range(self) -> None:
         path = Path("tests/fixtures/diag_synthetic/bsl062_unused_parameter.bsl")
-        diags = [d for d in DiagnosticEngine(select={"BSL062"}).check_file(str(path)) if d.code == "BSL062"]
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL062"}).check_file(str(path))
+            if d.code == "BSL062"
+        ]
 
         assert len(diags) == 1
         assert diags[0].line == 1

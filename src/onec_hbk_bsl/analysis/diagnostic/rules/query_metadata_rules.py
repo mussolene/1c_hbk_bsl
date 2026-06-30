@@ -1073,7 +1073,9 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         invalid = True
                     proc_sets = proc_names_by_module.get(module_cf)
                     if proc_sets is None:
-                        all_names = _diag._common_module_proc_names_for_module_cached(root, module_cf)
+                        all_names = _diag._common_module_proc_names_for_module_cached(
+                            root, module_cf
+                        )
                         exported_names = _diag._common_module_exported_proc_names_for_module_cached(
                             root, module_cf
                         )
@@ -1381,9 +1383,7 @@ def run_bsl244_253_261_runtime_pool(
                     line,
                     re.IGNORECASE,
                 ) or re.search(r"\b(?:И|And|Или|Or)\b", line, re.IGNORECASE):
-                    match = re.search(
-                        r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE
-                    )
+                    match = re.search(r"\b(?:БезопасныйРежим|SafeMode)\s*\(", line, re.IGNORECASE)
                     if match is not None and not re.search(r"(?:<>|<=|>=|=)", line):
                         diags.append(
                             _diag.Diagnostic(

@@ -515,9 +515,7 @@ def run_bsl233_public_methods_description(
             continue
 
         doc_comment = build_method_doc_comment(lines, proc, skip_blank_lines=True)
-        has_description = (
-            doc_comment is not None and doc_comment.has_method_documentation
-        )
+        has_description = doc_comment is not None and doc_comment.has_method_documentation
 
         if not has_description:
             header_line = lines[proc.start_idx]
@@ -761,9 +759,7 @@ def run_bsl240_rewrite_method_parameter(
             if li >= len(lines):
                 break
             lhs = str(event["lhs"]).casefold()
-            rhs_identifiers = {
-                str(name).casefold() for name in event.get("rhs_identifiers", ())
-            }
+            rhs_identifiers = {str(name).casefold() for name in event.get("rhs_identifiers", ())}
             if lhs in val_cf:
                 if lhs not in rhs_identifiers and lhs not in used_before_assign:
                     diags.append(

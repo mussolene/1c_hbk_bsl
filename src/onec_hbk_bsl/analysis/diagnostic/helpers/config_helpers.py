@@ -90,7 +90,7 @@ def metadata_name_index_cached(config_root: str) -> frozenset[str]:
         if not folder.exists():
             continue
         for xml_file in folder.glob("*.xml"):
-                names.add(xml_file.stem.casefold())
+            names.add(xml_file.stem.casefold())
     return frozenset(names)
 
 

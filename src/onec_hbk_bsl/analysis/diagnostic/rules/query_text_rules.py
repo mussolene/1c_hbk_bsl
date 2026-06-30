@@ -317,7 +317,9 @@ def _sdbl_like_expression_start_utf8_col(node: Any) -> int:
     return start_utf8_col
 
 
-def _sdbl_like_expression_source_ranges_by_start(block: Any) -> dict[tuple[int, int], tuple[int, int]]:
+def _sdbl_like_expression_source_ranges_by_start(
+    block: Any,
+) -> dict[tuple[int, int], tuple[int, int]]:
     source_ranges_by_start: dict[tuple[int, int], tuple[int, int]] = {}
     source_root = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
     if source_root is None:
@@ -326,9 +328,7 @@ def _sdbl_like_expression_source_ranges_by_start(block: Any) -> dict[tuple[int, 
         source_start = block.original_lsp_position(
             source_node.start_point[0], _sdbl_like_expression_start_utf8_col(source_node)
         )
-        source_end = block.original_lsp_position(
-            source_node.end_point[0], source_node.end_point[1]
-        )
+        source_end = block.original_lsp_position(source_node.end_point[0], source_node.end_point[1])
         source_ranges_by_start[source_start] = source_end
     return source_ranges_by_start
 
@@ -368,18 +368,31 @@ def _bsl269_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
 
 def _bsl201_right_query_expression(node: Any) -> Any | None:
     expressions = [
-        child for child in getattr(node, "children", ()) or () if getattr(child, "type", None) == "query_expression"
+        child
+        for child in getattr(node, "children", ()) or ()
+        if getattr(child, "type", None) == "query_expression"
     ]
     return expressions[1] if len(expressions) > 1 else None
 
 
 def _bsl201_first_primitive_kind(node: Any) -> str | None:
     node_type = getattr(node, "type", None)
-    if node_type in {"parameter", "string", "number", "undefined", "identifier", "dotted_identifier"}:
+    if node_type in {
+        "parameter",
+        "string",
+        "number",
+        "undefined",
+        "identifier",
+        "dotted_identifier",
+    }:
         return str(node_type)
     children = tuple(getattr(node, "children", ()) or ())
     for index, child in enumerate(children):
-        if node_type == "function_call" and index == 0 and getattr(child, "type", None) == "identifier":
+        if (
+            node_type == "function_call"
+            and index == 0
+            and getattr(child, "type", None) == "identifier"
+        ):
             continue
         primitive = _bsl201_first_primitive_kind(child)
         if primitive is not None:
@@ -431,7 +444,9 @@ def _bsl201_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
 
 
 def _sdbl_has_child_type(node: Any, node_type: str) -> bool:
-    return any(getattr(child, "type", None) == node_type for child in getattr(node, "children", ()) or ())
+    return any(
+        getattr(child, "type", None) == node_type for child in getattr(node, "children", ()) or ()
+    )
 
 
 def _sdbl_node_text(node: Any) -> str:
@@ -448,13 +463,17 @@ def _sdbl_bsl206_nested_query_source_nodes(root: Any) -> list[Any]:
         if getattr(node, "type", None) == "nested_query_source":
             parent = ancestors[-1] if ancestors else None
             join_clause = next(
-                (ancestor for ancestor in reversed(ancestors) if getattr(ancestor, "type", None) == "join_clause"),
+                (
+                    ancestor
+                    for ancestor in reversed(ancestors)
+                    if getattr(ancestor, "type", None) == "join_clause"
+                ),
                 None,
             )
             in_join_clause = join_clause is not None
-            table_source_has_join = (
-                getattr(parent, "type", None) == "table_source" and _sdbl_has_child_type(parent, "join_clause")
-            )
+            table_source_has_join = getattr(
+                parent, "type", None
+            ) == "table_source" and _sdbl_has_child_type(parent, "join_clause")
             if join_clause is not None and _sdbl_has_child_type(join_clause, "ERROR"):
                 return
             if in_join_clause or table_source_has_join:
@@ -514,13 +533,17 @@ def _sdbl_bsl207_virtual_table_source_nodes(root: Any) -> list[tuple[Any, bool]]
         if getattr(node, "type", None) == "virtual_table_source":
             parent = ancestors[-1] if ancestors else None
             join_clause = next(
-                (ancestor for ancestor in reversed(ancestors) if getattr(ancestor, "type", None) == "join_clause"),
+                (
+                    ancestor
+                    for ancestor in reversed(ancestors)
+                    if getattr(ancestor, "type", None) == "join_clause"
+                ),
                 None,
             )
             in_join_clause = join_clause is not None
-            table_source_has_join = (
-                getattr(parent, "type", None) == "table_source" and _sdbl_has_child_type(parent, "join_clause")
-            )
+            table_source_has_join = getattr(
+                parent, "type", None
+            ) == "table_source" and _sdbl_has_child_type(parent, "join_clause")
             if in_join_clause or table_source_has_join:
                 out.append((node, parent is not None and getattr(parent, "type", None) == "ERROR"))
                 return
@@ -575,7 +598,11 @@ def _bsl207_diags_from_sdbl_tree(path: str, block: Any) -> list[Any]:
     _diag = _diag_module()
     diags: list[Any] = []
     for node, recover_call_range in _sdbl_bsl207_virtual_table_source_nodes(root):
-        end_point = _sdbl_virtual_table_call_end_point(block, node) if recover_call_range else node.end_point
+        end_point = (
+            _sdbl_virtual_table_call_end_point(block, node)
+            if recover_call_range
+            else node.end_point
+        )
         start_line, start_character = _unescaped_lsp_position(
             block, byte_maps, node.start_point[0], node.start_point[1]
         )
@@ -606,8 +633,13 @@ def _sdbl_bsl209_field_identities(node: Any) -> set[str]:
         if getattr(parent, "type", None) != "reference_check_expression":
             return False
         siblings = list(getattr(parent, "children", ()) or ())
-        current_index = next((index for index, sibling in enumerate(siblings) if sibling is current), -1)
-        return any(getattr(sibling, "type", None) == "REFERENCE_KEYWORD" for sibling in siblings[:current_index])
+        current_index = next(
+            (index for index, sibling in enumerate(siblings) if sibling is current), -1
+        )
+        return any(
+            getattr(sibling, "type", None) == "REFERENCE_KEYWORD"
+            for sibling in siblings[:current_index]
+        )
 
     def walk(current: Any, ancestors: tuple[Any, ...]) -> None:
         if getattr(current, "type", None) == "dotted_identifier":
@@ -639,7 +671,10 @@ def _sdbl_bsl209_or_token_nodes(root: Any) -> list[Any]:
                 ),
                 None,
             )
-            if nearest_binary is not None and len(_sdbl_bsl209_field_identities(nearest_binary)) > 1:
+            if (
+                nearest_binary is not None
+                and len(_sdbl_bsl209_field_identities(nearest_binary)) > 1
+            ):
                 out.append(node)
         next_ancestors = (*ancestors, node)
         for child in getattr(node, "children", ()) or ():

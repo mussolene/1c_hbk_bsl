@@ -2316,12 +2316,8 @@ def path_is_likely_form_module_bsl(path: str) -> bool:
     normalized = p.as_posix().lower()
     if p.name.lower() != "module.bsl":
         return False
-    return (
-        "/forms/" in normalized
-        and (
-            normalized.endswith("/ext/module.bsl")
-            or normalized.endswith("/ext/form/module.bsl")
-        )
+    return "/forms/" in normalized and (
+        normalized.endswith("/ext/module.bsl") or normalized.endswith("/ext/form/module.bsl")
     )
 
 

@@ -146,7 +146,9 @@ def parse_method_doc_comment(
         empty_description_names=empty_names,
         stale_reference_entries=stale_references,
         is_ignored_for_method_contract=is_ignored,
-        force_all_params_missing=bool(proc_params and any(_RE_EXAMPLE_SEE.search(line) for line in lines)),
+        force_all_params_missing=bool(
+            proc_params and any(_RE_EXAMPLE_SEE.search(line) for line in lines)
+        ),
     )
 
 
@@ -190,7 +192,9 @@ def _is_ignored_block(lines: tuple[str, ...], params_section_offset: int | None)
         return True
     if params_section_offset is None and any(_RE_SEE_LINK.match(line) for line in lines):
         return True
-    if params_section_offset is None and any(_RE_STRUCTURE_COMPOSITION.match(line) for line in lines):
+    if params_section_offset is None and any(
+        _RE_STRUCTURE_COMPOSITION.match(line) for line in lines
+    ):
         return True
     if params_section_offset is None and len(lines) == 1:
         text = re.sub(r"^\s*//\s*", "", lines[0]).strip()
@@ -216,7 +220,9 @@ def _parse_param_entries(
             and (legacy_doc_path or not match.group("indent").startswith("\t"))
             and _has_bslls_type_description(match.group("tail"), legacy_doc_path=legacy_doc_path)
         ):
-            raw_entries.append((len(match.group("indent")), match.group("name"), match.group("tail")))
+            raw_entries.append(
+                (len(match.group("indent")), match.group("name"), match.group("tail"))
+            )
     entry_indent = min((indent for indent, _name, _tail in raw_entries), default=0)
 
     entries: list[MethodDocParamEntry] = []

@@ -181,9 +181,9 @@ def query_source_uses(root: Any) -> list[QuerySourceUse]:
     for node in iter_nodes(root, "table_source"):
         virtual_source = _direct_named_child(node, "virtual_table_source")
         source_parent = virtual_source if virtual_source is not None else node
-        source_node = _direct_named_child(source_parent, "dotted_identifier") or _direct_named_child(
-            source_parent, "identifier"
-        )
+        source_node = _direct_named_child(
+            source_parent, "dotted_identifier"
+        ) or _direct_named_child(source_parent, "identifier")
         if source_node is None:
             continue
         source = node_text(source_node).strip()
@@ -192,9 +192,9 @@ def query_source_uses(root: Any) -> list[QuerySourceUse]:
     for node in iter_nodes(root, "join_clause"):
         virtual_source = _direct_named_child(node, "virtual_table_source")
         source_parent = virtual_source if virtual_source is not None else node
-        source_node = _direct_named_child(source_parent, "dotted_identifier") or _direct_named_child(
-            source_parent, "identifier"
-        )
+        source_node = _direct_named_child(
+            source_parent, "dotted_identifier"
+        ) or _direct_named_child(source_parent, "identifier")
         if source_node is None:
             continue
         source = node_text(source_node).strip()

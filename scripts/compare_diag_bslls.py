@@ -180,9 +180,10 @@ def _bslls_file_key(fileinfo: dict, source_root: Path, workspace: Path) -> str:
 def onec_keys(raw: list[dict], workspace: Path, select: frozenset[str]) -> set[DiagnosticKey]:
     keys: set[DiagnosticKey] = set()
     for item in raw:
-        code = resolve_rule_token_to_code(str(item.get("code", "")).strip()) or str(
-            item.get("code", "")
-        ).upper()
+        code = (
+            resolve_rule_token_to_code(str(item.get("code", "")).strip())
+            or str(item.get("code", "")).upper()
+        )
         if code not in select:
             continue
         keys.add(
@@ -198,14 +199,17 @@ def onec_keys(raw: list[dict], workspace: Path, select: frozenset[str]) -> set[D
     return keys
 
 
-def bslls_keys(raw: dict, source_root: Path, workspace: Path, select: frozenset[str]) -> set[DiagnosticKey]:
+def bslls_keys(
+    raw: dict, source_root: Path, workspace: Path, select: frozenset[str]
+) -> set[DiagnosticKey]:
     keys: set[DiagnosticKey] = set()
     for fileinfo in raw.get("fileinfos", []):
         file_key = _bslls_file_key(fileinfo, source_root, workspace)
         for item in fileinfo.get("diagnostics", []):
-            code = resolve_rule_token_to_code(str(item.get("code", "")).strip()) or str(
-                item.get("code", "")
-            ).upper()
+            code = (
+                resolve_rule_token_to_code(str(item.get("code", "")).strip())
+                or str(item.get("code", "")).upper()
+            )
             if code not in select:
                 continue
             diagnostic_range = item.get("range", {})
@@ -387,9 +391,13 @@ def _print_delta(label: str, values: set[DiagnosticKey], *, limit: int) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("paths", nargs="+", type=Path, help=".bsl files or directories under workspace")
+    parser.add_argument(
+        "paths", nargs="+", type=Path, help=".bsl files or directories under workspace"
+    )
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
-    parser.add_argument("--select", required=True, help="Comma-separated BSL### or BSLLS rule names")
+    parser.add_argument(
+        "--select", required=True, help="Comma-separated BSL### or BSLLS rule names"
+    )
     parser.add_argument("--jar", type=Path, default=None)
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--limit", type=int, default=30, help="Maximum deltas printed per side")
@@ -406,7 +414,10 @@ def main(argv: list[str] | None = None) -> int:
     select = normalize_rule_codes(args.select)
     jar = find_bslls_jar(args.repo_root.resolve(), args.jar)
     if jar is None:
-        print("SKIP: no BSLLS jar found (use --jar, BSLLS_JAR, .nosync, or user cache).", file=sys.stderr)
+        print(
+            "SKIP: no BSLLS jar found (use --jar, BSLLS_JAR, .nosync, or user cache).",
+            file=sys.stderr,
+        )
         return 2
 
     try:
@@ -426,7 +437,9 @@ def main(argv: list[str] | None = None) -> int:
             config_path = Path(td) / "bslls-only.json"
             source_root.mkdir(parents=True, exist_ok=True)
             output_dir.mkdir()
-            copied = files if args.preserve_source_root else _copy_inputs(files, workspace, source_root)
+            copied = (
+                files if args.preserve_source_root else _copy_inputs(files, workspace, source_root)
+            )
             _write_bslls_config(config_path, select)
             if select & INDEXED_ONEC_RULES:
                 onec_raw = run_onec_indexed_engine(copied, temp_root, select)

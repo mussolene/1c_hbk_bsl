@@ -155,8 +155,12 @@ _RE_VAR_MODULE = re.compile(
     re.IGNORECASE,
 )
 _RE_VAR_MODULE_HEAD = re.compile(r"^\s*(?:Перем|Var)\b(?P<tail>.*)$", re.IGNORECASE)
-_RE_VAR_MODULE_CONT = re.compile(r"^\s*(?P<names>[\w\s,]+?)\s*(?P<export>Экспорт|Export)?\s*[;,]\s*$", re.IGNORECASE)
-_BSL204_ILLEGAL_CHARS = frozenset({"\u00ad", "\u2012", "\u2013", "\u2014", "\u2015", "\u2212", "\u00a0"})
+_RE_VAR_MODULE_CONT = re.compile(
+    r"^\s*(?P<names>[\w\s,]+?)\s*(?P<export>Экспорт|Export)?\s*[;,]\s*$", re.IGNORECASE
+)
+_BSL204_ILLEGAL_CHARS = frozenset(
+    {"\u00ad", "\u2012", "\u2013", "\u2014", "\u2015", "\u2212", "\u00a0"}
+)
 _RE_COMPLEX_CONDITION_HEAD = re.compile(
     r"^\s*(?:Если|If|ИначеЕсли|ElsIf)\b",
     re.IGNORECASE,
@@ -773,12 +777,8 @@ def _path_is_likely_form_module_bsl(path: str) -> bool:
     normalized = p.as_posix().lower()
     if p.name.lower() != "module.bsl":
         return False
-    return (
-        "/forms/" in normalized
-        and (
-            normalized.endswith("/ext/module.bsl")
-            or normalized.endswith("/ext/form/module.bsl")
-        )
+    return "/forms/" in normalized and (
+        normalized.endswith("/ext/module.bsl") or normalized.endswith("/ext/form/module.bsl")
     )
 
 
@@ -1030,11 +1030,7 @@ def _credential_string_value(text: str) -> str | None:
 def _credential_single_string_expression(expression: Any | None) -> Any | None:
     if expression is None:
         return None
-    strings = [
-        node
-        for node in _ts_walk(expression)
-        if getattr(node, "type", None) == "string"
-    ]
+    strings = [node for node in _ts_walk(expression) if getattr(node, "type", None) == "string"]
     if len(strings) != 1:
         return None
     string_node = strings[0]
@@ -1085,9 +1081,7 @@ def _credential_property_key(access_node: Any) -> str | None:
     text = _ts_node_text(access_node)
     if "[" in text and "]" in text:
         strings = [
-            node
-            for node in _ts_walk(access_node)
-            if getattr(node, "type", None) == "string"
+            node for node in _ts_walk(access_node) if getattr(node, "type", None) == "string"
         ]
         return _ts_node_text(strings[-1]) if strings else None
     if "." in text:
@@ -2375,10 +2369,7 @@ class DocumentSnapshot:
 
         def flush_group() -> None:
             nonlocal group, group_texts, group_has_example_marker, in_query_comment
-            group_has_code = (
-                _comment_lines_parse_as_bsl(group_texts, parser)
-                or in_query_comment
-            )
+            group_has_code = _comment_lines_parse_as_bsl(group_texts, parser) or in_query_comment
             if (
                 not group
                 or not group_has_code
@@ -2502,9 +2493,9 @@ class DocumentSnapshot:
             comment_pos = line.find("//")
             if comment_pos >= 0:
                 inline_comment = line[comment_pos:]
-                if _RE_COMMENTED_INLINE_ASSIGNMENT.search(inline_comment) or _RE_COMMENTED_CODE.match(
+                if _RE_COMMENTED_INLINE_ASSIGNMENT.search(
                     inline_comment
-                ):
+                ) or _RE_COMMENTED_CODE.match(inline_comment):
                     facts.append(
                         LineDiagnosticFact(
                             line_idx=idx,
@@ -2715,11 +2706,7 @@ class DocumentSnapshot:
         facts: list[LineDiagnosticFact] = []
         for line_idx, line in enumerate(self.lines):
             hit = next(
-                (
-                    pos
-                    for pos, ch in enumerate(line)
-                    if ch in _BSL204_ILLEGAL_CHARS
-                ),
+                (pos for pos, ch in enumerate(line) if ch in _BSL204_ILLEGAL_CHARS),
                 None,
             )
             if hit is None:
@@ -2937,7 +2924,9 @@ class DocumentSnapshot:
 
         reported_lengths = self.reported_line_lengths
         candidate_indices = [
-            idx for idx, reported_length in enumerate(reported_lengths) if reported_length > max_line_length
+            idx
+            for idx, reported_length in enumerate(reported_lengths)
+            if reported_length > max_line_length
         ]
         if not candidate_indices:
             self._line_too_long_facts_cache[max_line_length] = []

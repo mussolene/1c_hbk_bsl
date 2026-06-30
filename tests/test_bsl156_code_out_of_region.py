@@ -92,15 +92,7 @@ def test_bsl156_multiline_module_vars_use_whole_block_range(tmp_path: Path) -> N
     p = _common_module_path(tmp_path)
     p.parent.mkdir(parents=True)
     p.write_text(
-        "&НаСервере\n"
-        "Перем\n"
-        "А,\n"
-        "Б;\n"
-        "\n"
-        "// group\n"
-        "&НаКлиенте\n"
-        "Перем\n"
-        "В;\n",
+        "&НаСервере\nПерем\nА,\nБ;\n\n// group\n&НаКлиенте\nПерем\nВ;\n",
         encoding="utf-8",
     )
     engine = DiagnosticEngine(select={"BSL156"})
