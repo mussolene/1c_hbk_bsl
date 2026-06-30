@@ -14,7 +14,7 @@ Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL159 - exact private parity after line 1 single-character anchor alignment
 - [x] BSL160 - exact private parity after BOM-aware first-line anchor alignment
 - [x] BSL161 - exact-zero private parity; contract-only closure
-- [ ] BSL162 - open
+- [x] BSL162 - exact-zero private parity; contract-only closure
 - [ ] BSL163 - open
 - [ ] BSL164 - open
 - [ ] BSL165 - open
