@@ -10,7 +10,7 @@ This audit is the durable routing checklist for
 
 - [ ] BSL001 - open
 - [x] BSL005 - verified; owner-decision parity tail keeps 18 onec-only IP-shaped dotted numeric literals
-- [ ] BSL020 - open
+- [x] BSL020 - exact private parity; contract-only closure
 - [ ] BSL027 - open
 - [ ] BSL029 - open
 - [ ] BSL030 - open
