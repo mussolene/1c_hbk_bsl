@@ -1,6 +1,6 @@
 # 02 Query Metadata Aggregation Audit
 
-Status: in progress.
+Status: batch gate closed, 25/25 rule contracts verified.
 
 This audit is the durable routing checklist for
 `02-query-metadata-aggregation`. Rule membership comes from

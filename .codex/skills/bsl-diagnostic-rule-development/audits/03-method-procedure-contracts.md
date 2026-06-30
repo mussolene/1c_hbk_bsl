@@ -1,6 +1,6 @@
 # 03 Method Procedure Contracts Audit
 
-Status: in progress; BSL224+ require preserved-source-root BSLLS parity taxonomy before closure.
+Status: batch gate closed, 17/17 rule contracts verified.
 
 This audit is the durable routing checklist for
 `03-method-procedure-contracts`. Rule membership comes from

@@ -1,6 +1,6 @@
 # 04 Common Module Context Audit
 
-Status: in progress.
+Status: batch gate closed, 16/16 rule contracts verified.
 
 This audit is the durable routing checklist for `04-common-module-context`.
 Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
@@ -9,7 +9,7 @@ Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
 
 - [x] BSL152 - exact private parity; contract-only closure
 - [x] BSL154 - parity-classified; full-call range aligned, 1 BSLLS-only end-of-branch false positive retained
-- [x] BSL156 - semantic parity aligned; 105 paired BSLLS range-only deltas retained
+- [x] BSL156 - semantic parity aligned; 104 paired BSLLS range-only deltas retained
 - [x] BSL158 - exact-zero private parity; contract-only closure
 - [x] BSL159 - exact private parity after line 1 single-character anchor alignment
 - [x] BSL160 - exact private parity after BOM-aware first-line anchor alignment
