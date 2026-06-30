@@ -1,6 +1,6 @@
 # 05 Heavy Fork Typo Performance Audit
 
-Status: not started.
+Status: in progress.
 
 This audit is the durable routing checklist for
 `05-heavy-fork-typo-performance`. Rule membership comes from
@@ -9,7 +9,7 @@ This audit is the durable routing checklist for
 ## Closure Checklist
 
 - [ ] BSL001 - open
-- [ ] BSL005 - open
+- [x] BSL005 - verified; owner-decision parity tail keeps 18 onec-only IP-shaped dotted numeric literals
 - [ ] BSL020 - open
 - [ ] BSL027 - open
 - [ ] BSL029 - open

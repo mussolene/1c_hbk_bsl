@@ -3802,6 +3802,29 @@ class TestBsl005HardcodeNetworkAddress:
         diags = _check(content, tmp_path)
         assert "BSL005" in _codes(diags)
 
+    def test_ip_address_in_version_function_is_still_detected(self, tmp_path: Path) -> None:
+        content = """
+            Функция ВерсияСервера()
+                Возврат "192.168.1.100";
+            КонецФункции
+        """
+        diags = _check(content, tmp_path)
+        assert "BSL005" in _codes(diags)
+
+    def test_ip_shaped_version_literals_are_detected(self, tmp_path: Path) -> None:
+        content = """
+            Функция ВерсияВнешнейКомпоненты()
+                Возврат "5.32.4.635";
+            КонецФункции
+
+            Процедура ПроверитьВерсию()
+                Результат = (СравнитьВерсии(Версия, "6.0.39.08") >= 0);
+                Параметры.Вставить("Версия", "4.1.3.3");
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path)
+        assert _codes(diags).count("BSL005") == 3
+
     def test_no_hardcode_no_warning(self, tmp_path: Path) -> None:
         content = "Адрес = ПолучитьАдрес();\n"
         diags = _check(content, tmp_path)
