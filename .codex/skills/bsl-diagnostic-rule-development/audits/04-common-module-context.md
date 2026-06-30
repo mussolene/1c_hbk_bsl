@@ -17,7 +17,7 @@ Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL162 - exact-zero private parity; contract-only closure
 - [x] BSL163 - exact private parity; contract-only closure
 - [x] BSL164 - exact-zero private parity; contract-only closure
-- [ ] BSL165 - open
+- [x] BSL165 - exact-zero private parity; contract-only closure
 - [ ] BSL166 - open
 - [ ] BSL167 - open
 - [ ] BSL168 - open
