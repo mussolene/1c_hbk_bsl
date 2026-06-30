@@ -22,7 +22,7 @@ Rule membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL167 - exact private parity; contract-only closure
 - [x] BSL168 - exact private parity after single-character anchor alignment
 - [x] BSL172 - exact-zero private parity; contract-only closure
-- [ ] BSL173 - open
+- [x] BSL173 - exact private parity; contract-only closure
 
 ## Done Criteria
 
