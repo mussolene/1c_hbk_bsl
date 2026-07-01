@@ -10351,11 +10351,54 @@ class TestAdditionalParityBatch:
         ).check_file(str(p))
         assert "BSL239" in [d.code for d in diags]
 
-    def test_bsl271_unix_unavailable_object_detected(self, tmp_path: Path) -> None:
-        diags = _check(
-            'Компонента = Новый COMОбъект("Excel.Application");\n', tmp_path, select={"BSL271"}
+    def _bsl271_domain_diags(self, content: str) -> list[Diagnostic]:
+        from onec_hbk_bsl.analysis import diagnostics as diagnostics_module
+        from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        return ModuleModel(
+            "DataProcessors/Test/Ext/ObjectModule.bsl"
+        ).validate_bsl221_222_239_271_light_pool(
+            lines=textwrap.dedent(content).splitlines(),
+            tree=BslParser().parse_content(textwrap.dedent(content)),
+            procs=[],
+            enabled=("BSL271",),
+            snapshot=None,
+            strip_inline_comment_preserve_strings_fn=diagnostics_module._strip_inline_comment_preserve_strings,
+            reserved_parameter_names_re=None,
+            ts_walk_fn=diagnostics_module._ts_walk,
+            ts_child_of_type_fn=diagnostics_module._ts_child_of_type,
+            ts_node_text_fn=diagnostics_module._ts_node_text,
+            utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
+            bsl221_nstr_re=diagnostics_module._RE_BSL221_NSTR,
+            bsl221_lang_re=diagnostics_module._RE_BSL221_LANG,
+            bsl271_unix_unavailable_new_re=diagnostics_module._RE_BSL271_UNIX_UNAVAILABLE_NEW,
+            bsl271_platform_guard_re=diagnostics_module._RE_BSL271_PLATFORM_GUARD,
+            proc_name_span_fn=diagnostics_module._proc_name_span,
+            declared_languages=set(),
         )
-        assert "BSL271" in _codes(diags)
+
+    def test_bsl271_unix_unavailable_object_detected(self) -> None:
+        content = """\
+            Процедура Тест()
+                Компонента = Новый COMОбъект("Excel.Application");
+            КонецПроцедуры
+        """
+        bsl271 = [d for d in self._bsl271_domain_diags(content) if d.code == "BSL271"]
+        line = textwrap.dedent(content).splitlines()[1]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in bsl271] == [
+            (2, line.index("Новый"), 2, line.index(";"))
+        ]
+
+    def test_bsl271_unix_unavailable_object_guarded_by_platform_is_clean(self) -> None:
+        content = """\
+            Если ТипПлатформы() = ТипПлатформы.Windows Тогда
+                Компонента = Новый COMОбъект("Excel.Application");
+            КонецЕсли;
+        """
+        diags = self._bsl271_domain_diags(content)
+
+        assert "BSL271" not in _codes(diags)
 
     def test_bsl276_proceed_with_call_without_annotation_detected(self, tmp_path: Path) -> None:
         diags = _check(

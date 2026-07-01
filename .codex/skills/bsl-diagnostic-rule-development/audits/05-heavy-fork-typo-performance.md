@@ -42,7 +42,7 @@ This audit is the durable routing checklist for
 - [x] BSL263 - exact-zero private parity with existing CST for-each iterator implementation
 - [x] BSL265 - exact private parity with existing useless ternary implementation
 - [x] BSL267 - exact private parity with existing external code tools implementation
-- [ ] BSL271 - open
+- [x] BSL271 - exact private parity after full new-expression range/filter fix
 - [ ] BSL279 - open
 
 ## Done Criteria

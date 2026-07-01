@@ -2868,13 +2868,16 @@ class ModuleModel:
                 line_idx = node.start_point[0]
                 line_text = line_texts[line_idx] if line_idx < len(line_texts) else ""
                 start_char = utf8_byte_offset_to_lsp_character_fn(line_text, node.start_point[1])
+                end_line_idx = node.end_point[0]
+                end_line_text = line_texts[end_line_idx] if end_line_idx < len(line_texts) else ""
+                end_char = utf8_byte_offset_to_lsp_character_fn(end_line_text, node.end_point[1])
                 diags.append(
                     Diagnostic(
                         file=self.path,
                         line=line_idx + 1,
                         character=start_char,
-                        end_line=line_idx + 1,
-                        end_character=min(len(line_text), start_char + len(type_name)),
+                        end_line=end_line_idx + 1,
+                        end_character=end_char,
                         severity=Severity.ERROR,
                         code="BSL271",
                     )

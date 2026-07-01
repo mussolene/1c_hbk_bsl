@@ -334,6 +334,9 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL262",
         "BSL267",
         "BSL268",
+        # UsingObjectNotAvailableUnix spans the full New COMObject/Mail expression,
+        # whose constructor arguments commonly contain string literals.
+        "BSL271",
         "BSL272",
     }
 )
