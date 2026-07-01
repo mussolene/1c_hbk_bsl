@@ -37,7 +37,11 @@ def parse_suppressions(lines: list[str]) -> Suppressions:
         elif noqa_codes:
             result[line_no] = noqa_codes
 
-        comment_start = comment_start_outside_double_quotes(line, string_states[idx])
+        stripped = line.lstrip()
+        if stripped.startswith("//"):
+            comment_start = len(line) - len(stripped)
+        else:
+            comment_start = comment_start_outside_double_quotes(line, string_states[idx])
         if comment_start is None:
             continue
         comment = line[comment_start:]
@@ -68,8 +72,10 @@ def parse_suppressions(lines: list[str]) -> Suppressions:
         for line_no in range(max(1, start_line), max(start_line, end_line) + 1):
             if key == _ALL_DIAGNOSTICS:
                 result[line_no] = set()
-            elif line_no not in result or result[line_no]:
+            elif line_no not in result:
                 result.setdefault(line_no, set()).add(key)
+            elif result[line_no]:
+                result[line_no].add(key)
 
     return result
 

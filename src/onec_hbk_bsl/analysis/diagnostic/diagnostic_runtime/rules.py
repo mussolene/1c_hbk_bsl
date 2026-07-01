@@ -2213,6 +2213,8 @@ class MagicNumberRule(DiagnosticRuntimeRule):
         assignment = cls._ancestor_of_type(expression, {"assignment_statement"})
         if assignment is None:
             return False
+        if getattr(getattr(expression, "parent", None), "type", None) != "assignment_statement":
+            return False
         left = next(
             (
                 child
@@ -2223,7 +2225,9 @@ class MagicNumberRule(DiagnosticRuntimeRule):
         )
         if getattr(left, "type", None) != "property_access":
             return False
-        return any(getattr(child, "type", None) == "property" for child in _ts_children(left))
+        return any(getattr(child, "type", None) == "property" for child in _ts_children(left)) and (
+            cls._argument_is_simple_number(expression)
+        )
 
     @classmethod
     def _container_assignments(

@@ -5125,6 +5125,28 @@ class TestRuleSelection:
         # Line 5: BSL012 should fire again (if token is a secret-looking string)
         # BSL014 still off → no line-length errors on line 5
 
+    def test_bslls_overlapping_specific_blocks_union_codes(self, tmp_path: Path) -> None:
+        """Overlapping BSLLS blocks for different rules suppress both rules."""
+        content = (
+            "// BSLLS:Typo-off\n"
+            "// BSLLS:MagicNumber-off\n"
+            "Возврат 255;\n"
+            "// BSLLS:MagicNumber-on\n"
+            "// BSLLS:Typo-on\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_bslls_comment_line_is_seen_when_string_state_is_unbalanced(
+        self, tmp_path: Path
+    ) -> None:
+        """Whole-line BSLLS comments remain comments even after broken string state."""
+        content = (
+            'Текст = "broken\n// BSLLS:MagicNumber-off\nВозврат 255;\n// BSLLS:MagicNumber-on\n'
+        )
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
 
 # ---------------------------------------------------------------------------
 # RULE_METADATA completeness
@@ -6054,14 +6076,38 @@ class TestBsl029MagicNumber:
         diags = _check(content, tmp_path, select={"BSL029"})
         assert "BSL029" not in _codes(diags)
 
-    def test_property_assignment_expression_is_not_reported(self, tmp_path: Path) -> None:
+    def test_simple_property_assignment_value_is_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Объект.Свойство = 42;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert "BSL029" not in _codes(diags)
+
+    def test_property_assignment_expression_is_reported(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Объект.Свойство = 40 + 2;
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL029"})
-        assert "BSL029" not in _codes(diags)
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 22, 24),
+            (2, 27, 28),
+        ]
+
+    def test_property_assignment_call_arguments_are_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Объект.Свойство = ОписаниеТипаЧисло(15, 2);
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL029"] == [
+            (2, 40, 42),
+            (2, 44, 45),
+        ]
 
     def test_index_assignment_expression_is_still_reported(self, tmp_path: Path) -> None:
         content = """\
