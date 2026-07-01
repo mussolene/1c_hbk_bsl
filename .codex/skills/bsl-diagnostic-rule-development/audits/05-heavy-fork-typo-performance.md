@@ -22,7 +22,7 @@ This audit is the durable routing checklist for
 - [x] BSL153 - verified; exact private parity after removing stale form-module skip
 - [x] BSL171 - verified; exact-zero private parity plus synthetic adjacent-string range alignment
 - [x] BSL178 - exact-zero private parity; synthetic deprecated 8.3.17 API coverage
-- [ ] BSL180 - open
+- [x] BSL180 - exact-zero private parity; synthetic safe-mode disabling coverage
 - [ ] BSL181 - open
 - [ ] BSL183 - open
 - [ ] BSL185 - open

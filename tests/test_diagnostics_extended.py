@@ -695,11 +695,30 @@ class TestSecurityApiParityBatch:
         content = """\
             Процедура Метод()
                 УстановитьБезопасныйРежим(Ложь);
+                УстановитьОтключениеБезопасногоРежима(Истина);
+                УстановитьБезопасныйРежим(Значение);
+                УстановитьОтключениеБезопасногоРежима(Значение);
                 УстановитьБезопасныйРежим(Истина);
+                УстановитьОтключениеБезопасногоРежима(Ложь);
             КонецПроцедуры
         """
-        diags = _check(content, tmp_path, select={"BSL180"})
-        assert _codes(diags) == ["BSL180"]
+        diags = [d for d in _check(content, tmp_path, select={"BSL180"}) if d.code == "BSL180"]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 4, 29),
+            (3, 4, 41),
+            (4, 4, 29),
+            (5, 4, 41),
+        ]
+
+    def test_bsl180_ignores_object_calls_strings_and_comments(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Метод()
+                Объект.УстановитьБезопасныйРежим(Ложь);
+                Текст = "УстановитьОтключениеБезопасногоРежима(Истина)";
+                // УстановитьБезопасныйРежим(Ложь);
+            КонецПроцедуры
+        """
+        assert "BSL180" not in _codes(_check(content, tmp_path, select={"BSL180"}))
 
     def test_bsl188_file_system_access_uses_cst_calls_and_constructors(
         self, tmp_path: Path
