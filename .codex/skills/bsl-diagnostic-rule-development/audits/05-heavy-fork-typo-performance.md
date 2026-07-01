@@ -26,7 +26,7 @@ This audit is the durable routing checklist for
 - [x] BSL181 - verified; Add support/reset/range fix with classified parity tail
 - [x] BSL183 - exact private parity after scope/range/string-filter fixes
 - [x] BSL185 - exact private parity after declaration false-positive fix
-- [ ] BSL186 - open
+- [x] BSL186 - exact private parity after multiline trailing comma fix
 - [ ] BSL197 - open
 - [ ] BSL200 - open
 - [ ] BSL202 - open

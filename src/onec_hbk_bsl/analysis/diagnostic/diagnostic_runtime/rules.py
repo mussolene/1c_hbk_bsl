@@ -5373,16 +5373,36 @@ class ExtraCommasRule(DiagnosticRuntimeRule):
             code = line if comment_start is None else line[:comment_start]
             match = self._trailing_comma_re.search(code)
             if match is None:
-                continue
+                stripped = code.rstrip()
+                if not stripped.endswith(","):
+                    continue
+                next_code = self._next_significant_code_line(context.lines, idx + 1)
+                if next_code is None or not next_code.lstrip().startswith(")"):
+                    continue
+                comma_pos = code.rfind(",")
+                match_start = comma_pos
+            else:
+                match_start = match.start()
             storage.add_range(
                 code=self.code,
                 line=idx,
-                character=match.start(),
+                character=match_start,
                 end_line=idx,
-                end_character=match.start() + 1,
+                end_character=match_start + 1,
                 severity=Severity.WARNING,
             )
         return storage.diagnostics
+
+    @staticmethod
+    def _next_significant_code_line(lines: list[str], start: int) -> str | None:
+        for line in lines[start:]:
+            if _line_comment(line):
+                continue
+            comment_start = comment_start_outside_double_quotes(line)
+            code = line if comment_start is None else line[:comment_start]
+            if code.strip():
+                return code
+        return None
 
 
 class YoLetterUsageRule(DiagnosticRuntimeRule):
