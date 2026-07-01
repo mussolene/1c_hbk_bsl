@@ -27,7 +27,7 @@ This audit is the durable routing checklist for
 - [x] BSL183 - exact private parity after scope/range/string-filter fixes
 - [x] BSL185 - exact private parity after declaration false-positive fix
 - [x] BSL186 - exact private parity after multiline trailing comma fix
-- [ ] BSL197 - open
+- [x] BSL197 - exact private parity with existing CST branch-block comparison
 - [ ] BSL200 - open
 - [ ] BSL202 - open
 - [ ] BSL205 - open
