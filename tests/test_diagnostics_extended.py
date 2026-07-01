@@ -1190,6 +1190,35 @@ class TestLocalXmlParityBatch:
 
 
 class TestTailParityBatches:
+    def test_bsl181_duplicate_insert_add_and_expression(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Обработчик()
+                Коллекция.Вставить("Ключ");
+                Коллекция.Вставить("Ключ");
+                Массив.Добавить("Значение");
+                Массив.Добавить("Значение");
+                Карта.Вставить(Префикс + ".Поле", Значение1);
+                Карта.Вставить(Префикс + ".Поле", Значение2);
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL181"}) if d.code == "BSL181"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (3, 4, 3, 30),
+            (5, 4, 5, 31),
+            (7, 4, 7, 48),
+        ]
+
+    def test_bsl181_reassignment_resets_collection_facts(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Обработчик()
+                Условие = Новый Структура;
+                Условие.Вставить("ИмяПоля", "Номер");
+                Условие = Новый Структура;
+                Условие.Вставить("ИмяПоля", "Серия");
+            КонецПроцедуры
+        """
+        assert "BSL181" not in _codes(_check(content, tmp_path, select={"BSL181"}))
+
     def test_compilation_and_name_tail_pool(self, tmp_path: Path) -> None:
         form_path = (
             tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"

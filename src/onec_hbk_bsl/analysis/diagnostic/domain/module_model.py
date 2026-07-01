@@ -68,6 +68,97 @@ def _bsl171_multiline_literal_span(
     return (prev_start, cur_end)
 
 
+_BSL181_COLLECTION_INSERTION_RE = re.compile(
+    r"(?<!\.)\b(?P<target>\w+)\.(?P<method>Вставить|Insert|Добавить|Add)\s*\(",
+    re.IGNORECASE,
+)
+_BSL181_TARGET_ASSIGNMENT_RE = re.compile(r"^\s*(?P<target>\w+)\s*=")
+
+
+def _bsl181_first_argument(line: str, open_paren_idx: int) -> tuple[str, int] | None:
+    idx = open_paren_idx + 1
+    start = idx
+    depth = 0
+    in_string = False
+    while idx < len(line):
+        char = line[idx]
+        if in_string:
+            if char == '"':
+                if idx + 1 < len(line) and line[idx + 1] == '"':
+                    idx += 2
+                    continue
+                in_string = False
+            idx += 1
+            continue
+        if char == '"':
+            in_string = True
+            idx += 1
+            continue
+        if char == "(":
+            depth += 1
+            idx += 1
+            continue
+        if char == ")":
+            if depth == 0:
+                arg = line[start:idx].strip()
+                return (arg, idx + 1) if arg else None
+            depth -= 1
+            idx += 1
+            continue
+        if char == "," and depth == 0:
+            arg = line[start:idx].strip()
+            call_end = _bsl181_call_end(line, idx + 1)
+            return (arg, call_end) if arg else None
+        idx += 1
+    arg = line[start:].strip()
+    return (arg, len(line)) if arg else None
+
+
+def _bsl181_call_end(line: str, start_idx: int) -> int:
+    idx = start_idx
+    depth = 0
+    in_string = False
+    while idx < len(line):
+        char = line[idx]
+        if in_string:
+            if char == '"':
+                if idx + 1 < len(line) and line[idx + 1] == '"':
+                    idx += 2
+                    continue
+                in_string = False
+            idx += 1
+            continue
+        if char == '"':
+            in_string = True
+            idx += 1
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                return idx + 1
+            depth -= 1
+        idx += 1
+    return len(line)
+
+
+def _bsl181_normalize_argument(arg: str) -> str:
+    return re.sub(r"\s+", "", arg).casefold()
+
+
+def _bsl181_insert_argument_supported(arg: str) -> bool:
+    return (
+        '"' in arg or re.search(r"\b(?:КодСимвола|CharCode)\s*\(", arg, re.IGNORECASE) is not None
+    )
+
+
+def _bsl181_add_argument_supported(arg: str) -> bool:
+    return (
+        _bsl181_insert_argument_supported(arg)
+        or re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?", arg.strip()) is not None
+    )
+
+
 def _path_is_unmanaged_form_module(path: str) -> bool:
     module_path = Path(path)
     xml_path = current_form_xml_path(path)
@@ -1272,36 +1363,39 @@ class ModuleModel:
                 for idx in range(proc.start_idx, min(proc.end_idx + 1, len(lines))):
                     line = clean_lines[idx]
                     stripped_line = line.strip()
+                    assignment = _BSL181_TARGET_ASSIGNMENT_RE.match(line)
+                    if assignment is not None:
+                        assigned_target = assignment.group("target").casefold()
+                        seen_inserts = {
+                            key: value
+                            for key, value in seen_inserts.items()
+                            if key[0] != assigned_target and value != assigned_target
+                        }
                     if re.match(
                         r"^(?:КонецЕсли|EndIf|КонецПопытки|EndTry|КонецЦикла|EndDo)\b",
                         stripped_line,
                         re.IGNORECASE,
                     ):
                         control_depth = max(0, control_depth - 1)
-                    for match in re.finditer(
-                        r"(?<!\.)\b(?P<target>\w+)\.(?P<method>Вставить|Insert)\s*\("
-                        r"(?P<arg>\"[^\"]*\"|(?:КодСимвола|CharCode)\s*\([^)]*\))\s*(?:,|\))",
-                        line,
-                        re.IGNORECASE,
-                    ):
+                    for match in _BSL181_COLLECTION_INSERTION_RE.finditer(line):
                         target = match.group("target")
-                        arg = match.group("arg").strip()
-                        arg_key = re.sub(r"\s+", "", arg).casefold()
-                        if not (
-                            re.fullmatch(r'"[^"]*"', arg)
-                            or re.fullmatch(
-                                r"(?:КодСимвола|CharCode)\s*\(\s*\"[^\"]*\"\s*\)",
-                                arg,
-                                re.IGNORECASE,
-                            )
+                        method = match.group("method").casefold()
+                        first_arg = _bsl181_first_argument(line, match.end() - 1)
+                        if first_arg is None:
+                            continue
+                        arg, end_character = first_arg
+                        if method in {
+                            "вставить",
+                            "insert",
+                        } and not _bsl181_insert_argument_supported(arg):
+                            continue
+                        if method in {"добавить", "add"} and not _bsl181_add_argument_supported(
+                            arg
                         ):
                             continue
+                        arg_key = _bsl181_normalize_argument(arg)
                         key = (target.casefold(), arg_key)
                         if control_depth == 0 and key in seen_inserts:
-                            end_character = match.end()
-                            close_pos = line.find(")", match.end())
-                            if close_pos >= 0:
-                                end_character = close_pos + 1
                             diags.append(
                                 Diagnostic(
                                     file=self.path,
