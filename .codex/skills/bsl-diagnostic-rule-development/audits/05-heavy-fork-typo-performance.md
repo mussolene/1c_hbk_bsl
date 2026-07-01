@@ -37,7 +37,7 @@ This audit is the durable routing checklist for
 - [x] BSL227 - exact-zero private parity with existing one-statement scanner
 - [x] BSL230 - exact private parity with existing transaction pairing implementation
 - [x] BSL243 - exact-zero private parity after full receiver self-insertion fix
-- [ ] BSL250 - open
+- [x] BSL250 - exact private parity with existing TempFilesDir implementation
 - [ ] BSL256 - open
 - [ ] BSL263 - open
 - [ ] BSL265 - open
