@@ -10529,6 +10529,29 @@ class TestBsl273VirtualTableCallWithoutParameters:
 
 
 class TestBsl279YoLetterUsage:
+    def test_reports_yo_letter_in_identifier(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Счётчик = 1;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL279"}) if d.code == "BSL279"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 4, 2, 11)
+        ]
+
+    def test_skips_yo_letter_in_comments_and_strings(self, tmp_path: Path) -> None:
+        content = """\
+            // Счётчик
+            Процедура Тест()
+                Текст = "Счётчик";
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL279"})
+
+        assert "BSL279" not in _codes(diags)
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
