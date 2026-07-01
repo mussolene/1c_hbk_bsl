@@ -25,7 +25,7 @@ This audit is the durable routing checklist for
 - [x] BSL180 - exact-zero private parity; synthetic safe-mode disabling coverage
 - [x] BSL181 - verified; Add support/reset/range fix with classified parity tail
 - [x] BSL183 - exact private parity after scope/range/string-filter fixes
-- [ ] BSL185 - open
+- [x] BSL185 - exact private parity after declaration false-positive fix
 - [ ] BSL186 - open
 - [ ] BSL197 - open
 - [ ] BSL200 - open

@@ -2757,6 +2757,8 @@ class ExternalAppStartingRule(DiagnosticRuntimeRule):
             if _line_comment(line):
                 continue
             clean = _code_mask_without_strings_and_comments(line)
+            if re.match(r"^\s*(?:Процедура|Procedure|Функция|Function)\b", clean, re.IGNORECASE):
+                continue
             for match in _BSL185_EXTERNAL_APP_RE.finditer(clean):
                 storage.add_range(
                     code=self.code,
