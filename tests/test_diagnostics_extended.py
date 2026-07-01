@@ -634,6 +634,31 @@ class TestDeprecatedApiParityBatch:
         diags = DiagnosticEngine(select={"BSL178"}).check_file(str(path))
         assert "BSL178" in _codes(diags)
 
+    def test_bsl178_reports_all_deprecated_8317_global_methods(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = КраткоеПредставлениеОшибки(ИнформацияОбОшибке());
+                Б = ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());
+                ПоказатьИнформациюОбОшибке(ИнформацияОбОшибке());
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL178"}) if d.code == "BSL178"]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 8, 34),
+            (3, 8, 36),
+            (4, 4, 30),
+        ]
+
+    def test_bsl178_ignores_object_calls_strings_and_comments(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                А = ОбработкаОшибок.КраткоеПредставлениеОшибки(ИнформацияОбОшибке());
+                Текст = "ПодробноеПредставлениеОшибки()";
+                // ПоказатьИнформациюОбОшибке(ИнформацияОбОшибке());
+            КонецПроцедуры
+        """
+        assert "BSL178" not in _codes(_check(content, tmp_path, select={"BSL178"}))
+
     def test_bsl179_managed_form_type(self, tmp_path: Path) -> None:
         content = """\
             Процедура Test()
