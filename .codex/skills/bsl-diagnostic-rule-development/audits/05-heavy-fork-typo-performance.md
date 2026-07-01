@@ -35,7 +35,7 @@ This audit is the durable routing checklist for
 - [x] BSL218 - exact private parity with existing CST temp-file lifecycle implementation
 - [x] BSL223 - exact private parity after nested constructor arity/range fixes
 - [x] BSL227 - exact-zero private parity with existing one-statement scanner
-- [ ] BSL230 - open
+- [x] BSL230 - exact private parity with existing transaction pairing implementation
 - [ ] BSL243 - open
 - [ ] BSL250 - open
 - [ ] BSL256 - open
