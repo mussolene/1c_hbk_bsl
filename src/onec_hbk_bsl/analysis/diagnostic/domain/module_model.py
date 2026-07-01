@@ -2645,7 +2645,7 @@ class ModuleModel:
                                     if getattr(child, "type", None) != "new_expression":
                                         continue
                                     nested_args = ts_method_call_arg_exprs_fn(child)
-                                    if len(nested_args) > 1:
+                                    if nested_args:
                                         nested = True
                                         break
                                 if nested:
@@ -2666,7 +2666,9 @@ class ModuleModel:
                                         end_line=line_idx + 1,
                                         end_character=min(
                                             len(line_text),
-                                            start_char + len(ts_node_text_fn(type_node)),
+                                            utf8_byte_offset_to_lsp_character_fn(
+                                                line_text, node.end_point[1]
+                                            ),
                                         ),
                                         severity=Severity.INFORMATION,
                                         code="BSL223",

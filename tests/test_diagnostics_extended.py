@@ -10263,6 +10263,17 @@ class TestAdditionalParityBatch:
         )
         assert "BSL223" in _codes(diags)
 
+    def test_bsl223_single_argument_nested_constructor_detected(self, tmp_path: Path) -> None:
+        content = 'А = Новый Структура("Тип", Новый ОписаниеТипов("Строка"));\n'
+        diags = _check(content, tmp_path, select={"BSL223"})
+        bsl223 = [diag for diag in diags if diag.code == "BSL223"]
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl223] == [(1, 4, 57)]
+
+    def test_bsl223_parameterless_nested_constructor_is_clean(self, tmp_path: Path) -> None:
+        content = 'А = Новый Структура("Массив", Новый Массив);\n'
+        diags = _check(content, tmp_path, select={"BSL223"})
+        assert "BSL223" not in _codes(diags)
+
     def test_bsl243_self_insertion_detected(self, tmp_path: Path) -> None:
         diags = _check("Массив.Добавить(Массив);\n", tmp_path, select={"BSL243"})
         assert "BSL243" in _codes(diags)

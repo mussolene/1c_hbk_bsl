@@ -294,6 +294,7 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL203",
         "BSL205",
         "BSL218",
+        "BSL223",
         "BSL264",
         "BSL225",
         "BSL221",
