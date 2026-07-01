@@ -2711,22 +2711,24 @@ class ModuleModel:
             for idx, line in enumerate(clean_lines):
                 if "BSL243" in enabled_set:
                     for m in re.finditer(
-                        r"\b(?P<obj>\w+)\s*\.\s*(?:Вставить|Insert|Добавить|Add)\s*\((?P<args>[^)]*)\)",
+                        r"(?<![\w.])(?P<obj>\w+(?:\s*\.\s*\w+)*)\s*\.\s*"
+                        r"(?:Вставить|Insert|Добавить|Add)\s*\((?P<args>[^)]*)\)",
                         line,
                         re.IGNORECASE,
                     ):
-                        obj = m.group("obj").casefold()
+                        obj = re.sub(r"\s+", "", m.group("obj")).casefold()
                         parts = [part.strip() for part in split_top_level_args_fn(m.group("args"))]
-                        relevant = [part for part in parts if part]
-                        if any(part.casefold() == obj for part in relevant):
+                        relevant = [re.sub(r"\s+", "", part).casefold() for part in parts if part]
+                        if any(part == obj for part in relevant):
                             start = m.start("obj")
+                            end = m.end("obj")
                             diags.append(
                                 Diagnostic(
                                     file=self.path,
                                     line=idx + 1,
                                     character=start,
                                     end_line=idx + 1,
-                                    end_character=start + len(m.group("obj")),
+                                    end_character=end,
                                     severity=Severity.ERROR,
                                     code="BSL243",
                                 )

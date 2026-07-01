@@ -36,7 +36,7 @@ This audit is the durable routing checklist for
 - [x] BSL223 - exact private parity after nested constructor arity/range fixes
 - [x] BSL227 - exact-zero private parity with existing one-statement scanner
 - [x] BSL230 - exact private parity with existing transaction pairing implementation
-- [ ] BSL243 - open
+- [x] BSL243 - exact-zero private parity after full receiver self-insertion fix
 - [ ] BSL250 - open
 - [ ] BSL256 - open
 - [ ] BSL263 - open

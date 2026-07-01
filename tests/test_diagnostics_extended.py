@@ -10278,6 +10278,15 @@ class TestAdditionalParityBatch:
         diags = _check("Массив.Добавить(Массив);\n", tmp_path, select={"BSL243"})
         assert "BSL243" in _codes(diags)
 
+    def test_bsl243_dotted_receiver_tail_match_is_clean(self, tmp_path: Path) -> None:
+        diags = _check("Объект.Массив.Добавить(Массив);\n", tmp_path, select={"BSL243"})
+        assert "BSL243" not in _codes(diags)
+
+    def test_bsl243_dotted_receiver_self_insertion_detected(self, tmp_path: Path) -> None:
+        diags = _check("Объект.Массив.Добавить(Объект.Массив);\n", tmp_path, select={"BSL243"})
+        bsl243 = [diag for diag in diags if diag.code == "BSL243"]
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl243] == [(1, 0, 13)]
+
     def test_bsl249_style_constructor_detected(self, tmp_path: Path) -> None:
         diags = _check("ЦветФона = Новый Цвет(255, 0, 0);\n", tmp_path, select={"BSL249"})
         bsl249 = [d for d in diags if d.code == "BSL249"]
