@@ -9893,6 +9893,14 @@ class TestBsl066DeprecatedFind:
         diags = _check(content, tmp_path, select={"BSL066"})
         assert "BSL066" not in _codes(diags)
 
+    def test_chained_object_najti_not_flagged(self, tmp_path: Path) -> None:
+        content = (
+            'Если Документ.Метаданные().ТабличныеЧасти.Найти("Виды").Реквизиты.Найти("Сумма") '
+            "= Неопределено Тогда\nКонецЕсли;\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL066"})
+        assert "BSL066" not in _codes(diags)
+
     def test_in_comment_no_warning(self, tmp_path: Path) -> None:
         content = '// Найти("текст");\n'
         diags = _check(content, tmp_path, select={"BSL066"})

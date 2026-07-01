@@ -451,7 +451,10 @@ class DiagnosticEngine:
         """Collect global method calls from an already materialised ``method_call`` node list."""
         out: list[dict[str, Any]] = []
         for node in method_call_nodes:
-            if getattr(getattr(node, "parent", None), "type", None) == "call_expression":
+            if getattr(getattr(node, "parent", None), "type", None) in {
+                "access",
+                "call_expression",
+            }:
                 continue
             span = _ts_method_identifier_span(node, line_texts)
             if span is None:

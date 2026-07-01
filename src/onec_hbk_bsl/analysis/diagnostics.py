@@ -2904,7 +2904,7 @@ def _ts_global_method_calls(node: Any, line_texts: list[str]) -> list[dict[str, 
     for child in _ts_walk(node):
         if getattr(child, "type", None) != "method_call":
             continue
-        if getattr(getattr(child, "parent", None), "type", None) == "call_expression":
+        if getattr(getattr(child, "parent", None), "type", None) in {"access", "call_expression"}:
             continue
         span = _ts_method_identifier_span(child, line_texts)
         if span is None:
