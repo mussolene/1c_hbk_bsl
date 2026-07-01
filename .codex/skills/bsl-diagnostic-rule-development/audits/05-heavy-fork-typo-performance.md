@@ -38,7 +38,7 @@ This audit is the durable routing checklist for
 - [x] BSL230 - exact private parity with existing transaction pairing implementation
 - [x] BSL243 - exact-zero private parity after full receiver self-insertion fix
 - [x] BSL250 - exact private parity with existing TempFilesDir implementation
-- [ ] BSL256 - open
+- [x] BSL256 - verified; typo backend/tokenization parity tail classified
 - [ ] BSL263 - open
 - [ ] BSL265 - open
 - [ ] BSL267 - open
