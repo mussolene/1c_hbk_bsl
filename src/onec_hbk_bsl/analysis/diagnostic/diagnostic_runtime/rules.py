@@ -1451,8 +1451,6 @@ class CanonicalSpellingKeywordsRule(DiagnosticRuntimeRule):
     )
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        if _path_is_form_module_bsl(context.path):
-            return []
         skipped_lines = self._bsl036_condition_lines(context) if context.bsl036_enabled else set()
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):

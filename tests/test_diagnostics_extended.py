@@ -6717,9 +6717,9 @@ class TestBsl036ComplexCondition:
 # ---------------------------------------------------------------------------
 
 
-class TestBsl153FormModuleSkips:
-    def test_form_module_path_skips_bsl153(self, tmp_path: Path) -> None:
-        """BSLLS parity: EDT form ``Module.bsl`` — skip canonical keyword spelling (BSL153)."""
+class TestBsl153FormModuleParity:
+    def test_form_module_path_reports_bsl153(self, tmp_path: Path) -> None:
+        """BSLLS parity: form modules are checked for canonical keyword spelling (BSL153)."""
         content = """\
             процедура Тест()
                 А = 1;
@@ -6730,7 +6730,7 @@ class TestBsl153FormModuleSkips:
         bsl_path = form_dir / "Module.bsl"
         bsl_path.write_text(textwrap.dedent(content), encoding="utf-8")
         diags = DiagnosticEngine(select={"BSL153"}).check_file(str(bsl_path))
-        assert "BSL153" not in _codes(diags)
+        assert "BSL153" in _codes(diags)
 
 
 # ---------------------------------------------------------------------------
