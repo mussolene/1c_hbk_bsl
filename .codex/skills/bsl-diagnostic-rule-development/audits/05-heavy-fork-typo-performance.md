@@ -16,7 +16,7 @@ This audit is the durable routing checklist for
 - [x] BSL030 - verified; 978 exact, 48 paired range-only, 2 onec-only tail reports
 - [x] BSL035 - verified; 2055 exact, occurrence/range-policy tail classified
 - [x] BSL039 - exact private parity; contract-only closure
-- [ ] BSL060 - open
+- [x] BSL060 - exact private parity; contract-only closure
 - [ ] BSL066 - open
 - [ ] BSL097 - open
 - [ ] BSL153 - open
