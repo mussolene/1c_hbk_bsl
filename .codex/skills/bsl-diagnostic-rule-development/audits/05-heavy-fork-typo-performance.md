@@ -20,7 +20,7 @@ This audit is the durable routing checklist for
 - [x] BSL066 - exact private parity after chained member-call classification fix
 - [x] BSL097 - exact private parity; contract-only closure
 - [x] BSL153 - verified; exact private parity after removing stale form-module skip
-- [ ] BSL171 - open
+- [x] BSL171 - verified; exact-zero private parity plus synthetic adjacent-string range alignment
 - [ ] BSL178 - open
 - [ ] BSL180 - open
 - [ ] BSL181 - open

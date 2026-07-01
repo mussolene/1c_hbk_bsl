@@ -18,6 +18,56 @@ from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
 
+def _bsl_string_spans_before_comment(line: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    idx = 0
+    limit = len(line)
+    while idx < limit:
+        if line.startswith("//", idx):
+            break
+        if line[idx] != '"':
+            idx += 1
+            continue
+        start = idx
+        idx += 1
+        while idx < limit:
+            if line[idx] != '"':
+                idx += 1
+                continue
+            if idx + 1 < limit and line[idx + 1] == '"':
+                idx += 2
+                continue
+            idx += 1
+            spans.append((start, idx))
+            break
+    return spans
+
+
+def _bsl171_adjacent_literal_span(line: str) -> tuple[int, int] | None:
+    spans = _bsl_string_spans_before_comment(line)
+    for left, right in zip(spans, spans[1:], strict=False):
+        if line[left[1] : right[0]].strip() == "":
+            return (left[0], right[1])
+    return None
+
+
+def _bsl171_multiline_literal_span(
+    prev_line: str,
+    cur_line: str,
+) -> tuple[int, int] | None:
+    prev_spans = _bsl_string_spans_before_comment(prev_line)
+    cur_spans = _bsl_string_spans_before_comment(cur_line)
+    if not prev_spans or not cur_spans:
+        return None
+    prev_start, prev_end = prev_spans[-1]
+    cur_start, cur_end = cur_spans[0]
+    if prev_line[prev_end:].strip() != "":
+        return None
+    if cur_line[:cur_start].strip() != "":
+        return None
+    return (prev_start, cur_end)
+
+
 def _path_is_unmanaged_form_module(path: str) -> bool:
     module_path = Path(path)
     xml_path = current_form_xml_path(path)
@@ -424,8 +474,6 @@ class ModuleModel:
                     continue
                 line_idx = node.start_point[0]
                 line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-                if "|" not in line_text and line_text.count('"') >= 4:
-                    continue
                 prev_line = lines[line_idx - 1] if line_idx > 0 else ""
                 if re.search(r"\+\s*\"", line_text) or re.search(r"\"\s*\+", line_text):
                     continue
@@ -445,41 +493,37 @@ class ModuleModel:
                 after = line_text[end_char:].lstrip()
                 if before.endswith("+") or after.startswith("+"):
                     continue
+                same_line_span = _bsl171_adjacent_literal_span(line_text)
+                multiline_span = _bsl171_multiline_literal_span(prev_line, line_text)
+                if same_line_span is not None:
+                    start_char, end_char = same_line_span
+                    end_line = line_idx + 1
+                elif multiline_span is not None:
+                    start_char, end_char = multiline_span
+                    line_idx -= 1
+                    end_line = line_idx + 2
+                else:
+                    continue
                 diags.append(
                     Diagnostic(
                         file=self.path,
                         line=line_idx + 1,
                         character=start_char,
-                        end_line=line_idx + 1,
+                        end_line=end_line,
                         end_character=end_char,
                         severity=Severity.INFORMATION,
                         code="BSL171",
                     )
                 )
         if diags:
-            return [
-                diag
-                for diag in diags
-                if not (
-                    1 <= diag.line <= len(lines)
-                    and (
-                        re.search(r"\+\s*\"", lines[diag.line - 1])
-                        or re.search(r"\"\s*\+", lines[diag.line - 1])
-                        or (
-                            "|" not in lines[diag.line - 1] and lines[diag.line - 1].count('"') >= 4
-                        )
-                    )
-                )
-            ]
+            return diags
         for idx, line in enumerate(lines):
             if '"' not in line:
                 continue
-            if "|" not in line and line.count('"') >= 4:
-                continue
             if re.search(r"\+\s*\"", line) or re.search(r"\"\s*\+", line):
                 continue
-            match = adjacent_literals_re.search(line)
-            if match is not None:
+            adjacent_span = _bsl171_adjacent_literal_span(line)
+            if adjacent_span is not None:
                 prev = lines[idx - 1] if idx > 0 else ""
                 next_line = lines[idx + 1] if idx + 1 < len(lines) else ""
                 if re.search(r"\bНСтр\s*\(", prev + line, re.IGNORECASE) and (
@@ -490,9 +534,9 @@ class ModuleModel:
                     Diagnostic(
                         file=self.path,
                         line=idx + 1,
-                        character=match.start(),
+                        character=adjacent_span[0],
                         end_line=idx + 1,
-                        end_character=match.end(),
+                        end_character=adjacent_span[1],
                         severity=Severity.INFORMATION,
                         code="BSL171",
                     )
@@ -508,16 +552,16 @@ class ModuleModel:
                     continue
                 if re.search(r"\bНСтр\s*\(", prev + line, re.IGNORECASE) and prev.endswith("+"):
                     continue
-                end_character = min(
-                    len(line.rstrip()), len(line) - len(cur) + len(cur.split('"', 2)[1]) + 2
-                )
+                multiline_span = _bsl171_multiline_literal_span(lines[idx - 1], line)
+                if multiline_span is None:
+                    continue
                 diags.append(
                     Diagnostic(
                         file=self.path,
-                        line=idx + 1,
-                        character=len(line) - len(cur),
+                        line=idx,
+                        character=multiline_span[0],
                         end_line=idx + 1,
-                        end_character=end_character,
+                        end_character=multiline_span[1],
                         severity=Severity.INFORMATION,
                         code="BSL171",
                     )

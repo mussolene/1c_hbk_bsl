@@ -3511,6 +3511,42 @@ class TestBsl204InvalidCharacterInFile:
         assert bsl204[0].end_character == content.splitlines()[1].rindex('"') + 1
 
 
+class TestBsl171CrazyMultilineString:
+    def test_adjacent_literals_on_same_line_report_full_pair(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Строка = "ВВВ" "СС";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL171"}) if d.code == "BSL171"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 13, 2, 23),
+        ]
+
+    def test_adjacent_literals_on_next_line_report_cross_line_range(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Строка = "ВВВ"
+                "СС";
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL171"}) if d.code == "BSL171"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 13, 3, 8),
+        ]
+
+    def test_concat_escaped_quotes_and_comments_do_not_report(self, tmp_path: Path) -> None:
+        content = '''\
+            Процедура Тест()
+                Строка = "ВВВ" + "СС";
+                Строка = "ВВВ ""СС""";
+                // "ВВВ"
+                "СС";
+            КонецПроцедуры
+        '''
+        assert "BSL171" not in _codes(_check(content, tmp_path, select={"BSL171"}))
+
+
 class TestBsl217MissingTempStorageDeletion:
     def test_missing_delete_detected(self, tmp_path: Path) -> None:
         content = """\
