@@ -10568,6 +10568,46 @@ class TestBsl276WrongUseFunctionProceedWithCall:
 
 
 class TestBsl263UseLessForEach:
+    def test_reports_unused_iterator_in_for_each(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Для каждого Элемент Из Коллекция Цикл
+                    ВыполнитьДействие(Коллекция);
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL263"}) if d.code == "BSL263"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 16, 2, 23)
+        ]
+
+    def test_skips_used_iterator_in_for_each(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Для каждого Элемент Из Коллекция Цикл
+                    ВыполнитьДействие(Элемент);
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL263"})
+
+        assert "BSL263" not in _codes(diags)
+
+    def test_skips_module_variable_iterator_name(self, tmp_path: Path) -> None:
+        content = """\
+            Перем Элемент;
+
+            Процедура Тест()
+                Для каждого Элемент Из Коллекция Цикл
+                    ВыполнитьДействие(Коллекция);
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL263"})
+
+        assert "BSL263" not in _codes(diags)
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")

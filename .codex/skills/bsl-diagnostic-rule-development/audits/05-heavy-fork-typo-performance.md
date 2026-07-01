@@ -39,7 +39,7 @@ This audit is the durable routing checklist for
 - [x] BSL243 - exact-zero private parity after full receiver self-insertion fix
 - [x] BSL250 - exact private parity with existing TempFilesDir implementation
 - [x] BSL256 - verified; typo backend/tokenization parity tail classified
-- [ ] BSL263 - open
+- [x] BSL263 - exact-zero private parity with existing CST for-each iterator implementation
 - [ ] BSL265 - open
 - [ ] BSL267 - open
 - [ ] BSL271 - open
