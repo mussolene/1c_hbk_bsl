@@ -206,7 +206,7 @@ def _bsl030_statement_has_semicolon(node: Any, lines: list[str]) -> bool:
 
 
 def _bsl030_anchor_node(node: Any) -> Any:
-    punctuation = {"(", ")", "[", "]", ",", ".", "=", "+", "-", "*", "/", "%"}
+    punctuation = {"(", "[", "]", ",", ".", "=", "+", "-", "*", "/", "%"}
     leaves: list[Any] = []
 
     def collect(child: Any) -> None:
@@ -251,12 +251,18 @@ def _diagnostics_bsl030_semicolon_presence(context: DiagnosticDocumentContext) -
         end_line = int(anchor.end_point[0]) + 1
         if not (1 <= start_line <= len(context.lines)) or not (1 <= end_line <= len(context.lines)):
             continue
-        character = utf8_byte_offset_to_lsp_character(
-            context.lines[start_line - 1], int(anchor.start_point[1])
-        )
-        end_character = utf8_byte_offset_to_lsp_character(
-            context.lines[end_line - 1], int(anchor.end_point[1])
-        )
+        if _ts_node_text(anchor).strip() == ")" and start_line == end_line:
+            end_character = utf8_byte_offset_to_lsp_character(
+                context.lines[end_line - 1], int(anchor.end_point[1])
+            )
+            character = max(0, end_character - 1)
+        else:
+            character = utf8_byte_offset_to_lsp_character(
+                context.lines[start_line - 1], int(anchor.start_point[1])
+            )
+            end_character = utf8_byte_offset_to_lsp_character(
+                context.lines[end_line - 1], int(anchor.end_point[1])
+            )
         diags.append(
             Diagnostic(
                 file=context.path,

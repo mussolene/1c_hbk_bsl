@@ -6285,7 +6285,7 @@ class TestBsl030HeaderSemicolon:
         assert "BSL030" not in _codes(diags)
         assert "BSL025" in _codes(diags)
 
-    def test_missing_semicolon_span_matches_last_statement_token(self, tmp_path: Path) -> None:
+    def test_missing_semicolon_span_matches_bslls_anchor(self, tmp_path: Path) -> None:
         content = (
             "Функция Тест()\n"
             "    Значение = Объект.Реквизит\n"
@@ -6296,6 +6296,13 @@ class TestBsl030HeaderSemicolon:
         assert [(d.line, d.character, d.end_character) for d in diags] == [
             (2, 22, 30),
             (3, 12, 34),
+        ]
+
+    def test_missing_semicolon_after_call_reports_closing_paren(self, tmp_path: Path) -> None:
+        content = 'Процедура Тест()\n    Сообщить("missing")\nКонецПроцедуры\n'
+        diags = [d for d in _check(content, tmp_path, select={"BSL030"}) if d.code == "BSL030"]
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 22, 23),
         ]
 
     def test_multiline_comparison_operator_is_single_statement(self, tmp_path: Path) -> None:

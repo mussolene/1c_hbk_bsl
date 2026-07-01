@@ -13,7 +13,7 @@ This audit is the durable routing checklist for
 - [x] BSL020 - exact private parity; contract-only closure
 - [x] BSL027 - exact-zero private parity; contract-only closure
 - [x] BSL029 - verified; CST magic-number policy with private parity classified
-- [ ] BSL030 - open
+- [x] BSL030 - verified; 978 exact, 48 paired range-only, 2 onec-only tail reports
 - [ ] BSL035 - open
 - [ ] BSL039 - open
 - [ ] BSL060 - open
