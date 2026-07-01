@@ -41,7 +41,7 @@ This audit is the durable routing checklist for
 - [x] BSL256 - verified; typo backend/tokenization parity tail classified
 - [x] BSL263 - exact-zero private parity with existing CST for-each iterator implementation
 - [x] BSL265 - exact private parity with existing useless ternary implementation
-- [ ] BSL267 - open
+- [x] BSL267 - exact private parity with existing external code tools implementation
 - [ ] BSL271 - open
 - [ ] BSL279 - open
 
