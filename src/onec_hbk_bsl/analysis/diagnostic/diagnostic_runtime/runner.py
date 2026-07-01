@@ -323,7 +323,7 @@ _PROCESS_FORK_RULE_GROUPS: tuple[tuple[str, ...], ...] = (
     ("BSL210",),
     ("BSL227", "BSL265"),
     ("BSL173", "BSL186", "BSL181"),
-    ("BSL030", "BSL183", "BSL243"),
+    ("BSL030", "BSL243"),
     ("BSL230", "BSL202", "BSL218", "BSL223"),
     ("BSL035", "BSL027", "BSL267", "BSL066"),
     ("BSL180", "BSL200", "BSL178", "BSL279"),

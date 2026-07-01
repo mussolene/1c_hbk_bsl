@@ -274,6 +274,8 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL212",
         # CodeAfterAsyncCall spans the full async call; arguments may be string literals.
         "BSL154",
+        # ExecuteExternalCode spans the full dangerous call; code text is commonly a string argument.
+        "BSL183",
         "BSL005",
         "BSL006",
         "BSL012",

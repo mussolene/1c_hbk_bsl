@@ -3051,32 +3051,42 @@ class ExecuteExternalCodeRule(DiagnosticRuntimeRule):
         return out
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        normalized_path = context.path.replace("\\", "/").lower()
+        if "/commonmodules/" in normalized_path:
+            return []
+        if "/forms/" in normalized_path and normalized_path.endswith("/ext/module.bsl"):
+            return []
+        if _path_is_split_module_fragment(context.path):
+            return []
         storage = DiagnosticStorage(context.path)
-        procs = (
+        snapshot_procs = (
             list(getattr(context.snapshot, "procs", []) or [])
             if context.snapshot is not None
-            else self._fallback_procs(context.lines)
+            else []
         )
-        if not procs:
-            procs = self._fallback_procs(context.lines)
+        fallback_procs = self._fallback_procs(context.lines)
+        procs = snapshot_procs or fallback_procs
+        client_ranges = [
+            (int(proc.start_idx), int(proc.end_idx))
+            for proc in procs
+            if self._client_only_method(context.lines, int(proc.start_idx))
+        ]
 
-        for proc in procs:
-            if self._client_only_method(context.lines, int(proc.start_idx)):
+        for idx, line in enumerate(context.lines):
+            if any(start <= idx <= end for start, end in client_ranges):
                 continue
-            for idx in range(
-                int(proc.start_idx) + 1, min(int(proc.end_idx) + 1, len(context.lines))
-            ):
-                clean = _code_mask_without_strings_and_comments(context.lines[idx])
-                for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
-                    open_paren = clean.find("(", match.start())
-                    storage.add_range(
-                        code=self.code,
-                        line=idx,
-                        character=match.start(1),
-                        end_line=idx,
-                        end_character=_single_line_call_end(clean, open_paren),
-                        severity=Severity.ERROR,
-                    )
+            clean = _code_mask_without_strings_and_comments(line)
+            for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
+                open_paren = clean.find("(", match.start())
+                end_line, end_character = _multi_line_call_end(context.lines, idx, open_paren)
+                storage.add_range(
+                    code=self.code,
+                    line=idx,
+                    character=match.start(1),
+                    end_line=end_line,
+                    end_character=end_character,
+                    severity=Severity.ERROR,
+                )
         return storage.diagnostics
 
 
@@ -3092,12 +3102,13 @@ class ExecuteExternalCodeInCommonModuleRule(DiagnosticRuntimeRule):
             clean = _code_mask_without_strings_and_comments(line)
             for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
                 open_paren = clean.find("(", match.start())
+                end_line, end_character = _multi_line_call_end(context.lines, idx, open_paren)
                 storage.add_range(
                     code=self.code,
                     line=idx,
                     character=match.start(1),
-                    end_line=idx,
-                    end_character=_single_line_call_end(clean, open_paren),
+                    end_line=end_line,
+                    end_character=end_character,
                     severity=Severity.WARNING,
                 )
         return storage.diagnostics
