@@ -4009,6 +4009,8 @@ class LogicalOrInTheWhereSectionOfQueryRule(DiagnosticRuntimeRule):
         for idx, line in enumerate(context.lines):
             stripped = line.rstrip()
             if not self._continuation_re.match(stripped):
+                if in_query and not stripped.strip():
+                    continue
                 if in_query:
                     in_query = False
                     group_depth = 0

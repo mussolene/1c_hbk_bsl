@@ -8955,6 +8955,22 @@ class TestBsl210LogicalOrInWhereSection:
             (8, 4, 7),
         ]
 
+    def test_blank_line_does_not_end_multiline_query_literal(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = "ВЫБРАТЬ
+            |   Т.Ссылка
+            |ИЗ
+            |   Документ.РасходнаяНакладная КАК Т
+
+            |ГДЕ
+            |   Т.Проведен
+            |   ИЛИ Т.ПометкаУдаления";
+        """
+        diags = _check(content, tmp_path, select={"BSL210"})
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL210"] == [
+            (8, 4, 7),
+        ]
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/"

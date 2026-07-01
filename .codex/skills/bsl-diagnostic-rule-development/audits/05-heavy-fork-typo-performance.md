@@ -31,7 +31,7 @@ This audit is the durable routing checklist for
 - [x] BSL200 - verified with classified line-break parity tail
 - [x] BSL202 - exact-zero private parity with existing CST call-pool implementation
 - [x] BSL205 - exact-zero private parity with existing role-check implementation
-- [ ] BSL210 - open
+- [x] BSL210 - exact private parity after preserving query state across blank lines
 - [ ] BSL218 - open
 - [ ] BSL223 - open
 - [ ] BSL227 - open
