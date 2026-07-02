@@ -9,7 +9,7 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 
 - [x] BSL002 - exact current-corpus parity with existing method-size implementation
 - [x] BSL003 - exact current-corpus parity with existing API-region export implementation
-- [ ] BSL004 - open
+- [x] BSL004 - exact current-corpus parity with existing CST empty-block implementation
 - [ ] BSL009 - open
 - [ ] BSL028 - open
 - [ ] BSL032 - open
