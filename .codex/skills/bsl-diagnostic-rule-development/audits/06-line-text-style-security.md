@@ -12,7 +12,7 @@ This audit is the durable routing checklist for
 - [x] BSL023 - exact current-corpus parity after service-tag comment range fix
 - [x] BSL024 - classified current-corpus parity; no BSLLS-only deltas after comment spacing refinement
 - [x] BSL025 - exact-zero current-corpus parity with existing CST empty-statement implementation
-- [ ] BSL055 - open
+- [x] BSL055 - exact current-corpus parity with existing consecutive empty lines implementation
 - [ ] BSL149 - open
 - [ ] BSL150 - open
 - [ ] BSL184 - open
