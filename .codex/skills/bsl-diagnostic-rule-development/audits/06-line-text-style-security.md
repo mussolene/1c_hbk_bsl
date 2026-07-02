@@ -20,7 +20,7 @@ This audit is the durable routing checklist for
 - [x] BSL203 - exact current-corpus parity with existing CST internet access implementation
 - [x] BSL208 - classified current-corpus parity; remaining deltas are mixed-script occurrence policy
 - [x] BSL222 - exact-zero current-corpus parity with existing localized template implementation
-- [ ] BSL226 - open
+- [x] BSL226 - exact-zero current-corpus parity with existing OS users method implementation
 - [ ] BSL239 - open
 - [ ] BSL247 - open
 - [ ] BSL251 - open
