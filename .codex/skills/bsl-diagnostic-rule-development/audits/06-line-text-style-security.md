@@ -8,7 +8,7 @@ This audit is the durable routing checklist for
 
 ## Closure Checklist
 
-- [ ] BSL006 - open
+- [x] BSL006 - exact current-corpus parity with existing hardcoded path implementation
 - [ ] BSL023 - open
 - [ ] BSL024 - open
 - [ ] BSL025 - open
