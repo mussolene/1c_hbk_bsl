@@ -4553,28 +4553,31 @@ class UnionAllRule(DiagnosticRuntimeRule):
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
-        in_query = False
-        for idx, line in enumerate(context.lines):
-            stripped = line.strip()
-            if stripped.startswith("//"):
-                continue
-            if '|"' in line or stripped.startswith("|"):
-                in_query = True
-            if stripped.endswith('";') or (stripped.endswith('"') and "ВЫБРАТЬ" not in stripped):
-                in_query = False
-            if not in_query and "|" not in line and '"' not in line:
-                continue
-            match = _BSL258_UNION_RE.search(line)
-            if match is None:
-                continue
-            storage.add_range(
-                code=self.code,
-                severity=Severity.INFORMATION,
-                line=idx,
-                character=match.start(),
-                end_line=idx,
-                end_character=match.end(),
+        for block in context.query_text_blocks:
+            content_lines = list(getattr(block, "content_lines", []) or [])
+            first_head = next(
+                (str(getattr(line, "head", "")).strip() for line in content_lines if str(getattr(line, "head", "")).strip()),
+                "",
             )
+            if _BSL258_UNION_RE.match(first_head):
+                continue
+            for row, content_line in enumerate(content_lines):
+                head = str(getattr(content_line, "head", ""))
+                match = _BSL258_UNION_RE.search(head)
+                if match is None:
+                    continue
+                start_byte = len(head[: match.start()].encode("utf-8"))
+                end_byte = len(head[: match.end()].encode("utf-8"))
+                start_line, start_char = block.original_lsp_position(row, start_byte)
+                end_line, end_char = block.original_lsp_position(row, end_byte)
+                storage.add_range(
+                    code=self.code,
+                    severity=Severity.INFORMATION,
+                    line=start_line,
+                    character=start_char,
+                    end_line=end_line,
+                    end_character=end_char,
+                )
         return storage.diagnostics
 
 

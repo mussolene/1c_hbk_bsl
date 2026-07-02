@@ -3992,6 +3992,59 @@ class TestBsl251TernaryOperatorUsage:
         assert "BSL251" not in _codes(_check(content, tmp_path, select={"BSL251"}))
 
 
+class TestBsl252ThisObjectAssign:
+    def test_this_object_assignment_in_form_module_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ЭтотОбъект = Новый Структура;
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL252"}).check_file(str(path))
+
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL252"] == [
+            (2, 4, 14),
+        ]
+
+    def test_this_object_property_assignment_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                ЭтотОбъект.Реквизит = Значение;
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+
+        assert "BSL252" not in _codes(DiagnosticEngine(select={"BSL252"}).check_file(str(path)))
+
+
+class TestBsl259UnknownPreprocessorSymbol:
+    def test_unknown_preprocessor_symbol_reports(self, tmp_path: Path) -> None:
+        content = """\
+            #Если НеизвестныйСимвол Тогда
+            Сообщить("x");
+            #КонецЕсли
+        """
+        diags = _check(content, tmp_path, select={"BSL259"})
+
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL259"] == [
+            (1, 6, 23),
+        ]
+
+    def test_known_preprocessor_symbol_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            #Если Клиент Тогда
+            Сообщить("x");
+            #КонецЕсли
+        """
+
+        assert "BSL259" not in _codes(_check(content, tmp_path, select={"BSL259"}))
+
+
 class TestBsl217MissingTempStorageDeletion:
     def test_missing_delete_detected(self, tmp_path: Path) -> None:
         content = """\
@@ -8742,6 +8795,28 @@ class TestBsl258UnionAll:
         diags = _check(content, tmp_path, select={"BSL258"})
         assert "BSL258" not in _codes(diags)
 
+    def test_union_separator_string_is_not_query_union(self, tmp_path: Path) -> None:
+        content = """\
+            Разделитель = " ОБЪЕДИНИТЬ ";
+            ТекстЗапроса = СтрСоединить(ЧастиЗапроса, Разделитель);
+        """
+        diags = _check(content, tmp_path, select={"BSL258"})
+        assert "BSL258" not in _codes(diags)
+
+    def test_dynamic_union_fragment_start_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            ТекстЗапроса = ТекстЗапроса + "
+            |
+            |ОБЪЕДИНИТЬ
+            |
+            |ВЫБРАТЬ
+            |   Таблица.Ссылка
+            |ИЗ
+            |   Справочник.Номенклатура КАК Таблица";
+        """
+        diags = _check(content, tmp_path, select={"BSL258"})
+        assert "BSL258" not in _codes(diags)
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11033,6 +11108,29 @@ class TestBsl190FormDataToValue:
 
 
 class TestBsl255TryNumber:
+    def test_number_call_inside_try_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Попытка
+                Значение = Число(Текст);
+            Исключение
+            КонецПопытки;
+        """
+        diags = _check(content, tmp_path, select={"BSL255"})
+
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL255"] == [
+            (2, 15, 27),
+        ]
+
+    def test_number_call_in_except_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Попытка
+            Исключение
+                Значение = Число(Текст);
+            КонецПопытки;
+        """
+
+        assert "BSL255" not in _codes(_check(content, tmp_path, select={"BSL255"}))
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11059,6 +11157,19 @@ class TestBsl255TryNumber:
 
 
 class TestBsl257UnaryPlusInConcatenation:
+    def test_unary_plus_after_concat_reports(self, tmp_path: Path) -> None:
+        content = 'Текст = "A" + +Значение;\n'
+        diags = _check(content, tmp_path, select={"BSL257"})
+
+        assert [(d.line, d.character, d.end_character) for d in diags if d.code == "BSL257"] == [
+            (1, 14, 15),
+        ]
+
+    def test_unary_plus_number_after_concat_is_clean(self, tmp_path: Path) -> None:
+        content = 'Значение = 1 + +1;\n'
+
+        assert "BSL257" not in _codes(_check(content, tmp_path, select={"BSL257"}))
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")

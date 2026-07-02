@@ -45,11 +45,11 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL245 - exact-zero current-corpus parity after managed form metadata and split-layout gating
 - [x] BSL248 - exact-zero current-corpus parity with existing multiple compiler directive implementation
 - [x] BSL249 - exact current-corpus parity with existing style constructor implementation
-- [ ] BSL252 - open
-- [ ] BSL255 - open
-- [ ] BSL257 - open
-- [ ] BSL258 - open
-- [ ] BSL259 - open
+- [x] BSL252 - exact current-corpus parity with existing CST this-object assignment implementation
+- [x] BSL255 - exact current-corpus parity with existing CST try-body number conversion implementation
+- [x] BSL257 - exact current-corpus parity with existing CST unary-plus concatenation implementation
+- [x] BSL258 - exact current-corpus parity after extracted query-block scope and UTF-8 range mapping
+- [x] BSL259 - exact current-corpus parity with existing CST unknown preprocessor symbol implementation
 - [ ] BSL260 - open
 - [ ] BSL262 - open
 - [ ] BSL268 - open
