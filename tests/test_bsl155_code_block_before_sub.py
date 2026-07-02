@@ -39,6 +39,26 @@ def test_bsl155_skips_annotation_with_argument_before_first_proc(tmp_path: Path)
     assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
 
 
+def test_bsl155_skips_region_wrapped_methods_before_root_method(tmp_path: Path) -> None:
+    p = tmp_path / "m.bsl"
+    p.write_text(
+        "#Область Методы\n\nФункция Значение()\n    Возврат 1;\nКонецФункции\n#КонецОбласти\n\nПроцедура П()\nКонецПроцедуры\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL155"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
+
+
+def test_bsl155_skips_orphan_end_region_before_first_proc(tmp_path: Path) -> None:
+    p = tmp_path / "m.bsl"
+    p.write_text(
+        "#КонецОбласти\n\nФункция Значение()\n    Возврат 1;\nКонецФункции\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL155"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
+
+
 def test_bsl155_fires_executable_before_proc(tmp_path: Path) -> None:
     p = tmp_path / "m.bsl"
     p.write_text(
@@ -59,6 +79,18 @@ def test_bsl155_skips_split_fragment(tmp_path: Path) -> None:
     p = ext / "П.bsl"
     p.write_text(
         "а = 1;\nПроцедура П() Экспорт\nКонецПроцедуры\n",
+        encoding="utf-8",
+    )
+    engine = DiagnosticEngine(select={"BSL155"})
+    assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
+
+
+def test_bsl155_skips_ext_fragment_without_canonical_sibling(tmp_path: Path) -> None:
+    ext = tmp_path / "CommonModules" / "Модуль" / "Ext"
+    ext.mkdir(parents=True)
+    p = ext / "П.bsl"
+    p.write_text(
+        "#КонецОбласти\n\n#Область Методы\n\nПроцедура П() Экспорт\nКонецПроцедуры\n",
         encoding="utf-8",
     )
     engine = DiagnosticEngine(select={"BSL155"})

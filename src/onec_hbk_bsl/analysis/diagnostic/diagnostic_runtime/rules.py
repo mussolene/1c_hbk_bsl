@@ -3897,7 +3897,7 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
     _ignored_before_body_types = {"comment", "line_comment", "var_definition"}
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
-        if _path_is_split_module_fragment(context.path):
+        if not _path_is_whole_module_bsl(context.path):
             return []
 
         root = getattr(context.tree, "root_node", None)
@@ -3934,6 +3934,8 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
         for index, child in enumerate(children):
             if getattr(child, "type", None) in cls._sub_types:
                 return index
+            if getattr(child, "type", None) == "preprocessor" and cls._node_contains_sub(child):
+                return index
         return None
 
     @classmethod
@@ -3947,6 +3949,8 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
             return None
         if node_type in {"ERROR", "error"}:
             text = _ts_node_text(node).strip()
+            if re.match(r"^#\s*(?:КонецОбласти|EndRegion)\b", text, re.IGNORECASE):
+                return None
             first = text.split(None, 1)[0].rstrip(";,.")
             if first and "ё" in first.casefold() and first.replace("_", "").isalnum():
                 return None
@@ -3974,6 +3978,10 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
             if cls._executable_body_span(child) is not None:
                 return child, node
         return None
+
+    @classmethod
+    def _node_contains_sub(cls, node: Any) -> bool:
+        return any(getattr(child, "type", None) in cls._sub_types for child in _ts_walk(node))
 
     @classmethod
     def _end_node(cls, before_sub: list[Any], start_node: Any) -> Any:
