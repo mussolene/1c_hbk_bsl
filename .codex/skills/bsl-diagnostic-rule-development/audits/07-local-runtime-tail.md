@@ -30,11 +30,11 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL175 - exact-zero current-corpus parity after docs-listed chart method coverage
 - [x] BSL176 - exact current-corpus parity after platform/member surface and BSLLS-style deprecated doc-comment semantics
 - [x] BSL177 - exact-zero current-corpus parity after full documented 8.3.10 client-method coverage and method-token range alignment
-- [ ] BSL179 - open
-- [ ] BSL182 - open
-- [ ] BSL195 - open
-- [ ] BSL196 - open
-- [ ] BSL198 - open
+- [x] BSL179 - exact-zero current-corpus parity with deprecated managed-form type contract and synthetic negatives
+- [x] BSL182 - exact-zero current-corpus parity after CST AutoTest single-return branch implementation
+- [x] BSL195 - exact current-corpus parity with get-form method contract and receiver-call coverage
+- [x] BSL196 - exact-zero current-corpus parity with global 8.3.12 method-collision contract
+- [x] BSL198 - exact-zero current-corpus parity with CST duplicated-condition contract and non-skipping synthetic coverage
 - [ ] BSL199 - open
 - [ ] BSL217 - open
 - [ ] BSL221 - open

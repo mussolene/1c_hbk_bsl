@@ -830,6 +830,10 @@ _BSL179_MANAGED_FORM_RE = re.compile(
     r"\b(?:Тип|Type)\s*\(\s*(\"(?:УправляемаяФорма|ManagedForm)\")\s*\)",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL182_AUTOTEST_EXPRESSION_RE = re.compile(
+    r'(?:\.(?:Свойство|Property)\("(?:АвтоТест|AutoTest)"\)|="(?:АвтоТест|AutoTest)")$',
+    re.IGNORECASE | re.UNICODE,
+)
 
 
 @lru_cache(maxsize=128)
@@ -2741,6 +2745,77 @@ class DeprecatedTypeManagedFormRule(DiagnosticRuntimeRule):
                     severity=Severity.INFORMATION,
                 )
         return storage.diagnostics
+
+
+class ExcessiveAutoTestCheckRule(DiagnosticRuntimeRule):
+    code = "BSL182"
+
+    def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(getattr(context.tree, "root_node", None), "text", None)
+        if not isinstance(root, (bytes, bytearray)):
+            return []
+        storage = DiagnosticStorage(context.path)
+        for node in context.ts_nodes_for_types(context.tree, {"if_statement"})["if_statement"]:
+            for branch in self._branches(node):
+                expression = next(
+                    (
+                        child
+                        for child in _ts_children(branch)
+                        if getattr(child, "type", None) == "expression"
+                    ),
+                    None,
+                )
+                if expression is None or not self._expression_is_autotest_check(expression):
+                    continue
+                if not self._body_is_only_return(branch):
+                    continue
+                _add_node_range(
+                    storage,
+                    code=self.code,
+                    severity=Severity.INFORMATION,
+                    lines=context.lines,
+                    start_node=branch,
+                    end_node=branch,
+                )
+        return storage.diagnostics
+
+    @staticmethod
+    def _branches(if_statement: Any) -> list[Any]:
+        branches = [if_statement]
+        branches.extend(
+            child
+            for child in _ts_children(if_statement)
+            if getattr(child, "type", None) == "elseif_clause"
+        )
+        return branches
+
+    @staticmethod
+    def _expression_is_autotest_check(expression: Any) -> bool:
+        compact = re.sub(r"\s+", "", _ts_node_text(expression))
+        return bool(_BSL182_AUTOTEST_EXPRESSION_RE.search(compact))
+
+    @staticmethod
+    def _body_is_only_return(branch: Any) -> bool:
+        children = _ts_children(branch)
+        then_index = next(
+            (
+                index
+                for index, child in enumerate(children)
+                if getattr(child, "type", None) == "THEN_KEYWORD"
+            ),
+            None,
+        )
+        if then_index is None:
+            return False
+        body: list[Any] = []
+        for child in children[then_index + 1 :]:
+            child_type = getattr(child, "type", None)
+            if child_type in {"elseif_clause", "else_clause", "ENDIF_KEYWORD"}:
+                break
+            if child_type in {";", "comment"}:
+                continue
+            body.append(child)
+        return len(body) == 1 and getattr(body[0], "type", None) == "return_statement"
 
 
 class DisableSafeModeRule(DiagnosticRuntimeRule):

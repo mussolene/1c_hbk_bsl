@@ -891,6 +891,51 @@ class TestDeprecatedApiParityBatch:
         bsl179 = [d for d in diags if d.code == "BSL179"]
         assert len(bsl179) == 1
         assert bsl179[0].line == 2
+        assert (bsl179[0].character, bsl179[0].end_character) == (27, 40)
+
+    def test_bsl179_ignores_strings_comments_and_non_type_calls(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Test()
+                Text = "Тип(""УправляемаяФорма"")";
+                // Если Тип(Форма) = Тип("УправляемаяФорма") Тогда
+                ТипФормы("УправляемаяФорма");
+            КонецПроцедуры
+        """
+        assert "BSL179" not in _codes(_check(content, tmp_path, select={"BSL179"}))
+
+    def test_bsl182_excessive_autotest_check_official_patterns(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура ПриСозданииНаСервере()
+                Если Параметры.Свойство("АвтоТест") Тогда
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+
+            Процедура ОбработкаЗаполнения(ДанныеЗаполнения)
+                Если ДанныеЗаполнения = "АвтоТест" Тогда
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL182"}) if d.code == "BSL182"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 4, 4, 14),
+            (8, 4, 10, 14),
+        ]
+        assert {d.severity for d in diags} == {Severity.INFORMATION}
+
+    def test_bsl182_requires_only_return_in_if_body(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура БезОшибок()
+                Если Перечень.Свойство("АвтоТест") Тогда
+                    Перечень.Удалить("АвтоТест");
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        assert "BSL182" not in _codes(_check(content, tmp_path, select={"BSL182"}))
 
     def test_bsl195_get_form_method(self, tmp_path: Path) -> None:
         content = """\
@@ -903,6 +948,19 @@ class TestDeprecatedApiParityBatch:
         assert len(bsl195) == 1
         assert bsl195[0].line == 2
         assert bsl195[0].message == _rule_msg("BSL195")
+
+    def test_bsl195_reports_receiver_get_form_and_ignores_strings_comments(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                Форма = Док.ПолучитьФорму("ФормаДокумента");
+                Текст = "ПолучитьФорму()";
+                // Форма = ПолучитьФорму("Форма");
+            КонецПроцедуры
+        """
+        bsl195 = [d for d in _check(content, tmp_path, select={"BSL195"}) if d.code == "BSL195"]
+        assert [(d.line, d.character, d.end_character) for d in bsl195] == [(2, 16, 29)]
 
 
 # ---------------------------------------------------------------------------
@@ -1451,8 +1509,9 @@ class TestTailParityBatches:
                 КонецПроцедуры
 
                 Процедура Обработчик()
-                    АвтоТестПроверка();
-                    АвтоТестПроверка();
+                    Если Параметры.Свойство("АвтоТест") Тогда
+                        Возврат;
+                    КонецЕсли;
                     Коллекция.Вставить("Ключ");
                     Коллекция.Вставить("Ключ");
                     Найденный = Каталог.НайтиПоКоду("001");
@@ -1467,6 +1526,26 @@ class TestTailParityBatches:
         got = set(_codes(diags))
         assert {"BSL169", "BSL181", "BSL182", "BSL196"} <= got
         assert next(diag for diag in diags if diag.code == "BSL169").severity is Severity.ERROR
+
+    def test_bsl196_global_context_method_collision_isolated(self, tmp_path: Path) -> None:
+        path = tmp_path / "ObjectModule.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура ПроверитьБит()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        bsl196 = [
+            d
+            for d in DiagnosticEngine(select={"BSL196"}).check_file(str(path))
+            if d.code == "BSL196"
+        ]
+        assert [(d.line, d.character, d.end_character) for d in bsl196] == [(1, 10, 22)]
+        assert {d.severity for d in bsl196} == {Severity.ERROR}
 
     def test_compilation_directive_lost_skips_ordinary_form(self, tmp_path: Path) -> None:
         path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
@@ -11126,6 +11205,32 @@ class TestBsl199IfElseIfEndsWithElse:
 
 
 class TestBsl198IfElseDuplicatedCondition:
+    def test_reports_duplicate_elseif_condition_from_cst(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Если П = 0 Тогда
+                    Возврат;
+                ИначеЕсли П = 1 Тогда
+                    Возврат;
+                ИначеЕсли П = 1 Тогда
+                    Возврат;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        path = tmp_path / "test.bsl"
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL198"}).check_file(str(path))
+            if d.code == "BSL198"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 14, 4, 19)
+        ]
+        assert {d.severity for d in diags} == {Severity.WARNING}
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
