@@ -376,6 +376,14 @@ class ModuleModel:
 
             names = m.group("names")
             base = m.start("names")
+            export_match = re.search(
+                r"\b(?:Экспорт|Export)\b",
+                clean_lines[idx][m.end("names") :],
+                re.IGNORECASE,
+            )
+            export_end = (
+                m.end("names") + export_match.end() if export_match is not None else m.end()
+            )
             for part in re.finditer(r"\w+", names):
                 diags.append(
                     Diagnostic(
@@ -383,7 +391,7 @@ class ModuleModel:
                         line=idx + 1,
                         character=base + part.start(),
                         end_line=idx + 1,
-                        end_character=base + part.end(),
+                        end_character=export_end,
                         severity=Severity.WARNING,
                         code="BSL054",
                     )

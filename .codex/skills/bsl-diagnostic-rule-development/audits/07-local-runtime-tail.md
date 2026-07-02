@@ -19,7 +19,7 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL047 - exact current-corpus parity with existing magic-date implementation
 - [x] BSL051 - exact current-corpus parity after dirty-CST local unreachable fallback
 - [x] BSL052 - exact-zero current-corpus parity with CST identical-expression implementation
-- [ ] BSL054 - open
+- [x] BSL054 - exact current-corpus parity after export-variable range alignment
 - [ ] BSL064 - open
 - [ ] BSL065 - open
 - [ ] BSL151 - open

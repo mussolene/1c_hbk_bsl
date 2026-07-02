@@ -7847,8 +7847,8 @@ class TestBsl054ModuleLevelVariable:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL054"}) if d.code == "BSL054"]
         assert [(d.line, d.character, d.end_character) for d in diags] == [
-            (1, 6, 12),
-            (1, 14, 20),
+            (1, 6, 28),
+            (1, 14, 28),
         ]
 
     def test_module_level_non_export_var_no_warning(self, tmp_path: Path) -> None:
