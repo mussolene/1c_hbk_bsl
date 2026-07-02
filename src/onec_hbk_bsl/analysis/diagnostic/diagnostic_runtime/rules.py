@@ -5767,6 +5767,22 @@ def _run_bsl251_ternary_operator_usage(
     )
 
 
+def _run_bsl251_ternary_operator_usage_from_context(
+    context: DiagnosticDocumentContext,
+) -> list[Diagnostic]:
+    storage = DiagnosticStorage(context.path)
+    for span in _ternary_spans(context):
+        storage.add_range(
+            code="BSL251",
+            line=span.line,
+            character=span.col,
+            end_line=span.end_line,
+            end_character=span.end_col,
+            severity=Severity.INFORMATION,
+        )
+    return storage.diagnostics
+
+
 def _run_bsl252_this_object_assign(
     path: str,
     lines: list[str],
@@ -5882,7 +5898,9 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                 )
                 for fact in snapshot.invalid_character_facts
             ]
-        if code in {"BSL171", "BSL248", "BSL251", "BSL252", "BSL259", "BSL268"}:
+        if code == "BSL251":
+            return _run_bsl251_ternary_operator_usage_from_context(context)
+        if code in {"BSL171", "BSL248", "BSL252", "BSL259", "BSL268"}:
             return [
                 diag
                 for diag in model.validate_bsl171_248_251_252_259_268_light_pool(

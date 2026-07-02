@@ -3620,6 +3620,33 @@ class TestBsl171CrazyMultilineString:
         assert "BSL171" not in _codes(_check(content, tmp_path, select={"BSL171"}))
 
 
+class TestBsl251TernaryOperatorUsage:
+    def test_simple_ternary_is_reported(self, tmp_path: Path) -> None:
+        content = "Результат = ?(Условие, 1, 0);\n"
+        diags = [d for d in _check(content, tmp_path, select={"BSL251"}) if d.code == "BSL251"]
+        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+            (1, 12, 1, 28, "INFORMATION"),
+        ]
+
+    def test_multiline_ternary_uses_full_span(self, tmp_path: Path) -> None:
+        content = """\
+Результат = ?(Условие,
+    Истина,
+    Ложь);
+"""
+        diags = [d for d in _check(content, tmp_path, select={"BSL251"}) if d.code == "BSL251"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 12, 3, 9),
+        ]
+
+    def test_strings_and_comments_are_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+Текст = "?(Условие, 1, 0)";
+// Значение = ?(Условие, 1, 0);
+"""
+        assert "BSL251" not in _codes(_check(content, tmp_path, select={"BSL251"}))
+
+
 class TestBsl217MissingTempStorageDeletion:
     def test_missing_delete_detected(self, tmp_path: Path) -> None:
         content = """\
