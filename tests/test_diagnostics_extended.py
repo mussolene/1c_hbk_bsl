@@ -7664,6 +7664,34 @@ class TestBsl051UnreachableCode:
         assert 3 in dlines
         assert 5 in dlines
 
+    def test_dirty_tree_keeps_local_unreachable_detection(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        content = """\
+            Функция РаннийВыход()
+                Результат = Ложь;
+                Возврат Результат;
+
+                Попытка
+                    Результат = Истина;
+                Исключение
+                    Результат = Ложь;
+                КонецПопытки;
+
+                Возврат Результат;
+            КонецФункции
+
+            Процедура БитыйХвост()
+                Если Истина Тогда
+            КонецПроцедуры
+        """
+        tree = BslParser().parse_content(textwrap.dedent(content))
+        assert tree.root_node.has_error
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL051"}) if d.code == "BSL051"]
+        assert len(diags) == 1
+        assert diags[0].line == 5
+
     def test_bslls_fixture_all_if_branches_return_makes_following_code_unreachable(
         self, tmp_path: Path
     ) -> None:

@@ -333,6 +333,23 @@ def _bsl051_all_branch_exit_end_if_lines(
     return result
 
 
+def _bsl051_delimiter_lines_from_text(lines: list[str]) -> set[int]:
+    delimiter_re = re.compile(
+        r"^\s*(?:"
+        r"КонецЕсли|EndIf|"
+        r"КонецЦикла|EndDo|"
+        r"КонецПопытки|EndTry|"
+        r"КонецФункции|EndFunction|"
+        r"КонецПроцедуры|EndProcedure|"
+        r"Исключение|Except|"
+        r"ИначеЕсли|ElseIf|ElsIf|"
+        r"Иначе|Else"
+        r")\b",
+        re.IGNORECASE,
+    )
+    return {idx for idx, line in enumerate(lines) if delimiter_re.match(line)}
+
+
 @dataclass(frozen=True, slots=True)
 class ModuleModel:
     path: str
@@ -2365,7 +2382,7 @@ class ModuleModel:
         diags: list[Diagnostic] = []
         delimiter_lines = bsl051_delimiter_lines_for_tree_fn(tree)
         if delimiter_lines is None:
-            return []
+            delimiter_lines = _bsl051_delimiter_lines_from_text(lines)
         end_line_idxs = {proc.end_idx for proc in procs}
 
         for proc in procs:
