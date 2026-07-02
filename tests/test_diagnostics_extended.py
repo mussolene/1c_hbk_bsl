@@ -5586,6 +5586,14 @@ class TestBsl023UsingServiceTag:
         diags = _check(content, tmp_path)
         assert "BSL023" in _codes(diags)
 
+    def test_service_tag_range_starts_at_comment(self, tmp_path: Path) -> None:
+        content = "    // FIXME: баг с кодировкой\nА = 1;\n"
+        diags = [d for d in _check(content, tmp_path, select={"BSL023"}) if d.code == "BSL023"]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 4, 1, len(content.splitlines()[0]))
+        ]
+
     def test_hack_not_detected(self, tmp_path: Path) -> None:
         # BSLLS default UsingServiceTag pattern does not include HACK
         content = "// HACK: временный обходной путь\nА = 1;\n"

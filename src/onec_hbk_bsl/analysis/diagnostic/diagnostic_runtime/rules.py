@@ -1801,7 +1801,7 @@ class UsingServiceTagRule(DiagnosticRuntimeRule):
             storage.add_range(
                 code=self.code,
                 line=idx,
-                character=match.start(),
+                character=comment_start,
                 end_line=idx,
                 end_character=len(line),
                 severity=Severity.INFORMATION,
