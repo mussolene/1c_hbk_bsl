@@ -21,7 +21,7 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL052 - exact-zero current-corpus parity with CST identical-expression implementation
 - [x] BSL054 - exact current-corpus parity after export-variable range alignment
 - [x] BSL064 - exact-zero current-corpus parity with existing CST procedure-return implementation
-- [ ] BSL065 - open
+- [x] BSL065 - count parity with classified method-doc parser-context boundary after return-description parsing fixes
 - [ ] BSL151 - open
 - [ ] BSL155 - open
 - [ ] BSL157 - open

@@ -9900,6 +9900,33 @@ class TestBsl065MissingReturnedValueDescription:
         diags = _check(content, tmp_path, select={"BSL065"})
         assert "BSL065" not in _codes(diags)
 
+    def test_inline_return_description_is_valid(self, tmp_path: Path) -> None:
+        content = """\
+            // Описание функции
+            //
+            // Возвращаемое значение - Булево - Истина, если значение подходит.
+            //
+            Функция Тест()
+                Возврат Истина;
+            КонецФункции
+        """
+        diags = _check(content, tmp_path, select={"BSL065"})
+        assert "BSL065" not in _codes(diags)
+
+    def test_type_only_return_description_with_period_is_not_valid(self, tmp_path: Path) -> None:
+        content = """\
+            // Описание функции
+            //
+            // Возвращаемое значение:
+            //  Булево.
+            //
+            Функция Тест()
+                Возврат Истина;
+            КонецФункции
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL065"}) if d.code == "BSL065"]
+        assert len(diags) == 1
+
     def test_legacy_return_description_with_tabs_is_valid(self, tmp_path: Path) -> None:
         path = tmp_path / "ObjectModule.bsl"
         content = """\

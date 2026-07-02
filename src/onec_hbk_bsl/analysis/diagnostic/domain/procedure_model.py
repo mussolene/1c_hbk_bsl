@@ -7,6 +7,14 @@ from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
 
+def _bsl065_return_entry_is_valid(text: str) -> bool:
+    if text.startswith("*"):
+        return False
+    if re.match(r"^[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*\.$", text):
+        return False
+    return True
+
+
 @dataclass(frozen=True, slots=True)
 class ProcedureModel:
     path: str
@@ -277,19 +285,26 @@ class ProcedureModel:
                 return []
 
         returns_section_start = None
+        inline_return_text = ""
         for ci, cl in enumerate(comment_block):
-            if re.match(
-                r"^\s*//\s*(?:Возвращаемое\s+значение|Returns)\s*:?\s*$",
+            section_match = re.match(
+                r"^\s*//\s*(?:Возвращаемое\s+значение|Returns)\s*(?P<sep>:|-|–)?\s*(?P<text>.*)$",
                 cl,
                 re.IGNORECASE,
-            ):
+            )
+            if section_match:
                 returns_section_start = ci
+                inline_return_text = section_match.group("text").strip()
                 break
 
         has_valid_return_entry = False
         if returns_section_start is not None:
+            if inline_return_text:
+                has_valid_return_entry = _bsl065_return_entry_is_valid(inline_return_text)
             return_section_lines = comment_block[returns_section_start + 1 :]
             for cl in return_section_lines:
+                if has_valid_return_entry:
+                    break
                 stripped = cl.strip()
                 if stripped == "//":
                     break
@@ -302,10 +317,9 @@ class ProcedureModel:
                 if not entry:
                     continue
                 text = entry.group("text").strip()
-                if text.startswith("*"):
-                    continue
-                has_valid_return_entry = True
-                break
+                has_valid_return_entry = _bsl065_return_entry_is_valid(text)
+                if has_valid_return_entry:
+                    break
 
         header_line = lines[self.start_idx] if self.start_idx < len(lines) else ""
         try:
