@@ -17,7 +17,7 @@ This audit is the durable routing checklist for
 - [x] BSL150 - exact-zero current-corpus parity with default empty badWords pattern
 - [x] BSL184 - exact-zero current-corpus parity with existing server common-module dynamic-code implementation
 - [x] BSL188 - exact current-corpus parity with existing CST filesystem access implementation
-- [ ] BSL203 - open
+- [x] BSL203 - exact current-corpus parity with existing CST internet access implementation
 - [ ] BSL208 - open
 - [ ] BSL222 - open
 - [ ] BSL226 - open
