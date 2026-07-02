@@ -752,16 +752,27 @@ _BSL024_GOOD_STRICT_RE = re.compile(
     r"(?:(?://[ \t].*)|(?:/{2,}[ \t]*))$",
     re.IGNORECASE,
 )
-_BSL024_COMMENTED_CODE_RE = re.compile(
+_BSL024_COMMENTED_CODE_SKIP_RE = re.compile(
     r"^\s*//\s*(?:"
-    r"(?:Процедура|Функция|Function|Procedure)\s+\w+\s*\("
-    r"|(?:КонецПроцедуры|КонецФункции|EndProcedure|EndFunction)\s*;?\s*$"
-    r"|(?:Перем|Var)\s+\w+"
-    r"|(?:ВЫБРАТЬ|SELECT)\b"
-    r"|(?:Если|If|ИначеЕсли|ElseIf|ElsIf|КонецЕсли|EndIf)\b"
-    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\("
-    r"|\w.*(?:;|:=)"
+    r"(?:КонецПроцедуры|КонецФункции|КонецЕсли|КонецЦикла|EndProcedure|EndFunction|EndIf|EndDo)\s*;?\s*$"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\(.*\)\s*;\s*(?://.*)?$"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*(?:=|:=).*\)\s*;\s*(?://.*)?$"
     r")",
+    re.IGNORECASE,
+)
+_BSL024_COMMENTED_IF_START_RE = re.compile(
+    r"^\s*//\s*(?:Если|ИначеЕсли|If|ElseIf|ElsIf)\b",
+    re.IGNORECASE,
+)
+_BSL024_INLINE_COMMENTED_CODE_SKIP_RE = re.compile(
+    r"^//\s*(?:"
+    r"(?:Если|If|ИначеЕсли|ElseIf|ElsIf)\b"
+    r"|[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*\s*\(.*\)\s*;\s*(?://.*)?$"
+    r")",
+    re.IGNORECASE,
+)
+_BSL024_QUERY_PIPE_REPORT_RE = re.compile(
+    r"^//\|\s*(?:ВЫБОР|КОНЕЦ\b|ИЗ\b|ГДЕ\b|И\b.*(?:<=|ССЫЛКА)|SELECT|END\b|FROM\b|WHERE\b|AND\b.*(?:<=|REFS))",
     re.IGNORECASE,
 )
 _BSL178_DEPRECATED_METHOD_RE = re.compile(
@@ -1115,6 +1126,8 @@ def bsl024_find_report_comment_col(
     rest = comment_text[2:].lstrip()
     if rest.startswith("@") or rest.lower().startswith("(c)") or rest.startswith("©"):
         return None
+    if re.match(r"#\s*(?:Область|Region)\b", rest, re.IGNORECASE):
+        return None
     if (
         comment_text.startswith("//!")
         or re.match(r"//\s*noqa\b", comment_text, re.IGNORECASE)
@@ -1122,11 +1135,12 @@ def bsl024_find_report_comment_col(
     ):
         return None
     is_full_line_comment = col == len(line) - len(line.lstrip())
-    if (
-        is_full_line_comment
-        and not re.match(r"//\s*(?:Возврат|Return)\b", comment_text, re.IGNORECASE)
-        and _BSL024_COMMENTED_CODE_RE.match(comment_text)
-    ):
+    if is_full_line_comment and _BSL024_COMMENTED_IF_START_RE.match(comment_text):
+        if "=" in comment_text and not re.search(r"[A-Za-zА-Яа-яЁё_]\w*\s*\(", comment_text):
+            return None
+    if is_full_line_comment and _BSL024_COMMENTED_CODE_SKIP_RE.match(comment_text):
+        return None
+    if not is_full_line_comment and _BSL024_INLINE_COMMENTED_CODE_SKIP_RE.match(comment_text):
         return None
     if is_full_line_comment and (
         re.match(r'//\s*"\s*(?:ВЫБРАТЬ|SELECT)\b', comment_text, re.IGNORECASE)
@@ -1819,6 +1833,10 @@ class SpaceAtStartCommentRule(DiagnosticRuntimeRule):
             if idx < len(context.comment_starts):
                 comment_start = context.comment_starts[idx]
             col = bsl024_find_report_comment_col(line, comment_start, comment_start_known=True)
+            if col is None:
+                stripped = line.lstrip()
+                if _BSL024_QUERY_PIPE_REPORT_RE.match(stripped):
+                    col = len(line) - len(stripped)
             if col is None:
                 continue
             storage.add_range(

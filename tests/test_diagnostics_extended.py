@@ -5668,15 +5668,25 @@ class TestBsl024SpaceAtStartComment:
         diags = _check(content, tmp_path, select={"BSL024"})
         assert "BSL024" not in _codes(diags)
 
-    def test_commented_call_no_bsl024(self, tmp_path: Path) -> None:
+    def test_incomplete_commented_call_reports_bsl024(self, tmp_path: Path) -> None:
         content = "//НСтр(\"ru='строка'\") +\nА = 1;\n"
         diags = _check(content, tmp_path, select={"BSL024"})
-        assert "BSL024" not in _codes(diags)
+        assert "BSL024" in _codes(diags)
 
-    def test_commented_if_no_bsl024(self, tmp_path: Path) -> None:
+    def test_commented_if_without_comparison_reports_bsl024(self, tmp_path: Path) -> None:
         content = "//Если Условие Тогда\n//КонецЕсли;\nА = 1;\n"
         diags = _check(content, tmp_path, select={"BSL024"})
-        assert "BSL024" not in _codes(diags)
+        assert "BSL024" in _codes(diags)
+
+    def test_commented_if_with_call_reports_bsl024(self, tmp_path: Path) -> None:
+        content = "//Если ИспользоватьКонтурМаркировку() Тогда\nА = 1;\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert "BSL024" in _codes(diags)
+
+    def test_commented_region_start_is_skipped_but_end_reports(self, tmp_path: Path) -> None:
+        content = "//#Область СлужебныйИнтерфейс\n//#КонецОбласти\n"
+        diags = _check(content, tmp_path, select={"BSL024"})
+        assert [(d.line, d.character) for d in diags if d.code == "BSL024"] == [(2, 0)]
 
     def test_query_pipe_comment_reports_bsl024(self, tmp_path: Path) -> None:
         content = "//|\tИ Поле = &Поле\nА = 1;\n"
