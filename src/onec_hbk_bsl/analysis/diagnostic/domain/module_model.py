@@ -1517,6 +1517,7 @@ class ModuleModel:
         mask_double_quoted_strings_preserve_len_fn,
         bsl175_attribute_re,
         bsl175_attr_replacements: dict[str, str],
+        bsl175_method_re,
         bsl175_method_replacements: dict[str, str],
         bsl175_child_form_items_re,
         bsl175_enum_replacements: dict[str, str],
@@ -1580,6 +1581,22 @@ class ModuleModel:
                                 code="BSL175",
                             )
                         )
+                for match in bsl175_method_re.finditer(clean):
+                    name = match.group("name")
+                    replacement = bsl175_method_replacements.get(name.casefold())
+                    if not replacement:
+                        continue
+                    diags.append(
+                        Diagnostic(
+                            file=self.path,
+                            line=idx + 1,
+                            character=match.start("name"),
+                            end_line=idx + 1,
+                            end_character=match.end("name"),
+                            severity=Severity.INFORMATION,
+                            code="BSL175",
+                        )
+                    )
                 for match in bsl175_child_form_items_re.finditer(clean):
                     name = match.group("name")
                     replacement = bsl175_enum_replacements.get(name.casefold())

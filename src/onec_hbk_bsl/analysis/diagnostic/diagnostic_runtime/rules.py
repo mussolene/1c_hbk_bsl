@@ -6512,6 +6512,7 @@ class DeprecatedApiDiagnosticsRule(DiagnosticRuntimeRule):
                 ),
                 bsl175_attribute_re=_diag._RE_BSL175_ATTRIBUTE,
                 bsl175_attr_replacements=_diag._BSL175_ATTR_REPLACEMENTS,
+                bsl175_method_re=_diag._RE_BSL175_METHOD,
                 bsl175_method_replacements=_diag._BSL175_METHOD_REPLACEMENTS,
                 bsl175_child_form_items_re=_diag._RE_BSL175_CHILD_FORM_ITEMS,
                 bsl175_enum_replacements=_diag._BSL175_ENUM_REPLACEMENTS,

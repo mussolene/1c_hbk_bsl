@@ -569,6 +569,30 @@ class TestDeprecatedApiParityBatch:
         assert len(bsl175) == 2
         assert all(d.message == _rule_msg("BSL175") for d in bsl175)
 
+    def test_bsl175_deprecated_chart_method_and_enum(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Диаграмма.ПолучитьПалитру();
+                Значение = ГруппировкаПодчиненныхЭлементовФормы.Горизонтальная;
+                Значение = ОриентацияМетокДиаграммы.Авто;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL175"})
+        bsl175 = [d for d in diags if d.code == "BSL175"]
+        assert len(bsl175) == 3
+
+    def test_bsl175_ignores_strings_comments_and_current_names(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                // Диаграмма.ПолучитьПалитру();
+                Текст = "ОчиститьЖурналРегистрации(Отбор)";
+                Значение = ГруппировкаПодчиненныхЭлементовФормы.ГоризонтальнаяВсегда;
+                Значение = ОриентацияПодписейДиаграммы.Авто;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL175"})
+        assert "BSL175" not in _codes(diags)
+
     def test_bsl176_same_file_deprecated_method_call(self, tmp_path: Path) -> None:
         content = """\
             // Deprecated. Use НовыйМетод instead.

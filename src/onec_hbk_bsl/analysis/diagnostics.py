@@ -2790,6 +2790,11 @@ _RE_BSL175_ATTRIBUTE = re.compile(
     r"ДиаграммаГанта|GanttChart|СводнаяДиаграмма|PivotChart)\.(?P<name>\w+)\b",
     re.IGNORECASE | re.UNICODE,
 )
+_RE_BSL175_METHOD = re.compile(
+    r"\b(?:Диаграмма|Chart)\.(?P<name>ПолучитьПалитру|GetPalette|"
+    r"УстановитьПалитру|SetPalette)\s*\(",
+    re.IGNORECASE | re.UNICODE,
+)
 _RE_BSL175_CHILD_FORM_ITEMS = re.compile(
     r"\b(?:ГруппировкаПодчиненныхЭлементовФормы|ChildFormItemsGroup)\.(?P<name>\w+)\b",
     re.IGNORECASE | re.UNICODE,

@@ -27,7 +27,7 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL157 - exact current-corpus parity with synthetic commit-placement coverage
 - [x] BSL169 - exact-zero current-corpus parity after split-form layout scope fix
 - [x] BSL170 - exact-zero current-corpus parity with existing needless compilation directive implementation
-- [ ] BSL175 - open
+- [x] BSL175 - exact-zero current-corpus parity after docs-listed chart method coverage
 - [ ] BSL176 - open
 - [ ] BSL177 - open
 - [ ] BSL179 - open
