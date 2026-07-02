@@ -11057,6 +11057,36 @@ class TestBsl151BeginTransactionBeforeTryCatch:
 
 
 class TestBsl157CommitTransactionOutsideTryCatch:
+    def test_commit_not_last_in_try_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    ЗафиксироватьТранзакцию();
+                    Сообщить("после фиксации");
+                Исключение
+                    ОтменитьТранзакцию();
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL157"}) if d.code == "BSL157"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (3, 8, 3, 34)
+        ]
+
+    def test_commit_last_before_except_is_valid(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    Действие();
+                    ЗафиксироватьТранзакцию();
+                Исключение
+                    ОтменитьТранзакцию();
+                КонецПопытки;
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL157"})
+        assert "BSL157" not in _codes(diags)
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
