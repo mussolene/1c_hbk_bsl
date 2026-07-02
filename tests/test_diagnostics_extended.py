@@ -8674,6 +8674,19 @@ class TestBsl234QueryNestedFieldsByDot:
         diags = [d for d in _check(content, tmp_path, select={"BSL234"}) if d.code == "BSL234"]
         assert [(d.line, d.character) for d in diags] == [(4, 4)]
 
+    def test_query_type_literal_is_not_nested_field(self, tmp_path: Path) -> None:
+        content = """\
+            Запрос.Текст =
+            "ВЫБРАТЬ
+            |   Источник.Ссылка
+            |ИЗ
+            |   РегистрСведений.Данные КАК Источник
+            |ГДЕ
+            |   ТИПЗНАЧЕНИЯ(Источник.Документ) В (ТИП(Документ.ЗаказКлиента))";
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL234"}) if d.code == "BSL234"]
+        assert diags == []
+
     def test_fully_commented_query_is_ignored(self, tmp_path: Path) -> None:
         content = """\
             // Запрос = Новый Запрос(
@@ -10063,6 +10076,19 @@ class TestBsl225NumberOfValuesInStructureConstructor:
 
 
 class TestBsl245ServerSideExportFormMethod:
+    @staticmethod
+    def _write_form_xml(path: Path, *, managed: bool = True) -> None:
+        xml_path = path.parent.parent / "Form.xml"
+        xml_path.write_text(
+            (
+                "<Form><Properties>"
+                f"<FormType>{'Managed' if managed else 'Ordinary'}</FormType>"
+                f"<UseManagedForm>{str(managed).lower()}</UseManagedForm>"
+                "</Properties></Form>"
+            ),
+            encoding="utf-8",
+        )
+
     def test_server_export_in_form_module_is_reported(self, tmp_path: Path) -> None:
         content = """\
             &НаСервере
@@ -10072,6 +10098,7 @@ class TestBsl245ServerSideExportFormMethod:
         path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
+        self._write_form_xml(path)
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert _codes(diags) == ["BSL245"]
         assert diags[0].severity == Severity.ERROR
@@ -10085,6 +10112,7 @@ class TestBsl245ServerSideExportFormMethod:
         path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
+        self._write_form_xml(path)
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert "BSL245" not in _codes(diags)
 
@@ -10114,8 +10142,23 @@ class TestBsl245ServerSideExportFormMethod:
         path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
         path.parent.mkdir(parents=True)
         path.write_text(textwrap.dedent(content), encoding="utf-8")
+        self._write_form_xml(path)
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert _codes(diags) == ["BSL245"]
+
+    def test_server_export_in_form_module_without_metadata_is_clean(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            &НаСервере
+            Процедура ПолучитьДанные() Экспорт
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert "BSL245" not in _codes(diags)
 
     def test_object_module_split_with_form_substring_is_clean(self, tmp_path: Path) -> None:
         content = """\
@@ -10146,6 +10189,22 @@ class TestBsl245ServerSideExportFormMethod:
         (form_dir / "Module.bsl").write_text("// full module\n", encoding="utf-8")
         path = form_dir / "ПолучитьДанные.bsl"
         path.write_text(textwrap.dedent(content), encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
+        assert "BSL245" not in _codes(diags)
+
+    def test_server_export_in_split_form_layout_module_is_clean(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            &НаСервере
+            Процедура ПолучитьДанные() Экспорт
+            КонецПроцедуры
+        """
+        path = tmp_path / "Forms" / "ФормаСписка" / "Ext" / "Form" / "Module.bsl"
+        path.parent.mkdir(parents=True)
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+        (path.parent / "Module.header").write_text("", encoding="utf-8")
+        self._write_form_xml(path)
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert "BSL245" not in _codes(diags)
 

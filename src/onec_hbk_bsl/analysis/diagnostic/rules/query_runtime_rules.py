@@ -230,13 +230,16 @@ def run_bsl234_query_nested_fields_by_dot(
         re.IGNORECASE,
     )
     one_dot_chain_re = re.compile(r"(?<![\w.])([A-Za-zА-Яа-я_]\w*\.[A-Za-zА-Яа-я_]\w*)(?![\w.])")
-    value_re = re.compile(r"(?:ЗНАЧЕНИЕ|VALUE)\s*\(", re.IGNORECASE)
+    metadata_literal_re = re.compile(
+        r"\b(?:ЗНАЧЕНИЕ|VALUE|ТИП|TYPE|ТИПЗНАЧЕНИЯ|VALUETYPE)\s*\(",
+        re.IGNORECASE,
+    )
 
-    def mask_value_calls(text: str) -> str:
+    def mask_metadata_literal_calls(text: str) -> str:
         chars = list(text)
         pos = 0
         while True:
-            match = value_re.search(text, pos)
+            match = metadata_literal_re.search(text, pos)
             if match is None:
                 break
             depth = 0
@@ -296,7 +299,7 @@ def run_bsl234_query_nested_fields_by_dot(
             in_group_by = False
             in_where = False
             continue
-        masked = mask_value_calls(line)
+        masked = mask_metadata_literal_calls(line)
         if re.match(r"^(?:ВЫБРАТЬ|SELECT)\b", query_text, re.IGNORECASE):
             in_group_by = False
             in_where = False
@@ -400,7 +403,8 @@ def run_bsl245_server_side_export_form_method(
     _diag = _diag_module()
     if is_split_module_fragment(path) or not _diag.path_is_likely_form_module_bsl(path):
         return []
-    if _path_is_known_ordinary_form_module(path):
+    form_xml = _form_xml_text_for_module(path)
+    if not form_xml or _form_xml_is_ordinary(form_xml) or _path_is_split_form_layout_module(path):
         return []
     diags: list[Any] = []
     for proc in procs:
@@ -423,7 +427,7 @@ def run_bsl245_server_side_export_form_method(
     return diags
 
 
-def _path_is_known_ordinary_form_module(path: str) -> bool:
+def _form_xml_text_for_module(path: str) -> str:
     module_path = Path(path)
     xml_path = current_form_xml_path(path)
     candidates: list[Path] = []
@@ -445,11 +449,22 @@ def _path_is_known_ordinary_form_module(path: str) -> bool:
             continue
         if raw:
             break
-    if raw:
-        if re.search(r"<FormType>\s*(?:Ordinary|Обыч\w*)\s*</FormType>", raw, re.IGNORECASE):
-            return True
-        if re.search(r"<UseManagedForm>\s*false\s*</UseManagedForm>", raw, re.IGNORECASE):
-            return True
-        return bool(re.search(r"<Managed>\s*false\s*</Managed>", raw, re.IGNORECASE))
-    low = path.replace("\\", "/").lower()
-    return "/forms/" in low and low.endswith("/ext/module.bsl")
+    return raw
+
+
+def _form_xml_is_ordinary(raw: str) -> bool:
+    if re.search(r"<FormType>\s*(?:Ordinary|Обыч\w*)\s*</FormType>", raw, re.IGNORECASE):
+        return True
+    if re.search(r"<UseManagedForm>\s*false\s*</UseManagedForm>", raw, re.IGNORECASE):
+        return True
+    return bool(re.search(r"<Managed>\s*false\s*</Managed>", raw, re.IGNORECASE))
+
+
+def _path_is_split_form_layout_module(path: str) -> bool:
+    current = Path(path)
+    if current.suffix.lower() != ".bsl":
+        return False
+    normalized = current.as_posix().casefold()
+    if "/forms/" not in normalized or "/ext/form/" not in normalized:
+        return False
+    return (current.parent / "Module.header").is_file()

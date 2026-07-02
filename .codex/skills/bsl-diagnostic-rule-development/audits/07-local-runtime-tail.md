@@ -1,6 +1,6 @@
 # 07 Local Runtime Tail Audit
 
-Status: not started.
+Status: in progress.
 
 This audit is the durable routing checklist for `07-local-runtime-tail`. Rule
 membership comes from `scripts/diagnostic_rule_matrix.py`.
@@ -40,11 +40,11 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL221 - exact-zero current-corpus parity with declared-language NStr contract and synthetic clean coverage
 - [x] BSL225 - exact current-corpus parity with structure constructor value-count contract and fixed-structure coverage
 - [x] BSL229 - exact-zero current-corpus parity with ordinary-app support XML contract and recommended-flags negative coverage
-- [ ] BSL234 - open
-- [ ] BSL237 - open
-- [ ] BSL245 - open
-- [ ] BSL248 - open
-- [ ] BSL249 - open
+- [x] BSL234 - exact current-corpus parity after query type-literal masking
+- [x] BSL237 - exact-zero current-corpus parity with existing redundant receiver implementation
+- [x] BSL245 - exact-zero current-corpus parity after managed form metadata and split-layout gating
+- [x] BSL248 - exact-zero current-corpus parity with existing multiple compiler directive implementation
+- [x] BSL249 - exact current-corpus parity with existing style constructor implementation
 - [ ] BSL252 - open
 - [ ] BSL255 - open
 - [ ] BSL257 - open
