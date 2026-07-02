@@ -22,7 +22,7 @@ This audit is the durable routing checklist for
 - [x] BSL222 - exact-zero current-corpus parity with existing localized template implementation
 - [x] BSL226 - exact-zero current-corpus parity with existing OS users method implementation
 - [x] BSL239 - exact-zero current-corpus parity with default empty reservedWords pattern
-- [ ] BSL247 - open
+- [x] BSL247 - exact-zero current-corpus parity with existing privileged-mode call implementation
 - [ ] BSL251 - open
 - [ ] BSL264 - open
 
