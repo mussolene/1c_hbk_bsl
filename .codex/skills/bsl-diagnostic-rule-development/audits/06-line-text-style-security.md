@@ -24,7 +24,7 @@ This audit is the durable routing checklist for
 - [x] BSL239 - exact-zero current-corpus parity with default empty reservedWords pattern
 - [x] BSL247 - exact-zero current-corpus parity with existing privileged-mode call implementation
 - [x] BSL251 - exact current-corpus parity after shared ternary span implementation
-- [ ] BSL264 - open
+- [x] BSL264 - exact current-corpus parity with existing CST system-information implementation
 
 ## Done Criteria
 
