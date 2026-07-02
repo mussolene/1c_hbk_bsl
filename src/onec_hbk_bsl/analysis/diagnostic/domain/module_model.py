@@ -1533,7 +1533,7 @@ class ModuleModel:
         ts_node_text_fn=None,
         utf8_byte_offset_to_lsp_character_fn=None,
         line_comment_re,
-        bsl176_deprecated_doc_re,
+        bsl176_deprecated_doc_predicate_fn,
         mask_double_quoted_strings_preserve_len_fn,
         bsl175_attribute_re,
         bsl175_attr_replacements: dict[str, str],
@@ -1555,7 +1555,7 @@ class ModuleModel:
                 if getattr(sym, "kind", "") not in {"procedure", "function"}:
                     continue
                 doc_comment = getattr(sym, "doc_comment", "") or ""
-                if not bsl176_deprecated_doc_re.search(doc_comment):
+                if not bsl176_deprecated_doc_predicate_fn(doc_comment):
                     continue
                 name = getattr(sym, "name", "")
                 if not name:

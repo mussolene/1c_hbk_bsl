@@ -610,6 +610,65 @@ class TestDeprecatedApiParityBatch:
         assert bsl176[0].line == 6
         assert bsl176[0].message == _rule_msg("BSL176")
 
+    def test_bsl176_same_file_ru_deprecated_method_call(self, tmp_path: Path) -> None:
+        content = """\
+            // Устарела. Используйте НовыйМетод.
+            Процедура СтарыйМетод()
+            КонецПроцедуры
+
+            Процедура НовыйМетод()
+                СтарыйМетод();
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL176"})
+        bsl176 = [d for d in diags if d.code == "BSL176"]
+        assert len(bsl176) == 1
+        assert bsl176[0].line == 6
+
+    def test_bsl176_doc_words_about_stale_data_do_not_deprecate_method(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            // Возвращаемое значение:
+            //  - Обновленную сессию, если сессия устарела.
+            Функция ПолучитьСессию()
+            КонецФункции
+
+            Процедура Тест()
+                ПолучитьСессию();
+            КонецПроцедуры
+        """
+        assert "BSL176" not in _codes(_check(content, tmp_path, select={"BSL176"}))
+
+    def test_bsl176_doc_words_about_deprecated_parameter_do_not_deprecate_method(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            // Параметры:
+            //  ДанныеДокумента - Структура - Устарело, не используется.
+            Функция Контракт_Документ()
+            КонецФункции
+
+            Процедура Тест()
+                Контракт_Документ();
+            КонецПроцедуры
+        """
+        assert "BSL176" not in _codes(_check(content, tmp_path, select={"BSL176"}))
+
+    def test_bsl176_doc_shouty_obsolete_word_is_not_bslls_deprecated_block(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            // УСТАРЕЛ! Вместо данного метода следует использовать НовыйМетод()
+            Функция ПриложениеСтаршеВерсии()
+            КонецФункции
+
+            Процедура Тест()
+                ПриложениеСтаршеВерсии();
+            КонецПроцедуры
+        """
+        assert "BSL176" not in _codes(_check(content, tmp_path, select={"BSL176"}))
+
     def test_bsl176_metadata_deleted_prefix_property(self, tmp_path: Path) -> None:
         path = tmp_path / "Module.bsl"
         path.write_text(
