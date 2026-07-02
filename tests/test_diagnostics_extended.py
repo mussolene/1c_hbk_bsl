@@ -1292,6 +1292,29 @@ class TestTailParityBatches:
 
         assert "BSL169" in _codes(diags)
 
+    def test_compilation_directive_lost_skips_split_form_layout(self, tmp_path: Path) -> None:
+        path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form" / "Module.bsl"
+        xml_path = tmp_path / "Catalogs" / "Тест" / "Forms" / "Форма" / "Ext" / "Form.xml"
+        path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            "<Form><Properties><FormType>Managed</FormType></Properties></Form>",
+            encoding="utf-8",
+        )
+        (path.parent / "Module.header").write_text("", encoding="utf-8")
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Обработчик()
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL169"}).check_file(str(path))
+
+        assert "BSL169" not in _codes(diags)
+
     def test_compilation_directive_lost_skips_ordinary_ext_module_without_xml(
         self, tmp_path: Path
     ) -> None:

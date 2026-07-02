@@ -208,6 +208,16 @@ def _path_matches_bsl169_form_module(path: str) -> bool:
     )
 
 
+def _path_is_split_form_layout_module(path: str) -> bool:
+    current = Path(path)
+    if current.suffix.lower() != ".bsl":
+        return False
+    normalized = current.as_posix().casefold()
+    if "/forms/" not in normalized or "/ext/form/" not in normalized:
+        return False
+    return (current.parent / "Module.header").is_file()
+
+
 def _path_matches_bsl007_module_types(path: str) -> bool:
     """Mirror BSLLS module metadata for UnusedLocalVariable."""
     low = path.replace("\\", "/").lower()
@@ -1273,7 +1283,10 @@ class ModuleModel:
         is_form_module = _path_matches_bsl169_form_module(self.path)
         is_form_or_command = is_form_module or path_is_command_module_bsl_fn(self.path)
         split_module_fragment = is_split_module_fragment(self.path)
-        skip_bsl169 = is_form_module and _path_is_unmanaged_form_module(self.path)
+        split_form_layout = is_form_module and _path_is_split_form_layout_module(self.path)
+        skip_bsl169 = is_form_module and (
+            _path_is_unmanaged_form_module(self.path) or split_form_layout
+        )
         clean_lines = (
             snapshot.code_lines_without_comments
             if snapshot is not None
