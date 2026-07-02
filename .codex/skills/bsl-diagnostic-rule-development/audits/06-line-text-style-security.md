@@ -1,6 +1,6 @@
 # 06 Line Text Style Security Audit
 
-Status: not started.
+Status: closed.
 
 This audit is the durable routing checklist for
 `06-line-text-style-security`. Rule membership comes from
