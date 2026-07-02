@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from onec_hbk_bsl.indexer.metadata_parser import MetaMember, MetaObject
+from onec_hbk_bsl.indexer.metadata_parser import (
+    MetaMember,
+    MetaObject,
+    build_metadata_configuration_snapshot,
+    crawl_config,
+)
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 # ---------------------------------------------------------------------------
@@ -305,6 +310,104 @@ class TestMetadataMembers:
         assert len(result) == 205
         assert result[0]["name"] == "Реквизит000"
         assert result[-1]["name"] == "Реквизит204"
+
+
+class TestMetadataConfigurationSnapshot:
+    def test_structured_snapshot_projects_to_legacy_metadata_members(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path
+        (root / "Configuration.xml").write_text(
+            """\
+<MetaDataObject>
+  <Configuration>
+    <Properties>
+      <Name>ТестоваяКонфигурация</Name>
+      <UUID>cfg-uuid</UUID>
+    </Properties>
+  </Configuration>
+</MetaDataObject>
+""",
+            encoding="utf-8",
+        )
+        catalogs = root / "Catalogs"
+        catalogs.mkdir()
+        (catalogs / "Контрагенты.xml").write_text(
+            """\
+<MetaDataObject>
+  <Catalog uuid="catalog-uuid">
+    <Properties>
+      <Name>Контрагенты</Name>
+      <Synonym><item><lang>ru</lang><content>Контрагенты</content></item></Synonym>
+    </Properties>
+    <ChildObjects>
+      <Attribute>
+        <Properties>
+          <Name>ИНН</Name>
+          <Type><TypeDescription><Types><Type>String</Type></Types></TypeDescription></Type>
+        </Properties>
+      </Attribute>
+      <TabularSection>
+        <Properties><Name>Контакты</Name></Properties>
+        <ChildObjects>
+          <Attribute>
+            <Properties>
+              <Name>Телефон</Name>
+              <Type><TypeDescription><Types><Type>String</Type></Types></TypeDescription></Type>
+            </Properties>
+          </Attribute>
+        </ChildObjects>
+      </TabularSection>
+    </ChildObjects>
+  </Catalog>
+</MetaDataObject>
+""",
+            encoding="utf-8",
+        )
+        form_dir = catalogs / "Контрагенты" / "Forms" / "ФормаЭлемента" / "Ext"
+        form_dir.mkdir(parents=True)
+        (form_dir / "Form.xml").write_text(
+            """\
+<Form uuid="form-uuid" kind="ObjectForm">
+  <Attributes>
+    <Attribute name="Объект"><Type>CatalogObject.Контрагенты</Type></Attribute>
+  </Attributes>
+  <Commands>
+    <Command name="Записать" handler="Записать"/>
+  </Commands>
+  <Events>
+    <Event name="ПриОткрытии">ПриОткрытии</Event>
+  </Events>
+</Form>
+""",
+            encoding="utf-8",
+        )
+
+        snapshot = build_metadata_configuration_snapshot(root)
+
+        assert snapshot.name == "ТестоваяКонфигурация"
+        assert snapshot.uuid == "cfg-uuid"
+        assert len(snapshot.objects) == 1
+        catalog = snapshot.objects[0]
+        assert catalog.name == "Контрагенты"
+        assert catalog.type == "Catalog"
+        assert catalog.uuid == "catalog-uuid"
+        assert [attr.name for attr in catalog.attributes] == ["ИНН"]
+        assert [table.name for table in catalog.table_parts] == ["Контакты"]
+        assert [attr.name for attr in catalog.table_parts[0].attributes] == ["Телефон"]
+        assert [form.name for form in catalog.forms] == ["ФормаЭлемента"]
+        assert [attr.name for attr in catalog.forms[0].attributes] == ["Объект"]
+        assert [command.name for command in catalog.forms[0].commands] == ["Записать"]
+        assert [event.name for event in catalog.forms[0].events] == ["ПриОткрытии"]
+
+        legacy = crawl_config(root)
+        assert [(member.name, member.kind) for member in legacy[0].members] == [
+            ("ИНН", "attribute"),
+            ("Контакты", "tabular_section"),
+            ("Контакты.Телефон", "ts_attribute"),
+            ("Объект", "form_attribute"),
+            ("Записать", "form_command"),
+        ]
 
 
 class TestSqliteProfile:

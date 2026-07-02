@@ -60,6 +60,132 @@ class MetaObject:
     members: list[MetaMember] = field(default_factory=list)
 
 
+@dataclass
+class MetadataAttribute:
+    """XSD-like metadata attribute/requisite node."""
+
+    name: str
+    id: str = ""
+    type_info: str = ""
+
+
+@dataclass
+class MetadataCommand:
+    """XSD-like metadata command node."""
+
+    name: str
+    id: str = ""
+    handler: str = ""
+
+
+@dataclass
+class MetadataEvent:
+    """XSD-like metadata event binding node."""
+
+    name: str
+    id: str = ""
+    handler: str = ""
+
+
+@dataclass
+class MetadataForm:
+    """XSD-like form node with attributes, commands, and events."""
+
+    name: str
+    kind: str = ""
+    uuid: str = ""
+    attributes: list[MetadataAttribute] = field(default_factory=list)
+    commands: list[MetadataCommand] = field(default_factory=list)
+    events: list[MetadataEvent] = field(default_factory=list)
+
+
+@dataclass
+class MetadataObjectNode:
+    """XSD-like metadata object node with nested table parts."""
+
+    name: str
+    type: str
+    uuid: str = ""
+    synonym_ru: str = ""
+    file_path: str = ""
+    attributes: list[MetadataAttribute] = field(default_factory=list)
+    forms: list[MetadataForm] = field(default_factory=list)
+    table_parts: list[MetadataObjectNode] = field(default_factory=list)
+
+    def to_meta_object(self) -> MetaObject:
+        """Return the legacy flat metadata projection used by SymbolIndex."""
+        obj = MetaObject(
+            name=self.name,
+            kind=self.type,
+            synonym_ru=self.synonym_ru,
+            file_path=self.file_path,
+        )
+        for attr in self.attributes:
+            obj.members.append(
+                MetaMember(
+                    name=attr.name,
+                    kind="attribute",
+                    parent_name=self.name,
+                    parent_kind=self.type,
+                    type_info=attr.type_info,
+                )
+            )
+        for table_part in self.table_parts:
+            obj.members.append(
+                MetaMember(
+                    name=table_part.name,
+                    kind="tabular_section",
+                    parent_name=self.name,
+                    parent_kind=self.type,
+                )
+            )
+            for attr in table_part.attributes:
+                obj.members.append(
+                    MetaMember(
+                        name=f"{table_part.name}.{attr.name}",
+                        kind="ts_attribute",
+                        parent_name=self.name,
+                        parent_kind=self.type,
+                        type_info=attr.type_info,
+                    )
+                )
+        for form in self.forms:
+            for attr in form.attributes:
+                obj.members.append(
+                    MetaMember(
+                        name=attr.name,
+                        kind="form_attribute",
+                        parent_name=self.name,
+                        parent_kind=self.type,
+                        type_info=f"Форма.{form.name}",
+                    )
+                )
+            for command in form.commands:
+                obj.members.append(
+                    MetaMember(
+                        name=command.name,
+                        kind="form_command",
+                        parent_name=self.name,
+                        parent_kind=self.type,
+                        type_info=f"Форма.{form.name}",
+                    )
+                )
+        return obj
+
+
+@dataclass
+class MetadataConfigurationSnapshot:
+    """XSD-like metadata configuration root object."""
+
+    name: str = ""
+    uuid: str = ""
+    objects: list[MetadataObjectNode] = field(default_factory=list)
+
+    def to_meta_objects(self) -> list[MetaObject]:
+        """Return the legacy flat projection for existing index consumers."""
+        return [obj.to_meta_object() for obj in self.objects]
+
+
 # -----------------------------------------------------------------------
 # Namespace helpers
 # -----------------------------------------------------------------------
@@ -96,6 +222,16 @@ def _find_descendant(elem: ET.Element, *path: str) -> ET.Element | None:
         if current is None:
             return None
     return current
+
+
+def _find_first_descendant(elem: ET.Element, local_name: str) -> ET.Element | None:
+    """Find the first descendant by local tag name."""
+    for descendant in elem.iter():
+        if descendant is elem:
+            continue
+        if _strip_ns(descendant.tag) == local_name:
+            return descendant
+    return None
 
 
 # -----------------------------------------------------------------------
@@ -238,6 +374,133 @@ def parse_object_xml(xml_path: str | Path, kind: str, object_name: str) -> MetaO
     return obj
 
 
+def parse_metadata_object_xml(
+    xml_path: str | Path, kind: str, object_name: str
+) -> MetadataObjectNode:
+    """
+    Parse a 1C object XML file into an XSD-like metadata object node.
+
+    This is the structured owner for configuration metadata. The legacy
+    ``parse_object_xml`` API remains as a flat projection for SymbolIndex.
+    """
+    node = MetadataObjectNode(name=object_name, type=kind, file_path=str(xml_path))
+    try:
+        tree = ET.parse(str(xml_path))  # noqa: S314
+        root = tree.getroot()
+    except Exception as exc:
+        logger.debug("Failed to parse %s: %s", xml_path, exc)
+        return node
+
+    obj_elem = _metadata_payload_element(root, kind)
+    node.synonym_ru = _extract_synonym_ru(obj_elem)
+    node.uuid = _extract_uuid(obj_elem)
+
+    child_objects = _find_child(obj_elem, "ChildObjects")
+    if child_objects is None:
+        return node
+
+    for child in child_objects:
+        local = _strip_ns(child.tag)
+
+        if local in (
+            "Attribute",
+            "Dimension",
+            "Resource",
+            "AccountingFlag",
+            "ExtDimensionAccountingFlag",
+            "EnumValue",
+        ):
+            attr = _metadata_attribute_from_xml(child)
+            if attr is not None:
+                node.attributes.append(attr)
+
+        elif local == "TabularSection":
+            table_part = _metadata_table_part_from_xml(child)
+            if table_part is not None:
+                node.table_parts.append(table_part)
+
+    return node
+
+
+def _metadata_payload_element(root: ET.Element, kind: str) -> ET.Element:
+    """Return the actual metadata object element inside a Designer XML wrapper."""
+    allowed_tags = xml_root_tags_for_kind(kind)
+    for child in root:
+        if _strip_ns(child.tag) in allowed_tags:
+            return child
+    return root
+
+
+def _metadata_attribute_from_xml(elem: ET.Element) -> MetadataAttribute | None:
+    name = _extract_attribute_name(elem)
+    if not name:
+        return None
+    return MetadataAttribute(
+        name=name,
+        id=_extract_composite_id(elem),
+        type_info=_extract_type_info(elem),
+    )
+
+
+def _metadata_table_part_from_xml(elem: ET.Element) -> MetadataObjectNode | None:
+    name = _extract_attribute_name(elem)
+    if not name:
+        return None
+    table_part = MetadataObjectNode(
+        name=name,
+        type="TablePart",
+        uuid=_extract_uuid(elem),
+    )
+    child_objects = _find_child(elem, "ChildObjects")
+    if child_objects is not None:
+        for child in child_objects:
+            if _strip_ns(child.tag) == "Attribute":
+                attr = _metadata_attribute_from_xml(child)
+                if attr is not None:
+                    table_part.attributes.append(attr)
+    return table_part
+
+
+def _extract_synonym_ru(elem: ET.Element) -> str:
+    props = _find_child(elem, "Properties")
+    if props is None:
+        return ""
+    synonym_elem = _find_child(props, "Synonym")
+    if synonym_elem is None:
+        return ""
+    for item in synonym_elem:
+        lang_elem = _find_child(item, "lang")
+        content_elem = _find_child(item, "content")
+        if lang_elem is not None and (lang_elem.text or "").strip() == "ru":
+            return (content_elem.text or "").strip() if content_elem is not None else ""
+    return ""
+
+
+def _extract_uuid(elem: ET.Element) -> str:
+    for name in ("uuid", "id"):
+        value = elem.get(name, "").strip()
+        if value:
+            return value
+    props = _find_child(elem, "Properties")
+    if props is not None:
+        for name in ("UUID", "Uuid", "ID", "Id"):
+            text = _find_child_text(props, name)
+            if text:
+                return text
+    return ""
+
+
+def _extract_composite_id(elem: ET.Element) -> str:
+    props = _find_child(elem, "Properties")
+    if props is None:
+        return ""
+    for name in ("ID", "Id", "UUID", "Uuid"):
+        text = _find_child_text(props, name)
+        if text:
+            return text
+    return ""
+
+
 def _extract_attribute_name(elem: ET.Element) -> str:
     """Extract <Properties><Name> text from an Attribute/TabularSection element."""
     props = _find_child(elem, "Properties")
@@ -333,6 +596,93 @@ def parse_form_xml(
                     )
 
     return members
+
+
+def parse_metadata_form_xml(
+    xml_path: str | Path, object_name: str, object_kind: str, form_name: str
+) -> MetadataForm:
+    """
+    Parse a form XML file into an XSD-like form node.
+
+    ``object_name`` and ``object_kind`` are accepted for parity with
+    ``parse_form_xml`` and future resolver use.
+    """
+    del object_name, object_kind
+    form = MetadataForm(name=form_name)
+    try:
+        tree = ET.parse(str(xml_path))  # noqa: S314
+        root = tree.getroot()
+    except Exception as exc:
+        logger.debug("Failed to parse form %s: %s", xml_path, exc)
+        return form
+
+    form.kind = root.get("type", "").strip() or root.get("kind", "").strip()
+    form.uuid = root.get("uuid", "").strip()
+
+    attrs_section = None
+    commands_section = None
+    events_section = None
+    for child in root:
+        local = _strip_ns(child.tag)
+        if local == "Attributes":
+            attrs_section = child
+        elif local == "Commands":
+            commands_section = child
+        elif local == "Events":
+            events_section = child
+
+    if attrs_section is not None:
+        for attr in attrs_section:
+            if _strip_ns(attr.tag) == "Attribute":
+                attr_name = attr.get("name", "").strip()
+                if attr_name:
+                    form.attributes.append(
+                        MetadataAttribute(
+                            name=attr_name,
+                            id=attr.get("id", "").strip(),
+                            type_info=_extract_form_attribute_type_info(attr),
+                        )
+                    )
+
+    if commands_section is not None:
+        for cmd in commands_section:
+            if _strip_ns(cmd.tag) == "Command":
+                cmd_name = cmd.get("name", "").strip()
+                if cmd_name:
+                    form.commands.append(
+                        MetadataCommand(
+                            name=cmd_name,
+                            id=cmd.get("id", "").strip(),
+                            handler=cmd.get("handler", "").strip(),
+                        )
+                    )
+
+    if events_section is not None:
+        for event in events_section:
+            if _strip_ns(event.tag) == "Event":
+                event_name = event.get("name", "").strip()
+                if event_name:
+                    form.events.append(
+                        MetadataEvent(
+                            name=event_name,
+                            id=event.get("id", "").strip(),
+                            handler=(event.text or event.get("handler", "")).strip(),
+                        )
+                    )
+
+    return form
+
+
+def _extract_form_attribute_type_info(attr: ET.Element) -> str:
+    type_elem = _find_child(attr, "Type") or _find_first_descendant(attr, "Type")
+    if type_elem is None:
+        return ""
+    text_parts = [
+        (node.text or "").strip()
+        for node in type_elem.iter()
+        if (node.text or "").strip()
+    ]
+    return " ".join(text_parts)[:120]
 
 
 # -----------------------------------------------------------------------
@@ -434,29 +784,70 @@ def crawl_config(config_root: str | Path) -> list[MetaObject]:
     Returns:
         List of MetaObject instances with populated members.
     """
+    snapshot = build_metadata_configuration_snapshot(config_root)
+    objects = snapshot.to_meta_objects()
+
+    logger.info(
+        "Crawled config at %s: %d objects, %d total members",
+        Path(config_root),
+        len(objects),
+        sum(len(o.members) for o in objects),
+    )
+    return objects
+
+
+def build_metadata_configuration_snapshot(
+    config_root: str | Path,
+) -> MetadataConfigurationSnapshot:
+    """
+    Build an XSD-like metadata configuration root from a Designer XML export.
+
+    The shape mirrors ``PlatformConfigStructure.xsd`` from the platform evidence
+    layer while staying source-compatible with existing Designer XML inputs.
+    """
     config_root = Path(config_root)
-    objects: list[MetaObject] = []
+    snapshot = _parse_configuration_root(config_root / "Configuration.xml")
 
     for xml_file, kind, obj_name in iter_metadata_object_xmls(config_root):
         try:
-            meta_obj = parse_object_xml(xml_file, kind, obj_name)
+            meta_obj = parse_metadata_object_xml(xml_file, kind, obj_name)
         except Exception as exc:
             logger.debug("Error parsing %s: %s", xml_file, exc)
             continue
 
         for form_xml, form_name in iter_metadata_form_xmls(xml_file):
             try:
-                form_members = parse_form_xml(form_xml, obj_name, kind, form_name)
-                meta_obj.members.extend(form_members)
+                form = parse_metadata_form_xml(form_xml, obj_name, kind, form_name)
+                meta_obj.forms.append(form)
             except Exception as exc:
                 logger.debug("Error parsing form %s: %s", form_xml, exc)
 
-        objects.append(meta_obj)
+        snapshot.objects.append(meta_obj)
 
-    logger.info(
-        "Crawled config at %s: %d objects, %d total members",
-        config_root,
-        len(objects),
-        sum(len(o.members) for o in objects),
-    )
-    return objects
+    return snapshot
+
+
+def _parse_configuration_root(path: Path) -> MetadataConfigurationSnapshot:
+    snapshot = MetadataConfigurationSnapshot()
+    if not path.is_file():
+        return snapshot
+    try:
+        tree = ET.parse(str(path))  # noqa: S314
+        root = tree.getroot()
+    except Exception as exc:
+        logger.debug("Failed to parse configuration root %s: %s", path, exc)
+        return snapshot
+
+    payload = root
+    for child in root:
+        if _strip_ns(child.tag) == "Configuration":
+            payload = child
+            break
+
+    snapshot.name = _find_child_text(payload, "Name") or payload.get("name", "").strip()
+    snapshot.uuid = _find_child_text(payload, "UUID") or payload.get("uuid", "").strip()
+    properties = _find_child(payload, "Properties")
+    if properties is not None:
+        snapshot.name = snapshot.name or _find_child_text(properties, "Name")
+        snapshot.uuid = snapshot.uuid or _find_child_text(properties, "UUID")
+    return snapshot
