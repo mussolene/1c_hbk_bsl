@@ -7776,6 +7776,27 @@ class TestBsl052IdenticalExpressions:
         diags = _check(content, tmp_path, select={"BSL052"})
         assert "BSL052" not in _codes(diags)
 
+    def test_default_popular_divisors_are_not_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Если 60 / 60 > 0 Тогда
+                Сообщить(МояПеременная);
+            КонецЕсли;
+            Если 1024 / 1024 > 0 Тогда
+                Сообщить(МояПеременная);
+            КонецЕсли;
+        """
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert "BSL052" not in _codes(diags)
+
+    def test_non_popular_identical_divisor_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Если 5 / 5 > 0 Тогда
+                Сообщить(МояПеременная);
+            КонецЕсли;
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL052"}) if d.code == "BSL052"]
+        assert len(diags) == 1
+
     def test_transitive_logical_duplicate_detected(self, tmp_path: Path) -> None:
         content = """\
             Если А И Б И А Тогда

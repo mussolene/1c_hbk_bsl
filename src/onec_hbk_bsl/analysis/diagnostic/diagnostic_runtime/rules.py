@@ -435,6 +435,8 @@ def _diagnostics_bsl052_identical_expressions(
             duplicate_key = _bsl052_transitive_duplicate_key(node, operator_text)
         if duplicate_key is None:
             continue
+        if operator_text == "/" and duplicate_key in _BSL052_DEFAULT_POPULAR_DIVISORS:
+            continue
         storage.add_range(
             code="BSL052",
             line=int(node.start_point[0]) + 1,
@@ -448,6 +450,9 @@ def _diagnostics_bsl052_identical_expressions(
             severity=Severity.ERROR,
         )
     return storage.diagnostics
+
+
+_BSL052_DEFAULT_POPULAR_DIVISORS = frozenset({"60", "1024"})
 
 
 def _bsl052_binary_parts(node: Any) -> tuple[Any, Any, Any] | None:
