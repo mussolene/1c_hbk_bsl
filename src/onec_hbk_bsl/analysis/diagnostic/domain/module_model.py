@@ -17,6 +17,21 @@ from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
 )
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 
+_BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS = frozenset(
+    name.casefold()
+    for name in (
+        "КраткоеПредставлениеОшибки",
+        "BriefErrorDescription",
+        "ПодробноеПредставлениеОшибки",
+        "DetailErrorDescription",
+        "ПоказатьИнформациюОбОшибке",
+        "ShowErrorInfo",
+        "УстановитьВнешнююКомпоненту",
+        "InstallAddIn",
+        "НайтиНедопустимыеСимволыXML",
+    )
+)
+
 
 def _bsl_string_spans_before_comment(line: str) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
@@ -1509,9 +1524,14 @@ class ModuleModel:
         self,
         *,
         lines: list[str],
+        tree: Any | None = None,
         symbols: list[Any],
         calls: list[Any],
+        symbol_index: Any | None = None,
         enabled_codes: tuple[str, ...],
+        ts_walk_fn=None,
+        ts_node_text_fn=None,
+        utf8_byte_offset_to_lsp_character_fn=None,
         line_comment_re,
         bsl176_deprecated_doc_re,
         mask_double_quoted_strings_preserve_len_fn,
@@ -1669,6 +1689,159 @@ class ModuleModel:
                     )
                 )
 
+        if "BSL176" in enabled:
+            seen_bsl176 = {
+                (diag.line, diag.character, diag.end_line, diag.end_character)
+                for diag in diags
+                if diag.code == "BSL176"
+            }
+
+            for call in calls:
+                callee_name = getattr(call, "callee_name", "")
+                if not callee_name:
+                    continue
+                callee_cf = callee_name.casefold()
+                if callee_cf not in _BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS:
+                    continue
+                line_1 = int(getattr(call, "caller_line", 1))
+                start_char = int(getattr(call, "caller_character", 0))
+                if 0 < line_1 <= len(lines):
+                    found_at = lines[line_1 - 1].casefold().find(
+                        callee_name.casefold(),
+                        start_char,
+                    )
+                    if found_at >= 0:
+                        start_char = found_at
+                key = (line_1, start_char, line_1, start_char + len(callee_name))
+                if key in seen_bsl176:
+                    continue
+                seen_bsl176.add(key)
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_1,
+                        character=start_char,
+                        end_line=line_1,
+                        end_character=start_char + len(callee_name),
+                        severity=Severity.INFORMATION,
+                        code="BSL176",
+                    )
+                )
+
+        if (
+            "BSL176" in enabled
+            and tree is not None
+            and symbol_index is not None
+            and ts_walk_fn is not None
+            and ts_node_text_fn is not None
+            and utf8_byte_offset_to_lsp_character_fn is not None
+        ):
+            diags.extend(
+                self._validate_bsl176_metadata_deleted_prefix_properties(
+                    lines=lines,
+                    tree=tree,
+                    symbol_index=symbol_index,
+                    ts_walk_fn=ts_walk_fn,
+                    ts_node_text_fn=ts_node_text_fn,
+                    utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character_fn,
+                )
+            )
+
+        return diags
+
+    def _validate_bsl176_metadata_deleted_prefix_properties(
+        self,
+        *,
+        lines: list[str],
+        tree: Any,
+        symbol_index: Any,
+        ts_walk_fn,
+        ts_node_text_fn,
+        utf8_byte_offset_to_lsp_character_fn,
+    ) -> list[Diagnostic]:
+        root = getattr(tree, "root_node", None)
+        if root is None or not getattr(symbol_index, "has_metadata", lambda: False)():
+            return []
+
+        from onec_hbk_bsl.indexer.metadata_registry import (  # noqa: PLC0415
+            META_COLLECTION_ALIASES,
+        )
+
+        def object_name_from_receiver(receiver_text: str) -> str | None:
+            tokens = [part.strip() for part in receiver_text.split(".") if part.strip()]
+            if not tokens:
+                return None
+            if (
+                len(tokens) >= 3
+                and tokens[0].casefold() == "метаданные"
+                and META_COLLECTION_ALIASES.get(tokens[1].casefold())
+                and symbol_index.find_meta_object(tokens[2])
+            ):
+                return tokens[2]
+            if (
+                len(tokens) >= 2
+                and META_COLLECTION_ALIASES.get(tokens[0].casefold())
+                and symbol_index.find_meta_object(tokens[1])
+            ):
+                return tokens[1]
+            for token in tokens:
+                if symbol_index.find_meta_object(token):
+                    return token
+            return None
+
+        diags: list[Diagnostic] = []
+        seen: set[tuple[int, int, int]] = set()
+        for node in ts_walk_fn(root):
+            if getattr(node, "type", None) != "property_access":
+                continue
+            receiver = None
+            prop = None
+            for child in getattr(node, "children", []) or []:
+                child_type = getattr(child, "type", None)
+                if child_type == "access":
+                    receiver = child
+                elif child_type == "property":
+                    prop = child
+            if receiver is None or prop is None:
+                continue
+            prop_name = ts_node_text_fn(prop)
+            prop_cf = prop_name.casefold()
+            if not (prop_cf.startswith("удалить") or prop_cf.startswith("delete")):
+                continue
+            object_name = object_name_from_receiver(ts_node_text_fn(receiver))
+            if object_name is None:
+                continue
+            members = symbol_index.get_meta_members(object_name, prop_name)
+            if not any(
+                member.get("name", "").casefold() == prop_cf
+                and member.get("kind", "") != "form_command"
+                for member in members
+            ):
+                continue
+            line_idx = int(prop.start_point[0])
+            if line_idx < 0 or line_idx >= len(lines):
+                continue
+            character = utf8_byte_offset_to_lsp_character_fn(
+                lines[line_idx], int(prop.start_point[1])
+            )
+            end_character = utf8_byte_offset_to_lsp_character_fn(
+                lines[line_idx], int(prop.end_point[1])
+            )
+            key = (line_idx + 1, character, end_character)
+            if key in seen:
+                continue
+            seen.add(key)
+            diags.append(
+                Diagnostic(
+                    file=self.path,
+                    line=line_idx + 1,
+                    character=character,
+                    end_line=line_idx + 1,
+                    end_character=end_character,
+                    severity=Severity.INFORMATION,
+                    code="BSL176",
+                )
+            )
         return diags
 
     def validate_bsl171_248_251_252_259_268_light_pool(

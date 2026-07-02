@@ -529,9 +529,14 @@ def _run_deprecated_api_pool(
     calls = list(getattr(snapshot, "calls", []) or [])
     return context.module_model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
         lines=context.lines,
+        tree=context.tree,
         symbols=symbols,
         calls=calls,
+        symbol_index=getattr(context.diagnostics_engine, "_symbol_index", None),
         enabled_codes=enabled_codes,
+        ts_walk_fn=_diag._ts_walk,
+        ts_node_text_fn=_diag._ts_node_text,
+        utf8_byte_offset_to_lsp_character_fn=_diag.utf8_byte_offset_to_lsp_character,
         line_comment_re=_diag._RE_LINE_COMMENT,
         bsl176_deprecated_doc_re=_diag._RE_BSL176_DEPRECATED_DOC,
         mask_double_quoted_strings_preserve_len_fn=(_diag._mask_double_quoted_strings_preserve_len),

@@ -33,7 +33,7 @@ from onec_hbk_bsl.analysis.diagnostics import (  # noqa: E402
     resolve_rule_token_to_code,
 )
 
-INDEXED_ONEC_RULES = frozenset({"BSL254"})
+INDEXED_ONEC_RULES = frozenset({"BSL176", "BSL254"})
 
 
 @dataclass(frozen=True, order=True)
@@ -299,6 +299,7 @@ def run_onec_indexed_engine(
     files: list[Path],
     scratch_dir: Path,
     select: frozenset[str],
+    source_root: Path,
 ) -> list[dict]:
     from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
     from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
@@ -307,6 +308,8 @@ def run_onec_indexed_engine(
     index = SymbolIndex(db_path=str(index_path))
     indexer = IncrementalIndexer(index=index, quiet=True)
     try:
+        if "BSL176" in select:
+            indexer.index_metadata(str(source_root))
         for path in files:
             indexer.index_file(str(path))
         engine = DiagnosticEngine(select=set(select), symbol_index=index)
@@ -442,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             _write_bslls_config(config_path, select)
             if select & INDEXED_ONEC_RULES:
-                onec_raw = run_onec_indexed_engine(copied, temp_root, select)
+                onec_raw = run_onec_indexed_engine(copied, temp_root, select, source_root)
             else:
                 onec_raw = run_onec_cli(
                     copied,

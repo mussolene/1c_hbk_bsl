@@ -25,6 +25,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
 )
 from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+from onec_hbk_bsl.indexer.metadata_parser import MetaMember, MetaObject
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 _SDBL_AVAILABLE = _document_snapshot._SDBL_LANGUAGE is not None
@@ -608,6 +609,104 @@ class TestDeprecatedApiParityBatch:
         assert len(bsl176) == 1
         assert bsl176[0].line == 6
         assert bsl176[0].message == _rule_msg("BSL176")
+
+    def test_bsl176_metadata_deleted_prefix_property(self, tmp_path: Path) -> None:
+        path = tmp_path / "Module.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Значение = Метаданные.Справочники.Контрагенты.УдалитьСтарыйРеквизит;
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        idx = SymbolIndex(db_path=":memory:")
+        try:
+            idx.upsert_metadata(
+                [
+                    MetaObject(
+                        name="Контрагенты",
+                        kind="Catalog",
+                        members=[
+                            MetaMember(
+                                name="УдалитьСтарыйРеквизит",
+                                kind="attribute",
+                                parent_name="Контрагенты",
+                                parent_kind="Catalog",
+                            )
+                        ],
+                    )
+                ]
+            )
+            diags = DiagnosticEngine(select={"BSL176"}, symbol_index=idx).check_file(str(path))
+        finally:
+            idx.close()
+
+        bsl176 = [d for d in diags if d.code == "BSL176"]
+        assert len(bsl176) == 1
+        assert (bsl176[0].line, bsl176[0].character, bsl176[0].end_character) == (2, 50, 71)
+        assert bsl176[0].message == _rule_msg("BSL176")
+
+    def test_bsl176_deleted_prefix_method_call_is_not_metadata_property(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "Module.bsl"
+        path.write_text(
+            textwrap.dedent(
+                """\
+                Процедура Тест()
+                    Метаданные.Справочники.Контрагенты.УдалитьСтарыйРеквизит();
+                КонецПроцедуры
+                """
+            ),
+            encoding="utf-8",
+        )
+        idx = SymbolIndex(db_path=":memory:")
+        try:
+            idx.upsert_metadata(
+                [
+                    MetaObject(
+                        name="Контрагенты",
+                        kind="Catalog",
+                        members=[
+                            MetaMember(
+                                name="УдалитьСтарыйРеквизит",
+                                kind="attribute",
+                                parent_name="Контрагенты",
+                                parent_kind="Catalog",
+                            )
+                        ],
+                    )
+                ]
+            )
+            diags = DiagnosticEngine(select={"BSL176"}, symbol_index=idx).check_file(str(path))
+        finally:
+            idx.close()
+
+        assert "BSL176" not in _codes(diags)
+
+    def test_bsl176_deprecated_platform_global_method(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Текст = ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL176"}) if d.code == "BSL176"]
+        assert len(diags) == 1
+        assert (diags[0].line, diags[0].character, diags[0].end_character) == (2, 12, 40)
+
+    def test_bsl176_deprecated_platform_qualified_method(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Текст = ОбработкаОшибок.ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL176"})
+        bsl176 = [d for d in diags if d.code == "BSL176"]
+        assert len(bsl176) == 1
+        assert (bsl176[0].line, bsl176[0].character, bsl176[0].end_character) == (2, 28, 56)
 
     def test_bsl177_deprecated_client_app_method(self, tmp_path: Path) -> None:
         content = """\
