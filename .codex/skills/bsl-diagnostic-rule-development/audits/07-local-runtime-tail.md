@@ -14,7 +14,7 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL028 - exact current-corpus parity with existing CST empty-exception implementation
 - [x] BSL032 - exact current-corpus parity with existing function-return implementation
 - [x] BSL033 - exact current-corpus parity after execute-call range refinement
-- [ ] BSL041 - open
+- [x] BSL041 - exact current-corpus parity with existing deprecated-message implementation
 - [ ] BSL042 - open
 - [ ] BSL047 - open
 - [ ] BSL051 - open
