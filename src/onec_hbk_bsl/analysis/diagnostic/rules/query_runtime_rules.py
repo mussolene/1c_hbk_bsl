@@ -8,6 +8,7 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import current_form
 from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
     is_split_module_fragment,
 )
+from onec_hbk_bsl.analysis.document_snapshot import _parse_sdbl_query_text
 from onec_hbk_bsl.analysis.sdbl_cst import QUERY_METADATA_ROOTS
 
 
@@ -101,13 +102,66 @@ def _query_block_is_dynamic_fragment(block: Any) -> bool:
     )
 
 
+class _PartialQueryBlock:
+    def __init__(self, source_block: Any, start_row: int, end_row: int, tree: Any) -> None:
+        self._source_block = source_block
+        self._start_row = start_row
+        self.content_lines = tuple(
+            (getattr(source_block, "content_lines", []) or [])[start_row : end_row + 1]
+        )
+        self.sdbl_tree = tree
+        self.sdbl_has_errors = False
+
+    def original_lsp_position(self, row: int, utf8_col: int) -> tuple[int, int]:
+        return self._source_block.original_lsp_position(self._start_row + row, utf8_col)
+
+
+def _first_select_before_statement_separator(block: Any) -> _PartialQueryBlock | None:
+    content_lines = list(getattr(block, "content_lines", []) or [])
+    if not content_lines:
+        return None
+    if not re.match(r"^\s*(?:ОБЪЕДИНИТЬ|UNION)\b", content_lines[0].head, re.IGNORECASE):
+        return None
+
+    start_row = -1
+    for idx, line in enumerate(content_lines):
+        if re.match(r"^\s*(?:ВЫБРАТЬ|SELECT)\b", line.head, re.IGNORECASE):
+            start_row = idx
+            break
+    if start_row < 0:
+        return None
+
+    end_row = -1
+    for idx in range(start_row, len(content_lines)):
+        if content_lines[idx].head.strip() == ";":
+            end_row = idx - 1
+            break
+    if end_row < start_row:
+        return None
+    has_next_query = any(
+        re.match(r"^\s*(?:ВЫБРАТЬ|SELECT)\b", line.head, re.IGNORECASE)
+        for line in content_lines[end_row + 1 :]
+    )
+    if not has_next_query:
+        return None
+
+    candidate_text = "\n".join(line.head for line in content_lines[start_row : end_row + 1])
+    tree, has_errors = _parse_sdbl_query_text(candidate_text)
+    if tree is None or has_errors:
+        return None
+    return _PartialQueryBlock(block, start_row, end_row, tree)
+
+
 def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[Any]:
     tree = getattr(block, "sdbl_tree", None)
     root = getattr(tree, "root_node", None)
     if root is None or _query_block_has_dynamic_tail(lines, block):
         return []
     if getattr(block, "sdbl_has_errors", False) and _query_block_is_dynamic_fragment(block):
-        return []
+        partial_block = _first_select_before_statement_separator(block)
+        if partial_block is None:
+            return []
+        return _run_bsl149_on_sdbl_tree(path, lines, partial_block)
 
     _diag = _diag_module()
     diags: list[Any] = []

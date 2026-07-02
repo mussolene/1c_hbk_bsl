@@ -8523,6 +8523,29 @@ class TestBsl149AssignAliasFieldsInQueryFixture:
         diags = _check(content, tmp_path, select={"BSL149"})
         assert "BSL149" not in _codes(diags)
 
+    def test_dynamic_union_fragment_with_next_query_reports_first_select(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            ТекстЗапроса = ТекстЗапроса + "
+            |ОБЪЕДИНИТЬ
+            |ВЫБРАТЬ
+            |   Т.Документ,
+            |   Т.ДокументОснование
+            |ИЗ
+            |   Справочник.Тест КАК Т
+            |;
+            |ВЫБРАТЬ
+            |   Т.Ссылка КАК Ссылка
+            |ИЗ
+            |   Справочник.Тест КАК Т";
+        """
+        diags = _check(content, tmp_path, select={"BSL149"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (4, 4, 4, 14),
+            (5, 4, 5, 23),
+        ]
+
     def test_dynamic_condition_fragment_no_warning(self, tmp_path: Path) -> None:
         content = """\
             ТекстЗапроса = ТекстЗапроса + "
