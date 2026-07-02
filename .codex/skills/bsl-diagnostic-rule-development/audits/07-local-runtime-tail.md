@@ -28,8 +28,8 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL169 - exact-zero current-corpus parity after split-form layout scope fix
 - [x] BSL170 - exact-zero current-corpus parity with existing needless compilation directive implementation
 - [x] BSL175 - exact-zero current-corpus parity after docs-listed chart method coverage
-- [ ] BSL176 - open
-- [ ] BSL177 - open
+- [x] BSL176 - exact current-corpus parity after platform/member surface and BSLLS-style deprecated doc-comment semantics
+- [x] BSL177 - exact-zero current-corpus parity after full documented 8.3.10 client-method coverage and method-token range alignment
 - [ ] BSL179 - open
 - [ ] BSL182 - open
 - [ ] BSL195 - open

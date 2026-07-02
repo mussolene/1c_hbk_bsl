@@ -778,6 +778,44 @@ class TestDeprecatedApiParityBatch:
         assert len(bsl177) == 1
         assert bsl177[0].message == _rule_msg("BSL177")
 
+    def test_bsl177_reports_all_deprecated_8310_client_app_methods(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                УстановитьКраткийЗаголовокПриложения("x");
+                ПолучитьКраткийЗаголовокПриложения();
+                УстановитьЗаголовокКлиентскогоПриложения("x");
+                ПолучитьЗаголовокКлиентскогоПриложения();
+                ТекущийВариантОсновногоШрифтаКлиентскогоПриложения();
+                ТекущийВариантИнтерфейсаКлиентскогоПриложения();
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL177"}) if d.code == "BSL177"]
+        assert [(d.line, d.character) for d in diags] == [
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+        ]
+        assert diags[0].end_character == 40
+        assert diags[2].end_character == 44
+
+    def test_bsl177_ignores_qualified_calls_strings_comments_and_prefixes(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Процедура Тест()
+                Объект.ПолучитьКраткийЗаголовокПриложения();
+                Текст = "ПолучитьКраткийЗаголовокПриложения()";
+                // ПолучитьКраткийЗаголовокПриложения();
+                ПолучитьКраткийЗаголовокПриложенияНовый();
+            КонецПроцедуры
+        """
+        assert "BSL177" not in _codes(_check(content, tmp_path, select={"BSL177"}))
+
     def test_bsl178_skips_before_platform_8317_compatibility(self, tmp_path: Path) -> None:
         (tmp_path / "Configuration.xml").write_text(
             "<Configuration><CompatibilityMode>Version8_3_14</CompatibilityMode></Configuration>",

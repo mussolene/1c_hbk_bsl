@@ -2694,7 +2694,7 @@ class DeprecatedMethods8310Rule(DiagnosticRuntimeRule):
                     line=idx,
                     character=match.start(1),
                     end_line=idx,
-                    end_character=_single_line_call_end(clean, match.end() - 1),
+                    end_character=match.end(1),
                     severity=Severity.INFORMATION,
                 )
         return storage.diagnostics
