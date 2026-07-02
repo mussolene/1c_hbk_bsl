@@ -8,7 +8,7 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 ## Closure Checklist
 
 - [x] BSL002 - exact current-corpus parity with existing method-size implementation
-- [ ] BSL003 - open
+- [x] BSL003 - exact current-corpus parity with existing API-region export implementation
 - [ ] BSL004 - open
 - [ ] BSL009 - open
 - [ ] BSL028 - open
