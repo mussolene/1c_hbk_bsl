@@ -35,11 +35,11 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL195 - exact current-corpus parity with get-form method contract and receiver-call coverage
 - [x] BSL196 - exact-zero current-corpus parity with global 8.3.12 method-collision contract
 - [x] BSL198 - exact-zero current-corpus parity with CST duplicated-condition contract and non-skipping synthetic coverage
-- [ ] BSL199 - open
-- [ ] BSL217 - open
-- [ ] BSL221 - open
-- [ ] BSL225 - open
-- [ ] BSL229 - open
+- [x] BSL199 - exact current-corpus parity with CST elseif-without-else contract and synthetic coverage
+- [x] BSL217 - exact current-corpus parity with temp-storage get/delete scope contract and existing fixture coverage
+- [x] BSL221 - exact-zero current-corpus parity with declared-language NStr contract and synthetic clean coverage
+- [x] BSL225 - exact current-corpus parity with structure constructor value-count contract and fixed-structure coverage
+- [x] BSL229 - exact-zero current-corpus parity with ordinary-app support XML contract and recommended-flags negative coverage
 - [ ] BSL234 - open
 - [ ] BSL237 - open
 - [ ] BSL245 - open

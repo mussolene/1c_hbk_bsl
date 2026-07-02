@@ -1402,6 +1402,29 @@ class TestLocalXmlParityBatch:
         diags = DiagnosticEngine(select={"BSL229"}).check_file(str(module_path))
         assert _codes(diags) == ["BSL229", "BSL229"]
 
+    def test_bsl229_clean_recommended_ordinary_application_flags(self, tmp_path: Path) -> None:
+        root = tmp_path / "Config"
+        (root / "Ext").mkdir(parents=True)
+        (root / "Configuration.xml").write_text(
+            textwrap.dedent(
+                """\
+                <Configuration>
+                    <UseManagedFormInOrdinaryApplication>true</UseManagedFormInOrdinaryApplication>
+                    <UseOrdinaryFormInManagedApplication>false</UseOrdinaryFormInManagedApplication>
+                </Configuration>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path = root / "Ext" / "SessionModule.bsl"
+        module_path.write_text(
+            "Процедура ПриНачалеРаботыСистемы()\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL229"}).check_file(str(module_path))
+        assert "BSL229" not in _codes(diags)
+
     def test_bsl275_reports_missing_and_wrong_http_handlers(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
         module_path = root / "HTTPServices" / "Сервис" / "Ext" / "Module.bsl"
@@ -10022,6 +10045,17 @@ class TestBsl225NumberOfValuesInStructureConstructor:
         diags = _check(content, tmp_path, select={"BSL225"})
         assert "BSL225" not in _codes(diags)
 
+    def test_fixed_structure_with_too_many_values_is_reported(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Данные = Новый ФиксированнаяСтруктура("К1,К2,К3,К4", 1, 2, 3, 4);
+            КонецПроцедуры
+        """
+        diags = [d for d in _check(content, tmp_path, select={"BSL225"}) if d.code == "BSL225"]
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 13, 2, 68)
+        ]
+
 
 # ---------------------------------------------------------------------------
 # BSL245 — ServerSideExportFormMethod
@@ -10814,6 +10848,13 @@ class TestAdditionalParityBatch:
         diags = _check("Сообщение = НСтр(\"en = 'Done'\");\n", tmp_path, select={"BSL221"})
         assert "BSL221" in _codes(diags)
 
+    def test_bsl221_all_declared_languages_is_clean(self, tmp_path: Path) -> None:
+        path = tmp_path / "test.bsl"
+        path.write_text('Сообщение = НСтр("ru = \'Готово\'; en = \'Done\'");\n', encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL221"}, declared_languages="ru,en").check_file(str(path))
+        assert "BSL221" not in _codes(diags)
+
     def test_bsl222_nstr_inside_template_detected(self, tmp_path: Path) -> None:
         diags = _check(
             'Сообщение = СтрШаблон("%1", НСтр("en = \'Done\'"));\n',
@@ -11180,6 +11221,47 @@ class TestBsl263UseLessForEach:
 
 
 class TestBsl199IfElseIfEndsWithElse:
+    def test_reports_elseif_chain_without_else_from_cst(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Если А Тогда
+                    Б = 1;
+                ИначеЕсли В Тогда
+                    Б = 2;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        path = tmp_path / "test.bsl"
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+
+        diags = [
+            d
+            for d in DiagnosticEngine(select={"BSL199"}).check_file(str(path))
+            if d.code == "BSL199"
+        ]
+
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (6, 4, 6, 13)
+        ]
+
+    def test_elseif_chain_with_else_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Если А Тогда
+                    Б = 1;
+                ИначеЕсли В Тогда
+                    Б = 2;
+                Иначе
+                    Б = 3;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+        path = tmp_path / "test.bsl"
+        path.write_text(textwrap.dedent(content), encoding="utf-8")
+
+        diags = DiagnosticEngine(select={"BSL199"}).check_file(str(path))
+        assert "BSL199" not in _codes(diags)
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
