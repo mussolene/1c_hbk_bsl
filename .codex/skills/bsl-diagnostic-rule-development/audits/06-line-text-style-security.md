@@ -14,7 +14,7 @@ This audit is the durable routing checklist for
 - [x] BSL025 - exact-zero current-corpus parity with existing CST empty-statement implementation
 - [x] BSL055 - exact current-corpus parity with existing consecutive empty lines implementation
 - [x] BSL149 - exact current-corpus parity after dynamic union select-candidate recovery
-- [ ] BSL150 - open
+- [x] BSL150 - exact-zero current-corpus parity with default empty badWords pattern
 - [ ] BSL184 - open
 - [ ] BSL188 - open
 - [ ] BSL203 - open
