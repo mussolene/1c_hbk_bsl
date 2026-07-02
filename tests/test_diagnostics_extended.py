@@ -6568,7 +6568,24 @@ class TestBsl033QueryInLoop:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path)
-        assert "BSL033" in _codes(diags)
+        bsl033 = [diag for diag in diags if diag.code == "BSL033"]
+        assert [(diag.line, diag.character, diag.end_character) for diag in bsl033] == [
+            (4, 20, 38),
+        ]
+
+    def test_query_execute_chain_range_matches_full_call_chain(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Коллекция)
+                Запрос = Новый Запрос;
+                Для Каждого Элемент Из Коллекция Цикл
+                    Результат = Запрос.Выполнить().Выгрузить();
+                КонецЦикла;
+            КонецПроцедуры
+        """
+        diags = [diag for diag in _check(content, tmp_path, select={"BSL033"}) if diag.code == "BSL033"]
+        assert [(diag.line, diag.character, diag.end_character) for diag in diags] == [
+            (4, 20, 50),
+        ]
 
     def test_query_in_while_detected(self, tmp_path: Path) -> None:
         content = """\

@@ -464,7 +464,11 @@ class ProcedureModel:
             r"ПостроительОтчета|ReportBuilder)\b",
             re.IGNORECASE,
         )
-        execute_re = re.compile(r"(?P<name>[\w.]+)\.(?:Выполнить|Execute)\s*\(", re.IGNORECASE)
+        execute_re = re.compile(
+            r"(?P<name>[\w.]+)\.(?:Выполнить|Execute)\s*\([^)]*\)"
+            r"(?:\.\w+\s*\([^)]*\))*",
+            re.IGNORECASE,
+        )
         query_types = {
             "запрос",
             "query",
