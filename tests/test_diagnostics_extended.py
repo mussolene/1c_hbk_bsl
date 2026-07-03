@@ -778,9 +778,7 @@ class TestDeprecatedApiParityBatch:
         assert len(bsl177) == 1
         assert bsl177[0].message == _rule_msg("BSL177")
 
-    def test_bsl177_reports_all_deprecated_8310_client_app_methods(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bsl177_reports_all_deprecated_8310_client_app_methods(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 УстановитьКраткийЗаголовокПриложения("x");
@@ -903,9 +901,7 @@ class TestDeprecatedApiParityBatch:
         """
         assert "BSL179" not in _codes(_check(content, tmp_path, select={"BSL179"}))
 
-    def test_bsl182_excessive_autotest_check_official_patterns(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bsl182_excessive_autotest_check_official_patterns(self, tmp_path: Path) -> None:
         content = """\
             Процедура ПриСозданииНаСервере()
                 Если Параметры.Свойство("АвтоТест") Тогда
@@ -4011,7 +4007,9 @@ class TestBsl251TernaryOperatorUsage:
     def test_simple_ternary_is_reported(self, tmp_path: Path) -> None:
         content = "Результат = ?(Условие, 1, 0);\n"
         diags = [d for d in _check(content, tmp_path, select={"BSL251"}) if d.code == "BSL251"]
-        assert [(d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags] == [
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity.name) for d in diags
+        ] == [
             (1, 12, 1, 28, "INFORMATION"),
         ]
 
@@ -7022,7 +7020,9 @@ class TestBsl033QueryInLoop:
                 КонецЦикла;
             КонецПроцедуры
         """
-        diags = [diag for diag in _check(content, tmp_path, select={"BSL033"}) if diag.code == "BSL033"]
+        diags = [
+            diag for diag in _check(content, tmp_path, select={"BSL033"}) if diag.code == "BSL033"
+        ]
         assert [(diag.line, diag.character, diag.end_character) for diag in diags] == [
             (4, 20, 50),
         ]
@@ -10263,9 +10263,7 @@ class TestBsl245ServerSideExportFormMethod:
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert _codes(diags) == ["BSL245"]
 
-    def test_server_export_in_form_module_without_metadata_is_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_server_export_in_form_module_without_metadata_is_clean(self, tmp_path: Path) -> None:
         content = """\
             &НаСервере
             Процедура ПолучитьДанные() Экспорт
@@ -10309,9 +10307,7 @@ class TestBsl245ServerSideExportFormMethod:
         diags = DiagnosticEngine(select={"BSL245"}).check_file(str(path))
         assert "BSL245" not in _codes(diags)
 
-    def test_server_export_in_split_form_layout_module_is_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_server_export_in_split_form_layout_module_is_clean(self, tmp_path: Path) -> None:
         content = """\
             &НаСервере
             Процедура ПолучитьДанные() Экспорт
@@ -11026,9 +11022,11 @@ class TestAdditionalParityBatch:
 
     def test_bsl221_all_declared_languages_is_clean(self, tmp_path: Path) -> None:
         path = tmp_path / "test.bsl"
-        path.write_text('Сообщение = НСтр("ru = \'Готово\'; en = \'Done\'");\n', encoding="utf-8")
+        path.write_text("Сообщение = НСтр(\"ru = 'Готово'; en = 'Done'\");\n", encoding="utf-8")
 
-        diags = DiagnosticEngine(select={"BSL221"}, declared_languages="ru,en").check_file(str(path))
+        diags = DiagnosticEngine(select={"BSL221"}, declared_languages="ru,en").check_file(
+            str(path)
+        )
         assert "BSL221" not in _codes(diags)
 
     def test_bsl222_nstr_inside_template_detected(self, tmp_path: Path) -> None:
@@ -11208,7 +11206,7 @@ class TestBsl257UnaryPlusInConcatenation:
         ]
 
     def test_unary_plus_number_after_concat_is_clean(self, tmp_path: Path) -> None:
-        content = 'Значение = 1 + +1;\n'
+        content = "Значение = 1 + +1;\n"
 
         assert "BSL257" not in _codes(_check(content, tmp_path, select={"BSL257"}))
 

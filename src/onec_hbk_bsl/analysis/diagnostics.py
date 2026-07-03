@@ -2806,6 +2806,7 @@ _RE_BSL175_GLOBAL_METHOD = re.compile(
 )
 _RE_BSL175_ENUM_NAME = re.compile(r"\b(?P<name>ОриентацияМетокДиаграммы)\b", re.IGNORECASE)
 
+
 def _bsl176_doc_comment_is_deprecated(doc_comment: str) -> bool:
     for raw_line in doc_comment.splitlines():
         line = raw_line.strip()
@@ -2814,6 +2815,7 @@ def _bsl176_doc_comment_is_deprecated(doc_comment: str) -> bool:
         line_cf = line.casefold()
         return line_cf.startswith("устарела.") or line_cf.startswith("deprecated.")
     return False
+
 
 _RE_COMMON_MODULE_PATH = re.compile(r"(?:^|[/\\\\])CommonModules(?:[/\\\\])", re.IGNORECASE)
 _RE_BSL171_ADJACENT_LITERALS = re.compile(r'"[^"]*"\s+"[^"]*"', re.UNICODE)

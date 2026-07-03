@@ -313,9 +313,7 @@ class TestMetadataMembers:
 
 
 class TestMetadataConfigurationSnapshot:
-    def test_structured_snapshot_projects_to_legacy_metadata_members(
-        self, tmp_path: Path
-    ) -> None:
+    def test_structured_snapshot_projects_to_legacy_metadata_members(self, tmp_path: Path) -> None:
         root = tmp_path
         (root / "Configuration.xml").write_text(
             """\

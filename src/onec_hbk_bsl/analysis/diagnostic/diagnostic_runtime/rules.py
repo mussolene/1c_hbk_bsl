@@ -76,7 +76,9 @@ def _path_is_ext_split_fragment(path: str) -> bool:
     if current.parent.name.casefold() != "ext":
         return False
     try:
-        sibling_bsl_count = sum(1 for item in current.parent.iterdir() if item.suffix.lower() == ".bsl")
+        sibling_bsl_count = sum(
+            1 for item in current.parent.iterdir() if item.suffix.lower() == ".bsl"
+        )
     except OSError:
         return False
     return sibling_bsl_count > 1
@@ -4588,7 +4590,11 @@ class UnionAllRule(DiagnosticRuntimeRule):
         for block in context.query_text_blocks:
             content_lines = list(getattr(block, "content_lines", []) or [])
             first_head = next(
-                (str(getattr(line, "head", "")).strip() for line in content_lines if str(getattr(line, "head", "")).strip()),
+                (
+                    str(getattr(line, "head", "")).strip()
+                    for line in content_lines
+                    if str(getattr(line, "head", "")).strip()
+                ),
                 "",
             )
             if _BSL258_UNION_RE.match(first_head):

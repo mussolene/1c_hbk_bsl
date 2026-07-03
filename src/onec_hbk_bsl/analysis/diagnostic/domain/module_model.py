@@ -1706,9 +1706,13 @@ class ModuleModel:
                 line_1 = int(getattr(call, "caller_line", 1))
                 start_char = int(getattr(call, "caller_character", 0))
                 if 0 < line_1 <= len(lines):
-                    found_at = lines[line_1 - 1].casefold().find(
-                        callee_name.casefold(),
-                        start_char,
+                    found_at = (
+                        lines[line_1 - 1]
+                        .casefold()
+                        .find(
+                            callee_name.casefold(),
+                            start_char,
+                        )
                     )
                     if found_at >= 0:
                         start_char = found_at
