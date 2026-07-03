@@ -176,6 +176,32 @@ class TestPublishDiagnostics:
         _publish_diagnostics(ls, "file:///nonexistent.bsl", "/nonexistent.bsl")
         ls.text_document_publish_diagnostics.assert_called_once()
 
+    def test_publish_diagnostics_ignores_non_bsl_open_document(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Opened split-layout helper files must clear diagnostics, not run BSL rules."""
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        header = tmp_path / "Module.header"
+        header.write_text("#Если Сервер Тогда\n", encoding="utf-8")
+
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _path_to_uri, _publish_diagnostics
+
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        ls.diagnostics_engine.check_content = MagicMock()
+        ls.diagnostics_engine.check_file = MagicMock()
+        ls.diagnostics_engine.check_snapshot = MagicMock()
+
+        _publish_diagnostics(ls, _path_to_uri(str(header)), str(header))
+
+        params = ls.text_document_publish_diagnostics.call_args[0][0]
+        assert params.diagnostics == []
+        ls.diagnostics_engine.check_content.assert_not_called()
+        ls.diagnostics_engine.check_file.assert_not_called()
+        ls.diagnostics_engine.check_snapshot.assert_not_called()
+
     def test_publish_diagnostics_engine_failure_returns_failure_diagnostic(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -273,6 +299,35 @@ class TestPublishDiagnostics:
         report = on_document_diagnostic(ls, params)
         assert report.kind == "full"
         assert isinstance(report.items, (list, tuple))
+
+    def test_document_diagnostic_pull_ignores_non_bsl_open_document(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        header = tmp_path / "Module.header"
+        content = "#Если Сервер Тогда\n"
+        header.write_text(content, encoding="utf-8")
+
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DocumentDiagnosticParams, TextDocumentIdentifier
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _path_to_uri, on_document_diagnostic
+
+        ls = BslLanguageServer()
+        uri = _path_to_uri(str(header))
+        ls._docs[uri] = content
+        ls.diagnostics_engine.check_content = MagicMock()
+        ls.diagnostics_engine.check_file = MagicMock()
+        ls.diagnostics_engine.check_snapshot = MagicMock()
+
+        params = DocumentDiagnosticParams(text_document=TextDocumentIdentifier(uri=uri))
+        report = on_document_diagnostic(ls, params)
+
+        assert report.items == []
+        ls.diagnostics_engine.check_content.assert_not_called()
+        ls.diagnostics_engine.check_file.assert_not_called()
+        ls.diagnostics_engine.check_snapshot.assert_not_called()
 
     def test_document_diagnostic_data_contains_russian_rule_description(
         self, tmp_path: Path, monkeypatch

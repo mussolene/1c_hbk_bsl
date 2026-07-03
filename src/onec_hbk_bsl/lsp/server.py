@@ -538,6 +538,11 @@ _DIAG_DEBOUNCE_MAX = 3.0
 _SYNC_LOCAL_SCOPE_PARSE_MAX_BYTES = 1_000_000
 _ASYNC_PULL_DIAGNOSTICS_MIN_BYTES = 1_000_000
 _BACKGROUND_LOCAL_SCOPE_PARSE_MAX_BYTES = 4_000_000
+_LSP_DIAGNOSTIC_SUFFIXES = frozenset({".bsl", ".os"})
+
+
+def _is_lsp_diagnostic_path(path: str) -> bool:
+    return Path(path).suffix.lower() in _LSP_DIAGNOSTIC_SUFFIXES
 
 
 def _allow_sync_local_scope_parse(content: str) -> bool:
@@ -602,6 +607,10 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
         logger.debug("LSP: save %s handled by pull diagnostics; skip direct index_file", path)
         return
 
+    if not _is_lsp_diagnostic_path(path):
+        ls.text_document_publish_diagnostics(PublishDiagnosticsParams(uri=uri, diagnostics=[]))
+        return
+
     # Re-index and run diagnostics in background
     def _run() -> None:
         result = ls.indexer.index_file(path)
@@ -625,6 +634,9 @@ def on_did_close(ls: BslLanguageServer, params: DidCloseTextDocumentParams) -> N
 
 def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
     """Run the diagnostic engine and return LSP diagnostics (shared by push and pull)."""
+    if not _is_lsp_diagnostic_path(path):
+        return []
+
     content_for_hash = ls._doc_get(uri)
     if content_for_hash is None:
         try:
@@ -864,6 +876,8 @@ def _maybe_start_async_pull_diagnostics(
     responsive on first open while preserving full diagnostics once the worker
     completes.
     """
+    if not _is_lsp_diagnostic_path(path):
+        return []
     if not (ls.client_pull_diagnostics and ls.client_diagnostic_refresh):
         return None
     content = _content_for_lsp_diagnostics(ls, uri, path)
