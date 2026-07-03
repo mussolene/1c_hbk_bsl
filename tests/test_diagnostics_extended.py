@@ -1362,6 +1362,48 @@ class TestSecurityApiParityBatch:
         diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
         assert "BSL272" not in _codes(diags)
 
+    def test_bsl272_skips_split_module_fragment(self, tmp_path: Path) -> None:
+        ext_dir = tmp_path / "DataProcessors" / "Тест" / "Ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "ObjectModule.bsl").write_text("// full module\n", encoding="utf-8")
+        path = ext_dir / "УдалитьФайл.bsl"
+        path.write_text(
+            'Процедура П()\n    УдалитьФайлы("tmp.xml");\nКонецПроцедуры\n',
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
+
+        assert "BSL272" not in _codes(diags)
+
+    def test_bsl272_skips_ext_fragment_without_canonical_module(self, tmp_path: Path) -> None:
+        ext_dir = tmp_path / "DataProcessors" / "Тест" / "Ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "ДругойФрагмент.bsl").write_text("// sibling\n", encoding="utf-8")
+        path = ext_dir / "УдалитьФайл.bsl"
+        path.write_text(
+            'Процедура П()\n    УдалитьФайлы("tmp.xml");\nКонецПроцедуры\n',
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
+
+        assert "BSL272" not in _codes(diags)
+
+    def test_bsl272_skips_split_layout_module(self, tmp_path: Path) -> None:
+        form_dir = tmp_path / "Forms" / "Форма" / "Ext" / "Form"
+        form_dir.mkdir(parents=True)
+        (form_dir / "Module.header").write_text("", encoding="utf-8")
+        path = form_dir / "Module.bsl"
+        path.write_text(
+            'Процедура П()\n    УдалитьФайлы("tmp.xml");\nКонецПроцедуры\n',
+            encoding="utf-8",
+        )
+
+        diags = DiagnosticEngine(select={"BSL272"}).check_file(str(path))
+
+        assert "BSL272" not in _codes(diags)
+
     def test_bsl185_external_app_starting(self, tmp_path: Path) -> None:
         content = """\
             Процедура Метод()
@@ -11567,6 +11609,49 @@ class TestBsl225NumberOfValuesInStructureConstructorBslls:
 
 
 class TestBsl262UsageWriteLogEvent:
+    def test_error_info_assigned_before_detailed_presentation_is_clean(
+        self, tmp_path: Path
+    ) -> None:
+        content = """\
+            Попытка
+            Исключение
+                Отказ = Истина;
+                Ошибка = ИнформацияОбОшибке();
+                ЗаписьЖурналаРегистрации("Событие", УровеньЖурналаРегистрации.Ошибка, , , ПодробноеПредставлениеОшибки(Ошибка));
+            КонецПопытки;
+        """
+
+        diags = _check(content, tmp_path, select={"BSL262"})
+
+        assert "BSL262" not in _codes(diags)
+
+    def test_variable_comment_expression_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Попытка
+            Исключение
+                Ошибка = ИнформацияОбОшибке();
+                Комментарий = СтрШаблон("Ошибка: %1", КраткоеПредставлениеОшибки(Ошибка));
+                ЗаписьЖурналаРегистрации("Событие", УровеньЖурналаРегистрации.Ошибка, , , Комментарий);
+            КонецПопытки;
+        """
+
+        diags = _check(content, tmp_path, select={"BSL262"})
+
+        assert "BSL262" not in _codes(diags)
+
+    def test_direct_brief_error_description_reports(self, tmp_path: Path) -> None:
+        content = """\
+            Попытка
+            Исключение
+                Ошибка = ИнформацияОбОшибке();
+                ЗаписьЖурналаРегистрации("Событие", УровеньЖурналаРегистрации.Ошибка, , , КраткоеПредставлениеОшибки(Ошибка));
+            КонецПопытки;
+        """
+
+        diags = _check(content, tmp_path, select={"BSL262"})
+
+        assert "BSL262" in _codes(diags)
+
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")

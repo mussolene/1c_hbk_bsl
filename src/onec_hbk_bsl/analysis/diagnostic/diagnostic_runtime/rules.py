@@ -56,6 +56,32 @@ def _path_is_split_module_fragment(path: str) -> bool:
     return is_split_module_fragment(path)
 
 
+def _path_is_split_layout_module(path: str) -> bool:
+    current = Path(path)
+    if current.suffix.lower() != ".bsl":
+        return False
+    try:
+        sibling_names = {item.name.casefold() for item in current.parent.iterdir()}
+    except OSError:
+        return False
+    return current.name.casefold() == "module.bsl" and "module.header" in sibling_names
+
+
+def _path_is_ext_split_fragment(path: str) -> bool:
+    current = Path(path)
+    if current.suffix.lower() != ".bsl":
+        return False
+    if current.name.casefold() in {"module.bsl", "objectmodule.bsl"}:
+        return False
+    if current.parent.name.casefold() != "ext":
+        return False
+    try:
+        sibling_bsl_count = sum(1 for item in current.parent.iterdir() if item.suffix.lower() == ".bsl")
+    except OSError:
+        return False
+    return sibling_bsl_count > 1
+
+
 def _path_is_object_module_bsl(path: str) -> bool:
     return path.replace("\\", "/").lower().endswith("/ext/objectmodule.bsl")
 
@@ -3338,6 +3364,12 @@ class UsingSynchronousCallsRule(DiagnosticRuntimeRule):
         return skipped
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        if (
+            _path_is_split_module_fragment(context.path)
+            or _path_is_split_layout_module(context.path)
+            or _path_is_ext_split_fragment(context.path)
+        ):
+            return []
         if _path_is_bsl272_server_only_module(context.path):
             return []
         storage = DiagnosticStorage(context.path)
@@ -4746,6 +4778,8 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
                 assignment_expr = cls._first_assignment_expr(block_roots, identifier)
                 if assignment_expr is None:
                     return True
+                if not cls._expression_is_const(assignment_expr):
+                    return True
                 return cls._is_valid_comment_expression(
                     block_roots,
                     assignment_expr,
@@ -4798,30 +4832,28 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
 
     @staticmethod
     def _first_assignment_expr(block_roots: list[Any], var_name: str) -> Any | None:
-        assignment = next(
-            (root for root in block_roots if getattr(root, "type", None) == "assignment_statement"),
-            None,
-        )
-        if assignment is None:
-            return None
-        children = _ts_children(assignment)
-        eq_idx = next(
-            (idx for idx, child in enumerate(children) if getattr(child, "type", None) == "="),
-            None,
-        )
-        if eq_idx is None:
-            return None
-        lvalue = "".join(_ts_node_text(child) for child in children[:eq_idx]).strip()
-        if lvalue.casefold() != var_name.casefold():
-            return None
-        return next(
-            (
-                child
-                for child in children[eq_idx + 1 :]
-                if getattr(child, "type", None) == "expression"
-            ),
-            None,
-        )
+        for assignment in block_roots:
+            if getattr(assignment, "type", None) != "assignment_statement":
+                continue
+            children = _ts_children(assignment)
+            eq_idx = next(
+                (idx for idx, child in enumerate(children) if getattr(child, "type", None) == "="),
+                None,
+            )
+            if eq_idx is None:
+                continue
+            lvalue = "".join(_ts_node_text(child) for child in children[:eq_idx]).strip()
+            if lvalue.casefold() != var_name.casefold():
+                continue
+            return next(
+                (
+                    child
+                    for child in children[eq_idx + 1 :]
+                    if getattr(child, "type", None) == "expression"
+                ),
+                None,
+            )
+        return None
 
     @classmethod
     def _block_has_raise(cls, block_roots: list[Any]) -> bool:

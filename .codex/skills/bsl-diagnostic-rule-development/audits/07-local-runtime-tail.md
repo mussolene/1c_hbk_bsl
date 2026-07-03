@@ -1,6 +1,6 @@
 # 07 Local Runtime Tail Audit
 
-Status: in progress.
+Status: complete.
 
 This audit is the durable routing checklist for `07-local-runtime-tail`. Rule
 membership comes from `scripts/diagnostic_rule_matrix.py`.
@@ -50,15 +50,15 @@ membership comes from `scripts/diagnostic_rule_matrix.py`.
 - [x] BSL257 - exact current-corpus parity with existing CST unary-plus concatenation implementation
 - [x] BSL258 - exact current-corpus parity after extracted query-block scope and UTF-8 range mapping
 - [x] BSL259 - exact current-corpus parity with existing CST unknown preprocessor symbol implementation
-- [ ] BSL260 - open
-- [ ] BSL262 - open
-- [ ] BSL268 - open
-- [ ] BSL272 - open
-- [ ] BSL273 - open
-- [ ] BSL275 - open
-- [ ] BSL276 - open
-- [ ] BSL277 - open
-- [ ] BSL278 - open
+- [x] BSL260 - exact current-corpus parity with existing unsafe FindByCode metadata contract
+- [x] BSL262 - exact current-corpus parity after BSLLS-compatible variable comment expression handling
+- [x] BSL268 - exact current-corpus parity with existing find-by-string CST implementation
+- [x] BSL272 - exact current-corpus parity after split fragment/layout scope gating
+- [x] BSL273 - exact current-corpus parity with existing virtual table parameter query-block implementation
+- [x] BSL275 - exact current-corpus parity with existing HTTP service handler XML contract
+- [x] BSL276 - exact current-corpus parity with existing ProceedWithCall annotation contract
+- [x] BSL277 - exact current-corpus parity with existing rollback placement contract
+- [x] BSL278 - exact current-corpus parity with existing web service handler XML contract
 
 ## Done Criteria
 
