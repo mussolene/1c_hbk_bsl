@@ -74,10 +74,12 @@ def build_method_doc_comment(
     proc: ProcInfo,
     *,
     line_comment_nodes: list[Any] | None = None,
+    comment_lines_by_idx: dict[int, str] | None = None,
     skip_blank_lines: bool = False,
     legacy_doc_path: bool = False,
 ) -> MethodDocComment | None:
-    comment_lines_by_idx = _line_comment_text_by_idx(line_comment_nodes, lines)
+    if comment_lines_by_idx is None:
+        comment_lines_by_idx = build_line_comment_text_index(line_comment_nodes, lines)
 
     def is_comment_line(idx: int) -> bool:
         if comment_lines_by_idx is not None:
@@ -152,7 +154,7 @@ def parse_method_doc_comment(
     )
 
 
-def _line_comment_text_by_idx(
+def build_line_comment_text_index(
     line_comment_nodes: list[Any] | None,
     lines: list[str],
 ) -> dict[int, str] | None:

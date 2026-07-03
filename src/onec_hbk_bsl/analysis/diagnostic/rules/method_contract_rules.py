@@ -4,6 +4,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from onec_hbk_bsl.analysis.diagnostic.domain.method_doc_comment import (
+    build_line_comment_text_index,
     build_method_doc_comment,
 )
 
@@ -282,12 +283,14 @@ def run_bsl215_missing_parameter_description(
     _diag = _diag_module()
     diags: list[Any] = []
     legacy_doc_path = bool(re.search(r"(?:ManagerModule|ObjectModule)\.bsl$", path))
+    comment_lines_by_idx = build_line_comment_text_index(line_comment_nodes, lines)
 
     for proc in procs:
         doc_comment = build_method_doc_comment(
             lines,
             proc,
             line_comment_nodes=line_comment_nodes,
+            comment_lines_by_idx=comment_lines_by_idx,
             legacy_doc_path=legacy_doc_path,
         )
         if doc_comment is None or not doc_comment.has_method_documentation:
