@@ -221,17 +221,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 // ---------------------------------------------------------------------------
 
 const VSCODE_BSL_DOCUMENT_SELECTOR: vscode.DocumentFilter[] = [
-  { scheme: "file", language: "bsl" },
-  { scheme: "file", language: "1c-bsl" },
-  { scheme: "file", language: "1c" },
   { scheme: "file", pattern: "**/*.bsl" },
   { scheme: "file", pattern: "**/*.os" },
 ];
 
 const LSP_BSL_DOCUMENT_SELECTOR: LanguageClientOptions["documentSelector"] = [
-  { scheme: "file", language: "bsl" },
-  { scheme: "file", language: "1c-bsl" },
-  { scheme: "file", language: "1c" },
   { scheme: "file", pattern: "**/*.bsl" },
   { scheme: "file", pattern: "**/*.os" },
 ];
