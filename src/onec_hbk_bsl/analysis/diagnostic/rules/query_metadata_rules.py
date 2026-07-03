@@ -343,11 +343,17 @@ def _bsl253_timeout_diagnostics_from_cst(
     procs: list[Any],
     tree: Any | None,
     snapshot: Any | None,
+    nodes_by_type: dict[str, list[Any]] | None = None,
 ) -> list[Any] | None:
     _diag = _diag_module()
     if tree is None or getattr(tree, "root_node", None) is None:
         return None
-    if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+    if nodes_by_type is not None:
+        nodes = {
+            "new_expression": nodes_by_type.get("new_expression", []),
+            "assignment_statement": nodes_by_type.get("assignment_statement", []),
+        }
+    elif snapshot is not None and getattr(snapshot, "tree", None) is tree:
         nodes = snapshot.ts_nodes_for_types(
             {"new_expression", "assignment_statement"},
             walker=_diag._ts_walk,
@@ -471,11 +477,14 @@ def _bsl261_diagnostics_from_cst(
     lines: list[str],
     tree: Any | None,
     snapshot: Any | None,
+    nodes_by_type: dict[str, list[Any]] | None = None,
 ) -> list[Any] | None:
     _diag = _diag_module()
     if tree is None or getattr(tree, "root_node", None) is None:
         return None
-    if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+    if nodes_by_type is not None:
+        nodes = {"method_call": nodes_by_type.get("method_call", [])}
+    elif snapshot is not None and getattr(snapshot, "tree", None) is tree:
         nodes = snapshot.ts_nodes_for_types({"method_call"}, walker=_diag._ts_walk)
     else:
         nodes = {"method_call": []}
@@ -1306,41 +1315,58 @@ def run_bsl244_253_261_runtime_pool(
     enabled_set = set(enabled)
     diags: list[Any] = []
     clean = cleaned_lines or lines
-    server_proc_names = {
-        proc.name.casefold()
-        for proc in procs
-        if _bsl244_proc_has_context_server_directive(lines, proc)
-    }
+    cst_nodes_by_type: dict[str, list[Any]] | None = None
+    if tree is not None and snapshot is not None and getattr(snapshot, "tree", None) is tree:
+        wanted_cst_nodes: set[str] = set()
+        if "BSL253" in enabled_set:
+            wanted_cst_nodes.update({"new_expression", "assignment_statement"})
+        if "BSL261" in enabled_set:
+            wanted_cst_nodes.add("method_call")
+        if wanted_cst_nodes:
+            cst_nodes_by_type = snapshot.ts_nodes_for_types(wanted_cst_nodes, walker=_diag._ts_walk)
 
     if "BSL244" in enabled_set and _diag.path_is_likely_form_module_bsl(path):
-        for idx, line in enumerate(clean):
-            proc = _diag._proc_containing_line(procs, idx)
-            if proc is None:
-                continue
-            line_cf = line.lstrip().casefold()
-            if line_cf.startswith(("процедура ", "функция ", "procedure ", "function ")):
-                continue
-            if not _bsl244_forbidden_form_event_name(proc.name):
-                continue
-            for match in re.finditer(r"\b(?P<call>\w+)\s*\(", line):
-                if match.start("call") > 0 and line[match.start("call") - 1] == ".":
+        server_proc_names = {
+            proc.name.casefold()
+            for proc in procs
+            if _bsl244_proc_has_context_server_directive(lines, proc)
+        }
+        if server_proc_names:
+            for proc in procs:
+                if not _bsl244_forbidden_form_event_name(proc.name):
                     continue
-                if match.group("call").casefold() in server_proc_names:
-                    open_paren_idx = match.end() - 1
-                    diags.append(
-                        _diag.Diagnostic(
-                            file=path,
-                            line=idx + 1,
-                            character=match.start("call"),
-                            end_line=idx + 1,
-                            end_character=_bsl244_call_end_character(line, open_paren_idx),
-                            severity=_diag.Severity.ERROR,
-                            code="BSL244",
-                        )
-                    )
+                end_idx = min(proc.end_idx, len(clean) - 1)
+                for idx in range(proc.start_idx, end_idx + 1):
+                    line = clean[idx]
+                    line_cf = line.lstrip().casefold()
+                    if line_cf.startswith(("процедура ", "функция ", "procedure ", "function ")):
+                        continue
+                    for match in re.finditer(r"\b(?P<call>\w+)\s*\(", line):
+                        if match.start("call") > 0 and line[match.start("call") - 1] == ".":
+                            continue
+                        if match.group("call").casefold() in server_proc_names:
+                            open_paren_idx = match.end() - 1
+                            diags.append(
+                                _diag.Diagnostic(
+                                    file=path,
+                                    line=idx + 1,
+                                    character=match.start("call"),
+                                    end_line=idx + 1,
+                                    end_character=_bsl244_call_end_character(line, open_paren_idx),
+                                    severity=_diag.Severity.ERROR,
+                                    code="BSL244",
+                                )
+                            )
 
     if "BSL253" in enabled_set:
-        cst_diags = _bsl253_timeout_diagnostics_from_cst(path, lines, procs, tree, snapshot)
+        cst_diags = _bsl253_timeout_diagnostics_from_cst(
+            path,
+            lines,
+            procs,
+            tree,
+            snapshot,
+            cst_nodes_by_type,
+        )
         if cst_diags is not None:
             diags.extend(cst_diags)
         else:
@@ -1371,7 +1397,7 @@ def run_bsl244_253_261_runtime_pool(
                     )
                 )
     if "BSL261" in enabled_set:
-        cst_diags = _bsl261_diagnostics_from_cst(path, lines, tree, snapshot)
+        cst_diags = _bsl261_diagnostics_from_cst(path, lines, tree, snapshot, cst_nodes_by_type)
         if cst_diags is not None:
             diags.extend(cst_diags)
         else:
