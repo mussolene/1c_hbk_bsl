@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import FileSystemAccessRule
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
     append_diagnostic_runtime_rule_tasks,
 )
@@ -11,6 +13,7 @@ from onec_hbk_bsl.analysis.diagnostic.execution import (
     make_diagnostic_rule_task,
 )
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 
 def _worker_pid() -> list[int]:
@@ -156,3 +159,41 @@ def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:
     )
 
     assert requested[0] == {"line_comment", "method_call"}
+
+
+def test_access_rules_are_scheduled_as_shared_node_phase() -> None:
+    selected = {"BSL188", "BSL203", "BSL264"}
+    engine = DiagnosticEngine(select=selected)
+    tasks = []
+
+    append_diagnostic_runtime_rule_tasks(
+        tasks,
+        engine=engine,
+        path="Module.bsl",
+        content="",
+        lines=[],
+        tree=object(),
+        snapshot=None,
+    )
+
+    task_codes = [code for code, _ in tasks]
+    assert "BSL188+BSL203+BSL264" in task_codes
+    assert not selected & set(task_codes)
+
+
+def test_filesystem_access_rule_requires_runtime_cst_provider() -> None:
+    content = """\
+Процедура Метод()
+    Ф = Новый Файл("a.txt");
+КонецПроцедуры
+"""
+    tree = BslParser().parse_content(content, file_path="Module.bsl")
+    context = DiagnosticDocumentContext(
+        path="Module.bsl",
+        content=content,
+        lines=content.splitlines(),
+        tree=tree,
+        ts_nodes_for_types=None,
+    )
+
+    assert FileSystemAccessRule().run(context) == []

@@ -2936,13 +2936,9 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
 
     @staticmethod
     def _new_expression_nodes(context: DiagnosticDocumentContext) -> list[Any]:
-        if context.ts_nodes_for_types:
-            return context.ts_nodes_for_types(context.tree, {"new_expression"})["new_expression"]
-        return [
-            node
-            for node in _ts_walk(context.tree.root_node)
-            if getattr(node, "type", None) == "new_expression"
-        ]
+        if context.ts_nodes_for_types is None:
+            return []
+        return context.ts_nodes_for_types(context.tree, {"new_expression"})["new_expression"]
 
     @staticmethod
     def _new_expression_type_name(node: Any) -> str:
@@ -2954,16 +2950,11 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
 
     @staticmethod
     def _dynamic_new_expression_nodes(context: DiagnosticDocumentContext) -> list[Any]:
-        if context.ts_nodes_for_types:
-            nodes = context.ts_nodes_for_types(context.tree, {"new_expression_method"})[
-                "new_expression_method"
-            ]
-        else:
-            nodes = [
-                node
-                for node in _ts_walk(context.tree.root_node)
-                if getattr(node, "type", None) == "new_expression_method"
-            ]
+        if context.ts_nodes_for_types is None:
+            return []
+        nodes = context.ts_nodes_for_types(context.tree, {"new_expression_method"})[
+            "new_expression_method"
+        ]
         return [node for node in nodes if FileSystemAccessRule._dynamic_new_type_name(node)]
 
     @staticmethod
@@ -2981,15 +2972,16 @@ class FileSystemAccessRule(DiagnosticRuntimeRule):
 
     @staticmethod
     def _global_method_calls(context: DiagnosticDocumentContext) -> list[dict[str, Any]]:
-        if context.ts_nodes_for_types:
-            nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
-            method_call_nodes = nodes["method_call"]
-        else:
-            method_call_nodes = [
-                node
-                for node in _ts_walk(context.tree.root_node)
-                if getattr(node, "type", None) == "method_call"
-            ]
+        if context.ts_nodes_for_types is None:
+            return []
+        nodes = context.ts_nodes_for_types(context.tree, {"method_call"})
+        return FileSystemAccessRule._method_calls_from_nodes(context, nodes["method_call"])
+
+    @staticmethod
+    def _method_calls_from_nodes(
+        context: DiagnosticDocumentContext,
+        method_call_nodes: list[Any],
+    ) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for node in method_call_nodes:
             parent_type = getattr(getattr(node, "parent", None), "type", None)
@@ -3044,6 +3036,87 @@ class UseSystemInformationRule(FileSystemAccessRule):
     code = "BSL264"
     new_type_names = _BSL264_SYSTEM_INFO_NEW_NAMES
     global_method_names = frozenset[str]()
+
+
+def run_bsl188_203_264_access_pool(
+    context: DiagnosticDocumentContext,
+    enabled_codes: tuple[str, ...],
+) -> list[Diagnostic]:
+    if not FileSystemAccessRule._tree_ok(context) or context.ts_nodes_for_types is None:
+        return []
+
+    enabled = set(enabled_codes)
+    configs = {
+        "BSL188": (
+            _BSL188_FILESYSTEM_NEW_NAMES,
+            _BSL188_FILESYSTEM_METHOD_NAMES,
+            Severity.WARNING,
+        ),
+        "BSL203": (_BSL203_INTERNET_NEW_NAMES, frozenset[str](), Severity.WARNING),
+        "BSL264": (_BSL264_SYSTEM_INFO_NEW_NAMES, frozenset[str](), Severity.WARNING),
+    }
+    active_configs = {code: config for code, config in configs.items() if code in enabled}
+    if not active_configs:
+        return []
+
+    storage = DiagnosticStorage(context.path)
+    nodes = context.ts_nodes_for_types(
+        context.tree,
+        {"method_call", "new_expression", "new_expression_method"},
+    )
+
+    for node in nodes["new_expression"]:
+        type_name = FileSystemAccessRule._new_expression_type_name(node)
+        for code, (new_type_names, _, severity) in active_configs.items():
+            if type_name in new_type_names:
+                _add_node_range(
+                    storage,
+                    code=code,
+                    severity=severity,
+                    lines=context.lines,
+                    start_node=node,
+                    end_node=node,
+                )
+
+    for node in nodes["new_expression_method"]:
+        type_name = FileSystemAccessRule._dynamic_new_type_name(node)
+        if not type_name:
+            continue
+        for code, (new_type_names, _, severity) in active_configs.items():
+            if type_name in new_type_names:
+                _add_node_range(
+                    storage,
+                    code=code,
+                    severity=severity,
+                    lines=context.lines,
+                    start_node=node,
+                    end_node=node,
+                )
+
+    method_configs = {
+        code: (method_names, severity)
+        for code, (_, method_names, severity) in active_configs.items()
+        if method_names
+    }
+    if method_configs:
+        for call in FileSystemAccessRule._method_calls_from_nodes(
+            context,
+            nodes["method_call"],
+        ):
+            call_name = call["name"].casefold()
+            for code, (method_names, severity) in method_configs.items():
+                if call_name not in method_names:
+                    continue
+                storage.add_range(
+                    code=code,
+                    line=int(call["line"]),
+                    character=int(call["character"]),
+                    end_line=int(call["line"]),
+                    end_character=int(call["end_character"]),
+                    severity=severity,
+                )
+
+    return storage.diagnostics
 
 
 class IsInRoleMethodRule(DiagnosticRuntimeRule):

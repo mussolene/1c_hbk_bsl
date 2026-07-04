@@ -313,6 +313,7 @@ _LIGHT_CALL_POOL_202_223_243_249_CODES: tuple[str, ...] = (
     "BSL243",
     "BSL249",
 )
+_ACCESS_POOL_188_203_264_CODES: tuple[str, ...] = ("BSL188", "BSL203", "BSL264")
 _LIGHT_POOL_221_222_239_271_CODES: tuple[str, ...] = (
     "BSL221",
     "BSL222",
@@ -330,6 +331,7 @@ _AGGREGATED_RULE_CODES: frozenset[str] = frozenset(
     + _LIGHT_POOL_169_170_181_196_260_CODES
     + _LIGHT_POOL_171_248_252_259_268_CODES
     + _LIGHT_CALL_POOL_202_223_243_249_CODES
+    + _ACCESS_POOL_188_203_264_CODES
     + _LIGHT_POOL_221_222_239_271_CODES
 )
 _PROCESS_TYPO_MIN_LINES = 5_000
@@ -1098,6 +1100,20 @@ def append_diagnostic_runtime_rule_tasks(
             light_call_pool_202_223_243_249,
             lambda codes=light_call_pool_202_223_243_249: _run_light_call_pool_202_223_243_249(
                 context, codes
+            ),
+        )
+
+    access_pool_188_203_264 = enabled_codes(_ACCESS_POOL_188_203_264_CODES)
+    if access_pool_188_203_264:
+        from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
+            run_bsl188_203_264_access_pool,
+        )
+
+        add_task(
+            access_pool_188_203_264,
+            lambda codes=access_pool_188_203_264: run_bsl188_203_264_access_pool(
+                context,
+                codes,
             ),
         )
 
