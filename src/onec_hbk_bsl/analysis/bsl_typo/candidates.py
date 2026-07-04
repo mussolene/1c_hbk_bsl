@@ -211,13 +211,13 @@ def _collect_forced_source_token_candidates(source_bytes: bytes) -> list[SpellCa
     return result
 
 
-def _is_descendant(ancestor: Any, node: Any) -> bool:
-    cur = node
-    while cur is not None:
-        if cur == ancestor:
-            return True
-        cur = getattr(cur, "parent", None)
-    return False
+def _node_inside(outer: Any, inner: Any) -> bool:
+    return (
+        int(getattr(outer, "start_byte", -1))
+        <= int(getattr(inner, "start_byte", -2))
+        and int(getattr(inner, "end_byte", -2))
+        <= int(getattr(outer, "end_byte", -1))
+    )
 
 
 def _identifier_typo_context_ok(node: Any) -> bool:
@@ -235,7 +235,7 @@ def _identifier_typo_context_ok(node: Any) -> bool:
         if cur.type == "assignment_statement":
             if not cur.named_children:
                 return False
-            return _is_descendant(cur.named_children[0], node)
+            return _node_inside(cur.named_children[0], node)
         cur = getattr(cur, "parent", None)
     return False
 
@@ -248,7 +248,7 @@ def _property_typo_context_ok(node: Any) -> bool:
         if cur.type == "assignment_statement":
             if not cur.named_children:
                 return False
-            return _is_descendant(cur.named_children[0], node)
+            return _node_inside(cur.named_children[0], node)
         cur = getattr(cur, "parent", None)
     return False
 
