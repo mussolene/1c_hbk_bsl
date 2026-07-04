@@ -22,27 +22,6 @@ from onec_hbk_bsl.analysis.diagnostic.suppression import (
 from onec_hbk_bsl.analysis.diagnostics import *  # noqa: F401,F403
 from onec_hbk_bsl.analysis.source_positions import line_col_to_offset, line_start_offsets
 
-_HOT_TS_NODE_TYPES: frozenset[str] = frozenset(
-    {
-        "ERROR",
-        "assignment_statement",
-        "binary_expression",
-        "call_expression",
-        "for_each_statement",
-        "function_definition",
-        "if_statement",
-        "identifier",
-        "method_call",
-        "new_expression",
-        "preprocessor",
-        "procedure_definition",
-        "ternary_expression",
-        "try_statement",
-        "unary_expression",
-        "var_definition",
-    }
-)
-
 globals().update(
     {
         name: getattr(_diag, name)
@@ -477,14 +456,12 @@ class DiagnosticEngine:
         if snapshot is not None and getattr(snapshot, "tree", None) is tree:
             return snapshot.ts_nodes_for_types(
                 node_types,
-                hot_node_types=_HOT_TS_NODE_TYPES,
                 walker=_ts_walk,
             )
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
             return {node_type: [] for node_type in node_types}
-        collected_types = set(node_types) | set(_HOT_TS_NODE_TYPES)
-        grouped = {node_type: [] for node_type in collected_types}
+        grouped = {node_type: [] for node_type in node_types}
         for node in _ts_walk(root):
             node_type = getattr(node, "type", None)
             if node_type in grouped:

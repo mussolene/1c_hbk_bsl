@@ -132,3 +132,27 @@ def test_core_fact_phase_materializes_only_enabled_fact_family() -> None:
 
     result = execute_diagnostic_rule_tasks(core_tasks)
     assert [diagnostic.code for diagnostic in result] == ["BSL014"]
+
+
+def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:
+    engine = DiagnosticEngine(select={"BSL066", "BSL215"})
+    requested: list[set[str]] = []
+
+    def record_ts_nodes_for_types(tree, node_types: set[str]):
+        requested.append(set(node_types))
+        return {node_type: [] for node_type in node_types}
+
+    engine._ts_nodes_for_types = record_ts_nodes_for_types
+    tasks = []
+
+    append_diagnostic_runtime_rule_tasks(
+        tasks,
+        engine=engine,
+        path="Module.bsl",
+        content="",
+        lines=[],
+        tree=object(),
+        snapshot=None,
+    )
+
+    assert requested[0] == {"line_comment", "method_call"}

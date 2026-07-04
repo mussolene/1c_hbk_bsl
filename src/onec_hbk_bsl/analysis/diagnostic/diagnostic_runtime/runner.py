@@ -360,17 +360,34 @@ _PROCESS_FORK_RULE_GROUPS: tuple[tuple[str, ...], ...] = (
     ("BSL180", "BSL200", "BSL178", "BSL279"),
     ("BSL097", "BSL250", "BSL205", "BSL185"),
 )
-_PROCESS_FORK_PREWARM_TS_NODE_TYPES: frozenset[str] = frozenset(
-    {
-        "call_expression",
-        "function_definition",
-        "if_statement",
-        "method_call",
-        "new_expression",
-        "procedure_definition",
-        "try_statement",
-    }
-)
+_RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
+    "BSL060": frozenset({"assignment_statement", "number"}),
+    "BSL066": frozenset({"method_call"}),
+    "BSL097": frozenset({"method_call"}),
+    "BSL171": frozenset({"ERROR"}),
+    "BSL173": frozenset({"for_each_statement"}),
+    "BSL182": frozenset({"if_statement"}),
+    "BSL188": frozenset({"method_call", "new_expression", "new_expression_method"}),
+    "BSL197": frozenset({"if_statement"}),
+    "BSL198": frozenset({"if_statement"}),
+    "BSL199": frozenset({"if_statement"}),
+    "BSL202": frozenset({"method_call", "new_expression"}),
+    "BSL203": frozenset({"method_call", "new_expression", "new_expression_method"}),
+    "BSL215": frozenset({"line_comment"}),
+    "BSL218": frozenset({"method_call"}),
+    "BSL223": frozenset({"method_call", "new_expression"}),
+    "BSL224": frozenset({"call_expression", "method_call", "new_expression"}),
+    "BSL225": frozenset({"new_expression"}),
+    "BSL251": frozenset({"ternary_expression"}),
+    "BSL252": frozenset({"assignment_statement"}),
+    "BSL255": frozenset({"try_statement"}),
+    "BSL257": frozenset({"unary_expression"}),
+    "BSL259": frozenset({"preprocessor"}),
+    "BSL260": frozenset({"method_call"}),
+    "BSL263": frozenset({"for_each_statement"}),
+    "BSL264": frozenset({"method_call", "new_expression", "new_expression_method"}),
+    "BSL268": frozenset({"method_call"}),
+}
 _PROCESS_FACT_GROUP_011_175: tuple[str, ...] = ("BSL011", "BSL175")
 _PROCESS_CORE_FACT_CODES: tuple[str, ...] = (
     "BSL011",
@@ -417,6 +434,13 @@ def _process_rule_workers(group_count: int) -> int:
     return max(1, min(configured, group_count))
 
 
+def _runtime_cst_node_types_for_codes(codes: set[str] | frozenset[str]) -> set[str]:
+    node_types: set[str] = set()
+    for code in codes:
+        node_types.update(_RUNTIME_CST_NODE_TYPES_BY_CODE.get(code, ()))
+    return node_types
+
+
 def _run_forked_runtime_rule_group(codes: tuple[str, ...]) -> list[Diagnostic]:
     if _FORK_CONTEXT is None:
         return []
@@ -442,9 +466,6 @@ def _run_forked_runtime_rule_groups(
             for group in groups
             for diag in _run_runtime_rule_group_local(context, rule_by_code, group)
         ]
-
-    if context.ts_nodes_for_types is not None:
-        context.ts_nodes_for_types(context.tree, set(_PROCESS_FORK_PREWARM_TS_NODE_TYPES))
 
     global _FORK_CONTEXT, _FORK_RULE_BY_CODE
     _FORK_CONTEXT = context
@@ -881,6 +902,11 @@ def append_diagnostic_runtime_rule_tasks(
     def add_task(codes: tuple[str, ...], fn: Callable[[], list[Diagnostic]]) -> None:
         if codes:
             rule_tasks.append(("+".join(codes), fn))
+
+    if context.ts_nodes_for_types is not None:
+        runtime_cst_node_types = _runtime_cst_node_types_for_codes(engine._enabled_rule_codes())
+        if runtime_cst_node_types:
+            context.ts_nodes_for_types(context.tree, runtime_cst_node_types)
 
     def add_aggregated_query_tasks() -> None:
         query_text_191_201 = enabled_codes(_QUERY_TEXT_191_201_CODES)
