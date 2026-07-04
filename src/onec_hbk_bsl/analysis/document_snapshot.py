@@ -98,6 +98,31 @@ _RE_COGNITIVE_EXPR_TERMINATOR = re.compile(
 )
 _RE_COGNITIVE_CONTROL_TERMINATOR = re.compile(r"\b(?:Тогда|Then|Цикл|Do)\b", re.IGNORECASE)
 _RE_ASSIGNMENT_CONTINUATION = re.compile(r"[=+\-*/]\s*$")
+_COMPLEXITY_LINE_MARKERS = (
+    "если",
+    "if",
+    "иначе",
+    "else",
+    "elsif",
+    "для",
+    "for",
+    "пока",
+    "while",
+    "исключение",
+    "except",
+    "перейти",
+    "goto",
+    "конец",
+    "end",
+    " и ",
+    " или ",
+    "and",
+    "or",
+    "не",
+    "not",
+    "?(",
+    "? (",
+)
 _RE_LINE_COMMENT = re.compile(r"^\s*//")
 _RE_MODAL_GLOBAL_METHOD = re.compile(
     r"(?<![.\w])"
@@ -845,6 +870,15 @@ def _calc_complexity_metrics_from_lines(
             paren_depth = 0
             continue
         line_no_strings = masked_lines[i]
+        folded_line = line_no_strings.casefold()
+        if (
+            not bool_expr_open
+            and not ternary_paren_stack
+            and paren_depth == 0
+            and not any(marker in folded_line for marker in _COMPLEXITY_LINE_MARKERS)
+            and not (proc_name and proc_name.casefold() in folded_line)
+        ):
+            continue
 
         starts_with_bool = bool(_RE_COGNITIVE_BOOL_START.match(line_no_strings))
         line_bool_count, bool_last_op = _count_cognitive_bool_ops(
