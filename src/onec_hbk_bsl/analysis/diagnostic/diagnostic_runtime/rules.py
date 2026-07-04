@@ -4011,12 +4011,7 @@ class BeginTransactionBeforeTryCatchRule(DiagnosticRuntimeRule):
         storage = DiagnosticStorage(context.path)
         pending_begin: Any | None = None
         statements = sorted(
-            (
-                node
-                for node in _ts_walk(root)
-                if getattr(node, "type", None) in self._statement_types
-                and not _diag.tree_has_errors(node)
-            ),
+            self._statement_nodes(context, root),
             key=lambda node: (node.start_point[0], node.start_point[1], node.end_point[0]),
         )
 
@@ -4035,6 +4030,23 @@ class BeginTransactionBeforeTryCatchRule(DiagnosticRuntimeRule):
         if pending_begin is not None:
             self._add_diagnostic(storage, context, pending_begin)
         return storage.diagnostics
+
+    @classmethod
+    def _statement_nodes(cls, context: DiagnosticDocumentContext, root: Any) -> list[Any]:
+        if context.ts_nodes_for_types is not None:
+            nodes_by_type = context.ts_nodes_for_types(context.tree, set(cls._statement_types))
+            return [
+                node
+                for nodes in nodes_by_type.values()
+                for node in nodes
+                if not _diag.tree_has_errors(node)
+            ]
+        return [
+            node
+            for node in _ts_walk(root)
+            if getattr(node, "type", None) in cls._statement_types
+            and not _diag.tree_has_errors(node)
+        ]
 
     @classmethod
     def _is_global_begin_transaction(cls, statement: Any) -> bool:

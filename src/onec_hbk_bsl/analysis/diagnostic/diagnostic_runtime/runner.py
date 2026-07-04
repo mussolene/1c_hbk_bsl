@@ -363,9 +363,27 @@ _PROCESS_FORK_RULE_GROUPS: tuple[tuple[str, ...], ...] = (
     ("BSL097", "BSL250", "BSL205", "BSL185"),
 )
 _RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
-    "BSL060": frozenset({"assignment_statement", "number"}),
+    "BSL029": frozenset({"assignment_statement", "number"}),
+    "BSL060": frozenset({"binary_expression", "unary_expression"}),
     "BSL066": frozenset({"method_call"}),
     "BSL097": frozenset({"method_call"}),
+    "BSL151": frozenset(
+        {
+            "assignment_statement",
+            "break_statement",
+            "call_statement",
+            "continue_statement",
+            "for_each_statement",
+            "for_statement",
+            "goto_statement",
+            "if_statement",
+            "return_statement",
+            "rise_error_statement",
+            "try_statement",
+            "var_statement",
+            "while_statement",
+        }
+    ),
     "BSL171": frozenset({"ERROR"}),
     "BSL173": frozenset({"for_each_statement"}),
     "BSL182": frozenset({"if_statement"}),
@@ -376,10 +394,14 @@ _RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
     "BSL202": frozenset({"method_call", "new_expression"}),
     "BSL203": frozenset({"method_call", "new_expression", "new_expression_method"}),
     "BSL215": frozenset({"line_comment"}),
+    "BSL217": frozenset({"method_call"}),
     "BSL218": frozenset({"method_call"}),
     "BSL223": frozenset({"method_call", "new_expression"}),
     "BSL224": frozenset({"call_expression", "method_call", "new_expression"}),
     "BSL225": frozenset({"new_expression"}),
+    "BSL230": frozenset(
+        {"method_call", "procedure_definition", "function_definition", "try_statement"}
+    ),
     "BSL251": frozenset({"ternary_expression"}),
     "BSL252": frozenset({"assignment_statement"}),
     "BSL255": frozenset({"try_statement"}),
@@ -389,6 +411,12 @@ _RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
     "BSL263": frozenset({"for_each_statement"}),
     "BSL264": frozenset({"method_call", "new_expression", "new_expression_method"}),
     "BSL268": frozenset({"method_call"}),
+    "BSL276": frozenset(
+        {"method_call", "procedure_definition", "function_definition", "try_statement"}
+    ),
+    "BSL277": frozenset(
+        {"method_call", "procedure_definition", "function_definition", "try_statement"}
+    ),
 }
 _PROCESS_FACT_GROUP_011_175: tuple[str, ...] = ("BSL011", "BSL175")
 _PROCESS_CORE_FACT_CODES: tuple[str, ...] = (

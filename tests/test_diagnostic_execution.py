@@ -161,6 +161,66 @@ def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:
     assert requested[0] == {"line_comment", "method_call"}
 
 
+def test_runtime_cst_prewarm_covers_late_runtime_consumers() -> None:
+    selected = {"BSL029", "BSL060", "BSL151", "BSL217", "BSL230", "BSL276", "BSL277"}
+    engine = DiagnosticEngine(select=selected)
+    requested: list[set[str]] = []
+
+    def record_ts_nodes_for_types(tree, node_types: set[str]):
+        requested.append(set(node_types))
+        return {node_type: [] for node_type in node_types}
+
+    engine._ts_nodes_for_types = record_ts_nodes_for_types
+    content = """\
+Процедура Метод()
+    НачатьТранзакцию();
+    ОтменитьТранзакцию();
+    Значение = 2;
+    Если Не Не Флаг Тогда
+    КонецЕсли;
+    Адрес = ПолучитьИзВременногоХранилища("x");
+    ПродолжитьВызов();
+КонецПроцедуры
+"""
+    lines = content.splitlines()
+    tree = BslParser().parse_content(content, file_path="Module.bsl")
+    tasks = []
+
+    append_diagnostic_runtime_rule_tasks(
+        tasks,
+        engine=engine,
+        path="Module.bsl",
+        content=content,
+        lines=lines,
+        tree=tree,
+        snapshot=None,
+    )
+    execute_diagnostic_rule_tasks(tasks)
+
+    assert requested[0] == {
+        "assignment_statement",
+        "binary_expression",
+        "break_statement",
+        "call_statement",
+        "continue_statement",
+        "for_each_statement",
+        "for_statement",
+        "function_definition",
+        "goto_statement",
+        "if_statement",
+        "method_call",
+        "number",
+        "procedure_definition",
+        "return_statement",
+        "rise_error_statement",
+        "try_statement",
+        "unary_expression",
+        "var_statement",
+        "while_statement",
+    }
+    assert all(call <= requested[0] for call in requested[1:])
+
+
 def test_access_rules_are_scheduled_as_shared_node_phase() -> None:
     selected = {"BSL188", "BSL203", "BSL264"}
     engine = DiagnosticEngine(select=selected)
