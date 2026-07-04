@@ -1030,13 +1030,16 @@ def _credential_string_value(text: str) -> str | None:
 def _credential_single_string_expression(expression: Any | None) -> Any | None:
     if expression is None:
         return None
-    strings = [node for node in _ts_walk(expression) if getattr(node, "type", None) == "string"]
-    if len(strings) != 1:
+    node = expression
+    if getattr(node, "type", None) == "expression":
+        node = _ts_child_of_type(node, "const_expression")
+    if getattr(node, "type", None) == "const_expression":
+        node = _ts_child_of_type(node, "string")
+    if getattr(node, "type", None) != "string":
         return None
-    string_node = strings[0]
-    if _ts_node_text(expression).strip() != _ts_node_text(string_node):
+    if _ts_node_text(expression).strip() != _ts_node_text(node):
         return None
-    return string_node if _credential_string_value(_ts_node_text(string_node)) else None
+    return node if _credential_string_value(_ts_node_text(node)) else None
 
 
 def _credential_argument_expressions(arguments_node: Any | None) -> list[Any | None]:

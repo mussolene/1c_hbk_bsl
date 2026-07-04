@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import fields
 from pathlib import Path
 
+from onec_hbk_bsl.analysis import document_snapshot as snapshot_mod
 from onec_hbk_bsl.analysis.document_snapshot import (
     LineDiagnosticFact,
     build_document_snapshot,
@@ -61,6 +62,28 @@ def test_cst_string_ranges_include_multiline_literal() -> None:
     start, end = ranges[0]
     assert content[start] == '"'
     assert content[end - 1] == '"'
+
+
+def test_credential_single_string_expression_uses_structural_shape(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    content = 'Пароль = "secret";\nДругойПароль = ("secret");\n'
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+    assignments = snapshot.ts_nodes_for_types({"assignment_statement"}, walker=snapshot_mod._ts_walk)[
+        "assignment_statement"
+    ]
+    _left, direct_value = snapshot_mod._credential_assignment_parts(assignments[0])
+    _left, parenthesized_value = snapshot_mod._credential_assignment_parts(assignments[1])
+
+    monkeypatch.setattr(
+        snapshot_mod,
+        "_ts_walk",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected walk")),
+    )
+
+    assert snapshot_mod._credential_single_string_expression(direct_value) is not None
+    assert snapshot_mod._credential_single_string_expression(parenthesized_value) is None
 
 
 def test_line_start_offsets() -> None:
