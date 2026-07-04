@@ -428,6 +428,7 @@ _RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
     "BSL251": frozenset({"ternary_expression"}),
     "BSL252": frozenset({"assignment_statement"}),
     "BSL255": frozenset({"try_statement"}),
+    "BSL256": frozenset({"identifier", "property", "string"}),
     "BSL257": frozenset({"unary_expression"}),
     "BSL259": frozenset({"preprocessor"}),
     "BSL260": frozenset({"method_call"}),
@@ -1219,7 +1220,12 @@ def append_diagnostic_runtime_rule_tasks(
     if engine._rule_enabled("BSL256") and len(lines) >= _PROCESS_TYPO_MIN_LINES:
         root = getattr(tree, "root_node", None)
         if root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray)):
-            typo_candidates = collect_spell_candidates(tree=tree)
+            typo_nodes = (
+                context.ts_nodes_for_types(tree, {"identifier", "property", "string"})
+                if context.ts_nodes_for_types is not None
+                else None
+            )
+            typo_candidates = collect_spell_candidates(tree=tree, nodes_by_type=typo_nodes)
             if len(typo_candidates) >= _PROCESS_TYPO_MIN_CANDIDATES:
                 worker_count = min(8, max(1, len(typo_candidates) // _PROCESS_TYPO_MIN_CANDIDATES))
                 for shard_index, shard in enumerate(

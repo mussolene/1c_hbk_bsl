@@ -5,7 +5,9 @@ from onec_hbk_bsl.analysis.bsl_typo import (
     contains_latin_letter,
     split_by_character_type_camel_case,
 )
+from onec_hbk_bsl.analysis.bsl_typo.candidates import collect_spell_candidates
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 
 def test_cyrillic_pe_is_not_latin() -> None:
@@ -70,3 +72,27 @@ def test_bslls_typo_reports_string_abbreviations_after_ignored_latin_homoglyph(
     ]
 
     assert diags
+
+
+def test_typo_candidates_from_materialized_nodes_match_tree_walk() -> None:
+    content = (
+        "Процедура Тест()\n"
+        '    ВаринатыОплаты = Объект.ВаринатыОплаты;\n'
+        '    Сообщить("Варинаты оплаты");\n'
+        "КонецПроцедуры\n"
+    )
+    tree = BslParser().parse_content(content, file_path="Module.bsl")
+    root = tree.root_node
+    nodes_by_type = {"identifier": [], "property": [], "string": []}
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        node_type = getattr(node, "type", None)
+        if node_type in nodes_by_type:
+            nodes_by_type[node_type].append(node)
+        stack.extend(reversed(getattr(node, "children", ()) or ()))
+
+    walked = collect_spell_candidates(tree=tree)
+    materialized = collect_spell_candidates(tree=tree, nodes_by_type=nodes_by_type)
+
+    assert materialized == walked

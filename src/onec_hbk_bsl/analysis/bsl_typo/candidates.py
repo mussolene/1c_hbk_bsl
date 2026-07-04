@@ -13,7 +13,11 @@ FORMAT_STRING_PATTERN = re.compile(FORMAT_STRING_RU + FORMAT_STRING_EN, re.IGNOR
 QUOTE_PATTERN = re.compile('"')
 
 
-def collect_spell_candidates(*, tree: Any) -> list[SpellCandidate]:
+def collect_spell_candidates(
+    *,
+    tree: Any,
+    nodes_by_type: dict[str, list[Any]] | None = None,
+) -> list[SpellCandidate]:
     root = getattr(tree, "root_node", None)
     if root is None:
         return []
@@ -22,65 +26,71 @@ def collect_spell_candidates(*, tree: Any) -> list[SpellCandidate]:
         return []
     line_starts = _compute_line_starts(source_bytes)
 
-    stack: list[Any] = [root]
     candidates: list[SpellCandidate] = []
+    if nodes_by_type is None:
+        nodes_by_type = _collect_candidate_nodes(root)
 
-    while stack:
-        node = stack.pop()
-        for child in reversed(node.children):
-            stack.append(child)
-
-        ntype = node.type
-        if ntype == "string":
-            text = _node_text(node)
-            if FORMAT_STRING_PATTERN.search(text):
-                continue
-            inner = QUOTE_PATTERN.sub("", text).strip()
-            _append_candidate(
-                node=node,
-                source_text=text,
-                inner=inner,
-                source_bytes=source_bytes,
-                line_starts=line_starts,
-                kind="string",
-                out=candidates,
-            )
+    for node in nodes_by_type.get("string", []):
+        text = _node_text(node)
+        if FORMAT_STRING_PATTERN.search(text):
             continue
+        inner = QUOTE_PATTERN.sub("", text).strip()
+        _append_candidate(
+            node=node,
+            source_text=text,
+            inner=inner,
+            source_bytes=source_bytes,
+            line_starts=line_starts,
+            kind="string",
+            out=candidates,
+        )
 
-        if ntype == "identifier":
-            text = _node_text(node)
-            if not contains_cyrillic_letter(text) or not _identifier_typo_context_ok(node):
-                continue
-            _append_candidate(
-                node=node,
-                source_text=text,
-                inner=text.strip(),
-                source_bytes=source_bytes,
-                line_starts=line_starts,
-                kind="code",
-                exact_ignore=CODE_TOKEN_EXACT_IGNORE,
-                out=candidates,
-            )
+    for node in nodes_by_type.get("identifier", []):
+        text = _node_text(node)
+        if not contains_cyrillic_letter(text) or not _identifier_typo_context_ok(node):
             continue
+        _append_candidate(
+            node=node,
+            source_text=text,
+            inner=text.strip(),
+            source_bytes=source_bytes,
+            line_starts=line_starts,
+            kind="code",
+            exact_ignore=CODE_TOKEN_EXACT_IGNORE,
+            out=candidates,
+        )
 
-        if ntype == "property":
-            text = _node_text(node)
-            if not contains_cyrillic_letter(text) or not _property_typo_context_ok(node):
-                continue
-            _append_candidate(
-                node=node,
-                source_text=text,
-                inner=text.strip(),
-                source_bytes=source_bytes,
-                line_starts=line_starts,
-                kind="code",
-                exact_ignore=CODE_TOKEN_EXACT_IGNORE,
-                out=candidates,
-            )
+    for node in nodes_by_type.get("property", []):
+        text = _node_text(node)
+        if not contains_cyrillic_letter(text) or not _property_typo_context_ok(node):
+            continue
+        _append_candidate(
+            node=node,
+            source_text=text,
+            inner=text.strip(),
+            source_bytes=source_bytes,
+            line_starts=line_starts,
+            kind="code",
+            exact_ignore=CODE_TOKEN_EXACT_IGNORE,
+            out=candidates,
+        )
 
     candidates.extend(_collect_forced_method_candidates(source_bytes))
     candidates.extend(_collect_forced_source_token_candidates(source_bytes))
     return candidates
+
+
+def _collect_candidate_nodes(root: Any) -> dict[str, list[Any]]:
+    nodes_by_type: dict[str, list[Any]] = {"identifier": [], "property": [], "string": []}
+    stack: list[Any] = [root]
+    while stack:
+        node = stack.pop()
+        node_type = getattr(node, "type", None)
+        if node_type in nodes_by_type:
+            nodes_by_type[node_type].append(node)
+        for child in reversed(getattr(node, "children", ()) or ()):
+            stack.append(child)
+    return nodes_by_type
 
 
 def _node_text(node: Any) -> str:
