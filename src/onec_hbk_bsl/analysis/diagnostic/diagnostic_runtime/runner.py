@@ -808,6 +808,49 @@ def _run_core_fact_rule(
     ]
 
 
+def _core_fact_rows_for_code(
+    *,
+    code: str,
+    snapshot: Any,
+    engine: Any,
+) -> list[Any]:
+    if code == "BSL011":
+        return list(
+            snapshot.module_body_cognitive_complexity_facts(engine.max_cognitive_complexity)
+        )
+    if code == "BSL012":
+        return list(snapshot.hardcoded_credential_facts)
+    if code == "BSL013":
+        return list(snapshot.commented_code_facts)
+    if code == "BSL014":
+        return list(snapshot.line_too_long_facts(engine.max_line_length))
+    if code == "BSL016":
+        return list(snapshot.non_standard_region_facts)
+    if code == "BSL017":
+        return list(snapshot.command_or_form_export_facts)
+    if code == "BSL022":
+        return list(snapshot.deprecated_warning_facts)
+    if code == "BSL026":
+        return list(snapshot.empty_region_facts)
+    if code == "BSL036":
+        return list(snapshot.complex_condition_facts(engine.max_bool_ops))
+    if code == "BSL040":
+        return list(snapshot.this_form_usage_facts)
+    if code == "BSL077":
+        return list(snapshot.select_top_without_order_facts)
+    if code == "BSL131":
+        return list(snapshot.duplicate_region_facts)
+    if code == "BSL190":
+        return list(snapshot.form_data_to_value_facts)
+    if code == "BSL204":
+        return list(snapshot.invalid_character_facts)
+    if code == "BSL216":
+        return list(snapshot.missing_space_facts)
+    if code == "BSL219":
+        return list(snapshot.module_variable_description_facts)
+    return []
+
+
 def append_diagnostic_runtime_rule_tasks(
     rule_tasks: list[tuple[str, Callable[[], list[Diagnostic]]]],
     *,
@@ -1009,8 +1052,8 @@ def append_diagnostic_runtime_rule_tasks(
     if light_pool_169_170_181_196_260:
         add_task(
             light_pool_169_170_181_196_260,
-            lambda codes=light_pool_169_170_181_196_260: (
-                _run_light_pool_169_170_181_196_260(context, codes)
+            lambda codes=light_pool_169_170_181_196_260: _run_light_pool_169_170_181_196_260(
+                context, codes
             ),
         )
 
@@ -1018,8 +1061,8 @@ def append_diagnostic_runtime_rule_tasks(
     if light_pool_171_248_252_259_268:
         add_task(
             light_pool_171_248_252_259_268,
-            lambda codes=light_pool_171_248_252_259_268: (
-                _run_light_pool_171_248_252_259_268(context, codes)
+            lambda codes=light_pool_171_248_252_259_268: _run_light_pool_171_248_252_259_268(
+                context, codes
             ),
         )
 
@@ -1027,8 +1070,8 @@ def append_diagnostic_runtime_rule_tasks(
     if light_call_pool_202_223_243_249:
         add_task(
             light_call_pool_202_223_243_249,
-            lambda codes=light_call_pool_202_223_243_249: (
-                _run_light_call_pool_202_223_243_249(context, codes)
+            lambda codes=light_call_pool_202_223_243_249: _run_light_call_pool_202_223_243_249(
+                context, codes
             ),
         )
 
@@ -1036,8 +1079,8 @@ def append_diagnostic_runtime_rule_tasks(
     if light_pool_221_222_239_271:
         add_task(
             light_pool_221_222_239_271,
-            lambda codes=light_pool_221_222_239_271: (
-                _run_light_pool_221_222_239_271(context, codes)
+            lambda codes=light_pool_221_222_239_271: _run_light_pool_221_222_239_271(
+                context, codes
             ),
         )
 
@@ -1054,27 +1097,8 @@ def append_diagnostic_runtime_rule_tasks(
             complexity_metrics: list[tuple[int, int]] = []
             if "BSL011" in enabled_core_fact_codes or "BSL019" in enabled_core_fact_codes:
                 complexity_metrics = list(snapshot.complexity_metrics_for_procs(context.procedures))
-            facts_by_code: dict[str, list[Any]] = {
-                "BSL011": list(
-                    snapshot.module_body_cognitive_complexity_facts(engine.max_cognitive_complexity)
-                ),
-                "BSL012": list(snapshot.hardcoded_credential_facts),
-                "BSL013": list(snapshot.commented_code_facts),
-                "BSL014": list(snapshot.line_too_long_facts(engine.max_line_length)),
-                "BSL016": list(snapshot.non_standard_region_facts),
-                "BSL017": list(snapshot.command_or_form_export_facts),
-                "BSL022": list(snapshot.deprecated_warning_facts),
-                "BSL026": list(snapshot.empty_region_facts),
-                "BSL036": list(snapshot.complex_condition_facts(engine.max_bool_ops)),
-                "BSL040": list(snapshot.this_form_usage_facts),
-                "BSL077": list(snapshot.select_top_without_order_facts),
-                "BSL131": list(snapshot.duplicate_region_facts),
-                "BSL190": list(snapshot.form_data_to_value_facts),
-                "BSL204": list(snapshot.invalid_character_facts),
-                "BSL216": list(snapshot.missing_space_facts),
-                "BSL219": list(snapshot.module_variable_description_facts),
-            }
             for code in enabled_core_fact_codes:
+                facts = _core_fact_rows_for_code(code=code, snapshot=snapshot, engine=engine)
                 rule_tasks.append(
                     make_diagnostic_rule_task(
                         code,
@@ -1085,7 +1109,7 @@ def append_diagnostic_runtime_rule_tasks(
                             lines=context.lines,
                             procs=context.procedures,
                             complexity_metrics=complexity_metrics,
-                            facts=facts_by_code.get(code, []),
+                            facts=facts,
                             max_cognitive_complexity=engine.max_cognitive_complexity,
                             max_mccabe_complexity=engine.max_mccabe_complexity,
                         ),

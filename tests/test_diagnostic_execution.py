@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
     append_diagnostic_runtime_rule_tasks,
@@ -76,3 +77,58 @@ def test_light_pool_rules_are_scheduled_as_shared_fact_phases() -> None:
     assert "BSL221+BSL222+BSL239+BSL271" in task_codes
     assert "BSL251" in task_codes
     assert not (selected - {"BSL251"}) & set(task_codes)
+
+
+def test_core_fact_phase_materializes_only_enabled_fact_family() -> None:
+    class Snapshot:
+        procedures = []
+
+        def __init__(self) -> None:
+            self.accessed: list[str] = []
+
+        def line_too_long_facts(self, max_line_length: int) -> list[SimpleNamespace]:
+            self.accessed.append(f"line_too_long:{max_line_length}")
+            return [
+                SimpleNamespace(
+                    line_idx=0,
+                    character=0,
+                    end_line_idx=None,
+                    end_character=max_line_length + 1,
+                )
+            ]
+
+        def complexity_metrics_for_procs(self, procs) -> list[tuple[int, int]]:
+            raise AssertionError("complexity metrics must not be built for BSL014")
+
+        @property
+        def hardcoded_credential_facts(self):
+            raise AssertionError("BSL012 facts must not be built for BSL014")
+
+        @property
+        def commented_code_facts(self):
+            raise AssertionError("BSL013 facts must not be built for BSL014")
+
+        @property
+        def missing_space_facts(self):
+            raise AssertionError("BSL216 facts must not be built for BSL014")
+
+    snapshot = Snapshot()
+    engine = DiagnosticEngine(select={"BSL014"})
+    tasks = []
+
+    append_diagnostic_runtime_rule_tasks(
+        tasks,
+        engine=engine,
+        path="Module.bsl",
+        content="",
+        lines=["A"],
+        tree=None,
+        snapshot=snapshot,
+    )
+
+    core_tasks = [task for task in tasks if getattr(task, "code", None) == "BSL014"]
+    assert len(core_tasks) == 1
+    assert snapshot.accessed == [f"line_too_long:{engine.max_line_length}"]
+
+    result = execute_diagnostic_rule_tasks(core_tasks)
+    assert [diagnostic.code for diagnostic in result] == ["BSL014"]
