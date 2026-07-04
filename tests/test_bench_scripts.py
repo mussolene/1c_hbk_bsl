@@ -83,6 +83,20 @@ def test_dev_corpus_bench_parse_trace_flags() -> None:
     assert args.trace_call_sites is True
 
 
+def test_dev_corpus_bench_iter_bsl_files_uses_supported_suffixes(tmp_path: Path) -> None:
+    dev_corpus_bench = _load_script_module("dev_corpus_bench")
+    nested = tmp_path / "CommonModules" / "Demo"
+    nested.mkdir(parents=True)
+    module_path = nested / "Module.bsl"
+    os_path = tmp_path / "script.os"
+    ignored_path = tmp_path / "notes.txt"
+    module_path.write_text("Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8")
+    os_path.write_text("Сообщить(1);\n", encoding="utf-8")
+    ignored_path.write_text("not bsl", encoding="utf-8")
+
+    assert dev_corpus_bench.iter_bsl_files(tmp_path) == sorted([module_path, os_path])
+
+
 def test_dev_corpus_bench_trace_records_missing_types() -> None:
     dev_corpus_bench = _load_script_module("dev_corpus_bench")
     trace = dev_corpus_bench.AnalysisTrace()

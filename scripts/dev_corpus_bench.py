@@ -16,6 +16,7 @@ Example:
 
 from __future__ import annotations
 
+import os
 import random
 import sys
 import time
@@ -40,8 +41,6 @@ from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime import (
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine  # noqa: E402
 from onec_hbk_bsl.analysis.formatter import BslFormatter  # noqa: E402
 from onec_hbk_bsl.parser import bsl_parser as bsl_parser_mod  # noqa: E402
-
-BSL_SUFFIXES = {".bsl", ".os"}
 
 
 @dataclass
@@ -205,11 +204,14 @@ class TraceAnalysisPasses(AbstractContextManager["TraceAnalysisPasses"]):
 
 
 def iter_bsl_files(root: Path) -> list[Path]:
-    return sorted(
-        p
-        for p in root.rglob("*")
-        if p.is_file() and (p.suffix.lower() in BSL_SUFFIXES or p.name == "Module.bsl")
-    )
+    files: list[Path] = []
+    for dirpath, _dirnames, filenames in os.walk(root):
+        base = Path(dirpath)
+        for filename in filenames:
+            lower_name = filename.lower()
+            if lower_name.endswith((".bsl", ".os")) or filename == "Module.bsl":
+                files.append(base / filename)
+    return sorted(files)
 
 
 def pick_files(
