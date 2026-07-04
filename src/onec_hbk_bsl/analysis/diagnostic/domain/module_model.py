@@ -1330,6 +1330,63 @@ class ModuleModel:
             "bitwiseshiftright",
         }
 
+        if "BSL260" in enabled_set:
+            config_root = config_root_for_file(self.path)
+            unsafe_index = (
+                unsafe_find_by_code_metadata_index_cached(config_root)
+                if config_root is not None
+                else {}
+            )
+            root = getattr(tree, "root_node", None)
+            tree_ok = root is not None and isinstance(
+                getattr(root, "text", None),
+                (bytes, bytearray),
+            )
+            nodes_for_bsl260 = (
+                ts_nodes_for_types_fn(tree, {"method_call"}).get("method_call", [])
+                if unsafe_index and tree_ok
+                else ()
+            )
+            proc_line_mask = bytearray(len(lines))
+            for proc in procs:
+                start = max(proc.start_idx, 0)
+                end = min(proc.end_idx, len(lines) - 1)
+                if start <= end:
+                    proc_line_mask[start : end + 1] = b"\1" * (end - start + 1)
+            for node in nodes_for_bsl260 or ():
+                ident = ts_child_of_type_fn(node, "identifier")
+                if ident is None:
+                    continue
+                name = ts_node_text_fn(ident)
+                if name.casefold() not in {"найтипокоду", "findbycode"}:
+                    continue
+                key = _bsl260_access_metadata_key(
+                    _bsl260_call_access_text(node, ts_node_text_fn)
+                )
+                if key is None or not unsafe_index.get(key, False):
+                    continue
+                line_idx = ident.start_point[0]
+                if line_idx >= len(proc_line_mask) or not proc_line_mask[line_idx]:
+                    continue
+                line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
+                diags.append(
+                    Diagnostic(
+                        file=self.path,
+                        line=line_idx + 1,
+                        character=utf8_byte_offset_to_lsp_character_fn(
+                            line_text,
+                            ident.start_point[1],
+                        ),
+                        end_line=line_idx + 1,
+                        end_character=utf8_byte_offset_to_lsp_character_fn(
+                            line_text,
+                            ident.end_point[1],
+                        ),
+                        severity=Severity.WARNING,
+                        code="BSL260",
+                    )
+                )
+
         for proc in procs:
             annotation_lines: list[tuple[int, str]] = []
             j = proc.start_idx - 1
@@ -1468,56 +1525,6 @@ class ModuleModel:
                         re.IGNORECASE,
                     ):
                         control_depth += 1
-            if "BSL260" in enabled_set:
-                config_root = config_root_for_file(self.path)
-                unsafe_index = (
-                    unsafe_find_by_code_metadata_index_cached(config_root)
-                    if config_root is not None
-                    else {}
-                )
-                root = getattr(tree, "root_node", None)
-                tree_ok = root is not None and isinstance(
-                    getattr(root, "text", None),
-                    (bytes, bytearray),
-                )
-                nodes_for_bsl260 = (
-                    ts_nodes_for_types_fn(tree, {"method_call"}).get("method_call", [])
-                    if unsafe_index and tree_ok
-                    else ()
-                )
-                for node in nodes_for_bsl260 or ():
-                    ident = ts_child_of_type_fn(node, "identifier")
-                    if ident is None:
-                        continue
-                    name = ts_node_text_fn(ident)
-                    if name.casefold() not in {"найтипокоду", "findbycode"}:
-                        continue
-                    key = _bsl260_access_metadata_key(
-                        _bsl260_call_access_text(node, ts_node_text_fn)
-                    )
-                    if key is None or not unsafe_index.get(key, False):
-                        continue
-                    line_idx = ident.start_point[0]
-                    if line_idx < proc.start_idx or line_idx > proc.end_idx:
-                        continue
-                    line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-                    diags.append(
-                        Diagnostic(
-                            file=self.path,
-                            line=line_idx + 1,
-                            character=utf8_byte_offset_to_lsp_character_fn(
-                                line_text,
-                                ident.start_point[1],
-                            ),
-                            end_line=line_idx + 1,
-                            end_character=utf8_byte_offset_to_lsp_character_fn(
-                                line_text,
-                                ident.end_point[1],
-                            ),
-                            severity=Severity.WARNING,
-                            code="BSL260",
-                        )
-                    )
         return diags
 
     def validate_bsl175_176_177_179_195_deprecated_api_diagnostics(

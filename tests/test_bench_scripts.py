@@ -31,6 +31,37 @@ def test_bench_profile_path_for_run_cache_modes() -> None:
     assert bench_profile._path_for_run(base, 2, "miss") != base
 
 
+def test_bench_per_rule_external_paths_mode(tmp_path: Path) -> None:
+    bench_per_rule = _load_script_module("bench_per_rule")
+    module_path = tmp_path / "Module.bsl"
+    module_path.write_text(
+        "\n".join(
+            [
+                "Процедура Тест()",
+                "    Сообщить(\"ok\");",
+                "КонецПроцедуры",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    paths_file = tmp_path / "paths.txt"
+    paths_file.write_text(str(module_path), encoding="utf-8")
+
+    args = bench_per_rule._parse_args(
+        [
+            f"--paths-from={paths_file}",
+            "--runs=1",
+            "--top=3",
+            "--ignore=BSL001, BSL260",
+        ]
+    )
+
+    assert args.paths_from == str(paths_file)
+    assert args.runs == 1
+    assert args.top == 3
+    assert bench_per_rule._parse_codes(args.ignore) == {"BSL001", "BSL260"}
+
+
 def test_bsl_diagnostic_messages_are_not_english_fallbacks() -> None:
     root = Path(__file__).resolve().parents[1] / "src" / "onec_hbk_bsl" / "analysis"
     offenders: list[str] = []

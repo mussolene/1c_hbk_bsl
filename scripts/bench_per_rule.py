@@ -15,10 +15,12 @@
     python3 scripts/bench_per_rule.py 3000             # только 3000 строк
     python3 scripts/bench_per_rule.py 3000 --runs=5
     python3 scripts/bench_per_rule.py --top=20         # top-20 правил
+    python3 scripts/bench_per_rule.py --paths-from=/tmp/files.txt --ignore=BSL001
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -99,6 +101,44 @@ def run_per_rule(size: int, runs: int) -> tuple[dict[str, float], dict[str, int]
     return rule_times, rule_calls, n_lines
 
 
+def run_paths_per_rule(
+    paths: list[Path],
+    *,
+    runs: int,
+    ignore: set[str] | None,
+) -> tuple[dict[str, float], dict[str, int], int, int, int]:
+    """Return accumulated per-rule timings for an explicit external file list."""
+    picked = [path for path in paths if path.is_file()]
+    if not picked:
+        return {}, {}, 0, 0, 0
+
+    contents: list[tuple[Path, str]] = []
+    total_lines = 0
+    total_bytes = 0
+    for path in picked:
+        content = path.read_text(encoding="utf-8", errors="ignore")
+        contents.append((path, content))
+        total_lines += content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+        total_bytes += len(content.encode("utf-8", errors="ignore"))
+
+    rule_times: dict[str, float] = {}
+    rule_calls: dict[str, int] = {}
+
+    original = _pipeline_module.execute_diagnostic_rule_tasks
+    _pipeline_module.execute_diagnostic_rule_tasks = _make_instrumented_executor(
+        rule_times, rule_calls
+    )
+    try:
+        engine = DiagnosticEngine(ignore=ignore or None)
+        for run_idx in range(runs):
+            for path, content in contents:
+                engine.check_content(_path_for_run(str(path), run_idx), content)
+    finally:
+        _pipeline_module.execute_diagnostic_rule_tasks = original
+
+    return rule_times, rule_calls, total_lines, total_bytes, len(picked)
+
+
 def print_report(
     size: int,
     times: dict[str, float],
@@ -127,20 +167,78 @@ def print_report(
         print(f"{code:>12}  {rule_ms:>10.1f}  {mean_ms:>12.2f}  {c:>6}  {pct:>7.1f}%")
 
 
-def main() -> None:
-    args = sys.argv[1:]
-    sizes = [int(a) for a in args if a.isdigit()] or SIZES
-    runs = DEFAULT_RUNS
-    top_n = DEFAULT_TOP
-    for a in args:
-        if a.startswith("--runs="):
-            runs = int(a.split("=")[1])
-        elif a.startswith("--top="):
-            top_n = int(a.split("=")[1])
+def print_external_report(
+    label: str,
+    times: dict[str, float],
+    calls: dict[str, int],
+    n_lines: int,
+    n_bytes: int,
+    n_files: int,
+    runs: int,
+    top_n: int,
+) -> None:
+    if not times:
+        print(f"\n[SKIP] {label}: no readable files")
+        return
 
+    total_ms = sum(times.values()) * 1000
+    sorted_rules = sorted(times.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    mb = n_bytes / 1024 / 1024
+    print(f"\n{'=' * 68}")
+    print(f"{label}  ({n_files} files, {n_lines} lines, {mb:.1f} MiB, {runs} runs)")
+    print(f"Total rule time: {total_ms:.1f} ms  |  Top-{top_n} slowest rules:")
+    print(f"{'rule':>12}  {'total_ms':>10}  {'mean_ms/run':>12}  {'calls':>6}  {'% total':>8}")
+    print("-" * 68)
+    for code, elapsed in sorted_rules:
+        rule_ms = elapsed * 1000
+        mean_ms = rule_ms / runs
+        pct = rule_ms / total_ms * 100 if total_ms > 0 else 0.0
+        c = calls.get(code, 0)
+        print(f"{code:>12}  {rule_ms:>10.1f}  {mean_ms:>12.2f}  {c:>6}  {pct:>7.1f}%")
+
+
+def _parse_codes(raw: str | None) -> set[str] | None:
+    if not raw:
+        return None
+    return {part.strip().upper() for part in raw.split(",") if part.strip()}
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("sizes", nargs="*", type=int)
+    parser.add_argument("--runs", type=int, default=DEFAULT_RUNS)
+    parser.add_argument("--top", type=int, default=DEFAULT_TOP)
+    parser.add_argument("--paths-from", default=None)
+    parser.add_argument("--ignore", default=None)
+    return parser.parse_args(argv)
+
+
+def main() -> None:
+    args = _parse_args(sys.argv[1:])
+    if args.paths_from:
+        path_list = Path(args.paths_from).read_text(encoding="utf-8").splitlines()
+        paths = [Path(line) for line in path_list if line.strip()]
+        times, calls, n_lines, n_bytes, n_files = run_paths_per_rule(
+            paths,
+            runs=args.runs,
+            ignore=_parse_codes(args.ignore),
+        )
+        print_external_report(
+            Path(args.paths_from).name,
+            times,
+            calls,
+            n_lines,
+            n_bytes,
+            n_files,
+            args.runs,
+            args.top,
+        )
+        return
+
+    sizes = args.sizes or SIZES
     for size in sizes:
-        times, calls, n_lines = run_per_rule(size, runs=runs)
-        print_report(size, times, calls, n_lines, runs, top_n)
+        times, calls, n_lines = run_per_rule(size, runs=args.runs)
+        print_report(size, times, calls, n_lines, args.runs, args.top)
 
 
 if __name__ == "__main__":
