@@ -25,6 +25,8 @@ from onec_hbk_bsl.cli.check import (
 )
 from onec_hbk_bsl.cli.config import BslConfig
 
+check_module = import_module("onec_hbk_bsl.cli.check")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -111,6 +113,25 @@ class TestRunChecks:
         diags, err = _run_checks(files, select={"BSL012"}, ignore=None, jobs=2)
         assert not err
         assert len(diags) >= 4
+
+    def test_parallel_jobs_keep_large_files_serial(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        files = [
+            str(_write_bsl(tmp_path, f"large{i}.bsl", 'Пароль = "секрет123";\n'))
+            for i in range(2)
+        ]
+        monkeypatch.setenv("BSL_DIAG_LARGE_FILE_SERIAL_BYTES", "1")
+
+        def fail_thread_pool(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise AssertionError("large files must not enter file-level ThreadPoolExecutor")
+
+        monkeypatch.setattr(check_module, "ThreadPoolExecutor", fail_thread_pool)
+
+        diags, err = _run_checks(files, select={"BSL012"}, ignore=None, jobs=2)
+
+        assert not err
+        assert len(diags) == 2
 
     def test_no_files_returns_empty(self) -> None:
         diags, err = _run_checks([], select=None, ignore=None, jobs=1)

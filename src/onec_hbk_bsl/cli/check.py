@@ -64,6 +64,17 @@ _SARIF_LEVEL = {
 }
 
 BSL_EXTENSIONS = {".bsl", ".os"}
+_LARGE_FILE_SERIAL_BYTES = 2 * 1024 * 1024
+
+
+def _large_file_serial_bytes() -> int:
+    raw = os.environ.get("BSL_DIAG_LARGE_FILE_SERIAL_BYTES", "").strip()
+    if not raw:
+        return _LARGE_FILE_SERIAL_BYTES
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return _LARGE_FILE_SERIAL_BYTES
 
 
 def read_paths_from_file(path: str) -> list[str]:
@@ -368,6 +379,23 @@ def _run_checks(
     error_occurred = False
     use_progress = show_progress and len(files) >= _PROGRESS_THRESHOLD
 
+    large_file_threshold = _large_file_serial_bytes()
+    if workers > 1 and large_file_threshold > 0 and len(files) > 1:
+        large_files: list[str] = []
+        small_files: list[str] = []
+        for fp in files:
+            try:
+                size = Path(fp).stat().st_size
+            except OSError:
+                size = 0
+            if size >= large_file_threshold:
+                large_files.append(fp)
+            else:
+                small_files.append(fp)
+    else:
+        large_files = []
+        small_files = files
+
     progress_ctx: Any = (
         Progress(
             SpinnerColumn(),
@@ -384,17 +412,30 @@ def _run_checks(
 
     def _run(task_id: Any = None) -> None:
         nonlocal error_occurred
-        if workers == 1 or len(files) <= 1:
+        def _check_with_engine(engine: DiagnosticEngine, fp: str) -> list[Diagnostic]:
+            per_file_extra = cfg.get_file_ignores(fp)
+            return (
+                _make_engine(per_file_extra).check_file(fp)
+                if per_file_extra
+                else engine.check_file(fp)
+            )
+
+        if large_files:
             engine = _make_engine()
-            for fp in files:
+            for fp in large_files:
                 try:
-                    per_file_extra = cfg.get_file_ignores(fp)
-                    result = (
-                        _make_engine(per_file_extra).check_file(fp)
-                        if per_file_extra
-                        else engine.check_file(fp)
-                    )
-                    all_diagnostics.extend(result)
+                    all_diagnostics.extend(_check_with_engine(engine, fp))
+                except Exception as exc:
+                    console.print(f"[red]Error checking {fp}: {exc}[/red]")
+                    error_occurred = True
+                if task_id is not None and progress_ctx is not None:
+                    progress_ctx.advance(task_id)
+
+        if workers == 1 or len(small_files) <= 1:
+            engine = _make_engine()
+            for fp in small_files:
+                try:
+                    all_diagnostics.extend(_check_with_engine(engine, fp))
                 except Exception as exc:
                     console.print(f"[red]Error checking {fp}: {exc}[/red]")
                     error_occurred = True
@@ -419,7 +460,7 @@ def _run_checks(
                 return engine.check_file(fp)
 
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {executor.submit(_check_one, fp): fp for fp in files}
+                futures = {executor.submit(_check_one, fp): fp for fp in small_files}
                 for future in as_completed(futures):
                     fp = futures[future]
                     try:
