@@ -293,6 +293,32 @@ _METADATA_POOL_CODES: tuple[str, ...] = (
     "BSL274",
 )
 _METADATA_RUNTIME_CODES: tuple[str, ...] = ("BSL244", "BSL253", "BSL261")
+_LIGHT_POOL_169_170_181_196_260_CODES: tuple[str, ...] = (
+    "BSL169",
+    "BSL170",
+    "BSL181",
+    "BSL196",
+    "BSL260",
+)
+_LIGHT_POOL_171_248_252_259_268_CODES: tuple[str, ...] = (
+    "BSL171",
+    "BSL248",
+    "BSL252",
+    "BSL259",
+    "BSL268",
+)
+_LIGHT_CALL_POOL_202_223_243_249_CODES: tuple[str, ...] = (
+    "BSL202",
+    "BSL223",
+    "BSL243",
+    "BSL249",
+)
+_LIGHT_POOL_221_222_239_271_CODES: tuple[str, ...] = (
+    "BSL221",
+    "BSL222",
+    "BSL239",
+    "BSL271",
+)
 _DEPRECATED_API_POOL_CODES: tuple[str, ...] = ("BSL175", "BSL176")
 _AGGREGATED_RULE_CODES: frozenset[str] = frozenset(
     _QUERY_TEXT_191_201_CODES
@@ -301,6 +327,10 @@ _AGGREGATED_RULE_CODES: frozenset[str] = frozenset(
     + _QUERY_METADATA_CODES
     + _METADATA_POOL_CODES
     + _METADATA_RUNTIME_CODES
+    + _LIGHT_POOL_169_170_181_196_260_CODES
+    + _LIGHT_POOL_171_248_252_259_268_CODES
+    + _LIGHT_CALL_POOL_202_223_243_249_CODES
+    + _LIGHT_POOL_221_222_239_271_CODES
 )
 _PROCESS_TYPO_MIN_LINES = 5_000
 _PROCESS_TYPO_MIN_CANDIDATES = 200
@@ -550,6 +580,108 @@ def _run_deprecated_api_pool(
         bsl175_enum_name_re=_diag._RE_BSL175_ENUM_NAME,
         bsl175_global_method_re=_diag._RE_BSL175_GLOBAL_METHOD,
         bsl175_global_methods=_diag._BSL175_GLOBAL_METHODS,
+    )
+
+
+def _run_light_pool_169_170_181_196_260(
+    context: DiagnosticDocumentContext,
+    enabled_codes: tuple[str, ...],
+) -> list[Diagnostic]:
+    from onec_hbk_bsl.analysis import diagnostics as _diag
+
+    engine = context.diagnostics_engine
+    return context.module_model.validate_bsl169_170_181_182_196_260_light_pool(
+        lines=context.lines,
+        procs=context.procedures,
+        enabled=enabled_codes,
+        snapshot=context.snapshot,
+        tree=context.tree,
+        ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+        ts_child_of_type_fn=_diag._ts_child_of_type,
+        ts_node_text_fn=_diag._ts_node_text,
+        utf8_byte_offset_to_lsp_character_fn=_diag.utf8_byte_offset_to_lsp_character,
+        path_is_likely_form_module_bsl_fn=_diag.path_is_likely_form_module_bsl,
+        path_is_command_module_bsl_fn=_diag._path_is_command_module_bsl,
+        strip_inline_comment_preserve_strings_fn=_diag._strip_inline_comment_preserve_strings,
+        line_comment_re=_diag._RE_LINE_COMMENT,
+        proc_name_span_fn=_diag._proc_name_span,
+    )
+
+
+def _run_light_pool_171_248_252_259_268(
+    context: DiagnosticDocumentContext,
+    enabled_codes: tuple[str, ...],
+) -> list[Diagnostic]:
+    from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime import rules as runtime_rules
+
+    engine = context.diagnostics_engine
+    return context.module_model.validate_bsl171_248_251_252_259_268_light_pool(
+        lines=context.lines,
+        tree=context.tree,
+        procs=context.procedures,
+        codes=enabled_codes,
+        rule_enabled_fn=engine._rule_enabled,
+        ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+        rule_bsl171_fn=runtime_rules._run_bsl171_crazy_multiline_string,
+        rule_bsl248_fn=runtime_rules._run_bsl248_several_compiler_directives,
+        rule_bsl251_fn=runtime_rules._run_bsl251_ternary_operator_usage,
+        rule_bsl252_fn=runtime_rules._run_bsl252_this_object_assign,
+        rule_bsl259_fn=runtime_rules._run_bsl259_unknown_preprocessor_symbol,
+        rule_bsl268_fn=runtime_rules._run_bsl268_using_find_element_by_string,
+    )
+
+
+def _run_light_call_pool_202_223_243_249(
+    context: DiagnosticDocumentContext,
+    enabled_codes: tuple[str, ...],
+) -> list[Diagnostic]:
+    from onec_hbk_bsl.analysis import diagnostics as _diag
+
+    return context.module_model.validate_bsl202_205_223_243_249_light_call_pool(
+        lines=context.lines,
+        tree=context.tree,
+        enabled=enabled_codes,
+        snapshot=context.snapshot,
+        strip_inline_comment_preserve_strings_fn=_diag._strip_inline_comment_preserve_strings,
+        ts_nodes_for_types_fn=context.diagnostics_engine._ts_nodes_for_types,
+        ts_child_of_type_fn=_diag._ts_child_of_type,
+        ts_node_text_fn=_diag._ts_node_text,
+        ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
+        ts_walk_fn=_diag._ts_walk,
+        ts_method_identifier_span_fn=_diag._ts_method_identifier_span,
+        utf8_byte_offset_to_lsp_character_fn=_diag.utf8_byte_offset_to_lsp_character,
+        bsl223_structure_names=_diag._BSL223_STRUCTURE_NAMES,
+        bsl249_style_constructor_names=_diag._BSL249_STYLE_CONSTRUCTOR_NAMES,
+        split_top_level_args_fn=_diag._split_top_level_args,
+        find_matching_paren_fn=_diag._find_matching_paren,
+    )
+
+
+def _run_light_pool_221_222_239_271(
+    context: DiagnosticDocumentContext,
+    enabled_codes: tuple[str, ...],
+) -> list[Diagnostic]:
+    from onec_hbk_bsl.analysis import diagnostics as _diag
+
+    engine = context.diagnostics_engine
+    return context.module_model.validate_bsl221_222_239_271_light_pool(
+        lines=context.lines,
+        tree=context.tree,
+        procs=context.procedures,
+        enabled=enabled_codes,
+        snapshot=context.snapshot,
+        strip_inline_comment_preserve_strings_fn=_diag._strip_inline_comment_preserve_strings,
+        reserved_parameter_names_re=engine._reserved_parameter_names_re,
+        ts_walk_fn=_diag._ts_walk,
+        ts_child_of_type_fn=_diag._ts_child_of_type,
+        ts_node_text_fn=_diag._ts_node_text,
+        utf8_byte_offset_to_lsp_character_fn=_diag.utf8_byte_offset_to_lsp_character,
+        bsl221_nstr_re=_diag._RE_BSL221_NSTR,
+        bsl221_lang_re=_diag._RE_BSL221_LANG,
+        bsl271_unix_unavailable_new_re=_diag._RE_BSL271_UNIX_UNAVAILABLE_NEW,
+        bsl271_platform_guard_re=_diag._RE_BSL271_PLATFORM_GUARD,
+        proc_name_span_fn=_diag._proc_name_span,
+        declared_languages=engine._declared_languages,
     )
 
 
@@ -872,6 +1004,42 @@ def append_diagnostic_runtime_rule_tasks(
             lambda codes=deprecated_api_pool: _run_deprecated_api_pool(context, codes),
         )
         deprecated_api_parallelized.update(deprecated_api_pool)
+
+    light_pool_169_170_181_196_260 = enabled_codes(_LIGHT_POOL_169_170_181_196_260_CODES)
+    if light_pool_169_170_181_196_260:
+        add_task(
+            light_pool_169_170_181_196_260,
+            lambda codes=light_pool_169_170_181_196_260: (
+                _run_light_pool_169_170_181_196_260(context, codes)
+            ),
+        )
+
+    light_pool_171_248_252_259_268 = enabled_codes(_LIGHT_POOL_171_248_252_259_268_CODES)
+    if light_pool_171_248_252_259_268:
+        add_task(
+            light_pool_171_248_252_259_268,
+            lambda codes=light_pool_171_248_252_259_268: (
+                _run_light_pool_171_248_252_259_268(context, codes)
+            ),
+        )
+
+    light_call_pool_202_223_243_249 = enabled_codes(_LIGHT_CALL_POOL_202_223_243_249_CODES)
+    if light_call_pool_202_223_243_249:
+        add_task(
+            light_call_pool_202_223_243_249,
+            lambda codes=light_call_pool_202_223_243_249: (
+                _run_light_call_pool_202_223_243_249(context, codes)
+            ),
+        )
+
+    light_pool_221_222_239_271 = enabled_codes(_LIGHT_POOL_221_222_239_271_CODES)
+    if light_pool_221_222_239_271:
+        add_task(
+            light_pool_221_222_239_271,
+            lambda codes=light_pool_221_222_239_271: (
+                _run_light_pool_221_222_239_271(context, codes)
+            ),
+        )
 
     core_fact_parallelized: set[str] = set()
     if snapshot is not None:

@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
+    append_diagnostic_runtime_rule_tasks,
+)
 from onec_hbk_bsl.analysis.diagnostic.execution import (
     execute_diagnostic_rule_tasks,
     make_diagnostic_rule_task,
 )
+from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
 
 def _worker_pid() -> list[int]:
@@ -28,3 +32,47 @@ def test_process_safe_tasks_run_in_process_pool_and_preserve_order(monkeypatch) 
     assert result[1] == parent_pid
     assert result[0] != parent_pid
     assert result[2] != parent_pid
+
+
+def test_light_pool_rules_are_scheduled_as_shared_fact_phases() -> None:
+    selected = {
+        "BSL169",
+        "BSL170",
+        "BSL171",
+        "BSL181",
+        "BSL196",
+        "BSL202",
+        "BSL221",
+        "BSL222",
+        "BSL223",
+        "BSL239",
+        "BSL243",
+        "BSL248",
+        "BSL249",
+        "BSL251",
+        "BSL252",
+        "BSL259",
+        "BSL260",
+        "BSL268",
+        "BSL271",
+    }
+    engine = DiagnosticEngine(select=selected)
+    tasks = []
+
+    append_diagnostic_runtime_rule_tasks(
+        tasks,
+        engine=engine,
+        path="Module.bsl",
+        content="",
+        lines=[],
+        tree=None,
+        snapshot=None,
+    )
+
+    task_codes = [code for code, _ in tasks]
+    assert "BSL169+BSL170+BSL181+BSL196+BSL260" in task_codes
+    assert "BSL171+BSL248+BSL252+BSL259+BSL268" in task_codes
+    assert "BSL202+BSL223+BSL243+BSL249" in task_codes
+    assert "BSL221+BSL222+BSL239+BSL271" in task_codes
+    assert "BSL251" in task_codes
+    assert not (selected - {"BSL251"}) & set(task_codes)
