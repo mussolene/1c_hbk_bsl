@@ -138,7 +138,7 @@ def test_core_fact_phase_materializes_only_enabled_fact_family() -> None:
 
 
 def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:
-    engine = DiagnosticEngine(select={"BSL066", "BSL215"})
+    engine = DiagnosticEngine(select={"BSL022", "BSL066", "BSL215"})
     requested: list[set[str]] = []
 
     def record_ts_nodes_for_types(tree, node_types: set[str]):
@@ -158,11 +158,26 @@ def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:
         snapshot=None,
     )
 
-    assert requested[0] == {"line_comment", "method_call"}
+    assert requested[0] == {"line_comment", "method_call", "string"}
 
 
 def test_runtime_cst_prewarm_covers_late_runtime_consumers() -> None:
-    selected = {"BSL029", "BSL060", "BSL151", "BSL217", "BSL230", "BSL276", "BSL277"}
+    selected = {
+        "BSL025",
+        "BSL027",
+        "BSL028",
+        "BSL029",
+        "BSL030",
+        "BSL052",
+        "BSL060",
+        "BSL064",
+        "BSL151",
+        "BSL217",
+        "BSL230",
+        "BSL271",
+        "BSL276",
+        "BSL277",
+    }
     engine = DiagnosticEngine(select=selected)
     requested: list[set[str]] = []
 
@@ -198,6 +213,7 @@ def test_runtime_cst_prewarm_covers_late_runtime_consumers() -> None:
     execute_diagnostic_rule_tasks(tasks)
 
     assert requested[0] == {
+        ";",
         "assignment_statement",
         "binary_expression",
         "break_statement",
@@ -209,10 +225,12 @@ def test_runtime_cst_prewarm_covers_late_runtime_consumers() -> None:
         "goto_statement",
         "if_statement",
         "method_call",
+        "new_expression",
         "number",
         "procedure_definition",
         "return_statement",
         "rise_error_statement",
+        "string",
         "try_statement",
         "unary_expression",
         "var_statement",

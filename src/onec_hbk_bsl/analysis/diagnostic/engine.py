@@ -453,7 +453,11 @@ class DiagnosticEngine:
     def _ts_nodes_for_types(self, tree: Any, node_types: set[str]) -> dict[str, list[Any]]:
         """Return materialised CST nodes grouped by type for current file."""
         snapshot = self._current_snapshot
-        if snapshot is not None and getattr(snapshot, "tree", None) is tree:
+        if (
+            snapshot is not None
+            and getattr(snapshot, "tree", None) is tree
+            and hasattr(snapshot, "ts_nodes_for_types")
+        ):
             return snapshot.ts_nodes_for_types(
                 node_types,
                 walker=_ts_walk,

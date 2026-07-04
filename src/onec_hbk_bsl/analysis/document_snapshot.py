@@ -1155,15 +1155,13 @@ def _call_end_character(line: str, open_paren_idx: int) -> int:
     return len(line.rstrip())
 
 
-def _bsl022_modal_facts_from_tree(
-    root: Any,
+def _bsl022_modal_facts_from_nodes(
+    method_calls: list[Any],
     lines: list[str],
     procedures: list[ProcInfo],
 ) -> list[LineDiagnosticFact]:
     facts: list[LineDiagnosticFact] = []
-    for node in _ts_walk(root):
-        if getattr(node, "type", None) != "method_call":
-            continue
+    for node in method_calls:
         if getattr(getattr(node, "parent", None), "type", None) == "call_expression":
             continue
         ident = _ts_child_of_type(node, "identifier")
@@ -1868,9 +1866,7 @@ class DocumentSnapshot:
             else:
                 line_starts = line_start_offsets(self.content)
                 ranges: list[tuple[int, int]] = []
-                for node in _ts_walk(self.root_node):
-                    if getattr(node, "type", None) != "string":
-                        continue
+                for node in self.ts_nodes_for_types({"string"}, walker=_ts_walk)["string"]:
                     start = _char_offset_for_ts_point(self.lines, line_starts, node.start_point)
                     end = _char_offset_for_ts_point(self.lines, line_starts, node.end_point)
                     if end > start:
@@ -2600,7 +2596,11 @@ class DocumentSnapshot:
             return self._deprecated_warning_facts
         root = self.root_node
         facts = (
-            _bsl022_modal_facts_from_tree(root, self.lines, self.procedures)
+            _bsl022_modal_facts_from_nodes(
+                self.ts_nodes_for_types({"method_call"}, walker=_ts_walk)["method_call"],
+                self.lines,
+                self.procedures,
+            )
             if self.tree_ok and root is not None
             else _bsl022_modal_facts_from_lines(self.lines, self.procedures)
         )

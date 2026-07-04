@@ -266,9 +266,14 @@ def _diagnostics_bsl030_semicolon_presence(context: DiagnosticDocumentContext) -
         return []
 
     diags: list[Diagnostic] = []
-    for node in _ts_walk(root):
-        if getattr(node, "type", None) not in _BSL030_STATEMENT_TYPES:
-            continue
+    if context.ts_nodes_for_types is not None:
+        nodes_by_type = context.ts_nodes_for_types(context.tree, set(_BSL030_STATEMENT_TYPES))
+        nodes = (node for node_list in nodes_by_type.values() for node in node_list)
+    else:
+        nodes = (
+            node for node in _ts_walk(root) if getattr(node, "type", None) in _BSL030_STATEMENT_TYPES
+        )
+    for node in nodes:
         if _bsl030_statement_has_semicolon(node, context.lines):
             continue
         if _diag.tree_has_errors(node):
@@ -444,9 +449,13 @@ def _diagnostics_bsl052_identical_expressions(
         return []
 
     storage = DiagnosticStorage(context.path)
-    for node in _ts_walk(root):
-        if getattr(node, "type", None) != "binary_expression":
-            continue
+    if context.ts_nodes_for_types is not None:
+        nodes = context.ts_nodes_for_types(context.tree, {"binary_expression"})["binary_expression"]
+    else:
+        nodes = [
+            node for node in _ts_walk(root) if getattr(node, "type", None) == "binary_expression"
+        ]
+    for node in nodes:
         parts = _bsl052_binary_parts(node)
         if parts is None:
             continue
@@ -1551,9 +1560,13 @@ class UsingGotoRule(DiagnosticRuntimeRule):
         if root is None:
             return []
         storage = DiagnosticStorage(context.path)
-        for node in _ts_walk(root):
-            if getattr(node, "type", None) != "goto_statement":
-                continue
+        if context.ts_nodes_for_types is not None:
+            nodes = context.ts_nodes_for_types(context.tree, {"goto_statement"})["goto_statement"]
+        else:
+            nodes = [
+                node for node in _ts_walk(root) if getattr(node, "type", None) == "goto_statement"
+            ]
+        for node in nodes:
             _add_node_range(
                 storage,
                 code=self.code,
@@ -1897,8 +1910,12 @@ class EmptyStatementRule(DiagnosticRuntimeRule):
 
     def _run_from_tree(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
-        root = context.tree.root_node
-        for node in _ts_walk(root):
+        if context.ts_nodes_for_types is not None:
+            nodes = context.ts_nodes_for_types(context.tree, {";"})[";"]
+        else:
+            root = context.tree.root_node
+            nodes = _ts_walk(root)
+        for node in nodes:
             if not self._is_empty_statement_semicolon(node, context.lines):
                 continue
             _add_node_range(
@@ -1950,9 +1967,15 @@ class MissingCodeTryCatchRule(DiagnosticRuntimeRule):
         if root is None:
             return []
         storage = DiagnosticStorage(context.path)
-        for try_statement in _ts_walk(root):
-            if getattr(try_statement, "type", None) != "try_statement":
-                continue
+        if context.ts_nodes_for_types is not None:
+            try_statements = context.ts_nodes_for_types(context.tree, {"try_statement"})[
+                "try_statement"
+            ]
+        else:
+            try_statements = [
+                node for node in _ts_walk(root) if getattr(node, "type", None) == "try_statement"
+            ]
+        for try_statement in try_statements:
             except_keyword = self._except_keyword(try_statement)
             if except_keyword is None:
                 continue
@@ -5271,7 +5294,7 @@ class UseLessForEachRule(DiagnosticRuntimeRule):
         root = getattr(getattr(context.tree, "root_node", None), "text", None)
         if not isinstance(root, (bytes, bytearray)):
             return []
-        module_vars = self._module_variable_names(context.tree.root_node)
+        module_vars = self._module_variable_names(context)
         storage = DiagnosticStorage(context.path)
 
         for node in context.ts_nodes_for_types(context.tree, {"for_each_statement"})[
@@ -5299,11 +5322,17 @@ class UseLessForEachRule(DiagnosticRuntimeRule):
         return storage.diagnostics
 
     @staticmethod
-    def _module_variable_names(root: Any) -> set[str]:
+    def _module_variable_names(context: DiagnosticDocumentContext) -> set[str]:
         names: set[str] = set()
-        for node in _ts_walk(root):
-            if getattr(node, "type", None) != "var_definition":
-                continue
+        if context.ts_nodes_for_types is not None:
+            nodes = context.ts_nodes_for_types(context.tree, {"var_definition"})["var_definition"]
+        else:
+            nodes = [
+                node
+                for node in _ts_walk(context.tree.root_node)
+                if getattr(node, "type", None) == "var_definition"
+            ]
+        for node in nodes:
             if getattr(getattr(node, "parent", None), "type", None) != "source_file":
                 continue
             for child in _ts_walk(node):
@@ -6641,6 +6670,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 proc_node_map=proc_node_map,
                 find_proc_definition_node_fn=_diag._find_proc_definition_node,
                 ts_walk_fn=_diag._ts_walk,
+                ts_nodes_for_types_fn=engine._ts_nodes_for_types,
                 utf8_byte_offset_to_lsp_character_fn=(_diag.utf8_byte_offset_to_lsp_character),
                 lines=context.lines,
             )

@@ -12,7 +12,7 @@ from onec_hbk_bsl.analysis.document_snapshot import (
     find_procedure_names_from_tree,
     find_procedure_names_in_content,
 )
-from onec_hbk_bsl.indexer.metadata_parser import crawl_config
+from onec_hbk_bsl.indexer.metadata_parser import crawl_config, parse_metadata_object_xml
 from onec_hbk_bsl.indexer.metadata_registry import FOLDER_TO_KIND
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
@@ -208,6 +208,22 @@ def current_object_xml_path(path: str) -> Path | None:
         mod_name = Path(path).parent.parent.name
         return Path(root) / "CommonModules" / f"{mod_name}.xml"
     return None
+
+
+@functools.lru_cache(maxsize=4096)
+def current_metadata_object_for_file_cached(path: str) -> Any | None:
+    object_xml = current_object_xml_path(path)
+    if object_xml is None or not object_xml.is_file():
+        return None
+    ctx = current_module_xml_context(path)
+    folder = ctx.get("folder")
+    object_name = ctx.get("object_name")
+    if not (folder and object_name):
+        return None
+    kind = FOLDER_TO_KIND.get(folder)
+    if kind is None:
+        return None
+    return parse_metadata_object_xml(object_xml, kind, object_name).to_meta_object()
 
 
 def current_form_xml_path(path: str) -> Path | None:

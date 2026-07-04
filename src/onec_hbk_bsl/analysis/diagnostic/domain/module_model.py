@@ -1283,7 +1283,7 @@ class ModuleModel:
         enabled: tuple[str, ...],
         snapshot,
         tree,
-        ts_nodes_for_types_fn,
+        ts_nodes_for_types_fn=None,
         ts_child_of_type_fn,
         ts_node_text_fn,
         utf8_byte_offset_to_lsp_character_fn,
@@ -1863,7 +1863,7 @@ class ModuleModel:
         procs: list[ProcInfo],
         codes: tuple[str, ...],
         rule_enabled_fn,
-        ts_nodes_for_types_fn,
+        ts_nodes_for_types_fn=None,
         rule_bsl171_fn,
         rule_bsl248_fn,
         rule_bsl251_fn,
@@ -2173,6 +2173,7 @@ class ModuleModel:
         proc_node_map: dict[tuple[str, int, str], Any] | None,
         find_proc_definition_node_fn,
         ts_walk_fn,
+        ts_nodes_for_types_fn=None,
         utf8_byte_offset_to_lsp_character_fn,
         lines: list[str],
     ) -> list[Diagnostic]:
@@ -2180,6 +2181,12 @@ class ModuleModel:
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, bytearray)):
             return []
+        if ts_nodes_for_types_fn is not None:
+            return_nodes = ts_nodes_for_types_fn(tree, {"return_statement"})["return_statement"]
+        else:
+            return_nodes = [
+                node for node in ts_walk_fn(root) if getattr(node, "type", None) == "return_statement"
+            ]
         for proc in procs:
             if proc.kind != "procedure":
                 continue
@@ -2191,8 +2198,11 @@ class ModuleModel:
             )
             if proc_node is None:
                 continue
-            for node in ts_walk_fn(proc_node):
-                if getattr(node, "type", None) != "return_statement":
+            proc_start = int(getattr(proc_node, "start_byte", -1))
+            proc_end = int(getattr(proc_node, "end_byte", -1))
+            for node in return_nodes:
+                node_start = int(getattr(node, "start_byte", -2))
+                if node_start < proc_start or node_start >= proc_end:
                     continue
                 if not any(
                     getattr(child, "type", None) == "expression"
@@ -3010,7 +3020,8 @@ class ModuleModel:
         strip_inline_comment_preserve_strings_fn,
         reserved_parameter_names_re,
         ts_walk_fn,
-        ts_child_of_type_fn,
+        ts_nodes_for_types_fn=None,
+        ts_child_of_type_fn=None,
         ts_node_text_fn,
         utf8_byte_offset_to_lsp_character_fn,
         bsl221_nstr_re,
@@ -3083,9 +3094,15 @@ class ModuleModel:
             return diags
         line_texts = lines
         if "BSL271" in enabled_set:
-            for node in ts_walk_fn(root):
-                if getattr(node, "type", None) != "new_expression":
-                    continue
+            if ts_nodes_for_types_fn is not None:
+                nodes = ts_nodes_for_types_fn(tree, {"new_expression"})["new_expression"]
+            else:
+                nodes = [
+                    node
+                    for node in ts_walk_fn(root)
+                    if getattr(node, "type", None) == "new_expression"
+                ]
+            for node in nodes:
                 type_node = ts_child_of_type_fn(node, "identifier")
                 if type_node is None:
                     continue

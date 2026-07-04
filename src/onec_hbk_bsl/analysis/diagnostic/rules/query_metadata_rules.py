@@ -912,9 +912,8 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     current_ctx = _diag._current_module_xml_context(path) if object_xml is not None else {}
     object_name = current_ctx.get("object_name", object_xml.stem) if object_xml is not None else ""
     meta_obj: Any | None = None
-    if object_xml is not None and root is not None and ({"BSL189", "BSL241"} & enabled_set):
-        crawl = _diag._crawl_config_cached(root)
-        meta_obj = crawl["by_name"].get(object_name.casefold())
+    if object_xml is not None and ({"BSL189", "BSL241"} & enabled_set):
+        meta_obj = _diag._current_metadata_object_for_file_cached(path)
     privileged_map = (
         _diag._common_module_privileged_map_cached(root)
         if root is not None and "BSL231" in enabled_set

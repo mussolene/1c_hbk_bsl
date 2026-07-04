@@ -363,8 +363,31 @@ _PROCESS_FORK_RULE_GROUPS: tuple[tuple[str, ...], ...] = (
     ("BSL097", "BSL250", "BSL205", "BSL185"),
 )
 _RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
+    "BSL022": frozenset({"method_call"}),
+    "BSL025": frozenset({";"}),
+    "BSL027": frozenset({"goto_statement"}),
+    "BSL028": frozenset({"try_statement"}),
     "BSL029": frozenset({"assignment_statement", "number"}),
+    "BSL030": frozenset(
+        {
+            "assignment_statement",
+            "break_statement",
+            "call_statement",
+            "continue_statement",
+            "for_each_statement",
+            "for_statement",
+            "goto_statement",
+            "if_statement",
+            "return_statement",
+            "rise_error_statement",
+            "try_statement",
+            "var_statement",
+            "while_statement",
+        }
+    ),
+    "BSL052": frozenset({"binary_expression"}),
     "BSL060": frozenset({"binary_expression", "unary_expression"}),
+    "BSL064": frozenset({"return_statement"}),
     "BSL066": frozenset({"method_call"}),
     "BSL097": frozenset({"method_call"}),
     "BSL151": frozenset(
@@ -408,9 +431,10 @@ _RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
     "BSL257": frozenset({"unary_expression"}),
     "BSL259": frozenset({"preprocessor"}),
     "BSL260": frozenset({"method_call"}),
-    "BSL263": frozenset({"for_each_statement"}),
+    "BSL263": frozenset({"for_each_statement", "var_definition"}),
     "BSL264": frozenset({"method_call", "new_expression", "new_expression_method"}),
     "BSL268": frozenset({"method_call"}),
+    "BSL271": frozenset({"new_expression"}),
     "BSL276": frozenset(
         {"method_call", "procedure_definition", "function_definition", "try_statement"}
     ),
@@ -724,6 +748,7 @@ def _run_light_pool_221_222_239_271(
         strip_inline_comment_preserve_strings_fn=_diag._strip_inline_comment_preserve_strings,
         reserved_parameter_names_re=engine._reserved_parameter_names_re,
         ts_walk_fn=_diag._ts_walk,
+        ts_nodes_for_types_fn=engine._ts_nodes_for_types,
         ts_child_of_type_fn=_diag._ts_child_of_type,
         ts_node_text_fn=_diag._ts_node_text,
         utf8_byte_offset_to_lsp_character_fn=_diag.utf8_byte_offset_to_lsp_character,
@@ -935,6 +960,8 @@ def append_diagnostic_runtime_rule_tasks(
 
     if context.ts_nodes_for_types is not None:
         runtime_cst_node_types = _runtime_cst_node_types_for_codes(engine._enabled_rule_codes())
+        if engine._enabled_rule_codes():
+            runtime_cst_node_types.add("string")
         if runtime_cst_node_types:
             context.ts_nodes_for_types(context.tree, runtime_cst_node_types)
 

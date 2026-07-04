@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -11,6 +12,7 @@ def _load_script_module(name: str):
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -60,6 +62,38 @@ def test_bench_per_rule_external_paths_mode(tmp_path: Path) -> None:
     assert args.runs == 1
     assert args.top == 3
     assert bench_per_rule._parse_codes(args.ignore) == {"BSL001", "BSL260"}
+
+
+def test_dev_corpus_bench_parse_trace_flags() -> None:
+    dev_corpus_bench = _load_script_module("dev_corpus_bench")
+
+    args = dev_corpus_bench.parse_args(
+        [
+            ".",
+            "--largest=5",
+            "--diagnostics-only",
+            "--trace-analysis",
+            "--trace-call-sites",
+        ]
+    )
+
+    assert args.largest == 5
+    assert args.diagnostics_only is True
+    assert args.trace_analysis is True
+    assert args.trace_call_sites is True
+
+
+def test_dev_corpus_bench_trace_records_missing_types() -> None:
+    dev_corpus_bench = _load_script_module("dev_corpus_bench")
+    trace = dev_corpus_bench.AnalysisTrace()
+
+    trace.add_walk("runtime", 10)
+    trace.add_walk("runtime", 5)
+    trace.add_missing_type("method_call")
+
+    assert trace.root_walk_calls == {"runtime": 2}
+    assert trace.root_walk_nodes == {"runtime": 15}
+    assert trace.ts_nodes_missing_types == {"method_call": 1}
 
 
 def test_bsl_diagnostic_messages_are_not_english_fallbacks() -> None:

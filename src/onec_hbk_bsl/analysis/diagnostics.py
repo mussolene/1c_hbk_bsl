@@ -178,6 +178,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     current_module_xml_context as _current_module_xml_context,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    current_metadata_object_for_file_cached as _current_metadata_object_for_file_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     current_object_xml_path as _current_object_xml_path,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (

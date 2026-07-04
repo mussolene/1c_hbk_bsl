@@ -2199,6 +2199,40 @@ class TestTailParityBatches:
 
         assert "BSL241" not in _codes(DiagnosticEngine(select={"BSL241"}).check_file(str(module)))
 
+    def test_bsl241_uses_current_object_without_full_crawl(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+
+        object_name = "ТестовыйОбъект"
+        obj_dir = root / "Catalogs" / object_name / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "Catalogs" / f"{object_name}.xml").write_text(
+            textwrap.dedent(
+                f"""\
+                <MetaDataObject>
+                    <Catalog>
+                        <Properties><Name>{object_name}</Name></Properties>
+                        <ChildObjects>
+                            <Attribute><Properties><Name>{object_name}</Name></Properties></Attribute>
+                        </ChildObjects>
+                    </Catalog>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module = obj_dir / "ManagerModule.bsl"
+        module.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._crawl_config_cached",
+            lambda *_args, **_kwargs: pytest.fail("full crawl is not expected for BSL241"),
+        )
+
+        assert "BSL241" in _codes(DiagnosticEngine(select={"BSL241"}).check_file(str(module)))
+
     def test_deny_incomplete_values_skips_non_register_metadata(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
         root.mkdir(parents=True)
@@ -2348,6 +2382,38 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
+
+    def test_bsl189_uses_current_object_without_full_crawl(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        obj_dir = root / "DataProcessors" / "Обработка" / "Ext"
+        obj_dir.mkdir(parents=True)
+        (root / "DataProcessors" / "Обработка.xml").write_text(
+            textwrap.dedent(
+                """\
+                <MetaDataObject>
+                    <DataProcessor>
+                        <Properties><Name>Обработка</Name></Properties>
+                        <ChildObjects>
+                            <Attribute><Properties><Name>Документ</Name></Properties></Attribute>
+                        </ChildObjects>
+                    </DataProcessor>
+                </MetaDataObject>
+                """
+            ),
+            encoding="utf-8",
+        )
+        module_path = obj_dir / "Module.bsl"
+        module_path.write_text("Процедура Метод()\nКонецПроцедуры\n", encoding="utf-8")
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._crawl_config_cached",
+            lambda *_args, **_kwargs: pytest.fail("full crawl is not expected for BSL189"),
+        )
+
+        assert "BSL189" in _codes(DiagnosticEngine(select={"BSL189"}).check_file(str(module_path)))
 
     def test_common_module_cross_reference_tail_pool(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
