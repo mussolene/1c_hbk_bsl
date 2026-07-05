@@ -385,6 +385,7 @@ _RUNTIME_CST_NODE_TYPES_BY_CODE: dict[str, frozenset[str]] = {
             "while_statement",
         }
     ),
+    "BSL033": frozenset({"assignment_statement", "method_call"}),
     "BSL052": frozenset({"binary_expression"}),
     "BSL060": frozenset({"binary_expression", "unary_expression"}),
     "BSL064": frozenset({"return_statement"}),

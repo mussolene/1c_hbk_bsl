@@ -6610,20 +6610,34 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 )
             return diags
         if code == "BSL033":
-            loop_lines: set[int] | None = None
             if _diag._ts_tree_ok_for_rules(context.tree):
-                loop_lines = _diag.loop_body_line_indices_0(context.tree.root_node)
-            diags = []
-            for proc_model in context.procedure_models:
-                diags.extend(
-                    proc_model.validate_query_in_loop(
-                        context.lines,
-                        loop_lines=loop_lines,
-                        loop_open_re=_diag._RE_LOOP_OPEN,
-                        loop_close_re=_diag._RE_LOOP_CLOSE,
+                nodes_by_type = (
+                    context.ts_nodes_for_types(
+                        context.tree,
+                        {"assignment_statement", "method_call"},
                     )
+                    if context.ts_nodes_for_types is not None
+                    else {
+                        "assignment_statement": [
+                            node
+                            for node in _diag._ts_walk(context.tree.root_node)
+                            if getattr(node, "type", None) == "assignment_statement"
+                        ],
+                        "method_call": [
+                            node
+                            for node in _diag._ts_walk(context.tree.root_node)
+                            if getattr(node, "type", None) == "method_call"
+                        ],
+                    }
                 )
-            return diags
+                return _diag._diagnostics_bsl033_from_tree(
+                    context.path,
+                    context.lines,
+                    procs,
+                    assignment_nodes=nodes_by_type["assignment_statement"],
+                    method_call_nodes=nodes_by_type["method_call"],
+                )
+            return []
         if code == "BSL035":
             return model.validate_duplicate_string_literal(
                 context.lines,

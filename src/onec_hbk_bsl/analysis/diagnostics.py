@@ -2955,6 +2955,160 @@ def _ts_method_call_arg_exprs(node: Any) -> list[Any]:
     return [child for child in getattr(args, "children", []) or [] if child.type == "expression"]
 
 
+_BSL033_QUERY_TYPES = frozenset(
+    {
+        "запрос",
+        "query",
+        "построительзапроса",
+        "querybuilder",
+        "построительотчета",
+        "reportbuilder",
+    }
+)
+_BSL033_LOOP_NODE_TYPES = frozenset({"for_each_statement", "for_statement", "while_statement"})
+
+
+def _ts_parent_of_type(node: Any, node_types: set[str] | frozenset[str]) -> Any | None:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) in node_types:
+            return parent
+        parent = getattr(parent, "parent", None)
+    return None
+
+
+def _bsl033_assignment_target(assignment: Any) -> str:
+    identifier = _ts_child_of_type(assignment, "identifier")
+    return _ts_node_text(identifier).casefold() if identifier is not None else ""
+
+
+def _bsl033_expression_query_types(expr: Any, variable_types: dict[str, set[str]]) -> set[str]:
+    children = getattr(expr, "children", []) or []
+    if len(children) != 1:
+        return set()
+    child = children[0]
+    child_type = getattr(child, "type", None)
+    if child_type == "new_expression":
+        type_node = _ts_child_of_type(child, "identifier")
+        type_name = _ts_node_text(type_node).casefold() if type_node is not None else ""
+        return {type_name} if type_name in _BSL033_QUERY_TYPES else set()
+    if child_type == "identifier":
+        return set(variable_types.get(_ts_node_text(child).casefold(), set()))
+    return set()
+
+
+def _bsl033_method_name(method_call: Any) -> str:
+    ident = _ts_child_of_type(method_call, "identifier")
+    return _ts_node_text(ident).casefold() if ident is not None else ""
+
+
+def _bsl033_receiver_from_access(access: Any, stop_before: Any | None = None) -> str:
+    for child in getattr(access, "children", []) or []:
+        if child is stop_before:
+            return ""
+        if getattr(child, "type", None) == "access":
+            receiver = _bsl033_receiver_from_access(child)
+            if receiver:
+                return receiver
+        if getattr(child, "type", None) == "identifier":
+            return _ts_node_text(child).casefold()
+    return ""
+
+
+def _bsl033_receiver_name(method_call: Any) -> str:
+    parent = getattr(method_call, "parent", None)
+    if getattr(parent, "type", None) == "access":
+        return _bsl033_receiver_from_access(parent, stop_before=method_call)
+    if getattr(parent, "type", None) == "call_expression":
+        for child in getattr(parent, "children", []) or []:
+            if child is method_call:
+                break
+            if getattr(child, "type", None) == "access":
+                return _bsl033_receiver_from_access(child)
+    return ""
+
+
+def _bsl033_range_node(method_call: Any) -> Any:
+    parent = getattr(method_call, "parent", None)
+    if getattr(parent, "type", None) == "call_expression":
+        return parent
+    call_expression = getattr(parent, "parent", None)
+    if getattr(call_expression, "type", None) == "call_expression":
+        return call_expression
+    return parent if getattr(parent, "type", None) == "access" else method_call
+
+
+def _diagnostics_bsl033_from_tree(
+    path: str,
+    lines: list[str],
+    procs: list[_ProcInfo],
+    *,
+    assignment_nodes: list[Any],
+    method_call_nodes: list[Any],
+) -> list[Diagnostic]:
+    diags: list[Diagnostic] = []
+    proc_nodes = sorted(
+        (*assignment_nodes, *method_call_nodes),
+        key=lambda node: (
+            getattr(node, "start_point", (0, 0))[0],
+            getattr(node, "start_point", (0, 0))[1],
+            0 if getattr(node, "type", None) == "assignment_statement" else 1,
+        ),
+    )
+    node_idx = 0
+    for proc in sorted(procs, key=lambda item: item.start_idx):
+        variable_types: dict[str, set[str]] = {}
+        while (
+            node_idx < len(proc_nodes)
+            and getattr(proc_nodes[node_idx], "start_point", (0, 0))[0] <= proc.start_idx
+        ):
+            node_idx += 1
+        current_idx = node_idx
+        while current_idx < len(proc_nodes):
+            node = proc_nodes[current_idx]
+            row = getattr(node, "start_point", (0, 0))[0]
+            if row >= proc.end_idx:
+                break
+            current_idx += 1
+            node_type = getattr(node, "type", None)
+            if node_type == "method_call" and _bsl033_method_name(node) not in {
+                "выполнить",
+                "execute",
+            }:
+                continue
+            if node_type == "assignment_statement":
+                target = _bsl033_assignment_target(node)
+                expr = _ts_child_of_type(node, "expression")
+                if target and expr is not None:
+                    variable_types[target] = _bsl033_expression_query_types(expr, variable_types)
+                continue
+            if node_type != "method_call":
+                continue
+            if _ts_parent_of_type(node, _BSL033_LOOP_NODE_TYPES) is None:
+                continue
+            receiver = _bsl033_receiver_name(node)
+            if not receiver or not (variable_types.get(receiver, set()) & _BSL033_QUERY_TYPES):
+                continue
+            range_node = _bsl033_range_node(node)
+            start_row, start_byte = range_node.start_point
+            end_row, end_byte = range_node.end_point
+            start_line = lines[start_row] if 0 <= start_row < len(lines) else ""
+            end_line = lines[end_row] if 0 <= end_row < len(lines) else ""
+            diags.append(
+                Diagnostic(
+                    file=path,
+                    line=start_row + 1,
+                    character=utf8_byte_offset_to_lsp_character(start_line, start_byte),
+                    end_line=end_row + 1,
+                    end_character=utf8_byte_offset_to_lsp_character(end_line, end_byte),
+                    severity=Severity.WARNING,
+                    code="BSL033",
+                )
+            )
+        node_idx = current_idx
+    return diags
+
+
 # BSL051 — tree-sitter nodes that close or branch control flow (not executable body).
 # Matches keyword roles in tree-sitter block statements (if/while/for/try).
 _BSL051_BLOCK_DELIMITER_TYPES = frozenset(
