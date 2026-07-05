@@ -1065,6 +1065,12 @@ _BSL183_EXECUTE_EXTERNAL_CODE_RE = re.compile(
     r"(?<![.\w])(Выполнить|Execute|Вычислить|Eval)\s*\(",
     re.IGNORECASE | re.UNICODE,
 )
+_BSL183_EXECUTE_EXTERNAL_CODE_MARKERS = (
+    "выполнить",
+    "execute",
+    "вычислить",
+    "eval",
+)
 _BSL226_OS_USERS_RE = re.compile(
     r"(?<![.\w])(ПользователиОС|OSUsers)\s*\(",
     re.IGNORECASE | re.UNICODE,
@@ -3285,21 +3291,19 @@ class ExecuteExternalCodeRule(DiagnosticRuntimeRule):
         if _path_is_split_module_fragment(context.path):
             return []
         storage = DiagnosticStorage(context.path)
-        snapshot_procs = (
-            list(getattr(context.snapshot, "procs", []) or [])
-            if context.snapshot is not None
-            else []
-        )
-        fallback_procs = self._fallback_procs(context.lines)
-        procs = snapshot_procs or fallback_procs
-        client_ranges = [
-            (int(proc.start_idx), int(proc.end_idx))
-            for proc in procs
-            if self._client_only_method(context.lines, int(proc.start_idx))
-        ]
+        procs = context.procedures or self._fallback_procs(context.lines)
+        client_lines = bytearray(len(context.lines))
+        for proc in procs:
+            if self._client_only_method(context.lines, int(proc.start_idx)):
+                start = max(0, int(proc.start_idx))
+                end = min(int(proc.end_idx) + 1, len(context.lines))
+                client_lines[start:end] = b"\x01" * (end - start)
 
         for idx, line in enumerate(context.lines):
-            if any(start <= idx <= end for start, end in client_ranges):
+            if client_lines[idx]:
+                continue
+            line_cf = line.casefold()
+            if not any(marker in line_cf for marker in _BSL183_EXECUTE_EXTERNAL_CODE_MARKERS):
                 continue
             clean = _code_mask_without_strings_and_comments(line)
             for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
@@ -3325,6 +3329,9 @@ class ExecuteExternalCodeInCommonModuleRule(DiagnosticRuntimeRule):
 
         storage = DiagnosticStorage(context.path)
         for idx, line in enumerate(context.lines):
+            line_cf = line.casefold()
+            if not any(marker in line_cf for marker in _BSL183_EXECUTE_EXTERNAL_CODE_MARKERS):
+                continue
             clean = _code_mask_without_strings_and_comments(line)
             for match in _BSL183_EXECUTE_EXTERNAL_CODE_RE.finditer(clean):
                 open_paren = clean.find("(", match.start())
@@ -3448,13 +3455,7 @@ class UsingSynchronousCallsRule(DiagnosticRuntimeRule):
 
     @staticmethod
     def _server_only_lines(context: DiagnosticDocumentContext) -> set[int]:
-        procs = (
-            list(getattr(context.snapshot, "procs", []) or [])
-            if context.snapshot is not None
-            else ExecuteExternalCodeRule._fallback_procs(context.lines)
-        )
-        if not procs:
-            procs = ExecuteExternalCodeRule._fallback_procs(context.lines)
+        procs = context.procedures or ExecuteExternalCodeRule._fallback_procs(context.lines)
         skipped: set[int] = set()
         for proc in procs:
             if UsingSynchronousCallsRule._server_only_method(context.lines, int(proc.start_idx)):
