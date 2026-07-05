@@ -6653,7 +6653,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
         if code == "BSL062":
             if _path_is_split_module_fragment(context.path):
                 return []
-            proc_node_map = dict(getattr(snapshot, "proc_node_map", {}) or {})
+            proc_node_map = getattr(snapshot, "proc_node_map", None)
             return model.validate_bsl062_unused_parameter(
                 lines=context.lines,
                 procs=procs,

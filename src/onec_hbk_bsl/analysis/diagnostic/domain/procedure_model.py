@@ -367,7 +367,7 @@ class ProcedureModel:
         body_lines = lines[self.start_idx + 1 : self.end_idx]
         if not any(line.strip() and not line.lstrip().startswith("//") for line in body_lines):
             return []
-        body_text = "\n".join(body_lines)
+        body_text: str | None = None
         diags: list[Diagnostic] = []
 
         for param_name in self.params:
@@ -376,6 +376,8 @@ class ProcedureModel:
             if used_casefold is not None:
                 is_used = param_name.casefold() in used_casefold
             else:
+                if body_text is None:
+                    body_text = "\n".join(body_lines)
                 is_used = bool(
                     re.search(
                         r"\b" + re.escape(param_name) + r"\b",
