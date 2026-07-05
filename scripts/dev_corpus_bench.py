@@ -154,6 +154,7 @@ class TraceSnapshotFacts(AbstractContextManager["TraceSnapshotFacts"]):
     def __init__(self) -> None:
         self.trace = FactTrace()
         self._patches: list[tuple[Any, str, Any]] = []
+        self._line_counts: dict[tuple[str, int], int] = {}
 
     def __enter__(self) -> TraceSnapshotFacts:
         snapshot_cls = snapshot_mod.DocumentSnapshot
@@ -204,8 +205,14 @@ class TraceSnapshotFacts(AbstractContextManager["TraceSnapshotFacts"]):
         setattr(target, name, replacement)
 
     def _snapshot_line_count(self, snapshot: Any) -> int:
+        key = (str(getattr(snapshot, "path", "")), id(snapshot))
+        cached = self._line_counts.get(key)
+        if cached is not None:
+            return cached
         content = getattr(snapshot, "content", "")
-        return content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+        line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+        self._line_counts[key] = line_count
+        return line_count
 
     def _record(self, snapshot: Any, name: str, *, built: bool, seconds: float) -> None:
         self.trace.add(

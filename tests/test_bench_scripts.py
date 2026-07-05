@@ -145,6 +145,28 @@ def test_dev_corpus_bench_fact_trace_records_builds_and_hits() -> None:
     assert row.max_lines == 40
 
 
+def test_dev_corpus_bench_fact_trace_caches_snapshot_line_count() -> None:
+    dev_corpus_bench = _load_script_module("dev_corpus_bench")
+
+    class CountedContent(str):
+        calls = 0
+
+        def count(self, sub: str, *args: object) -> int:
+            type(self).calls += 1
+            return super().count(sub, *args)
+
+    class Snapshot:
+        content = CountedContent("А\nБ\n")
+        path = "a.bsl"
+
+    trace = dev_corpus_bench.TraceSnapshotFacts()
+    snapshot = Snapshot()
+
+    assert trace._snapshot_line_count(snapshot) == 2
+    assert trace._snapshot_line_count(snapshot) == 2
+    assert CountedContent.calls == 1
+
+
 def test_dev_corpus_bench_task_trace_records_task_totals() -> None:
     dev_corpus_bench = _load_script_module("dev_corpus_bench")
     trace = dev_corpus_bench.TaskTrace()
