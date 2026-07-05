@@ -13,6 +13,7 @@ import threading
 from bisect import bisect_left
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -547,10 +548,15 @@ def _count_cognitive_bool_ops(text: str, last_op: str | None = None) -> tuple[in
     return count, current
 
 
+@lru_cache(maxsize=4096)
+def _self_call_re(proc_name: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<![.\w]){re.escape(proc_name)}\s*\(", re.IGNORECASE)
+
+
 def _line_has_self_call(line: str, proc_name: str | None) -> bool:
     if not proc_name:
         return False
-    return bool(re.search(rf"(?<![.\w]){re.escape(proc_name)}\s*\(", line, re.IGNORECASE))
+    return bool(_self_call_re(proc_name).search(line))
 
 
 def _arithmetic_missing_space_cols_in_line(line: str, in_str_at_start: bool = False) -> list[int]:

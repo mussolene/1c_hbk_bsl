@@ -806,7 +806,9 @@ def _assigned_names_from_cst(_diag: Any, proc_node: Any) -> set[str]:
 
 def _bsl240_assignment_events_from_cst(_diag: Any, proc_node: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for node in _diag._ts_walk(proc_node):
+    stack = [proc_node]
+    while stack:
+        node = stack.pop()
         node_type = getattr(node, "type", None)
         if node_type == "assignment_statement":
             children = list(getattr(node, "children", []) or [])
@@ -830,16 +832,19 @@ def _bsl240_assignment_events_from_cst(_diag: Any, proc_node: Any) -> list[dict[
             )
             continue
 
-        if node_type != "identifier" or _has_ancestor_type(node, "assignment_statement"):
+        if node_type == "identifier":
+            items.append(
+                {
+                    "kind": "read",
+                    "line": node.start_point[0],
+                    "column": node.start_point[1],
+                    "name": _diag._ts_node_text(node),
+                }
+            )
             continue
-        items.append(
-            {
-                "kind": "read",
-                "line": node.start_point[0],
-                "column": node.start_point[1],
-                "name": _diag._ts_node_text(node),
-            }
-        )
+
+        children = getattr(node, "children", None) or ()
+        stack.extend(reversed(children))
     return sorted(items, key=lambda item: (int(item["line"]), int(item["column"])))
 
 
@@ -851,12 +856,3 @@ def _identifier_texts(_diag: Any, node: Any | None) -> tuple[str, ...]:
         for child in _diag._ts_walk(node)
         if getattr(child, "type", None) == "identifier"
     )
-
-
-def _has_ancestor_type(node: Any, node_type: str) -> bool:
-    parent = getattr(node, "parent", None)
-    while parent is not None:
-        if getattr(parent, "type", None) == node_type:
-            return True
-        parent = getattr(parent, "parent", None)
-    return False
