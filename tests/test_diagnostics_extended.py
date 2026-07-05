@@ -3765,6 +3765,12 @@ class TestTailParityBatches:
             "КонецПроцедуры\n",
             encoding="utf-8",
         )
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._common_module_privileged_map_cached",
+            lambda *_args, **_kwargs: pytest.fail(
+                "BSL231 should use per-module privileged lookup, not full privileged index"
+            ),
+        )
         diags = DiagnosticEngine(select={"BSL231"}).check_file(str(ordinary_module))
         bsl231 = [diag for diag in diags if diag.code == "BSL231"]
         assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [(2, 22, 27)]
@@ -3791,6 +3797,31 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL231"}).check_file(str(privileged_module))
         bsl231 = [diag for diag in diags if diag.code == "BSL231"]
         assert [(diag.line, diag.character, diag.end_character) for diag in bsl231] == [(4, 4, 20)]
+
+    def test_bsl231_plain_common_module_without_dotted_calls_skips_privileged_index(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / "Config"
+        root.mkdir(parents=True)
+        (root / "Configuration.xml").write_text("<Configuration/>", encoding="utf-8")
+        (root / "CommonModules" / "Обычный" / "Ext").mkdir(parents=True)
+        (root / "CommonModules" / "Обычный.xml").write_text(
+            "<CommonModule><Name>Обычный</Name></CommonModule>",
+            encoding="utf-8",
+        )
+        ordinary_module = root / "CommonModules" / "Обычный" / "Ext" / "Module.bsl"
+        ordinary_module.write_text(
+            "Процедура НетЭкспорта()\n    ЛокальныйМетод();\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "onec_hbk_bsl.analysis.diagnostics._common_module_privileged_map_cached",
+            lambda *_args, **_kwargs: pytest.fail(
+                "privileged index is not expected for a local-only BSL231 candidate"
+            ),
+        )
+        diags = DiagnosticEngine(select={"BSL231"}).check_file(str(ordinary_module))
+        assert "BSL231" not in _codes(diags)
 
     def test_bsl213_skips_privileged_index(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

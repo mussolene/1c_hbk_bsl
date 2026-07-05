@@ -261,6 +261,46 @@ def common_module_index_cached(config_root: str) -> dict[str, dict[str, Any]]:
 
 
 @functools.lru_cache(maxsize=128)
+def common_module_path_index_cached(config_root: str) -> dict[str, dict[str, str]]:
+    root = Path(config_root) / "CommonModules"
+    result: dict[str, dict[str, str]] = {}
+    if not root.exists():
+        return result
+    for child in root.iterdir():
+        if child.is_dir():
+            result.setdefault(child.name.casefold(), {})["module_dir"] = str(child)
+            result[child.name.casefold()].setdefault("name", child.name)
+        elif child.suffix.casefold() == ".xml":
+            result.setdefault(child.stem.casefold(), {})["object_xml"] = str(child)
+            result[child.stem.casefold()].setdefault("name", child.stem)
+    return result
+
+
+@functools.lru_cache(maxsize=4096)
+def common_module_info_cached(config_root: str, module_name_cf: str) -> dict[str, Any] | None:
+    root = Path(config_root) / "CommonModules"
+    if not root.exists():
+        return None
+    path_info = common_module_path_index_cached(config_root).get(module_name_cf)
+    if path_info is None:
+        return None
+
+    name = path_info.get("name", module_name_cf)
+    module_dir = Path(path_info["module_dir"]) if path_info.get("module_dir") else root / name
+    object_xml = Path(path_info["object_xml"]) if path_info.get("object_xml") else None
+    raw = read_text_cached(str(object_xml)) if object_xml is not None else ""
+    server_match = re.search(_RE_XML_BOOL_SIMPLE.format(tag="Server"), raw, re.IGNORECASE)
+    module_file = (module_dir or (root / name)) / "Ext" / "Module.bsl"
+    return {
+        "name": name,
+        "privileged": bool(_RE_XML_PRIVILEGED.search(raw)),
+        "protected": bool(_RE_XML_PROTECTED.search(raw)),
+        "server": bool(server_match and server_match.group(1).casefold() == "true"),
+        "module_file": str(module_file) if module_file.exists() else "",
+    }
+
+
+@functools.lru_cache(maxsize=128)
 def common_module_privileged_map_cached(config_root: str) -> dict[str, dict[str, Any]]:
     module_index = common_module_index_cached(config_root)
     return {
@@ -297,7 +337,7 @@ def common_module_exported_proc_names_for_file_cached(module_file: str) -> froze
 def common_module_proc_names_for_module_cached(
     config_root: str, module_name_cf: str
 ) -> frozenset[str]:
-    info = common_module_index_cached(config_root).get(module_name_cf)
+    info = common_module_info_cached(config_root, module_name_cf)
     if info is None:
         return frozenset()
     module_file = str(info.get("module_file") or "")
@@ -310,7 +350,7 @@ def common_module_proc_names_for_module_cached(
 def common_module_exported_proc_names_for_module_cached(
     config_root: str, module_name_cf: str
 ) -> frozenset[str]:
-    info = common_module_index_cached(config_root).get(module_name_cf)
+    info = common_module_info_cached(config_root, module_name_cf)
     if info is None:
         return frozenset()
     module_file = str(info.get("module_file") or "")

@@ -16,8 +16,12 @@ Example:
 
 from __future__ import annotations
 
+import cProfile
+import io
 import os
+import pstats
 import random
+import resource
 import sys
 import time
 from collections.abc import Callable
@@ -244,6 +248,10 @@ class Args:
     diagnostics_only: bool
     trace_analysis: bool
     trace_call_sites: bool
+    profile: bool
+    profile_top: int
+    profile_sort: str
+    slow_files: int
 
 
 def parse_args(argv: list[str]) -> Args:
@@ -251,7 +259,9 @@ def parse_args(argv: list[str]) -> Args:
         raise SystemExit(
             "Usage: dev_corpus_bench.py <corpus_dir> "
             "[--limit=N] [--sample=N] [--seed=N] [--largest=N] "
-            "[--diagnostics-only] [--trace-analysis] [--trace-call-sites]"
+            "[--diagnostics-only] [--trace-analysis] [--trace-call-sites] "
+            "[--profile] [--profile-top=N] [--profile-sort=cumulative|tottime] "
+            "[--slow-files=N]"
         )
 
     root = Path(argv[0]).expanduser().resolve()
@@ -262,6 +272,10 @@ def parse_args(argv: list[str]) -> Args:
     diagnostics_only = False
     trace_analysis = False
     trace_call_sites = False
+    profile = False
+    profile_top = 30
+    profile_sort = "cumulative"
+    slow_files = 0
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -299,9 +313,34 @@ def parse_args(argv: list[str]) -> Args:
             trace_analysis = True
         elif arg == "--trace-call-sites":
             trace_call_sites = True
+        elif arg == "--profile":
+            profile = True
+        elif arg == "--profile-top":
+            i += 1
+            if i >= len(argv):
+                raise SystemExit("--profile-top requires a value")
+            profile_top = int(argv[i])
+        elif arg.startswith("--profile-top="):
+            profile_top = int(arg.split("=", 1)[1])
+        elif arg == "--profile-sort":
+            i += 1
+            if i >= len(argv):
+                raise SystemExit("--profile-sort requires a value")
+            profile_sort = argv[i].strip().lower()
+        elif arg.startswith("--profile-sort="):
+            profile_sort = arg.split("=", 1)[1].strip().lower()
+        elif arg == "--slow-files":
+            i += 1
+            if i >= len(argv):
+                raise SystemExit("--slow-files requires a value")
+            slow_files = int(argv[i])
+        elif arg.startswith("--slow-files="):
+            slow_files = int(arg.split("=", 1)[1])
         else:
             raise SystemExit(f"Unknown argument: {arg}")
         i += 1
+    if profile_sort not in {"cumulative", "tottime"}:
+        raise SystemExit("--profile-sort must be one of: cumulative, tottime")
     return Args(
         root=root,
         limit=limit,
@@ -311,6 +350,10 @@ def parse_args(argv: list[str]) -> Args:
         diagnostics_only=diagnostics_only,
         trace_analysis=trace_analysis,
         trace_call_sites=trace_call_sites,
+        profile=profile,
+        profile_top=profile_top,
+        profile_sort=profile_sort,
+        slow_files=slow_files,
     )
 
 
@@ -344,6 +387,42 @@ def print_trace(trace: AnalysisTrace, *, top_sites: int = 20) -> None:
     print(f"trace_typo_candidates_total: {trace.typo_candidates_total}")
 
 
+def maxrss_mb() -> float:
+    maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # Linux reports KiB, macOS reports bytes.
+    if maxrss > 10_000_000:
+        return maxrss / (1024.0 * 1024.0)
+    return maxrss / 1024.0
+
+
+def print_profile(profile: cProfile.Profile, *, top: int, sort: str) -> None:
+    buf = io.StringIO()
+    pstats.Stats(profile, stream=buf).sort_stats(sort).print_stats(top)
+    print(f"profile_sort: {sort}")
+    print(f"profile_top: {top}")
+    print(buf.getvalue())
+
+
+def print_slow_files(
+    rows: list[tuple[float, Path, int, int, int]],
+    *,
+    root: Path,
+    top: int,
+) -> None:
+    if top <= 0:
+        return
+    print(f"slow_files_top: {top}")
+    print("slow_file_sec\tlines\tbytes\tdiags\tfile")
+    for elapsed, path, lines_count, byte_count, diag_count in sorted(
+        rows, key=lambda row: row[0], reverse=True
+    )[:top]:
+        try:
+            shown_path = path.relative_to(root)
+        except ValueError:
+            shown_path = path
+        print(f"{elapsed:.3f}\t{lines_count}\t{byte_count}\t{diag_count}\t{shown_path}")
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     root = args.root
@@ -368,31 +447,49 @@ def main(argv: list[str]) -> int:
     total_bytes = 0
     total_diags = 0
     changed_after_format = 0
+    slow_rows: list[tuple[float, Path, int, int, int]] = []
 
     trace_manager = (
         TraceAnalysisPasses(call_sites=args.trace_call_sites) if args.trace_analysis else None
     )
+    profiler = cProfile.Profile() if args.profile else None
+    if profiler is not None:
+        profiler.enable()
     if trace_manager is None:
         diag_started = time.perf_counter()
         for path in picked:
             content = path.read_text(encoding="utf-8", errors="ignore")
-            total_lines += content.count("\n") + (
-                1 if content and not content.endswith("\n") else 0
+            file_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+            file_bytes = len(content.encode("utf-8", errors="ignore"))
+            total_lines += file_lines
+            total_bytes += file_bytes
+            file_started = time.perf_counter()
+            file_diags = len(engine.check_content(str(path), content))
+            total_diags += file_diags
+            slow_rows.append(
+                (time.perf_counter() - file_started, path, file_lines, file_bytes, file_diags)
             )
-            total_bytes += len(content.encode("utf-8", errors="ignore"))
-            total_diags += len(engine.check_content(str(path), content))
         diag_elapsed = time.perf_counter() - diag_started
     else:
         with trace_manager:
             diag_started = time.perf_counter()
             for path in picked:
                 content = path.read_text(encoding="utf-8", errors="ignore")
-                total_lines += content.count("\n") + (
+                file_lines = content.count("\n") + (
                     1 if content and not content.endswith("\n") else 0
                 )
-                total_bytes += len(content.encode("utf-8", errors="ignore"))
-                total_diags += len(engine.check_content(str(path), content))
+                file_bytes = len(content.encode("utf-8", errors="ignore"))
+                total_lines += file_lines
+                total_bytes += file_bytes
+                file_started = time.perf_counter()
+                file_diags = len(engine.check_content(str(path), content))
+                total_diags += file_diags
+                slow_rows.append(
+                    (time.perf_counter() - file_started, path, file_lines, file_bytes, file_diags)
+                )
             diag_elapsed = time.perf_counter() - diag_started
+    if profiler is not None:
+        profiler.disable()
 
     fmt_elapsed = 0.0
     if not args.diagnostics_only:
@@ -422,6 +519,10 @@ def main(argv: list[str]) -> int:
     print(f"formatting_files_per_sec: {len(picked) / max(fmt_elapsed, 1e-9):.2f}")
     print(f"diagnostics_mb_per_sec: {mb / max(diag_elapsed, 1e-9):.2f}")
     print(f"formatting_mb_per_sec: {mb / max(fmt_elapsed, 1e-9):.2f}")
+    print(f"process_maxrss_mb: {maxrss_mb():.1f}")
+    print_slow_files(slow_rows, root=root, top=args.slow_files)
+    if profiler is not None:
+        print_profile(profiler, top=args.profile_top, sort=args.profile_sort)
     if trace_manager is not None:
         print_trace(trace_manager.trace)
     return 0

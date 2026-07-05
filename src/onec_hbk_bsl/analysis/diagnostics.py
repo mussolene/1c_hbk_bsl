@@ -136,6 +136,9 @@ from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     common_module_index_cached as _common_module_index_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+    common_module_info_cached as _common_module_info_cached,
+)
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
     common_module_privileged_map_cached as _common_module_privileged_map_cached,
 )
 from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (

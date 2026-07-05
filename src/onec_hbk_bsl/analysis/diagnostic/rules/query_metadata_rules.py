@@ -880,9 +880,7 @@ def applicable_bsl189_211_213_214_231_232_241_242_246_274_codes(
             out.append("BSL214")
     if root is not None and "/commonmodules/" in low_path:
         if "BSL231" in enabled_set and "(" in content:
-            current_common = Path(path).parent.parent.name.casefold()
-            privileged_map = _diag._common_module_privileged_map_cached(root)
-            if "." in content or privileged_map.get(current_common, {}).get("privileged"):
+            if "." in content or _current_common_module_is_privileged(_diag, path):
                 out.append("BSL231")
         if "BSL213" in enabled_set and "." in content and "(" in content:
             out.append("BSL213")
@@ -914,14 +912,10 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
     meta_obj: Any | None = None
     if object_xml is not None and ({"BSL189", "BSL241"} & enabled_set):
         meta_obj = _diag._current_metadata_object_for_file_cached(path)
-    privileged_map = (
-        _diag._common_module_privileged_map_cached(root)
-        if root is not None and "BSL231" in enabled_set
-        else {}
-    )
     common_module_index = (
         _diag._common_module_index_cached(root)
-        if root is not None and ({"BSL213", "BSL214", "BSL242"} & enabled_set)
+        if root is not None
+        and ("BSL214" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl"))
         else {}
     )
 
@@ -1110,7 +1104,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         if "/commonmodules/" in low_path:
             current_common = Path(path).parent.parent.name.casefold()
         current_privileged = bool(
-            current_common and privileged_map.get(current_common, {}).get("privileged")
+            current_common and _current_common_module_is_privileged(_diag, path)
         )
         exported_names_by_module: dict[str, frozenset[str]] = {}
 
@@ -1126,7 +1120,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
             for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
                 mod_cf = match.group("mod").casefold()
                 meth_cf = match.group("meth").casefold()
-                info = privileged_map.get(mod_cf)
+                info = _diag._common_module_info_cached(root, mod_cf)
                 if info and info.get("privileged") and meth_cf in exported_names(mod_cf):
                     diags.append(
                         _diag.Diagnostic(
@@ -1171,7 +1165,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                 line = clean[idx]
                 for match in re.finditer(r"\b(?P<mod>\w+)\.(?P<meth>\w+)\s*\(", line):
                     mod_cf = match.group("mod").casefold()
-                    if mod_cf not in common_module_index:
+                    if _diag._common_module_info_cached(root, mod_cf) is None:
                         continue
                     info = proc_names_by_module.get(mod_cf)
                     if info is None:
@@ -1213,7 +1207,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     )
         if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
             handlers_seen: dict[str, str] = {}
-            module_info = common_module_index.get(module_name.casefold()) or {}
+            module_info = _diag._common_module_info_cached(root, module_name.casefold()) or {}
             module_handlers = _diag._scheduled_job_handlers_by_module_cached(root).get(
                 module_name.casefold(), ()
             )
@@ -1298,6 +1292,17 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     )
                 handlers_seen[handler] = job_name
     return diags
+
+
+def _current_common_module_is_privileged(_diag: Any, path: str) -> bool:
+    if "/commonmodules/" not in path.replace("\\", "/").lower():
+        return False
+    root = _diag._config_root_for_file(path)
+    if root is None:
+        return False
+    module_name_cf = Path(path).parent.parent.name.casefold()
+    info = _diag._common_module_info_cached(root, module_name_cf)
+    return bool(info and info.get("privileged"))
 
 
 def run_bsl244_253_261_runtime_pool(

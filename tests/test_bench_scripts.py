@@ -74,6 +74,10 @@ def test_dev_corpus_bench_parse_trace_flags() -> None:
             "--diagnostics-only",
             "--trace-analysis",
             "--trace-call-sites",
+            "--profile",
+            "--profile-top=7",
+            "--profile-sort=tottime",
+            "--slow-files=3",
         ]
     )
 
@@ -81,6 +85,10 @@ def test_dev_corpus_bench_parse_trace_flags() -> None:
     assert args.diagnostics_only is True
     assert args.trace_analysis is True
     assert args.trace_call_sites is True
+    assert args.profile is True
+    assert args.profile_top == 7
+    assert args.profile_sort == "tottime"
+    assert args.slow_files == 3
 
 
 def test_dev_corpus_bench_iter_bsl_files_uses_supported_suffixes(tmp_path: Path) -> None:
