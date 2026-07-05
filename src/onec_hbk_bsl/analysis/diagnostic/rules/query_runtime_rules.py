@@ -63,13 +63,19 @@ def _field_belongs_to_select_list(field_node: Any) -> bool:
     return getattr(getattr(field_node, "parent", None), "type", None) == "field_list"
 
 
-def _query_has_from_clause(field_node: Any) -> bool:
+def _query_has_from_clause(field_node: Any, cache: dict[int, bool] | None = None) -> bool:
     query = _ancestor_of_type(field_node, "query")
     if query is None:
         return False
-    return any(
+    cache_key = id(query)
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+    has_from = any(
         getattr(node, "type", None) == "from_clause" for node in _iter_nodes(query, "from_clause")
     )
+    if cache is not None:
+        cache[cache_key] = has_from
+    return has_from
 
 
 def _field_should_be_skipped(field_text: str) -> bool:
@@ -165,10 +171,11 @@ def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[An
 
     _diag = _diag_module()
     diags: list[Any] = []
+    query_from_clause_cache: dict[int, bool] = {}
     for field_node in _iter_nodes(root, "field"):
         if not _field_belongs_to_select_list(field_node):
             continue
-        if not _query_has_from_clause(field_node):
+        if not _query_has_from_clause(field_node, query_from_clause_cache):
             continue
         if _inside_union_clause(field_node):
             continue
