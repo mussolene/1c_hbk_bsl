@@ -15,6 +15,7 @@ from collections import OrderedDict
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
 from onec_hbk_bsl.analysis.diagnostic.pipeline import AnalysisFrame, PipelineExecutor
+from onec_hbk_bsl.analysis.diagnostic.string_state import build_line_string_states
 from onec_hbk_bsl.analysis.diagnostic.suppression import (
     is_suppressed,
     parse_suppressions,
@@ -373,7 +374,17 @@ class DiagnosticEngine:
         diagnostics = PipelineExecutor().execute(self, frame)
         # Apply inline suppressions
         diagnostics = [d for d in diagnostics if not is_suppressed(d, suppressions)]
-        _str_ranges = snapshot.string_literal_ranges
+        try:
+            _line_string_states = snapshot.line_string_states
+        except AttributeError:
+            _line_string_states = build_line_string_states(lines)
+        _needs_string_overlap_filter = any(
+            d.code not in _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL
+            and 1 <= d.line <= len(lines)
+            and ('"' in lines[d.line - 1] or _line_string_states[d.line - 1])
+            for d in diagnostics
+        )
+        _str_ranges = snapshot.string_literal_ranges if _needs_string_overlap_filter else ()
         if _str_ranges:
             _line_starts = line_start_offsets(content)
             _str_range_starts = [start for start, _ in _str_ranges]

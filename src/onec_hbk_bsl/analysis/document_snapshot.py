@@ -2692,6 +2692,9 @@ class DocumentSnapshot:
 
         facts: list[LineDiagnosticFact] = []
         for idx, line in enumerate(self.lines):
+            line_cf = line.casefold()
+            if "этаформа" not in line_cf and "thisform" not in line_cf:
+                continue
             proc = proc_containing_line(self.procedures, idx)
             if proc is not None and any(
                 re.fullmatch(r"(?:ЭтаФорма|ThisForm)", param, re.IGNORECASE)
@@ -2721,6 +2724,9 @@ class DocumentSnapshot:
 
         facts: list[LineDiagnosticFact] = []
         for idx, line in enumerate(self.lines):
+            line_cf = line.casefold()
+            if "данныеформывзначение" not in line_cf and "formdatatovalue" not in line_cf:
+                continue
             if _RE_LINE_COMMENT.match(line):
                 continue
             clean = self.masked_lines[idx]
@@ -2844,6 +2850,9 @@ class DocumentSnapshot:
 
         facts: list[LineDiagnosticFact] = []
         for idx, line in enumerate(self.lines):
+            line_cf = line.casefold()
+            if "если" not in line_cf and "if" not in line_cf:
+                continue
             span = self._complex_condition_span(idx, max_bool_ops)
             if span is None:
                 continue
@@ -2880,7 +2889,7 @@ class DocumentSnapshot:
             return None
         if not _RE_COMPLEX_CONDITION_HEAD.match(line):
             return None
-        masked_line = re.sub(r"//.*", "", line)
+        masked_line = line.partition("//")[0]
         then_match = _RE_COMPLEX_CONDITION_THEN.search(masked_line)
         if then_match is not None:
             return (
@@ -2893,15 +2902,15 @@ class DocumentSnapshot:
         idx = line_idx + 1
         max_idx = min(len(self.lines), line_idx + 48)
         while idx < max_idx:
-            masked_next = re.sub(r"//.*", "", self.lines[idx])
+            masked_next = self.lines[idx].partition("//")[0]
             if re.match(r"^\s*(?:Тогда|Then)\b", masked_next, re.IGNORECASE):
                 previous_idx = idx - 1
                 while previous_idx > line_idx:
-                    previous = re.sub(r"//.*", "", self.lines[previous_idx])
+                    previous = self.lines[previous_idx].partition("//")[0]
                     if previous.strip():
                         return "\n".join(parts), previous_idx, len(previous.rstrip())
                     previous_idx -= 1
-                previous = re.sub(r"//.*", "", self.lines[previous_idx])
+                previous = self.lines[previous_idx].partition("//")[0]
                 return "\n".join(parts), previous_idx, len(previous.rstrip())
             parts.append(masked_next)
             then_match = _RE_COMPLEX_CONDITION_THEN.search(masked_next)
@@ -2911,7 +2920,7 @@ class DocumentSnapshot:
         return (
             "\n".join(parts),
             idx - 1,
-            len(re.sub(r"//.*", "", self.lines[idx - 1]).rstrip())
+            len(self.lines[idx - 1].partition("//")[0].rstrip())
             if idx > line_idx
             else len(masked_line.rstrip()),
         )
