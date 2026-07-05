@@ -77,7 +77,7 @@ def test_bslls_typo_reports_string_abbreviations_after_ignored_latin_homoglyph(
 def test_typo_candidates_from_materialized_nodes_match_tree_walk() -> None:
     content = (
         "Процедура Тест()\n"
-        '    ВаринатыОплаты = Объект.ВаринатыОплаты;\n'
+        "    ВаринатыОплаты = Объект.ВаринатыОплаты;\n"
         '    Сообщить("Варинаты оплаты");\n'
         "КонецПроцедуры\n"
     )

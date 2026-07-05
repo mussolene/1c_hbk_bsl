@@ -1360,9 +1360,7 @@ class ModuleModel:
                 name = ts_node_text_fn(ident)
                 if name.casefold() not in {"найтипокоду", "findbycode"}:
                     continue
-                key = _bsl260_access_metadata_key(
-                    _bsl260_call_access_text(node, ts_node_text_fn)
-                )
+                key = _bsl260_access_metadata_key(_bsl260_call_access_text(node, ts_node_text_fn))
                 if key is None or not unsafe_index.get(key, False):
                     continue
                 line_idx = ident.start_point[0]
@@ -2185,7 +2183,9 @@ class ModuleModel:
             return_nodes = ts_nodes_for_types_fn(tree, {"return_statement"})["return_statement"]
         else:
             return_nodes = [
-                node for node in ts_walk_fn(root) if getattr(node, "type", None) == "return_statement"
+                node
+                for node in ts_walk_fn(root)
+                if getattr(node, "type", None) == "return_statement"
             ]
         for proc in procs:
             if proc.kind != "procedure":

@@ -118,8 +118,7 @@ class TestRunChecks:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         files = [
-            str(_write_bsl(tmp_path, f"large{i}.bsl", 'Пароль = "секрет123";\n'))
-            for i in range(2)
+            str(_write_bsl(tmp_path, f"large{i}.bsl", 'Пароль = "секрет123";\n')) for i in range(2)
         ]
         monkeypatch.setenv("BSL_DIAG_LARGE_FILE_SERIAL_BYTES", "1")
 

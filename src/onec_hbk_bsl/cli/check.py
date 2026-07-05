@@ -412,6 +412,7 @@ def _run_checks(
 
     def _run(task_id: Any = None) -> None:
         nonlocal error_occurred
+
         def _check_with_engine(engine: DiagnosticEngine, fp: str) -> list[Diagnostic]:
             per_file_extra = cfg.get_file_ignores(fp)
             return (

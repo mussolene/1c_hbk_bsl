@@ -70,9 +70,9 @@ def test_credential_single_string_expression_uses_structural_shape(
 ) -> None:
     content = 'Пароль = "secret";\nДругойПароль = ("secret");\n'
     snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
-    assignments = snapshot.ts_nodes_for_types({"assignment_statement"}, walker=snapshot_mod._ts_walk)[
-        "assignment_statement"
-    ]
+    assignments = snapshot.ts_nodes_for_types(
+        {"assignment_statement"}, walker=snapshot_mod._ts_walk
+    )["assignment_statement"]
     _left, direct_value = snapshot_mod._credential_assignment_parts(assignments[0])
     _left, parenthesized_value = snapshot_mod._credential_assignment_parts(assignments[1])
 

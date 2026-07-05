@@ -271,7 +271,9 @@ def _diagnostics_bsl030_semicolon_presence(context: DiagnosticDocumentContext) -
         nodes = (node for node_list in nodes_by_type.values() for node in node_list)
     else:
         nodes = (
-            node for node in _ts_walk(root) if getattr(node, "type", None) in _BSL030_STATEMENT_TYPES
+            node
+            for node in _ts_walk(root)
+            if getattr(node, "type", None) in _BSL030_STATEMENT_TYPES
         )
     for node in nodes:
         if _bsl030_statement_has_semicolon(node, context.lines):

@@ -40,7 +40,7 @@ def test_bench_per_rule_external_paths_mode(tmp_path: Path) -> None:
         "\n".join(
             [
                 "Процедура Тест()",
-                "    Сообщить(\"ok\");",
+                '    Сообщить("ok");',
                 "КонецПроцедуры",
             ]
         ),

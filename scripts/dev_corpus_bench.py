@@ -189,7 +189,9 @@ class TraceAnalysisPasses(AbstractContextManager["TraceAnalysisPasses"]):
 
         return wrapped
 
-    def _wrap_timed_typo_candidates(self, original: Callable[..., list[Any]]) -> Callable[..., list[Any]]:
+    def _wrap_timed_typo_candidates(
+        self, original: Callable[..., list[Any]]
+    ) -> Callable[..., list[Any]]:
         def wrapped(*args: Any, **kwargs: Any) -> list[Any]:
             started = time.perf_counter()
             try:
@@ -321,9 +323,9 @@ def print_trace(trace: AnalysisTrace, *, top_sites: int = 20) -> None:
         nodes = trace.root_walk_nodes.get(name, 0)
         print(f"trace_root_walk[{name}]: calls={calls} nodes={nodes}")
     print(f"trace_root_walk_top_sites: {top_sites}")
-    for name, nodes in sorted(trace.root_walk_nodes.items(), key=lambda item: item[1], reverse=True)[
-        :top_sites
-    ]:
+    for name, nodes in sorted(
+        trace.root_walk_nodes.items(), key=lambda item: item[1], reverse=True
+    )[:top_sites]:
         calls = trace.root_walk_calls.get(name, 0)
         print(f"trace_root_walk_top[{name}]: calls={calls} nodes={nodes}")
     print(f"trace_ts_nodes_requests: {trace.ts_nodes_requests}")
@@ -374,7 +376,9 @@ def main(argv: list[str]) -> int:
         diag_started = time.perf_counter()
         for path in picked:
             content = path.read_text(encoding="utf-8", errors="ignore")
-            total_lines += content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+            total_lines += content.count("\n") + (
+                1 if content and not content.endswith("\n") else 0
+            )
             total_bytes += len(content.encode("utf-8", errors="ignore"))
             total_diags += len(engine.check_content(str(path), content))
         diag_elapsed = time.perf_counter() - diag_started
