@@ -6414,7 +6414,17 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
         if code == "BSL009":
             if not _diag._ts_tree_ok_for_rules(context.tree):
                 return []
-            return _diag._diagnostics_bsl009_from_tree(context.path, context.tree.root_node)
+            candidate_nodes = None
+            if context.ts_nodes_for_types is not None:
+                candidate_nodes = context.ts_nodes_for_types(
+                    context.tree,
+                    {"assignment_statement"},
+                )["assignment_statement"]
+            return _diag._diagnostics_bsl009_from_tree(
+                context.path,
+                context.tree.root_node,
+                candidate_nodes=candidate_nodes,
+            )
         if code == "BSL011":
             diags = []
             metrics = engine._complexity_metrics_for_procs(context.lines, procs)

@@ -3090,10 +3090,15 @@ def _ts_assignment_is_bare_self_assign(node: Any) -> bool:
     return left == _ts_node_text(ech[0])
 
 
-def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
+def _diagnostics_bsl009_from_tree(
+    path: str,
+    root: Any,
+    *,
+    candidate_nodes: list[Any] | None = None,
+) -> list[Diagnostic]:
     diags: list[Diagnostic] = []
 
-    def walk(node: Any) -> None:
+    def check_node(node: Any) -> None:
         if (
             getattr(node, "type", None) == "assignment_statement"
             and not _ts_node_is_under_parameters(node)
@@ -3116,6 +3121,14 @@ def _diagnostics_bsl009_from_tree(path: str, root: Any) -> list[Diagnostic]:
                     code="BSL009",
                 )
             )
+
+    if candidate_nodes is not None:
+        for node in candidate_nodes:
+            check_node(node)
+        return diags
+
+    def walk(node: Any) -> None:
+        check_node(node)
         for c in getattr(node, "children", []) or []:
             walk(c)
 
