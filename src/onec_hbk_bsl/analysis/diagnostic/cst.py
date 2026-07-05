@@ -395,7 +395,12 @@ def _try_except_has_only_comments_or_empty(
     return True
 
 
-def diagnostics_bsl004_from_tree(path: str, root: Any, lines: list[str] | None = None) -> list[Any]:
+def diagnostics_bsl004_from_tree(
+    path: str,
+    root: Any,
+    lines: list[str] | None = None,
+    candidate_nodes: list[Any] | None = None,
+) -> list[Any]:
     """BSL004 — empty executable bodies in control-flow branches and loops."""
     diags: list[Any] = []
     source_lines = lines if lines is not None else _root_source_lines(root)
@@ -407,7 +412,11 @@ def diagnostics_bsl004_from_tree(path: str, root: Any, lines: list[str] | None =
         elif nt in {"while_statement", "for_statement", "for_each_statement"}:
             _bsl004_emit_empty_loop_body(node, path, diags, source_lines)
 
-    ts_walk_preorder(root, visit)
+    if candidate_nodes is None:
+        ts_walk_preorder(root, visit)
+    else:
+        for node in candidate_nodes:
+            visit(node)
     return diags
 
 

@@ -6356,8 +6356,32 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
 
             if context.tree is None:
                 return []
+            candidate_nodes: list[Any] | None = None
+            if context.ts_nodes_for_types is not None:
+                groups = context.ts_nodes_for_types(
+                    context.tree,
+                    {
+                        "if_statement",
+                        "while_statement",
+                        "for_statement",
+                        "for_each_statement",
+                    },
+                )
+                candidate_nodes = [
+                    node
+                    for node_type in (
+                        "if_statement",
+                        "while_statement",
+                        "for_statement",
+                        "for_each_statement",
+                    )
+                    for node in groups.get(node_type, ())
+                ]
             return diagnostics_bsl004_from_tree(
-                context.path, context.tree.root_node, lines=context.lines
+                context.path,
+                context.tree.root_node,
+                lines=context.lines,
+                candidate_nodes=candidate_nodes,
             )
         if code == "BSL007":
             return model.validate_bsl007_unused_local_variable(
