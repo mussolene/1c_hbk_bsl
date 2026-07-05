@@ -6673,6 +6673,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 tree=context.tree,
                 bsl051_delimiter_lines_for_tree_fn=_diag._bsl051_delimiter_lines_for_tree,
                 re_unconditional_exit=_diag._RE_UNCONDITIONAL_EXIT,
+                re_return_statement=_diag._RE_RETURN,
             )
         if code == "BSL052":
             return _diagnostics_bsl052_identical_expressions(context)

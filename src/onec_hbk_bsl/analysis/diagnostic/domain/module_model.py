@@ -292,18 +292,19 @@ def _bsl260_call_access_text(method_call: Any, ts_node_text_fn) -> str:
     return ""
 
 
+_BSL051_IF_START_RE = re.compile(r"^\s*(?:Если|If)\b.*(?:Тогда|Then)\s*$", re.IGNORECASE)
+_BSL051_ELSEIF_RE = re.compile(r"^\s*(?:ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE)
+_BSL051_ELSE_RE = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
+_BSL051_ENDIF_RE = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
+_BSL051_TRY_RE = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
+_BSL051_ENDTRY_RE = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
+
+
 def _bsl051_all_branch_exit_end_if_lines(
     body_lines: list[tuple[int, str]],
     *,
     re_unconditional_exit: re.Pattern[str],
 ) -> set[int]:
-    if_start_re = re.compile(r"^\s*(?:Если|If)\b.*(?:Тогда|Then)\s*$", re.IGNORECASE)
-    elseif_re = re.compile(r"^\s*(?:ИначеЕсли|ElseIf|ElsIf)\b", re.IGNORECASE)
-    else_re = re.compile(r"^\s*(?:Иначе|Else)\b", re.IGNORECASE)
-    endif_re = re.compile(r"^\s*(?:КонецЕсли|EndIf)\b", re.IGNORECASE)
-    try_re = re.compile(r"^\s*(?:Попытка|Try)\b", re.IGNORECASE)
-    endtry_re = re.compile(r"^\s*(?:КонецПопытки|EndTry)\b", re.IGNORECASE)
-
     stack: list[dict[str, Any]] = []
     result: set[int] = set()
     try_depth = 0
@@ -316,14 +317,14 @@ def _bsl051_all_branch_exit_end_if_lines(
         if not stripped or stripped.startswith("//"):
             continue
 
-        if try_re.match(line):
+        if _BSL051_TRY_RE.match(line):
             try_depth += 1
             continue
-        if endtry_re.match(line):
+        if _BSL051_ENDTRY_RE.match(line):
             try_depth = max(0, try_depth - 1)
             continue
 
-        if if_start_re.match(line):
+        if _BSL051_IF_START_RE.match(line):
             stack.append({"branches": [], "current_exit": False, "has_else": False})
             continue
 
@@ -334,18 +335,18 @@ def _bsl051_all_branch_exit_end_if_lines(
             stack[-1]["current_exit"] = True
             continue
 
-        if elseif_re.match(line):
+        if _BSL051_ELSEIF_RE.match(line):
             stack[-1]["branches"].append(current_exits())
             stack[-1]["current_exit"] = False
             continue
 
-        if else_re.match(line):
+        if _BSL051_ELSE_RE.match(line):
             stack[-1]["branches"].append(current_exits())
             stack[-1]["current_exit"] = False
             stack[-1]["has_else"] = True
             continue
 
-        if endif_re.match(line):
+        if _BSL051_ENDIF_RE.match(line):
             finished = stack.pop()
             finished["branches"].append(finished["current_exit"])
             exits = bool(finished["has_else"] and all(finished["branches"]))
@@ -2610,6 +2611,7 @@ class ModuleModel:
         tree: Any,
         bsl051_delimiter_lines_for_tree_fn,
         re_unconditional_exit,
+        re_return_statement,
     ) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         delimiter_lines = bsl051_delimiter_lines_for_tree_fn(tree)
@@ -2635,9 +2637,7 @@ class ModuleModel:
                 next_indent = len(line) - len(line.lstrip())
                 end_abs = abs_idx
                 first_stripped = line.strip()
-                if extend_to_block_end or re.match(
-                    r"^(?:Возврат|Return)\b", first_stripped, re.IGNORECASE
-                ):
+                if extend_to_block_end or re_return_statement.match(first_stripped):
                     for tail_abs in range(abs_idx + 1, min(proc_end_idx, len(lines))):
                         tail = lines[tail_abs]
                         stripped_tail = tail.strip()
@@ -2649,10 +2649,7 @@ class ModuleModel:
                 if (
                     end_abs == abs_idx
                     and end_text.endswith(";")
-                    and (
-                        re.match(r"^\s*(?:Возврат|Return)\b", end_text, re.IGNORECASE)
-                        or "=" in end_text
-                    )
+                    and (re_return_statement.match(end_text) or "=" in end_text)
                 ):
                     end_character -= 1
 
