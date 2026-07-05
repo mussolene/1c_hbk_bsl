@@ -36,6 +36,8 @@ from onec_hbk_bsl.analysis import diagnostics as diagnostics_mod  # noqa: E402
 from onec_hbk_bsl.analysis import document_snapshot as snapshot_mod  # noqa: E402
 from onec_hbk_bsl.analysis import semantic as semantic_mod  # noqa: E402
 from onec_hbk_bsl.analysis.bsl_typo import candidates as typo_candidates_mod  # noqa: E402
+from onec_hbk_bsl.analysis.diagnostic import execution as execution_mod  # noqa: E402
+from onec_hbk_bsl.analysis.diagnostic import pipeline as pipeline_mod  # noqa: E402
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime import (
     rules as runtime_rules_mod,  # noqa: E402
 )
@@ -71,6 +73,325 @@ class AnalysisTrace:
 
     def add_missing_type(self, node_type: str) -> None:
         self.ts_nodes_missing_types[node_type] = self.ts_nodes_missing_types.get(node_type, 0) + 1
+
+
+@dataclass
+class FactTraceRow:
+    calls: int = 0
+    builds: int = 0
+    hits: int = 0
+    seconds: float = 0.0
+    build_seconds: float = 0.0
+    hit_seconds: float = 0.0
+    files: set[str] = field(default_factory=set)
+    max_lines: int = 0
+
+
+@dataclass
+class FactTrace:
+    rows: dict[str, FactTraceRow] = field(default_factory=dict)
+
+    def add(
+        self,
+        name: str,
+        *,
+        built: bool,
+        seconds: float,
+        path: str,
+        line_count: int,
+    ) -> None:
+        row = self.rows.setdefault(name, FactTraceRow())
+        row.calls += 1
+        row.seconds += seconds
+        row.files.add(path)
+        row.max_lines = max(row.max_lines, line_count)
+        if built:
+            row.builds += 1
+            row.build_seconds += seconds
+        else:
+            row.hits += 1
+            row.hit_seconds += seconds
+
+
+class TraceSnapshotFacts(AbstractContextManager["TraceSnapshotFacts"]):
+    _PROPERTY_ATTRS: dict[str, str | None] = {
+        "lines": "_lines",
+        "has_parse_errors": "_has_parse_errors",
+        "procedures": "_procs",
+        "regions": "_regions",
+        "proc_node_map": "_proc_node_map",
+        "symbols": "_symbols",
+        "calls": "_calls",
+        "semantic_model": "_semantic_model",
+        "query_text_blocks": "_query_blocks",
+        "query_line_indices": "_query_line_indices",
+        "query_content_line_tuples": "_query_content_line_tuples",
+        "line_string_states": "_line_string_states",
+        "comment_starts": "_comment_starts",
+        "masked_lines": "_masked_lines",
+        "code_lines_without_comments": "_code_lines_wo_comments",
+        "counter_lines": "_counter_lines",
+        "line_lengths": "_line_lengths",
+        "reported_line_lengths": "_reported_line_lengths",
+        "blank_line_flags": "_blank_line_flags",
+        "string_literal_ranges": "_string_literal_ranges",
+        "missing_space_facts": "_missing_space_facts",
+        "incorrect_line_break_facts": "_incorrect_line_break_facts",
+        "hardcoded_credential_facts": "_hardcoded_credential_facts",
+        "commented_code_facts": "_commented_code_facts",
+        "non_standard_region_facts": "_non_standard_region_facts",
+        "empty_region_facts": "_empty_region_facts",
+        "duplicate_region_facts": "_duplicate_region_facts",
+        "deprecated_warning_facts": "_deprecated_warning_facts",
+        "command_or_form_export_facts": "_command_or_form_export_facts",
+        "this_form_usage_facts": "_this_form_usage_facts",
+        "form_data_to_value_facts": "_form_data_to_value_facts",
+        "invalid_character_facts": "_invalid_character_facts",
+        "module_variable_description_facts": "_module_variable_description_facts",
+        "select_top_without_order_facts": "_select_top_without_order_facts",
+    }
+
+    def __init__(self) -> None:
+        self.trace = FactTrace()
+        self._patches: list[tuple[Any, str, Any]] = []
+
+    def __enter__(self) -> TraceSnapshotFacts:
+        snapshot_cls = snapshot_mod.DocumentSnapshot
+        for name, attr in self._PROPERTY_ATTRS.items():
+            member = getattr(snapshot_cls, name, None)
+            if isinstance(member, property) and member.fget is not None:
+                self._patch(
+                    snapshot_cls, name, property(self._wrap_property(name, attr, member.fget))
+                )
+        self._patch(snapshot_cls, "ts_nodes_for_types", self._wrap_ts_nodes_for_types())
+        self._patch(snapshot_cls, "complexity_metrics_for_procs", self._wrap_complexity_metrics())
+        self._patch(
+            snapshot_cls,
+            "module_body_cognitive_complexity_facts",
+            self._wrap_keyed_cache_method(
+                "module_body_cognitive_complexity_facts",
+                "_module_body_cognitive_facts_cache",
+                lambda args, _kwargs: args[0] if args else None,
+            ),
+        )
+        self._patch(
+            snapshot_cls,
+            "complex_condition_facts",
+            self._wrap_keyed_cache_method(
+                "complex_condition_facts",
+                "_complex_condition_facts_cache",
+                lambda args, _kwargs: args[0] if args else None,
+            ),
+        )
+        self._patch(
+            snapshot_cls,
+            "line_too_long_facts",
+            self._wrap_keyed_cache_method(
+                "line_too_long_facts",
+                "_line_too_long_facts_cache",
+                lambda args, _kwargs: args[0] if args else None,
+            ),
+        )
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        for target, name, original in reversed(self._patches):
+            setattr(target, name, original)
+        self._patches.clear()
+
+    def _patch(self, target: Any, name: str, replacement: Any) -> None:
+        self._patches.append((target, name, getattr(target, name)))
+        setattr(target, name, replacement)
+
+    def _snapshot_line_count(self, snapshot: Any) -> int:
+        content = getattr(snapshot, "content", "")
+        return content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+
+    def _record(self, snapshot: Any, name: str, *, built: bool, seconds: float) -> None:
+        self.trace.add(
+            name,
+            built=built,
+            seconds=seconds,
+            path=str(getattr(snapshot, "path", "")),
+            line_count=self._snapshot_line_count(snapshot),
+        )
+
+    def _wrap_property(
+        self,
+        name: str,
+        attr: str | None,
+        original: Callable[[Any], Any],
+    ) -> Callable[[Any], Any]:
+        def wrapped(snapshot: Any) -> Any:
+            built = attr is None or getattr(snapshot, attr, None) is None
+            started = time.perf_counter()
+            try:
+                return original(snapshot)
+            finally:
+                self._record(
+                    snapshot,
+                    name,
+                    built=built,
+                    seconds=time.perf_counter() - started,
+                )
+
+        return wrapped
+
+    def _wrap_ts_nodes_for_types(self) -> Callable[..., dict[str, list[Any]]]:
+        original = snapshot_mod.DocumentSnapshot.ts_nodes_for_types
+
+        def wrapped(snapshot: Any, node_types: set[str], *, hot_node_types=(), walker):
+            requested = set(node_types) | set(hot_node_types)
+            groups = getattr(snapshot, "_ts_node_groups", None)
+            built = groups is None or bool(requested - set(groups))
+            started = time.perf_counter()
+            try:
+                return original(snapshot, node_types, hot_node_types=hot_node_types, walker=walker)
+            finally:
+                self._record(
+                    snapshot,
+                    "ts_nodes_for_types",
+                    built=built,
+                    seconds=time.perf_counter() - started,
+                )
+
+        return wrapped
+
+    def _wrap_complexity_metrics(self) -> Callable[..., list[tuple[int, int]]]:
+        original = snapshot_mod.DocumentSnapshot.complexity_metrics_for_procs
+
+        def wrapped(snapshot: Any, procs: list[Any]) -> list[tuple[int, int]]:
+            key = tuple((proc.start_idx, proc.end_idx) for proc in procs)
+            cache = getattr(snapshot, "_complexity_metrics_cache", None)
+            built = cache is None or key not in cache
+            started = time.perf_counter()
+            try:
+                return original(snapshot, procs)
+            finally:
+                self._record(
+                    snapshot,
+                    "complexity_metrics_for_procs",
+                    built=built,
+                    seconds=time.perf_counter() - started,
+                )
+
+        return wrapped
+
+    def _wrap_keyed_cache_method(
+        self,
+        name: str,
+        cache_attr: str,
+        key_fn: Callable[[tuple[Any, ...], dict[str, Any]], Any],
+    ) -> Callable[..., list[Any]]:
+        original = getattr(snapshot_mod.DocumentSnapshot, name)
+
+        def wrapped(snapshot: Any, *args: Any, **kwargs: Any) -> list[Any]:
+            cache = getattr(snapshot, cache_attr, None)
+            key = key_fn(args, kwargs)
+            built = cache is None or key not in cache
+            started = time.perf_counter()
+            try:
+                return original(snapshot, *args, **kwargs)
+            finally:
+                self._record(
+                    snapshot,
+                    name,
+                    built=built,
+                    seconds=time.perf_counter() - started,
+                )
+
+        return wrapped
+
+
+@dataclass
+class TaskTraceRow:
+    calls: int = 0
+    seconds: float = 0.0
+    diagnostics: int = 0
+    process_safe_calls: int = 0
+
+
+@dataclass
+class TaskTrace:
+    rows: dict[str, TaskTraceRow] = field(default_factory=dict)
+
+    def add(
+        self,
+        code: str,
+        *,
+        seconds: float,
+        diagnostics_count: int,
+        process_safe: bool,
+    ) -> None:
+        row = self.rows.setdefault(code, TaskTraceRow())
+        row.calls += 1
+        row.seconds += seconds
+        row.diagnostics += diagnostics_count
+        if process_safe:
+            row.process_safe_calls += 1
+
+
+class TraceDiagnosticTasks(AbstractContextManager["TraceDiagnosticTasks"]):
+    def __init__(self) -> None:
+        self.trace = TaskTrace()
+        self._patches: list[tuple[Any, str, Any]] = []
+
+    def __enter__(self) -> TraceDiagnosticTasks:
+        self._patch(
+            execution_mod,
+            "execute_diagnostic_rule_tasks",
+            self._wrap_execute(execution_mod.execute_diagnostic_rule_tasks),
+        )
+        self._patch(
+            pipeline_mod,
+            "execute_diagnostic_rule_tasks",
+            self._wrap_execute(pipeline_mod.execute_diagnostic_rule_tasks),
+        )
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        for target, name, original in reversed(self._patches):
+            setattr(target, name, original)
+        self._patches.clear()
+
+    def _patch(self, target: Any, name: str, replacement: Any) -> None:
+        self._patches.append((target, name, getattr(target, name)))
+        setattr(target, name, replacement)
+
+    def _normalize_task_for_trace(self, task: Any) -> Any:
+        if isinstance(task, execution_mod.DiagnosticRuleTask):
+            return task
+        code, fn = task
+        return execution_mod.DiagnosticRuleTask(code=code, fn=fn)
+
+    def _wrap_task(self, task: Any) -> Any:
+        normalized = self._normalize_task_for_trace(task)
+
+        def wrapped_fn() -> list[Any]:
+            started = time.perf_counter()
+            result = normalized.fn()
+            elapsed = time.perf_counter() - started
+            self.trace.add(
+                normalized.code,
+                seconds=elapsed,
+                diagnostics_count=len(result),
+                process_safe=normalized.process_safe,
+            )
+            return result
+
+        return execution_mod.DiagnosticRuleTask(
+            code=normalized.code,
+            fn=wrapped_fn,
+            process_safe=False,
+        )
+
+    def _wrap_execute(
+        self, original: Callable[[list[Any]], list[Any]]
+    ) -> Callable[[list[Any]], list[Any]]:
+        def wrapped(tasks: list[Any]) -> list[Any]:
+            return original([self._wrap_task(task) for task in tasks])
+
+        return wrapped
 
 
 class TraceAnalysisPasses(AbstractContextManager["TraceAnalysisPasses"]):
@@ -252,6 +573,10 @@ class Args:
     profile_top: int
     profile_sort: str
     slow_files: int
+    trace_facts: bool
+    trace_facts_top: int
+    trace_tasks: bool
+    trace_tasks_top: int
 
 
 def parse_args(argv: list[str]) -> Args:
@@ -261,7 +586,8 @@ def parse_args(argv: list[str]) -> Args:
             "[--limit=N] [--sample=N] [--seed=N] [--largest=N] "
             "[--diagnostics-only] [--trace-analysis] [--trace-call-sites] "
             "[--profile] [--profile-top=N] [--profile-sort=cumulative|tottime] "
-            "[--slow-files=N]"
+            "[--slow-files=N] [--trace-facts] [--trace-facts-top=N] "
+            "[--trace-tasks] [--trace-tasks-top=N]"
         )
 
     root = Path(argv[0]).expanduser().resolve()
@@ -276,6 +602,10 @@ def parse_args(argv: list[str]) -> Args:
     profile_top = 30
     profile_sort = "cumulative"
     slow_files = 0
+    trace_facts = False
+    trace_facts_top = 30
+    trace_tasks = False
+    trace_tasks_top = 30
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -336,6 +666,24 @@ def parse_args(argv: list[str]) -> Args:
             slow_files = int(argv[i])
         elif arg.startswith("--slow-files="):
             slow_files = int(arg.split("=", 1)[1])
+        elif arg == "--trace-facts":
+            trace_facts = True
+        elif arg == "--trace-facts-top":
+            i += 1
+            if i >= len(argv):
+                raise SystemExit("--trace-facts-top requires a value")
+            trace_facts_top = int(argv[i])
+        elif arg.startswith("--trace-facts-top="):
+            trace_facts_top = int(arg.split("=", 1)[1])
+        elif arg == "--trace-tasks":
+            trace_tasks = True
+        elif arg == "--trace-tasks-top":
+            i += 1
+            if i >= len(argv):
+                raise SystemExit("--trace-tasks-top requires a value")
+            trace_tasks_top = int(argv[i])
+        elif arg.startswith("--trace-tasks-top="):
+            trace_tasks_top = int(arg.split("=", 1)[1])
         else:
             raise SystemExit(f"Unknown argument: {arg}")
         i += 1
@@ -354,6 +702,10 @@ def parse_args(argv: list[str]) -> Args:
         profile_top=profile_top,
         profile_sort=profile_sort,
         slow_files=slow_files,
+        trace_facts=trace_facts,
+        trace_facts_top=trace_facts_top,
+        trace_tasks=trace_tasks,
+        trace_tasks_top=trace_tasks_top,
     )
 
 
@@ -385,6 +737,30 @@ def print_trace(trace: AnalysisTrace, *, top_sites: int = 20) -> None:
     print(f"trace_typo_candidate_calls: {trace.typo_candidate_calls}")
     print(f"trace_typo_candidate_sec: {trace.typo_candidate_seconds:.3f}")
     print(f"trace_typo_candidates_total: {trace.typo_candidates_total}")
+
+
+def print_fact_trace(trace: FactTrace, *, top: int = 30) -> None:
+    print(f"fact_trace_top: {top}")
+    print(
+        "fact_trace_name\tcalls\tbuilds\thits\tseconds\tbuild_seconds\thit_seconds\tfiles\tmax_lines"
+    )
+    rows = sorted(trace.rows.items(), key=lambda item: item[1].seconds, reverse=True)
+    for name, row in rows[:top]:
+        print(
+            f"{name}\t{row.calls}\t{row.builds}\t{row.hits}\t"
+            f"{row.seconds:.3f}\t{row.build_seconds:.3f}\t{row.hit_seconds:.3f}\t"
+            f"{len(row.files)}\t{row.max_lines}"
+        )
+
+
+def print_task_trace(trace: TaskTrace, *, top: int = 30) -> None:
+    print(f"task_trace_top: {top}")
+    print("task_trace_name\tcalls\tprocess_safe_calls\tseconds\tdiagnostics")
+    rows = sorted(trace.rows.items(), key=lambda item: item[1].seconds, reverse=True)
+    for name, row in rows[:top]:
+        print(
+            f"{name}\t{row.calls}\t{row.process_safe_calls}\t{row.seconds:.3f}\t{row.diagnostics}"
+        )
 
 
 def maxrss_mb() -> float:
@@ -452,25 +828,32 @@ def main(argv: list[str]) -> int:
     trace_manager = (
         TraceAnalysisPasses(call_sites=args.trace_call_sites) if args.trace_analysis else None
     )
+    fact_trace_manager = TraceSnapshotFacts() if args.trace_facts else None
+    task_trace_manager = TraceDiagnosticTasks() if args.trace_tasks else None
     profiler = cProfile.Profile() if args.profile else None
     if profiler is not None:
         profiler.enable()
-    if trace_manager is None:
-        diag_started = time.perf_counter()
-        for path in picked:
-            content = path.read_text(encoding="utf-8", errors="ignore")
-            file_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-            file_bytes = len(content.encode("utf-8", errors="ignore"))
-            total_lines += file_lines
-            total_bytes += file_bytes
-            file_started = time.perf_counter()
-            file_diags = len(engine.check_content(str(path), content))
-            total_diags += file_diags
-            slow_rows.append(
-                (time.perf_counter() - file_started, path, file_lines, file_bytes, file_diags)
-            )
-        diag_elapsed = time.perf_counter() - diag_started
-    else:
+
+    def run_diagnostics_loop() -> float:
+        nonlocal total_lines, total_bytes, total_diags
+        if trace_manager is None:
+            diag_started = time.perf_counter()
+            for path in picked:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+                file_lines = content.count("\n") + (
+                    1 if content and not content.endswith("\n") else 0
+                )
+                file_bytes = len(content.encode("utf-8", errors="ignore"))
+                total_lines += file_lines
+                total_bytes += file_bytes
+                file_started = time.perf_counter()
+                file_diags = len(engine.check_content(str(path), content))
+                total_diags += file_diags
+                slow_rows.append(
+                    (time.perf_counter() - file_started, path, file_lines, file_bytes, file_diags)
+                )
+            return time.perf_counter() - diag_started
+
         with trace_manager:
             diag_started = time.perf_counter()
             for path in picked:
@@ -487,7 +870,20 @@ def main(argv: list[str]) -> int:
                 slow_rows.append(
                     (time.perf_counter() - file_started, path, file_lines, file_bytes, file_diags)
                 )
-            diag_elapsed = time.perf_counter() - diag_started
+            return time.perf_counter() - diag_started
+
+    if fact_trace_manager is not None and task_trace_manager is not None:
+        with fact_trace_manager, task_trace_manager:
+            diag_elapsed = run_diagnostics_loop()
+    elif fact_trace_manager is not None:
+        with fact_trace_manager:
+            diag_elapsed = run_diagnostics_loop()
+    elif task_trace_manager is not None:
+        with task_trace_manager:
+            diag_elapsed = run_diagnostics_loop()
+    else:
+        diag_elapsed = run_diagnostics_loop()
+
     if profiler is not None:
         profiler.disable()
 
@@ -523,6 +919,10 @@ def main(argv: list[str]) -> int:
     print_slow_files(slow_rows, root=root, top=args.slow_files)
     if profiler is not None:
         print_profile(profiler, top=args.profile_top, sort=args.profile_sort)
+    if fact_trace_manager is not None:
+        print_fact_trace(fact_trace_manager.trace, top=args.trace_facts_top)
+    if task_trace_manager is not None:
+        print_task_trace(task_trace_manager.trace, top=args.trace_tasks_top)
     if trace_manager is not None:
         print_trace(trace_manager.trace)
     return 0

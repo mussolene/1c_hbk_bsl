@@ -78,6 +78,10 @@ def test_dev_corpus_bench_parse_trace_flags() -> None:
             "--profile-top=7",
             "--profile-sort=tottime",
             "--slow-files=3",
+            "--trace-facts",
+            "--trace-facts-top=11",
+            "--trace-tasks",
+            "--trace-tasks-top=13",
         ]
     )
 
@@ -89,6 +93,10 @@ def test_dev_corpus_bench_parse_trace_flags() -> None:
     assert args.profile_top == 7
     assert args.profile_sort == "tottime"
     assert args.slow_files == 3
+    assert args.trace_facts is True
+    assert args.trace_facts_top == 11
+    assert args.trace_tasks is True
+    assert args.trace_tasks_top == 13
 
 
 def test_dev_corpus_bench_iter_bsl_files_uses_supported_suffixes(tmp_path: Path) -> None:
@@ -116,6 +124,39 @@ def test_dev_corpus_bench_trace_records_missing_types() -> None:
     assert trace.root_walk_calls == {"runtime": 2}
     assert trace.root_walk_nodes == {"runtime": 15}
     assert trace.ts_nodes_missing_types == {"method_call": 1}
+
+
+def test_dev_corpus_bench_fact_trace_records_builds_and_hits() -> None:
+    dev_corpus_bench = _load_script_module("dev_corpus_bench")
+    trace = dev_corpus_bench.FactTrace()
+
+    trace.add("procedures", built=True, seconds=0.25, path="a.bsl", line_count=10)
+    trace.add("procedures", built=False, seconds=0.05, path="a.bsl", line_count=10)
+    trace.add("procedures", built=True, seconds=0.10, path="b.bsl", line_count=40)
+
+    row = trace.rows["procedures"]
+    assert row.calls == 3
+    assert row.builds == 2
+    assert row.hits == 1
+    assert round(row.seconds, 2) == 0.40
+    assert round(row.build_seconds, 2) == 0.35
+    assert row.hit_seconds == 0.05
+    assert row.files == {"a.bsl", "b.bsl"}
+    assert row.max_lines == 40
+
+
+def test_dev_corpus_bench_task_trace_records_task_totals() -> None:
+    dev_corpus_bench = _load_script_module("dev_corpus_bench")
+    trace = dev_corpus_bench.TaskTrace()
+
+    trace.add("BSL001", seconds=0.25, diagnostics_count=2, process_safe=False)
+    trace.add("BSL001", seconds=0.05, diagnostics_count=1, process_safe=True)
+
+    row = trace.rows["BSL001"]
+    assert row.calls == 2
+    assert round(row.seconds, 2) == 0.30
+    assert row.diagnostics == 3
+    assert row.process_safe_calls == 1
 
 
 def test_bsl_diagnostic_messages_are_not_english_fallbacks() -> None:
