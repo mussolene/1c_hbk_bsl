@@ -292,9 +292,8 @@ def implicit_exit_reachable(
     loops_executed_at_least_once: bool,
     at_top_level: bool,
 ) -> bool:
-    def walk(i: int) -> bool:
-        if i >= len(stmts):
-            return True
+    i = 0
+    while i < len(stmts):
         s = stmts[i]
         t = getattr(s, "type", None)
         if t in ("return_statement", "rise_error_statement"):
@@ -304,7 +303,8 @@ def implicit_exit_reachable(
                 s, loops_executed_at_least_once=loops_executed_at_least_once
             ):
                 return False
-            return walk(i + 1)
+            i += 1
+            continue
         if t == "if_statement":
             if (
                 at_top_level
@@ -321,7 +321,8 @@ def implicit_exit_reachable(
                 s,
                 loops_executed_at_least_once=loops_executed_at_least_once,
             ):
-                return walk(i + 1)
+                i += 1
+                continue
             return False
         if t in ("while_statement", "for_statement", "for_each_statement"):
             if t == "while_statement" and _while_literal_true(s):
@@ -333,20 +334,23 @@ def implicit_exit_reachable(
             if loops_executed_at_least_once and body_always_returns:
                 return False
             if loops_executed_at_least_once and at_top_level:
-                return walk(i + 1)
+                i += 1
+                continue
             if not body_always_returns:
-                return walk(i + 1)
-            return walk(i + 1)
+                i += 1
+                continue
+            i += 1
+            continue
         if t == "try_statement":
             if not _try_always_returns(
                 s,
                 loops_executed_at_least_once=loops_executed_at_least_once,
             ):
-                return walk(i + 1)
+                i += 1
+                continue
             return False
-        return walk(i + 1)
-
-    return walk(0)
+        i += 1
+    return True
 
 
 def _fn_subtree_has_parse_error(fn_def: Any) -> bool:
