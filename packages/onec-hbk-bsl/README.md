@@ -9,6 +9,9 @@ CLI, formatter, diagnostics, LSP, Python API, and MCP.
 pip install onec-hbk-bsl
 ```
 
+The published wheel pins `onec-hbk-bsl-core` to the same release version, so
+installing `onec-hbk-bsl==X.Y.Z` also installs `onec-hbk-bsl-core==X.Y.Z`.
+
 The implementation lives in `onec-hbk-bsl-core`. Install that package directly
 when you need the slim formatter/diagnostics/Python API surface without MCP
 dependencies.

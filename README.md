@@ -143,7 +143,7 @@ for diagnostic in diagnostics:
 | Пакет | Назначение |
 |---|---|
 | `onec-hbk-bsl-core` | CLI, formatter, diagnostics, Python API и LSP без MCP-зависимостей |
-| `onec-hbk-bsl` | Полный совместимый пакет поверх `onec-hbk-bsl-core[mcp]` |
+| `onec-hbk-bsl` | Полный совместимый пакет поверх `onec-hbk-bsl-core[mcp]` той же версии |
 
 ## Документация
 

@@ -4,7 +4,7 @@
 
 **Источник правды — аннотированный тег** вида `vMAJOR.MINOR.PATCH` (например `v0.7.2`).
 
-- **Python-пакеты:** версия берётся через **setuptools-scm** при сборке и попадает в wheel/sdist и в `importlib.metadata` после `pip install`. Release workflow публикует slim-пакет `onec-hbk-bsl-core` и полный backwards-compatible метапакет `onec-hbk-bsl`.
+- **Python-пакеты:** версия берётся через **setuptools-scm** при сборке и попадает в wheel/sdist и в `importlib.metadata` после `pip install`. Release workflow публикует slim-пакет `onec-hbk-bsl-core` и полный backwards-compatible метапакет `onec-hbk-bsl`. Метапакет собирается только через **`scripts/build_python_dist.sh`**, который временно пинит зависимости `onec-hbk-bsl-core[mcp]` / `onec-hbk-bsl-core[all]` к той же release-версии и проверяет `Requires-Dist` в wheel metadata.
 - **Committed metadata:** в `src/onec_hbk_bsl/_version.py`, `vscode-extension/package.json` и корне `vscode-extension/package-lock.json` хранится placeholder `0.0.0`. Это не релизная версия и ее не нужно менять руками.
 - **Расширение VS Code:** `vsce` требует literal `version` в **`vscode-extension/package.json`**; release workflow перед VSIX-сборкой генерирует build-time metadata скриптом **`scripts/sync_version.py`** из `GITHUB_REF_NAME`. Эти изменения живут только в рабочей директории CI и не коммитятся.
 - **Локальная сборка VSIX:** цель **`make vsix`** вызывает **`sync-version`** перед сборкой, затем собирает бинарник, копирует его в `vscode-extension/bin/`, запускает webpack и `vsce package`.
@@ -13,7 +13,7 @@
 Типичный релиз:
 
 1. Закоммитить изменения на `main`.
-2. `./scripts/release.sh X.Y.Z "release: vX.Y.Z"` или вручную `git tag -a vX.Y.Z -m "release"` и `git push origin main vX.Y.Z`.
+2. `./scripts/release.sh X.Y.Z "release: vX.Y.Z"`. Не создавайте release tag вручную без локального release script: он запускает тот же Python distribution builder, что и CI, и ловит рассинхрон meta/core dependency metadata до публикации.
 3. GitHub Actions **Release** собирает артефакты, публикует Python-пакет в PyPI через Trusted Publishing и публикует платформенные VSIX; build jobs вызывают `scripts/sync_version.py`, чтобы frozen runtime и VSIX metadata совпадали с тегом.
 
 Для PyPI в настройках проекта PyPI должен быть добавлен Trusted Publisher:

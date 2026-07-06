@@ -203,9 +203,7 @@ jobs:
           pip install build twine
           pip install setuptools-scm
           python scripts/sync_version.py --runtime-only
-          python -m build
-          python -m build packages/onec-hbk-bsl --outdir dist
-          python -m twine check dist/*
+          PYTHON=python scripts/build_python_dist.sh "$VERSION" dist
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v6

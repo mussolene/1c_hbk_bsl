@@ -32,7 +32,8 @@ behavior should be added to command forms first.
 ## Packaging
 
 - `onec-hbk-bsl-core`: CLI, formatter, diagnostics, Python API and LSP without MCP dependencies.
-- `onec-hbk-bsl`: full compatibility package depending on `onec-hbk-bsl-core[mcp]`.
+- `onec-hbk-bsl`: full compatibility package depending on the same-version
+  `onec-hbk-bsl-core[mcp]` wheel.
 
 Running `onec-hbk-bsl mcp` from a slim core installation without MCP should exit
 with a clear installation hint rather than an import traceback.
