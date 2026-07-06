@@ -61,7 +61,31 @@ echo "==> Build Python distributions as ${VERSION}"
 TMP_DIST="$(mktemp -d /tmp/onec-hbk-bsl-release.XXXXXX)"
 export SETUPTOOLS_SCM_PRETEND_VERSION="$VERSION"
 "$PYTHON" -m build --outdir "$TMP_DIST"
+
+META_PYPROJECT="packages/onec-hbk-bsl/pyproject.toml"
+META_PYPROJECT_BACKUP="$(mktemp /tmp/onec-hbk-bsl-meta-pyproject.XXXXXX)"
+cp "$META_PYPROJECT" "$META_PYPROJECT_BACKUP"
+restore_meta_pyproject() {
+    cp "$META_PYPROJECT_BACKUP" "$META_PYPROJECT"
+    rm -f "$META_PYPROJECT_BACKUP"
+}
+trap restore_meta_pyproject EXIT
+"$PYTHON" - "$VERSION" "$META_PYPROJECT" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+version = sys.argv[1]
+path = Path(sys.argv[2])
+text = path.read_text(encoding="utf-8")
+text = text.replace('"onec-hbk-bsl-core[mcp]",', f'"onec-hbk-bsl-core[mcp]=={version}",')
+text = text.replace('"onec-hbk-bsl-core[all]",', f'"onec-hbk-bsl-core[all]=={version}",')
+path.write_text(text, encoding="utf-8")
+PY
 "$PYTHON" -m build packages/onec-hbk-bsl --outdir "$TMP_DIST"
+restore_meta_pyproject
+trap - EXIT
 "$PYTHON" -m twine check "$TMP_DIST"/*
 
 if [[ -n "$(git status --porcelain)" ]]; then
