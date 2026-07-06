@@ -1222,7 +1222,10 @@ def append_diagnostic_runtime_rule_tasks(
         root = getattr(tree, "root_node", None)
         if root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray)):
             typo_nodes = (
-                context.ts_nodes_for_types(tree, {"identifier", "property", "string"})
+                context.ts_nodes_for_types(
+                    tree,
+                    {"assignment_statement", "string", "var_definition", "var_statement"},
+                )
                 if context.ts_nodes_for_types is not None
                 else None
             )

@@ -45,33 +45,18 @@ def collect_spell_candidates(
             out=candidates,
         )
 
-    for node in nodes_by_type.get("identifier", []):
-        text = _node_text(node)
-        if not contains_cyrillic_letter(text) or not _identifier_typo_context_ok(node):
-            continue
-        _append_candidate(
-            node=node,
-            source_text=text,
-            inner=text.strip(),
+    if _has_structural_code_candidate_nodes(nodes_by_type):
+        _append_structural_code_candidates(
+            nodes_by_type=nodes_by_type,
             source_bytes=source_bytes,
             line_starts=line_starts,
-            kind="code",
-            exact_ignore=CODE_TOKEN_EXACT_IGNORE,
             out=candidates,
         )
-
-    for node in nodes_by_type.get("property", []):
-        text = _node_text(node)
-        if not contains_cyrillic_letter(text) or not _property_typo_context_ok(node):
-            continue
-        _append_candidate(
-            node=node,
-            source_text=text,
-            inner=text.strip(),
+    else:
+        _append_legacy_code_candidates(
+            nodes_by_type=nodes_by_type,
             source_bytes=source_bytes,
             line_starts=line_starts,
-            kind="code",
-            exact_ignore=CODE_TOKEN_EXACT_IGNORE,
             out=candidates,
         )
 
@@ -81,7 +66,12 @@ def collect_spell_candidates(
 
 
 def _collect_candidate_nodes(root: Any) -> dict[str, list[Any]]:
-    nodes_by_type: dict[str, list[Any]] = {"identifier": [], "property": [], "string": []}
+    nodes_by_type: dict[str, list[Any]] = {
+        "assignment_statement": [],
+        "string": [],
+        "var_definition": [],
+        "var_statement": [],
+    }
     stack: list[Any] = [root]
     while stack:
         node = stack.pop()
@@ -150,6 +140,139 @@ def _append_candidate(
             exact_ignore=exact_ignore,
         )
     )
+
+
+def _has_structural_code_candidate_nodes(nodes_by_type: dict[str, list[Any]]) -> bool:
+    return any(
+        node_type in nodes_by_type
+        for node_type in ("assignment_statement", "var_definition", "var_statement")
+    )
+
+
+def _append_code_candidate(
+    *,
+    node: Any,
+    source_bytes: bytes,
+    line_starts: list[int],
+    out: list[SpellCandidate],
+    seen: set[tuple[int, int, str]],
+) -> None:
+    node_type = getattr(node, "type", None)
+    if node_type not in {"identifier", "property"}:
+        return
+    key = (int(getattr(node, "start_byte", -1)), int(getattr(node, "end_byte", -1)), node_type)
+    if key in seen:
+        return
+    text = _node_text(node)
+    if not contains_cyrillic_letter(text):
+        return
+    if node_type == "identifier" and not _identifier_typo_context_ok(node):
+        return
+    if node_type == "property" and not _property_typo_context_ok(node):
+        return
+    seen.add(key)
+    _append_candidate(
+        node=node,
+        source_text=text,
+        inner=text.strip(),
+        source_bytes=source_bytes,
+        line_starts=line_starts,
+        kind="code",
+        exact_ignore=CODE_TOKEN_EXACT_IGNORE,
+        out=out,
+    )
+
+
+def _iter_name_nodes(node: Any):
+    node_type = getattr(node, "type", None)
+    if node_type in {"identifier", "property"}:
+        yield node
+        return
+    for child in getattr(node, "children", ()) or ():
+        yield from _iter_name_nodes(child)
+
+
+def _assignment_lhs_node(assignment: Any) -> Any | None:
+    named_children = list(getattr(assignment, "named_children", ()) or ())
+    return named_children[0] if named_children else None
+
+
+def _append_structural_code_candidates(
+    *,
+    nodes_by_type: dict[str, list[Any]],
+    source_bytes: bytes,
+    line_starts: list[int],
+    out: list[SpellCandidate],
+) -> None:
+    seen: set[tuple[int, int, str]] = set()
+    for node in nodes_by_type.get("var_definition", []):
+        for name_node in _iter_name_nodes(node):
+            _append_code_candidate(
+                node=name_node,
+                source_bytes=source_bytes,
+                line_starts=line_starts,
+                out=out,
+                seen=seen,
+            )
+    for node in nodes_by_type.get("var_statement", []):
+        for name_node in _iter_name_nodes(node):
+            _append_code_candidate(
+                node=name_node,
+                source_bytes=source_bytes,
+                line_starts=line_starts,
+                out=out,
+                seen=seen,
+            )
+    for assignment in nodes_by_type.get("assignment_statement", []):
+        lhs = _assignment_lhs_node(assignment)
+        if lhs is None:
+            continue
+        for name_node in _iter_name_nodes(lhs):
+            _append_code_candidate(
+                node=name_node,
+                source_bytes=source_bytes,
+                line_starts=line_starts,
+                out=out,
+                seen=seen,
+            )
+
+
+def _append_legacy_code_candidates(
+    *,
+    nodes_by_type: dict[str, list[Any]],
+    source_bytes: bytes,
+    line_starts: list[int],
+    out: list[SpellCandidate],
+) -> None:
+    for node in nodes_by_type.get("identifier", []):
+        text = _node_text(node)
+        if not contains_cyrillic_letter(text) or not _identifier_typo_context_ok(node):
+            continue
+        _append_candidate(
+            node=node,
+            source_text=text,
+            inner=text.strip(),
+            source_bytes=source_bytes,
+            line_starts=line_starts,
+            kind="code",
+            exact_ignore=CODE_TOKEN_EXACT_IGNORE,
+            out=out,
+        )
+
+    for node in nodes_by_type.get("property", []):
+        text = _node_text(node)
+        if not contains_cyrillic_letter(text) or not _property_typo_context_ok(node):
+            continue
+        _append_candidate(
+            node=node,
+            source_text=text,
+            inner=text.strip(),
+            source_bytes=source_bytes,
+            line_starts=line_starts,
+            kind="code",
+            exact_ignore=CODE_TOKEN_EXACT_IGNORE,
+            out=out,
+        )
 
 
 def _collect_forced_method_candidates(source_bytes: bytes) -> list[SpellCandidate]:
