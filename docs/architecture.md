@@ -47,8 +47,8 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │  ───────────────────────────────────────────────────────────  │
 │                   Parser Layer                                │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  BslParser (tree-sitter-languages["bsl"])               │  │
-│  │  Fallback: _RegexTree (regex-based extraction)          │  │
+│  │  BslParser (tree-sitter-bsl pinned grammar)             │  │
+│  │  CST-first diagnostics over shared parse artifacts       │  │
 │  └─────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
          ↕ STDIO                    ↕ HTTP :8051
