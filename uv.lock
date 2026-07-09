@@ -507,7 +507,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "setuptools-scm", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "tree-sitter", specifier = ">=0.24,<0.26" },
-    { name = "tree-sitter-hbk", specifier = "==0.1.8" },
+    { name = "tree-sitter-hbk", specifier = ">=0.1.10" },
     { name = "watchfiles", specifier = ">=0.24" },
 ]
 provides-extras = ["mcp", "all", "dev", "build"]
@@ -1052,9 +1052,16 @@ wheels = [
 
 [[package]]
 name = "tree-sitter-hbk"
-version = "0.1.8"
+version = "0.1.10"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ed/69/03be58134feb2e01397dfb5a3ae002e53dc412486b3615856207674e1a04/tree_sitter_hbk-0.1.8.tar.gz", hash = "sha256:fbf2a3ba7a34b36ce28f271e0b5acd7ee65977314c60171cb3b68700c87176cc", size = 172304, upload-time = "2026-07-09T14:34:42.29Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/d4/fc20463af85876bc107a0b19c8d73836f52ee80f1294cc317f42a133521d/tree_sitter_hbk-0.1.10.tar.gz", hash = "sha256:9872228592f17d9b76c61f275f4e9cd47c16e0f32e6f6ba5f0aa5cc609b00895", size = 172298, upload-time = "2026-07-09T15:10:30.49Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/ca/407018c52af447faf7e40724f32a0709142038ce167e39e86792d1b34ac5/tree_sitter_hbk-0.1.10-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:d5de5fff3c8c88a82006a4d48d238d86b282f0d973985d047e69d76c63887c71", size = 95475, upload-time = "2026-07-09T15:10:24.862Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/28/8892958fa908188e540f31c051638e14db5b5c749b40fe22a2d78fcbec65/tree_sitter_hbk-0.1.10-cp310-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:5e5c733494c6612b0f7a1b99a5914449de3ba16d5f8706c0d0bad60e0a0f7f0a", size = 106886, upload-time = "2026-07-09T15:10:25.991Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/b7/5d67bfb33f530e18c39b61e69a99c975d5d5516a92583b48fe9e588eae5a/tree_sitter_hbk-0.1.10-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:dcccf20ad34e45a601f64001f10a09816885956b9159d9c38cf1ebb4fd7f2f18", size = 106813, upload-time = "2026-07-09T15:10:27.216Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/d2/42e18988a45519af0b55e65f3cbdde3baf8577415cb921816ec75f4825c0/tree_sitter_hbk-0.1.10-cp310-abi3-win32.whl", hash = "sha256:16f264d8e57d596875d383a9067694177aaeed2933cb2fd58fea595a14841009", size = 97357, upload-time = "2026-07-09T15:10:28.458Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/a1/2d82e7e079171b529e202658afac4a23fbeae979cb43d6f66d414ce4416e/tree_sitter_hbk-0.1.10-cp310-abi3-win_amd64.whl", hash = "sha256:a3a1340bf0f394b1af4644c86e0ce108258180c11b2cbfb2098574db6adc3cc0", size = 94005, upload-time = "2026-07-09T15:10:29.462Z" },
+]
 
 [[package]]
 name = "typing-extensions"
