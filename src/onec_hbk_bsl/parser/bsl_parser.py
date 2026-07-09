@@ -1,8 +1,8 @@
 """
 BSL parser using tree-sitter.
 
-Primary: tree-sitter-bsl (dedicated BSL grammar package).
-Fallback: regex-based extraction if tree-sitter-bsl is not available.
+Primary: tree-sitter-hbk (dedicated HBK-packaged BSL grammar).
+Fallback: regex-based extraction if tree-sitter-hbk is not available.
 
 Language notes (1C:Enterprise / BSL)
 -----------------------------------
@@ -33,7 +33,7 @@ _TS_AVAILABLE = False
 _BSL_LANGUAGE = None
 
 try:
-    import tree_sitter_bsl as _ts_bsl
+    import tree_sitter_hbk as _ts_bsl
     from tree_sitter import Language
     from tree_sitter import Parser as _TsParser
 
@@ -41,7 +41,7 @@ try:
     _TS_AVAILABLE = True
     logger.debug("tree-sitter BSL grammar loaded successfully")
 except Exception as exc:  # pragma: no cover
-    logger.warning("tree-sitter BSL grammar not available (%s). Using regex fallback.", exc)
+    logger.warning("tree-sitter HBK grammar not available (%s). Using regex fallback.", exc)
 
 
 @dataclass
@@ -146,12 +146,12 @@ class BslParser:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    # tree-sitter-bsl grammar bug: КонецЦикла; is rejected only inside
+    # tree-sitter-hbk grammar bug: КонецЦикла; is rejected only inside
     # while_statement. BSL spec (1C docs) shows КонецЦикла; WITH semicolon.
     # Для/ДляКаждого loops already accept the trailing semicolon correctly.
     _WHILE_LOOP_NODE_TYPES = frozenset({"while_statement"})
 
-    # tree-sitter-bsl grammar bug: parenthesised Если conditions are valid BSL:
+    # tree-sitter-hbk grammar bug: parenthesised Если conditions are valid BSL:
     #   Если (А = Б) Тогда     — lone '(' and ')' ERROR nodes, parent = if_statement
     # The grammar only accepts bare expressions, not a leading '(' group.
     _IF_NODE_TYPES = frozenset({"if_statement", "elsif_clause"})
@@ -256,7 +256,7 @@ class BslParser:
 
     def _is_region_directive_wrapper_error(self, node: Any) -> bool:
         """
-        tree-sitter-bsl may wrap region directives and their sibling module
+        tree-sitter-hbk may wrap region directives and their sibling module
         declarations in ERROR nodes. BSLLS does not report ParseError for those
         CST wrappers; region correctness is handled by region diagnostics.
         """
@@ -294,7 +294,7 @@ class BslParser:
 
     @staticmethod
     def _is_identifier_with_yo_error(node: Any) -> bool:
-        """tree-sitter-bsl currently splits valid identifiers containing ``ё``."""
+        """tree-sitter-hbk currently splits valid identifiers containing ``ё``."""
         text = node.text if isinstance(node.text, bytes) else b""
         value = text.decode("utf-8", errors="replace").strip()
         if not value or "ё" not in value.casefold():
@@ -370,7 +370,7 @@ class BslParser:
         """Return True when an ERROR node represents a keyword used as a member-access
         property name — a valid 1C pattern the grammar rejects.
 
-        Two structural signatures (tree-sitter-bsl):
+        Two structural signatures (tree-sitter-hbk):
 
         Case A — ERROR nested inside access / property_access:
           access | property_access
@@ -408,7 +408,7 @@ class BslParser:
             return children[0].type.endswith("_KEYWORD")
 
         # Case A2: property assignment/read with a keyword-like property name.
-        # tree-sitter-bsl may parse ``Контент.Function = ...`` or
+        # tree-sitter-hbk may parse ``Контент.Function = ...`` or
         # ``Объект.Функция;`` as a call_expression with ``.`` before ERROR.
         if parent is not None and parent.type == "call_expression":
             siblings = list(parent.children)
@@ -484,7 +484,7 @@ class BslParser:
 
     @classmethod
     def _is_date_literal_error(cls, node: Any) -> bool:
-        """tree-sitter-bsl currently emits ERROR nodes inside valid BSL date literals."""
+        """tree-sitter-hbk currently emits ERROR nodes inside valid BSL date literals."""
         text = node.text if isinstance(node.text, bytes) else b""
         stripped = text.strip()
         if re.search(rb"'\d{4}(?:\.\d{2}){0,2}$", stripped):
@@ -551,7 +551,7 @@ class BslParser:
 
     @classmethod
     def _is_property_after_ternary_error(cls, node: Any) -> bool:
-        """tree-sitter-bsl rejects valid postfix access after ``?(...)`` expressions."""
+        """tree-sitter-hbk rejects valid postfix access after ``?(...)`` expressions."""
         text = node.text if isinstance(node.text, bytes) else b""
         stripped = text.strip()
         if not stripped.startswith(b"."):

@@ -26,7 +26,7 @@ npx license-checker --production --csv
 | Package | SPDX / PyPI license | Notes |
 |---------|----------------------|--------|
 | tree-sitter | MIT | Parser runtime |
-| tree-sitter-bsl | MIT | BSL grammar ([mussolene/tree-sitter-bsl](https://github.com/mussolene/tree-sitter-bsl), pinned to commit `5752667f4d40879a533c4ffe3005da10ff0b5e29`) |
+| tree-sitter-hbk | MIT | HBK-packaged BSL/SDBL grammar ([mussolene/tree-sitter-bsl](https://github.com/mussolene/tree-sitter-bsl), PyPI package `tree-sitter-hbk`) |
 | watchfiles | MIT | File watching |
 | MCP Python SDK | MIT | MCP server framework |
 | pygls | Apache-2.0 | LSP framework ([pygls](https://github.com/openlawlibrary/pygls), per `LICENSE.txt` in wheel) |
@@ -57,7 +57,7 @@ Transitive dependencies include **MIT**, **Apache-2.0**, **BSD-2/3-Clause**, **I
 | Project | License | Role |
 |---------|---------|------|
 | [vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl) | MIT | Platform API reference data lineage (see [DATA_SOURCES.md](DATA_SOURCES.md)) |
-| [tree-sitter-bsl](https://github.com/mussolene/tree-sitter-bsl) | MIT | Grammar |
+| [tree-sitter-hbk](https://pypi.org/project/tree-sitter-hbk/) / [mussolene/tree-sitter-bsl](https://github.com/mussolene/tree-sitter-bsl) | MIT | Grammar |
 | [bsl-language-server](https://github.com/1c-syntax/bsl-language-server) | LGPL-3.0 | Diagnostic **codes/names** reference only — **not** linked or bundled as a runtime dependency |
 
 ## VS Code extension — production `npm` dependencies

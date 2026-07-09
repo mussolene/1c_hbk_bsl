@@ -1,7 +1,7 @@
 """
 BSL type inference engine — pure AST walk, no regex on source text.
 
-Grammar node types (tree-sitter-bsl):
+Grammar node types (tree-sitter-hbk):
   source_file
   procedure_definition / function_definition
     identifier          — name

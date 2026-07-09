@@ -38,7 +38,7 @@ from onec_hbk_bsl.analysis.source_positions import line_start_offsets
 from onec_hbk_bsl.analysis.symbols import Symbol
 
 try:
-    import tree_sitter_bsl as _ts_bsl
+    import tree_sitter_hbk as _ts_bsl
     from tree_sitter import Language as _TsLanguage
     from tree_sitter import Parser as _TsParser
 

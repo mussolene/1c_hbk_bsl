@@ -460,7 +460,7 @@ dependencies = [
     { name = "pyspellchecker" },
     { name = "rich" },
     { name = "tree-sitter" },
-    { name = "tree-sitter-bsl" },
+    { name = "tree-sitter-hbk" },
     { name = "watchfiles" },
 ]
 
@@ -507,7 +507,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "setuptools-scm", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "tree-sitter", specifier = ">=0.24,<0.26" },
-    { name = "tree-sitter-bsl", git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=5752667f4d40879a533c4ffe3005da10ff0b5e29" },
+    { name = "tree-sitter-hbk", specifier = "==0.1.8" },
     { name = "watchfiles", specifier = ">=0.24" },
 ]
 provides-extras = ["mcp", "all", "dev", "build"]
@@ -1051,9 +1051,10 @@ wheels = [
 ]
 
 [[package]]
-name = "tree-sitter-bsl"
-version = "0.1.7"
-source = { git = "https://github.com/mussolene/tree-sitter-bsl.git?rev=5752667f4d40879a533c4ffe3005da10ff0b5e29#5752667f4d40879a533c4ffe3005da10ff0b5e29" }
+name = "tree-sitter-hbk"
+version = "0.1.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/69/03be58134feb2e01397dfb5a3ae002e53dc412486b3615856207674e1a04/tree_sitter_hbk-0.1.8.tar.gz", hash = "sha256:fbf2a3ba7a34b36ce28f271e0b5acd7ee65977314c60171cb3b68700c87176cc", size = 172304, upload-time = "2026-07-09T14:34:42.29Z" }
 
 [[package]]
 name = "typing-extensions"

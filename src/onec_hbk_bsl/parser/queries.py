@@ -1,20 +1,20 @@
 """
-Tree-sitter S-expression queries for BSL grammar (tree-sitter-bsl).
+Tree-sitter S-expression queries for BSL grammar (tree-sitter-hbk).
 
 These queries are written against the actual BSL grammar node types.
 Can be compiled with Language.query() or the Query() constructor.
 
 Usage example::
 
-    import tree_sitter_bsl
+    import tree_sitter_hbk
     from tree_sitter import Language, Query
     from onec_hbk_bsl.parser.queries import PROCEDURES_QUERY
 
-    lang = Language(tree_sitter_bsl.language())
+    lang = Language(tree_sitter_hbk.language())
     query = Query(lang, PROCEDURES_QUERY)
     captures = query.captures(tree.root_node)
 
-BSL grammar node types (verified against tree-sitter-bsl):
+BSL grammar node types (verified against tree-sitter-hbk):
   procedure_definition  — Процедура … КонецПроцедуры
   function_definition   — Функция … КонецФункции
   parameters            — the ( … ) parameter list          [NOT param_list]
