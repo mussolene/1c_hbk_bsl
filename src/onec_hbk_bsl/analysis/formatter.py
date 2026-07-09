@@ -60,7 +60,21 @@ def _bslls_token_kind(token: FormatToken) -> str:
     return token.type
 
 
-def _canonical_token_text(token: FormatToken) -> str:
+def _is_member_name_token(token: FormatToken, previous: FormatToken | None) -> bool:
+    return (
+        previous is not None
+        and _bslls_token_kind(previous) == "."
+        and token.type in FORMATTER_KEYWORD_TOKEN_TYPES
+    )
+
+
+def _effective_token_kind(token: FormatToken, previous: FormatToken | None) -> str:
+    if _is_member_name_token(token, previous):
+        return "identifier"
+    return _bslls_token_kind(token)
+
+
+def _canonical_token_text(token: FormatToken, previous: FormatToken | None = None) -> str:
     if token.type == "LINE_COMMENT":
         return token.text.strip()
     if token.type == "PREPROCESSOR":
@@ -71,6 +85,8 @@ def _canonical_token_text(token: FormatToken) -> str:
         directive = _PP_CANONICAL.get(match.group(2)[1:].lower(), match.group(2))
         tail = match.group(3).strip()
         return f"{directive} {tail}" if tail else directive
+    if _is_member_name_token(token, previous):
+        return token.text
     if token.type in FORMATTER_KEYWORD_TOKEN_TYPES or token.type == "operator":
         return FORMATTER_KEYWORD_TEXT.get(token.text.lower(), token.text)
     return token.text
@@ -159,17 +175,17 @@ def _format_bslls_token_stream(
     out: list[str] = []
 
     for token in tokens:
-        kind = _bslls_token_kind(token)
+        kind = _effective_token_kind(token, previous)
         need_new_line = token.line != last_line
 
-        if token.type in {"FUNCTION_KEYWORD", "PROCEDURE_KEYWORD"}:
+        if kind in {"FUNCTION_KEYWORD", "PROCEDURE_KEYWORD"}:
             in_method_definition = True
         if in_method_definition and kind == ")":
             in_method_definition = False
 
-        if token.type in {"IF_KEYWORD", "ELSIF_KEYWORD", "WHILE_KEYWORD", "FOR_KEYWORD"}:
+        if kind in {"IF_KEYWORD", "ELSIF_KEYWORD", "WHILE_KEYWORD", "FOR_KEYWORD"}:
             inside_operator = True
-        if inside_operator and token.type in {"THEN_KEYWORD", "DO_KEYWORD"}:
+        if inside_operator and kind in {"THEN_KEYWORD", "DO_KEYWORD"}:
             inside_operator = False
 
         if previous is not None and previous.type == "ANNOTATION_CUSTOM_SYMBOL" and kind == "(":
@@ -196,7 +212,7 @@ def _format_bslls_token_stream(
         elif _bslls_need_add_space(token, previous, previous_is_unary):
             out.append(" ")
 
-        out.append(_canonical_token_text(token))
+        out.append(_canonical_token_text(token, previous))
 
         if kind in FORMATTER_INCREMENT_TOKEN_TYPES:
             current_indent_level += 1

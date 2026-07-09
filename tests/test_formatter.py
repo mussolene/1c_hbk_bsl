@@ -203,6 +203,23 @@ class TestKeywordNormalisation:
         assert "Procedure" in result
         assert "EndProcedure" in result
 
+    def test_english_boolean_operator_member_names_are_preserved(self) -> None:
+        f = BslFormatter()
+        result = f.format(
+            "Если Тип = Перечисления.КЭДО_ТипыГрупповыхШаговМаршрута.And Тогда\n"
+            "ИначеЕсли Тип = Перечисления.КЭДО_ТипыГрупповыхШаговМаршрута.Or Тогда\n"
+            "ИначеЕсли Тип = Объект.to Тогда\n"
+            "КонецЕсли;\n"
+        )
+        assert ".And Тогда" in result
+        assert ".Or Тогда" in result
+        assert ".to Тогда" in result
+
+    def test_english_boolean_operators_are_still_normalised(self) -> None:
+        f = BslFormatter()
+        result = f.format("Если А And Б Or В Тогда\nКонецЕсли;\n")
+        assert "А AND Б OR В" in result
+
     def test_keywords_inside_string_not_touched(self) -> None:
         f = BslFormatter()
         result = f.format('А = "процедура";\n')
