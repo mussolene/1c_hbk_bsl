@@ -1032,14 +1032,26 @@ def _ts_node_text(node: Any) -> str:
     return text.decode("utf-8", errors="replace") if isinstance(text, bytes) else str(text)
 
 
+def _iter_ts_children(node: Any):
+    child_count = getattr(node, "child_count", None)
+    child_at = getattr(node, "child", None)
+    if isinstance(child_count, int) and callable(child_at):
+        for index in range(child_count):
+            child = child_at(index)
+            if child is not None:
+                yield child
+        return
+    yield from getattr(node, "children", []) or []
+
+
 def _ts_walk(node: Any):
     yield node
-    for child in getattr(node, "children", []) or []:
+    for child in _iter_ts_children(node):
         yield from _ts_walk(child)
 
 
 def _ts_child_of_type(node: Any, child_type: str) -> Any | None:
-    for child in getattr(node, "children", []) or []:
+    for child in _iter_ts_children(node):
         if getattr(child, "type", None) == child_type:
             return child
     return None
@@ -1362,21 +1374,21 @@ def _collect_procs_from_node(node: Any, result: list[ProcInfo]) -> None:
         if proc:
             result.append(proc)
         return
-    for child in getattr(node, "children", []) or []:
+    for child in _iter_ts_children(node):
         _collect_procs_from_node(child, result)
 
 
 def _collect_proc_names_from_node(node: Any, result: set[str]) -> None:
     node_type = getattr(node, "type", None)
     if node_type in ("procedure_definition", "function_definition"):
-        for child in getattr(node, "children", []) or []:
+        for child in _iter_ts_children(node):
             if getattr(child, "type", None) == "identifier":
                 name = _ts_node_text(child)
                 if name:
                     result.add(name.casefold())
                 break
         return
-    for child in getattr(node, "children", []) or []:
+    for child in _iter_ts_children(node):
         _collect_proc_names_from_node(child, result)
 
 
@@ -1502,22 +1514,21 @@ def _find_regions_from_tree(tree: Any) -> list[RegionInfo]:
     closes: list[int] = []
     result: list[RegionInfo] = []
 
-    def visit(node: Any) -> None:
+    def inspect_preprocessor(node: Any) -> bool:
         if getattr(node, "type", None) == "preprocessor":
-            child_types = {getattr(child, "type", None) for child in getattr(node, "children", [])}
+            child_types: set[str | None] = set()
+            region_name = ""
+            seen_region_keyword = False
+            for child in _iter_ts_children(node):
+                child_type = getattr(child, "type", None)
+                child_types.add(child_type)
+                if child_type == "PREPROC_REGION_KEYWORD":
+                    seen_region_keyword = True
+                elif seen_region_keyword and child_type == "identifier" and not region_name:
+                    region_name = _ts_node_text(child)
             start_idx = node.start_point[0] if getattr(node, "start_point", None) else 0
 
             if "PREPROC_REGION_KEYWORD" in child_types:
-                region_name = ""
-                seen_keyword = False
-                for child in getattr(node, "children", []) or []:
-                    child_type = getattr(child, "type", None)
-                    if child_type == "PREPROC_REGION_KEYWORD":
-                        seen_keyword = True
-                        continue
-                    if seen_keyword and child_type == "identifier":
-                        region_name = _ts_node_text(child)
-                        break
                 if "PREPROC_ENDREGION_KEYWORD" in child_types:
                     end_idx = (
                         node.end_point[0] if getattr(node, "end_point", None) else start_idx + 1
@@ -1525,20 +1536,39 @@ def _find_regions_from_tree(tree: Any) -> list[RegionInfo]:
                     result.append(
                         RegionInfo(name=region_name, start_idx=start_idx, end_idx=end_idx)
                     )
-                    for child in getattr(node, "children", []) or []:
-                        visit(child)
-                    return
+                    return True
                 opens.append((start_idx, region_name))
-                return
+                return False
 
             if "PREPROC_ENDREGION_KEYWORD" in child_types:
                 closes.append(start_idx)
+                return False
+
+        return True
+
+    walk = getattr(root, "walk", None)
+    if callable(walk):
+        cursor = walk()
+        done = False
+        while not done:
+            descend = inspect_preprocessor(cursor.node)
+            if descend and cursor.goto_first_child():
+                continue
+            while True:
+                if cursor.goto_next_sibling():
+                    break
+                if not cursor.goto_parent():
+                    done = True
+                    break
+    else:
+
+        def visit(node: Any) -> None:
+            if not inspect_preprocessor(node):
                 return
+            for child in _iter_ts_children(node):
+                visit(child)
 
-        for child in getattr(node, "children", []) or []:
-            visit(child)
-
-    visit(root)
+        visit(root)
 
     events = [(idx, "open", name) for idx, name in opens]
     events.extend((idx, "close", "") for idx in closes)
@@ -1733,6 +1763,7 @@ class DocumentSnapshot:
     _select_top_without_order_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
+    _ternary_spans_cache: Any | None = None
     _cache_lock: threading.RLock = field(
         default_factory=threading.RLock,
         init=False,
@@ -3013,6 +3044,14 @@ class DocumentSnapshot:
     def set_runtime_call_context(self, context: Any) -> None:
         """Store shared runtime call context for this snapshot."""
         self._runtime_call_context_cache = context
+
+    def get_ternary_spans(self) -> Any | None:
+        """Return cached textual ternary spans if they have been built."""
+        return self._ternary_spans_cache
+
+    def set_ternary_spans(self, spans: Any) -> None:
+        """Store textual ternary spans shared by runtime rules."""
+        self._ternary_spans_cache = spans
 
 
 def build_document_snapshot(

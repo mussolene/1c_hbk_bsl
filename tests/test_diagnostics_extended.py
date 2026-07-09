@@ -12095,6 +12095,19 @@ class TestBsl186ExtraCommas:
         diags = _check(content, tmp_path, select={"BSL186"})
         assert [diag for diag in diags if diag.code == "BSL186"] == []
 
+    def test_multiline_trailing_comma_skips_comments_and_blank_lines(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Метод(
+                    Параметр,
+                    // пояснение
+
+                );
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL186"})
+        assert [(diag.line, diag.character, diag.end_character) for diag in diags] == [(3, 16, 17)]
+
 
 class TestRuleMetadataCompleteness:
     def test_all_rules_in_metadata(self) -> None:

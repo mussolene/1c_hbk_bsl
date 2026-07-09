@@ -190,7 +190,16 @@ def _ts_node_text(node: Any) -> str:
 
 def _ts_walk(node: Any):
     yield node
-    for child in getattr(node, "children", []) or []:
+    child_count = getattr(node, "child_count", None)
+    child_at = getattr(node, "child", None)
+    children = (
+        (child_at(index) for index in range(child_count))
+        if isinstance(child_count, int) and callable(child_at)
+        else (getattr(node, "children", []) or [])
+    )
+    for child in children:
+        if child is None:
+            continue
         yield from _ts_walk(child)
 
 
@@ -1324,6 +1333,12 @@ def _calls_in_node(
 
 
 def _ternary_spans(context: DiagnosticDocumentContext) -> list[_TernarySpan]:
+    snapshot = context.snapshot
+    if snapshot is not None and hasattr(snapshot, "get_ternary_spans"):
+        cached = snapshot.get_ternary_spans()
+        if cached is not None:
+            return cached
+
     spans: list[_TernarySpan] = []
     pos = 0
     text = context.content
@@ -1348,6 +1363,8 @@ def _ternary_spans(context: DiagnosticDocumentContext) -> list[_TernarySpan]:
                 pos += 1
                 continue
         pos += 1
+    if snapshot is not None and hasattr(snapshot, "set_ternary_spans"):
+        snapshot.set_ternary_spans(spans)
     return spans
 
 
@@ -5632,6 +5649,7 @@ class ExtraCommasRule(DiagnosticRuntimeRule):
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         storage = DiagnosticStorage(context.path)
+        next_significant_is_closing = self._next_significant_is_closing(context.lines)
         for idx, line in enumerate(context.lines):
             if _line_comment(line):
                 continue
@@ -5642,8 +5660,7 @@ class ExtraCommasRule(DiagnosticRuntimeRule):
                 stripped = code.rstrip()
                 if not stripped.endswith(","):
                     continue
-                next_code = self._next_significant_code_line(context.lines, idx + 1)
-                if next_code is None or not next_code.lstrip().startswith(")"):
+                if not next_significant_is_closing[idx + 1]:
                     continue
                 comma_pos = code.rfind(",")
                 match_start = comma_pos
@@ -5660,15 +5677,20 @@ class ExtraCommasRule(DiagnosticRuntimeRule):
         return storage.diagnostics
 
     @staticmethod
-    def _next_significant_code_line(lines: list[str], start: int) -> str | None:
-        for line in lines[start:]:
+    def _next_significant_is_closing(lines: list[str]) -> bytearray:
+        result = bytearray(len(lines) + 1)
+        next_is_closing = False
+        for idx in range(len(lines) - 1, -1, -1):
+            line = lines[idx]
             if _line_comment(line):
+                result[idx] = next_is_closing
                 continue
             comment_start = comment_start_outside_double_quotes(line)
             code = line if comment_start is None else line[:comment_start]
             if code.strip():
-                return code
-        return None
+                next_is_closing = code.lstrip().startswith(")")
+            result[idx] = next_is_closing
+        return result
 
 
 class YoLetterUsageRule(DiagnosticRuntimeRule):

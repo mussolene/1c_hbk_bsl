@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
+import onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner as runtime_runner
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import FileSystemAccessRule
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
@@ -36,6 +37,43 @@ def test_process_safe_tasks_run_in_process_pool_and_preserve_order(monkeypatch) 
     assert result[1] == parent_pid
     assert result[0] != parent_pid
     assert result[2] != parent_pid
+
+
+def test_large_fork_capable_documents_schedule_one_read_only_task_graph(monkeypatch) -> None:
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
+    monkeypatch.setattr(runtime_runner.mp, "get_all_start_methods", lambda: ["fork"])
+    monkeypatch.setattr(runtime_runner, "_PROCESS_HEAVY_GROUP_MIN_LINES", 1)
+
+    captured: list[tuple[object, ...]] = []
+
+    def run_sequentially(tasks: tuple[object, ...]):
+        captured.append(tasks)
+        diagnostics = []
+        for task in tasks:
+            fn = task.fn if hasattr(task, "fn") else task[1]
+            diagnostics.extend(fn())
+        return diagnostics
+
+    monkeypatch.setattr(runtime_runner, "_run_forked_rule_tasks", run_sequentially)
+    content = "Процедура Тест()\nКонецПроцедуры\n"
+    tree = BslParser().parse_content(content, file_path="Module.bsl")
+    tasks = []
+
+    append_diagnostic_runtime_rule_tasks(
+        tasks,
+        engine=DiagnosticEngine(select={"BSL186", "BSL279"}),
+        path="Module.bsl",
+        content=content,
+        lines=content.splitlines(),
+        tree=tree,
+        snapshot=None,
+    )
+
+    assert len(tasks) == 1
+    assert tasks[0][0].startswith("fork-all:")
+    assert execute_diagnostic_rule_tasks(tasks) == []
+    assert len(captured) == 1
+    assert [task[0] for task in captured[0]] == ["BSL186", "BSL279"]
 
 
 def test_light_pool_rules_are_scheduled_as_shared_fact_phases() -> None:

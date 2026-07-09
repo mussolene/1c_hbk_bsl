@@ -91,5 +91,13 @@ def _visit_node(
         if call is not None:
             calls.append(call)
 
+    child_count = getattr(node, "child_count", None)
+    child_at = getattr(node, "child", None)
+    if isinstance(child_count, int) and callable(child_at):
+        for index in range(child_count):
+            child = child_at(index)
+            if child is not None:
+                _visit_node(child, symbols, calls, file_path, source_lines, current_container)
+        return
     for child in getattr(node, "children", []) or []:
         _visit_node(child, symbols, calls, file_path, source_lines, current_container)

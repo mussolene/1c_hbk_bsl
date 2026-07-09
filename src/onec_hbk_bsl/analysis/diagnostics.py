@@ -2897,13 +2897,31 @@ def _ts_node_text(node: Any) -> str:
 def _ts_walk(node: Any):
     """Yield *node* and all descendants depth-first."""
     yield node
-    for child in getattr(node, "children", []) or []:
+    child_count = getattr(node, "child_count", None)
+    child_at = getattr(node, "child", None)
+    children = (
+        (child_at(index) for index in range(child_count))
+        if isinstance(child_count, int) and callable(child_at)
+        else (getattr(node, "children", []) or [])
+    )
+    for child in children:
+        if child is None:
+            continue
         yield from _ts_walk(child)
 
 
 def _ts_child_of_type(node: Any, node_type: str) -> Any | None:
     """First direct child of *node* with ``type == node_type``."""
-    for child in getattr(node, "children", []) or []:
+    child_count = getattr(node, "child_count", None)
+    child_at = getattr(node, "child", None)
+    children = (
+        (child_at(index) for index in range(child_count))
+        if isinstance(child_count, int) and callable(child_at)
+        else (getattr(node, "children", []) or [])
+    )
+    for child in children:
+        if child is None:
+            continue
         if getattr(child, "type", None) == node_type:
             return child
     return None

@@ -468,6 +468,7 @@ _PROCESS_CORE_FACT_CODE_SET: frozenset[str] = frozenset(_PROCESS_CORE_FACT_CODES
 _SPLIT_FRAGMENT_CORE_FACT_CODES: frozenset[str] = frozenset({"BSL017", "BSL026", "BSL040"})
 _FORK_CONTEXT: DiagnosticDocumentContext | None = None
 _FORK_RULE_BY_CODE: dict[str, DiagnosticRuntimeRule] = {}
+_FORK_RULE_TASKS: tuple[Callable[[], list[Diagnostic]], ...] = ()
 
 
 def _parallel_rule_tasks_enabled() -> bool:
@@ -486,7 +487,7 @@ def _process_rule_workers(group_count: int) -> int:
     except ValueError:
         configured = 0
     if configured <= 0:
-        configured = min(8, (os.cpu_count() or 2))
+        configured = min(6, (os.cpu_count() or 2))
     return max(1, min(configured, group_count))
 
 
@@ -506,6 +507,42 @@ def _run_forked_runtime_rule_group(codes: tuple[str, ...]) -> list[Diagnostic]:
         if rule is not None:
             out.extend(rule.run(_FORK_CONTEXT))
     return out
+
+
+def _run_forked_rule_task(index: int) -> list[Diagnostic]:
+    if not 0 <= index < len(_FORK_RULE_TASKS):
+        return []
+    return _FORK_RULE_TASKS[index]()
+
+
+def _run_forked_rule_tasks(tasks: tuple[Any, ...]) -> list[Diagnostic]:
+    callables = tuple(task.fn if hasattr(task, "fn") else task[1] for task in tasks)
+    if not callables:
+        return []
+    if "fork" not in mp.get_all_start_methods():
+        return [diagnostic for fn in callables for diagnostic in fn()]
+
+    global _FORK_RULE_TASKS
+    _FORK_RULE_TASKS = callables
+    try:
+        workers = _process_rule_workers(len(callables))
+        with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("fork")) as pool:
+            future_to_index = {
+                pool.submit(_run_forked_rule_task, index): index for index in range(len(callables))
+            }
+            results: dict[int, list[Diagnostic]] = {}
+            for future, index in future_to_index.items():
+                try:
+                    results[index] = future.result()
+                except Exception:
+                    results[index] = callables[index]()
+            return [
+                diagnostic
+                for index in range(len(callables))
+                for diagnostic in results.get(index, ())
+            ]
+    finally:
+        _FORK_RULE_TASKS = ()
 
 
 def _run_forked_runtime_rule_groups(
@@ -1087,11 +1124,18 @@ def append_diagnostic_runtime_rule_tasks(
             )
 
     add_aggregated_query_tasks()
+    fork_all_rule_tasks = (
+        _process_rule_tasks_enabled()
+        and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES
+        and "fork" in mp.get_all_start_methods()
+    )
     coarse_parallelized: set[str] = set()
     fact_group_011_175 = tuple(
         code
         for code in enabled_codes(_PROCESS_FACT_GROUP_011_175)
-        if snapshot is not None and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES
+        if not fork_all_rule_tasks
+        and snapshot is not None
+        and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES
     )
     if fact_group_011_175 and snapshot is not None:
         rule_tasks.append(
@@ -1184,7 +1228,7 @@ def append_diagnostic_runtime_rule_tasks(
         )
 
     core_fact_parallelized: set[str] = set()
-    if snapshot is not None:
+    if snapshot is not None and not fork_all_rule_tasks:
         split_fragment = _path_is_split_module_fragment(path)
         enabled_core_fact_codes = tuple(
             code
@@ -1218,7 +1262,11 @@ def append_diagnostic_runtime_rule_tasks(
                 core_fact_parallelized.add(code)
 
     typo_parallelized = False
-    if engine._rule_enabled("BSL256") and len(lines) >= _PROCESS_TYPO_MIN_LINES:
+    if (
+        not fork_all_rule_tasks
+        and engine._rule_enabled("BSL256")
+        and len(lines) >= _PROCESS_TYPO_MIN_LINES
+    ):
         root = getattr(tree, "root_node", None)
         if root is not None and isinstance(getattr(root, "text", None), (bytes, bytearray)):
             typo_nodes = (
@@ -1245,7 +1293,11 @@ def append_diagnostic_runtime_rule_tasks(
                 typo_parallelized = True
 
     fork_parallelized: set[str] = set()
-    if _process_rule_tasks_enabled() and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES:
+    if (
+        not fork_all_rule_tasks
+        and _process_rule_tasks_enabled()
+        and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES
+    ):
         rule_by_code = {rule.code: rule for rule in _RULES}
         fork_groups: list[tuple[str, ...]] = []
         for group in _PROCESS_FORK_RULE_GROUPS:
@@ -1290,3 +1342,16 @@ def append_diagnostic_runtime_rule_tasks(
             continue
         if engine._rule_enabled(rule.code):
             rule_tasks.append((rule.code, lambda rule=rule: rule.run(context)))
+
+    if fork_all_rule_tasks and len(rule_tasks) > 1:
+        fork_tasks = tuple(rule_tasks)
+        fork_codes = "+".join(
+            task.code if hasattr(task, "code") else task[0] for task in fork_tasks
+        )
+        rule_tasks.clear()
+        rule_tasks.append(
+            (
+                f"fork-all:{fork_codes}",
+                partial(_run_forked_rule_tasks, fork_tasks),
+            )
+        )
