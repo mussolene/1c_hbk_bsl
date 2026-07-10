@@ -22,7 +22,7 @@ It is a guardrail for future changes, not a user guide. User-facing docs live in
 | Reports | `--format text`, `--format json`, `--format sarif` |
 | Rule control | `--select`, `--ignore`, config `ignore`, per-file ignores |
 | CI adoption | `--exit-zero`, `--baseline`, `--update-baseline`, `--diff`, `--since`, `--paths-from` |
-| VS Code | diagnostics, formatting, navigation, hover, completion, inlay hints, semantic tokens |
+| VS Code | diagnostics, formatting, definition/references/rename, call hierarchy, hover, completion, signature help, folding, code actions, inlay hints, semantic tokens |
 | Python API | `check_files(...)`, `DiagnosticEngine` |
 
 Legacy flag aliases such as `--check`, `--lsp`, `--mcp`, `--index`,
@@ -34,6 +34,11 @@ behavior should be added to command forms first.
 - `onec-hbk-bsl-core`: CLI, formatter, diagnostics, Python API and LSP without MCP dependencies.
 - `onec-hbk-bsl`: full compatibility package depending on the same-version
   `onec-hbk-bsl-core[mcp]` wheel.
+- Both PyPI distributions require Python 3.12 or newer.
+- Release VSIX artifacts bundle a standalone server for `darwin-arm64`,
+  `darwin-x64`, `linux-x64`, and `win32-x64`; they do not require a system Python.
+- The extension requires VS Code API 1.85 or newer and binds only `.bsl` / `.os`
+  file documents to the LSP client.
 
 Running `onec-hbk-bsl mcp` from a slim core installation without MCP should exit
 with a clear installation hint rather than an import traceback.

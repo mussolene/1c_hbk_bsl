@@ -6,7 +6,9 @@ Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для
 
 [![CI](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml)
 [![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/mussolene.1c-hbk-bsl)](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl)
+[![VS Marketplace installs](https://img.shields.io/visual-studio-marketplace/i/mussolene.1c-hbk-bsl)](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl)
 [![PyPI](https://img.shields.io/pypi/v/onec-hbk-bsl)](https://pypi.org/project/onec-hbk-bsl/)
+[![Python](https://img.shields.io/pypi/pyversions/onec-hbk-bsl)](https://pypi.org/project/onec-hbk-bsl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Что Это
@@ -14,6 +16,7 @@ Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для
 `onec-hbk-bsl` помогает держать BSL-код в порядке:
 
 - показывает диагностики в редакторе и CLI;
+- включает 180 публичных диагностических правил;
 - форматирует `.bsl` / `.os`;
 - дает навигацию, hover, completion, rename и inlay hints через LSP;
 - умеет отдавать SARIF/JSON для CI;
@@ -22,6 +25,10 @@ Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для
 Проект не запускает Java-анализатор в рантайме. Публичный контракт продукта:
 `BSL###` коды правил, `onec-hbk-bsl.toml`, CLI/LSP/MCP и VS Code extension.
 
+Текущий релиз требует Python 3.12+ при установке из PyPI. Платформенные VSIX
+содержат готовый бинарник и не требуют системного Python. Проверяемые показатели
+релиза и методика замеров приведены в [Production notes](docs/Production-Notes.md#verification-snapshot-v0838).
+
 ## Быстрый Старт
 
 ### VS Code / Cursor
@@ -29,6 +36,9 @@ Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для
 1. Установите расширение `mussolene.1c-hbk-bsl`.
 2. Откройте каталог с исходниками 1С.
 3. Диагностики появятся в Problems; форматирование и навигация заработают через LSP.
+
+Поддерживаются VS Code / Cursor с API VS Code 1.85+ и платформенные сборки для
+macOS Apple Silicon, macOS Intel, Linux x64 и Windows x64.
 
 Рекомендуемые настройки workspace:
 

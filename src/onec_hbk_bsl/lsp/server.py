@@ -528,7 +528,7 @@ def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> Non
     _schedule_local_scope_cache(ls, doc.uri, doc.text)
     logger.debug("LSP: opened %s", doc.uri)
     path = _uri_to_path(doc.uri)
-    if not ls.client_pull_diagnostics:
+    if _diagnostics_enabled() and not ls.client_pull_diagnostics:
         threading.Thread(target=_publish_diagnostics, args=(ls, doc.uri, path), daemon=True).start()
 
 
@@ -538,6 +538,11 @@ _DIAG_DEBOUNCE_MAX = 3.0
 _SYNC_LOCAL_SCOPE_PARSE_MAX_BYTES = 1_000_000
 _ASYNC_PULL_DIAGNOSTICS_MIN_BYTES = 1_000_000
 _BACKGROUND_LOCAL_SCOPE_PARSE_MAX_BYTES = 4_000_000
+
+
+def _diagnostics_enabled() -> bool:
+    value = os.environ.get("BSL_DIAGNOSTICS_ENABLED", "1").strip().casefold()
+    return value not in {"0", "false", "no", "off"}
 
 
 def _allow_sync_local_scope_parse(content: str) -> bool:
@@ -571,7 +576,7 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
         old_timer.cancel()
     logger.debug("LSP: changed %s", uri)
 
-    if ls.client_pull_diagnostics:
+    if not _diagnostics_enabled() or ls.client_pull_diagnostics:
         return
 
     path = _uri_to_path(uri)
@@ -598,7 +603,7 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
     if old_timer is not None:
         old_timer.cancel()
 
-    if ls.client_pull_diagnostics:
+    if ls.client_pull_diagnostics and _diagnostics_enabled():
         logger.debug("LSP: save %s handled by pull diagnostics; skip direct index_file", path)
         return
 
@@ -606,7 +611,8 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
     def _run() -> None:
         result = ls.indexer.index_file(path)
         logger.debug("LSP: re-indexed %s: %s", path, result)
-        _publish_diagnostics(ls, uri, path)
+        if _diagnostics_enabled():
+            _publish_diagnostics(ls, uri, path)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -625,6 +631,8 @@ def on_did_close(ls: BslLanguageServer, params: DidCloseTextDocumentParams) -> N
 
 def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
     """Run the diagnostic engine and return LSP diagnostics (shared by push and pull)."""
+    if not _diagnostics_enabled():
+        return []
     content_for_hash = ls._doc_get(uri)
     if content_for_hash is None:
         try:
@@ -911,6 +919,8 @@ def on_document_diagnostic(
     ls: BslLanguageServer, params: DocumentDiagnosticParams
 ) -> RelatedFullDocumentDiagnosticReport:
     """Pull diagnostics (LSP 3.17). Used by VS Code / Cursor instead of push."""
+    if not _diagnostics_enabled():
+        return RelatedFullDocumentDiagnosticReport(items=[])
     uri = params.text_document.uri
     path = _uri_to_path(uri)
     async_items = _maybe_start_async_pull_diagnostics(ls, uri, path)

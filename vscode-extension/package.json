@@ -141,21 +141,6 @@
           },
           "default": [],
           "description": "Suppress the listed diagnostic rules. Accepts BSL### codes or compatible diagnostic aliases."
-        },
-        "onecHbkBsl.format.indentSize": {
-          "type": "number",
-          "default": 4,
-          "description": "Indent width for BSL: with editor.insertSpaces=true, spaces per level; with insertSpaces=false (default for [bsl]), logical indent width / tab display (LSP uses the editor tabSize from the formatting request)."
-        },
-        "onecHbkBsl.inlayHints.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show parameter name hints at function call sites."
-        },
-        "onecHbkBsl.semanticTokens.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable semantic token coloring (layered on top of syntax highlighting)."
         }
       }
     },

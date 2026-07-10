@@ -9,6 +9,8 @@ CLI, formatter, diagnostics, LSP, Python API, and MCP.
 pip install onec-hbk-bsl
 ```
 
+Python 3.12 or newer is required.
+
 The published wheel pins `onec-hbk-bsl-core` to the same release version, so
 installing `onec-hbk-bsl==X.Y.Z` also installs `onec-hbk-bsl-core==X.Y.Z`.
 

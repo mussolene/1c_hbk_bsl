@@ -1,10 +1,10 @@
-# BSL Analyzer — Architecture
+# 1C HBK BSL — Architecture
 
 Актуальный контракт по эксплуатации, совместимости LSP/MCP и индексации: [Production-Notes.md](Production-Notes.md).
 
 ## Overview
 
-BSL Analyzer (`onec-hbk-bsl`) — статический анализ для языка 1C Enterprise BSL. Три интерфейса над общим SQLite-индексом символов и вызовов:
+`onec-hbk-bsl` — статический анализ для языка 1C Enterprise BSL. Три интерфейса над общим SQLite-индексом символов, вызовов и метаданных конфигурации:
 
 1. **MCP server** (Python MCP SDK) — инструменты для ассистентов (поиск символов, диагностики, метаданные, и др.)
 2. **LSP server** (pygls) — VS Code / Cursor: определение, ссылки, переименование, дополнение, подсказки сигнатур, форматирование, диагностики
@@ -19,7 +19,8 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────────┐ │
 │  │   mcp    │   │   lsp    │   │   check / index          │ │
 │  │   MCP    │   │  pygls   │   │  CLI (rich output)       │ │
-│  │ HTTP/SSE │   │  stdio   │   │                          │ │
+│  │ Streamable│  │  stdio   │   │                          │ │
+│  │   HTTP    │  │          │   │                          │ │
 │  └────┬─────┘   └────┬─────┘   └────────────┬─────────────┘ │
 │       │              │                       │               │
 │  ─────┴──────────────┴───────────────────────┴─────────────  │
@@ -28,8 +29,8 @@ BSL Analyzer (`onec-hbk-bsl`) — статический анализ для я�
 │  │  symbols.py  │  │ call_graph.py │  │  diagnostics.py  │  │
 │  │  Symbol      │  │  Call         │  │  DiagnosticEngine│  │
 │  │  extraction  │  │  build_call_  │  │  Rule registry   │  │
-│  │              │  │  graph()      │  │  (реестр; подмн. │  │
-│  │              │  │               │  │   набор активен) │  │
+│  │              │  │  graph()      │  │  180 public rules│  │
+│  │              │  │               │  │  enabled default │  │
 │  └──────┬───────┘  └───────┬───────┘  └──────┬───────────┘  │
 │         │                  │                  │               │
 │  ─────────────────────────────────────────────────────────  │
@@ -121,6 +122,7 @@ Formatted response (dict / LSP Location)
 |--------------|---------|------------------------------------------|
 | id           | INTEGER | Primary key                              |
 | name         | TEXT    | Symbol name                              |
+| name_lower   | TEXT    | Case-folded name for indexed lookup      |
 | file_path    | TEXT    | Absolute path to source file             |
 | line         | INTEGER | 1-based start line                       |
 | character    | INTEGER | 0-based start column                     |
@@ -135,7 +137,8 @@ Formatted response (dict / LSP Location)
 
 ### `symbols_fts`
 
-FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
+FTS5 virtual table mirroring symbol name, file path, and signature for indexed
+name search.
 
 ### `calls`
 
@@ -144,8 +147,10 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | id               | INTEGER | Primary key                    |
 | caller_file      | TEXT    | File where the call occurs     |
 | caller_line      | INTEGER | 1-based line of the call       |
+| caller_character | INTEGER | 0-based call column             |
 | caller_name      | TEXT    | Enclosing procedure name       |
 | callee_name      | TEXT    | Name of the called symbol      |
+| callee_name_lower| TEXT    | Case-folded callee name         |
 | callee_args_count| INTEGER | Number of arguments passed     |
 
 ### `git_state`
@@ -156,6 +161,13 @@ FTS5 virtual table mirroring `symbols(name)` for fast prefix/substring search.
 | commit_hash   | TEXT  | Last successfully indexed commit     |
 | indexed_at    | REAL  | Unix timestamp                       |
 | workspace_root| TEXT  | Workspace root path                  |
+
+### Configuration metadata
+
+`meta_objects`, `meta_members`, and `metadata_state` store the structured 1C
+configuration snapshot used by metadata-aware navigation and diagnostics.
+Objects are indexed by normalized name/kind; members retain kind and type
+information; `metadata_state` records the configuration fingerprint and counts.
 
 ## MCP tools (summary)
 
@@ -181,13 +193,16 @@ MCP servers are separate integrations and are not cross-bound into `onec-hbk-bsl
 | `textDocument/hover` | Implemented | Signature + doc comment |
 | `textDocument/documentSymbol` | Implemented | File outline |
 | `workspace/symbol` | Implemented | FTS5 prefix search |
-| `textDocument/publishDiagnostics` | Implemented | Debounced on change; full rule set from engine |
+| `textDocument/diagnostic` | Implemented | LSP 3.17 pull diagnostics; large files complete in background and request refresh |
+| `textDocument/publishDiagnostics` | Implemented | Adaptive debounced fallback for clients without pull support |
 | `textDocument/completion` | Implemented | Globals + workspace + metadata-aware members |
 | `textDocument/references` | Implemented | Via index |
 | `textDocument/rename` / `prepareRename` | Implemented | Workspace edits |
 | `textDocument/signatureHelp` | Implemented | Parameter hints |
 | `textDocument/formatting` / `rangeFormatting` | Implemented | `BslFormatter` stack |
-| Semantic tokens / inlay hints | Implemented | Configurable in extension |
+| Code lens / highlights / folding / code actions | Implemented | Editor structure and quick-fix surfaces |
+| Selection ranges | Implemented | Smart structural selection |
+| Semantic tokens / inlay hints | Implemented | Controlled by standard VS Code editor settings |
 
 ## Отношение к справочнику правил BSL (совместимость имён)
 

@@ -29,8 +29,8 @@ environment `pypi`. API-токен в GitHub secrets для этого пути 
 Примеры:
 
 ```bash
-python3 scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
-python3 scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
+./.venv/bin/python scripts/dev_corpus_bench.py /path/to/1c/config --limit=200
+./.venv/bin/python scripts/dev_corpus_bench.py /path/to/1c/config --sample=500
 ```
 
 Скрипт считает:

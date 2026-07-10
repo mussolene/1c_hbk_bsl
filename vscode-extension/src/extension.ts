@@ -462,6 +462,7 @@ const DOCKER_LSP_ENV_KEYS = [
   "INDEX_DB_PATH",
   "BSL_SELECT",
   "BSL_IGNORE",
+  "BSL_DIAGNOSTICS_ENABLED",
 ] as const;
 
 /**
@@ -502,6 +503,9 @@ function buildServerOptions(
 
   const select = config.get<string[]>("diagnostics.select", []);
   const ignore = config.get<string[]>("diagnostics.ignore", []);
+  env["BSL_DIAGNOSTICS_ENABLED"] = config.get<boolean>("diagnostics.enabled", true)
+    ? "1"
+    : "0";
   if (select.length > 0) { env["BSL_SELECT"] = select.join(","); }
   if (ignore.length > 0) { env["BSL_IGNORE"] = ignore.join(","); }
 

@@ -49,6 +49,15 @@ class TestUriHelpers:
 
 
 class TestBslLanguageServerInit:
+    def test_diagnostics_enabled_environment_switch(self, monkeypatch) -> None:
+        from onec_hbk_bsl.lsp.server import _diagnostics_enabled
+
+        monkeypatch.delenv("BSL_DIAGNOSTICS_ENABLED", raising=False)
+        assert _diagnostics_enabled() is True
+        for value in ("0", "false", "NO", "off"):
+            monkeypatch.setenv("BSL_DIAGNOSTICS_ENABLED", value)
+            assert _diagnostics_enabled() is False
+
     def test_server_is_created(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
         from onec_hbk_bsl.lsp.server import BslLanguageServer
@@ -273,6 +282,29 @@ class TestPublishDiagnostics:
         report = on_document_diagnostic(ls, params)
         assert report.kind == "full"
         assert isinstance(report.items, (list, tuple))
+
+    def test_document_diagnostic_disabled_returns_empty_without_running_engine(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DocumentDiagnosticParams, TextDocumentIdentifier
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _path_to_uri, on_document_diagnostic
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        monkeypatch.setenv("BSL_DIAGNOSTICS_ENABLED", "0")
+        bsl = tmp_path / "disabled.bsl"
+        bsl.write_text("А = 1;\n", encoding="utf-8")
+        ls = BslLanguageServer()
+        ls.diagnostics_engine.check_content = MagicMock()  # type: ignore[method-assign]
+        uri = _path_to_uri(str(bsl))
+        params = DocumentDiagnosticParams(text_document=TextDocumentIdentifier(uri=uri))
+
+        report = on_document_diagnostic(ls, params)
+
+        assert report.items == []
+        ls.diagnostics_engine.check_content.assert_not_called()
 
     def test_document_diagnostic_data_contains_russian_rule_description(
         self, tmp_path: Path, monkeypatch
@@ -724,6 +756,38 @@ class TestHandlerFunctions:
         ls.indexer.index_file.assert_not_called()
         ls.text_document_publish_diagnostics.assert_not_called()
         assert ls._docs[params.text_document.uri] == "А = 2;\n"
+
+    def test_on_did_save_with_diagnostics_disabled_still_updates_index(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import _path_to_uri, on_did_save
+
+        class _SyncThread:
+            def __init__(self, target, args=(), kwargs=None, daemon=None, name=None):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        monkeypatch.setattr(threading, "Thread", _SyncThread)
+        monkeypatch.setenv("BSL_DIAGNOSTICS_ENABLED", "false")
+        ls = self._make_server(tmp_path, monkeypatch)
+        ls.client_pull_diagnostics = True
+        ls.indexer.index_file = MagicMock(return_value={})  # type: ignore[method-assign]
+        bsl = tmp_path / "module.bsl"
+        bsl.write_text("А = 1;\n", encoding="utf-8")
+        params = MagicMock()
+        params.text_document.uri = _path_to_uri(str(bsl))
+        params.text = "А = 2;\n"
+
+        on_did_save(ls, params)
+
+        ls.indexer.index_file.assert_called_once_with(str(bsl))
+        ls.text_document_publish_diagnostics.assert_not_called()
 
     def test_pull_diagnostics_indexes_from_snapshot_once_without_index_file(
         self, tmp_path, monkeypatch

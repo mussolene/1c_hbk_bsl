@@ -20,11 +20,12 @@ This runbook covers production usage of:
 - The formatter has no parser/line/CST fallback mode: it formats from the product token stream.
 
 ## Startup And Activation
-- VSCode extension activates on:
+- On VS Code 1.85+, contributed languages and commands provide activation for:
   - `onLanguage:bsl`
   - `onCommand:onecHbkBsl.reindexWorkspace`
   - `onCommand:onecHbkBsl.reindexCurrentFile`
   - `onCommand:onecHbkBsl.showStatus`
+  - `onCommand:onecHbkBsl.showOutput`
 - Server binary resolution order:
   1. `onecHbkBsl.serverPath` (explicit filesystem path; default placeholder does not override)
   2. bundled extension binary
@@ -36,7 +37,7 @@ This runbook covers production usage of:
 
 When `useDocker` is true, the extension runs:
 
-`docker exec -i -e LOG_LEVEL=… [-e INDEX_DB_PATH=…] [-e BSL_SELECT=…] [-e BSL_IGNORE=…] <container> onec-hbk-bsl lsp`
+`docker exec -i -e LOG_LEVEL=… [-e INDEX_DB_PATH=…] [-e BSL_SELECT=…] [-e BSL_IGNORE=…] [-e BSL_DIAGNOSTICS_ENABLED=…] <container> onec-hbk-bsl lsp`
 
 — the same environment keys as for a local binary (`extension.ts`), so log level, DB path, and rule selection match non-Docker mode. The container must already exist; mount workspace and index paths so `INDEX_DB_PATH` (if set) resolves inside the container.
 
@@ -68,15 +69,70 @@ When `useDocker` is true, the extension runs:
   - a bounded queue back-pressures parsers when commits lag — avoids holding tens of thousands of parsed trees in RAM on huge workspaces (30k+ files).
 
 ## Operational Commands
-- Lint: `ruff check`
-- Tests + coverage gate: `PYTHONPATH=src pytest -q`
+- Lint: `./.venv/bin/python -m ruff check src tests scripts`
+- Format gate: `./.venv/bin/python -m ruff format --check src tests scripts`
+- Tests + coverage gate: `./.venv/bin/python -m pytest -q`
 - Performance checks: use repository scripts or dedicated test tooling; helper
   scripts are not part of the product CLI.
 - VSCode extension compile: `npm run compile` (in `vscode-extension`)
 
+## Verification Snapshot v0.8.38
+
+This is dated release evidence, not a performance SLA. Re-run the listed
+commands before using the numbers for another version or machine.
+
+### Product Surface
+
+- Runtime registry: 180 public rules; all 180 are enabled by default unless
+  `select` / `ignore` narrows the set.
+- Python gate on 2026-07-10: 1,532 passed, 43 skipped, 81.24% statement coverage.
+- Extension gate: `npm ci`, ESLint, TypeScript typecheck, and production webpack
+  build passed; npm reported 0 known vulnerabilities.
+- Release assets: four standalone binaries, four platform VSIX files, and
+  wheel/sdist pairs for `onec-hbk-bsl-core` and `onec-hbk-bsl`.
+- Published metadata: both Python packages require Python 3.12+; the meta wheel
+  pins `onec-hbk-bsl-core[mcp]==0.8.38`; core requires
+  `tree-sitter-hbk>=0.1.10`.
+
+### Diagnostics Timing
+
+Command: `./.venv/bin/python scripts/bench_timing.py --runs=10`, cache-miss
+mode, trimmed mean after warm-up. Host: Apple M1 Pro, 8 logical CPUs, 16 GiB
+RAM, Python 3.12.12. Fixtures differ structurally, so do not infer linear
+scaling from their names.
+
+| Fixture lines | Mean | ms / 1,000 lines | Diagnostics |
+|---:|---:|---:|---:|
+| 139 | 24.7 ms | 177.8 | 40 |
+| 411 | 66.0 ms | 160.6 | 120 |
+| 955 | 151.0 ms | 158.1 | 280 |
+| 3,131 | 491.7 ms | 157.0 | 920 |
+| 5,035 | 290.0 ms | 57.6 | 1,480 |
+
+A separate CLI process over all five fixtures (9,671 lines total) completed in
+2.73 seconds wall time with 79,429,632 bytes maximum RSS on the same host. This
+includes interpreter startup, file collection, analysis, and JSON serialization.
+
+### Delivery Time
+
+For [release v0.8.38](https://github.com/mussolene/1c_hbk_bsl/actions/runs/29041130145),
+measured from workflow start (`2026-07-09 18:34:06 UTC`):
+
+| Milestone | Elapsed |
+|---|---:|
+| PyPI upload recorded | 49 s |
+| GitHub Release published | 4 min 14 s |
+| Release workflow completed | 4 min 53 s |
+| Marketplace version visible through Gallery API | 14 min 37 s |
+
+The Marketplace value includes registry propagation after the publish command.
+Release frequency is not treated as a quality metric: v0.8.18 through v0.8.38
+contained 21 releases over 21.5 days, which is delivery evidence but also signals
+patch churn.
+
 ## Release Go/No-Go
 - `ruff check` passes.
-- `PYTHONPATH=src pytest -q` passes with coverage threshold.
+- `./.venv/bin/python -m pytest -q` passes with coverage threshold.
 - If extension changed, `npm run compile` passes.
 - Diagnostic stability checks on selected release corpora preserve expected counts, severity and anchors.
 - Performance output is collected and reviewed (cold/warm index, diagnostics timing).
