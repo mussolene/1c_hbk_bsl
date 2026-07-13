@@ -35,7 +35,9 @@ dev = [
     "setuptools-scm>=8",
 ]
 build = [
+    "build>=1.2",
     "pyinstaller>=6.0",
+    "twine>=6.0",
 ]
 
 [project.scripts]

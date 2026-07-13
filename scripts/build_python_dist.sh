@@ -20,13 +20,15 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-if [[ ! -x "$PYTHON" ]]; then
-    if command -v python >/dev/null 2>&1; then
-        PYTHON=python
-    else
-        echo "Missing Python runtime: $PYTHON" >&2
-        exit 1
-    fi
+if [[ "$PYTHON" != */* ]]; then
+    PYTHON_FOUND="$(command -v "$PYTHON" 2>/dev/null || true)"
+else
+    PYTHON_FOUND="$PYTHON"
+fi
+if [[ -z "$PYTHON_FOUND" || ( "$PYTHON" == */* && ! -x "$PYTHON" ) ]]; then
+    echo "Missing project Python runtime: $PYTHON" >&2
+    echo "Create or repair .venv, or set PYTHON explicitly in a controlled build environment." >&2
+    exit 1
 fi
 
 mkdir -p "$OUT_DIR"

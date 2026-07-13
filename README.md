@@ -26,8 +26,9 @@ Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для
 `BSL###` коды правил, `onec-hbk-bsl.toml`, CLI/LSP/MCP и VS Code extension.
 
 Текущий релиз требует Python 3.12+ при установке из PyPI. Платформенные VSIX
-содержат готовый бинарник и не требуют системного Python. Проверяемые показатели
-релиза и методика замеров приведены в [Production notes](docs/Production-Notes.md#verification-snapshot-v0838).
+содержат готовый бинарник и не требуют системного Python. Датированный снимок
+проверок и методика замеров приведены в
+[Production notes](docs/Production-Notes.md#verification-snapshot-v0838).
 
 ## Быстрый Старт
 
@@ -148,7 +149,8 @@ onec-hbk-bsl index /path/to/project --clean  # сначала остановит
 
 В Git-репозитории индексируются tracked-файлы и untracked-файлы, не исключённые
 Git (`.gitignore`, `.git/info/exclude`, global excludes). Затем применяются
-паттерны `exclude` из `onec-hbk-bsl.toml`. Режим `symbols` не хранит граф вызовов,
+паттерны `index-exclude` из `onec-hbk-bsl.toml`; если ключ не задан, он наследует
+`exclude`. Режим `symbols` не хранит граф вызовов,
 `off` отключает постоянный workspace-индекс, а `full` сохраняет все cross-file
 возможности. Повреждённый индекс является кэшем и удаляется для пересборки —
 копии `.corrupt.*` не сохраняются. Перед `--clean` остановите LSP/MCP: writer-lock

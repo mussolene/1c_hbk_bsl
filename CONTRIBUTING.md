@@ -6,8 +6,8 @@ Thank you for your interest in contributing!
 
 ### Prerequisites
 
-- Python 3.14+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
 - git
 - Node.js 20+ (only if working on the VSCode extension)
 
@@ -18,12 +18,12 @@ Thank you for your interest in contributing!
 git clone https://github.com/mussolene/1c_hbk_bsl.git
 cd 1c_hbk_bsl
 
-# Create a virtual environment and install in editable mode with dev deps
-uv venv
-source .venv/bin/activate          # Linux/macOS
-# .venv\Scripts\activate           # Windows
+# Create/update the project virtual environment from the lockfile
+uv sync --all-extras
 
-uv pip install -e ".[dev]"
+# Verify that the project runtime is available
+./.venv/bin/python --version          # Linux/macOS
+# .venv\Scripts\python.exe --version  # Windows
 ```
 
 ### Install (VSCode Extension)
@@ -49,14 +49,14 @@ npm run compile
 ## Running Tests
 
 ```bash
-# All tests
-pytest
+# All tests with the configured coverage gate
+./.venv/bin/python -m pytest -q
 
 # With coverage report
-pytest --cov=src/onec_hbk_bsl --cov-report=html
+./.venv/bin/python -m pytest --cov-report=html
 
 # Single test file
-pytest tests/test_diagnostics.py -v
+./.venv/bin/python -m pytest tests/test_diagnostics.py -v
 ```
 
 ## Code Style
@@ -65,28 +65,39 @@ We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting.
 
 ```bash
 # Check
-ruff check src/ tests/
+./.venv/bin/python -m ruff check src tests scripts
 
 # Fix auto-fixable issues
-ruff check --fix src/ tests/
+./.venv/bin/python -m ruff check --fix src tests scripts
 
 # Format
-ruff format src/ tests/
+./.venv/bin/python -m ruff format src tests scripts
 ```
 
 The ruff configuration is in `pyproject.toml` under `[tool.ruff]`.
 
 ## Adding a New Diagnostic Rule
 
-1. Open `src/onec_hbk_bsl/analysis/diagnostics.py`
-2. Add a new regex pattern constant (e.g. `_RE_MY_PATTERN = re.compile(...)`)
-3. Add a new private method `_rule_bslXXX_description(self, path, content) -> list[Diagnostic]`
-4. Call it inside `check_file()`
-5. Add tests in `tests/test_diagnostics.py` following the existing pattern
-6. See [docs/cst_policy.md](docs/cst_policy.md) and verify the rule appears in `onec-hbk-bsl --list-rules`
+1. Read the rule description and create or update its contract in
+   `docs/rule-contracts/BSL###.md`.
+2. Add or update metadata in `src/onec_hbk_bsl/analysis/diagnostics.py`.
+3. Reuse `DocumentSnapshot`, CST facts, or an existing domain model. Do not add
+   a regex fallback to a structural rule without an explicit contract reason.
+4. Register execution through `analysis/diagnostic/diagnostic_runtime` and keep
+   shared semantic work outside individual rule callbacks.
+5. Add focused positive, negative, range, and malformed-input tests.
+6. Run the contract validator and check the generated public rule reference:
 
-Rule naming convention: `BSL001–BSL099` are reserved for core rules.
-Community rules start at `BSL200`.
+```bash
+./.venv/bin/python scripts/validate_rule_contract.py docs/rule-contracts/BSL###.md
+./.venv/bin/python scripts/build_diagnostic_rules_doc.py
+git diff --exit-code -- docs/diagnostic-rules.md
+./.venv/bin/python -m onec_hbk_bsl rules
+```
+
+See [docs/cst_policy.md](docs/cst_policy.md) for structural-rule policy and
+[docs/diagnostics_rule_invoke.md](docs/diagnostics_rule_invoke.md) for runtime
+execution phases.
 
 ### Rule severity guidelines
 
@@ -107,13 +118,17 @@ data flow, and SQLite schema. Operational notes: [docs/Production-Notes.md](docs
 If the PR changes LSP/MCP behavior, diagnostic rules, VS Code settings in `vscode-extension/package.json`, or MCP tool names:
 
 - Update [README.md](README.md) and/or [docs/Production-Notes.md](docs/Production-Notes.md) as needed.
-- For new or renamed rules, verify `onec-hbk-bsl --list-rules` and update user-facing docs when behavior changes.
+- For new or renamed rules, verify `./.venv/bin/python -m onec_hbk_bsl rules`
+  and update user-facing docs when behavior changes.
 - Optional: add a line to [CHANGELOG.md](CHANGELOG.md) for user-visible behavior changes.
 
 ## Pull Request Checklist
 
 - [ ] Tests added/updated for the change
-- [ ] `ruff check` passes with no new errors
-- [ ] `pytest` passes
+- [ ] `./.venv/bin/python -m ruff check src tests scripts` passes
+- [ ] `./.venv/bin/python -m ruff format --check src tests scripts` passes
+- [ ] `./.venv/bin/python -m pytest -q` passes
+- [ ] Extension lint, typecheck, and compile pass when extension code or settings change
+- [ ] Generated diagnostic documentation and rule contracts are current
 - [ ] `docs/architecture.md` or `README.md` / `docs/Production-Notes.md` updated if public behavior or settings changed
 - [ ] Commit message is descriptive (what & why, not just what)

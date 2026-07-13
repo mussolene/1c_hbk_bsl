@@ -2112,9 +2112,6 @@ def _generate_doc_comment_at_line(
     return None
 
 
-_META_MEMBER_KIND_TO_COMPLETION_KIND: dict[str, object] = {}  # unused; placeholder
-
-
 def _metadata_object_name_from_chain(
     ls: BslLanguageServer,
     chain_expr: str,

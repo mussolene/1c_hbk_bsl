@@ -68,7 +68,7 @@
 ```
 BSL workspace on disk
         │
-        ▼  (Git tracked + untracked non-ignored, then project exclude)
+        ▼  (Git tracked + untracked non-ignored, then project index-exclude)
 Changed file list
         │
         ▼  (BslParser.parse_file)

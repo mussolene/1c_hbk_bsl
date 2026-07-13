@@ -21,7 +21,9 @@ It is a guardrail for future changes, not a user guide. User-facing docs live in
 | CLI | `check`, `format`, `rules`, `init`, `lsp`, `mcp`, `index` |
 | Reports | `--format text`, `--format json`, `--format sarif` |
 | Rule control | `--select`, `--ignore`, config `ignore`, per-file ignores |
+| Check execution | `--jobs`, `--no-config`, `--fix` |
 | CI adoption | `--exit-zero`, `--baseline`, `--update-baseline`, `--diff`, `--since`, `--paths-from` |
+| Workspace index | `--force`, `--status`, `--clean`, `--compact`, `--mode`, `--max-bytes` |
 | VS Code | diagnostics, formatting, definition/references/rename, call hierarchy, hover, completion, signature help, folding, code actions, inlay hints, semantic tokens |
 | Python API | `check_files(...)`, `DiagnosticEngine` |
 
