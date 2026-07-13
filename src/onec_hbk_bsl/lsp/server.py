@@ -172,6 +172,7 @@ from onec_hbk_bsl.analysis.platform_api import PlatformApi, get_platform_api
 from onec_hbk_bsl.analysis.symbols import extract_symbols
 from onec_hbk_bsl.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
 from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+from onec_hbk_bsl.cli.config import load_config
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.metadata_registry import (
@@ -189,6 +190,24 @@ from onec_hbk_bsl.lsp.source_fragments import (
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
+
+
+def _workspace_index_mode(workspace_root: str) -> str:
+    env_mode = os.environ.get("BSL_INDEX_MODE", "").strip().lower()
+    if env_mode in {"off", "symbols", "full"}:
+        return env_mode
+    return load_config(workspace_root).index_mode
+
+
+def _workspace_index_max_bytes(workspace_root: str) -> int:
+    raw = os.environ.get("BSL_INDEX_MAX_BYTES", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    return load_config(workspace_root).index_max_bytes
+
 
 # Map BSL severity → LSP DiagnosticSeverity
 _SEV_MAP = {
@@ -297,8 +316,11 @@ class BslLanguageServer(LanguageServer):
             "v0.1.0",
             text_document_sync_kind=TextDocumentSyncKind.Full,
         )
-        db_path = resolve_index_db_path(os.getcwd())
-        self.symbol_index = SymbolIndex(db_path=db_path)
+        self.index_mode = _workspace_index_mode(os.getcwd())
+        db_path = ":memory:" if self.index_mode == "off" else resolve_index_db_path(os.getcwd())
+        self.symbol_index = SymbolIndex(
+            db_path=db_path, max_size_bytes=_workspace_index_max_bytes(os.getcwd())
+        )
         _sel, _ign = parse_env_rule_filters()
         self.diagnostics_engine = DiagnosticEngine(
             symbol_index=self.symbol_index,
@@ -461,6 +483,7 @@ def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
         reindex_pending = ls._reindex_pending
     indexing = reindex_running or reindex_pending
     return {
+        "index_mode": ls.index_mode,
         "ready": stats.get("symbol_count", 0) > 0,
         "indexing": indexing,
         "reindex_running": reindex_running,
@@ -473,6 +496,8 @@ def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
         "db_size_bytes": stats.get("db_size_bytes", 0),
         "wal_size_bytes": stats.get("wal_size_bytes", 0),
         "shm_size_bytes": stats.get("shm_size_bytes", 0),
+        "max_size_bytes": stats.get("max_size_bytes", 0),
+        "over_size_limit": stats.get("over_size_limit", False),
         "last_commit": stats.get("last_commit"),
         "indexed_at": stats.get("indexed_at"),
         "workspace_root": stats.get("workspace_root"),
@@ -503,15 +528,29 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
         workspace_root = params.root_path
 
     if workspace_root and Path(workspace_root).is_dir():
+        ls.index_mode = _workspace_index_mode(workspace_root)
         # Re-resolve DB path now that we know the actual workspace root
-        db_path = resolve_index_db_path(workspace_root)
+        db_path = ":memory:" if ls.index_mode == "off" else resolve_index_db_path(workspace_root)
         if db_path != ls.symbol_index.db_path:
-            ls.symbol_index = SymbolIndex(db_path=db_path)
+            ls.symbol_index.close()
+            ls.symbol_index = SymbolIndex(
+                db_path=db_path, max_size_bytes=_workspace_index_max_bytes(workspace_root)
+            )
             ls.indexer = IncrementalIndexer(index=ls.symbol_index, quiet=True)
+        else:
+            ls.symbol_index.max_size_bytes = _workspace_index_max_bytes(workspace_root)
 
-        logger.info("LSP: scheduling background index of %s (db: %s)", workspace_root, db_path)
-        _schedule_workspace_reindex(ls, workspace_root, reason="initialize")
-        _start_branch_watcher(ls, workspace_root)
+        if ls.index_mode == "off":
+            logger.info("LSP: persistent workspace index disabled")
+        else:
+            logger.info(
+                "LSP: scheduling %s background index of %s (db: %s)",
+                ls.index_mode,
+                workspace_root,
+                db_path,
+            )
+            _schedule_workspace_reindex(ls, workspace_root, reason="initialize")
+            _start_branch_watcher(ls, workspace_root)
 
 
 # ---------------------------------------------------------------------------
@@ -4107,6 +4146,8 @@ def on_bsl_status(ls: BslLanguageServer, params: object) -> dict:  # type: ignor
 @server.feature("bsl/reindexWorkspace")
 def on_bsl_reindex_workspace(ls: BslLanguageServer, params: dict) -> dict:  # type: ignore[type-arg]
     """Re-index the entire workspace (triggered from VSCode command)."""
+    if ls.index_mode == "off":
+        return {"success": False, "error": "Workspace index is disabled (index-mode=off)"}
     root = params.get("root", "")
     if not root or not Path(root).is_dir():
         return {"success": False, "error": f"Invalid root: {root}"}

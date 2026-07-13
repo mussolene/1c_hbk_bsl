@@ -146,6 +146,24 @@ class TestBslConfigFormatter:
         assert cfg.insert_spaces is True
 
 
+class TestBslConfigIndex:
+    def test_index_defaults(self) -> None:
+        cfg = BslConfig({})
+        assert cfg.index_mode == "full"
+        assert cfg.index_max_bytes == 0
+
+    def test_index_options(self) -> None:
+        cfg = BslConfig({"index-mode": "symbols", "index-max-bytes": 1234})
+        assert cfg.index_mode == "symbols"
+        assert cfg.index_max_bytes == 1234
+
+    def test_invalid_index_options(self) -> None:
+        with pytest.raises(ValueError, match="index-mode"):
+            _ = BslConfig({"index-mode": "remote"}).index_mode
+        with pytest.raises(ValueError, match="index-max-bytes"):
+            _ = BslConfig({"index-max-bytes": -1}).index_max_bytes
+
+
 class TestBslConfigThresholds:
     def test_thresholds_none(self) -> None:
         cfg = BslConfig({})

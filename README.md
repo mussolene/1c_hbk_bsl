@@ -82,6 +82,8 @@ format = "text"
 jobs = 0
 insert-spaces = false
 indent-size = 4
+index-mode = "full"      # off | symbols | full
+index-max-bytes = 0      # 0 = unlimited
 
 [per-file-ignores]
 "legacy/*.bsl" = ["BSL002", "BSL011"]
@@ -91,7 +93,8 @@ indent-size = 4
 CLI-флаги имеют приоритет над конфигом.
 Python API `check_files(...)` автоматически ищет этот конфиг от первого
 переданного пути; если передать `config=cfg`, он применяется как набор
-дефолтов целиком. CLI `format` также читает конфиг для `exclude`,
+дефолтов целиком. CLI `format` и workspace-индекс также читают `exclude`;
+индекс дополнительно учитывает Git ignore. Formatter читает
 `insert-spaces` и `indent-size`; низкоуровневый `default_formatter.format(...)`
 остаётся чистой функцией от текста и явных параметров.
 
@@ -134,7 +137,19 @@ onec-hbk-bsl format . --check
 onec-hbk-bsl lsp
 onec-hbk-bsl mcp --stdio --workspace /path/to/project
 onec-hbk-bsl index /path/to/project
+onec-hbk-bsl index /path/to/project --mode symbols
+onec-hbk-bsl index /path/to/project --status
+onec-hbk-bsl index /path/to/project --compact
+onec-hbk-bsl index /path/to/project --clean  # сначала остановить LSP/MCP
 ```
+
+В Git-репозитории индексируются tracked-файлы и untracked-файлы, не исключённые
+Git (`.gitignore`, `.git/info/exclude`, global excludes). Затем применяются
+паттерны `exclude` из `onec-hbk-bsl.toml`. Режим `symbols` не хранит граф вызовов,
+`off` отключает постоянный workspace-индекс, а `full` сохраняет все cross-file
+возможности. Повреждённый индекс является кэшем и удаляется для пересборки —
+копии `.corrupt.*` не сохраняются. Перед `--clean` остановите LSP/MCP: writer-lock
+не может обнаружить бездействующий reader или старую версию процесса с открытым файлом.
 
 Публичная поверхность CLI/API описана в [docs/public-surface.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/public-surface.md).
 

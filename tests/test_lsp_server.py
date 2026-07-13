@@ -2106,6 +2106,7 @@ class TestStatusAndReindexContract:
         ls._reindex_pending = False
 
         result = on_bsl_status(ls, {})
+        assert result["index_mode"] == "full"
         assert result["ready"] is True
         assert result["indexing"] is True
         assert result["reindex_running"] is True
@@ -2114,6 +2115,25 @@ class TestStatusAndReindexContract:
             result["db_size_bytes"] + result["wal_size_bytes"] + result["shm_size_bytes"]
         )
         assert result["index_size_bytes"] > 0
+
+    def test_workspace_index_mode_reads_project_config(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.lsp.server import _workspace_index_mode
+
+        monkeypatch.delenv("BSL_INDEX_MODE", raising=False)
+        (tmp_path / "onec-hbk-bsl.toml").write_text('index-mode = "symbols"\n', encoding="utf-8")
+
+        assert _workspace_index_mode(str(tmp_path)) == "symbols"
+
+    def test_reindex_workspace_rejects_off_mode(self, tmp_path, monkeypatch) -> None:
+        from onec_hbk_bsl.lsp.server import on_bsl_reindex_workspace
+
+        ls = self._make_status_server(tmp_path, monkeypatch)
+        ls.index_mode = "off"
+
+        result = on_bsl_reindex_workspace(ls, {"root": str(tmp_path)})
+
+        assert result["success"] is False
+        assert "disabled" in result["error"]
 
     def test_on_bsl_reindex_workspace_reports_started_not_complete(
         self, tmp_path, monkeypatch

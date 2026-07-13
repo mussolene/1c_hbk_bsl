@@ -21,10 +21,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
+from onec_hbk_bsl.indexer.db_path import (
+    cleanup_index_storage,
+    index_storage_lock,
+    resolve_index_db_path,
+)
 
-# Each thread gets its own connection to avoid SQLite thread-safety issues.
-_local = threading.local()
+# Increment when workspace discovery semantics change. Existing databases keep
+# their previous value so the next run performs one full scope reconciliation.
+INDEX_POLICY_VERSION = 2
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -94,7 +99,9 @@ CREATE TABLE IF NOT EXISTS git_state (
     id             INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row
     commit_hash    TEXT,
     indexed_at     REAL,
-    workspace_root TEXT
+    workspace_root TEXT,
+    index_mode     TEXT NOT NULL DEFAULT 'full',
+    index_policy_version INTEGER NOT NULL DEFAULT 2
 );
 
 -- 1C Configuration metadata tables
@@ -170,9 +177,25 @@ class SymbolIndex:
             ``~/.cache/onec-hbk-bsl/…``). Use ``":memory:"`` for in-memory (tests).
     """
 
-    def __init__(self, db_path: str | None = None, mode: str | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str | None = None,
+        mode: str | None = None,
+        max_size_bytes: int | None = None,
+    ) -> None:
         self.db_path = db_path if db_path is not None else resolve_index_db_path(os.getcwd())
         self._sqlite_profile = self._resolve_sqlite_profile(mode)
+        self.max_size_bytes = (
+            max_size_bytes
+            if max_size_bytes is not None
+            else self._read_env_int("BSL_INDEX_MAX_BYTES", 0, minimum=0)
+        )
+        # Connections belong to this SymbolIndex instance.  The previous module-global
+        # thread-local map let independent LSP/MCP instances accidentally share a
+        # connection and made it impossible for close() to release worker connections.
+        self._conn_tls = threading.local()
+        self._connections: set[sqlite3.Connection] = set()
+        self._connections_lock = threading.RLock()
         # Per-thread flag: True only in the thread that opened bulk_write().
         # Using threading.local() avoids cross-thread reads of a shared bool that
         # caused upsert_file() to skip its transaction wrapper when called from the
@@ -182,20 +205,48 @@ class SymbolIndex:
         # avoid test isolation issues with the thread-local pool.
         self._mem_conn: sqlite3.Connection | None = None
         try:
-            self._initialize_schema()
+            self._initialize_or_open_existing()
         except sqlite3.DatabaseError as exc:
             if self.db_path != ":memory:" and self._is_corrupt_db_error(exc):
-                self._recover_corrupt_database()
-                self._initialize_schema()
+                if self._recover_corrupt_database():
+                    self._initialize_schema()
+                else:
+                    self._fallback_to_memory()
             elif self.db_path != ":memory:" and isinstance(exc, sqlite3.OperationalError):
                 self._fallback_to_memory()
             else:
                 raise
         # Heavy data migrations (index build / data population) run in background
         # so they don't block LSP startup.
-        threading.Thread(
+        self._migration_thread = threading.Thread(
             target=self._migrate_background, daemon=True, name="bsl-db-migrate"
-        ).start()
+        )
+        self._migration_thread.start()
+
+    def wait_for_background_migration(self, timeout: float | None = None) -> bool:
+        """Wait for the per-instance migration writer before another write operation."""
+        thread = self._migration_thread
+        if thread is threading.current_thread():
+            return True
+        join = getattr(thread, "join", None)
+        is_alive = getattr(thread, "is_alive", None)
+        if join is None or is_alive is None:
+            return True
+        join(timeout=timeout)
+        return not bool(is_alive())
+
+    def _initialize_or_open_existing(self) -> None:
+        """Create/migrate under the writer lock, or open an already-active index read-only-ish."""
+        if self.db_path == ":memory:":
+            self._initialize_schema()
+            return
+        with index_storage_lock(self.db_path) as acquired:
+            if acquired:
+                self._initialize_schema()
+                return
+            # Another process is indexing.  Avoid schema writes and verify that the
+            # existing cache is usable; callers can still serve read queries.
+            self._conn().execute("SELECT 1 FROM symbols LIMIT 1").fetchone()
 
     @staticmethod
     def _read_env_int(name: str, default: int, *, minimum: int | None = None) -> int:
@@ -263,6 +314,17 @@ class SymbolIndex:
         if "callee_name_lower" not in existing_calls:
             conn.execute("ALTER TABLE calls ADD COLUMN callee_name_lower TEXT NOT NULL DEFAULT ''")
 
+        existing_git_state = {row[1] for row in conn.execute("PRAGMA table_info(git_state)")}
+        if "index_mode" not in existing_git_state:
+            conn.execute("ALTER TABLE git_state ADD COLUMN index_mode TEXT NOT NULL DEFAULT 'full'")
+        if "index_policy_version" not in existing_git_state:
+            # Version 1 represents the former filesystem-wide discovery policy.
+            # Do not use the current schema default here: existing indexes must
+            # receive a one-time full pass that prunes newly ignored paths.
+            conn.execute(
+                "ALTER TABLE git_state ADD COLUMN index_policy_version INTEGER NOT NULL DEFAULT 1"
+            )
+
         # Ensure metadata tables exist for databases created before metadata support
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS meta_objects (
@@ -302,6 +364,12 @@ class SymbolIndex:
         """Heavy migrations: index creation and data population, run in background thread."""
         if self.db_path == ":memory:":
             return
+        with index_storage_lock(self.db_path) as acquired:
+            if not acquired:
+                return
+            self._migrate_background_locked()
+
+    def _migrate_background_locked(self) -> None:
         try:
             conn = self._conn()
             # Symbols: name_lower index (fast — index already built or instant for empty table)
@@ -353,28 +421,22 @@ class SymbolIndex:
         message = str(exc).casefold()
         return any(fragment in message for fragment in CORRUPT_DB_ERROR_FRAGMENTS)
 
-    def _recover_corrupt_database(self) -> None:
-        """Quarantine an unusable cache DB so the index can be rebuilt."""
+    def _recover_corrupt_database(self) -> bool:
+        """Delete an unusable disposable cache DB under the cross-process lock."""
         self.close()
-        timestamp = int(time.time())
-        for suffix in ("", "-wal", "-shm"):
-            path = Path(f"{self.db_path}{suffix}")
-            if not path.exists():
-                continue
-            target = path.with_name(f"{path.name}.corrupt.{timestamp}")
-            try:
-                path.replace(target)
-            except OSError:
-                try:
-                    path.unlink()
-                except OSError:
-                    pass
+        with index_storage_lock(self.db_path) as acquired:
+            if not acquired:
+                return False
+            cleanup_index_storage(self.db_path, include_corrupt=True)
+            return True
 
     def _handle_read_database_error(self, exc: sqlite3.DatabaseError) -> bool:
         if not self._is_corrupt_db_error(exc):
             return False
         if self.db_path != ":memory:":
-            self._recover_corrupt_database()
+            if not self._recover_corrupt_database():
+                self._fallback_to_memory()
+                return True
             try:
                 self._initialize_schema()
             except sqlite3.DatabaseError:
@@ -420,17 +482,21 @@ class SymbolIndex:
         )
         conn.row_factory = sqlite3.Row
 
-        def _safe_pragma(sql: str) -> None:
+        def _safe_pragma(sql: str) -> sqlite3.Row | None:
             try:
-                conn.execute(sql)
+                return conn.execute(sql).fetchone()
             except sqlite3.OperationalError:
                 # Keep connection usable even when a particular pragma is unsupported.
-                pass
+                return None
 
         # Some filesystems/sandboxes do not support WAL; fallback to DELETE journal.
-        _safe_pragma("PRAGMA journal_mode=WAL")
-        _safe_pragma("PRAGMA journal_mode=DELETE")
+        journal_row = _safe_pragma("PRAGMA journal_mode=WAL")
+        if journal_row is None or str(journal_row[0]).casefold() != "wal":
+            _safe_pragma("PRAGMA journal_mode=DELETE")
         _safe_pragma("PRAGMA synchronous=NORMAL")
+        _safe_pragma(
+            f"PRAGMA wal_autocheckpoint={self._read_env_int('BSL_SQLITE_WAL_AUTOCHECKPOINT', 1000, minimum=1)}"
+        )
         # Wait up to 10 s before raising "database is locked" — prevents spurious
         # failures when the LSP/MCP thread tries to write while the indexer thread
         # holds BEGIN IMMEDIATE (e.g. full workspace reindex on initialize).
@@ -451,12 +517,12 @@ class SymbolIndex:
                 self._mem_conn = self._make_conn()
             return self._mem_conn
 
-        conn_map: dict[str, sqlite3.Connection] = getattr(_local, "conn_map", {})
-        existing = conn_map.get(self.db_path)
+        existing: sqlite3.Connection | None = getattr(self._conn_tls, "conn", None)
         if existing is None or self._is_closed(existing):
             existing = self._make_conn()
-            conn_map[self.db_path] = existing
-            _local.conn_map = conn_map
+            self._conn_tls.conn = existing
+            with self._connections_lock:
+                self._connections.add(existing)
         return existing
 
     @staticmethod
@@ -496,18 +562,49 @@ class SymbolIndex:
         }
 
     def close(self) -> None:
-        """Close the connection for the current thread (or instance for :memory:)."""
+        """Close every connection owned by this index, including worker threads."""
+        migration = getattr(self, "_migration_thread", None)
+        if migration is not None and migration is not threading.current_thread():
+            join = getattr(migration, "join", None)
+            if join is not None:
+                join(timeout=10.0)
         if self.db_path == ":memory:":
             if self._mem_conn and not self._is_closed(self._mem_conn):
                 self._mem_conn.close()
             self._mem_conn = None
         else:
-            conn_map: dict[str, sqlite3.Connection] = getattr(_local, "conn_map", {})
-            conn = conn_map.get(self.db_path)
-            if conn and not self._is_closed(conn):
-                conn.close()
-            conn_map.pop(self.db_path, None)
-            _local.conn_map = conn_map
+            with self._connections_lock:
+                connections = list(self._connections)
+                self._connections.clear()
+            for conn in connections:
+                try:
+                    if not self._is_closed(conn):
+                        conn.close()
+                except sqlite3.Error:
+                    pass
+            self._conn_tls = threading.local()
+
+    def checkpoint(self, *, truncate: bool = False) -> dict[str, int]:
+        """Checkpoint WAL pages; truncate the sidecar after an exclusive full pass."""
+        if self.db_path == ":memory:":
+            return {"busy": 0, "log_pages": 0, "checkpointed_pages": 0}
+        mode = "TRUNCATE" if truncate else "PASSIVE"
+        row = self._conn().execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+        values = tuple(row or (0, 0, 0))
+        return {
+            "busy": int(values[0]),
+            "log_pages": int(values[1]),
+            "checkpointed_pages": int(values[2]),
+        }
+
+    def compact(self) -> dict[str, int]:
+        """Rebuild the disposable DB to reclaim free pages, then truncate its WAL."""
+        before = self._index_size_stats()["index_size_bytes"]
+        self.checkpoint(truncate=True)
+        self._conn().execute("VACUUM")
+        self.checkpoint(truncate=True)
+        after = self._index_size_stats()["index_size_bytes"]
+        return {"before_bytes": before, "after_bytes": after, "reclaimed_bytes": before - after}
 
     # ------------------------------------------------------------------
     # Write operations
@@ -661,20 +758,35 @@ class SymbolIndex:
                 conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
                 conn.execute("DELETE FROM calls WHERE caller_file = ?", (file_path,))
 
-    def save_commit(self, commit_hash: str, workspace_root: str = "") -> None:
+    def save_commit(
+        self,
+        commit_hash: str,
+        workspace_root: str = "",
+        index_mode: str = "full",
+        index_policy_version: int = INDEX_POLICY_VERSION,
+    ) -> None:
         """Persist the last successfully indexed commit hash."""
         conn = self._conn()
         with conn:
             conn.execute(
                 """
-                INSERT INTO git_state (id, commit_hash, indexed_at, workspace_root)
-                VALUES (1, ?, ?, ?)
+                INSERT INTO git_state
+                    (id, commit_hash, indexed_at, workspace_root, index_mode, index_policy_version)
+                VALUES (1, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     commit_hash = excluded.commit_hash,
                     indexed_at = excluded.indexed_at,
-                    workspace_root = excluded.workspace_root
+                    workspace_root = excluded.workspace_root,
+                    index_mode = excluded.index_mode,
+                    index_policy_version = excluded.index_policy_version
                 """,
-                (commit_hash, time.time(), workspace_root),
+                (
+                    commit_hash,
+                    time.time(),
+                    workspace_root,
+                    index_mode,
+                    index_policy_version,
+                ),
             )
 
     # ------------------------------------------------------------------
@@ -874,12 +986,37 @@ class SymbolIndex:
             ).fetchall()
         )
 
+    def get_indexed_files(self) -> set[str]:
+        """Return file paths currently represented by symbol or call rows."""
+        rows = self._read_list(
+            lambda conn: conn.execute(
+                "SELECT file_path AS path FROM symbols UNION SELECT caller_file AS path FROM calls"
+            ).fetchall()
+        )
+        return {str(row["path"]) for row in rows}
+
     def get_last_commit(self) -> str | None:
         """Return the last indexed commit hash, or None if not yet indexed."""
         row = self._read_optional_row(
             lambda conn: conn.execute("SELECT commit_hash FROM git_state WHERE id = 1").fetchone()
         )
         return row["commit_hash"] if row else None
+
+    def get_last_index_mode(self) -> str | None:
+        """Return the mode used for the last complete workspace pass."""
+        row = self._read_optional_row(
+            lambda conn: conn.execute("SELECT index_mode FROM git_state WHERE id = 1").fetchone()
+        )
+        return str(row["index_mode"]) if row else None
+
+    def get_last_index_policy_version(self) -> int | None:
+        """Return the discovery policy used for the last complete workspace pass."""
+        row = self._read_optional_row(
+            lambda conn: conn.execute(
+                "SELECT index_policy_version FROM git_state WHERE id = 1"
+            ).fetchone()
+        )
+        return int(row["index_policy_version"]) if row else None
 
     def get_module_exports(self, module_name: str) -> list[dict]:
         """Return exported symbols from the file whose stem matches *module_name* (case-insensitive)."""
@@ -1144,4 +1281,8 @@ class SymbolIndex:
                 "workspace_root": None,
             }
         stats.update(self._index_size_stats())
+        stats["max_size_bytes"] = self.max_size_bytes
+        stats["over_size_limit"] = bool(
+            self.max_size_bytes and stats["index_size_bytes"] > self.max_size_bytes
+        )
         return stats

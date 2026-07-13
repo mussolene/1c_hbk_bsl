@@ -91,6 +91,7 @@ let statusBarItem: vscode.StatusBarItem | undefined;
 let resolvedBinaryPath: string | undefined;
 
 interface BslStatus {
+  index_mode?: "off" | "symbols" | "full";
   ready: boolean;
   indexing?: boolean;
   reindex_running?: boolean;
@@ -103,6 +104,8 @@ interface BslStatus {
   db_size_bytes?: number;
   wal_size_bytes?: number;
   shm_size_bytes?: number;
+  max_size_bytes?: number;
+  over_size_limit?: boolean;
   last_commit?: string | null;
   indexed_at?: number | null;
   workspace_root?: string | null;
@@ -128,13 +131,16 @@ function formatBytes(bytes: number | undefined): string {
 
 function formatStatusSummary(status: BslStatus): string {
   const parts = [
-    `${status.symbol_count} symbols in ${status.file_count} files`,
+    `${status.index_mode ?? "full"} · ${status.symbol_count} symbols in ${status.file_count} files`,
   ];
   if (typeof status.index_size_bytes === "number") {
     parts.push(`${formatBytes(status.index_size_bytes)} on disk`);
   }
   if (status.indexing) {
     parts.push("indexing in background");
+  }
+  if (status.over_size_limit) {
+    parts.push(`over ${formatBytes(status.max_size_bytes)} budget`);
   }
   return parts.join(" · ");
 }
@@ -463,6 +469,8 @@ const DOCKER_LSP_ENV_KEYS = [
   "BSL_SELECT",
   "BSL_IGNORE",
   "BSL_DIAGNOSTICS_ENABLED",
+  "BSL_INDEX_MODE",
+  "BSL_INDEX_MAX_BYTES",
 ] as const;
 
 /**
@@ -500,6 +508,10 @@ function buildServerOptions(
   if (indexDb.trim()) {
     env.INDEX_DB_PATH = indexDb;
   }
+  const indexMode = config.get<string>("indexMode", "project");
+  if (indexMode !== "project") { env.BSL_INDEX_MODE = indexMode; }
+  const indexMaxBytes = config.get<number>("indexMaxBytes", -1);
+  if (indexMaxBytes >= 0) { env.BSL_INDEX_MAX_BYTES = String(indexMaxBytes); }
 
   const select = config.get<string[]>("diagnostics.select", []);
   const ignore = config.get<string[]>("diagnostics.ignore", []);

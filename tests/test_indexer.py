@@ -20,7 +20,7 @@ from onec_hbk_bsl.indexer.metadata_parser import (
     build_metadata_configuration_snapshot,
     crawl_config,
 )
-from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+from onec_hbk_bsl.indexer.symbol_index import INDEX_POLICY_VERSION, SymbolIndex
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -222,11 +222,16 @@ class TestGitState:
         commit_hash = "abc123def456"
         symbol_index.save_commit(commit_hash, workspace_root="/workspace")
         assert symbol_index.get_last_commit() == commit_hash
+        assert symbol_index.get_last_index_policy_version() == INDEX_POLICY_VERSION
 
     def test_save_commit_updates_existing(self, symbol_index: SymbolIndex) -> None:
         symbol_index.save_commit("old_hash")
         symbol_index.save_commit("new_hash")
         assert symbol_index.get_last_commit() == "new_hash"
+
+    def test_save_commit_preserves_explicit_legacy_policy(self, symbol_index: SymbolIndex) -> None:
+        symbol_index.save_commit("old_hash", index_policy_version=1)
+        assert symbol_index.get_last_index_policy_version() == 1
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +279,7 @@ class TestCorruptDatabaseRecovery:
         stats = idx.get_stats()
         assert stats["symbol_count"] == 0
         assert stats["call_count"] == 0
+        assert list(tmp_path.glob("*.corrupt.*")) == []
 
     def test_reads_recover_when_database_becomes_invalid(self, tmp_path: Path) -> None:
         db = tmp_path / "invalid-later.sqlite"
@@ -286,6 +292,7 @@ class TestCorruptDatabaseRecovery:
         stats = idx.get_stats()
         assert stats["symbol_count"] == 0
         assert stats["meta_object_count"] == 0
+        assert list(tmp_path.glob("*.corrupt.*")) == []
 
 
 class TestMetadataMembers:
@@ -769,6 +776,31 @@ class TestIncrementalIndexerExtended:
 
         assert result == {"indexed": 0, "skipped": 0, "errors": 0}
 
+    def test_index_workspace_policy_change_forces_full_reconciliation(
+        self, symbol_index: SymbolIndex, tmp_path: Path
+    ) -> None:
+        from unittest.mock import patch
+
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        fake_commit = "deadbeef1234567890"
+        symbol_index.save_commit(
+            fake_commit,
+            workspace_root=str(tmp_path),
+            index_policy_version=INDEX_POLICY_VERSION - 1,
+        )
+        indexer = IncrementalIndexer(index=symbol_index)
+
+        with (
+            patch.object(indexer, "_get_current_commit", return_value=fake_commit),
+            patch.object(indexer, "_find_all_bsl_files", return_value=[]) as find_all,
+        ):
+            result = indexer.index_workspace(str(tmp_path), force=False)
+
+        find_all.assert_called_once_with(str(tmp_path.resolve()))
+        assert result == {"indexed": 0, "skipped": 0, "errors": 0, "pruned": 0}
+        assert symbol_index.get_last_index_policy_version() == INDEX_POLICY_VERSION
+
     def test_index_files_with_missing_file_increments_skipped(
         self, symbol_index: SymbolIndex, tmp_path: Path
     ) -> None:
@@ -960,6 +992,112 @@ class TestIncrementalIndexerExtended:
             time.sleep(0.01)
 
         assert calls == [str(ws1.resolve()), str(ws3.resolve())]
+
+
+class TestIndexScopeAndLifecycle:
+    def test_git_discovery_includes_tracked_and_nonignored_only(self, tmp_path: Path) -> None:
+        import subprocess
+
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+        ignored = tmp_path / "ignored"
+        ignored.mkdir()
+        dropped = ignored / "drop.bsl"
+        tracked = ignored / "tracked.bsl"
+        visible = tmp_path / "visible.bsl"
+        for path in (dropped, tracked, visible):
+            path.write_text("Процедура П()\nКонецПроцедуры\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-f", str(tracked)], cwd=tmp_path, check=True)
+
+        files = IncrementalIndexer._find_all_bsl_files(str(tmp_path))
+
+        assert str(visible.resolve()) in files
+        assert str(tracked.resolve()) in files
+        assert str(dropped.resolve()) not in files
+
+    def test_discovery_applies_project_exclude(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        generated = tmp_path / "generated"
+        generated.mkdir()
+        excluded = generated / "part.bsl"
+        included = tmp_path / "module.bsl"
+        excluded.write_text("", encoding="utf-8")
+        included.write_text("", encoding="utf-8")
+        (tmp_path / "onec-hbk-bsl.toml").write_text('exclude = ["generated"]\n', encoding="utf-8")
+
+        files = IncrementalIndexer._find_all_bsl_files(str(tmp_path))
+
+        assert str(included.resolve()) in files
+        assert str(excluded.resolve()) not in files
+
+    def test_symbols_mode_omits_call_graph(
+        self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        monkeypatch.setenv("BSL_INDEX_MODE", "symbols")
+        path = tmp_path / "module.bsl"
+        path.write_text("Процедура П()\n    Другая();\nКонецПроцедуры\n", encoding="utf-8")
+        result = IncrementalIndexer(index=symbol_index).index_file(str(path))
+
+        assert result["symbols"] >= 1
+        assert result["calls"] == 0
+        assert symbol_index.get_stats()["call_count"] == 0
+
+    def test_off_mode_skips_persistent_writes(
+        self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        monkeypatch.setenv("BSL_INDEX_MODE", "off")
+        path = tmp_path / "module.bsl"
+        path.write_text("Процедура П()\nКонецПроцедуры\n", encoding="utf-8")
+
+        result = IncrementalIndexer(index=symbol_index).index_file(str(path))
+
+        assert result["disabled"] is True
+        assert symbol_index.get_stats()["symbol_count"] == 0
+
+    def test_full_reindex_prunes_files_no_longer_in_scope(
+        self, symbol_index: SymbolIndex, tmp_path: Path
+    ) -> None:
+        import subprocess
+
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+        stale = tmp_path / "ignored" / "old.bsl"
+        stale.parent.mkdir()
+        stale.write_text("Процедура Старая()\nКонецПроцедуры\n", encoding="utf-8")
+        symbol_index.upsert_file(
+            str(stale.resolve()),
+            [{**SAMPLE_SYMBOLS[0], "name": "Старая"}],
+            [],
+        )
+
+        result = IncrementalIndexer(index=symbol_index, quiet=True).index_workspace(
+            str(tmp_path), force=True
+        )
+
+        assert result["pruned"] == 1
+        assert symbol_index.find_symbol("Старая") == []
+
+    def test_checkpoint_and_compact_reclaim_wal(self, tmp_path: Path) -> None:
+        db = tmp_path / "compact.sqlite"
+        idx = SymbolIndex(str(db))
+        for i in range(50):
+            idx.upsert_file(f"/workspace/{i}.bsl", SAMPLE_SYMBOLS, SAMPLE_CALLS)
+        idx.remove_file("/workspace/1.bsl")
+
+        checkpoint = idx.checkpoint(truncate=True)
+        compact = idx.compact()
+
+        assert checkpoint["busy"] == 0
+        assert compact["after_bytes"] <= compact["before_bytes"]
 
 
 # ---------------------------------------------------------------------------

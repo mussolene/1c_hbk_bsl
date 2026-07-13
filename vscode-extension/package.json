@@ -110,6 +110,18 @@
           "default": "",
           "description": "SQLite index path. Leave empty: server stores the index under .git/onec-hbk-bsl_index.sqlite (git repo) or ~/.cache/onec-hbk-bsl/<id>/ (otherwise). Set only to force a custom location."
         },
+        "onecHbkBsl.indexMode": {
+          "type": "string",
+          "enum": ["project", "off", "symbols", "full"],
+          "default": "project",
+          "description": "Persistent workspace index detail. project reads onec-hbk-bsl.toml; off disables background disk indexing; symbols omits the call graph; full enables all cross-file features."
+        },
+        "onecHbkBsl.indexMaxBytes": {
+          "type": "number",
+          "minimum": -1,
+          "default": -1,
+          "description": "Hard on-disk index budget in bytes. -1 reads project config; 0 means unlimited."
+        },
         "onecHbkBsl.logLevel": {
           "type": "string",
           "enum": [

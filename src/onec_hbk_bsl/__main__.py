@@ -97,6 +97,10 @@ def _autoindex_if_empty(workspace: str, db_path: str) -> None:
     """Spawn background indexing if the index has no symbols yet."""
     import threading
 
+    if os.environ.get("BSL_INDEX_MODE", "").strip().lower() == "off":
+        logging.getLogger(__name__).info("MCP workspace auto-index disabled")
+        return
+
     from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
     idx = SymbolIndex(db_path=db_path)
@@ -126,9 +130,17 @@ def _autoindex_if_empty(workspace: str, db_path: str) -> None:
 
 
 def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
+    from onec_hbk_bsl.cli.config import load_config
     from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 
-    db_path = resolve_index_db_path(workspace)
+    configured_mode = os.environ.get("BSL_INDEX_MODE", "").strip().lower()
+    index_mode = (
+        configured_mode
+        if configured_mode in {"off", "symbols", "full"}
+        else load_config(workspace).index_mode
+    )
+    os.environ["BSL_INDEX_MODE"] = index_mode
+    db_path = ":memory:" if index_mode == "off" else resolve_index_db_path(workspace)
     # Set env vars BEFORE importing mcp_bridge/server so module-level globals pick them up
     os.environ.setdefault("INDEX_DB_PATH", db_path)
     os.environ.setdefault("WORKSPACE_ROOT", workspace)
@@ -309,6 +321,13 @@ exclude = [
     "build",
 ]
 
+# Persistent workspace index: off | symbols | full.
+# Git repositories index tracked plus untracked non-ignored files; exclude is applied too.
+# index-mode = "full"
+
+# Hard on-disk budget in bytes. 0 = unlimited.
+# index-max-bytes = 0
+
 # Per-file rule overrides
 # [per-file-ignores]
 # "legacy_*.bsl" = ["BSL012", "BSL035"]
@@ -342,13 +361,70 @@ exclude = [
     _console.print("Edit the file to customize rules and thresholds.")
 
 
-def _run_index(workspace: str, force: bool) -> None:
-    from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
-    from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+def _run_index(
+    workspace: str,
+    force: bool,
+    *,
+    clean: bool = False,
+    compact: bool = False,
+    status: bool = False,
+    mode: str | None = None,
+    max_bytes: int | None = None,
+) -> int:
+    import json
 
+    from onec_hbk_bsl.cli.config import load_config
+    from onec_hbk_bsl.indexer.db_path import (
+        cleanup_index_storage,
+        index_storage_lock,
+        resolve_index_db_path,
+    )
+    from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+    from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+
+    workspace = str(Path(workspace).resolve())
+    if mode is not None:
+        os.environ["BSL_INDEX_MODE"] = mode
+    if max_bytes is not None:
+        os.environ["BSL_INDEX_MAX_BYTES"] = str(max_bytes)
+    elif "BSL_INDEX_MAX_BYTES" not in os.environ:
+        max_bytes = load_config(workspace).index_max_bytes
     db_path = resolve_index_db_path(workspace)
-    indexer = IncrementalIndexer(db_path=db_path)
-    indexer.index_workspace(workspace, force=force)
+
+    if clean:
+        with index_storage_lock(db_path) as acquired:
+            if not acquired:
+                print(
+                    "Index is in use by another process; stop LSP/MCP and retry.", file=sys.stderr
+                )
+                return 2
+            result = cleanup_index_storage(db_path, include_corrupt=True)
+        print(json.dumps({"db_path": db_path, **result}, ensure_ascii=False))
+        return 0
+
+    index = SymbolIndex(db_path=db_path, max_size_bytes=max_bytes)
+    if status:
+        print(json.dumps({"db_path": db_path, **index.get_stats()}, ensure_ascii=False))
+        index.close()
+        return 0
+    if compact:
+        index.wait_for_background_migration()
+        with index_storage_lock(db_path) as acquired:
+            if not acquired:
+                print(
+                    "Index is in use by another process; stop LSP/MCP and retry.", file=sys.stderr
+                )
+                index.close()
+                return 2
+            result = index.compact()
+        print(json.dumps({"db_path": db_path, **result}, ensure_ascii=False))
+        index.close()
+        return 0
+
+    result = IncrementalIndexer(index=index).index_workspace(workspace, force=force)
+    print(json.dumps({"db_path": db_path, **result}, ensure_ascii=False))
+    index.close()
+    return 0
 
 
 def _parse_codes(raw: str | None) -> set[str] | None:
@@ -588,6 +664,29 @@ Examples:
         action="store_true",
         help="Force full reindex even if incremental is possible",
     )
+    index_actions = index_parser.add_mutually_exclusive_group()
+    index_actions.add_argument(
+        "--status", action="store_true", help="Print index counts, size, and configured budget"
+    )
+    index_actions.add_argument(
+        "--clean", action="store_true", help="Delete DB, WAL/SHM, and legacy .corrupt cache files"
+    )
+    index_actions.add_argument(
+        "--compact", action="store_true", help="Checkpoint and VACUUM the existing index"
+    )
+    index_parser.add_argument(
+        "--mode",
+        choices=["off", "symbols", "full"],
+        default=None,
+        help="Index detail level (default: config or full)",
+    )
+    index_parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Abort writes above this on-disk budget; 0 means unlimited",
+    )
 
     rules_parser = subparsers.add_parser(
         "rules",
@@ -664,7 +763,17 @@ Examples:
 
     if args.command == "index":
         _setup_logging(args.log_level, use_rich=True)
-        _run_index(args.path, force=args.force)
+        sys.exit(
+            _run_index(
+                args.path,
+                force=args.force,
+                clean=args.clean,
+                compact=args.compact,
+                status=args.status,
+                mode=args.mode,
+                max_bytes=args.max_bytes,
+            )
+        )
 
 
 if __name__ == "__main__":

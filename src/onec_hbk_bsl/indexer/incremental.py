@@ -21,6 +21,7 @@ from typing import Any
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
 from onec_hbk_bsl.analysis.semantic import extract_semantic_model
+from onec_hbk_bsl.indexer.db_path import cleanup_corrupt_index_storage, index_storage_lock
 from onec_hbk_bsl.indexer.discovery import is_discovery_dir
 from onec_hbk_bsl.indexer.metadata_parser import (
     crawl_config,
@@ -28,7 +29,7 @@ from onec_hbk_bsl.indexer.metadata_parser import (
     find_edt_configuration_marker,
     iter_metadata_input_xmls,
 )
-from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+from onec_hbk_bsl.indexer.symbol_index import INDEX_POLICY_VERSION, SymbolIndex
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,17 @@ BSL_EXTENSIONS = {".bsl", ".os"}
 # and parsed AST payloads; unbounded queues previously allowed RAM to grow to 100+ GB
 # on 30k+ file workspaces when parsing outran SQLite.
 _MAX_PARSE_WORKERS = 32
+INDEX_MODES = {"off", "symbols", "full"}
+
+
+class IndexSizeLimitExceeded(RuntimeError):
+    """Raised when a configured persistent-index size budget is exceeded."""
+
+
+def _split_git_paths(raw: bytes | str) -> list[bytes]:
+    """Split NUL-delimited git output, tolerating newline mocks/older callers."""
+    value = os.fsencode(raw)
+    return [part for part in (value.split(b"\0") if b"\0" in value else value.splitlines()) if part]
 
 
 def _parse_workers_from_env() -> int:
@@ -88,6 +100,20 @@ class IncrementalIndexer:
         self._metadata_running = False
         self._metadata_pending = False
         self._metadata_pending_workspace: str | None = None
+        self._index_mode = self._index_mode_from_env() or "full"
+
+    @staticmethod
+    def _index_mode_from_env() -> str | None:
+        value = os.environ.get("BSL_INDEX_MODE", "").strip().lower()
+        return value if value in INDEX_MODES else None
+
+    def _apply_workspace_settings(self, workspace: str) -> None:
+        from onec_hbk_bsl.cli.config import load_config  # noqa: PLC0415
+
+        config = load_config(workspace)
+        self._index_mode = self._index_mode_from_env() or config.index_mode
+        if "BSL_INDEX_MAX_BYTES" not in os.environ:
+            self.index.max_size_bytes = config.index_max_bytes
 
     def _get_parser(self) -> BslParser:
         """Return a thread-local :class:`BslParser` (required for parallel indexing)."""
@@ -113,7 +139,33 @@ class IncrementalIndexer:
             Dict with ``indexed``, ``skipped``, ``errors`` counts.
         """
         workspace = str(Path(workspace).resolve())
-        last_commit = None if force else self.index.get_last_commit()
+        self._apply_workspace_settings(workspace)
+        if self._index_mode == "off":
+            logger.info("Workspace indexing disabled by index-mode=off")
+            return {"indexed": 0, "skipped": 0, "errors": 0, "disabled": True}
+
+        self.index.wait_for_background_migration()
+        with index_storage_lock(self.index.db_path) as acquired:
+            if not acquired:
+                logger.info("Workspace index writer is active in another process; skipping")
+                return {"indexed": 0, "skipped": 0, "errors": 0, "locked": True}
+            cleanup_corrupt_index_storage(self.index.db_path)
+            result = self._index_workspace_locked(workspace, force=force)
+            self.index.checkpoint(truncate=True)
+
+        # Metadata uses the same writer lock in its own background pass.
+        self._start_metadata_indexing(workspace)
+        return result
+
+    def _index_workspace_locked(self, workspace: str, *, force: bool) -> dict:
+        """Index a workspace while the caller owns the cross-process writer lock."""
+        previous_mode = self.index.get_last_index_mode()
+        mode_changed = previous_mode is not None and previous_mode != self._index_mode
+        previous_policy = self.index.get_last_index_policy_version()
+        policy_changed = previous_policy is not None and previous_policy != INDEX_POLICY_VERSION
+        last_commit = (
+            None if force or mode_changed or policy_changed else self.index.get_last_commit()
+        )
         current_commit = self._get_current_commit(workspace)
 
         if not force and last_commit and last_commit == current_commit:
@@ -131,13 +183,12 @@ class IncrementalIndexer:
             files = self._find_all_bsl_files(workspace)
             logger.info("Full index: %d BSL files in %s", len(files), workspace)
 
-        result = self._index_files(files, workspace)
+        result = self._index_files(files, workspace, prune_missing=last_commit is None)
 
         if current_commit:
-            self.index.save_commit(current_commit, workspace_root=workspace)
-
-        # Index 1C configuration metadata in background
-        self._start_metadata_indexing(workspace)
+            self.index.save_commit(
+                current_commit, workspace_root=workspace, index_mode=self._index_mode
+            )
 
         return result
 
@@ -151,6 +202,18 @@ class IncrementalIndexer:
             Dict with ``objects`` and ``members`` counts, or ``{"skipped": True}`` if no config found.
         """
         workspace = str(Path(workspace).resolve())
+        self._apply_workspace_settings(workspace)
+        if self._index_mode == "off":
+            return {"skipped": True, "reason": "index_disabled"}
+        self.index.wait_for_background_migration()
+        with index_storage_lock(self.index.db_path) as acquired:
+            if not acquired:
+                return {"skipped": True, "reason": "writer_locked"}
+            return self._index_metadata_locked(workspace, config_root, force=force)
+
+    def _index_metadata_locked(
+        self, workspace: str, config_root: str | None = None, *, force: bool = False
+    ) -> dict:
         resolved_config_root = (
             Path(config_root).resolve() if config_root else find_config_root(workspace)
         )
@@ -282,11 +345,12 @@ class IncrementalIndexer:
         Uses ``git diff --name-only`` against the current HEAD.
         Falls back to full scan if git is unavailable.
         """
+        from onec_hbk_bsl.cli.config import load_config  # noqa: PLC0415
+
         try:
             result = subprocess.run(
-                ["git", "diff", "--name-only", since_commit, "HEAD"],
+                ["git", "diff", "--name-only", "-z", since_commit, "HEAD"],
                 capture_output=True,
-                text=True,
                 cwd=workspace,
                 timeout=30,
             )
@@ -294,19 +358,29 @@ class IncrementalIndexer:
                 logger.warning(
                     "git diff failed (rc=%d): %s. Falling back to full scan.",
                     result.returncode,
-                    result.stderr.strip(),
+                    os.fsdecode(result.stderr).strip(),
                 )
                 return self._find_all_bsl_files(workspace)
 
-            changed: list[str] = []
-            for rel_path in result.stdout.splitlines():
-                rel_path = rel_path.strip()
-                if not rel_path:
-                    continue
-                if Path(rel_path).suffix.lower() in BSL_EXTENSIONS:
-                    abs_path = str(Path(workspace) / rel_path)
-                    changed.append(abs_path)
-            return changed
+            untracked = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard", "-z", "--"],
+                capture_output=True,
+                cwd=workspace,
+                timeout=30,
+            )
+            raw_paths = os.fsencode(result.stdout)
+            if untracked.returncode == 0:
+                raw_paths += os.fsencode(untracked.stdout)
+            config = load_config(workspace)
+            changed: set[str] = set()
+            for raw_path in _split_git_paths(raw_paths):
+                rel_path = os.fsdecode(raw_path)
+                abs_path = str((Path(workspace) / rel_path).resolve())
+                if Path(rel_path).suffix.lower() in BSL_EXTENSIONS and not config.is_excluded(
+                    abs_path
+                ):
+                    changed.add(abs_path)
+            return sorted(changed)
 
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
             logger.warning("git not available (%s). Falling back to full scan.", exc)
@@ -319,6 +393,16 @@ class IncrementalIndexer:
         Returns:
             Dict with ``symbols`` and ``calls`` counts, plus ``error`` if failed.
         """
+        self._apply_workspace_settings(str(Path(path).resolve().parent))
+        if self._index_mode == "off":
+            return {"symbols": 0, "calls": 0, "disabled": True}
+        self.index.wait_for_background_migration()
+        with index_storage_lock(self.index.db_path) as acquired:
+            if not acquired:
+                return {"symbols": 0, "calls": 0, "locked": True}
+            return self._index_file_locked(path)
+
+    def _index_file_locked(self, path: str) -> dict:
         try:
             parsed = self._parse_file(path)
             if "error" in parsed:
@@ -339,10 +423,22 @@ class IncrementalIndexer:
         This is the LSP hot path: diagnostics already materialize a DocumentSnapshot,
         so re-reading and re-parsing the same open file on save wastes time.
         """
+        self._apply_workspace_settings(str(Path(path).resolve().parent))
+        if self._index_mode == "off":
+            return {"symbols": 0, "calls": 0, "disabled": True}
+        self.index.wait_for_background_migration()
+        with index_storage_lock(self.index.db_path) as acquired:
+            if not acquired:
+                return {"symbols": 0, "calls": 0, "locked": True}
+            return self._index_snapshot_locked(path, snapshot)
+
+    def _index_snapshot_locked(self, path: str, snapshot: Any) -> dict:
         try:
             semantic = extract_semantic_model(snapshot.tree, file_path=path)
             sym_dicts = [_symbol_to_dict(s) for s in semantic.symbols]
-            call_dicts = [_call_to_dict(c) for c in semantic.calls]
+            call_dicts = (
+                [_call_to_dict(c) for c in semantic.calls] if self._index_mode == "full" else []
+            )
             self.index.upsert_file(path, sym_dicts, call_dicts)
             return {"symbols": len(sym_dicts), "calls": len(call_dicts)}
         except Exception as exc:
@@ -353,11 +449,13 @@ class IncrementalIndexer:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _index_files(self, files: list[str], workspace: str) -> dict:
+    def _index_files(
+        self, files: list[str], workspace: str, *, prune_missing: bool = False
+    ) -> dict:
         indexed = 0
         skipped = 0
         errors = 0
-        _ = workspace  # reserved for future workspace-scoped policies
+        pruned = 0
 
         bulk_enabled = os.environ.get("BSL_INDEX_SQLITE_BULK", "1").strip().lower() not in (
             "0",
@@ -384,6 +482,19 @@ class IncrementalIndexer:
                 else progress.add_task("Indexing BSL files", total=len(files))
             )
             with bulk_ctx():
+                if prune_missing:
+                    eligible = {str(Path(path).resolve()) for path in files}
+                    workspace_path = Path(workspace).resolve()
+                    stale = {
+                        path
+                        for path in self.index.get_indexed_files()
+                        if Path(path).is_relative_to(workspace_path)
+                        and str(Path(path).resolve()) not in eligible
+                    }
+                    for path in stale:
+                        self.index.remove_file(path)
+                    pruned = len(stale)
+
                 existing: list[str] = []
                 for path in files:
                     if not Path(path).exists():
@@ -408,6 +519,8 @@ class IncrementalIndexer:
                         else:
                             self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
                             indexed += 1
+                            if indexed % 100 == 0:
+                                self._enforce_size_limit()
                         if self._on_progress:
                             self._on_progress(indexed + skipped + errors, len(files), path)
                         if progress is not None:
@@ -455,6 +568,8 @@ class IncrementalIndexer:
                         else:
                             self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
                             indexed += 1
+                            if indexed % 100 == 0:
+                                self._enforce_size_limit()
 
                         if self._on_progress:
                             self._on_progress(indexed + skipped + errors, len(files), path)
@@ -465,13 +580,26 @@ class IncrementalIndexer:
                     for t in workers:
                         t.join(timeout=0.1)
 
+                self._enforce_size_limit()
+
         logger.info(
-            "Indexing complete: %d indexed, %d skipped, %d errors",
+            "Indexing complete: %d indexed, %d skipped, %d pruned, %d errors",
             indexed,
             skipped,
+            pruned,
             errors,
         )
-        return {"indexed": indexed, "skipped": skipped, "errors": errors}
+        return {"indexed": indexed, "skipped": skipped, "pruned": pruned, "errors": errors}
+
+    def _enforce_size_limit(self) -> None:
+        limit = self.index.max_size_bytes
+        if not limit:
+            return
+        size = self.index._index_size_stats()["index_size_bytes"]
+        if size > limit:
+            raise IndexSizeLimitExceeded(
+                f"Index size {size} bytes exceeds configured limit {limit} bytes"
+            )
 
     def _parse_file(self, path: str) -> dict[str, Any]:
         """Parse one file and return prepared symbol/call dict lists."""
@@ -480,27 +608,56 @@ class IncrementalIndexer:
             semantic = extract_semantic_model(tree, file_path=path)
             return {
                 "symbols": [_symbol_to_dict(s) for s in semantic.symbols],
-                "calls": [_call_to_dict(c) for c in semantic.calls],
+                "calls": (
+                    [_call_to_dict(c) for c in semantic.calls] if self._index_mode == "full" else []
+                ),
             }
         except Exception as exc:  # noqa: BLE001
             return {"error": str(exc)}
 
     @staticmethod
     def _find_all_bsl_files(workspace: str) -> list[str]:
-        """Walk the workspace and return all .bsl/.os files.
+        """Return tracked and non-ignored BSL sources, also applying project excludes."""
+        from onec_hbk_bsl.cli.config import load_config  # noqa: PLC0415
 
-        Uses a single ``os.walk`` pass instead of two ``Path.rglob`` traversals plus a
-        full sort of the combined list — large workspaces (10k+ files) spend noticeable
-        time just enumerating paths.
-        """
         root = os.path.abspath(workspace)
+        config = load_config(root)
+
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "ls-files",
+                    "-co",
+                    "--exclude-standard",
+                    "-z",
+                    "--",
+                    "*.bsl",
+                    "*.os",
+                ],
+                capture_output=True,
+                cwd=root,
+                timeout=60,
+            )
+            if result.returncode == 0:
+                git_files = {
+                    str((Path(root) / os.fsdecode(raw_path)).resolve())
+                    for raw_path in _split_git_paths(result.stdout)
+                }
+                return sorted(path for path in git_files if not config.is_excluded(path))
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        # Non-git fallback: retain the existing filesystem walk, but honor config excludes.
         result: list[str] = []
         for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
             dirnames[:] = [name for name in dirnames if is_discovery_dir(name)]
             for name in filenames:
                 suf = Path(name).suffix.lower()
                 if suf in BSL_EXTENSIONS:
-                    result.append(os.path.join(dirpath, name))
+                    path = os.path.join(dirpath, name)
+                    if not config.is_excluded(path):
+                        result.append(path)
         result.sort()
         return result
 

@@ -68,7 +68,7 @@
 ```
 BSL workspace on disk
         │
-        ▼  (git diff --name-only <last_commit> HEAD)
+        ▼  (Git tracked + untracked non-ignored, then project exclude)
 Changed file list
         │
         ▼  (BslParser.parse_file)

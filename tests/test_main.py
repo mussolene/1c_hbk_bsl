@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from onec_hbk_bsl.__main__ import _normalize_argv, _parse_codes, _run_mcp, main
+from onec_hbk_bsl.__main__ import _normalize_argv, _parse_codes, _run_index, _run_mcp, main
 
 # ---------------------------------------------------------------------------
 # _parse_codes
@@ -433,6 +433,22 @@ class TestMainInit:
             with patch("os.getcwd", return_value=str(tmp_path)):
                 main()
         assert existing.read_text() == "# custom\n"
+
+
+class TestMainIndexLifecycle:
+    def test_status_and_clean(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        db = tmp_path / "index.sqlite"
+        monkeypatch.setenv("INDEX_DB_PATH", str(db))
+
+        assert _run_index(str(tmp_path), force=False, status=True) == 0
+        assert '"index_size_bytes"' in capsys.readouterr().out
+        assert db.exists()
+
+        (tmp_path / "index.sqlite.corrupt.1").write_bytes(b"old")
+        assert _run_index(str(tmp_path), force=False, clean=True) == 0
+        assert '"files_removed"' in capsys.readouterr().out
+        assert not db.exists()
+        assert not (tmp_path / "index.sqlite.corrupt.1").exists()
 
 
 # ---------------------------------------------------------------------------

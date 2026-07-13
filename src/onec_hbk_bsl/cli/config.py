@@ -30,6 +30,8 @@ min-duplicate-uses        int
 max-module-lines          int
 indent-size               int    — formatter indent width when spaces are used
 insert-spaces             bool   — formatter uses spaces instead of tabs
+index-mode               str    — off | symbols | full (default: full)
+index-max-bytes          int    — hard size budget, 0 = unlimited
 """
 
 from __future__ import annotations
@@ -147,6 +149,20 @@ class BslConfig:
     def insert_spaces(self) -> bool | None:
         v = self._data.get("insert-spaces")
         return bool(v) if v is not None else None
+
+    @property
+    def index_mode(self) -> str:
+        value = str(self._data.get("index-mode", "full")).strip().lower()
+        if value not in {"off", "symbols", "full"}:
+            raise ValueError(f"Unsupported index-mode: {value!r}. Use off, symbols, or full.")
+        return value
+
+    @property
+    def index_max_bytes(self) -> int:
+        value = int(self._data.get("index-max-bytes", 0))
+        if value < 0:
+            raise ValueError("index-max-bytes must be >= 0")
+        return value
 
     # ------------------------------------------------------------------
     # DiagnosticEngine threshold overrides

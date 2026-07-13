@@ -37,7 +37,7 @@ This runbook covers production usage of:
 
 When `useDocker` is true, the extension runs:
 
-`docker exec -i -e LOG_LEVEL=… [-e INDEX_DB_PATH=…] [-e BSL_SELECT=…] [-e BSL_IGNORE=…] [-e BSL_DIAGNOSTICS_ENABLED=…] <container> onec-hbk-bsl lsp`
+`docker exec -i -e LOG_LEVEL=… [-e INDEX_DB_PATH=…] [-e BSL_INDEX_MODE=…] [-e BSL_INDEX_MAX_BYTES=…] [-e BSL_SELECT=…] [-e BSL_IGNORE=…] [-e BSL_DIAGNOSTICS_ENABLED=…] <container> onec-hbk-bsl lsp`
 
 — the same environment keys as for a local binary (`extension.ts`), so log level, DB path, and rule selection match non-Docker mode. The container must already exist; mount workspace and index paths so `INDEX_DB_PATH` (if set) resolves inside the container.
 
@@ -57,9 +57,24 @@ When `useDocker` is true, the extension runs:
 ## Multi-Project Safety
 - MCP tools use `workspace_root`/`config_root` where relevant.
 - Index instances are cached by resolved DB path (LRU policy).
-- `SymbolIndex` keeps per-db thread-local connections to avoid cross-project contamination.
+- `SymbolIndex` owns and closes all of its per-thread connections; instances do not share them.
 
 ## Indexing And Concurrency
+- Full discovery uses `git ls-files -co --exclude-standard`: tracked files remain
+  eligible, while ignored untracked files are skipped. Project `exclude` patterns
+  are applied after Git filtering. Non-Git workspaces use the filesystem fallback.
+- A discovery-policy version stored in `git_state` forces one full reconciliation
+  after scope semantics change, even when the Git commit itself is unchanged.
+- `index-mode=off|symbols|full` (or `BSL_INDEX_MODE`) controls persistence and detail.
+  `symbols` omits call edges; `off` skips persistent background indexing.
+- A persistent OS file lock beside the DB permits one writer process per index.
+- WAL autocheckpoint defaults to 1,000 pages; a completed workspace pass performs
+  `wal_checkpoint(TRUNCATE)`. `index --compact` additionally runs `VACUUM`.
+- `index-max-bytes` / `BSL_INDEX_MAX_BYTES` provides an optional hard budget (0 = unlimited).
+- Stop LSP/MCP processes before `index --clean`. The command removes DB/WAL/SHM
+  and legacy `.corrupt.*` while holding the writer lock; the lock prevents new-version
+  writers but cannot prove that an idle reader or an older binary has no open handle.
+- Corrupt cache databases are deleted and rebuilt; they are not retained as durable evidence.
 - LSP workspace reindex uses single-flight scheduling:
   - no concurrent full reindex runs
   - one pending rerun is queued during active indexing

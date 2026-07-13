@@ -6,7 +6,12 @@ import os
 
 import pytest
 
-from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
+from onec_hbk_bsl.indexer.db_path import (
+    cleanup_corrupt_index_storage,
+    cleanup_index_storage,
+    index_storage_lock,
+    resolve_index_db_path,
+)
 
 
 def test_explicit_env_overrides(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,3 +55,46 @@ def test_non_git_uses_user_cache(tmp_path, monkeypatch: pytest.MonkeyPatch) -> N
     assert "onec-hbk-bsl" in p.replace("\\", "/")
     assert p.endswith("onec-hbk-bsl_index.sqlite")
     assert os.path.expanduser("~") in p
+
+
+def test_index_storage_lock_rejects_second_writer(tmp_path) -> None:
+    db = str(tmp_path / "index.sqlite")
+    with index_storage_lock(db) as first:
+        assert first is True
+        with index_storage_lock(db) as second:
+            assert second is False
+
+
+def test_cleanup_index_storage_removes_sidecars_and_legacy_corrupt(tmp_path) -> None:
+    db = tmp_path / "index.sqlite"
+    paths = [
+        db,
+        tmp_path / "index.sqlite-wal",
+        tmp_path / "index.sqlite-shm",
+        tmp_path / "index.sqlite.corrupt.123",
+        tmp_path / "index.sqlite-wal.corrupt.123",
+    ]
+    for path in paths:
+        path.write_bytes(b"1234")
+
+    with index_storage_lock(str(db)) as acquired:
+        assert acquired is True
+        result = cleanup_index_storage(str(db), include_corrupt=True)
+
+    assert result == {"files_removed": 5, "bytes_removed": 20}
+    assert not any(path.exists() for path in paths)
+
+
+def test_cleanup_corrupt_index_storage_preserves_active_db(tmp_path) -> None:
+    db = tmp_path / "index.sqlite"
+    corrupt = tmp_path / "index.sqlite.corrupt.123"
+    db.write_bytes(b"active")
+    corrupt.write_bytes(b"old")
+
+    with index_storage_lock(str(db)) as acquired:
+        assert acquired is True
+        result = cleanup_corrupt_index_storage(str(db))
+
+    assert result == {"files_removed": 1, "bytes_removed": 3}
+    assert db.read_bytes() == b"active"
+    assert not corrupt.exists()
