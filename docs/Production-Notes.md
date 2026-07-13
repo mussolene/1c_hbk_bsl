@@ -61,8 +61,10 @@ When `useDocker` is true, the extension runs:
 
 ## Indexing And Concurrency
 - Full discovery uses `git ls-files -co --exclude-standard`: tracked files remain
-  eligible, while ignored untracked files are skipped. Project `exclude` patterns
-  are applied after Git filtering. Non-Git workspaces use the filesystem fallback.
+  eligible, while ignored untracked files are skipped. Project `index-exclude`
+  patterns are applied after Git filtering and default to `exclude` for compatibility.
+  Set `index-exclude=[]` when lint-excluded dependencies must remain navigable.
+  Non-Git workspaces use the filesystem fallback.
 - A discovery-policy version stored in `git_state` forces one full reconciliation
   after scope semantics change, even when the Git commit itself is unchanged.
 - `index-mode=off|symbols|full` (or `BSL_INDEX_MODE`) controls persistence and detail.

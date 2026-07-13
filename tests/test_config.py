@@ -69,6 +69,16 @@ class TestBslConfigExclude:
         cfg = BslConfig({"exclude": ["generated"]})
         assert cfg.is_excluded("/project/generated/out.bsl") is True
 
+    def test_index_exclude_defaults_to_diagnostic_exclude(self) -> None:
+        cfg = BslConfig({"exclude": ["vendor"]})
+        assert cfg.is_index_excluded("/project/vendor/module.bsl") is True
+
+    def test_empty_index_exclude_keeps_lint_excluded_files_navigable(self) -> None:
+        cfg = BslConfig({"exclude": ["vendor"], "index-exclude": []})
+        path = "/project/vendor/module.bsl"
+        assert cfg.is_excluded(path) is True
+        assert cfg.is_index_excluded(path) is False
+
 
 class TestBslConfigPerFileIgnores:
     def test_per_file_ignores_empty(self) -> None:

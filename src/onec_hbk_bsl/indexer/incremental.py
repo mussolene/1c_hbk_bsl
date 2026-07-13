@@ -376,7 +376,7 @@ class IncrementalIndexer:
             for raw_path in _split_git_paths(raw_paths):
                 rel_path = os.fsdecode(raw_path)
                 abs_path = str((Path(workspace) / rel_path).resolve())
-                if Path(rel_path).suffix.lower() in BSL_EXTENSIONS and not config.is_excluded(
+                if Path(rel_path).suffix.lower() in BSL_EXTENSIONS and not config.is_index_excluded(
                     abs_path
                 ):
                     changed.add(abs_path)
@@ -617,7 +617,7 @@ class IncrementalIndexer:
 
     @staticmethod
     def _find_all_bsl_files(workspace: str) -> list[str]:
-        """Return tracked and non-ignored BSL sources, also applying project excludes."""
+        """Return tracked and non-ignored BSL sources, applying index excludes."""
         from onec_hbk_bsl.cli.config import load_config  # noqa: PLC0415
 
         root = os.path.abspath(workspace)
@@ -644,7 +644,7 @@ class IncrementalIndexer:
                     str((Path(root) / os.fsdecode(raw_path)).resolve())
                     for raw_path in _split_git_paths(result.stdout)
                 }
-                return sorted(path for path in git_files if not config.is_excluded(path))
+                return sorted(path for path in git_files if not config.is_index_excluded(path))
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
 
@@ -656,7 +656,7 @@ class IncrementalIndexer:
                 suf = Path(name).suffix.lower()
                 if suf in BSL_EXTENSIONS:
                     path = os.path.join(dirpath, name)
-                    if not config.is_excluded(path):
+                    if not config.is_index_excluded(path):
                         result.append(path)
         result.sort()
         return result

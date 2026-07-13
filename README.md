@@ -93,8 +93,11 @@ index-max-bytes = 0      # 0 = unlimited
 CLI-флаги имеют приоритет над конфигом.
 Python API `check_files(...)` автоматически ищет этот конфиг от первого
 переданного пути; если передать `config=cfg`, он применяется как набор
-дефолтов целиком. CLI `format` и workspace-индекс также читают `exclude`;
-индекс дополнительно учитывает Git ignore. Formatter читает
+дефолтов целиком. CLI `format` читает `exclude`; workspace-индекс читает
+`index-exclude`, который по умолчанию наследует `exclude`, и дополнительно
+учитывает Git ignore. Пустой `index-exclude` оставляет исключённые из диагностик
+библиотеки доступными для hover/F12. После изменения области индекса выполните
+`index --force`. Formatter читает
 `insert-spaces` и `indent-size`; низкоуровневый `default_formatter.format(...)`
 остаётся чистой функцией от текста и явных параметров.
 

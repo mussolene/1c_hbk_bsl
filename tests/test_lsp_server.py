@@ -885,6 +885,65 @@ class TestHandlerFunctions:
         # No symbols found for this name → returns None or empty list
         assert result is None or result == []
 
+    def test_chained_workspace_call_has_hover_and_definition(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_definition, on_hover
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        library = tmp_path / "Library.bsl"
+        library.write_text(
+            "// Возвращает служебный модуль.\n"
+            "Функция УникальныйЧленЦепочки() Экспорт\n"
+            "    Возврат Неопределено;\n"
+            "КонецФункции\n",
+            encoding="utf-8",
+        )
+        assert ls.indexer.index_file(str(library))["symbols"] == 1
+
+        content = "ПолучитьФасад().УникальныйЧленЦепочки();\n"
+        caller = tmp_path / "Caller.bsl"
+        uri = caller.as_uri()
+        ls._docs[uri] = content
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.index("УникальныйЧленЦепочки") + 2
+
+        hover = on_hover(ls, params)
+        definition = on_definition(ls, params)
+
+        assert hover is not None
+        assert "Возвращает служебный модуль" in str(hover.contents)
+        assert definition and definition[0].target_uri == library.as_uri()
+        assert definition[0].target_selection_range.start.line == 1
+
+    def test_chained_workspace_call_does_not_resolve_private_symbol(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_definition, on_hover
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        library = tmp_path / "Library.bsl"
+        library.write_text(
+            "Функция УникальныйПриватныйЧлен()\n    Возврат Неопределено;\nКонецФункции\n",
+            encoding="utf-8",
+        )
+        assert ls.indexer.index_file(str(library))["symbols"] == 1
+
+        content = "НеизвестныйОбъект.УникальныйПриватныйЧлен();\n"
+        uri = (tmp_path / "Caller.bsl").as_uri()
+        ls._docs[uri] = content
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.index("УникальныйПриватныйЧлен") + 2
+
+        assert on_hover(ls, params) is None
+        assert on_definition(ls, params) is None
+
     def test_on_hover_empty_doc_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 

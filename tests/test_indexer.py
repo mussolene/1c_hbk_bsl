@@ -1033,6 +1033,21 @@ class TestIndexScopeAndLifecycle:
         assert str(included.resolve()) in files
         assert str(excluded.resolve()) not in files
 
+    def test_discovery_can_index_diagnostic_excluded_files(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        library = tmp_path / "library"
+        library.mkdir()
+        dependency = library / "module.bsl"
+        dependency.write_text("", encoding="utf-8")
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            'exclude = ["library"]\nindex-exclude = []\n', encoding="utf-8"
+        )
+
+        files = IncrementalIndexer._find_all_bsl_files(str(tmp_path))
+
+        assert str(dependency.resolve()) in files
+
     def test_symbols_mode_omits_call_graph(
         self, symbol_index: SymbolIndex, tmp_path: Path, monkeypatch
     ) -> None:

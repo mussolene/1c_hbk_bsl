@@ -96,3 +96,39 @@ def test_typo_candidates_from_materialized_nodes_match_tree_walk() -> None:
     materialized = collect_spell_candidates(tree=tree, nodes_by_type=nodes_by_type)
 
     assert materialized == walked
+
+
+def test_repeated_typo_fragment_emits_one_diagnostic(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
+        lambda word: word == "Атмена",
+    )
+    path = tmp_path / "Module.bsl"
+    path.write_text(
+        'Процедура Тест()\n    Сообщить("Атмена Атмена");\nКонецПроцедуры\n',
+        encoding="utf-8",
+    )
+
+    diagnostics = DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == "BSL256"
+
+
+def test_distinct_typo_fragments_in_one_candidate_emit_one_diagnostic(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "onec_hbk_bsl.analysis.bslls_typo.default_spell_fn",
+        lambda word: word in {"Атмена", "Варинаты"},
+    )
+    path = tmp_path / "Module.bsl"
+    path.write_text(
+        'Процедура Тест()\n    Сообщить("Атмена Варинаты");\nКонецПроцедуры\n',
+        encoding="utf-8",
+    )
+
+    diagnostics = DiagnosticEngine(select={"BSL256"}).check_file(str(path))
+
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == "BSL256"

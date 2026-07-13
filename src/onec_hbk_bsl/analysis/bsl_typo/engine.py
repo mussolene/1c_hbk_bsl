@@ -177,8 +177,12 @@ def check_candidates_for_typos(
     }
 
     issues: list[SpellIssue] = []
+    seen_candidates: set[SpellCandidate] = set()
     for candidate, part, normalized, forced in candidate_parts:
         if forced or checked.get(normalized, False):
+            if candidate in seen_candidates:
+                continue
+            seen_candidates.add(candidate)
             issues.append(SpellIssue(word=part, candidate=candidate))
             continue
     return issues

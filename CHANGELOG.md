@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Hover и переход к определению для пользовательских функций в цепочках вызовов
+  используют workspace symbol index; `index-exclude` позволяет индексировать
+  библиотеки независимо от диагностического `exclude`.
+
+## [0.8.40] - 2026-07-13
+
+### Added
+
+- Режимы workspace-индекса `off`, `symbols` и `full`, ограничение размера
+  индекса и команды `index --status`, `--compact` и `--clean`.
+
+### Changed
+
+- Обнаружение файлов индекса учитывает tracked и untracked non-ignored файлы
+  Git, а затем применяет проектные `exclude`.
+- Соединения SQLite, writer lock, WAL checkpoint и очистка повреждённого кэша
+  получили ограниченный и явно управляемый жизненный цикл.
+
+## [0.8.39] - 2026-07-10
+
+### Fixed
+
+- `onecHbkBsl.diagnostics.enabled` теперь действительно отключает выполнение
+  диагностических правил, не отключая save-time индексацию документа.
+- Публичная документация и настройки расширения приведены к проверенной
+  продуктовой поверхности без неработающих дублирующих параметров.
+
 ## [0.8.38] - 2026-07-09
 
 ### Added
@@ -406,7 +435,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.38...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.40...HEAD
+[0.8.40]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.39...v0.8.40
+[0.8.39]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.38...v0.8.39
 [0.8.38]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.18...v0.8.38
 [0.8.18]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.17...v0.8.18
 [0.8.17]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.16...v0.8.17

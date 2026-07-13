@@ -56,6 +56,8 @@ VSIX для macOS Apple Silicon, macOS Intel, Linux x64 и Windows x64. В VSIX 
 |---|---|
 | `onecHbkBsl.serverPath` | Явный путь к `onec-hbk-bsl` |
 | `onecHbkBsl.indexDbPath` | Путь к SQLite-индексу |
+| `onecHbkBsl.indexMode` | Детализация индекса: настройки проекта, `off`, `symbols` или `full` |
+| `onecHbkBsl.indexMaxBytes` | Ограничение размера индекса; `-1` читает конфиг проекта, `0` снимает ограничение |
 | `onecHbkBsl.logLevel` | Уровень логов сервера |
 | `onecHbkBsl.diagnostics.enabled` | Включить диагностики |
 | `onecHbkBsl.diagnostics.select` | Запускать только указанные правила (`BSL###` или compatible key) |
@@ -94,6 +96,13 @@ Command Palette:
 - `1C HBK BSL: Reindex Current File`
 - `1C HBK BSL: Show Index Status`
 - `1C HBK BSL: Show Server Log`
+
+Постоянный индекс также управляется из CLI: `onec-hbk-bsl index --status`
+показывает состояние, `--compact` выполняет checkpoint/VACUUM, а `--clean`
+удаляет кэш после остановки LSP/MCP. Проектные значения задаются через
+`index-mode` и `index-max-bytes` в `onec-hbk-bsl.toml`.
+`index-exclude` независимо ограничивает файлы навигации и по умолчанию наследует
+`exclude`; после его изменения выполните `Reindex Workspace`.
 
 ## Docker LSP
 

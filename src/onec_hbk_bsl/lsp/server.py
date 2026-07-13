@@ -997,6 +997,7 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
         return None
 
     origin_range = _word_range_at_position(content, pos.line, pos.character)
+    left_word = _left_word_at_position(content, pos.line, pos.character)
 
     # 1. Check local scope first (parameters, Перем, loop vars, assignments).
     #    Local variables shadow same-named globals — resolve them without index.
@@ -1035,6 +1036,8 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
 
     # 2. Workspace symbol index (procedures, functions, exported variables)
     symbols = ls.symbol_index.find_symbol(word, limit=20)
+    if left_word:
+        symbols = [symbol for symbol in symbols if symbol.get("is_export")]
     if not symbols:
         return None
 
@@ -1082,13 +1085,6 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
 # ---------------------------------------------------------------------------
 
 
-_KIND_RU: dict[str, str] = {
-    "procedure": "процедура",
-    "function": "функция",
-    "variable": "переменная",
-    "unknown": "символ",
-}
-
 _API_KIND_RU: dict[str, str] = {
     "class": "класс",
     "enum": "перечисление",
@@ -1099,6 +1095,27 @@ _API_KIND_RU: dict[str, str] = {
 
 def _hover_markdown(parts: list[str]) -> Hover:
     return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts)))
+
+
+def _workspace_symbol_hover(ls: BslLanguageServer, symbols: list[dict[str, Any]]) -> Hover:
+    sym = symbols[0]
+    sig = sym.get("signature") or sym["name"]
+    parts: list[str] = [f"```bsl\n{sig}\n```"]
+    doc = sym.get("doc_comment")
+    if doc:
+        parts.append(_format_doc_comment(doc))
+    if len(symbols) == 1:
+        file_name = Path(sym["file_path"]).name
+        parts.append(f"*Определено в* `{file_name}`, строка {sym['line']}")
+    else:
+        locations = "\n".join(
+            f"- `{Path(item['file_path']).name}`, строка {item['line']}" for item in symbols
+        )
+        parts.append(f"*Определено в {len(symbols)} местах:*\n{locations}")
+    caller_count = ls.symbol_index.find_callers_count(sym["name"])
+    if caller_count:
+        parts.append(f"*Вызывается в {caller_count} местах*")
+    return _hover_markdown(parts)
 
 
 def _format_doc_comment(raw: str) -> str:
@@ -1218,26 +1235,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
         else []
     )
     if symbols:
-        sym = symbols[0]
-        kind_ru = _KIND_RU.get(sym.get("kind", ""), "символ")
-        sig = sym.get("signature") or sym["name"]
-        parts: list[str] = [f"```bsl\n{sig}\n```"]
-        doc = sym.get("doc_comment")
-        if doc:
-            parts.append(_format_doc_comment(doc))
-        if len(symbols) == 1:
-            file_name = Path(sym["file_path"]).name
-            parts.append(f"*Определено в* `{file_name}`, строка {sym['line']}")
-        else:
-            locations = "\n".join(
-                f"- `{Path(s['file_path']).name}`, строка {s['line']}" for s in symbols
-            )
-            parts.append(f"*Определено в {len(symbols)} местах:*\n{locations}")
-        # Количество мест вызова (быстрый COUNT — без загрузки всех строк)
-        caller_count = ls.symbol_index.find_callers_count(word)
-        if caller_count:
-            parts.append(f"*Вызывается в {caller_count} местах*")
-        return _hover_markdown(parts)
+        return _workspace_symbol_hover(ls, symbols)
 
     # 2. Глобальная функция платформы 1С (не применимо к вызовам через точку)
     global_fn = ls.platform_api.find_global(word) if not left_word else None
@@ -1312,6 +1310,17 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
             parts.append(f"*Метод типов:* {type_names}")
         parts.append("*Встроенный метод платформы 1С*")
         return _hover_markdown(parts)
+
+    # 4b. Exported workspace functions may also be called as object members.
+    # Platform methods stay authoritative because their lookup runs first.
+    if left_word:
+        member_symbols = [
+            symbol
+            for symbol in ls.symbol_index.find_symbol(word, limit=5)
+            if symbol.get("is_export")
+        ]
+        if member_symbols:
+            return _workspace_symbol_hover(ls, member_symbols)
 
     # 5. Метаданные конфигурации 1С
     if hasattr(ls, "symbol_index") and ls.symbol_index.has_metadata():

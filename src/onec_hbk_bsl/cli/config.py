@@ -13,6 +13,7 @@ Supported keys
 select              list[str]   — run only these rule codes
 ignore              list[str]   — always-skip rule codes
 exclude             list[str]   — glob patterns for excluded paths
+index-exclude       list[str]   — index-only globs; defaults to exclude
 per-file-ignores    dict        — {"pattern": ["BSL001"]}
 format              str         — text | json | sarif
 jobs                int         — 0 = auto
@@ -79,13 +80,25 @@ class BslConfig:
         return list(self._data.get("exclude", []))
 
     @property
+    def index_exclude(self) -> list[str]:
+        return list(self._data.get("index-exclude", self.exclude))
+
+    @property
     def per_file_ignores(self) -> dict[str, list[str]]:
         return dict(self._data.get("per-file-ignores", {}))
 
     def is_excluded(self, file_path: str) -> bool:
         """Return True if *file_path* matches any exclude pattern."""
+        return self._matches_patterns(file_path, self.exclude)
+
+    def is_index_excluded(self, file_path: str) -> bool:
+        """Return True if *file_path* is excluded from the workspace symbol index."""
+        return self._matches_patterns(file_path, self.index_exclude)
+
+    @staticmethod
+    def _matches_patterns(file_path: str, patterns: list[str]) -> bool:
         p = Path(file_path)
-        for pattern in self.exclude:
+        for pattern in patterns:
             # Exact fnmatch on full path
             if fnmatch.fnmatch(str(p), pattern):
                 return True
