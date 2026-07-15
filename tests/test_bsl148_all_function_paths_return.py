@@ -94,6 +94,35 @@ def test_bsl148_anchor_points_to_function_identifier(tmp_path: Path) -> None:
     assert diags[0].severity == Severity.ERROR
 
 
+def test_bsl148_reuses_indexed_function_nodes(tmp_path: Path, monkeypatch) -> None:
+    from onec_hbk_bsl.analysis import diagnostics as diagnostics_module
+
+    original = diagnostics_module.bsl148_function_name_spans
+    observed_counts: list[int] = []
+
+    def wrapped(*args, **kwargs):
+        function_nodes = kwargs.get("function_nodes")
+        observed_counts.append(len(function_nodes) if function_nodes is not None else -1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(diagnostics_module, "bsl148_function_name_spans", wrapped)
+    path = tmp_path / "indexed_functions.bsl"
+    path.write_text(
+        "Функция Тест(Флаг)\n"
+        "    Если Флаг Тогда\n"
+        "        Возврат 1;\n"
+        "    ИначеЕсли Не Флаг Тогда\n"
+        "        Возврат 0;\n"
+        "    КонецЕсли;\n"
+        "КонецФункции\n",
+        encoding="utf-8",
+    )
+
+    DiagnosticEngine(select={"BSL148"}).check_file(str(path))
+
+    assert observed_counts == [1]
+
+
 def test_bsl148_simple_trailing_if_without_else_is_not_reported(tmp_path: Path) -> None:
     content = (
         "Функция Тест(Флаг)\n"

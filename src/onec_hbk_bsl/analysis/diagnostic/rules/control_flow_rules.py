@@ -353,78 +353,79 @@ def implicit_exit_reachable(
     return True
 
 
-def _fn_subtree_has_parse_error(fn_def: Any) -> bool:
-    def walk(node: Any) -> bool:
-        if getattr(node, "type", None) == "ERROR":
-            return True
-        if bool(getattr(node, "is_missing", False)):
-            return True
-        return any(walk(child) for child in getattr(node, "children", []) or [])
+def _fn_parse_error_and_has_return(fn_def: Any) -> tuple[bool, bool]:
+    """Collect BSL148 eligibility facts in one function-subtree traversal."""
+    if getattr(fn_def, "type", None) == "ERROR" or bool(getattr(fn_def, "is_missing", False)):
+        return True, False
 
-    return walk(fn_def)
-
-
-def _fn_has_return(fn_def: Any) -> bool:
-    found = False
-
-    def walk(node: Any) -> None:
-        nonlocal found
+    has_return = False
+    stack = [(child, True) for child in reversed(getattr(fn_def, "children", []) or [])]
+    while stack:
+        node, contributes_return = stack.pop()
         node_type = getattr(node, "type", None)
-        if node_type in {"function_definition", "procedure_definition"}:
-            # Nested routines do not contribute to outer function return paths.
-            return
-        if node_type == "return_statement":
-            found = True
-            return
-        for child in getattr(node, "children", []) or []:
-            walk(child)
-
-    for child in _function_body_children(fn_def):
-        walk(child)
-    return found
+        if node_type == "ERROR" or bool(getattr(node, "is_missing", False)):
+            return True, has_return
+        if contributes_return and node_type == "return_statement":
+            has_return = True
+            continue
+        child_contributes = contributes_return and node_type not in {
+            "function_definition",
+            "procedure_definition",
+        }
+        stack.extend(
+            (child, child_contributes) for child in reversed(getattr(node, "children", []) or [])
+        )
+    return False, has_return
 
 
 def bsl148_function_name_spans(
     tree_or_root: Any,
     *,
     loops_executed_at_least_once: bool = True,
+    function_nodes: list[Any] | tuple[Any, ...] | None = None,
 ) -> list[tuple[int, int, int]]:
     root = getattr(tree_or_root, "root_node", None)
     if root is None:
         root = tree_or_root
 
+    if function_nodes is None:
+        function_nodes = []
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            if getattr(node, "type", None) == "function_definition":
+                function_nodes.append(node)
+            stack.extend(reversed(getattr(node, "children", []) or []))
+
     out: list[tuple[int, int, int]] = []
-
-    def scan(node: Any) -> None:
-        if getattr(node, "type", None) == "function_definition":
-            if not _fn_subtree_has_parse_error(node) and _fn_has_return(node):
-                body = _function_body_children(node)
-                if implicit_exit_reachable(
-                    body,
-                    loops_executed_at_least_once=loops_executed_at_least_once,
-                    at_top_level=True,
-                ):
-                    ident = _identifier_span(node)
-                    if ident is not None:
-                        # Tree root text can be degraded for very large files in some
-                        # parser states; use function-local header text for stable
-                        # byte->LSP conversion of identifier anchor.
-                        raw_fn_text = getattr(node, "text", b"")
-                        if isinstance(raw_fn_text, bytes):
-                            fn_header = raw_fn_text.decode("utf-8", errors="replace").splitlines()
-                            line_text = fn_header[0] if fn_header else ""
-                        else:
-                            fn_header = str(raw_fn_text or "").splitlines()
-                            line_text = fn_header[0] if fn_header else ""
-                        out.append(
-                            (
-                                ident.line0 + 1,
-                                utf8_byte_offset_to_lsp_character(line_text, ident.col0),
-                                utf8_byte_offset_to_lsp_character(line_text, ident.col1),
-                            )
-                        )
-        for child in getattr(node, "children", []) or []:
-            scan(child)
-
-    scan(root)
+    for node in function_nodes:
+        has_parse_error, has_return = _fn_parse_error_and_has_return(node)
+        if has_parse_error or not has_return:
+            continue
+        body = _function_body_children(node)
+        if not implicit_exit_reachable(
+            body,
+            loops_executed_at_least_once=loops_executed_at_least_once,
+            at_top_level=True,
+        ):
+            continue
+        ident = _identifier_span(node)
+        if ident is None:
+            continue
+        # Tree root text can be degraded for very large files in some parser
+        # states; use function-local header text for stable LSP conversion.
+        raw_fn_text = getattr(node, "text", b"")
+        if isinstance(raw_fn_text, bytes):
+            fn_header = raw_fn_text.decode("utf-8", errors="replace").splitlines()
+            line_text = fn_header[0] if fn_header else ""
+        else:
+            fn_header = str(raw_fn_text or "").splitlines()
+            line_text = fn_header[0] if fn_header else ""
+        out.append(
+            (
+                ident.line0 + 1,
+                utf8_byte_offset_to_lsp_character(line_text, ident.col0),
+                utf8_byte_offset_to_lsp_character(line_text, ident.col1),
+            )
+        )
     return out

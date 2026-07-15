@@ -6777,10 +6777,17 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 )
                 for fact in snapshot.duplicate_region_facts
             ]
+        function_nodes = None
+        if context.ts_nodes_for_types is not None:
+            function_nodes = context.ts_nodes_for_types(
+                context.tree,
+                {"function_definition"},
+            )["function_definition"]
         return model.validate_function_paths_return(
             tree=context.tree,
             bsl148_function_name_spans=_diag.bsl148_function_name_spans,
             loops_executed_at_least_once=engine.bsl148_loops_executed_at_least_once,
+            function_nodes=function_nodes,
         )
 
 

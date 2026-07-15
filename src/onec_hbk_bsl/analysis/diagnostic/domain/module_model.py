@@ -573,14 +573,21 @@ class ModuleModel:
         return diags
 
     def validate_function_paths_return(
-        self, *, tree, bsl148_function_name_spans, loops_executed_at_least_once: bool
+        self,
+        *,
+        tree,
+        bsl148_function_name_spans,
+        loops_executed_at_least_once: bool,
+        function_nodes=None,
     ) -> list[Diagnostic]:
         root = getattr(tree, "root_node", None)
         if root is None or not isinstance(getattr(root, "text", None), (bytes, type(None))):
             return []
         diags: list[Diagnostic] = []
         for line0, col0, col1 in bsl148_function_name_spans(
-            root, loops_executed_at_least_once=loops_executed_at_least_once
+            root,
+            loops_executed_at_least_once=loops_executed_at_least_once,
+            function_nodes=function_nodes,
         ):
             diags.append(
                 Diagnostic(
