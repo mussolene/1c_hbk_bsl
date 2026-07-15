@@ -75,14 +75,44 @@ def ts_node_text(node: Any) -> str:
     return t.decode("utf-8", errors="replace") if isinstance(t, bytes) else str(t)
 
 
+def iter_ts_nodes(node: Any):
+    """Yield a tree-sitter subtree in depth-first pre-order.
+
+    ``TreeCursor`` keeps traversal in the native binding and avoids creating a
+    Python generator frame for every CST node.  Lightweight test doubles do not
+    expose ``walk()``, so they use an iterative stack with identical ordering.
+    """
+    walk = getattr(node, "walk", None)
+    if callable(walk):
+        cursor = walk()
+        done = False
+        while not done:
+            yield cursor.node
+            if cursor.goto_first_child():
+                continue
+            while True:
+                if cursor.goto_next_sibling():
+                    break
+                if not cursor.goto_parent():
+                    done = True
+                    break
+        return
+
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        yield current
+        children = getattr(current, "children", None) or ()
+        stack.extend(reversed(children))
+
+
 def ts_walk_preorder(
     node: Any,
     visit: Callable[[Any], None],
 ) -> None:
     """Depth-first pre-order walk."""
-    visit(node)
-    for c in getattr(node, "children", []) or []:
-        ts_walk_preorder(c, visit)
+    for current in iter_ts_nodes(node):
+        visit(current)
 
 
 def _root_source_lines(node: Any) -> list[str]:

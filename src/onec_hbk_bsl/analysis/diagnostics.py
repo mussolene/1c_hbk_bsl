@@ -75,6 +75,7 @@ from onec_hbk_bsl.analysis.diagnostic.rules.control_flow_rules import (
 )
 from onec_hbk_bsl.analysis.diagnostic.cst import (
     diagnostics_bsl004_from_tree,
+    iter_ts_nodes,
     loop_body_line_indices_0,
     ts_elseif_then_branch_empty,
     ts_if_main_then_branch_empty,
@@ -2896,18 +2897,7 @@ def _ts_node_text(node: Any) -> str:
 
 def _ts_walk(node: Any):
     """Yield *node* and all descendants depth-first."""
-    yield node
-    child_count = getattr(node, "child_count", None)
-    child_at = getattr(node, "child", None)
-    children = (
-        (child_at(index) for index in range(child_count))
-        if isinstance(child_count, int) and callable(child_at)
-        else (getattr(node, "children", []) or [])
-    )
-    for child in children:
-        if child is None:
-            continue
-        yield from _ts_walk(child)
+    yield from iter_ts_nodes(node)
 
 
 def _ts_child_of_type(node: Any, node_type: str) -> Any | None:

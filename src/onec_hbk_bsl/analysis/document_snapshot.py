@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from onec_hbk_bsl.analysis.call_graph import Call
-from onec_hbk_bsl.analysis.diagnostic.cst import tree_has_errors
+from onec_hbk_bsl.analysis.diagnostic.cst import iter_ts_nodes, tree_has_errors
 from onec_hbk_bsl.analysis.diagnostic.helpers.proc_helpers import (
     is_typical_client_command_handler,
     proc_containing_line,
@@ -1045,9 +1045,7 @@ def _iter_ts_children(node: Any):
 
 
 def _ts_walk(node: Any):
-    yield node
-    for child in _iter_ts_children(node):
-        yield from _ts_walk(child)
+    yield from iter_ts_nodes(node)
 
 
 def _ts_child_of_type(node: Any, child_type: str) -> Any | None:

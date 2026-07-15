@@ -4,6 +4,7 @@ import os
 from types import SimpleNamespace
 
 import onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner as runtime_runner
+from onec_hbk_bsl.analysis.diagnostic.cst import iter_ts_nodes
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import FileSystemAccessRule
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
@@ -19,6 +20,29 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 def _worker_pid() -> list[int]:
     return [os.getpid()]
+
+
+def test_iter_ts_nodes_preserves_tree_sitter_preorder() -> None:
+    tree = BslParser().parse_content("Процедура Тест()\nКонецПроцедуры\n", file_path="Module.bsl")
+
+    actual = [(node.type, node.start_byte, node.end_byte) for node in iter_ts_nodes(tree.root_node)]
+
+    def recursive(node):
+        yield node
+        for child in node.children:
+            yield from recursive(child)
+
+    expected = [(node.type, node.start_byte, node.end_byte) for node in recursive(tree.root_node)]
+    assert actual == expected
+
+
+def test_iter_ts_nodes_supports_nodes_without_tree_cursor() -> None:
+    leaf_a = SimpleNamespace(name="a", children=[])
+    leaf_b = SimpleNamespace(name="b", children=[])
+    branch = SimpleNamespace(name="branch", children=[leaf_b])
+    root = SimpleNamespace(name="root", children=[leaf_a, branch])
+
+    assert [node.name for node in iter_ts_nodes(root)] == ["root", "a", "branch", "b"]
 
 
 def test_process_safe_tasks_run_in_process_pool_and_preserve_order(monkeypatch) -> None:

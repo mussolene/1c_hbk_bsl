@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import onec_hbk_bsl.analysis.diagnostics as _diag
+from onec_hbk_bsl.analysis.diagnostic.cst import iter_ts_nodes
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.storage import DiagnosticStorage
 from onec_hbk_bsl.analysis.diagnostic.domain import ModuleModel
@@ -189,18 +190,7 @@ def _ts_node_text(node: Any) -> str:
 
 
 def _ts_walk(node: Any):
-    yield node
-    child_count = getattr(node, "child_count", None)
-    child_at = getattr(node, "child", None)
-    children = (
-        (child_at(index) for index in range(child_count))
-        if isinstance(child_count, int) and callable(child_at)
-        else (getattr(node, "children", []) or [])
-    )
-    for child in children:
-        if child is None:
-            continue
-        yield from _ts_walk(child)
+    yield from iter_ts_nodes(node)
 
 
 def _ts_children(node: Any) -> list[Any]:
