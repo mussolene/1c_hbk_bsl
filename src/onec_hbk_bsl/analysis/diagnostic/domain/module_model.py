@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -2145,7 +2146,7 @@ class ModuleModel:
         )
 
         for proc in procs:
-            used_casefold: set[str] | None = None
+            used_casefold_factory = None
             if tree_is_ts:
                 key = (proc.name, proc.start_idx, proc.kind)
                 proc_node = (
@@ -2154,12 +2155,18 @@ class ModuleModel:
                     else find_proc_definition_node_fn(tree, proc)
                 )
                 if proc_node is not None:
-                    used_casefold = collect_identifier_casefolds_in_proc_body_fn(proc_node)
+                    candidates = frozenset(name.casefold() for name in proc.params if name)
+                    used_casefold_factory = partial(
+                        collect_identifier_casefolds_in_proc_body_fn,
+                        proc_node,
+                        candidate_casefolds=candidates,
+                    )
             model = procedure_model_from_proc_info_fn(self.path, proc)
             diags.extend(
                 model.validate_unused_parameters(
                     lines,
-                    used_casefold=used_casefold,
+                    used_casefold=None,
+                    used_casefold_factory=used_casefold_factory,
                 )
             )
         return diags

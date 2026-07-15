@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic, Severity
@@ -359,6 +360,7 @@ class ProcedureModel:
         lines: list[str],
         *,
         used_casefold: set[str] | None,
+        used_casefold_factory: Callable[[], set[str]] | None = None,
     ) -> list[Diagnostic]:
         if not self.params or re.fullmatch(
             r"(?:ПриСозданииОбъекта|OnObjectCreate)", self.name, re.IGNORECASE
@@ -367,6 +369,8 @@ class ProcedureModel:
         body_lines = lines[self.start_idx + 1 : self.end_idx]
         if not any(line.strip() and not line.lstrip().startswith("//") for line in body_lines):
             return []
+        if used_casefold is None and used_casefold_factory is not None:
+            used_casefold = used_casefold_factory()
         body_text: str | None = None
         diags: list[Diagnostic] = []
 

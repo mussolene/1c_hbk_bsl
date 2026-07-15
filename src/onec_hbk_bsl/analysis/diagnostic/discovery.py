@@ -201,23 +201,33 @@ def export_description_anchor_line_idx(lines: list[str], header_idx: int) -> int
     return None
 
 
-def collect_identifier_casefolds_in_proc_body(proc_node: Any) -> set[str]:
+def collect_identifier_casefolds_in_proc_body(
+    proc_node: Any,
+    *,
+    candidate_casefolds: frozenset[str] | set[str] | None = None,
+) -> set[str]:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
     out: set[str] = set()
+    remaining = set(candidate_casefolds) if candidate_casefolds is not None else None
+    if remaining == set():
+        return out
 
-    def walk(n: Any) -> None:
-        if n.type == "parameters":
-            return
-        if n.type == "identifier":
-            t = _diag._ts_node_text(n)
-            if t:
-                out.add(t.casefold())
-        for c in n.children:
-            walk(c)
-
-    for child in proc_node.children:
-        if child.type == "parameters":
+    stack = list(reversed(getattr(proc_node, "children", ()) or ()))
+    while stack:
+        node = stack.pop()
+        if getattr(node, "type", None) == "parameters":
             continue
-        walk(child)
+        if getattr(node, "type", None) == "identifier":
+            text = _diag._ts_node_text(node)
+            if text:
+                identifier = text.casefold()
+                if remaining is None:
+                    out.add(identifier)
+                elif identifier in remaining:
+                    out.add(identifier)
+                    remaining.remove(identifier)
+                    if not remaining:
+                        break
+        stack.extend(reversed(getattr(node, "children", ()) or ()))
     return out

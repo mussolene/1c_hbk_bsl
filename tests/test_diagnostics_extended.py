@@ -9727,6 +9727,23 @@ class TestBsl060DoubleNegation:
 
 
 class TestBsl062UnusedParameter:
+    def test_no_parameter_method_does_not_collect_body_identifiers(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import onec_hbk_bsl.analysis.diagnostics as diagnostics_module
+
+        def unexpected_collection(*args, **kwargs):
+            raise AssertionError("identifier facts must stay lazy for methods without parameters")
+
+        monkeypatch.setattr(
+            diagnostics_module,
+            "_collect_identifier_casefolds_in_proc_body",
+            unexpected_collection,
+        )
+        content = "Процедура Тест()\n    А = 1;\nКонецПроцедуры\n"
+
+        assert _check(content, tmp_path, select={"BSL062"}) == []
+
     def test_synthetic_fixture_reports_unused_param_exact_range(self) -> None:
         path = Path("tests/fixtures/diag_synthetic/bsl062_unused_parameter.bsl")
         diags = [
