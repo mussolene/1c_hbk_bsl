@@ -23,10 +23,11 @@ Exit codes
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import os
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -152,7 +153,7 @@ def check(
         format:          Output format: ``text``, ``json``, or ``sarif``.
         select:          If provided, run only these rule codes.
         ignore:          Rule codes to skip.
-        jobs:            Worker threads (0 = auto-detect, 1 = serial).
+        jobs:            Worker budget (0 = adaptive, 1 = serial).
         exit_zero:       Always return 0 (never fail even if issues found).
         baseline:        Path to baseline JSON — suppress known issues.
         update_baseline: Write all found issues to this path, then exit 0.
@@ -328,11 +329,49 @@ _PROGRESS_THRESHOLD = 20  # show progress bar only for larger batches
 
 
 def _auto_check_workers() -> int:
-    # Diagnostics are mostly CPU-bound and already use targeted process-safe
-    # subtasks for the few large-file hotspots. Threading whole-file checks adds
-    # scheduler overhead on large 1C workspaces, so the adaptive default stays
-    # serial unless the caller explicitly requests --jobs N.
+    # Small files stay serial by default. Multiple large files use a separate
+    # fork-only hybrid path that divides the process budget across files/rules.
     return 1
+
+
+def _large_file_process_budget() -> int:
+    raw = os.environ.get("BSL_DIAG_PARALLEL_WORKERS", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return 1
+    return max(1, min(6, os.cpu_count() or 1))
+
+
+def _check_large_file_in_process(
+    fp: str,
+    *,
+    select: set[str] | None,
+    ignore: set[str] | None,
+    engine_kw: dict[str, Any],
+    inner_workers: int,
+    use_index: bool,
+    index_cwd: str,
+) -> list[Diagnostic]:
+    os.environ["BSL_DIAG_PARALLEL_WORKERS"] = str(inner_workers)
+    symbol_index: SymbolIndex | None = None
+    if use_index:
+        try:
+            symbol_index = SymbolIndex(db_path=resolve_index_db_path(index_cwd))
+        except Exception:
+            symbol_index = None
+    try:
+        return DiagnosticEngine(
+            select=select,
+            ignore=ignore or None,
+            symbol_index=symbol_index,
+            **engine_kw,
+        ).check_file(fp)
+    finally:
+        close = getattr(symbol_index, "close", None)
+        if callable(close):
+            close()
 
 
 def _run_checks(
@@ -358,18 +397,29 @@ def _run_checks(
     engine_kw = cfg.engine_kwargs()
 
     shared_symbol_index: SymbolIndex | None = None
-    if use_index:
-        try:
-            shared_symbol_index = SymbolIndex(db_path=resolve_index_db_path(os.getcwd()))
-        except Exception:
-            shared_symbol_index = None
+    shared_symbol_index_initialized = False
+    shared_symbol_index_lock = threading.Lock()
+
+    def _get_shared_symbol_index() -> SymbolIndex | None:
+        nonlocal shared_symbol_index, shared_symbol_index_initialized
+        if shared_symbol_index_initialized or not use_index:
+            return shared_symbol_index
+        with shared_symbol_index_lock:
+            if shared_symbol_index_initialized:
+                return shared_symbol_index
+            try:
+                shared_symbol_index = SymbolIndex(db_path=resolve_index_db_path(os.getcwd()))
+            except Exception:
+                shared_symbol_index = None
+            shared_symbol_index_initialized = True
+        return shared_symbol_index
 
     def _make_engine(extra_ignore: set[str] | None = None) -> DiagnosticEngine:
         effective_ignore = (ignore or set()) | (extra_ignore or set())
         return DiagnosticEngine(
             select=select,
             ignore=effective_ignore or None,
-            symbol_index=shared_symbol_index,
+            symbol_index=_get_shared_symbol_index(),
             **engine_kw,
         )
 
@@ -380,7 +430,13 @@ def _run_checks(
     use_progress = show_progress and len(files) >= _PROGRESS_THRESHOLD
 
     large_file_threshold = _large_file_serial_bytes()
-    if workers > 1 and large_file_threshold > 0 and len(files) > 1:
+    auto_large_file_processes = (
+        jobs == 0
+        and large_file_threshold > 0
+        and len(files) > 1
+        and "fork" in mp.get_all_start_methods()
+    )
+    if (workers > 1 or auto_large_file_processes) and large_file_threshold > 0 and len(files) > 1:
         large_files: list[str] = []
         small_files: list[str] = []
         for fp in files:
@@ -422,15 +478,56 @@ def _run_checks(
             )
 
         if large_files:
-            engine = _make_engine()
-            for fp in large_files:
-                try:
-                    all_diagnostics.extend(_check_with_engine(engine, fp))
-                except Exception as exc:
-                    console.print(f"[red]Error checking {fp}: {exc}[/red]")
-                    error_occurred = True
-                if task_id is not None and progress_ctx is not None:
-                    progress_ctx.advance(task_id)
+            process_budget = _large_file_process_budget()
+            file_workers = min(3, len(large_files), max(1, process_budget // 2))
+            if auto_large_file_processes and file_workers > 1:
+                inner_workers = max(1, process_budget // file_workers)
+                fallback_engine: DiagnosticEngine | None = None
+                with ProcessPoolExecutor(
+                    max_workers=file_workers,
+                    mp_context=mp.get_context("fork"),
+                ) as executor:
+                    futures = {}
+                    for fp in large_files:
+                        per_file_ignore = (ignore or set()) | cfg.get_file_ignores(fp)
+                        future = executor.submit(
+                            _check_large_file_in_process,
+                            fp,
+                            select=select,
+                            ignore=per_file_ignore,
+                            engine_kw=engine_kw,
+                            inner_workers=inner_workers,
+                            use_index=use_index,
+                            index_cwd=os.getcwd(),
+                        )
+                        futures[future] = fp
+                    for future in as_completed(futures):
+                        fp = futures[future]
+                        try:
+                            all_diagnostics.extend(future.result())
+                        except Exception as exc:
+                            try:
+                                if fallback_engine is None:
+                                    fallback_engine = _make_engine()
+                                all_diagnostics.extend(_check_with_engine(fallback_engine, fp))
+                            except Exception as fallback_exc:
+                                console.print(
+                                    f"[red]Error checking {fp}: {exc}; "
+                                    f"local retry failed: {fallback_exc}[/red]"
+                                )
+                                error_occurred = True
+                        if task_id is not None and progress_ctx is not None:
+                            progress_ctx.advance(task_id)
+            else:
+                engine = _make_engine()
+                for fp in large_files:
+                    try:
+                        all_diagnostics.extend(_check_with_engine(engine, fp))
+                    except Exception as exc:
+                        console.print(f"[red]Error checking {fp}: {exc}[/red]")
+                        error_occurred = True
+                    if task_id is not None and progress_ctx is not None:
+                        progress_ctx.advance(task_id)
 
         if workers == 1 or len(small_files) <= 1:
             engine = _make_engine()

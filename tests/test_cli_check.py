@@ -132,6 +132,21 @@ class TestRunChecks:
         assert not err
         assert len(diags) == 2
 
+    def test_auto_jobs_hybridize_large_files(self, tmp_path: Path, monkeypatch) -> None:
+        files = [
+            str(_write_bsl(tmp_path, f"large{i}.bsl", 'Пароль = "секрет123";\n')) for i in range(2)
+        ]
+        monkeypatch.setenv("BSL_DIAG_LARGE_FILE_SERIAL_BYTES", "1")
+        monkeypatch.setenv("BSL_DIAG_PARALLEL_WORKERS", "4")
+
+        diags, err = _run_checks(files, select={"BSL012"}, ignore=None, jobs=0)
+
+        assert not err
+        assert [(Path(diag.file).name, diag.code) for diag in diags] == [
+            ("large0.bsl", "BSL012"),
+            ("large1.bsl", "BSL012"),
+        ]
+
     def test_no_files_returns_empty(self) -> None:
         diags, err = _run_checks([], select=None, ignore=None, jobs=1)
         assert diags == []
