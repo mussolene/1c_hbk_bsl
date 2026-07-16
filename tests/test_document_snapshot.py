@@ -206,3 +206,20 @@ def test_regions_require_tree_sitter_snapshot(tmp_path: Path) -> None:
     snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content, tree=object())
 
     assert snapshot.regions == []
+
+
+def test_global_method_call_facts_are_reused_from_snapshot(tmp_path: Path) -> None:
+    from onec_hbk_bsl.analysis.diagnostic.cst import iter_ts_nodes
+    from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+
+    content = 'Сообщить("Первый");\nСообщить("Второй");\n'
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+    engine = DiagnosticEngine()
+    engine._current_snapshot = snapshot
+    nodes = snapshot.ts_nodes_for_types({"method_call"}, walker=iter_ts_nodes)["method_call"]
+
+    first = engine._global_method_calls_from_nodes(nodes, snapshot.lines)
+    second = engine._global_method_calls_from_nodes(nodes, snapshot.lines)
+
+    assert len(first) == 2
+    assert second is first

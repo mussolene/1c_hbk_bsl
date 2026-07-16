@@ -1761,6 +1761,7 @@ class DocumentSnapshot:
     _select_top_without_order_facts: list[LineDiagnosticFact] | None = None
     _line_too_long_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
     _runtime_call_context_cache: Any | None = None
+    _global_method_calls_cache: Any | None = None
     _ternary_spans_cache: Any | None = None
     _cache_lock: threading.RLock = field(
         default_factory=threading.RLock,
@@ -3042,6 +3043,14 @@ class DocumentSnapshot:
     def set_runtime_call_context(self, context: Any) -> None:
         """Store shared runtime call context for this snapshot."""
         self._runtime_call_context_cache = context
+
+    def get_global_method_calls(self) -> Any | None:
+        """Return cached global method-call facts if they have been built."""
+        return self._global_method_calls_cache
+
+    def set_global_method_calls(self, calls: Any) -> None:
+        """Store global method-call facts shared by runtime rules."""
+        self._global_method_calls_cache = calls
 
     def get_ternary_spans(self) -> Any | None:
         """Return cached textual ternary spans if they have been built."""

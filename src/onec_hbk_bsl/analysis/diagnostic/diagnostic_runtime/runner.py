@@ -976,6 +976,16 @@ def append_diagnostic_runtime_rule_tasks(
     tree: Any,
     snapshot: Any | None,
 ) -> None:
+    enabled_rule_codes = engine._enabled_rule_codes()
+    if engine._ts_nodes_for_types is not None:
+        runtime_cst_node_types = _runtime_cst_node_types_for_codes(enabled_rule_codes)
+        if enabled_rule_codes:
+            runtime_cst_node_types.add("string")
+        if runtime_cst_node_types:
+            engine._ts_nodes_for_types(tree, runtime_cst_node_types)
+    runtime_call_context = None
+    if enabled_rule_codes.intersection({"BSL066", "BSL097", "BSL217", "BSL218", "BSL277"}):
+        runtime_call_context = engine._runtime_call_context(tree, lines)
     context = DiagnosticDocumentContext(
         path=path,
         content=content,
@@ -984,7 +994,7 @@ def append_diagnostic_runtime_rule_tasks(
         snapshot=snapshot,
         max_bool_ops=int(getattr(engine, "max_bool_ops", 3)),
         bsl036_enabled=bool(engine._rule_enabled("BSL036")),
-        runtime_call_context=None,
+        runtime_call_context=runtime_call_context,
         ts_nodes_for_types=engine._ts_nodes_for_types,
         global_method_calls_from_nodes=engine._global_method_calls_from_nodes,
         diagnostics_engine=engine,
@@ -996,13 +1006,6 @@ def append_diagnostic_runtime_rule_tasks(
     def add_task(codes: tuple[str, ...], fn: Callable[[], list[Diagnostic]]) -> None:
         if codes:
             rule_tasks.append(("+".join(codes), fn))
-
-    if context.ts_nodes_for_types is not None:
-        runtime_cst_node_types = _runtime_cst_node_types_for_codes(engine._enabled_rule_codes())
-        if engine._enabled_rule_codes():
-            runtime_cst_node_types.add("string")
-        if runtime_cst_node_types:
-            context.ts_nodes_for_types(context.tree, runtime_cst_node_types)
 
     def add_aggregated_query_tasks() -> None:
         query_text_191_201 = enabled_codes(_QUERY_TEXT_191_201_CODES)

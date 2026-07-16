@@ -439,6 +439,11 @@ class DiagnosticEngine:
         self, method_call_nodes: list[Any], line_texts: list[str]
     ) -> list[dict[str, Any]]:
         """Collect global method calls from an already materialised ``method_call`` node list."""
+        snapshot = self._current_snapshot
+        if snapshot is not None and getattr(snapshot, "lines", None) is line_texts:
+            cached = snapshot.get_global_method_calls()
+            if cached is not None:
+                return cached
         out: list[dict[str, Any]] = []
         for node in method_call_nodes:
             if getattr(getattr(node, "parent", None), "type", None) in {
@@ -459,6 +464,8 @@ class DiagnosticEngine:
                     "end_character": span[2],
                 }
             )
+        if snapshot is not None and getattr(snapshot, "lines", None) is line_texts:
+            snapshot.set_global_method_calls(out)
         return out
 
     def _ts_nodes_for_types(self, tree: Any, node_types: set[str]) -> dict[str, list[Any]]:
