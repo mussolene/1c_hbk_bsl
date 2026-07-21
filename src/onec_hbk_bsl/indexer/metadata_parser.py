@@ -519,6 +519,10 @@ def _extract_type_info(elem: ET.Element) -> str:
     e.g. <Type><v8:Type>cfg:CatalogRef.Организации</v8:Type></Type>. The
     <TypeDescription><Types> wrapper shape is also handled in case it occurs
     in other 1C artifacts this parser consumes.
+
+    The result is not length-capped: composite reference types can list many
+    target objects and truncating mid-token would corrupt an otherwise valid
+    object name (see tmp/onec-hbk-bsl-issue-type-info-120-char-truncation.md).
     """
     props = _find_child(elem, "Properties")
     if props is None:
@@ -534,7 +538,7 @@ def _extract_type_info(elem: ET.Element) -> str:
         for child in source
         if _strip_ns(child.tag) == "Type" and (child.text or "").strip()
     ]
-    return " ".join(tokens)[:120]
+    return " ".join(tokens)
 
 
 # -----------------------------------------------------------------------
@@ -687,7 +691,7 @@ def _extract_form_attribute_type_info(attr: ET.Element) -> str:
     text_parts = [
         (node.text or "").strip() for node in type_elem.iter() if (node.text or "").strip()
     ]
-    return " ".join(text_parts)[:120]
+    return " ".join(text_parts)
 
 
 # -----------------------------------------------------------------------
