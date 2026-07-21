@@ -337,9 +337,27 @@ class TestMetadataConfigurationSnapshot:
         )
         catalogs = root / "Catalogs"
         catalogs.mkdir()
+        # Composite type with enough reference targets to push the joined
+        # type_info string past 120 chars, to prove long values aren't truncated.
+        wide_composite_targets = [
+            "Организации",
+            "Контрагенты",
+            "ДоговорыКонтрагентов",
+            "ФизическиеЛица",
+            "СтруктурныеПодразделения",
+            "Пользователи",
+        ]
+        wide_composite_xml = "".join(
+            f"<v8:Type>cfg:CatalogRef.{name}</v8:Type>" for name in wide_composite_targets
+        )
+        expected_wide_composite = " ".join(
+            f"cfg:CatalogRef.{name}" for name in wide_composite_targets
+        )
+        assert len(expected_wide_composite) > 120
+
         (catalogs / "Контрагенты.xml").write_text(
-            """\
-<MetaDataObject>
+            f"""\
+<MetaDataObject xmlns:v8="http://v8.1c.ru/8.3/MDClasses">
   <Catalog uuid="catalog-uuid">
     <Properties>
       <Name>Контрагенты</Name>
@@ -349,7 +367,16 @@ class TestMetadataConfigurationSnapshot:
       <Attribute>
         <Properties>
           <Name>ИНН</Name>
-          <Type><TypeDescription><Types><Type>String</Type></Types></TypeDescription></Type>
+          <Type>
+            <v8:Type>xs:string</v8:Type>
+            <v8:StringQualifiers><v8:Length>12</v8:Length></v8:StringQualifiers>
+          </Type>
+        </Properties>
+      </Attribute>
+      <Attribute>
+        <Properties>
+          <Name>Ответственный</Name>
+          <Type>{wide_composite_xml}</Type>
         </Properties>
       </Attribute>
       <TabularSection>
@@ -358,7 +385,10 @@ class TestMetadataConfigurationSnapshot:
           <Attribute>
             <Properties>
               <Name>Телефон</Name>
-              <Type><TypeDescription><Types><Type>String</Type></Types></TypeDescription></Type>
+              <Type>
+                <v8:Type>cfg:CatalogRef.Контрагенты</v8:Type>
+                <v8:Type>cfg:CatalogRef.Организации</v8:Type>
+              </Type>
             </Properties>
           </Attribute>
         </ChildObjects>
@@ -397,9 +427,17 @@ class TestMetadataConfigurationSnapshot:
         assert catalog.name == "Контрагенты"
         assert catalog.type == "Catalog"
         assert catalog.uuid == "catalog-uuid"
-        assert [attr.name for attr in catalog.attributes] == ["ИНН"]
+        assert [attr.name for attr in catalog.attributes] == ["ИНН", "Ответственный"]
+        assert catalog.attributes[0].type_info == "xs:string"
+        # Wide composite type_info must not be cut mid-token at 120 chars.
+        assert catalog.attributes[1].type_info == expected_wide_composite
+        assert len(catalog.attributes[1].type_info) > 120
         assert [table.name for table in catalog.table_parts] == ["Контакты"]
         assert [attr.name for attr in catalog.table_parts[0].attributes] == ["Телефон"]
+        assert (
+            catalog.table_parts[0].attributes[0].type_info
+            == "cfg:CatalogRef.Контрагенты cfg:CatalogRef.Организации"
+        )
         assert [form.name for form in catalog.forms] == ["ФормаЭлемента"]
         assert [attr.name for attr in catalog.forms[0].attributes] == ["Объект"]
         assert [command.name for command in catalog.forms[0].commands] == ["Записать"]
@@ -408,11 +446,15 @@ class TestMetadataConfigurationSnapshot:
         legacy = crawl_config(root)
         assert [(member.name, member.kind) for member in legacy[0].members] == [
             ("ИНН", "attribute"),
+            ("Ответственный", "attribute"),
             ("Контакты", "tabular_section"),
             ("Контакты.Телефон", "ts_attribute"),
             ("Объект", "form_attribute"),
             ("Записать", "form_command"),
         ]
+        responsible = next(m for m in legacy[0].members if m.name == "Ответственный")
+        assert responsible.type_info == expected_wide_composite
+        assert len(responsible.type_info) > 120
 
 
 class TestSqliteProfile:

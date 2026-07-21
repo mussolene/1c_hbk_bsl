@@ -680,7 +680,7 @@ def _extract_form_attribute_type_info(attr: ET.Element) -> str:
     text_parts = [
         (node.text or "").strip() for node in type_elem.iter() if (node.text or "").strip()
     ]
-    return " ".join(text_parts)[:120]
+    return " ".join(text_parts)
 
 
 # -----------------------------------------------------------------------
