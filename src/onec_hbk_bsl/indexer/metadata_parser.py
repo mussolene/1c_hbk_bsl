@@ -512,22 +512,29 @@ def _extract_attribute_name(elem: ET.Element) -> str:
 
 
 def _extract_type_info(elem: ET.Element) -> str:
-    """Try to extract a readable type string from Type > TypeDescription."""
+    """Try to extract a readable type string from a <Properties><Type> element.
+
+    Real Designer exports place value tokens as sibling <Type> children
+    directly under <Properties><Type> (no <TypeDescription><Types> wrapper),
+    e.g. <Type><v8:Type>cfg:CatalogRef.Организации</v8:Type></Type>. The
+    <TypeDescription><Types> wrapper shape is also handled in case it occurs
+    in other 1C artifacts this parser consumes.
+    """
     props = _find_child(elem, "Properties")
     if props is None:
         return ""
     type_elem = _find_child(props, "Type")
     if type_elem is None:
         return ""
-    # <TypeDescription><Types>...</Types></TypeDescription>
     td = _find_child(type_elem, "TypeDescription")
-    if td is None:
-        td = type_elem
-    types_elem = _find_child(td, "Types")
-    if types_elem is not None:
-        types_text = " ".join((t.text or "").strip() for t in types_elem if (t.text or "").strip())
-        return types_text[:120]
-    return ""
+    types_elem = _find_child(td, "Types") if td is not None else None
+    source = types_elem if types_elem is not None else type_elem
+    tokens = [
+        (child.text or "").strip()
+        for child in source
+        if _strip_ns(child.tag) == "Type" and (child.text or "").strip()
+    ]
+    return " ".join(tokens)[:120]
 
 
 # -----------------------------------------------------------------------
