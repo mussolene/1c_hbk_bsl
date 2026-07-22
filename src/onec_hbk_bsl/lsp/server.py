@@ -2682,7 +2682,7 @@ def _cached_type_engine(
         return None
     if cache.type_engine is not None:
         return cache.type_engine
-    engine = BslTypeEngine(cache.tree)
+    engine = BslTypeEngine(cache.tree, module_path=_uri_to_path(uri))
     with ls._parsed_doc_cache_lock:
         latest = ls._parsed_doc_cache.get(uri)
         if isinstance(latest, _LspDocumentContext) and latest.content_hash == cache.content_hash:
