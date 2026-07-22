@@ -1,7 +1,8 @@
 """
 BSL type inference engine — pure AST walk, no regex on source text.
 
-Grammar node types (tree-sitter-hbk):
+Grammar node types (tree-sitter-hbk), verified against the compiled
+tree_sitter_hbk grammar rather than assumed from syntax alone:
   source_file
   procedure_definition / function_definition
     identifier          — name
@@ -17,18 +18,25 @@ Grammar node types (tree-sitter-hbk):
     expression                     — RHS
     ;
   expression
-    new_expression
+    new_expression                 — Новый Тип(...)
       NEW_KEYWORD
       identifier                   — type name
       arguments
-    call_expression
-      access
-        identifier                 — object name
+    call_expression                — chain ending in a method call
+      access                       — possibly nested, see below
       .
       method_call
         identifier                 — method name
         arguments
     identifier                     — variable reference
+  access                           — a chain segment; nests for multi-hop
+                                      chains, e.g. `Запрос.Выполнить().Выгрузить()`
+                                      is access(access(access(id)."."method_call)
+                                      "."method_call) — an *intermediate* hop's
+                                      method_call/property lives INSIDE the
+                                      access subtree, not just at the top.
+    access | identifier            — base or nested access
+    . method_call | . property
   var_statement
     VAR_KEYWORD
     identifier+
@@ -128,6 +136,49 @@ RETURN_TYPE_MAP: dict[str, str] = {
     "spreadsheetdocument.getarea": "ОбластьЯчеекТабличногоДокумента",
     # ЗапросHTTP
     "httpsзапрос": "HTTPЗапрос",
+}
+
+
+# ---------------------------------------------------------------------------
+# Global manager collections (Справочники, Документы, ...) → manager type
+# ---------------------------------------------------------------------------
+
+# The base identifier of a multi-segment access chain (e.g. "Справочники" in
+# "Справочники.Организации.НайтиПоКоду(...)") is a built-in global collection,
+# not a local variable — it never appears in TypeScope. It always denotes the
+# same manager type regardless of which specific catalog/document the next
+# segment names, so it maps directly to a RETURN_TYPE_MAP key prefix.
+_GLOBAL_MANAGER_TYPES: dict[str, str] = {
+    "справочники": "СправочникМенеджер",
+    "catalogs": "CatalogManager",
+    "документы": "ДокументМенеджер",
+    "documents": "DocumentManager",
+    "регистрысведений": "РегистрСведенийМенеджер",
+    "informationregisters": "InformationRegisterManager",
+    "перечисления": "ПеречислениеМенеджер",
+    "enums": "EnumManager",
+    "регистрынакопления": "РегистрНакопленияМенеджер",
+    "accumulationregisters": "AccumulationRegisterManager",
+    "регистрырасчета": "РегистрРасчетаМенеджер",
+    "calculationregisters": "CalculationRegisterManager",
+    "планывидовхарактеристик": "ПланВидовХарактеристикМенеджер",
+    "chartsofcharacteristictypes": "ChartOfCharacteristicTypesManager",
+    "планывидоврасчета": "ПланВидовРасчетаМенеджер",
+    "chartsofcalculationtypes": "ChartOfCalculationTypesManager",
+    "планыобмена": "ПланОбменаМенеджер",
+    "exchangeplans": "ExchangePlanManager",
+    "журналыдокументов": "ЖурналДокументовМенеджер",
+    "documentjournals": "DocumentJournalManager",
+    "константы": "КонстантаМенеджер",
+    "constants": "ConstantManager",
+    "бизнеспроцессы": "БизнесПроцессМенеджер",
+    "businessprocesses": "BusinessProcessManager",
+    "задачи": "ЗадачаМенеджер",
+    "tasks": "TaskManager",
+    "обработки": "ОбработкаМенеджер",
+    "dataprocessors": "DataProcessorManager",
+    "отчеты": "ОтчетМенеджер",
+    "reports": "ReportManager",
 }
 
 
@@ -338,7 +389,7 @@ class BslTypeEngine:
             if ct == "new_expression":
                 return self._resolve_new(child)
             elif ct == "call_expression":
-                return self._resolve_call(child, scope)
+                return self._resolve_access_chain(child, scope)
             elif ct == "identifier":
                 # Variable reference
                 return scope.get(_node_text(child)) or ""
@@ -356,32 +407,78 @@ class BslTypeEngine:
                 return _node_text(child)
         return ""
 
-    def _resolve_call(self, node: Any, scope: TypeScope) -> str:
+    def _resolve_access_chain(self, node: Any, scope: TypeScope) -> str:
         """
-        call_expression structure:
-          access → identifier (object)
-          .
-          method_call → identifier (method) + arguments
+        Resolve the type produced by a `call_expression` node — an ordered
+        chain of `.property` / `.method(...)` hops applied to a base
+        identifier (a local variable, or a global manager collection such
+        as `Справочники`).
+
+        Chained calls (`Запрос.Выполнить().Выгрузить()`) nest the earlier
+        hops *inside* the `access` subtree as embedded `method_call` /
+        `property` children, with only the last hop attached directly to
+        the outer `call_expression` node — so the type must be threaded
+        sequentially through every hop, not just derived from the base
+        name and the final method alone.
         """
-        obj_name = ""
-        method_name = ""
+        steps = self._flatten_chain(node)
+        if not steps or steps[0][0] != "id":
+            return ""
+
+        base_name = steps[0][1]
+        global_type = _GLOBAL_MANAGER_TYPES.get(base_name.casefold())
+        if global_type and len(steps) > 1 and steps[1][0] == "prop":
+            # Справочники.Организации... — the specific catalog/document
+            # name doesn't change the manager's type (see class docstring).
+            current_type = global_type
+            remaining = steps[2:]
+        else:
+            current_type = scope.get(base_name) or base_name
+            remaining = steps[1:]
+
+        for kind, name in remaining:
+            if kind in ("call", "prop"):
+                # RETURN_TYPE_MAP keys are "type.member" regardless of
+                # whether the member is a method or a read-only property
+                # (e.g. "деревозначений.строки" — ДеревоЗначений.Строки is
+                # a property, not a method) — the platform help doesn't
+                # distinguish them for chaining purposes, so neither do we.
+                if current_type:
+                    key = f"{current_type.casefold()}.{name.casefold()}"
+                    current_type = self._rtm.get(key, "")
+                else:
+                    current_type = ""
+            else:
+                current_type = ""
+
+        return current_type
+
+    def _flatten_chain(self, node: Any) -> list[tuple[str, str]]:
+        """
+        Flatten an `access` / `call_expression` node into an ordered list
+        of chain steps:
+
+          ("id", name)    — the leading base identifier
+          ("prop", name)  — a `.property` hop
+          ("call", name)  — a `.method(...)` hop (name = method identifier)
+        """
+        steps: list[tuple[str, str]] = []
         for child in node.children:
             ct = child.type
             if ct == "access":
-                for ac in child.children:
-                    if ac.type == "identifier":
-                        obj_name = _node_text(ac)
+                steps.extend(self._flatten_chain(child))
+            elif ct == "identifier":
+                steps.append(("id", _node_text(child)))
+            elif ct == "property":
+                steps.append(("prop", _node_text(child)))
             elif ct == "method_call":
+                method_name = ""
                 for mc in child.children:
                     if mc.type == "identifier":
                         method_name = _node_text(mc)
                         break
-
-        if obj_name and method_name:
-            obj_type = scope.get(obj_name) or obj_name
-            key = f"{obj_type.casefold()}.{method_name.casefold()}"
-            return self._rtm.get(key, "")
-        return ""
+                steps.append(("call", method_name))
+        return steps
 
 
 # ---------------------------------------------------------------------------

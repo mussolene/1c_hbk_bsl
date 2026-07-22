@@ -2251,6 +2251,53 @@ class TestInferType:
         engine = BslTypeEngine(tree)
         assert engine.infer("ЗАП", 0) == "Запрос"
 
+    def test_infer_nested_access_chain_global_manager(self) -> None:
+        # Справочники.Организации.НайтиПоКоду(...) nests the access chain
+        # (access(access(identifier), ".", property)) — the outer `access`
+        # node has no direct `identifier` child at all.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Орг = Справочники.Организации.НайтиПоКоду(Код);\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Орг", 0) == "СправочникСсылка"
+
+    def test_infer_nested_access_chain_document_manager(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Док = Документы.ПереносОтпуска.СоздатьДокумент();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Док", 0) == "ДокументОбъект"
+
+    def test_infer_single_segment_access_still_resolves(self) -> None:
+        # Regression guard: the multi-segment fix must not break the
+        # single-segment (`Обj.Метод()`) resolution path.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Зап = Новый Запрос();\nРез = Зап.Выполнить();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Рез", 1) == "РезультатЗапроса"
+
+    def test_infer_chained_calls(self) -> None:
+        # Запрос.Выполнить().Выгрузить() — the first hop's method_call lives
+        # *inside* the access subtree, not as a sibling of the last hop.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Т = Запрос.Выполнить().Выгрузить();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Т", 0) == "ТаблицаЗначений"
+
+    def test_infer_nested_manager_then_chained_call(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "О = Справочники.Организации.НайтиПоКоду(1).ПолучитьОбъект();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("О", 0) == "СправочникОбъект"
+
 
 # ---------------------------------------------------------------------------
 # _node_to_dict helper (Iteration 4)
