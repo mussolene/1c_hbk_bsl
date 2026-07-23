@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Type inference сохраняет конкретную metadata identity через manager chains,
+  выборки, значения перечислений, type guards и неявные переменные object/
+  record-set modules; generic hover-контракт остаётся обратимо совместимым,
+  а неоднозначность возвращается детерминированным списком кандидатов.
+
 ### Changed
 
 - Минимальная версия `tree-sitter-hbk` поднята до `0.1.11`: SDBL parser

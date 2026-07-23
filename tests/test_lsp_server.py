@@ -2737,6 +2737,201 @@ class TestInferType:
 
 
 # ---------------------------------------------------------------------------
+# BslTypeEngine — specific metadata identity (Kind.Name), real-code-derived
+# ---------------------------------------------------------------------------
+
+
+class TestInferSpecificMetadataIdentity:
+    def _parse(self, content: str):
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        parser = BslParser()
+        return parser.parse_content(content, file_path="test.bsl")
+
+    # -- item 1: compound "Kind.Name" identity, threaded through the chain --
+
+    def test_metadata_only_compound_catalog_identity(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Орг = Справочники.Организации.НайтиПоКоду(Код);\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Орг", 0, metadata_only=True) == "СправочникСсылка.Организации"
+        assert engine.infer("Орг", 0) == "СправочникСсылка"  # default unchanged (hover-safe)
+
+    def test_metadata_only_compound_document_identity(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Док = Документы.ПереносОтпуска.СоздатьДокумент();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Док", 0, metadata_only=True) == "ДокументОбъект.ПереносОтпуска"
+
+    def test_metadata_only_none_for_non_metadata_chain(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Т = Запрос.Выполнить().Выгрузить();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Т", 0, metadata_only=True) is None
+        assert engine.infer("Т", 0) == "ТаблицаЗначений"  # default unchanged
+
+    def test_metadata_identity_survives_intermediate_variable(self) -> None:
+        # Мен = Справочники.Организации; Эл = Мен.НайтиПоКоду(1);
+        # — property_access (no call) assigned to a variable, then used as
+        # the base of a later chain. Found in real ZUP code.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Мен = Справочники.Организации;\nЭл = Мен.НайтиПоКоду(1);\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Мен", 0, metadata_only=True) == "СправочникМенеджер.Организации"
+        assert engine.infer("Эл", 1, metadata_only=True) == "СправочникСсылка.Организации"
+
+    # -- item 2: generic manager methods missing from RETURN_TYPE_MAP --
+
+    def test_metadata_only_empty_ref(self) -> None:
+        # Справочники.Пользователи.ПустаяСсылка() —
+        # ИК_ОбщиеПроцедурыИФункцииПовтИсп/Module.bsl and
+        # zup30.../Catalogs/РеестрДокументов/ManagerModule.bsl.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Авт = Справочники.Пользователи.ПустаяСсылка();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Авт", 0, metadata_only=True) == "СправочникСсылка.Пользователи"
+        assert engine.infer("Авт", 0) == "СправочникСсылка"
+
+    def test_metadata_identity_survives_selection_cursor(self) -> None:
+        # Справочники.Организации.Выбрать() ... Организация.Ссылка —
+        # ИК_ОбщиеПроцедурыИФункцииПовтИсп/Module.bsl:102-104.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Организация = Справочники.Организации.Выбрать();\nР = Организация.Ссылка;\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Организация", 0, metadata_only=True) == "СправочникВыборка.Организации"
+        assert engine.infer("Р", 1, metadata_only=True) == "СправочникСсылка.Организации"
+
+    # -- item 3: enum value access (self-limiting, no RETURN_TYPE_MAP entry) --
+
+    def test_metadata_only_enum_value_access(self) -> None:
+        # Перечисления.ВариантыВажностиЗадачи.Обычная —
+        # БизнесПроцессыЗаявокСотрудников/Module.bsl:40.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Приоритет = Перечисления.ВариантыВажностиЗадачи.Обычная;\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Приоритет", 0) == "ПеречислениеСсылка"
+        assert (
+            engine.infer("Приоритет", 0, metadata_only=True)
+            == "ПеречислениеСсылка.ВариантыВажностиЗадачи"
+        )
+
+    # -- item 4: type narrowing via Если ТипЗнч(Х) = Тип("Kind.Name") Тогда --
+
+    def test_type_guard_narrows_only_inside_then_branch(self) -> None:
+        # ИК_ОбщиеПроцедурыИФункцииПовтИсп/Module.bsl:110-112 pattern.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = (
+            "Функция Ф(ПравилоОбработкиЗаявки) Экспорт\n"
+            "\tОрганизация = ПравилоОбработкиЗаявки.Подразделение.Источник;\n"
+            '\tЕсли ТипЗнч(Организация) = Тип("СправочникСсылка.ПодразделенияОрганизаций") Тогда\n'
+            "\t\tРез = Организация.ГоловнаяОрганизация;\n"
+            "\tКонецЕсли;\n"
+            "КонецФункции\n"
+        )
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Организация", 1, metadata_only=True) is None  # before the guard
+        assert (
+            engine.infer("Организация", 3, metadata_only=True)
+            == "СправочникСсылка.ПодразделенияОрганизаций"
+        )  # inside Тогда
+        assert engine.infer("Организация", 4, metadata_only=True) is None  # after КонецЕсли
+
+    def test_type_guard_or_chain_same_kind_narrows_to_list(self) -> None:
+        # ИК_ОбщиеПроцедурыИФункцииПовтИсп/Module.bsl:122-146 pattern — the
+        # dominant real-code form: multiple ТипЗнч(Х)=Тип(...) checks joined
+        # by ИЛИ, all against the same variable and the same generic Kind.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = (
+            "Функция Ф(Ссылка) Экспорт\n"
+            '\tЕсли ТипЗнч(Ссылка) = Тип("ДокументСсылка.А")\n'
+            '\t\tИЛИ ТипЗнч(Ссылка) = Тип("ДокументСсылка.Б") Тогда\n'
+            "\t\tРезультат = Ссылка.Организация;\n"
+            "\tКонецЕсли;\n"
+            "КонецФункции\n"
+        )
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Ссылка", 3, metadata_only=True) == [
+            "ДокументСсылка.А",
+            "ДокументСсылка.Б",
+        ]
+
+    def test_type_guard_or_chain_non_matching_disjunct_no_narrowing(self) -> None:
+        # Conservative all-or-nothing: one disjunct not shaped like
+        # ТипЗнч(Х)=Тип(...) means no narrowing at all, not a partial one.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = (
+            "Функция Ф(Ссылка) Экспорт\n"
+            '\tЕсли ТипЗнч(Ссылка) = Тип("ДокументСсылка.А")\n'
+            "\t\tИЛИ Ссылка = Неопределено Тогда\n"
+            "\t\tРезультат = Ссылка;\n"
+            "\tКонецЕсли;\n"
+            "КонецФункции\n"
+        )
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+        assert engine.infer("Ссылка", 3, metadata_only=True) is None
+
+    # -- item 5: implicit Ссылка/ЭтотОбъект in ObjectModule/RecordSetModule --
+
+    def test_implicit_vars_in_catalog_object_module(self) -> None:
+        # Catalogs/Сотрудники/Ext/ObjectModule.bsl — Ссылка/ЭтотОбъект are
+        # never assigned in the module body; the platform supplies them.
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Процедура П() Экспорт\n\tX = Ссылка;\n\tY = ЭтотОбъект;\nКонецПроцедуры\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree, module_path="/fake/Catalogs/Сотрудники/Ext/ObjectModule.bsl")
+        assert engine.infer("Ссылка", 1, metadata_only=True) == "СправочникСсылка.Сотрудники"
+        assert engine.infer("Ссылка", 1) == "СправочникСсылка"
+        assert engine.infer("ЭтотОбъект", 2, metadata_only=True) == "СправочникОбъект.Сотрудники"
+
+    def test_implicit_var_in_information_register_recordset_module(self) -> None:
+        # InformationRegisters/БудущиеСобытия.../Ext/RecordSetModule.bsl —
+        # ЭтотОбъект exists, Ссылка does not (registers have no ref type).
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Процедура П() Экспорт\n\tY = ЭтотОбъект;\nКонецПроцедуры\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(
+            tree,
+            module_path="/fake/InformationRegisters/БудущиеСобытия/Ext/RecordSetModule.bsl",
+        )
+        assert (
+            engine.infer("ЭтотОбъект", 1, metadata_only=True)
+            == "РегистрСведенийНаборЗаписей.БудущиеСобытия"
+        )
+        assert engine.infer("Ссылка", 1) is None
+
+    def test_no_implicit_vars_in_manager_module(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Процедура П() Экспорт\n\tX = Ссылка;\n\tY = ЭтотОбъект;\nКонецПроцедуры\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree, module_path="/fake/Catalogs/Сотрудники/Ext/ManagerModule.bsl")
+        assert engine.infer("Ссылка", 1) is None
+        assert engine.infer("ЭтотОбъект", 2) is None
+
+
+# ---------------------------------------------------------------------------
 # _node_to_dict helper (Iteration 4)
 # ---------------------------------------------------------------------------
 
