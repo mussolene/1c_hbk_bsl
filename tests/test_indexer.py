@@ -887,6 +887,128 @@ class TestIncrementalIndexerExtended:
 
         assert result == {"indexed": 0, "skipped": 0, "errors": 0}
 
+    def test_index_workspace_reconciles_dirty_git_states_without_head_change(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import subprocess
+
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        def git(workspace: Path, *args: str) -> str:
+            result = subprocess.run(
+                ["git", *args],
+                cwd=workspace,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout.strip()
+
+        def write_procedure(path: Path, name: str) -> None:
+            path.write_text(
+                f"Процедура {name}()\nКонецПроцедуры\n",
+                encoding="utf-8",
+            )
+
+        for state in ("unstaged", "staged", "untracked", "deleted", "renamed"):
+            workspace = tmp_path / state
+            workspace.mkdir()
+            git(workspace, "init", "-q")
+            module = workspace / "module.bsl"
+            write_procedure(module, "Исходная")
+            git(workspace, "add", "module.bsl")
+            git(
+                workspace,
+                "-c",
+                "user.name=Indexer Test",
+                "-c",
+                "user.email=indexer@example.invalid",
+                "commit",
+                "-qm",
+                "initial",
+            )
+
+            index = SymbolIndex(str(tmp_path / f"{state}.sqlite"))
+            indexer = IncrementalIndexer(index=index, quiet=True)
+            monkeypatch.setattr(indexer, "_start_metadata_indexing", lambda workspace: None)
+            initial = indexer.index_workspace(str(workspace))
+            assert initial["indexed"] == 1
+            head = git(workspace, "rev-parse", "HEAD")
+
+            if state == "unstaged":
+                write_procedure(module, "ИзмененаБезStage")
+            elif state == "staged":
+                write_procedure(module, "ИзмененаВStage")
+                git(workspace, "add", "module.bsl")
+            elif state == "untracked":
+                write_procedure(workspace / "untracked.bsl", "НоваяUntracked")
+            elif state == "deleted":
+                module.unlink()
+            else:
+                git(workspace, "mv", "module.bsl", "renamed.bsl")
+
+            result = indexer.index_workspace(str(workspace))
+
+            assert result["errors"] == 0
+            assert git(workspace, "rev-parse", "HEAD") == head
+            if state == "unstaged":
+                assert index.find_symbol("Исходная") == []
+                assert len(index.find_symbol("ИзмененаБезStage")) == 1
+            elif state == "staged":
+                assert index.find_symbol("Исходная") == []
+                assert len(index.find_symbol("ИзмененаВStage")) == 1
+            elif state == "untracked":
+                assert len(index.find_symbol("Исходная")) == 1
+                assert len(index.find_symbol("НоваяUntracked")) == 1
+            elif state == "deleted":
+                assert index.find_symbol("Исходная") == []
+            else:
+                renamed = workspace / "renamed.bsl"
+                assert index.get_file_symbols(str(module.resolve())) == []
+                assert len(index.get_file_symbols(str(renamed.resolve()))) == 1
+            index.close()
+
+    def test_clean_unchanged_worktree_does_zero_indexing_work(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import subprocess
+        from unittest.mock import patch
+
+        from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=workspace, check=True)
+        module = workspace / "module.bsl"
+        module.write_text("Процедура Исходная()\nКонецПроцедуры\n", encoding="utf-8")
+        subprocess.run(["git", "add", "module.bsl"], cwd=workspace, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Indexer Test",
+                "-c",
+                "user.email=indexer@example.invalid",
+                "commit",
+                "-qm",
+                "initial",
+            ],
+            cwd=workspace,
+            check=True,
+        )
+
+        index = SymbolIndex(str(tmp_path / "clean.sqlite"))
+        indexer = IncrementalIndexer(index=index, quiet=True)
+        monkeypatch.setattr(indexer, "_start_metadata_indexing", lambda workspace: None)
+        assert indexer.index_workspace(str(workspace))["indexed"] == 1
+
+        with patch.object(indexer, "_index_files", wraps=indexer._index_files) as index_files:
+            result = indexer.index_workspace(str(workspace))
+
+        assert result == {"indexed": 0, "skipped": 0, "errors": 0}
+        index_files.assert_not_called()
+        index.close()
+
     def test_index_workspace_policy_change_forces_full_reconciliation(
         self, symbol_index: SymbolIndex, tmp_path: Path
     ) -> None:

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workspace lifecycle с монотонными revisions и revision-aware caches.
 - LSP diagnostic scheduler не запускает process pool из фоновых потоков,
   не использует fork-global context и выполняет worker fallback ровно один раз.
+- Incremental index учитывает committed, staged, unstaged, untracked, deleted
+  и renamed worktree paths даже при неизменном `HEAD`.
 
 ### Security
 
