@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 
 # MCP JSON contract version — response shape for clients.
 # Tool payloads are for assistant context; lint/format correctness uses CST in analysis/.
-MCP_CONTRACT_VERSION = "0.3.0"
+MCP_CONTRACT_VERSION = "0.4.0"
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -299,6 +299,12 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         return {
             "schema_version": MCP_CONTRACT_VERSION,
             "server": "onec-hbk-bsl",
+            "tool_modes": {
+                "bsl_rename": {
+                    "mode": "read_only",
+                    "write_error_code": "write_disabled",
+                }
+            },
             "tools": [
                 "bsl_status",
                 "bsl_find_symbol",
@@ -1120,8 +1126,8 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
 
     @mcp.tool(
         description=(
-            "Rename a BSL symbol across the entire workspace. "
-            "Finds all definitions and call sites, then optionally applies edits to files."
+            "Preview a BSL symbol rename across the entire workspace. "
+            "Write mode is disabled until semantic RenamePlan support is available."
         )
     )
     @_guard_workspace_access
@@ -1129,24 +1135,35 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         old_name: Annotated[str, "Current symbol name"],
         new_name: Annotated[str, "New symbol name"],
         apply: Annotated[
-            bool, "If True, actually write changes to files (default False — dry run)"
+            bool, "Write mode request; currently returns write_disabled when True"
         ] = False,
         workspace_root: Annotated[
             str | None, "Workspace root for resolving the index DB and file edits"
         ] = None,
     ) -> dict:
         """
-        Rename *old_name* to *new_name* across the workspace.
+        Preview renaming *old_name* to *new_name* across the workspace.
 
-        When ``apply=False`` (default) returns a dry-run preview — files and line counts
-        that would be changed — without touching disk.
-        When ``apply=True`` performs the rename in-place on all files.
+        ``apply=False`` (default) returns a dry-run preview — files and line counts
+        that would be changed — without touching disk. ``apply=True`` returns the
+        stable ``write_disabled`` error until semantic RenamePlan support is available.
 
         Args:
             old_name: Symbol to rename.
             new_name: Replacement name (must be a valid BSL identifier).
-            apply:    Write changes to disk (default False).
+            apply:    Request write mode (currently disabled).
         """
+        if apply:
+            return {
+                "error": {
+                    "code": "write_disabled",
+                    "message": (
+                        "bsl_rename write mode is disabled until semantic RenamePlan "
+                        "support is available"
+                    ),
+                }
+            }
+
         if not re.match(r"^[А-ЯЁа-яёA-Za-z_]\w*$", new_name, re.UNICODE):
             return {"error": f"'{new_name}' is not a valid BSL identifier"}
 
@@ -1173,40 +1190,13 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         ]
         total_changes = sum(len(v) for v in file_edits.values())
 
-        if not apply:
-            return {
-                "dry_run": True,
-                "old_name": old_name,
-                "new_name": new_name,
-                "files_affected": len(file_edits),
-                "total_occurrences": total_changes,
-                "preview": preview,
-            }
-
-        # Apply edits
-        applied_files = 0
-        errors: list[str] = []
-        pattern = re.compile(
-            r"(?<![А-ЯЁа-яёA-Za-z_\d])" + re.escape(old_name) + r"(?![А-ЯЁа-яёA-Za-z_\d])",
-            re.UNICODE | re.IGNORECASE,
-        )
-        for fp in file_edits:
-            try:
-                content = Path(fp).read_text(encoding="utf-8")
-                new_content = pattern.sub(new_name, content)
-                if new_content != content:
-                    Path(fp).write_text(new_content, encoding="utf-8")
-                    applied_files += 1
-            except OSError as exc:
-                errors.append(f"{fp}: {exc}")
-
         return {
-            "dry_run": False,
+            "dry_run": True,
             "old_name": old_name,
             "new_name": new_name,
-            "files_affected": applied_files,
+            "files_affected": len(file_edits),
             "total_occurrences": total_changes,
-            "errors": errors,
+            "preview": preview,
         }
 
     # ------------------------------------------------------------------
