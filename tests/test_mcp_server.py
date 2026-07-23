@@ -12,9 +12,24 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _restore_mcp_workspace_policy():
+    from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+    original_workspace = mcp_module._WORKSPACE
+    original_allowed_roots = mcp_module._ALLOWED_WORKSPACE_ROOTS
+    try:
+        yield
+    finally:
+        mcp_module._WORKSPACE = original_workspace
+        mcp_module._ALLOWED_WORKSPACE_ROOTS = original_allowed_roots
 
 
 def _make_bsl(tmp_path: Path, name: str, content: str) -> str:
@@ -50,6 +65,13 @@ class TestCreateMcpApp:
         assert "bsl_diagnostics" in tool_names
         assert "bsl_1c_help_search_keyword" not in tool_names
         assert "bsl_1c_help_get_topic" not in tool_names
+
+    def test_contract_version_includes_workspace_path_policy(self, tmp_path: Path) -> None:
+        tools = _tool_fns(_make_app(tmp_path))
+
+        result = tools["bsl_contract_version"].fn()
+
+        assert result["schema_version"] == "0.3.0"
 
 
 # ---------------------------------------------------------------------------
@@ -146,31 +168,29 @@ class TestBslCheckFileTool:
         finally:
             mcp_module._WORKSPACE = original_workspace
 
-    def test_resolve_path_absolute(self, tmp_path: Path) -> None:
-        from onec_hbk_bsl.mcp_bridge.server import _resolve_path
-
-        abs_path = str(tmp_path / "module.bsl")
-        assert _resolve_path(abs_path) == abs_path
-
-    def test_resolve_path_relative(self, tmp_path: Path) -> None:
+    def test_resolve_path_absolute(self, tmp_path: Path, monkeypatch) -> None:
         from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
-        original = mcp_module._WORKSPACE
-        try:
-            mcp_module._WORKSPACE = str(tmp_path)
-            result = _resolve_path_via_module("relative/module.bsl", mcp_module)
-            assert result == str(tmp_path / "relative" / "module.bsl")
-        finally:
-            mcp_module._WORKSPACE = original
+        _set_workspace_policy(mcp_module, tmp_path, monkeypatch)
+        abs_path = str(tmp_path / "module.bsl")
+        assert mcp_module._resolve_path(abs_path) == abs_path
+
+    def test_resolve_path_relative(self, tmp_path: Path, monkeypatch) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        _set_workspace_policy(mcp_module, tmp_path, monkeypatch)
+        result = mcp_module._resolve_path("relative/module.bsl")
+        assert result == str(tmp_path / "relative" / "module.bsl")
 
 
-def _resolve_path_via_module(path: str, mod) -> str:
-    from pathlib import Path as P
-
-    p = P(path)
-    if p.is_absolute():
-        return str(p)
-    return str(P(mod._WORKSPACE) / path)
+def _set_workspace_policy(mod, root: Path, monkeypatch=None) -> None:
+    resolved = root.resolve()
+    if monkeypatch is None:
+        mod._WORKSPACE = str(resolved)
+        mod._ALLOWED_WORKSPACE_ROOTS = (resolved,)
+        return
+    monkeypatch.setattr(mod, "_WORKSPACE", str(resolved))
+    monkeypatch.setattr(mod, "_ALLOWED_WORKSPACE_ROOTS", (resolved,))
 
 
 class TestMcpUnusedDiagnostics:
@@ -211,9 +231,10 @@ class TestMcpUnusedDiagnostics:
 def _make_app(tmp_path):
     os.environ["INDEX_DB_PATH"] = str(tmp_path / "idx.sqlite")
     os.environ["WORKSPACE_ROOT"] = str(tmp_path)
-    from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
+    from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
-    return create_mcp_app()
+    _set_workspace_policy(mcp_module, tmp_path)
+    return mcp_module.create_mcp_app()
 
 
 def _call_tool(app, tool_name: str, **arguments):
@@ -236,6 +257,176 @@ def _tool_fns(app):
         )
         for tool in asyncio.run(app.list_tools())
     }
+
+
+class TestMcpWorkspacePathPolicy:
+    def test_all_workspace_tools_reject_unapproved_workspace_root(self, tmp_path: Path) -> None:
+        inside = tmp_path / "inside.bsl"
+        inside.write_text("А = 1;\n", encoding="utf-8")
+        outside = tmp_path.parent / f"{tmp_path.name}-outside"
+        outside.mkdir()
+
+        tools = _tool_fns(_make_app(tmp_path))
+        cases = {
+            "bsl_status": {},
+            "bsl_find_symbol": {"name": "Тест"},
+            "bsl_file_symbols": {"file_path": str(inside)},
+            "bsl_callers": {"symbol_name": "Тест"},
+            "bsl_callees": {"symbol_name": "Тест"},
+            "bsl_diagnostics": {"file_path": str(inside)},
+            "bsl_definition": {"symbol_name": "Тест"},
+            "bsl_check_file": {"file_path": str(inside)},
+            "bsl_index_file": {"file_path": str(inside)},
+            "bsl_hover": {"symbol_name": "Тест"},
+            "bsl_references": {"symbol_name": "Тест"},
+            "bsl_read_file": {"file_path": str(inside)},
+            "bsl_search": {"query": "Тест"},
+            "bsl_format": {"file_path": str(inside)},
+            "bsl_rename": {"old_name": "Тест", "new_name": "НовыйТест"},
+            "bsl_fix": {"file_path": str(inside)},
+            "bsl_workspace_scan": {},
+            "bsl_meta_object": {"name": "Тест"},
+            "bsl_meta_collection": {"collection": "Справочники"},
+            "bsl_meta_index": {},
+        }
+
+        for tool_name, arguments in cases.items():
+            result = tools[tool_name].fn(workspace_root=str(outside), **arguments)
+            assert result == {
+                "error": {
+                    "code": "workspace_path_denied",
+                    "message": "Path is outside the allowed workspace",
+                    "path": str(outside),
+                }
+            }, tool_name
+
+    @pytest.mark.parametrize("path_kind", ["absolute", "parent_traversal"])
+    def test_read_rejects_paths_outside_selected_workspace(
+        self, tmp_path: Path, path_kind: str
+    ) -> None:
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.bsl"
+        outside.write_text("Секрет = 1;\n", encoding="utf-8")
+        requested = str(outside) if path_kind == "absolute" else f"../{outside.name}"
+
+        tools = _tool_fns(_make_app(tmp_path))
+        result = tools["bsl_read_file"].fn(file_path=requested)
+
+        assert result["error"]["code"] == "workspace_path_denied"
+        assert result["error"]["path"] == requested
+
+    def test_symlink_escape_is_rejected(self, tmp_path: Path) -> None:
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.bsl"
+        outside.write_text("Секрет = 1;\n", encoding="utf-8")
+        link = tmp_path / "escape.bsl"
+        link.symlink_to(outside)
+
+        tools = _tool_fns(_make_app(tmp_path))
+        result = tools["bsl_read_file"].fn(file_path=str(link))
+
+        assert result["error"]["code"] == "workspace_path_denied"
+
+    def test_selected_workspace_is_a_narrower_boundary(self, tmp_path: Path) -> None:
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        first.mkdir()
+        second.mkdir()
+        other_project_file = second / "module.bsl"
+        other_project_file.write_text("А = 1;\n", encoding="utf-8")
+
+        tools = _tool_fns(_make_app(tmp_path))
+        result = tools["bsl_read_file"].fn(
+            file_path=str(other_project_file),
+            workspace_root=str(first),
+        )
+
+        assert result["error"]["code"] == "workspace_path_denied"
+
+    def test_new_file_under_symlinked_parent_is_rejected(self, tmp_path: Path) -> None:
+        outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
+        outside_dir.mkdir()
+        linked_parent = tmp_path / "linked"
+        linked_parent.symlink_to(outside_dir, target_is_directory=True)
+
+        tools = _tool_fns(_make_app(tmp_path))
+        result = tools["bsl_format"].fn(
+            file_path=str(linked_parent / "new.bsl"),
+            write=True,
+        )
+
+        assert result["error"]["code"] == "workspace_path_denied"
+        assert not (outside_dir / "new.bsl").exists()
+
+    def test_denied_write_does_not_change_outside_target(self, tmp_path: Path) -> None:
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.bsl"
+        original = "процедура Тест()\nконецпроцедуры\n"
+        outside.write_text(original, encoding="utf-8")
+        before_mtime = outside.stat().st_mtime_ns
+
+        tools = _tool_fns(_make_app(tmp_path))
+        result = tools["bsl_format"].fn(file_path=str(outside), write=True)
+
+        assert result["error"]["code"] == "workspace_path_denied"
+        assert outside.read_text(encoding="utf-8") == original
+        assert outside.stat().st_mtime_ns == before_mtime
+
+    def test_rename_rejects_outside_path_from_index_without_writing(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        (tmp_path / ".git").mkdir()
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.bsl"
+        original = "Процедура СтароеИмя()\nКонецПроцедуры\n"
+        outside.write_text(original, encoding="utf-8")
+        before_mtime = outside.stat().st_mtime_ns
+
+        tools = _tool_fns(_make_app(tmp_path))
+        index = mcp_module._get_index(str(tmp_path))
+        index.upsert_file(
+            str(outside),
+            [
+                {
+                    "name": "СтароеИмя",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 19,
+                    "kind": "procedure",
+                    "is_export": 0,
+                    "signature": "СтароеИмя()",
+                    "doc_comment": None,
+                }
+            ],
+            [],
+        )
+
+        result = tools["bsl_rename"].fn(
+            old_name="СтароеИмя",
+            new_name="НовоеИмя",
+            apply=True,
+            workspace_root=str(tmp_path),
+        )
+
+        assert result["error"]["code"] == "workspace_path_denied"
+        assert outside.read_text(encoding="utf-8") == original
+        assert outside.stat().st_mtime_ns == before_mtime
+
+    def test_unapproved_workspace_root_is_rejected_before_filesystem_probe(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        _set_workspace_policy(mcp_module, tmp_path, monkeypatch)
+        outside = tmp_path.parent / f"{tmp_path.name}-outside"
+        probes = 0
+
+        def fail_if_probed(_path: Path) -> bool:
+            nonlocal probes
+            probes += 1
+            raise AssertionError("filesystem probe occurred before allowlist rejection")
+
+        monkeypatch.setattr(Path, "exists", fail_if_probed)
+        with pytest.raises(mcp_module.WorkspacePathError):
+            mcp_module._resolve_workspace_root(str(outside))
+        assert probes == 0
 
 
 class TestBslHover:
@@ -465,9 +656,10 @@ class TestMcpMultiProject:
         f1.write_text("Процедура ТолькоWS1()\nКонецПроцедуры\n", encoding="utf-8")
         f2.write_text("Процедура ТолькоWS2()\nКонецПроцедуры\n", encoding="utf-8")
 
-        from onec_hbk_bsl.mcp_bridge.server import create_mcp_app
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
-        app = create_mcp_app()
+        _set_workspace_policy(mcp_module, tmp_path, monkeypatch)
+        app = mcp_module.create_mcp_app()
         tools = _tool_fns(app)
 
         # Index both workspaces (separate DBs via .git/onec-hbk-bsl_index.sqlite).
