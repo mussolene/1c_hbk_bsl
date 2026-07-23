@@ -56,10 +56,15 @@ fallback_version = "0.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=src/onec_hbk_bsl --cov-report=term-missing --cov-fail-under=80"
+addopts = "-v --strict-config --strict-markers --cov=src/onec_hbk_bsl --cov-report=term-missing --cov-fail-under=80"
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "external_bslls: parity checks that require an explicitly provisioned upstream BSLLS checkout",
+    "integration: semantic tests that exercise multiple diagnostic layers or workspace metadata",
+    "performance: deterministic performance-oriented diagnostic tests",
+    "platform: tests whose behavior depends on an optional parser or operating-system capability",
+    "slow: deterministic tests that are intentionally more expensive than the default unit cases",
+    "unit: focused deterministic tests for one diagnostic behavior or registry contract",
 ]
 
 [tool.coverage.run]

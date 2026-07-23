@@ -15,7 +15,10 @@ from onec_hbk_bsl.analysis.query_field_resolver import (
     resolve_query_text_uses,
 )
 
-pytestmark = pytest.mark.skipif(_SDBL_LANGUAGE is None, reason="SDBL tree-sitter unavailable")
+pytestmark = [
+    pytest.mark.platform,
+    pytest.mark.skipif(_SDBL_LANGUAGE is None, reason="SDBL tree-sitter unavailable"),
+]
 
 
 class FakeLookup:

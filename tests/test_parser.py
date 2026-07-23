@@ -72,6 +72,7 @@ class TestBslParserExtractErrors:
         result = parser.extract_errors(tree)
         assert isinstance(result, list)
 
+    @pytest.mark.platform
     @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-hbk required")
     def test_no_false_positive_paren_errors_multiline_assignment(self) -> None:
         """Valid parenthesised RHS split across lines must not yield lone (/) ERROR nodes."""
@@ -86,6 +87,7 @@ class TestBslParserExtractErrors:
         tree = parser.parse_content(code)
         assert parser.extract_errors(tree) == []
 
+    @pytest.mark.platform
     @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-hbk required")
     def test_no_false_positive_paren_new_string_constructor(self) -> None:
         """``Новый(\"…\")`` can produce spurious ')' ERROR in grammar — suppress when valid."""
@@ -98,6 +100,7 @@ class TestBslParserExtractErrors:
         tree = parser.parse_content(code)
         assert parser.extract_errors(tree) == []
 
+    @pytest.mark.platform
     @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-hbk required")
     def test_no_false_positive_keyword_named_member_call(self) -> None:
         """Member methods whose names are BSL keywords are valid platform API calls."""
@@ -110,6 +113,7 @@ class TestBslParserExtractErrors:
         tree = parser.parse_content(code)
         assert parser.extract_errors(tree) == []
 
+    @pytest.mark.platform
     @pytest.mark.skipif(not _TS_AVAILABLE, reason="tree-sitter-hbk required")
     def test_no_false_positive_property_access_after_ternary_expression(self) -> None:
         """BSL allows postfix property access on ``?(...)`` expression results."""
