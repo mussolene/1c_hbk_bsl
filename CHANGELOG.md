@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request-local context без общего mutable состояния текущего документа.
 - LSP публикует `SymbolIndex`, indexer и diagnostics engine через единый
   workspace lifecycle с монотонными revisions и revision-aware caches.
+- LSP diagnostic scheduler не запускает process pool из фоновых потоков,
+  не использует fork-global context и выполняет worker fallback ровно один раз.
 
 ### Security
 

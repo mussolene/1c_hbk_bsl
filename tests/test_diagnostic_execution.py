@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import os
+import pickle
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
+from functools import partial
 from types import SimpleNamespace
 
-import onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner as runtime_runner
+import onec_hbk_bsl.analysis.diagnostic.execution as diagnostic_execution
 from onec_hbk_bsl.analysis.diagnostic.cst import iter_ts_nodes
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
@@ -24,6 +28,10 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 def _worker_pid() -> list[int]:
     return [os.getpid()]
+
+
+def _task_signature(value: str) -> list[str]:
+    return [value]
 
 
 def test_iter_ts_nodes_preserves_tree_sitter_preorder() -> None:
@@ -67,22 +75,7 @@ def test_process_safe_tasks_run_in_process_pool_and_preserve_order(monkeypatch) 
     assert result[2] != parent_pid
 
 
-def test_large_fork_capable_documents_schedule_one_read_only_task_graph(monkeypatch) -> None:
-    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
-    monkeypatch.setattr(runtime_runner.mp, "get_all_start_methods", lambda: ["fork"])
-    monkeypatch.setattr(runtime_runner, "_PROCESS_HEAVY_GROUP_MIN_LINES", 1)
-
-    captured: list[tuple[object, ...]] = []
-
-    def run_sequentially(tasks: tuple[object, ...]):
-        captured.append(tasks)
-        diagnostics = []
-        for task in tasks:
-            fn = task.fn if hasattr(task, "fn") else task[1]
-            diagnostics.extend(fn())
-        return diagnostics
-
-    monkeypatch.setattr(runtime_runner, "_run_forked_rule_tasks", run_sequentially)
+def test_large_documents_keep_only_serializable_process_tasks() -> None:
     content = "Процедура Тест()\nКонецПроцедуры\n"
     tree = BslParser().parse_content(content, file_path="Module.bsl")
     tasks = []
@@ -97,11 +90,227 @@ def test_large_fork_capable_documents_schedule_one_read_only_task_graph(monkeypa
         snapshot=None,
     )
 
-    assert len(tasks) == 1
-    assert tasks[0][0].startswith("fork-all:")
+    assert [task[0] for task in tasks] == ["BSL186", "BSL279"]
+    assert all(not task[0].startswith("fork") for task in tasks)
     assert execute_diagnostic_rule_tasks(tasks) == []
-    assert len(captured) == 1
-    assert [task[0] for task in captured[0]] == ["BSL186", "BSL279"]
+
+
+def test_process_safe_task_is_immutable_serializable_dto() -> None:
+    task = make_diagnostic_rule_task(
+        "BSL256:0",
+        partial(_task_signature, "stable"),
+        process_safe=True,
+    )
+
+    restored = pickle.loads(pickle.dumps(task))  # noqa: S301 - trusted test object
+
+    assert restored.code == "BSL256:0"
+    assert restored.process_safe is True
+    assert restored.fn() == ["stable"]
+
+
+def test_process_and_serial_paths_have_identical_signatures(monkeypatch) -> None:
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
+    monkeypatch.setenv("BSL_DIAG_PARALLEL_WORKERS", "2")
+    tasks = [
+        make_diagnostic_rule_task(
+            "BSL256:0",
+            partial(_task_signature, "first"),
+            process_safe=True,
+        ),
+        ("LOCAL", partial(_task_signature, "middle")),
+        make_diagnostic_rule_task(
+            "BSL256:1",
+            partial(_task_signature, "last"),
+            process_safe=True,
+        ),
+    ]
+
+    process_result = execute_diagnostic_rule_tasks(tasks)
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "0")
+    serial_result = execute_diagnostic_rule_tasks(tasks)
+
+    assert process_result == serial_result == ["first", "middle", "last"]
+
+
+def test_background_documents_never_start_process_pool_or_mix_context(monkeypatch) -> None:
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
+    monkeypatch.setenv("BSL_DIAG_PARALLEL_WORKERS", "2")
+
+    def unexpected_process_pool(workers: int):
+        raise AssertionError(f"background thread requested {workers} process workers")
+
+    monkeypatch.setattr(diagnostic_execution, "_get_process_pool", unexpected_process_pool)
+
+    def document_tasks(path: str, long_line_index: int):
+        lines = [""] * 5_000
+        lines[long_line_index] = "А" * 121
+        content = "\n".join(lines)
+        snapshot = build_document_snapshot(path, content=content)
+        tasks = []
+        append_diagnostic_runtime_rule_tasks(
+            tasks,
+            engine=DiagnosticEngine(select={"BSL014"}),
+            path=path,
+            content=content,
+            lines=lines,
+            tree=snapshot.tree,
+            snapshot=snapshot,
+        )
+        return tasks
+
+    task_sets = [
+        document_tasks("First.bsl", 0),
+        document_tasks("Second.bsl", 4_999),
+    ]
+    barrier = threading.Barrier(2)
+
+    def run_background(tasks):
+        barrier.wait()
+        return [
+            (diagnostic.file, diagnostic.line, diagnostic.code)
+            for diagnostic in execute_diagnostic_rule_tasks(tasks)
+        ]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(run_background, tasks) for tasks in task_sets]
+        results = [future.result() for future in futures]
+
+    assert results == [
+        [("First.bsl", 1, "BSL014")],
+        [("Second.bsl", 5_000, "BSL014")],
+    ]
+
+
+def test_worker_submission_failure_falls_back_once(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class FailingPool:
+        def submit(self, fn):
+            raise RuntimeError("injected worker failure")
+
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
+    monkeypatch.setenv("BSL_DIAG_PARALLEL_WORKERS", "2")
+    monkeypatch.setattr(diagnostic_execution, "_get_process_pool", lambda workers: FailingPool())
+    monkeypatch.setattr(diagnostic_execution, "_shutdown_process_pool", lambda: None)
+
+    def record_fallback() -> list[str]:
+        calls.append("fallback")
+        return ["result"]
+
+    result = execute_diagnostic_rule_tasks(
+        [
+            make_diagnostic_rule_task("PROCESS", record_fallback, process_safe=True),
+            make_diagnostic_rule_task("PROCESS:2", lambda: [], process_safe=True),
+        ]
+    )
+
+    assert result == ["result"]
+    assert calls == ["fallback"]
+
+
+def test_process_pool_creation_failure_falls_back_once(monkeypatch) -> None:
+    calls: list[str] = []
+    shutdown_calls: list[str] = []
+
+    def unavailable_pool(workers: int):
+        raise OSError(f"injected failure for {workers} workers")
+
+    def record(value: str) -> list[str]:
+        calls.append(value)
+        return [value]
+
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
+    monkeypatch.setenv("BSL_DIAG_PARALLEL_WORKERS", "2")
+    monkeypatch.setattr(diagnostic_execution, "_get_process_pool", unavailable_pool)
+    monkeypatch.setattr(
+        diagnostic_execution,
+        "_shutdown_process_pool",
+        lambda: shutdown_calls.append("shutdown"),
+    )
+    tasks = [
+        make_diagnostic_rule_task(
+            value,
+            partial(record, value),
+            process_safe=True,
+        )
+        for value in ("first", "second")
+    ]
+
+    result = execute_diagnostic_rule_tasks(tasks)
+
+    assert result == ["first", "second"]
+    assert calls == ["first", "second"]
+    assert shutdown_calls == ["shutdown"]
+
+
+def test_worker_result_failure_falls_back_once(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class ResultFailingPool:
+        def __init__(self) -> None:
+            self.submissions = 0
+
+        def submit(self, fn):
+            self.submissions += 1
+            future: Future[list[str]] = Future()
+            if self.submissions == 1:
+                future.set_exception(RuntimeError("injected result failure"))
+            else:
+                future.set_result(fn())
+            return future
+
+    def record_fallback() -> list[str]:
+        calls.append("fallback")
+        return ["recovered"]
+
+    pool = ResultFailingPool()
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
+    monkeypatch.setenv("BSL_DIAG_PARALLEL_WORKERS", "2")
+    monkeypatch.setattr(diagnostic_execution, "_get_process_pool", lambda workers: pool)
+    tasks = [
+        make_diagnostic_rule_task("FAIL", record_fallback, process_safe=True),
+        make_diagnostic_rule_task(
+            "OK",
+            partial(_task_signature, "stable"),
+            process_safe=True,
+        ),
+    ]
+
+    result = execute_diagnostic_rule_tasks(tasks)
+
+    assert result == ["recovered", "stable"]
+    assert calls == ["fallback"]
+
+
+def test_process_submission_count_is_bounded(monkeypatch) -> None:
+    class ImmediatePool:
+        def __init__(self) -> None:
+            self.submissions = 0
+
+        def submit(self, fn):
+            self.submissions += 1
+            future: Future[list[str]] = Future()
+            future.set_result(fn())
+            return future
+
+    pool = ImmediatePool()
+    monkeypatch.setenv("BSL_DIAG_PROCESS_RULES", "1")
+    monkeypatch.setenv("BSL_DIAG_PARALLEL_WORKERS", "8")
+    monkeypatch.setattr(diagnostic_execution, "_get_process_pool", lambda workers: pool)
+    tasks = [
+        make_diagnostic_rule_task(
+            f"TASK:{index}",
+            partial(_task_signature, str(index)),
+            process_safe=True,
+        )
+        for index in range(diagnostic_execution._MAX_PROCESS_TASKS + 5)
+    ]
+
+    result = execute_diagnostic_rule_tasks(tasks)
+
+    assert pool.submissions == diagnostic_execution._MAX_PROCESS_TASKS
+    assert result == [str(index) for index in range(len(tasks))]
 
 
 def test_light_pool_rules_are_scheduled_as_shared_fact_phases() -> None:

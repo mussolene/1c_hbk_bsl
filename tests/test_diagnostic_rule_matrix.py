@@ -84,12 +84,21 @@ def test_rule_matrix_maps_method_contract_cluster_even_when_core_rule() -> None:
     assert row.placement_guidance
 
 
+def test_rule_matrix_keeps_document_context_rules_local() -> None:
+    row = _rows_by_code()["BSL001"]
+
+    assert row.runner_group == "runtime_rule_class:CoreDiagnosticsRule"
+    assert row.execution_mode == "local_runtime_task"
+    assert "fork" not in row.recommended_batch
+    assert "fork" not in row.placement_guidance
+
+
 def test_rule_matrix_maps_typo_as_heavy_sharded_work() -> None:
     row = _rows_by_code()["BSL256"]
 
     assert row.runner_group == "typo_runtime_or_large_file_shards"
     assert row.execution_mode == "local_or_process_safe_large_file_shards"
-    assert row.recommended_batch == "05-heavy-fork-typo-performance"
+    assert row.recommended_batch == "05-heavy-process-typo-performance"
 
 
 def test_rule_matrix_summary_cli(capsys) -> None:

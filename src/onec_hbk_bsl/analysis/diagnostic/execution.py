@@ -12,6 +12,7 @@ from typing import Any
 _PROCESS_POOL_LOCK = threading.Lock()
 _PROCESS_POOL: ProcessPoolExecutor | None = None
 _PROCESS_POOL_WORKERS = 0
+_MAX_PROCESS_TASKS = 32
 
 
 def _shutdown_process_pool() -> None:
@@ -62,7 +63,11 @@ def _parallel_enabled() -> bool:
 
 def _process_parallel_enabled() -> bool:
     value = os.environ.get("BSL_DIAG_PROCESS_RULES", "1").strip().casefold()
-    return _parallel_enabled() and value not in {"0", "false", "no", "off"}
+    return (
+        threading.current_thread() is threading.main_thread()
+        and _parallel_enabled()
+        and value not in {"0", "false", "no", "off"}
+    )
 
 
 def _get_process_pool(workers: int) -> ProcessPoolExecutor:
@@ -90,40 +95,33 @@ def _execute_sequential(tasks: list[DiagnosticRuleTask]) -> list[Any]:
     return out
 
 
-def _run_process_tasks(
-    tasks: list[tuple[int, DiagnosticRuleTask]],
-    results_by_index: dict[int, list[Any]],
-) -> None:
-    workers = min(_parallel_workers(), len(tasks))
-    if workers <= 1 or not _process_parallel_enabled():
-        for index, task in tasks:
-            results_by_index[index] = task.fn()
-        return
-
-    future_to_task: dict[Any, tuple[int, DiagnosticRuleTask]] = {}
-    pool = _get_process_pool(workers)
-    for index, task in tasks:
-        future_to_task[pool.submit(task.fn)] = (index, task)
-
-    for future, (index, task) in future_to_task.items():
-        try:
-            results_by_index[index] = future.result()
-        except Exception:
-            results_by_index[index] = task.fn()
-
-
 def _submit_process_tasks(
     tasks: list[tuple[int, DiagnosticRuleTask]],
-) -> dict[Any, tuple[int, DiagnosticRuleTask]] | None:
+) -> tuple[
+    dict[Any, tuple[int, DiagnosticRuleTask]],
+    list[tuple[int, DiagnosticRuleTask]],
+]:
     workers = min(_parallel_workers(), len(tasks))
     if workers <= 1 or not _process_parallel_enabled():
-        return None
-    pool = _get_process_pool(workers)
+        return {}, tasks
+
+    submitted_tasks = tasks[:_MAX_PROCESS_TASKS]
+    fallback_tasks = tasks[_MAX_PROCESS_TASKS:]
     try:
-        return {pool.submit(task.fn): (index, task) for index, task in tasks}
+        pool = _get_process_pool(workers)
     except (BrokenProcessPool, RuntimeError, OSError):
         _shutdown_process_pool()
-        return None
+        return {}, tasks
+
+    future_to_task: dict[Any, tuple[int, DiagnosticRuleTask]] = {}
+    for position, (index, task) in enumerate(submitted_tasks):
+        try:
+            future_to_task[pool.submit(task.fn)] = (index, task)
+        except (BrokenProcessPool, RuntimeError, OSError):
+            _shutdown_process_pool()
+            fallback_tasks = submitted_tasks[position:] + fallback_tasks
+            break
+    return future_to_task, fallback_tasks
 
 
 def _collect_process_tasks(
@@ -160,12 +158,12 @@ def execute_diagnostic_rule_tasks(
             local_tasks.append((index, task))
 
     results_by_index: dict[int, list[Any]] = {}
-    future_to_task = _submit_process_tasks(process_tasks)
-    if future_to_task is None:
-        _run_process_tasks(process_tasks, results_by_index)
+    future_to_task, fallback_tasks = _submit_process_tasks(process_tasks)
+    for index, task in fallback_tasks:
+        results_by_index[index] = task.fn()
     for index, task in local_tasks:
         results_by_index[index] = task.fn()
-    if future_to_task is not None:
+    if future_to_task:
         _collect_process_tasks(future_to_task, results_by_index)
 
     out: list[Any] = []
