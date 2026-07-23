@@ -275,11 +275,11 @@ def build_call_graph(
     """
     visited_callers: set[str] = set()
 
-    def _callers_tree(name: str, d: int) -> list[dict]:
+    def _callers_tree(name: str, d: int, scope_file: str | None) -> list[dict]:
         if d <= 0 or name in visited_callers:
             return []
         visited_callers.add(name)
-        rows = index.find_callers(name, limit=20)
+        rows = index.find_callers(name, limit=20, scope_file=scope_file)
         result = []
         for row in rows:
             caller = row.get("caller_name") or row.get("caller_file", "")
@@ -288,7 +288,7 @@ def build_call_graph(
                     "caller_name": row.get("caller_name"),
                     "caller_file": row.get("caller_file"),
                     "caller_line": row.get("caller_line"),
-                    "callers": _callers_tree(caller, d - 1) if row.get("caller_name") else [],
+                    "callers": _callers_tree(caller, d - 1, None) if row.get("caller_name") else [],
                 }
             )
         return result
@@ -321,6 +321,13 @@ def build_call_graph(
 
     definition = definitions[0] if definitions else None
 
+    # A non-exported symbol can only be called (unqualified) from within its
+    # own module, so scope callers to the defining file to avoid attributing
+    # an unrelated same-named local procedure's callers to this definition.
+    scope_file = None
+    if definition is not None and not definition.get("is_export"):
+        scope_file = definition["file_path"]
+
     callees_raw: list[dict] = []
     if definition:
         callees_raw = index.find_callees(
@@ -340,7 +347,7 @@ def build_call_graph(
             "line": definition["line"] if definition else None,
             "signature": definition["signature"] if definition else None,
         },
-        "callers": _callers_tree(symbol_name, depth),
+        "callers": _callers_tree(symbol_name, depth, scope_file),
         "callees": [
             {
                 "callee_name": c.get("callee_name"),

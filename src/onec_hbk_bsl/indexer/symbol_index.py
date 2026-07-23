@@ -933,9 +933,24 @@ class SymbolIndex:
             ).fetchall()
         )
 
-    def find_callers(self, callee_name: str, limit: int | None = 50) -> list[dict[str, Any]]:
+    def find_callers(
+        self,
+        callee_name: str,
+        limit: int | None = 50,
+        scope_file: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Find all call sites that call *callee_name*.
+
+        Args:
+            callee_name: Bare name of the called procedure/function.
+            limit:       Max rows to return (``None`` for unlimited).
+            scope_file:  When given, restrict results to call sites in this
+                         file. Bare-name calls to a non-exported (module-local)
+                         symbol can only resolve within its own module, so
+                         callers should be scoped to the defining file to
+                         avoid attributing an unrelated same-named local
+                         procedure's callers to it.
 
         Returns dicts with: caller_file, caller_line, caller_name, callee_name.
         """
@@ -945,18 +960,19 @@ class SymbolIndex:
                 FROM calls c
                 LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower AND s.file_path = c.caller_file
                 WHERE c.callee_name_lower = ?
-                ORDER BY c.caller_file, c.caller_line
                 """
-        params: tuple[Any, ...]
-        if limit is None:
-            params = (callee_name.casefold(),)
-        else:
+        params: list[Any] = [callee_name.casefold()]
+        if scope_file is not None:
+            sql += " AND c.caller_file = ?"
+            params.append(scope_file)
+        sql += " ORDER BY c.caller_file, c.caller_line"
+        if limit is not None:
             sql += " LIMIT ?"
-            params = (callee_name.casefold(), limit)
+            params.append(limit)
         return self._read_list(
             lambda conn: conn.execute(
                 sql,
-                params,
+                tuple(params),
             ).fetchall()
         )
 

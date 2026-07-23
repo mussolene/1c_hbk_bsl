@@ -217,6 +217,45 @@ class TestFindCallers:
         callers = symbol_index.find_callers("НесуществующаяФункция")
         assert callers == []
 
+    def test_find_callers_scope_file_restricts_results(self, symbol_index: SymbolIndex) -> None:
+        """Two files each have their own unrelated same-named local procedure and caller."""
+        for file_path in ("/workspace/ObjectA.bsl", "/workspace/ObjectB.bsl"):
+            symbol_index.upsert_file(
+                file_path,
+                [
+                    {
+                        "name": "ПередЗаписью",
+                        "line": 1,
+                        "character": 0,
+                        "end_line": 2,
+                        "end_character": 0,
+                        "kind": "procedure",
+                        "is_export": False,
+                        "container": None,
+                        "signature": "Procedure ПередЗаписью(Отказ)",
+                        "doc_comment": "",
+                    }
+                ],
+                [
+                    {
+                        "caller_line": 5,
+                        "caller_character": 1,
+                        "caller_name": "Инициализация",
+                        "callee_name": "ПередЗаписью",
+                        "callee_args_count": 1,
+                    }
+                ],
+            )
+
+        unscoped = symbol_index.find_callers("ПередЗаписью")
+        assert {c["caller_file"] for c in unscoped} == {
+            "/workspace/ObjectA.bsl",
+            "/workspace/ObjectB.bsl",
+        }
+
+        scoped = symbol_index.find_callers("ПередЗаписью", scope_file="/workspace/ObjectA.bsl")
+        assert {c["caller_file"] for c in scoped} == {"/workspace/ObjectA.bsl"}
+
     def test_find_callees_by_file(self, symbol_index: SymbolIndex) -> None:
         symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
 
