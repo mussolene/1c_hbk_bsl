@@ -115,7 +115,6 @@ class DiagnosticEngine:
         )
         # Instrumentation for benchmarks/debug: per-thread (free-threading safe).
         self._metrics_tls = threading.local()
-        self._current_snapshot: Any | None = None
         _user_ignore: set[str] = normalize_rule_code_set(ignore) if ignore else set()
         self._ignore: set[str] = _user_ignore & set(_PUBLIC_RULE_CODES)
         self._enabled_codes: frozenset[str] = frozenset(
@@ -337,7 +336,6 @@ class DiagnosticEngine:
             )
         tree = snapshot.tree
         lines = snapshot.lines
-        self._current_lines = lines
         suppressions = parse_suppressions(lines)
 
         # Precompute structural info once (shared across rules).
@@ -361,7 +359,6 @@ class DiagnosticEngine:
             }
         )
         self._metrics_tls.data = last_metrics
-        self._current_snapshot = snapshot
 
         frame = AnalysisFrame(
             path=path,
@@ -369,7 +366,7 @@ class DiagnosticEngine:
             tree=tree,
             snapshot=snapshot,
             lines=lines,
-            symbol_index=symbol_index,
+            symbol_index=symbol_index if symbol_index is not None else self._symbol_index,
         )
         diagnostics = PipelineExecutor().execute(self, frame)
         # Apply inline suppressions
@@ -427,19 +424,24 @@ class DiagnosticEngine:
         return sorted(diagnostics, key=lambda d: (d.line, d.character))
 
     def _complexity_metrics_for_procs(
-        self, lines: list[str], procs: list[_ProcInfo]
+        self,
+        snapshot: Any,
+        lines: list[str],
+        procs: list[_ProcInfo],
     ) -> list[tuple[int, int]]:
-        """Return cached ``(cognitive, mccabe)`` metrics for current file procedures."""
-        snapshot = self._current_snapshot
-        if snapshot is None or getattr(snapshot, "lines", None) is not lines:
-            raise RuntimeError("complexity metrics require the current DocumentSnapshot")
+        """Return cached ``(cognitive, mccabe)`` metrics for one document snapshot."""
+        if getattr(snapshot, "lines", None) is not lines:
+            raise RuntimeError("complexity metrics require the provided DocumentSnapshot")
         return snapshot.complexity_metrics_for_procs(procs)
 
     def _global_method_calls_from_nodes(
-        self, method_call_nodes: list[Any], line_texts: list[str]
+        self,
+        method_call_nodes: list[Any],
+        line_texts: list[str],
+        *,
+        snapshot: Any | None = None,
     ) -> list[dict[str, Any]]:
         """Collect global method calls from an already materialised ``method_call`` node list."""
-        snapshot = self._current_snapshot
         if snapshot is not None and getattr(snapshot, "lines", None) is line_texts:
             cached = snapshot.get_global_method_calls()
             if cached is not None:
@@ -468,9 +470,14 @@ class DiagnosticEngine:
             snapshot.set_global_method_calls(out)
         return out
 
-    def _ts_nodes_for_types(self, tree: Any, node_types: set[str]) -> dict[str, list[Any]]:
-        """Return materialised CST nodes grouped by type for current file."""
-        snapshot = self._current_snapshot
+    def _ts_nodes_for_types(
+        self,
+        tree: Any,
+        node_types: set[str],
+        *,
+        snapshot: Any | None = None,
+    ) -> dict[str, list[Any]]:
+        """Return materialised CST nodes grouped by type for one document snapshot."""
         if (
             snapshot is not None
             and getattr(snapshot, "tree", None) is tree
@@ -491,10 +498,13 @@ class DiagnosticEngine:
         return {node_type: grouped.get(node_type, []) for node_type in node_types}
 
     def _runtime_call_context(
-        self, tree: Any, lines: list[str]
+        self,
+        tree: Any,
+        lines: list[str],
+        *,
+        snapshot: Any | None = None,
     ) -> tuple[list[dict[str, Any]], list[int], list[Any], list[Any]]:
         """Shared CST context for runtime rules that scan global method calls."""
-        snapshot = self._current_snapshot
         if snapshot is not None and getattr(snapshot, "tree", None) is tree:
             cached = snapshot.get_runtime_call_context()
             if cached is not None:
@@ -502,8 +512,13 @@ class DiagnosticEngine:
         nodes = self._ts_nodes_for_types(
             tree,
             {"method_call", "procedure_definition", "function_definition", "try_statement"},
+            snapshot=snapshot,
         )
-        global_calls = self._global_method_calls_from_nodes(nodes["method_call"], lines)
+        global_calls = self._global_method_calls_from_nodes(
+            nodes["method_call"],
+            lines,
+            snapshot=snapshot,
+        )
         global_call_starts = [getattr(call["node"], "start_byte", -1) for call in global_calls]
         proc_nodes = nodes["procedure_definition"] + nodes["function_definition"]
         context = (global_calls, global_call_starts, proc_nodes, nodes["try_statement"])

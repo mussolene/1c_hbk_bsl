@@ -203,7 +203,8 @@ def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:
     engine = DiagnosticEngine(select={"BSL022", "BSL066", "BSL215"})
     requested: list[set[str]] = []
 
-    def record_ts_nodes_for_types(tree, node_types: set[str]):
+    def record_ts_nodes_for_types(tree, node_types: set[str], *, snapshot=None):
+        _ = snapshot
         requested.append(set(node_types))
         return {node_type: [] for node_type in node_types}
 
@@ -244,7 +245,8 @@ def test_runtime_cst_prewarm_covers_late_runtime_consumers() -> None:
     engine = DiagnosticEngine(select=selected)
     requested: list[set[str]] = []
 
-    def record_ts_nodes_for_types(tree, node_types: set[str]):
+    def record_ts_nodes_for_types(tree, node_types: set[str], *, snapshot=None):
+        _ = snapshot
         requested.append(set(node_types))
         return {node_type: [] for node_type in node_types}
 

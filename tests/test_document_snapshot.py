@@ -215,11 +215,10 @@ def test_global_method_call_facts_are_reused_from_snapshot(tmp_path: Path) -> No
     content = 'Сообщить("Первый");\nСообщить("Второй");\n'
     snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
     engine = DiagnosticEngine()
-    engine._current_snapshot = snapshot
     nodes = snapshot.ts_nodes_for_types({"method_call"}, walker=iter_ts_nodes)["method_call"]
 
-    first = engine._global_method_calls_from_nodes(nodes, snapshot.lines)
-    second = engine._global_method_calls_from_nodes(nodes, snapshot.lines)
+    first = engine._global_method_calls_from_nodes(nodes, snapshot.lines, snapshot=snapshot)
+    second = engine._global_method_calls_from_nodes(nodes, snapshot.lines, snapshot=snapshot)
 
     assert len(first) == 2
     assert second is first

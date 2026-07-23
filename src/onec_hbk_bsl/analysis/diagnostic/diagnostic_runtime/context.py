@@ -25,6 +25,7 @@ class DiagnosticDocumentContext:
     lines: list[str]
     tree: Any
     snapshot: Any | None = None
+    symbol_index: Any | None = None
     max_bool_ops: int = 3
     bsl036_enabled: bool = False
     runtime_call_context: Any | None = None

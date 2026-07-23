@@ -11,6 +11,8 @@ Covers:
 from __future__ import annotations
 
 import textwrap
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
@@ -392,6 +394,60 @@ class TestCleanFile:
 
 
 class TestCheckFileOptimization:
+    def test_shared_engine_keeps_parallel_snapshot_state_request_local(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.analysis.diagnostic.pipeline import PipelineExecutor
+        from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
+
+        simple_content = "Процедура Простая()\n    Возврат;\nКонецПроцедуры\n"
+        complex_content = (
+            "Процедура Сложная()\n"
+            "    Если Истина Тогда\n"
+            "        Если Истина Тогда\n"
+            "            Возврат;\n"
+            "        КонецЕсли;\n"
+            "    КонецЕсли;\n"
+            "КонецПроцедуры\n"
+        )
+        snapshots = (
+            build_document_snapshot(str(tmp_path / "simple.bsl"), content=simple_content),
+            build_document_snapshot(str(tmp_path / "complex.bsl"), content=complex_content),
+        )
+        engine = DiagnosticEngine(select={"BSL011"}, max_cognitive_complexity=0)
+
+        def signature(snapshot) -> tuple[tuple[str, int, int, int, int], ...]:
+            return tuple(
+                (diag.code, diag.line, diag.character, diag.end_line, diag.end_character)
+                for diag in engine.check_snapshot(snapshot)
+            )
+
+        serial = {snapshot.path: signature(snapshot) for snapshot in snapshots}
+        assert serial[snapshots[0].path] == ()
+        assert serial[snapshots[1].path]
+
+        original_execute = PipelineExecutor.execute
+        barrier: threading.Barrier | None = None
+
+        def synchronized_execute(self, current_engine, frame):
+            assert barrier is not None
+            barrier.wait(timeout=5)
+            return original_execute(self, current_engine, frame)
+
+        monkeypatch.setattr(PipelineExecutor, "execute", synchronized_execute)
+
+        for _ in range(20):
+            barrier = threading.Barrier(2)
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {
+                    snapshot.path: executor.submit(signature, snapshot) for snapshot in snapshots
+                }
+                parallel = {path: future.result(timeout=10) for path, future in futures.items()}
+            assert parallel == serial
+
+        assert not hasattr(engine, "_current_snapshot")
+        assert not hasattr(engine, "_current_lines")
+
     def test_complexity_rules_reuse_string_state_per_file(
         self, tmp_path: Path, monkeypatch
     ) -> None:
