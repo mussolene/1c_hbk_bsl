@@ -88,3 +88,43 @@ def test_checksum_manifest_is_independent_of_input_order(tmp_path: Path) -> None
     verify_release.write_checksum_manifest([first, second], manifest)
     assert manifest.read_text(encoding="utf-8") == forward
     assert forward.splitlines()[0].endswith("  a.bin")
+
+
+def test_pull_request_preflight_accepts_non_empty_unreleased_section(tmp_path: Path) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Correct pull request preflight.\n",
+        encoding="utf-8",
+    )
+
+    verify_release.verify_changelog(
+        "0.8.44",
+        allow_unreleased=True,
+        changelog_path=changelog,
+    )
+
+
+def test_pull_request_preflight_rejects_empty_unreleased_section(tmp_path: Path) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\n## [Unreleased]\n\n## [0.8.43] - 2026-07-23\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="no non-empty Unreleased section"):
+        verify_release.verify_changelog(
+            "0.8.44",
+            allow_unreleased=True,
+            changelog_path=changelog,
+        )
+
+
+def test_tag_preflight_still_requires_exact_dated_section(tmp_path: Path) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Pending change.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="no dated 0.8.44 section"):
+        verify_release.verify_changelog("0.8.44", changelog_path=changelog)
