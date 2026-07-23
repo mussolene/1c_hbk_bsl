@@ -8,7 +8,7 @@
 - Циклы, условия, вложенность
 
 Использование:
-    python3 scripts/bench_generate_fixtures.py
+    ./.venv/bin/python scripts/bench_generate_fixtures.py
     # Создаёт tests/fixtures/bench_100.bsl, bench_500.bsl, и т.д.
 """
 
@@ -19,6 +19,8 @@ from pathlib import Path
 FIXTURE_DIR = Path(__file__).parent.parent / "tests" / "fixtures"
 
 SIZES = [100, 500, 1000, 3000, 5000]
+DATASET_SCHEMA_VERSION = 1
+DEFAULT_SEED = 20260724
 
 _VAR_NAMES = [
     "ТекущаяСтрока",
@@ -113,11 +115,12 @@ def _make_proc(proc_idx: int, n_vars: int = 4, n_body_lines: int = 25) -> list[s
     return lines
 
 
-def generate_bsl(target_lines: int) -> str:
+def generate_bsl(target_lines: int, *, seed: int = DEFAULT_SEED) -> str:
     """Генерирует BSL-файл с ~target_lines строками."""
     out: list[str] = [
         "// Синтетический BSL файл для бенчмарков производительности",
         f"// Целевой размер: {target_lines} строк",
+        f"// Dataset schema/seed: {DATASET_SCHEMA_VERSION}/{seed}",
         "// Содержит: процедуры, Перем-объявления, циклы, условия, регионы",
         "",
     ]

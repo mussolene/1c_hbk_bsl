@@ -82,8 +82,17 @@ When `useDocker` is true, the extension runs:
 - Lint: `./.venv/bin/python -m ruff check src tests scripts`
 - Format gate: `./.venv/bin/python -m ruff format --check src tests scripts`
 - Tests + coverage gate: `./.venv/bin/python -m pytest -q`
-- Performance checks: use repository scripts or dedicated test tooling; helper
-  scripts are not part of the product CLI.
+- Deterministic performance gate:
+  `./.venv/bin/python scripts/bench_observability.py --output
+  .artifacts/performance-current.json --baseline
+  benchmarks/performance-baseline-v1.json --check`. The versioned synthetic
+  dataset records its seed and content hash; CI compares operation, node and
+  task counts, never wall-clock time.
+- Nightly performance trend: the `Performance observability` workflow records
+  the same schema plus runtime/tool provenance and non-blocking wall-clock
+  observations. Compare compatible JSON artifacts with
+  `./.venv/bin/python scripts/bench_compare.py BEFORE.json AFTER.json`.
+- Benchmark helpers are development tools and are not part of the product CLI.
 - VSCode extension compile: `npm run compile` (in `vscode-extension`)
 
 ## Verification Snapshot v0.8.38

@@ -1,0 +1,85 @@
+{
+  "datasets": [
+    {
+      "counts": {
+        "cache": {
+          "entries": 1,
+          "hits": 1,
+          "lookups": 2,
+          "misses": 1
+        },
+        "diagnostics": {
+          "diagnostics": 44,
+          "rules_enabled": 180,
+          "runs": 1
+        },
+        "index": {
+          "calls": 0,
+          "files": 1,
+          "symbols": 20,
+          "upserts": 1
+        },
+        "parse": {
+          "bytes": 6207,
+          "lines": 140,
+          "nodes": 893,
+          "runs": 1
+        },
+        "scheduler": {
+          "local_tasks": 125,
+          "phases": 6,
+          "process_safe_tasks": 17,
+          "task_codes": 142,
+          "tasks": 142
+        }
+      },
+      "dataset": {
+        "name": "synthetic-100",
+        "schema_version": 1,
+        "seed": 20260724,
+        "sha256": "c7fa521e1ce5e06ac33dbf4513b92c5bec88bec1841ee5d90542d84e2eee2baa"
+      }
+    },
+    {
+      "counts": {
+        "cache": {
+          "entries": 1,
+          "hits": 1,
+          "lookups": 2,
+          "misses": 1
+        },
+        "diagnostics": {
+          "diagnostics": 132,
+          "rules_enabled": 180,
+          "runs": 1
+        },
+        "index": {
+          "calls": 0,
+          "files": 1,
+          "symbols": 60,
+          "upserts": 1
+        },
+        "parse": {
+          "bytes": 18097,
+          "lines": 412,
+          "nodes": 2661,
+          "runs": 1
+        },
+        "scheduler": {
+          "local_tasks": 125,
+          "phases": 6,
+          "process_safe_tasks": 17,
+          "task_codes": 142,
+          "tasks": 142
+        }
+      },
+      "dataset": {
+        "name": "synthetic-500",
+        "schema_version": 1,
+        "seed": 20260724,
+        "sha256": "c74f48e52ab8e152c0181dbc255cb73f3d708649743e1250a163503f2701d586"
+      }
+    }
+  ],
+  "schema_version": 1
+}

@@ -1,0 +1,39 @@
+name: Performance observability
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONHASHSEED: "0"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  trend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv sync --frozen --python 3.12 --extra dev
+      - name: Record comparable trend artifact
+        run: |
+          ./.venv/bin/python scripts/bench_observability.py \
+            --output .artifacts/performance-trend.json \
+            --baseline benchmarks/performance-baseline-v1.json \
+            --check \
+            --include-timing
+      - uses: actions/upload-artifact@v6
+        with:
+          name: performance-trend
+          path: .artifacts/performance-trend.json
+          include-hidden-files: true
+          retention-days: 30

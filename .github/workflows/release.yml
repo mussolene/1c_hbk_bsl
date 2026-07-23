@@ -89,12 +89,20 @@ jobs:
             args+=(--version "${GITHUB_REF_NAME#v}")
           fi
           ./.venv/bin/python scripts/verify_release.py "${args[@]}"
+      - name: Deterministic performance budgets
+        if: matrix.python-version == '3.12'
+        run: |
+          ./.venv/bin/python scripts/bench_observability.py \
+            --output .artifacts/performance-current.json \
+            --baseline benchmarks/performance-baseline-v1.json \
+            --check
       - name: Upload quality evidence
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v6
         with:
           name: quality-evidence
           path: .artifacts/
+          include-hidden-files: true
           retention-days: 14
 
   build-binary:

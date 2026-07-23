@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def parse_timing_file(path: str) -> dict[int, tuple[float, float, int]]:
@@ -41,12 +43,48 @@ def parse_timing_file(path: str) -> dict[int, tuple[float, float, int]]:
     return results
 
 
+def compare_observability(baseline: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    """Compare deterministic counters only; wall-clock observations are ignored."""
+    if baseline.get("schema_version") != current.get("schema_version"):
+        return ["performance schema_version differs"]
+    base_rows = {row["dataset"]["name"]: row for row in baseline.get("datasets", [])}
+    current_rows = {row["dataset"]["name"]: row for row in current.get("datasets", [])}
+    failures: list[str] = []
+    for name, base_row in base_rows.items():
+        row = current_rows.get(name)
+        if row is None:
+            failures.append(f"{name}: dataset missing")
+            continue
+        if base_row["dataset"] != row["dataset"]:
+            failures.append(f"{name}: dataset provenance differs")
+            continue
+        for plane, metrics in base_row.get("counts", {}).items():
+            for metric, maximum in metrics.items():
+                actual = row.get("counts", {}).get(plane, {}).get(metric)
+                if actual is None:
+                    failures.append(f"{name}.{plane}.{metric}: metric missing")
+                elif actual > maximum:
+                    failures.append(
+                        f"{name}.{plane}.{metric}: {actual} exceeds deterministic budget {maximum}"
+                    )
+    return failures
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         print("Usage: bench_compare.py <before.txt> <after.txt>")
         sys.exit(1)
 
     before_path, after_path = sys.argv[1], sys.argv[2]
+    if before_path.endswith(".json") and after_path.endswith(".json"):
+        before_json = json.loads(Path(before_path).read_text(encoding="utf-8"))
+        after_json = json.loads(Path(after_path).read_text(encoding="utf-8"))
+        failures = compare_observability(before_json, after_json)
+        if failures:
+            print("\n".join(failures))
+            sys.exit(1)
+        print("Deterministic performance budgets: PASS (wall-clock ignored)")
+        return
     before = parse_timing_file(before_path)
     after = parse_timing_file(after_path)
 

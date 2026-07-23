@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import importlib.util
 import sys
 from pathlib import Path
@@ -23,6 +24,29 @@ def test_bench_timing_path_for_run_cache_modes() -> None:
     assert bench_timing._path_for_run(base, 1, "hit") == base
     assert bench_timing._path_for_run(base, 1, "miss").startswith(base)
     assert bench_timing._path_for_run(base, 1, "miss") != base
+
+
+def test_observability_report_is_deterministic_and_covers_all_planes() -> None:
+    bench = _load_script_module("bench_observability")
+    first = bench.build_report(sizes=(100,), seed=7, include_timing=False)
+    second = bench.build_report(sizes=(100,), seed=7, include_timing=False)
+
+    assert first["datasets"] == second["datasets"]
+    assert set(first["datasets"][0]["counts"]) == set(bench.REQUIRED_PLANES)
+    bench.validate_report(first)
+
+
+def test_observability_comparator_rejects_growth_but_ignores_wall_clock() -> None:
+    bench = _load_script_module("bench_observability")
+    compare = _load_script_module("bench_compare")
+    baseline = bench.build_report(sizes=(100,), seed=11, include_timing=True)
+    current = copy.deepcopy(baseline)
+    current["datasets"][0]["observations"]["parse_wall_clock_ms"] += 99_999
+    assert compare.compare_observability(baseline, current) == []
+
+    current["datasets"][0]["counts"]["parse"]["nodes"] += 1
+    failures = compare.compare_observability(baseline, current)
+    assert failures and "exceeds deterministic budget" in failures[0]
 
 
 def test_bench_profile_path_for_run_cache_modes() -> None:
