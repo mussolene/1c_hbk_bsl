@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP filesystem, index and metadata tools reject workspace roots, path traversal
   and symlink escapes outside the immutable startup workspace allowlist with a
   stable `workspace_path_denied` response.
+- `bsl_rename` сохраняет read-only preview, но отклоняет `apply=True` стабильной
+  ошибкой `write_disabled` до появления semantic RenamePlan.
 
 ## [0.8.43] - 2026-07-23
 
