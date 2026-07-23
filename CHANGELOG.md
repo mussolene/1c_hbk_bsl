@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   не использует fork-global context и выполняет worker fallback ровно один раз.
 - Incremental index учитывает committed, staged, unstaged, untracked, deleted
   и renamed worktree paths даже при неизменном `HEAD`.
+- LSP защищает cache, snapshot index и Problems от устаревших diagnostic runs
+  монотонными document generations и CAS-публикацией; workspace reindex
+  инициирует diagnostic refresh.
 
 ### Security
 

@@ -193,6 +193,9 @@ class TestDocumentDiagnosticsState:
         state.diag_timers[uri] = timer
         state.diag_last_time[uri] = 0.12
         state.diag_result_cache[uri] = (123, [])
+        state.doc_generations[uri] = 7
+        state.indexed_snapshot_cache[uri] = (7, 123)
+        state.published_diagnostics[uri] = (7, 123)
 
         popped = state.close_document(uri)
 
@@ -201,6 +204,9 @@ class TestDocumentDiagnosticsState:
         assert uri not in state.diag_timers
         assert uri not in state.diag_last_time
         assert uri not in state.diag_result_cache
+        assert uri not in state.doc_generations
+        assert uri not in state.indexed_snapshot_cache
+        assert uri not in state.published_diagnostics
 
     def test_diag_cache_roundtrip(self) -> None:
         from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
@@ -221,14 +227,90 @@ class TestDocumentDiagnosticsState:
             WorkspaceRevisions,
         )
 
+        first = DiagnosticCacheKey(99, WorkspaceRevisions(index=1, metadata=1, config=1))
+        changed_keys = (
+            DiagnosticCacheKey(99, WorkspaceRevisions(index=2, metadata=1, config=1)),
+            DiagnosticCacheKey(99, WorkspaceRevisions(index=1, metadata=2, config=1)),
+            DiagnosticCacheKey(99, WorkspaceRevisions(index=1, metadata=1, config=2)),
+        )
+
+        for changed in changed_keys:
+            state = DocumentDiagnosticsState()
+            uri = "file:///module.bsl"
+            state.set_diag_cache(uri, first, [])
+            assert state.begin_diag_run(uri, first)[0] == "cached"
+            assert state.begin_diag_run(uri, changed)[0] == "run"
+
+    def test_stale_generation_cannot_commit_index_or_publish(self) -> None:
+        import threading
+
+        from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+
         state = DocumentDiagnosticsState()
         uri = "file:///module.bsl"
-        first = DiagnosticCacheKey(99, WorkspaceRevisions(index=1, metadata=1, config=1))
-        changed = DiagnosticCacheKey(99, WorkspaceRevisions(index=2, metadata=1, config=1))
-        state.set_diag_cache(uri, first, [])
+        old_generation = state.set_doc(uri, "Старое = 1;")
+        action, old_run = state.begin_diag_run(uri, "old", old_generation)
+        assert action == "run"
+        assert old_run is not None
 
-        assert state.begin_diag_run(uri, first)[0] == "cached"
-        assert state.begin_diag_run(uri, changed)[0] == "run"
+        old_started = threading.Event()
+        allow_old_finish = threading.Event()
+        old_finished = threading.Event()
+        effects: list[str] = []
+
+        def _finish_old() -> None:
+            old_started.set()
+            assert allow_old_finish.wait(timeout=5)
+            assert not state.finish_diag_run(uri, old_run, diagnostics=["old"])
+            assert not state.index_if_current(
+                uri,
+                old_generation,
+                hash("Старое = 1;"),
+                lambda: effects.append("old-index"),
+            )
+            assert not state.publish_if_current(
+                uri,
+                old_generation,
+                "old",
+                lambda: effects.append("old-publish"),
+            )
+            old_finished.set()
+
+        old_thread = threading.Thread(target=_finish_old)
+        old_thread.start()
+        assert old_started.wait(timeout=5)
+
+        new_generation = state.set_doc(uri, "Новое = 2;")
+        action, new_run = state.begin_diag_run(uri, "new", new_generation)
+        assert action == "run"
+        assert new_run is not None
+        assert state.finish_diag_run(uri, new_run, diagnostics=["new"])
+        assert state.index_if_current(
+            uri,
+            new_generation,
+            hash("Новое = 2;"),
+            lambda: effects.append("new-index"),
+        )
+        assert state.publish_if_current(
+            uri,
+            new_generation,
+            "new",
+            lambda: effects.append("new-publish"),
+        )
+        assert not state.publish_if_current(
+            uri,
+            new_generation,
+            "new",
+            lambda: effects.append("duplicate-publish"),
+        )
+
+        allow_old_finish.set()
+        assert old_finished.wait(timeout=5)
+        old_thread.join(timeout=5)
+        assert not old_thread.is_alive()
+
+        assert state.get_diag_cache(uri) == ("new", ["new"])
+        assert effects == ["new-index", "new-publish"]
 
     def test_workspace_state_replaces_services_and_closes_each_index_once(self) -> None:
         from types import SimpleNamespace
@@ -322,6 +404,124 @@ class TestDocumentDiagnosticsState:
 
 
 class TestPublishDiagnostics:
+    def test_stale_run_finishing_last_does_not_publish_over_latest(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp import server as srv
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _publish_diagnostics
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        uri = (tmp_path / "module.bsl").as_uri()
+        old_content = "Старое = 1;"
+        new_content = "Новое = 2;"
+        ls.doc_state.set_doc(uri, old_content)
+
+        old_started = threading.Event()
+        allow_old_finish = threading.Event()
+        old_finished = threading.Event()
+
+        def _build_inner(
+            _ls: object,
+            _uri: str,
+            _path: str,
+            *,
+            workspace_context: object,
+            content_override: str,
+        ) -> list:
+            if content_override == old_content:
+                old_started.set()
+                assert allow_old_finish.wait(timeout=5)
+            return []
+
+        monkeypatch.setattr(srv, "_build_lsp_diagnostics_inner", _build_inner)
+        monkeypatch.setattr(srv, "_get_lsp_document_context", lambda *_a, **_k: None)
+
+        def _publish_old() -> None:
+            _publish_diagnostics(ls, uri, str(tmp_path / "module.bsl"))
+            old_finished.set()
+
+        old_thread = threading.Thread(target=_publish_old)
+        old_thread.start()
+        assert old_started.wait(timeout=5)
+
+        ls.doc_state.set_doc(uri, new_content)
+        _publish_diagnostics(ls, uri, str(tmp_path / "module.bsl"))
+        _publish_diagnostics(ls, uri, str(tmp_path / "module.bsl"))
+        allow_old_finish.set()
+        assert old_finished.wait(timeout=5)
+        old_thread.join(timeout=5)
+
+        assert not old_thread.is_alive()
+        ls.text_document_publish_diagnostics.assert_called_once()
+        cached = ls.doc_state.get_diag_cache(uri)
+        assert cached is not None
+        assert cached[0].content_hash == hash(new_content)
+
+    def test_workspace_revision_change_discards_inflight_result(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp import server as srv
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _publish_diagnostics
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        ls = BslLanguageServer()
+        ls.text_document_publish_diagnostics = MagicMock()
+        uri = (tmp_path / "module.bsl").as_uri()
+        content = "Значение = 1;"
+        ls.doc_state.set_doc(uri, content)
+
+        old_started = threading.Event()
+        allow_old_finish = threading.Event()
+        old_finished = threading.Event()
+        calls = 0
+
+        def _build_inner(
+            _ls: object,
+            _uri: str,
+            _path: str,
+            *,
+            workspace_context: object,
+            content_override: str,
+        ) -> list:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                old_started.set()
+                assert allow_old_finish.wait(timeout=5)
+            return []
+
+        monkeypatch.setattr(srv, "_build_lsp_diagnostics_inner", _build_inner)
+        monkeypatch.setattr(srv, "_get_lsp_document_context", lambda *_a, **_k: None)
+
+        def _publish_old() -> None:
+            _publish_diagnostics(ls, uri, str(tmp_path / "module.bsl"))
+            old_finished.set()
+
+        old_thread = threading.Thread(target=_publish_old)
+        old_thread.start()
+        assert old_started.wait(timeout=5)
+
+        current_revisions = ls.workspace_state.mark_config_changed()
+        _publish_diagnostics(ls, uri, str(tmp_path / "module.bsl"))
+        allow_old_finish.set()
+        assert old_finished.wait(timeout=5)
+        old_thread.join(timeout=5)
+
+        assert not old_thread.is_alive()
+        assert calls == 2
+        ls.text_document_publish_diagnostics.assert_called_once()
+        cached = ls.doc_state.get_diag_cache(uri)
+        assert cached is not None
+        assert cached[0].revisions == current_revisions
+
     def test_publish_diagnostics_runs_engine(self, tmp_path: Path, monkeypatch) -> None:
         """_publish_diagnostics should not raise for a valid BSL file."""
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
@@ -2307,6 +2507,37 @@ class TestWorkspaceReindexSingleFlight:
         _schedule_workspace_reindex(ls, "/workspace", reason="test")
         time.sleep(0.1)
         assert ls.indexer.calls == 1
+        assert ls._reindex_running is False
+
+    def test_successful_reindex_requests_pull_diagnostic_refresh(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp import server as srv
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _schedule_workspace_reindex
+
+        class _SyncThread:
+            def __init__(self, target, args=(), kwargs=None, daemon=None, name=None):
+                self._target = target
+                self._args = args
+                self._kwargs = kwargs or {}
+
+            def start(self):
+                self._target(*self._args, **self._kwargs)
+
+        monkeypatch.setattr(srv.threading, "Thread", _SyncThread)
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        ls = BslLanguageServer()
+        ls.client_pull_diagnostics = True
+        ls.client_diagnostic_refresh = True
+        ls.workspace_diagnostic_refresh = MagicMock()  # type: ignore[method-assign]
+        ls.indexer.index_workspace = MagicMock()  # type: ignore[method-assign]
+
+        _schedule_workspace_reindex(ls, str(tmp_path), reason="test")
+
+        ls.indexer.index_workspace.assert_called_once_with(str(tmp_path), force=False)
+        ls.workspace_diagnostic_refresh.assert_called_once()
         assert ls._reindex_running is False
 
 
