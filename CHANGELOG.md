@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.44] - 2026-07-23
+
 ### Added
 
 - Type inference сохраняет конкретную metadata identity через manager chains,
