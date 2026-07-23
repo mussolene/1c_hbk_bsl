@@ -38,8 +38,9 @@ import os
 import re
 import threading
 from collections import OrderedDict
+from functools import wraps
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Final
 
 from mcp.server.fastmcp import FastMCP
 
@@ -64,13 +65,14 @@ logger = logging.getLogger(__name__)
 
 # MCP JSON contract version — response shape for clients.
 # Tool payloads are for assistant context; lint/format correctness uses CST in analysis/.
-MCP_CONTRACT_VERSION = "0.2.0"
+MCP_CONTRACT_VERSION = "0.3.0"
 
 # ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
 
-_WORKSPACE = os.path.abspath(os.environ.get("WORKSPACE_ROOT", os.getcwd()))
+_WORKSPACE = str(Path(os.environ.get("WORKSPACE_ROOT", os.getcwd())).resolve())
+_ALLOWED_WORKSPACE_ROOTS: Final[tuple[Path, ...]] = (Path(_WORKSPACE),)
 
 # Resolve DB path: INDEX_DB_PATH env → .git/onec-hbk-bsl_index.sqlite → ~/.cache/onec-hbk-bsl/<hash>/
 _DB_PATH = resolve_index_db_path(_WORKSPACE)
@@ -89,14 +91,76 @@ _indexer: IncrementalIndexer | None = None
 _parser_tls = threading.local()
 
 
+class WorkspacePathError(ValueError):
+    """Stable MCP error for paths outside the startup workspace allowlist."""
+
+    code = "workspace_path_denied"
+
+    def __init__(self, requested_path: str) -> None:
+        super().__init__("Path is outside the allowed workspace")
+        self.requested_path = requested_path
+
+    def as_response(self) -> dict[str, dict[str, str]]:
+        return {
+            "error": {
+                "code": self.code,
+                "message": str(self),
+                "path": self.requested_path,
+            }
+        }
+
+
+def _guard_workspace_access(func):
+    """Convert workspace policy violations into a stable MCP response."""
+
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except WorkspacePathError as exc:
+            return exc.as_response()
+
+    return wrapped
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_existing_or_parent(path: Path) -> Path:
+    if path.exists() or path.is_symlink():
+        return path.resolve(strict=False)
+    return path.parent.resolve(strict=False) / path.name
+
+
+def _resolve_workspace_root(workspace_root: str | None = None) -> str:
+    requested = workspace_root or _WORKSPACE
+    raw = Path(requested)
+    if not raw.is_absolute():
+        raw = Path(_WORKSPACE) / raw
+
+    lexical = Path(os.path.abspath(raw))
+    if not any(_is_within(lexical, root) for root in _ALLOWED_WORKSPACE_ROOTS):
+        raise WorkspacePathError(str(requested))
+
+    resolved = _resolve_existing_or_parent(lexical)
+    if not any(_is_within(resolved, root) for root in _ALLOWED_WORKSPACE_ROOTS):
+        raise WorkspacePathError(str(requested))
+    return str(resolved)
+
+
 def _get_index(workspace_root: str | None = None) -> SymbolIndex:
+    ws = _resolve_workspace_root(workspace_root)
     if workspace_root is None:
         global _index
         if _index is None:
             _index = SymbolIndex(db_path=_DB_PATH)
         return _index
 
-    ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
     db_path = resolve_index_db_path(ws)
 
     with _cache_lock:
@@ -117,13 +181,13 @@ def _get_index(workspace_root: str | None = None) -> SymbolIndex:
 
 
 def _get_indexer(workspace_root: str | None = None) -> IncrementalIndexer:
+    ws = _resolve_workspace_root(workspace_root)
     if workspace_root is None:
         global _indexer
         if _indexer is None:
             _indexer = IncrementalIndexer(index=_get_index())
         return _indexer
 
-    ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
     db_path = resolve_index_db_path(ws)
 
     with _cache_lock:
@@ -267,6 +331,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     @mcp.tool(
         description="Return current indexing status: counts, size, ready state, and indexing state."
     )
+    @_guard_workspace_access
     def bsl_status(
         workspace_root: Annotated[
             str | None, "Workspace root for the index (defaults to server WORKSPACE_ROOT)"
@@ -278,7 +343,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         Returns stats: symbol count, file count, index size, last indexed git commit, workspace root.
         Call this first to confirm the index is populated before searching.
         """
-        ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+        ws = _resolve_workspace_root(workspace_root)
         index = _get_index(workspace_root)
         stats = index.get_stats()
         return {
@@ -310,6 +375,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Returns file path, line, signature, and export status."
         )
     )
+    @_guard_workspace_access
     def bsl_find_symbol(
         name: Annotated[
             str, "Symbol name to search for (case-insensitive, prefix match supported)"
@@ -364,6 +430,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "List all symbols (procedures, functions, variables) defined in a single BSL file."
         )
     )
+    @_guard_workspace_access
     def bsl_file_symbols(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         workspace_root: Annotated[
@@ -408,6 +475,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "pass file_filter to pick one."
         )
     )
+    @_guard_workspace_access
     def bsl_callers(
         symbol_name: Annotated[str, "Name of the procedure or function to find callers of"],
         depth: Annotated[int, "How many levels of callers to traverse (default 3)"] = 3,
@@ -459,6 +527,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "pass file_filter to pick one."
         )
     )
+    @_guard_workspace_access
     def bsl_callees(
         symbol_name: Annotated[str, "Name of the procedure or function to inspect"],
         depth: Annotated[int, "How many call levels to traverse (default 3)"] = 3,
@@ -507,6 +576,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "when the symbol index is populated."
         )
     )
+    @_guard_workspace_access
     def bsl_diagnostics(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         workspace_root: Annotated[
@@ -557,6 +627,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     @mcp.tool(
         description="Find the definition location(s) of a BSL symbol by name.",
     )
+    @_guard_workspace_access
     def bsl_definition(
         symbol_name: Annotated[str, "Exact symbol name to look up"],
         file_filter: Annotated[
@@ -602,6 +673,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Accepts BSL### or BSLLS names. Diagnostics include rule_name + code."
         )
     )
+    @_guard_workspace_access
     def bsl_check_file(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         workspace_root: Annotated[
@@ -702,6 +774,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Use this after editing a file to update the symbol index immediately."
         ),
     )
+    @_guard_workspace_access
     def bsl_index_file(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         workspace_root: Annotated[
@@ -733,6 +806,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Searches workspace index first, then built-in platform API."
         )
     )
+    @_guard_workspace_access
     def bsl_hover(
         symbol_name: Annotated[str, "Symbol name to look up"],
         workspace_root: Annotated[
@@ -800,6 +874,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Combines bsl_definition + bsl_callers into one result."
         )
     )
+    @_guard_workspace_access
     def bsl_references(
         symbol_name: Annotated[str, "Symbol name to find all references for"],
         include_definitions: Annotated[bool, "Include definition locations (default True)"] = True,
@@ -847,6 +922,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Equivalent to get_range_content in mcp-bsl-lsp-bridge."
         )
     )
+    @_guard_workspace_access
     def bsl_read_file(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         start_line: Annotated[int | None, "First line to return (1-based, inclusive)"] = None,
@@ -895,6 +971,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Combines symbol index search with optional filesystem text scan."
         )
     )
+    @_guard_workspace_access
     def bsl_search(
         query: Annotated[str, "Text or regex pattern to search for"],
         search_type: Annotated[
@@ -918,7 +995,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         search_type='both'    — runs both and merges results.
         """
         results: dict = {"query": query, "search_type": search_type}
-        ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+        ws = _resolve_workspace_root(workspace_root)
 
         if search_type in ("symbol", "both"):
             rows = _get_index(workspace_root).find_symbol(
@@ -944,7 +1021,14 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
                 return results
 
             workspace = Path(ws)
-            bsl_files = list(workspace.rglob("*.bsl")) if workspace.is_dir() else []
+            bsl_files = (
+                [
+                    Path(_resolve_path(str(path), workspace_root=ws))
+                    for path in workspace.rglob("*.bsl")
+                ]
+                if workspace.is_dir()
+                else []
+            )
             if file_filter:
                 bsl_files = [f for f in bsl_files if file_filter in str(f)]
 
@@ -983,6 +1067,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Returns the formatted text and optionally writes the file."
         )
     )
+    @_guard_workspace_access
     def bsl_format(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         write: Annotated[bool, "If True, write the formatted content back to the file"] = False,
@@ -1039,6 +1124,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Finds all definitions and call sites, then optionally applies edits to files."
         )
     )
+    @_guard_workspace_access
     def bsl_rename(
         old_name: Annotated[str, "Current symbol name"],
         new_name: Annotated[str, "New symbol name"],
@@ -1074,6 +1160,12 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             file_edits.setdefault(d["file_path"], []).append(d["line"] - 1)
         for c in callers:
             file_edits.setdefault(c["caller_file"], []).append(c["caller_line"] - 1)
+
+        safe_file_edits: dict[str, list[int]] = {}
+        for file_path, lines in file_edits.items():
+            safe_path = _resolve_path(file_path, workspace_root=workspace_root)
+            safe_file_edits.setdefault(safe_path, []).extend(lines)
+        file_edits = safe_file_edits
 
         preview = [
             {"file_path": fp, "lines_affected": len(lines)}
@@ -1127,6 +1219,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "missing newline at EOF). Optionally writes the fixed content to disk."
         )
     )
+    @_guard_workspace_access
     def bsl_fix(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         write: Annotated[
@@ -1202,6 +1295,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "file list, line counts, and quick module metrics."
         )
     )
+    @_guard_workspace_access
     def bsl_workspace_scan(
         directory: Annotated[str | None, "Directory to scan (default: WORKSPACE_ROOT)"] = None,
         max_files: Annotated[int, "Maximum files to include in result (default 200)"] = 200,
@@ -1217,14 +1311,16 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             Dict with ``file_count``, ``total_lines``, and ``files`` list.
             Each file entry has: path, size_bytes, line_count, symbol_count (if indexed).
         """
-        ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
+        ws = _resolve_workspace_root(workspace_root)
         root = (
             Path(_resolve_path(directory, workspace_root=workspace_root)) if directory else Path(ws)
         )
         if not root.is_dir():
             return {"error": f"Not a directory: {root}"}
 
-        bsl_files = sorted(root.rglob("*.bsl"))
+        bsl_files = sorted(
+            Path(_resolve_path(str(path), workspace_root=ws)) for path in root.rglob("*.bsl")
+        )
         total_lines = 0
         files_info: list[dict] = []
 
@@ -1271,6 +1367,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "export (with Configuration.xml) is present in the workspace."
         )
     )
+    @_guard_workspace_access
     def bsl_meta_object(
         name: Annotated[str, "Technical name of the 1C metadata object (e.g. 'Контрагенты')"],
         kind_filter: Annotated[
@@ -1334,6 +1431,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Returns object names, kinds, and synonyms."
         )
     )
+    @_guard_workspace_access
     def bsl_meta_collection(
         collection: Annotated[
             str, "Russian name of the collection (e.g. 'Справочники', 'Документы')"
@@ -1384,6 +1482,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "Searches for Configuration.xml within the workspace and parses all objects."
         )
     )
+    @_guard_workspace_access
     def bsl_meta_index(
         workspace: Annotated[
             str | None, "Workspace path to index (defaults to server WORKSPACE_ROOT)"
@@ -1403,9 +1502,12 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         Returns:
             Dict with objects count, members count, or error.
         """
-        ws = os.path.abspath(workspace_root or workspace or _WORKSPACE)
+        ws = _resolve_workspace_root(workspace_root or workspace)
+        resolved_config_root = (
+            _resolve_path(config_root, workspace_root=ws) if config_root is not None else None
+        )
         indexer = _get_indexer(ws)
-        result = indexer.index_metadata(ws, config_root=config_root)
+        result = indexer.index_metadata(ws, config_root=resolved_config_root)
         if isinstance(result, dict):
             result["metadata_kind_registry"] = defs_snapshot()
         return result
@@ -1424,8 +1526,14 @@ def _resolve_path(file_path: str, workspace_root: str | None = None) -> str:
 
     If *file_path* is relative, it is joined against WORKSPACE_ROOT.
     """
-    p = Path(file_path)
-    if p.is_absolute():
-        return str(p)
-    ws = os.path.abspath(workspace_root) if workspace_root else _WORKSPACE
-    return str(Path(ws) / file_path)
+    workspace = Path(_resolve_workspace_root(workspace_root))
+    requested = Path(file_path)
+    raw = requested if requested.is_absolute() else workspace / requested
+    lexical = Path(os.path.abspath(raw))
+    if not _is_within(lexical, workspace):
+        raise WorkspacePathError(file_path)
+
+    resolved = _resolve_existing_or_parent(lexical)
+    if not _is_within(resolved, workspace):
+        raise WorkspacePathError(file_path)
+    return str(resolved)
