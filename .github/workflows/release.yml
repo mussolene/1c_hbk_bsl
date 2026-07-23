@@ -281,16 +281,19 @@ jobs:
           path: artifacts/
       - name: Verify the complete artifact set
         run: |
+          changelog_args=()
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
             VERSION="$(uv run --frozen python -c \
               'from onec_hbk_bsl import __version__; print(__version__.split(".dev", 1)[0])')"
+            changelog_args+=(--allow-unreleased-changelog)
           fi
           uv run --frozen python scripts/verify_release.py artifacts \
             --version "${VERSION}" \
             --artifacts-dir artifacts \
-            --output-dir release-assets
+            --output-dir release-assets \
+            "${changelog_args[@]}"
       - uses: actions/upload-artifact@v6
         with:
           name: verified-release-assets

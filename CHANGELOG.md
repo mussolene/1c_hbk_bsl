@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Artifact preflight для pull request проверяет непустой раздел `Unreleased`,
+  сохраняя строгую проверку датированного раздела версии для release tag.
+
 ### Security
 
 - MCP filesystem, index and metadata tools reject workspace roots, path traversal
