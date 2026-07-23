@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CLI, Python API, LSP и MCP используют единый immutable config resolver с
+  приоритетом explicit option → environment → project config → defaults;
+  явные `--format text`, `--jobs 0`, `--no-exit-zero` и
+  `--no-insert-spaces` корректно перекрывают конфиг проекта.
+
 ## [0.8.44] - 2026-07-23
 
 ### Added
