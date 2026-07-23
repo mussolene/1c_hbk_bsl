@@ -16,6 +16,7 @@ _FIXTURE = (
 )
 
 
+@pytest.mark.external_bslls
 @pytest.mark.skipif(not _FIXTURE.is_file(), reason="copy from BSLLS diagnostics resources")
 def test_bsl148_matches_bslls_default_fixture() -> None:
     engine = DiagnosticEngine(select={"BSL148"})
@@ -24,6 +25,7 @@ def test_bsl148_matches_bslls_default_fixture() -> None:
     assert lines == [1, 26, 94, 103, 132]
 
 
+@pytest.mark.external_bslls
 @pytest.mark.skipif(not _FIXTURE.is_file(), reason="copy from BSLLS diagnostics resources")
 def test_bsl148_loops_false_adds_for_loop_case() -> None:
     engine = DiagnosticEngine(

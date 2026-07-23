@@ -37,6 +37,26 @@ def _check_content(content: str, tmp_path: Path) -> list[Diagnostic]:
 
 
 class TestBsl001SyntaxErrors:
+    def test_malformed_document_reports_precise_error(self, tmp_path: Path) -> None:
+        bsl_file = tmp_path / "malformed.bsl"
+        bsl_file.write_text(
+            "Процедура Тест()\n    Если Тогда\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+
+        issues = DiagnosticEngine(select={"BSL001"}).check_file(str(bsl_file))
+        syntax_errors = [diagnostic for diagnostic in issues if diagnostic.code == "BSL001"]
+
+        assert len(syntax_errors) == 1
+        assert (
+            syntax_errors[0].line,
+            syntax_errors[0].character,
+            syntax_errors[0].end_line,
+            syntax_errors[0].end_character,
+        ) == (2, 4, 2, 23)
+        assert syntax_errors[0].severity is Severity.ERROR
+        assert syntax_errors[0].message == get_rule("BSL001").message
+
     def test_valid_file_has_no_syntax_errors(self, sample_bsl_path: str) -> None:
         """sample.bsl is syntactically valid — should produce no BSL001 errors."""
         engine = DiagnosticEngine()

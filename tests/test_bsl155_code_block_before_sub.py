@@ -97,6 +97,7 @@ def test_bsl155_skips_ext_fragment_without_canonical_sibling(tmp_path: Path) -> 
     assert not [d for d in engine.check_file(str(p)) if d.code == "BSL155"]
 
 
+@pytest.mark.external_bslls
 def test_bsl155_matches_upstream_fixture_range() -> None:
     p = Path(
         ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/CodeBlockBeforeSubDiagnostic.bsl"

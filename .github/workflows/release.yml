@@ -46,6 +46,7 @@ jobs:
         run: |
           mkdir -p .artifacts
           ./.venv/bin/python -m pytest -q \
+            -m "not external_bslls" \
             --cov=src/onec_hbk_bsl \
             --cov-report=term-missing \
             --cov-report=json:.artifacts/coverage.json \
@@ -59,6 +60,17 @@ jobs:
             ./.venv/bin/python -m pytest --version
             echo "PYTHONHASHSEED=${PYTHONHASHSEED}"
           } > .artifacts/environment.txt
+      - name: External BSLLS fixture status
+        if: matrix.python-version == '3.12'
+        run: |
+          mkdir -p .artifacts
+          if [[ -d .tmp/external-fixtures/bsl-language-server ]]; then
+            ./.venv/bin/python -m pytest -q -m external_bslls \
+              --no-cov | tee .artifacts/external-bslls.log
+            echo "external_bslls=available" > .artifacts/external-bslls-status.txt
+          else
+            echo "external_bslls=unavailable" | tee .artifacts/external-bslls-status.txt
+          fi
       - name: Frozen extension dependencies and behavior tests
         if: matrix.python-version == '3.12'
         working-directory: vscode-extension

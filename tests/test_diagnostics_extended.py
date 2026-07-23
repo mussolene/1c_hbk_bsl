@@ -1281,6 +1281,7 @@ class TestSecurityApiParityBatch:
         ]
         assert {d.message for d in diags} == {_rule_msg("BSL267")}
 
+    @pytest.mark.external_bslls
     def test_bsl272_synchronous_calls_matches_bslls_fixture(self, tmp_path: Path) -> None:
         fixture = (
             Path(__file__).resolve().parents[1]
@@ -4110,7 +4111,18 @@ class TestBsl248SeveralCompilerDirectives:
         """
         diags = _check(content, tmp_path, select={"BSL248"})
 
-        assert _codes(diags).count("BSL248") == 1
+        bsl248 = [diag for diag in diags if diag.code == "BSL248"]
+        assert [
+            (
+                diag.line,
+                diag.character,
+                diag.end_line,
+                diag.end_character,
+                diag.severity,
+                diag.message,
+            )
+            for diag in bsl248
+        ] == [(3, 10, 3, 14, Severity.ERROR, _rule_msg("BSL248"))]
 
     def test_two_directives_on_module_variable_are_reported(self, tmp_path: Path) -> None:
         content = """\
@@ -4274,6 +4286,7 @@ class TestBsl217MissingTempStorageDeletion:
         diags = _check(content, tmp_path, select={"BSL217"})
         assert "BSL217" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/"
@@ -6405,6 +6418,7 @@ class TestBsl200IncorrectLineBreak:
         diags = _check(content, tmp_path, select={"BSL200"})
         assert "BSL200" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/IncorrectLineBreakDiagnostic.bsl"
@@ -6547,6 +6561,7 @@ class TestBsl027UseGoto:
         diags = _check(content, tmp_path, select={"BSL027"})
         assert "BSL027" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/UsingGotoDiagnostic.bsl"
@@ -6624,6 +6639,7 @@ class TestBsl028MissingCodeTryCatchEx:
         diags = _check(content, tmp_path, select={"BSL028"})
         assert "BSL028" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/"
@@ -6913,6 +6929,7 @@ class TestBsl029MagicNumber:
             (2, 44, 45),
         ]
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/MagicNumberDiagnostic.bsl"
@@ -8996,6 +9013,7 @@ class TestBsl258UnionAll:
         diags = _check(content, tmp_path, select={"BSL258"})
         assert "BSL258" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -9165,6 +9183,8 @@ class TestBsl149AssignAliasFieldsInQueryFixture:
         assert len(bsl149) == 1
         assert bsl149[0].line == 2
         assert bsl149[0].character > 0
+        assert bsl149[0].end_character > bsl149[0].character
+        assert bsl149[0].severity is Severity.WARNING
         assert bsl149[0].message == _rule_msg("BSL149")
 
     def test_multiline_case_with_alias_no_warning(self, tmp_path: Path) -> None:
@@ -9717,6 +9737,7 @@ class TestBsl210LogicalOrInWhereSection:
             (8, 4, 7),
         ]
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = Path(
             ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/"
@@ -10275,6 +10296,7 @@ class TestBsl218MissingTemporaryFileDeletion:
         diags = _check(content, tmp_path, select={"BSL218"})
         assert _codes(diags) == ["BSL218"]
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -10339,6 +10361,8 @@ class TestBsl225NumberOfValuesInStructureConstructor:
         assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
             (2, 13, 2, 68)
         ]
+        assert diags[0].severity is Severity.INFORMATION
+        assert diags[0].message == _rule_msg("BSL225")
 
 
 # ---------------------------------------------------------------------------
@@ -11325,6 +11349,7 @@ class TestBsl255TryNumber:
 
         assert "BSL255" not in _codes(_check(content, tmp_path, select={"BSL255"}))
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11364,6 +11389,7 @@ class TestBsl257UnaryPlusInConcatenation:
 
         assert "BSL257" not in _codes(_check(content, tmp_path, select={"BSL257"}))
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11390,6 +11416,31 @@ class TestBsl257UnaryPlusInConcatenation:
 
 
 class TestBsl273VirtualTableCallWithoutParameters:
+    def test_empty_virtual_table_parameters_report_exact_range(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Тест()\n"
+            '    Запрос = Новый Запрос("ВЫБРАТЬ * ИЗ '
+            'РегистрНакопления.Товары.Остатки() КАК Остатки");\n'
+            "КонецПроцедуры\n"
+        )
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL273"}) if d.code == "BSL273"]
+
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity, d.message) for d in diags
+        ] == [(2, 40, 2, 74, Severity.ERROR, _rule_msg("BSL273"))]
+
+    def test_parameterized_virtual_table_is_clean(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Тест()\n"
+            '    Запрос = Новый Запрос("ВЫБРАТЬ * ИЗ '
+            'РегистрНакопления.Товары.Остатки(&Дата) КАК Остатки");\n'
+            "КонецПроцедуры\n"
+        )
+
+        assert "BSL273" not in _codes(_check(content, tmp_path, select={"BSL273"}))
+
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11440,6 +11491,7 @@ class TestBsl279YoLetterUsage:
 
         assert "BSL279" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11468,6 +11520,30 @@ class TestBsl279YoLetterUsage:
 
 
 class TestBsl277WrongUseOfRollbackTransaction:
+    def test_rollback_outside_except_reports_exact_call(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    ОтменитьТранзакцию();\nКонецПроцедуры\n"
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL277"}) if d.code == "BSL277"]
+
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity, d.message) for d in diags
+        ] == [(2, 4, 2, 22, Severity.ERROR, _rule_msg("BSL277"))]
+
+    def test_rollback_first_in_except_is_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест()
+                Попытка
+                    Выполнить();
+                Исключение
+                    ОтменитьТранзакцию();
+                    ВызватьИсключение;
+                КонецПопытки;
+            КонецПроцедуры
+        """
+
+        assert "BSL277" not in _codes(_check(content, tmp_path, select={"BSL277"}))
+
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11494,6 +11570,21 @@ class TestBsl277WrongUseOfRollbackTransaction:
 
 
 class TestBsl276WrongUseFunctionProceedWithCall:
+    def test_proceed_without_around_reports_exact_call(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    ПродолжитьВызов();\nКонецПроцедуры\n"
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL276"}) if d.code == "BSL276"]
+
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity, d.message) for d in diags
+        ] == [(2, 4, 2, 19, Severity.ERROR, _rule_msg("BSL276"))]
+
+    def test_proceed_in_around_method_is_clean(self, tmp_path: Path) -> None:
+        content = '&Вместо("Тест")\nПроцедура Тест()\n    ПродолжитьВызов();\nКонецПроцедуры\n'
+
+        assert "BSL276" not in _codes(_check(content, tmp_path, select={"BSL276"}))
+
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11562,6 +11653,7 @@ class TestBsl263UseLessForEach:
 
         assert "BSL263" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11626,6 +11718,7 @@ class TestBsl199IfElseIfEndsWithElse:
         diags = DiagnosticEngine(select={"BSL199"}).check_file(str(path))
         assert "BSL199" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11677,6 +11770,7 @@ class TestBsl198IfElseDuplicatedCondition:
         ]
         assert {d.severity for d in diags} == {Severity.WARNING}
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11705,6 +11799,37 @@ class TestBsl198IfElseDuplicatedCondition:
 
 
 class TestBsl197IfElseDuplicatedCodeBlock:
+    def test_duplicate_else_block_reports_exact_statement(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Флаг)
+                Если Флаг Тогда
+                    Значение = 1;
+                Иначе
+                    Значение = 1;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL197"}) if d.code == "BSL197"]
+
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity, d.message) for d in diags
+        ] == [(3, 8, 3, 21, Severity.INFORMATION, _rule_msg("BSL197"))]
+
+    def test_distinct_if_else_blocks_are_clean(self, tmp_path: Path) -> None:
+        content = """\
+            Процедура Тест(Флаг)
+                Если Флаг Тогда
+                    Значение = 1;
+                Иначе
+                    Значение = 2;
+                КонецЕсли;
+            КонецПроцедуры
+        """
+
+        assert "BSL197" not in _codes(_check(content, tmp_path, select={"BSL197"}))
+
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11734,6 +11859,7 @@ class TestBsl197IfElseDuplicatedCodeBlock:
 
 
 class TestBsl225NumberOfValuesInStructureConstructorBslls:
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11804,6 +11930,7 @@ class TestBsl262UsageWriteLogEvent:
 
         assert "BSL262" in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11863,6 +11990,7 @@ class TestBsl151BeginTransactionBeforeTryCatch:
             (3, 4, 3, 23)
         ]
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11924,6 +12052,7 @@ class TestBsl157CommitTransactionOutsideTryCatch:
         diags = _check(content, tmp_path, select={"BSL157"})
         assert "BSL157" not in _codes(diags)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11954,6 +12083,7 @@ class TestBsl157CommitTransactionOutsideTryCatch:
             "'Попытка' перед оператором 'Исключение'"
         }
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_single_sub_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -11989,6 +12119,7 @@ class TestBsl230PairingBrokenTransaction:
         assert len(diags) == 1
         assert (diags[0].line, diags[0].character, diags[0].end_character) == (2, 2, 22)
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -12054,6 +12185,21 @@ class TestBsl268UsingFindElementByString:
 
 
 class TestBsl227OneStatementPerLine:
+    def test_second_statement_reports_exact_range(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    А = 1; Б = 2;\nКонецПроцедуры\n"
+
+        diags = [d for d in _check(content, tmp_path, select={"BSL227"}) if d.code == "BSL227"]
+
+        assert [
+            (d.line, d.character, d.end_line, d.end_character, d.severity, d.message) for d in diags
+        ] == [(2, 11, 2, 17, Severity.INFORMATION, _rule_msg("BSL227"))]
+
+    def test_one_statement_per_line_is_clean(self, tmp_path: Path) -> None:
+        content = "Процедура Тест()\n    А = 1;\n    Б = 2;\nКонецПроцедуры\n"
+
+        assert "BSL227" not in _codes(_check(content, tmp_path, select={"BSL227"}))
+
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -12076,6 +12222,7 @@ class TestBsl227OneStatementPerLine:
         ]
         assert {diag.severity for diag in diags} == {Severity.INFORMATION}
 
+    @pytest.mark.external_bslls
     def test_matches_bslls_end_file_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -12097,6 +12244,7 @@ class TestBsl227OneStatementPerLine:
 
 
 class TestBsl149AssignAliasFieldsInQuery:
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")
@@ -12121,6 +12269,7 @@ class TestBsl149AssignAliasFieldsInQuery:
 
 
 class TestBsl186ExtraCommas:
+    @pytest.mark.external_bslls
     def test_matches_bslls_fixture(self) -> None:
         fixture = (
             Path(".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics")

@@ -71,6 +71,10 @@ def _write_module_xml(
     return bsl
 
 
+def _engine_codes(path: Path, code: str) -> set[str]:
+    return {diagnostic.code for diagnostic in DiagnosticEngine(select={code}).check_file(str(path))}
+
+
 def test_bsl158_assign_to_indexed_common_module(tmp_path: Path) -> None:
     p = tmp_path / "m.bsl"
     p.write_text("МойОбщийМодуль = 1;\n", encoding="utf-8")
@@ -208,13 +212,16 @@ def test_bsl161_cached_name(tmp_path: Path) -> None:
 def test_bsl162_client_name(tmp_path: Path) -> None:
     bsl = _write_module_xml(tmp_path, coa="true", cma="true")
     assert "BSL162" in {c for c, _ in common_module_name_convention_issues(str(bsl))}
+    assert "BSL162" in _engine_codes(bsl, "BSL162")
     bsl_ok = _write_module_xml(tmp_path / "ok", folder_name="КлиентТест", coa="true", cma="true")
     assert "BSL162" not in {c for c, _ in common_module_name_convention_issues(str(bsl_ok))}
+    assert "BSL162" not in _engine_codes(bsl_ok, "BSL162")
 
 
 def test_bsl163_client_server_name(tmp_path: Path) -> None:
     bsl = _write_module_xml(tmp_path, server="true", ext="true", coa="true", cma="true")
     assert "BSL163" in {c for c, _ in common_module_name_convention_issues(str(bsl))}
+    assert "BSL163" in _engine_codes(bsl, "BSL163")
     bsl_ok = _write_module_xml(
         tmp_path / "ok",
         folder_name="КлиентСерверТест",
@@ -224,11 +231,13 @@ def test_bsl163_client_server_name(tmp_path: Path) -> None:
         cma="true",
     )
     assert "BSL163" not in {c for c, _ in common_module_name_convention_issues(str(bsl_ok))}
+    assert "BSL163" not in _engine_codes(bsl_ok, "BSL163")
 
 
 def test_bsl164_privileged_name(tmp_path: Path) -> None:
     bsl = _write_module_xml(tmp_path, privileged="true", server="true", ext="true", coa="true")
     assert "BSL164" in {c for c, _ in common_module_name_convention_issues(str(bsl))}
+    assert "BSL164" in _engine_codes(bsl, "BSL164")
     bsl_ok = _write_module_xml(
         tmp_path / "ok",
         folder_name="ПолныеПраваТест",
@@ -238,15 +247,18 @@ def test_bsl164_privileged_name(tmp_path: Path) -> None:
         coa="true",
     )
     assert "BSL164" not in {c for c, _ in common_module_name_convention_issues(str(bsl_ok))}
+    assert "BSL164" not in _engine_codes(bsl_ok, "BSL164")
 
 
 def test_bsl165_global_name(tmp_path: Path) -> None:
     bsl = _write_module_xml(tmp_path, global_="true", coa="true", cma="true")
     assert "BSL165" in {c for c, _ in common_module_name_convention_issues(str(bsl))}
+    assert "BSL165" in _engine_codes(bsl, "BSL165")
     bsl_ok = _write_module_xml(
         tmp_path / "ok", folder_name="ГлобальныйТест", global_="true", coa="true", cma="true"
     )
     assert "BSL165" not in {c for c, _ in common_module_name_convention_issues(str(bsl_ok))}
+    assert "BSL165" not in _engine_codes(bsl_ok, "BSL165")
 
 
 def test_bsl166_global_client_name(tmp_path: Path) -> None:
@@ -254,6 +266,7 @@ def test_bsl166_global_client_name(tmp_path: Path) -> None:
         tmp_path, folder_name="ГлобальныйСервис", global_="true", coa="true", cma="true"
     )
     assert "BSL166" in {c for c, _ in common_module_name_convention_issues(str(bsl))}
+    assert "BSL166" in _engine_codes(bsl, "BSL166")
     bsl_ok = _write_module_xml(
         tmp_path / "ok",
         folder_name="ГлобальныйКлиентТест",
@@ -262,6 +275,7 @@ def test_bsl166_global_client_name(tmp_path: Path) -> None:
         cma="true",
     )
     assert "BSL166" not in {c for c, _ in common_module_name_convention_issues(str(bsl_ok))}
+    assert "BSL166" not in _engine_codes(bsl_ok, "BSL166")
 
 
 def test_bsl167_server_call_name(tmp_path: Path) -> None:
@@ -269,6 +283,7 @@ def test_bsl167_server_call_name(tmp_path: Path) -> None:
         tmp_path, server="true", servercall="true", ext="false", coa="false", cma="false"
     )
     assert "BSL167" in {c for c, _ in common_module_name_convention_issues(str(bsl))}
+    assert "BSL167" in _engine_codes(bsl, "BSL167")
     bsl_ok = _write_module_xml(
         tmp_path / "ok",
         folder_name="ВызовСервераТест",
@@ -279,6 +294,7 @@ def test_bsl167_server_call_name(tmp_path: Path) -> None:
         cma="false",
     )
     assert "BSL167" not in {c for c, _ in common_module_name_convention_issues(str(bsl_ok))}
+    assert "BSL167" not in _engine_codes(bsl_ok, "BSL167")
 
 
 def test_bsl168_forbidden_word_in_name(tmp_path: Path) -> None:
@@ -292,3 +308,7 @@ def test_bsl168_forbidden_word_in_name(tmp_path: Path) -> None:
     assert diags[0].line == 1
     assert diags[0].character == 0
     assert diags[0].end_character == 1
+    bsl_ok = _write_module_xml(
+        tmp_path / "ok", folder_name="ТестСервис", server="true", ext="true", coa="true"
+    )
+    assert "BSL168" not in _engine_codes(bsl_ok, "BSL168")

@@ -30,6 +30,7 @@ def _fixture(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+@pytest.mark.external_bslls
 @pytest.mark.parametrize(
     ("source_name", "expected_name", "indent_size"),
     [
@@ -53,6 +54,7 @@ def test_bslls_unary_minus_fixture_parity() -> None:
     assert formatter.format("Возврат-1>-2", indent_size=4, insert_spaces=True) == "Возврат -1 > -2"
 
 
+@pytest.mark.external_bslls
 def test_bslls_general_fixture_parity() -> None:
     formatter = BslFormatter()
     assert formatter.format(_fixture("format.bsl"), indent_size=4, insert_spaces=True) == _fixture(
@@ -60,6 +62,7 @@ def test_bslls_general_fixture_parity() -> None:
     )
 
 
+@pytest.mark.external_bslls
 def test_bslls_range_fixture_parity() -> None:
     formatter = BslFormatter()
     source = _fixture("format.bsl")
@@ -72,6 +75,7 @@ def test_bslls_range_fixture_parity() -> None:
     )
 
 
+@pytest.mark.external_bslls
 def test_bslls_fluent_fixture_parity() -> None:
     formatter = BslFormatter()
     assert formatter.format(

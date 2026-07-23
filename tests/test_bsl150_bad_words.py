@@ -45,6 +45,7 @@ def test_bsl150_can_skip_comments() -> None:
     assert [(d.line, d.character, d.end_character) for d in diags] == [(2, 14, 21)]
 
 
+@pytest.mark.external_bslls
 def test_bsl150_matches_bslls_configured_fixture() -> None:
     fixture = Path(
         ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/BadWordsDiagnostic.bsl"
@@ -70,6 +71,7 @@ def test_bsl150_matches_bslls_configured_fixture() -> None:
     ]
 
 
+@pytest.mark.external_bslls
 def test_bsl150_matches_bslls_configured_fixture_without_comments() -> None:
     fixture = Path(
         ".tmp/external-fixtures/bsl-language-server/src/test/resources/diagnostics/BadWordsDiagnostic.bsl"

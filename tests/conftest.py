@@ -8,12 +8,26 @@ import shutil
 from pathlib import Path
 
 import pytest
+from _pytest.reports import TestReport
 
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
 # Absolute path to the sample BSL fixture
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_BSL = FIXTURES_DIR / "sample.bsl"
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]):
+    """Turn every unclassified runtime skip into a test failure."""
+    outcome = yield
+    report: TestReport = outcome.get_result()
+    if report.skipped and "external_bslls" not in item.keywords:
+        report.outcome = "failed"
+        report.longrepr = (
+            f"Unexpected skip in {item.nodeid}; "
+            "only tests marked external_bslls may skip at runtime"
+        )
 
 
 @pytest.fixture

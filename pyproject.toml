@@ -58,6 +58,9 @@ fallback_version = "0.0.0"
 testpaths = ["tests"]
 addopts = "-v --cov=src/onec_hbk_bsl --cov-report=term-missing --cov-fail-under=80"
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "external_bslls: parity checks that require an explicitly provisioned upstream BSLLS checkout",
+]
 
 [tool.coverage.run]
 omit = [

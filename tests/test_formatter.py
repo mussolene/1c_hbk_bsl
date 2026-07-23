@@ -534,6 +534,7 @@ class TestPreprocessor:
 
 
 class TestBsllsFixtureParity:
+    @pytest.mark.external_bslls
     @pytest.mark.parametrize(
         ("source_name", "expected_name", "indent_size"),
         [
