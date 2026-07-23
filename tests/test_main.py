@@ -417,7 +417,9 @@ class TestMainVersion:
     def test_release_contract_is_machine_readable(self, capsys: pytest.CaptureFixture[str]) -> None:
         with patch("sys.argv", ["onec-hbk-bsl", "_release-contract"]):
             main()
-        contract = json.loads(capsys.readouterr().out)
+        output = capsys.readouterr().out
+        output.encode("ascii")
+        contract = json.loads(output)
         assert len(contract["rules"]) == 180
         assert contract["rules"] == contract["runtime_rules"]
         assert len(contract["platform_api"]["types"]) == 62
