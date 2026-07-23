@@ -1017,6 +1017,7 @@ class TestBslRename:
             [],
         )
         plan = build_rename_plan(index, "СтароеИмя", "НовоеИмя")
+        index.close()
         changed = "// параллельное изменение\nПроцедура СтароеИмя()\nКонецПроцедуры\n"
         source.write_text(changed, encoding="utf-8")
 
@@ -1144,6 +1145,7 @@ class TestBslRename:
             for uri, edits in lsp_result.changes.items()
             for edit in edits
         }
+        ls.close()
 
         tools = _tool_fns(_make_app(tmp_path))
         mcp_result = tools["bsl_rename"].fn(
