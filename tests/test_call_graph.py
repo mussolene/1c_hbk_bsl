@@ -353,6 +353,56 @@ class TestBuildCallGraph:
         assert len(result["callers"]) == 1
         assert result["callers"][0]["caller_name"] == "ГлавнаяФункция"
 
+    def test_non_exported_definition_scopes_callers_to_its_file(self) -> None:
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
+
+        mock_index = MagicMock()
+        mock_index.find_symbol_candidates.return_value = (
+            [
+                {
+                    "file_path": "/ws/orders.bsl",
+                    "line": 10,
+                    "end_line": 40,
+                    "signature": "Procedure ОбработатьЗаказ()",
+                    "is_export": False,
+                }
+            ],
+            1,
+        )
+        mock_index.find_callers.return_value = []
+        mock_index.find_callees.return_value = []
+
+        build_call_graph(mock_index, "ОбработатьЗаказ")
+
+        mock_index.find_callers.assert_called_once_with(
+            "ОбработатьЗаказ", limit=20, scope_file="/ws/orders.bsl"
+        )
+
+    def test_exported_definition_leaves_callers_unscoped(self) -> None:
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
+
+        mock_index = MagicMock()
+        mock_index.find_symbol_candidates.return_value = (
+            [
+                {
+                    "file_path": "/ws/orders.bsl",
+                    "line": 10,
+                    "end_line": 40,
+                    "signature": "Procedure ОбработатьЗаказ() Экспорт",
+                    "is_export": True,
+                }
+            ],
+            1,
+        )
+        mock_index.find_callers.return_value = []
+        mock_index.find_callees.return_value = []
+
+        build_call_graph(mock_index, "ОбработатьЗаказ")
+
+        mock_index.find_callers.assert_called_once_with(
+            "ОбработатьЗаказ", limit=20, scope_file=None
+        )
+
     def test_callees_populated_from_index(self) -> None:
         from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
@@ -389,3 +439,51 @@ class TestBuildCallGraph:
         assert result["name"] == "ЗаписатьЛог"
         assert isinstance(result["callers"], list)
         assert isinstance(result["callees"], list)
+
+    def test_file_filter_scopes_callers_to_resolved_definition(self, symbol_index: Any) -> None:
+        """
+        Regression test for tmp/onec-hbk-bsl-issue-callers-not-scoped-after-file-filter.md:
+        two files each declare their own local ПередЗаписью and call it from their
+        own Инициализация. Resolving via file_filter must not attribute ObjectB's
+        call to ObjectA's definition.
+        """
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
+
+        for file_path in ("/ws/ObjectA.bsl", "/ws/ObjectB.bsl"):
+            symbol_index.upsert_file(
+                file_path,
+                [
+                    {
+                        "name": "ПередЗаписью",
+                        "line": 1,
+                        "character": 0,
+                        "end_line": 2,
+                        "end_character": 0,
+                        "kind": "procedure",
+                        "is_export": False,
+                        "container": None,
+                        "signature": "Procedure ПередЗаписью(Отказ)",
+                        "doc_comment": "",
+                    }
+                ],
+                [
+                    {
+                        "caller_line": 5,
+                        "caller_character": 1,
+                        "caller_name": "Инициализация",
+                        "callee_name": "ПередЗаписью",
+                        "callee_args_count": 1,
+                    }
+                ],
+            )
+
+        result = build_call_graph(
+            symbol_index,
+            "ПередЗаписью",
+            depth=1,
+            file_filter="ObjectA",
+        )
+
+        assert "ambiguous" not in result
+        assert result["definition"]["file"] == "/ws/ObjectA.bsl"
+        assert [c["caller_file"] for c in result["callers"]] == ["/ws/ObjectA.bsl"]

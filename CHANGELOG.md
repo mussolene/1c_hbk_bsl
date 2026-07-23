@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LSP защищает cache, snapshot index и Problems от устаревших diagnostic runs
   монотонными document generations и CAS-публикацией; workspace reindex
   инициирует diagnostic refresh.
+- `bsl_callers` и `bsl_callees` ограничивают callers файлом выбранного
+  непубличного определения и не смешивают одноимённые локальные обработчики.
 
 ### Security
 
