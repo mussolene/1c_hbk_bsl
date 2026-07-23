@@ -95,6 +95,26 @@ SymbolIndex.find_symbol() — FTS5 or exact lookup
 Formatted response (dict / LSP Location)
 ```
 
+### SDBL field identity facts
+
+`analysis/query_field_resolver.py` строит conservative field identity facts для
+статических текстов запросов. Resolver переиспользует SDBL CST из
+`tree-sitter-hbk>=0.1.11` и metadata snapshot в `SymbolIndex`:
+
+- строит отдельное alias environment для каждого `SELECT`, включая `JOIN`;
+- переносит типы через временные таблицы, вложенные запросы и
+  `ВЫРАЗИТЬ(...).Поле`;
+- возвращает `resolved`, `ambiguous` со стабильно отсортированными кандидатами
+  или `unknown`, не выбирая первый совпавший metadata type;
+- запрашивает metadata object одновременно по имени и kind, поэтому
+  одноимённые объекты разных коллекций не смешиваются.
+
+Динамически собранные query strings не анализируются. Суффиксные поля
+виртуальных таблиц, которых нет у базового регистра, консервативно дают
+`unknown`. Это внутренняя analysis primitive; единый snapshot/revision fact
+boundary и подключение к нескольким LSP/MCP/diagnostic surfaces остаются в
+scope roadmap issue #37.
+
 ## Formatting
 
 `textDocument/formatting` and `textDocument/rangeFormatting` use `BslFormatter`

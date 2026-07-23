@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   выборки, значения перечислений, type guards и неявные переменные object/
   record-set modules; generic hover-контракт остаётся обратимо совместимым,
   а неоднозначность возвращается детерминированным списком кандидатов.
+- SDBL query field resolver связывает aliases, временные таблицы, вложенные
+  запросы и цепочки полей с конкретными metadata identities; composite types
+  возвращают explicit ambiguity, а unsupported/dynamic cases — `unknown`.
 
 ### Changed
 

@@ -1198,24 +1198,42 @@ class SymbolIndex:
     # Metadata read operations
     # ------------------------------------------------------------------
 
-    def get_meta_members(self, object_name: str, member_prefix: str = "") -> list[dict[str, Any]]:
+    def get_meta_members(
+        self,
+        object_name: str,
+        member_prefix: str = "",
+        *,
+        object_kind: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Return metadata members for the given object name (case-insensitive).
 
         Args:
             object_name: Technical name of the 1C object (e.g. 'Контрагенты').
             member_prefix: If provided, filter members whose name starts with this prefix.
+            object_kind: If provided, require the exact metadata kind. This avoids
+                choosing an arbitrary same-named object from another collection.
 
         Returns:
             List of member dicts with keys: name, kind, type_info, synonym_ru, object_name, object_kind.
         """
         name_lo = object_name.casefold()
-        obj_row = self._read_optional_row(
-            lambda conn: conn.execute(
-                "SELECT id, name, kind, synonym_ru FROM meta_objects WHERE name_lower = ? LIMIT 1",
-                (name_lo,),
-            ).fetchone()
-        )
+        if object_kind is None:
+            obj_row = self._read_optional_row(
+                lambda conn: conn.execute(
+                    "SELECT id, name, kind, synonym_ru FROM meta_objects "
+                    "WHERE name_lower = ? ORDER BY kind LIMIT 1",
+                    (name_lo,),
+                ).fetchone()
+            )
+        else:
+            obj_row = self._read_optional_row(
+                lambda conn: conn.execute(
+                    "SELECT id, name, kind, synonym_ru FROM meta_objects "
+                    "WHERE name_lower = ? AND kind = ? LIMIT 1",
+                    (name_lo, object_kind),
+                ).fetchone()
+            )
         if obj_row is None:
             return []
 

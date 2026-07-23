@@ -393,6 +393,44 @@ class TestMetadataMembers:
         assert result[0]["name"] == "Реквизит000"
         assert result[-1]["name"] == "Реквизит204"
 
+    def test_get_meta_members_can_require_same_named_object_kind(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        symbol_index.upsert_metadata(
+            [
+                MetaObject(
+                    name="ОбщийОбъект",
+                    kind="Catalog",
+                    members=[
+                        MetaMember(
+                            name="ПолеСправочника",
+                            kind="attribute",
+                            parent_name="ОбщийОбъект",
+                            parent_kind="Catalog",
+                        )
+                    ],
+                ),
+                MetaObject(
+                    name="ОбщийОбъект",
+                    kind="Document",
+                    members=[
+                        MetaMember(
+                            name="ПолеДокумента",
+                            kind="attribute",
+                            parent_name="ОбщийОбъект",
+                            parent_kind="Document",
+                        )
+                    ],
+                ),
+            ]
+        )
+
+        catalog = symbol_index.get_meta_members("ОбщийОбъект", object_kind="Catalog")
+        document = symbol_index.get_meta_members("ОбщийОбъект", object_kind="Document")
+
+        assert [member["name"] for member in catalog] == ["ПолеСправочника"]
+        assert [member["name"] for member in document] == ["ПолеДокумента"]
+
 
 class TestMetadataConfigurationSnapshot:
     def test_legacy_type_wrapper_remains_supported(self) -> None:
