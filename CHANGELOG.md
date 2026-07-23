@@ -7,12 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.45] - 2026-07-24
+
 ### Added
 
 - LSP и MCP используют общий immutable `RenamePlan` с точными semantic CST spans,
   детерминированной сортировкой edits и content-hash preconditions; MCP
   `bsl_rename(apply=true)` применяет многофайловый план транзакционно с полным
   rollback при ошибке записи.
+- Diagnostics, LSP navigation и rename используют общий immutable,
+  revision-aware semantic fact snapshot для representative symbol/call slice
+  без дублирования parser/semantic engine.
+- LSP поддерживает детерминированный multi-root lifecycle: отдельные workspace
+  contexts, маршрутизацию документа по наиболее специфичному root и очистку
+  состояния при изменении workspace folders.
+- Performance observability публикует стабильные benchmark-артефакты, сравнивает
+  их с versioned baseline и запускается в release preflight и nightly CI.
 
 ### Changed
 
@@ -23,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Неоднозначное определение, коллизия нового имени, stale index/content или
   квалифицированный receiver без доказанной identity теперь отклоняют rename
   до записи стабильным кодом ошибки.
+- Каталог diagnostic contracts перенесён в канонический `docs/rule-contracts`,
+  а executable gate проверяет владельца, fixture mapping и согласованность
+  публичного каталога.
+- BSLLS comparator сохраняет mapping и multiplicity diagnostics; semantic
+  regression suite разделён по execution families и дополнен пропущенными
+  parity/lifecycle сценариями.
+- Публичные README, architecture, package metadata, issue/PR templates,
+  security policy и карта surface ownership синхронизированы с фактическим
+  продуктовым контрактом.
+
+### Security
+
+- Synthetic credential fixtures отслеживаются явным allowlist gitleaks после
+  перемещения diagnostic tests; production paths остаются под строгой проверкой.
 
 ## [0.8.44] - 2026-07-23
 
@@ -556,7 +580,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.44...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.45...HEAD
+[0.8.45]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.44...v0.8.45
 [0.8.44]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.43...v0.8.44
 [0.8.43]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.42...v0.8.43
 [0.8.42]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.41...v0.8.42
