@@ -1,6 +1,9 @@
 # 1C HBK BSL — Architecture
 
-Актуальный контракт по эксплуатации, совместимости LSP/MCP и индексации: [Production-Notes.md](Production-Notes.md).
+Нормативный публичный контракт CLI/Python/LSP/MCP/package:
+[public-surface.md](public-surface.md). Эксплуатационный runbook и датированные
+проверки: [Production-Notes.md](Production-Notes.md). Этот документ описывает
+внутреннюю архитектуру и не создаёт второй compatibility contract.
 
 ## Overview
 

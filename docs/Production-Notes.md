@@ -5,20 +5,10 @@ This runbook covers production usage of:
 - `onec-hbk-bsl` server (LSP + MCP + diagnostics/indexing)
 - `vscode-extension` activation and binary startup behavior
 
-**Note:** `onec-hbk-bsl` does **not** bundle or call a separate Java analyzer at runtime.
-
-## Public Compatibility Contract
-- `onec-hbk-bsl` is the product contract: CLI, LSP, MCP, formatter and Python API.
-- The primary project config is `onec-hbk-bsl.toml`; `.bsl-language-server.json` is not a supported runtime config.
-- CLI, Python API, LSP, and MCP resolve settings in one order: explicit option, supported environment variable, project config, built-in default.
-- By default diagnostics run all public rules.
-- `BSL_SELECT` / `onecHbkBsl.diagnostics.select` select the exact rules to run.
-- `BSL_IGNORE` / `onecHbkBsl.diagnostics.ignore` suppress rules from the active rule set.
-- Rule selectors accept stable `BSL###` codes and compatible diagnostic aliases; the generated reference is [diagnostic-rules.md](diagnostic-rules.md).
-- Source suppressions such as `// noqa: BSL###` and `// BSLLS-off/on` are supported for compatibility with existing BSL codebases.
-- Formatting defaults are tabs for `[bsl]`, logical indent width 4, and safe on-type indentation on newline only.
-- Diagnostics/indexing parser fallbacks are internal resilience mechanisms for malformed or partially parsed documents; they are not separate product modes and should not be documented as user-selectable behavior.
-- The formatter has no parser/line/CST fallback mode: it formats from the product token stream.
+The normative compatibility contract is
+[public-surface.md](public-surface.md). This document only explains how to run
+and verify that contract. When a command, setting or capability differs, update
+the canonical contract and its executable checks first; do not redefine it here.
 
 ## Startup And Activation
 - On VS Code 1.85+, contributed languages and commands provide activation for:
@@ -100,6 +90,20 @@ When `useDocker` is true, the extension runs:
 
 This is dated release evidence, not a performance SLA. Re-run the listed
 commands before using the numbers for another version or machine.
+
+Snapshot provenance:
+
+- captured: 2026-07-10;
+- release/source: `v0.8.38`,
+  commit `d5e00ffdd03adb86b02ba62799ff28af9ed7b349`;
+- Python toolchain: Python 3.12.12, pytest 9.0.2, pytest-cov 7.0.0,
+  Ruff 0.15.7 and tree-sitter-hbk 0.1.10;
+- delivery toolchain and runner image: preserved in
+  [release run 29041130145](https://github.com/mussolene/1c_hbk_bsl/actions/runs/29041130145).
+
+Every new snapshot must record capture date, source commit and the versions of
+all tools that produced its numbers. A snapshot missing any of these fields is
+historical context, not release evidence.
 
 ### Product Surface
 

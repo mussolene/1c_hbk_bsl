@@ -4,6 +4,30 @@ This document defines what `onec-hbk-bsl` treats as product-facing API and UI.
 It is a guardrail for future changes, not a user guide. User-facing docs live in
 [README.md](../README.md) and [vscode-extension/README.md](../vscode-extension/README.md).
 
+## Documentation Ownership
+
+This table is the documentation index and the normative ownership registry.
+Each owner key appears exactly once and owns only the facts named in its scope.
+Other documents may explain or operate a surface, but must link to its canonical
+owner instead of defining a second compatibility contract.
+
+<!-- docs-index:start -->
+| Owner key | Canonical owner | Normative scope |
+|---|---|---|
+| `product-guide` | [README.md](../README.md) | Product overview, installation, first-run examples and navigation into detailed docs |
+| `product-contract` | [public-surface.md](public-surface.md) | Stable CLI, Python, LSP, MCP, configuration and packaging compatibility |
+| `extension-guide` | [vscode-extension/README.md](../vscode-extension/README.md) | Published extension settings, startup resolution, commands and editor behavior |
+| `diagnostics-reference` | [diagnostic-rules.md](diagnostic-rules.md) | Generated public rule identifiers, aliases, severity, descriptions and implementation state |
+| `release-history` | [CHANGELOG.md](../CHANGELOG.md) | Versioned user-visible changes reconstructed from release tags |
+| `operations` | [Production-Notes.md](Production-Notes.md) | Operational runbook, go/no-go checks and dated verification snapshots; not a compatibility contract |
+| `architecture` | [architecture.md](architecture.md) | Current internal component, data-flow and storage design; not a product promise |
+| `third-party` | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Dependency provenance, notices and redistribution notes |
+<!-- docs-index:end -->
+
+Product boundaries with adjacent repositories are tracked only in
+[issue #8](https://github.com/mussolene/1c_hbk_bsl/issues/8). This index must
+not create a second product-boundary backlog.
+
 ## Product Contract
 
 - Primary project config: `onec-hbk-bsl.toml`.

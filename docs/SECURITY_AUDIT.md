@@ -57,7 +57,9 @@ Coordinate `force-push`, notify fork owners, and re-clone local checkouts. Purgi
 
 - **GitHub release download (VS Code):** The extension resolves the release tag as `v` + `version` from the installed `package.json`, so the fallback download matches the published VSIX ([`vscode-extension/src/extension.ts`](../vscode-extension/src/extension.ts)).
 - **PyPI release:** The release workflow publishes the same checked wheel/sdist that it attaches to the GitHub Release. Configure PyPI Trusted Publishing for `mussolene/1c_hbk_bsl`, `.github/workflows/release.yml`, environment `pypi` before pushing a release tag.
-- **Release asset integrity:** CI does not publish SHA256 sidecar files today. Optional hardening: attach `SHA256SUMS` (or GitHub’s built-in asset checksums) and verify in the client before executing a downloaded binary.
+- **Release asset integrity:** full artifact preflight emits a deterministic
+  `SHA256SUMS` for the complete release set before publication. Download
+  clients should verify the manifest before executing a binary.
 - **Branch protection:** Restrict who can push `v*.*.*` tags and approve `environment: release` deploys in GitHub **Settings → Environments / Rules** (not expressible in-repo).
 
 ## Related

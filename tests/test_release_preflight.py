@@ -128,3 +128,75 @@ def test_tag_preflight_still_requires_exact_dated_section(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="no dated 0.8.44 section"):
         verify_release.verify_changelog("0.8.44", changelog_path=changelog)
+
+
+def test_local_markdown_link_checker_validates_paths_and_anchors(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (tmp_path / "README.md").write_text(
+        "# Root\n\n[Details](docs/details.md#known-fact)\n",
+        encoding="utf-8",
+    )
+    (docs / "details.md").write_text("# Details\n\n## Known fact\n", encoding="utf-8")
+
+    verify_release.verify_local_markdown_links(tmp_path)
+
+    (tmp_path / "README.md").write_text("[Missing](docs/details.md#absent)\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="missing anchor"):
+        verify_release.verify_local_markdown_links(tmp_path)
+
+
+def test_documentation_ownership_rejects_duplicate_owner_keys(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for owner in verify_release.REQUIRED_DOC_OWNERS:
+        (tmp_path / f"{owner}.md").write_text(f"# {owner}\n", encoding="utf-8")
+    rows = "\n".join(
+        f"| `{owner}` | [{owner}](../{owner}.md) | contract |"
+        for owner in sorted(verify_release.REQUIRED_DOC_OWNERS)
+    )
+    (docs / "public-surface.md").write_text(
+        "<!-- docs-index:start -->\n"
+        "| Owner key | Canonical owner | Scope |\n"
+        "|---|---|---|\n"
+        f"{rows}\n"
+        "<!-- docs-index:end -->\n",
+        encoding="utf-8",
+    )
+    verify_release.verify_documentation_ownership(tmp_path)
+
+    duplicated = rows + "\n| `architecture` | [duplicate](../architecture.md) | duplicate |"
+    (docs / "public-surface.md").write_text(
+        "<!-- docs-index:start -->\n"
+        "| Owner key | Canonical owner | Scope |\n"
+        "|---|---|---|\n"
+        f"{duplicated}\n"
+        "<!-- docs-index:end -->\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="duplicate normative"):
+        verify_release.verify_documentation_ownership(tmp_path)
+
+
+def test_changelog_integrity_requires_repaired_history_and_latest_base(tmp_path: Path) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\n"
+        "## [Unreleased]\n\n- Pending.\n\n"
+        "## [0.8.44] - 2026-07-23\n\n- Current.\n\n"
+        "## [0.8.42] - 2026-07-16\n\n- Performance.\n\n"
+        "## [0.8.41] - 2026-07-13\n\n- Compatibility.\n\n"
+        "[Unreleased]: https://example.test/compare/v0.8.44...HEAD\n"
+        "[0.8.44]: https://example.test/compare/v0.8.43...v0.8.44\n"
+        "[0.8.42]: https://example.test/compare/v0.8.41...v0.8.42\n"
+        "[0.8.41]: https://example.test/compare/v0.8.40...v0.8.41\n",
+        encoding="utf-8",
+    )
+    verify_release.verify_changelog_integrity(changelog)
+
+    changelog.write_text(
+        changelog.read_text(encoding="utf-8").replace("v0.8.44...HEAD", "v0.8.43...HEAD"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="latest dated release"):
+        verify_release.verify_changelog_integrity(changelog)

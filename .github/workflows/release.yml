@@ -270,6 +270,22 @@ jobs:
             cd "$(dirname "${ARTIFACT_VENV}")"
             "${ARTIFACT_VENV}/bin/onec-hbk-bsl" _release-contract
           ) > contract-wheel.json
+          SMOKE_ROOT="$(dirname "${ARTIFACT_VENV}")/public-doc-smoke"
+          mkdir -p "${SMOKE_ROOT}"
+          printf 'Процедура Тест()\n\tВозврат;\nКонецПроцедуры\n' > "${SMOKE_ROOT}/Smoke.bsl"
+          (
+            cd "${SMOKE_ROOT}"
+            CLI="${ARTIFACT_VENV}/bin/onec-hbk-bsl"
+            "${CLI}" --help >/dev/null
+            for command in check format rules init index lsp mcp; do
+              "${CLI}" "${command}" --help >/dev/null
+            done
+            "${CLI}" init
+            test -s onec-hbk-bsl.toml
+            "${CLI}" rules >/dev/null
+            "${CLI}" check Smoke.bsl --format json --exit-zero --no-config > diagnostics.json
+            test -s diagnostics.json
+          )
       - uses: actions/upload-artifact@v6
         with:
           name: python-dist

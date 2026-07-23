@@ -78,7 +78,7 @@ Use `acs run` when ACS should execute and record a command:
 ```bash
 acs run --label "ruff" -- ruff check src tests
 acs run --label "pytest" -- env PYTHONPATH=src ./.venv/bin/python -m pytest -q
-acs run --label "targeted diagnostics" -- env PYTHONPATH=src python -m onec_hbk_bsl check tests/fixtures --format json --exit-zero
+acs run --label "targeted diagnostics" -- env PYTHONPATH=src ./.venv/bin/python -m onec_hbk_bsl check tests/fixtures --format json --exit-zero
 ```
 
 Use `acs tool ingest-result` when a tool has already run and you need to record
@@ -111,7 +111,7 @@ When evidence should become reusable project knowledge:
 ```bash
 MEM_ID=$(acs memory propose --type procedure --depth 2 --scope project \
   --text "Release checks are recorded as OACS evidence with compact summaries and artifact paths when raw output is too large." \
-  --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+  --json | ./.venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 acs memory commit "$MEM_ID" --json
 acs memory sharpen "$MEM_ID" <ev_...> --json
 ```

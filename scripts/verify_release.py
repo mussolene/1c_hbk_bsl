@@ -13,9 +13,21 @@ import tomllib
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ("darwin-arm64", "darwin-x64", "linux-x64", "win32-x64")
+REQUIRED_DOC_OWNERS = {
+    "architecture",
+    "diagnostics-reference",
+    "extension-guide",
+    "operations",
+    "product-contract",
+    "product-guide",
+    "release-history",
+    "third-party",
+}
+REQUIRED_CHANGELOG_HISTORY = {"0.8.41", "0.8.42"}
 
 
 def _load_quality_config() -> dict[str, Any]:
@@ -145,6 +157,119 @@ def verify_generated_docs() -> None:
     actual = (ROOT / "docs" / "diagnostic-rules.md").read_text(encoding="utf-8")
     if actual != expected:
         raise ValueError("docs/diagnostic-rules.md is stale")
+
+
+def _markdown_files(root: Path) -> list[Path]:
+    candidates = [
+        root / "README.md",
+        root / "CONTRIBUTING.md",
+        root / "CHANGELOG.md",
+        root / "vscode-extension" / "README.md",
+        *(root / "docs").rglob("*.md"),
+    ]
+    return sorted({path for path in candidates if path.is_file()})
+
+
+def _heading_anchors(path: Path) -> set[str]:
+    anchors: set[str] = set()
+    counts: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", line)
+        if match is None:
+            continue
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", match.group(1))
+        text = re.sub(r"[`*_~]", "", text).strip().lower()
+        slug = re.sub(r"[^\w\- ]", "", text, flags=re.UNICODE)
+        slug = re.sub(r"[\s\-]+", "-", slug).strip("-")
+        duplicate = counts.get(slug, 0)
+        counts[slug] = duplicate + 1
+        anchors.add(slug if duplicate == 0 else f"{slug}-{duplicate}")
+    return anchors
+
+
+def verify_local_markdown_links(root: Path = ROOT) -> None:
+    failures: list[str] = []
+    for source in _markdown_files(root):
+        text = source.read_text(encoding="utf-8")
+        links = re.findall(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+['\"][^)]*['\"])?\)", text)
+        links.extend(match.group(1) for match in re.finditer(r"(?m)^\[[^\]]+\]:\s*(\S+)\s*$", text))
+        for raw_link in links:
+            if raw_link.startswith(("http://", "https://", "mailto:")):
+                continue
+            target_text, _, fragment = raw_link.partition("#")
+            target = source if not target_text else source.parent / unquote(target_text)
+            try:
+                target = target.resolve()
+                target.relative_to(root.resolve())
+            except ValueError:
+                failures.append(f"{source.relative_to(root)}: path escapes repository: {raw_link}")
+                continue
+            if not target.exists():
+                failures.append(f"{source.relative_to(root)}: missing {raw_link}")
+                continue
+            if fragment and target.suffix.lower() == ".md":
+                anchor = unquote(fragment).lower()
+                if anchor not in _heading_anchors(target):
+                    failures.append(f"{source.relative_to(root)}: missing anchor {raw_link}")
+    if failures:
+        raise ValueError("broken local documentation links:\n" + "\n".join(failures))
+
+
+def verify_documentation_ownership(root: Path = ROOT) -> None:
+    index = root / "docs" / "public-surface.md"
+    text = index.read_text(encoding="utf-8")
+    block = re.search(
+        r"(?ms)<!-- docs-index:start -->\s*(?P<body>.*?)\s*<!-- docs-index:end -->",
+        text,
+    )
+    if block is None:
+        raise ValueError("docs/public-surface.md has no bounded documentation ownership index")
+    rows = re.findall(
+        r"(?m)^\|\s*`(?P<key>[a-z0-9-]+)`\s*\|\s*\[[^\]]+\]\((?P<path>[^)]+)\)\s*\|",
+        block.group("body"),
+    )
+    keys = [key for key, _ in rows]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise ValueError("duplicate normative documentation owners: " + ", ".join(duplicates))
+    missing = sorted(REQUIRED_DOC_OWNERS - set(keys))
+    extra = sorted(set(keys) - REQUIRED_DOC_OWNERS)
+    if missing or extra:
+        raise ValueError(f"documentation ownership mismatch: missing={missing}, extra={extra}")
+    absent_paths = sorted(
+        path for _, path in rows if not (index.parent / unquote(path.split("#", 1)[0])).exists()
+    )
+    if absent_paths:
+        raise ValueError("documentation owners do not exist: " + ", ".join(absent_paths))
+
+
+def verify_changelog_integrity(changelog_path: Path | None = None) -> None:
+    path = changelog_path or ROOT / "CHANGELOG.md"
+    changelog = path.read_text(encoding="utf-8")
+    versions = re.findall(r"(?m)^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$", changelog)
+    duplicates = sorted({version for version in versions if versions.count(version) > 1})
+    if duplicates:
+        raise ValueError("duplicate changelog versions: " + ", ".join(duplicates))
+    missing = sorted(REQUIRED_CHANGELOG_HISTORY - set(versions))
+    if missing:
+        raise ValueError("CHANGELOG.md is missing historical releases: " + ", ".join(missing))
+    if not versions:
+        raise ValueError("CHANGELOG.md has no dated releases")
+    unreleased = re.search(
+        r"(?m)^\[Unreleased\]:\s+\S+/compare/v(?P<base>\d+\.\d+\.\d+)\.\.\.HEAD$",
+        changelog,
+    )
+    if unreleased is None or unreleased.group("base") != versions[0]:
+        raise ValueError("Unreleased comparison must start at the latest dated release")
+    missing_refs = [
+        version
+        for version in REQUIRED_CHANGELOG_HISTORY | {versions[0]}
+        if not re.search(rf"(?m)^\[{re.escape(version)}\]:\s+\S+$", changelog)
+    ]
+    if missing_refs:
+        raise ValueError(
+            "CHANGELOG.md is missing comparison links: " + ", ".join(sorted(missing_refs))
+        )
 
 
 def _job_block(workflow: str, job: str) -> str:
@@ -293,6 +418,9 @@ def main() -> int:
     if args.command == "source":
         source_contract()
         verify_generated_docs()
+        verify_local_markdown_links()
+        verify_documentation_ownership()
+        verify_changelog_integrity()
         verify_release_dag()
         verify_coverage(
             args.coverage_json,
@@ -303,6 +431,7 @@ def main() -> int:
         return 0
 
     verify_changelog(args.version, allow_unreleased=args.allow_unreleased_changelog)
+    verify_changelog_integrity()
     verify_release_dag()
     verify_artifacts(args.artifacts_dir, args.version, args.output_dir)
     return 0

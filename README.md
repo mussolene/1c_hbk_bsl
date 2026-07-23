@@ -187,14 +187,17 @@ for diagnostic in diagnostics:
 
 ## Документация
 
-| Документ | Для чего |
+Канонические владельцы фактов и полный индекс закреплены в разделе
+[Documentation Ownership](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/public-surface.md#documentation-ownership).
+
+| Документ | Роль |
 |---|---|
-| [VS Code extension guide](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md) | Расширение VS Code / Cursor |
-| [Diagnostic rules](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/diagnostic-rules.md) | Справочник правил |
-| [Public surface](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/public-surface.md) | Публичный контракт CLI/API/extension |
-| [Architecture](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/architecture.md) | Архитектура сервера и анализатора |
-| [Production notes](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/Production-Notes.md) | Release и эксплуатационные проверки |
-| [Third-party notices](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/THIRD_PARTY_NOTICES.md) | Лицензии и источники данных |
+| [VS Code extension guide](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md) | Нормативные настройки и поведение расширения VS Code / Cursor |
+| [Diagnostic rules](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/diagnostic-rules.md) | Генерируемый справочник правил |
+| [Public surface](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/public-surface.md) | Нормативный публичный контракт CLI/Python/LSP/MCP/package |
+| [Architecture](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/architecture.md) | Описательная архитектура сервера и анализатора |
+| [Production notes](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/Production-Notes.md) | Runbook, release checks и датированные snapshots |
+| [Third-party notices](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/THIRD_PARTY_NOTICES.md) | Зависимости, лицензии и происхождение данных |
 
 ## Разработка
 

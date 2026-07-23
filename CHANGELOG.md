@@ -103,6 +103,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   high/critical advisories.
 - Каталог диагностик не публикует нераскрытые `%s` placeholders.
 
+## [0.8.42] - 2026-07-16
+
+### Changed
+
+- Диагностический runtime переиспользует CST cursor traversal, call facts,
+  function nodes и лениво вычисленные parameter-usage facts между правилами,
+  сохраняя прежние diagnostic contracts.
+- CLI планирует большие файлы по process workers без повторной передачи одного
+  документа и сохраняет детерминированный порядок результатов.
+
+### Fixed
+
+- BSL062 и BSL148 используют уже построенные структурные факты и не выполняют
+  повторные обходы процедур и функций.
+
+## [0.8.41] - 2026-07-13
+
+### Added
+
+- Конфигурация `index-exclude` отделяет область workspace navigation от
+  диагностического `exclude`, по умолчанию наследуя его для совместимости.
+- Frozen Python lock и синхронизированные release/build instructions закрепляют
+  воспроизводимую сборку дистрибутивов.
+
+### Fixed
+
+- Hover и переход к определению пользовательских функций работают внутри
+  цепочек вызовов через workspace symbol index.
+- Typo diagnostics не дублируют один structural candidate, даже если несколько
+  нормализованных частей приводят к одному сообщению.
+
 ## [0.8.40] - 2026-07-13
 
 ### Added
@@ -525,8 +556,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.43...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.44...HEAD
+[0.8.44]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.43...v0.8.44
 [0.8.43]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.42...v0.8.43
+[0.8.42]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.41...v0.8.42
+[0.8.41]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.40...v0.8.41
 [0.8.40]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.39...v0.8.40
 [0.8.39]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.38...v0.8.39
 [0.8.38]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.18...v0.8.38

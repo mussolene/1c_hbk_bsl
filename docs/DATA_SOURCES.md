@@ -1,8 +1,12 @@
-# Data sources and 1C-related materials (`data/`)
+# Data sources and 1C-related materials (`src/onec_hbk_bsl/data/`)
 
 ## Purpose
 
-Files under [`data/`](../data/) (including [`data/platform_api/`](../data/platform_api/)) support completions, hovers, and metadata indexing. They must come from **sources you have the right to publish**.
+Files under [`src/onec_hbk_bsl/data/`](../src/onec_hbk_bsl/data/)
+(including
+[`src/onec_hbk_bsl/data/platform_api/`](../src/onec_hbk_bsl/data/platform_api/))
+support completions, hovers, and metadata indexing. They must come from
+**sources you have the right to publish**.
 
 ## Documented lineage
 
