@@ -39,6 +39,9 @@ jobs:
         run: |
           ./.venv/bin/python -m ruff check src tests scripts
           ./.venv/bin/python -m ruff format --check src tests scripts
+      - name: Canonical rule contract gate
+        if: matrix.python-version == '3.12'
+        run: ./.venv/bin/python scripts/validate_rule_contract.py --catalog --check-selectors
       - name: Python tests with quality artifacts
         run: |
           mkdir -p .artifacts

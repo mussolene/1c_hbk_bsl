@@ -90,6 +90,7 @@ The ruff configuration is in `pyproject.toml` under `[tool.ruff]`.
 
 ```bash
 ./.venv/bin/python scripts/validate_rule_contract.py docs/rule-contracts/BSL###.md
+./.venv/bin/python scripts/validate_rule_contract.py --catalog --check-selectors
 ./.venv/bin/python scripts/build_diagnostic_rules_doc.py
 git diff --exit-code -- docs/diagnostic-rules.md
 ./.venv/bin/python -m onec_hbk_bsl rules

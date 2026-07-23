@@ -4100,6 +4100,46 @@ class TestBsl171CrazyMultilineString:
         assert "BSL171" not in _codes(_check(content, tmp_path, select={"BSL171"}))
 
 
+class TestBsl248SeveralCompilerDirectives:
+    def test_two_directives_on_method_are_reported(self, tmp_path: Path) -> None:
+        content = """\
+            &НаКлиенте
+            &НаСервере
+            Процедура Тест()
+            КонецПроцедуры
+        """
+        diags = _check(content, tmp_path, select={"BSL248"})
+
+        assert _codes(diags).count("BSL248") == 1
+
+    def test_two_directives_on_module_variable_are_reported(self, tmp_path: Path) -> None:
+        content = """\
+            &НаКлиенте
+            &НаСервере
+            Перем Значение;
+        """
+        diags = _check(content, tmp_path, select={"BSL248"})
+
+        assert _codes(diags).count("BSL248") == 1
+
+    def test_single_and_separate_directives_are_clean(self, tmp_path: Path) -> None:
+        content = """\
+            &НаКлиенте
+            Процедура Клиент()
+            КонецПроцедуры
+
+            &НаСервере
+            Процедура Сервер()
+            КонецПроцедуры
+
+            // &НаКлиенте
+            Текст = "&НаСервере";
+        """
+        diags = _check(content, tmp_path, select={"BSL248"})
+
+        assert "BSL248" not in _codes(diags)
+
+
 class TestBsl251TernaryOperatorUsage:
     def test_simple_ternary_is_reported(self, tmp_path: Path) -> None:
         content = "Результат = ?(Условие, 1, 0);\n"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -190,10 +191,36 @@ def test_validate_rule_contract_accepts_complete_contract(tmp_path: Path) -> Non
 
 def test_rule_contracts_are_complete() -> None:
     validator = _load_validator()
-    contracts_dir = ROOT / ".codex" / "skills" / "bsl-diagnostic-rule-development" / "contracts"
+    contracts_dir = ROOT / "docs" / "rule-contracts"
     contracts = sorted(contracts_dir.glob("BSL*.md"))
 
-    assert contracts
-    assert {contract.name for contract in contracts} >= {"BSL040.md", "BSL077.md"}
-    for contract in contracts:
-        assert validator.validate_contract(contract) == []
+    assert len(contracts) == 180
+    assert {contract.stem for contract in contracts} == validator.runtime_rule_codes()
+    assert validator.validate_catalog() == {}
+
+
+def test_catalog_rejects_missing_extra_and_duplicate_codes(tmp_path: Path, monkeypatch) -> None:
+    validator = _load_validator()
+    source = ROOT / "docs" / "rule-contracts" / "BSL001.md"
+    first = tmp_path / "BSL001.md"
+    duplicate = tmp_path / "BSL999.md"
+    shutil.copyfile(source, first)
+    shutil.copyfile(source, duplicate)
+    monkeypatch.setattr(validator, "runtime_rule_codes", lambda: {"BSL001", "BSL002"})
+
+    errors = validator.validate_catalog(tmp_path)
+    catalog_errors = errors[tmp_path]
+
+    assert any("missing runtime contracts: BSL002" in error for error in catalog_errors)
+    assert any(
+        "contracts absent from runtime registry: BSL999" in error for error in catalog_errors
+    )
+    assert any("duplicate declared Code BSL001" in error for error in catalog_errors)
+
+
+def test_required_rule_selectors_collect_semantic_tests() -> None:
+    validator = _load_validator()
+    contracts_dir = ROOT / "docs" / "rule-contracts"
+
+    assert validator.validate_targeted_test_selector(contracts_dir / "BSL248.md") == []
+    assert validator.validate_targeted_test_selector(contracts_dir / "BSL260.md") == []

@@ -5,10 +5,11 @@ Use this reference when a diagnostic rule is implemented, reviewed, repaired, or
 ## Rule State Gate
 
 Every diagnostic iteration must start by opening or creating a rule dossier from
-`rule-contract-template.md`. Run:
+`rule-contract-template.md`. The only canonical catalog is
+`docs/rule-contracts`; skill-local copies are not rule state. Run:
 
 ```bash
-./.venv/bin/python scripts/validate_rule_contract.py <dossier.md>
+./.venv/bin/python scripts/validate_rule_contract.py docs/rule-contracts/BSL###.md
 ```
 
 The template is allowed to fail validation because it contains placeholders.

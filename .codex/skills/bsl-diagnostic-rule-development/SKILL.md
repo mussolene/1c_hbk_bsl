@@ -14,8 +14,9 @@ Do not start from parity counts or isolated corpus examples. Start from the rule
    `AC1 rule semantics`, `AC2 correct implementation`, `AC3 performance`, `AC4 related-rule consistency`, `AC5 synthetic coverage`, `AC6 BSLLS parity`, `AC7 verification/evidence`.
 
 2. Open or create the rule contract dossier before editing:
-   use `references/rule-contract-template.md` as the minimum shape and run
-   `scripts/validate_rule_contract.py <dossier.md>` before implementation.
+   use `references/rule-contract-template.md` as the minimum shape, keep the
+   canonical dossier at `docs/rule-contracts/BSL###.md`, and run
+   `scripts/validate_rule_contract.py docs/rule-contracts/BSL###.md` before implementation.
    If no dossier exists, write one first. A missing dossier is a blocker, not
    a TODO.
 
@@ -66,7 +67,8 @@ Do not edit a diagnostic implementation until all are true:
 - the proposed code change says which category it fixes.
 - the compared input-file set, config/exclude mode, and normalized file-key
   strategy are stated.
-- `scripts/validate_rule_contract.py` passes for the rule dossier.
+- `scripts/validate_rule_contract.py` passes for the canonical rule dossier in
+  `docs/rule-contracts`.
 
 If this gate is not satisfied, only inspect, instrument, document, or improve synthetic fixtures/skill instructions.
 
