@@ -239,7 +239,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
           else
             VERSION="$(uv run --frozen python -c \
-              'from onec_hbk_bsl import __version__; print(__version__.split(\".dev\", 1)[0])')"
+              'from onec_hbk_bsl import __version__; print(__version__.split(".dev", 1)[0])')"
           fi
           echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
           SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}" uv run --frozen python scripts/sync_version.py --runtime-only
@@ -284,7 +284,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
           else
             VERSION="$(uv run --frozen python -c \
-              'from onec_hbk_bsl import __version__; print(__version__.split(\".dev\", 1)[0])')"
+              'from onec_hbk_bsl import __version__; print(__version__.split(".dev", 1)[0])')"
           fi
           uv run --frozen python scripts/verify_release.py artifacts \
             --version "${VERSION}" \
