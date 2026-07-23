@@ -36,11 +36,13 @@ class DiagnosticCacheKey:
 class DiagnosticRun:
     """Single-flight state for one diagnostics computation."""
 
-    def __init__(self, cache_key: Any) -> None:
+    def __init__(self, cache_key: Any, generation: int) -> None:
         self.cache_key = cache_key
+        self.generation = generation
         self.event = threading.Event()
         self.diagnostics: list[Any] | None = None
         self.error: BaseException | None = None
+        self.committed = False
 
 
 class WorkspaceState:
@@ -73,7 +75,23 @@ class WorkspaceState:
 
     def is_current(self, context: WorkspaceRunContext) -> bool:
         with self._lock:
-            return context.symbol_index is self._symbol_index
+            return (
+                context.symbol_index is self._symbol_index and context.revisions == self._revisions
+            )
+
+    def run_if_current(
+        self,
+        context: WorkspaceRunContext,
+        action: Callable[[], bool],
+    ) -> bool:
+        """Run an update while the complete workspace context is still current."""
+        with self._lock:
+            if (
+                context.symbol_index is not self._symbol_index
+                or context.revisions != self._revisions
+            ):
+                return False
+            return action()
 
     def replace_index(self, *, symbol_index: Any, indexer: Any) -> WorkspaceRunContext:
         """Atomically publish a new index and retire the old instance once."""
@@ -148,11 +166,13 @@ class DocumentDiagnosticsState:
     def __init__(self) -> None:
         self.lock = threading.RLock()
         self.docs: dict[str, str] = {}
+        self.doc_generations: dict[str, int] = {}
         self.diag_timers: dict[str, threading.Timer] = {}
         self.diag_last_time: dict[str, float] = {}
         self.diag_result_cache: dict[str, tuple[Any, list[Any]]] = {}
         self.diag_inflight: dict[str, DiagnosticRun] = {}
-        self.indexed_snapshot_cache: dict[str, int] = {}
+        self.indexed_snapshot_cache: dict[str, tuple[int, int]] = {}
+        self.published_diagnostics: dict[str, tuple[int, Any]] = {}
 
     def get_doc(self, uri: str, default: str | None = None) -> str | None:
         with self.lock:
@@ -160,9 +180,22 @@ class DocumentDiagnosticsState:
                 return self.docs.get(uri)
             return self.docs.get(uri, default)
 
-    def set_doc(self, uri: str, text: str) -> None:
+    def get_doc_snapshot(self, uri: str) -> tuple[str | None, int]:
+        """Return document text and its generation from one locked snapshot."""
+        with self.lock:
+            return self.docs.get(uri), self.doc_generations.get(uri, 0)
+
+    def set_doc(self, uri: str, text: str) -> int:
+        """Store text and advance the monotonic generation for this URI."""
         with self.lock:
             self.docs[uri] = text
+            generation = self.doc_generations.get(uri, 0) + 1
+            self.doc_generations[uri] = generation
+            return generation
+
+    def open_uris(self) -> tuple[str, ...]:
+        with self.lock:
+            return tuple(self.docs)
 
     def pop_timer(self, uri: str) -> threading.Timer | None:
         with self.lock:
@@ -193,16 +226,30 @@ class DocumentDiagnosticsState:
         with self.lock:
             self.diag_result_cache[uri] = (cache_key, diagnostics)
 
-    def begin_diag_run(self, uri: str, cache_key: Any) -> tuple[str, DiagnosticRun | None]:
-        """Return whether caller should run, wait, or use cached diagnostics."""
+    def begin_diag_run(
+        self,
+        uri: str,
+        cache_key: Any,
+        generation: int | None = None,
+    ) -> tuple[str, DiagnosticRun | None]:
+        """Return whether caller should run, wait, use cache, or discard stale work."""
         with self.lock:
+            current_generation = self.doc_generations.get(uri, 0)
+            if generation is None:
+                generation = current_generation
+            if generation != current_generation:
+                return "stale", None
             cached = self.diag_result_cache.get(uri)
             if cached is not None and cached[0] == cache_key:
                 return "cached", None
             current = self.diag_inflight.get(uri)
-            if current is not None and current.cache_key == cache_key:
+            if (
+                current is not None
+                and current.cache_key == cache_key
+                and current.generation == generation
+            ):
                 return "wait", current
-            run = DiagnosticRun(cache_key)
+            run = DiagnosticRun(cache_key, generation)
             self.diag_inflight[uri] = run
             return "run", run
 
@@ -212,16 +259,25 @@ class DocumentDiagnosticsState:
         run: DiagnosticRun,
         diagnostics: list[Any] | None = None,
         error: BaseException | None = None,
-    ) -> None:
-        """Complete a single-flight diagnostics run and wake waiters."""
+        *,
+        workspace_is_current: bool = True,
+    ) -> bool:
+        """CAS-complete a diagnostics run and wake waiters."""
         with self.lock:
+            committed = (
+                self.diag_inflight.get(uri) is run
+                and self.doc_generations.get(uri, 0) == run.generation
+                and workspace_is_current
+            )
             if self.diag_inflight.get(uri) is run:
                 self.diag_inflight.pop(uri, None)
             run.diagnostics = diagnostics
             run.error = error
-            if diagnostics is not None and error is None:
+            run.committed = committed
+            if committed and diagnostics is not None and error is None:
                 self.diag_result_cache[uri] = (run.cache_key, diagnostics)
             run.event.set()
+            return committed
 
     def clear_semantic_caches(self, *, clear_indexed_snapshots: bool = False) -> None:
         """Invalidate results derived from workspace index, metadata, or config."""
@@ -230,20 +286,53 @@ class DocumentDiagnosticsState:
             if clear_indexed_snapshots:
                 self.indexed_snapshot_cache.clear()
 
-    def mark_snapshot_indexed(self, uri: str, content_hash: int) -> bool:
-        """Return True when this content hash has not been indexed yet."""
+    def index_if_current(
+        self,
+        uri: str,
+        generation: int,
+        content_hash: int,
+        action: Callable[[], None],
+    ) -> bool:
+        """Run one index update only while its document generation is current."""
         with self.lock:
-            if self.indexed_snapshot_cache.get(uri) == content_hash:
+            if self.doc_generations.get(uri, 0) != generation:
                 return False
-            self.indexed_snapshot_cache[uri] = content_hash
+            current = self.docs.get(uri)
+            if current is not None and hash(current) != content_hash:
+                return False
+            identity = (generation, content_hash)
+            if self.indexed_snapshot_cache.get(uri) == identity:
+                return False
+            action()
+            self.indexed_snapshot_cache[uri] = identity
+            return True
+
+    def publish_if_current(
+        self,
+        uri: str,
+        generation: int,
+        cache_key: Any,
+        action: Callable[[], None],
+    ) -> bool:
+        """Publish a diagnostic identity once while its generation is current."""
+        with self.lock:
+            if self.doc_generations.get(uri, 0) != generation:
+                return False
+            identity = (generation, cache_key)
+            if self.published_diagnostics.get(uri) == identity:
+                return False
+            action()
+            self.published_diagnostics[uri] = identity
             return True
 
     def close_document(self, uri: str) -> threading.Timer | None:
         with self.lock:
             timer = self.diag_timers.pop(uri, None)
             self.docs.pop(uri, None)
+            self.doc_generations.pop(uri, None)
             self.diag_last_time.pop(uri, None)
             self.diag_result_cache.pop(uri, None)
             self.diag_inflight.pop(uri, None)
             self.indexed_snapshot_cache.pop(uri, None)
+            self.published_diagnostics.pop(uri, None)
             return timer
