@@ -112,13 +112,6 @@ def _contains(code: str, codes: Iterable[str]) -> bool:
     return code in set(codes)
 
 
-def _fork_group_for_code(code: str) -> tuple[str, ...] | None:
-    for group in runner._PROCESS_FORK_RULE_GROUPS:
-        if code in group:
-            return tuple(group)
-    return None
-
-
 def _group_for_code(code: str, runtime_rule_class: str) -> tuple[str, str, tuple[str, ...]]:
     if _contains(code, runner._QUERY_TEXT_191_201_CODES):
         return ("query_text_191_201", "local_aggregated_task", ("query_text_blocks", "lines"))
@@ -158,13 +151,6 @@ def _group_for_code(code: str, runtime_rule_class: str) -> tuple[str, str, tuple
             "local_or_process_safe_large_file_shards",
             ("tree", "spell_candidates"),
         )
-    fork_group = _fork_group_for_code(code)
-    if fork_group is not None:
-        return (
-            "fork_large_file_group:" + "+".join(fork_group),
-            "local_or_fork_large_file_group",
-            ("document_context", "tree", "lines"),
-        )
     return (
         f"runtime_rule_class:{runtime_rule_class}",
         "local_runtime_task",
@@ -203,11 +189,8 @@ def _recommended_batch(
         return "03-method-procedure-contracts"
     if code in COMMON_MODULE_CLUSTER or runtime_rule_class == "CommonModuleDiagnosticsRule":
         return "04-common-module-context"
-    if (
-        runner_group.startswith("fork_large_file_group:")
-        or runner_group == "typo_runtime_or_large_file_shards"
-    ):
-        return "05-heavy-fork-typo-performance"
+    if runner_group == "typo_runtime_or_large_file_shards":
+        return "05-heavy-process-typo-performance"
     if set(tags) & TEXTUAL_STYLE_SECURITY_TAGS:
         return "06-line-text-style-security"
     return "07-local-runtime-tail"
@@ -220,8 +203,6 @@ def _placement_guidance(runner_group: str, execution_mode: str) -> str:
         return "place beside the aggregated query/metadata pool that owns the shared view"
     if execution_mode == "process_safe_fact_task":
         return "pass only serializable facts into process-safe work"
-    if execution_mode == "local_or_fork_large_file_group":
-        return "keep tree-sitter objects local; use fork only through runner group boundaries"
     if runner_group == "typo_runtime_or_large_file_shards":
         return "shard only collected spell candidates, not full parser state"
     return "keep beside the runtime rule class until a shared fact pool exists"
