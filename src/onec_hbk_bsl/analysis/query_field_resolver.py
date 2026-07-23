@@ -11,26 +11,99 @@ field identity
 for where-used queries, not query validation. Composite reference types produce
 `ambiguous` results with candidates instead of silently picking the first match.
 
-Known limits:
-- virtual tables with renamed fields (Остатки/Обороты resource suffixes) fall
-  back to base-table field names — suffixed fields resolve to `unknown`;
-- `ВЫРАЗИТЬ(...) КАК ...` followed by dereference is not parsed by the current
-  SDBL grammar (ERROR node) and is therefore not resolved;
+Known limits (accepted, not planned):
+- virtual tables (Остатки/Обороты/ОстаткиИОбороты) resolve fields against the
+  base register object with no suffix awareness: dimensions (unrenamed by the
+  virtual table) resolve correctly, suffixed resource fields (КоличествоОстаток
+  and the like) resolve to `unknown` (safe — no such name exists on the base
+  object), and a resource referenced by its bare base name (not how real
+  queries address these virtual tables) would resolve as if valid;
+- `ВЫРАЗИТЬ(...).Поле` dereference requires a grammar with the
+  `cast_field_access` node (see
+  docs/contributors/onec-hbk-bsl-sdbl-grammar-parse-gaps.md); on an older
+  `tree-sitter-hbk` build the dot after `)` is an ERROR node and the chain is
+  invisible to this resolver, same as any other parse error;
 - dynamically built query texts are out of scope by design.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from onec_hbk_bsl.analysis.sdbl_cst import (
     child_by_field_name,
+    child_field_name,
     dotted_identifier_parts,
     first_named_child,
     node_text,
 )
+
+# ---------------------------------------------------------------------------
+# Query text preparation (embedded BSL literal -> parseable SDBL)
+# ---------------------------------------------------------------------------
+
+
+def prepare_query_text(text: str) -> str:
+    """Prepare an embedded BSL query literal for SDBL parsing.
+
+    - Unescape BSL-level doubled quotes (``""`` -> ``"``): query blocks are
+      extracted from inside BSL string literals, where every SDBL quote is
+      doubled; without unescaping, string constants in the query break the
+      SDBL parse.
+    - Blank report-builder sections ``{...}`` (``{ГДЕ ...}``,
+      ``{ЛЕВОЕ СОЕДИНЕНИЕ ...}``) with spaces: they are not SDBL grammar and
+      do not affect the metadata identity of the main query. Braces inside
+      string literals are kept; newlines inside sections are kept, so row
+      numbers of the rest of the query survive (columns shift only on lines
+      with unescaped quotes).
+    """
+    out = list(text.replace('""', '"'))
+    depth = 0
+    in_string = False
+    i = 0
+    n = len(out)
+    while i < n:
+        ch = out[i]
+        if ch == "\n":
+            i += 1
+            continue
+        if in_string:
+            if ch == '"':
+                if i + 1 < n and out[i + 1] == '"':
+                    if depth:
+                        out[i] = out[i + 1] = " "
+                    i += 2
+                    continue
+                in_string = False
+            if depth:
+                out[i] = " "
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            if depth:
+                out[i] = " "
+            i += 1
+            continue
+        if ch == "{":
+            depth += 1
+            out[i] = " "
+            i += 1
+            continue
+        if ch == "}":
+            if depth:
+                depth -= 1
+                out[i] = " "
+            i += 1
+            continue
+        if depth:
+            out[i] = " "
+        i += 1
+    return "".join(out)
+
 
 # ---------------------------------------------------------------------------
 # Type token normalization (`meta_members.type_info` -> query-language identity)
@@ -227,7 +300,6 @@ class TableBinding:
 
     kind: str = ""  # metadata kind id for metadata tables
     name: str = ""  # metadata object name
-    virtual: str = ""  # virtual table suffix as written (СрезПоследних, ...)
     # Materialized fields for temp tables / nested query sources:
     # field name casefold -> (canonical name, normalized types).
     fields: Mapping[str, tuple[str, tuple[QueryTypeRef, ...]]] | None = None
@@ -269,6 +341,10 @@ class QueryFieldUse:
     node: Any  # dotted_identifier CST node
     parts: tuple[str, ...]
     resolution: ChainResolution
+    # Row of the node's tree relative to the full query text; non-zero when the
+    # use came from a split part (package/union fallback in
+    # resolve_query_text_uses). Absolute row = row_offset + node row.
+    row_offset: int = 0
 
 
 _UNKNOWN = ChainResolution(status="unknown")
@@ -319,7 +395,7 @@ def _binding_for_source(
         parts = dotted_identifier_parts(inner)
         if len(parts) >= 3 and parts[0].casefold() in _QUERY_ROOT_TO_KIND:
             kind = _QUERY_ROOT_TO_KIND[parts[0].casefold()]
-            return TableBinding(kind=kind, name=parts[1], virtual=parts[2]), None
+            return TableBinding(kind=kind, name=parts[1]), None
         return TableBinding(), None
     if node_type == "nested_query_source":
         inner_query = first_named_child(name_node, "query")
@@ -333,10 +409,10 @@ def _binding_for_source(
             return TableBinding(), None
         root_kind = _QUERY_ROOT_TO_KIND.get(parts[0].casefold())
         if root_kind is not None and len(parts) >= 2:
-            virtual = parts[2] if len(parts) >= 3 else ""
+            is_virtual = len(parts) >= 3
             return (
-                TableBinding(kind=root_kind, name=parts[1], virtual=virtual),
-                parts[-1] if not virtual else None,
+                TableBinding(kind=root_kind, name=parts[1]),
+                parts[-1] if not is_virtual else None,
             )
         return TableBinding(), None
     if node_type == "identifier":
@@ -416,22 +492,15 @@ def _resolve_field_on_binding(
     return None
 
 
-def resolve_chain(
-    parts: tuple[str, ...],
-    env: Mapping[str, TableBinding],
+def _resolve_hops(
+    owners: list[TableBinding],
+    field_names: Sequence[str],
     lookup: MetaFieldLookup,
-    _cache: dict[tuple[str, str], dict[str, tuple[str, str]] | None] | None = None,
+    cache: dict[tuple[str, str], dict[str, tuple[str, str]] | None],
 ) -> ChainResolution:
-    """Resolve `Алиас.Поле[.Поле2...]` against a section alias environment."""
-    if len(parts) < 2:
-        return _UNKNOWN
-    binding = env.get(parts[0].casefold())
-    if binding is None:
-        return _UNKNOWN
-    cache = _cache if _cache is not None else {}
-    owners: list[TableBinding] = [binding]
+    """Walk successive field dereferences starting from *owners*."""
     hops: list[FieldHop] = []
-    for part in parts[1:]:
+    for part in field_names:
         resolved = [
             hop
             for owner in owners
@@ -448,6 +517,66 @@ def resolve_chain(
         hops.append(hop)
         owners = [TableBinding(kind=ref.kind, name=ref.name) for ref in hop.types if ref.is_ref]
     return ChainResolution(status="resolved", hops=tuple(hops))
+
+
+def resolve_chain(
+    parts: tuple[str, ...],
+    env: Mapping[str, TableBinding],
+    lookup: MetaFieldLookup,
+    _cache: dict[tuple[str, str], dict[str, tuple[str, str]] | None] | None = None,
+) -> ChainResolution:
+    """Resolve `Алиас.Поле[.Поле2...]` against a section alias environment."""
+    if len(parts) < 2:
+        return _UNKNOWN
+    binding = env.get(parts[0].casefold())
+    if binding is None:
+        return _UNKNOWN
+    cache = _cache if _cache is not None else {}
+    return _resolve_hops([binding], parts[1:], lookup, cache)
+
+
+def _cast_expression_base_ref(cast_expr: Any) -> QueryTypeRef | None:
+    """Resolve the metadata identity named by a `cast_expression`'s `type` field."""
+    cast_type = child_by_field_name(cast_expr, "type")
+    type_dotted = (
+        first_named_child(cast_type, "dotted_identifier") if cast_type is not None else None
+    )
+    if type_dotted is None:
+        return None
+    parts = dotted_identifier_parts(type_dotted)
+    if not parts:
+        return None
+    kind = _QUERY_ROOT_TO_KIND.get(parts[0].casefold())
+    if kind is None or len(parts) < 2:
+        return None
+    root_ru = _KIND_TO_QUERY_ROOT.get(kind, kind)
+    return QueryTypeRef(display=f"{root_ru}.{parts[1]}", kind=kind, name=parts[1])
+
+
+def _cast_field_access_field_names(node: Any) -> list[str]:
+    """Ordered `.field` identifiers of a `cast_field_access` node (its own field, not the cast value's)."""
+    return [
+        node_text(child).strip()
+        for child in getattr(node, "children", []) or []
+        if getattr(child, "type", None) == "identifier" and child_field_name(node, child) == "field"
+    ]
+
+
+def _cast_field_access_resolution(
+    node: Any,
+    lookup: MetaFieldLookup,
+    cache: dict[tuple[str, str], dict[str, tuple[str, str]] | None],
+) -> tuple[list[str], ChainResolution]:
+    """Resolve a `ВЫРАЗИТЬ(... КАК Тип).Поле[.Поле2...]` node's field chain."""
+    field_names = _cast_field_access_field_names(node)
+    if not field_names:
+        return field_names, _UNKNOWN
+    cast_expr = first_named_child(node, "cast_expression")
+    base_ref = _cast_expression_base_ref(cast_expr) if cast_expr is not None else None
+    if base_ref is None or not base_ref.is_ref:
+        return field_names, _UNKNOWN
+    owners = [TableBinding(kind=base_ref.kind, name=base_ref.name)]
+    return field_names, _resolve_hops(owners, field_names, lookup, cache)
 
 
 # ---------------------------------------------------------------------------
@@ -490,18 +619,15 @@ def _query_output_fields(
             if resolution.status == "resolved" and resolution.hops:
                 types = resolution.hops[-1].types
         elif expr_type == "cast_expression":
-            cast_type = child_by_field_name(expr, "type")
-            type_dotted = (
-                first_named_child(cast_type, "dotted_identifier") if cast_type is not None else None
-            )
-            if type_dotted is not None:
-                parts = dotted_identifier_parts(type_dotted)
-                kind = _QUERY_ROOT_TO_KIND.get(parts[0].casefold()) if parts else None
-                if kind is not None and len(parts) >= 2:
-                    root_ru = _KIND_TO_QUERY_ROOT.get(kind, kind)
-                    types = (
-                        QueryTypeRef(display=f"{root_ru}.{parts[1]}", kind=kind, name=parts[1]),
-                    )
+            base_ref = _cast_expression_base_ref(expr)
+            if base_ref is not None:
+                types = (base_ref,)
+        elif expr_type == "cast_field_access":
+            field_names, resolution = _cast_field_access_resolution(expr, lookup, cache)
+            if out_name is None and field_names:
+                out_name = field_names[-1]
+            if resolution.status == "resolved" and resolution.hops:
+                types = resolution.hops[-1].types
         elif expr_type == "identifier" and out_name is None:
             out_name = node_text(expr).strip()
         if out_name:
@@ -512,9 +638,14 @@ def _query_output_fields(
 def build_temp_table_env(
     root: Any,
     lookup: MetaFieldLookup,
+    seed: Mapping[str, dict[str, tuple[str, tuple[QueryTypeRef, ...]]]] | None = None,
 ) -> dict[str, dict[str, tuple[str, tuple[QueryTypeRef, ...]]]]:
-    """Materialize temp-table fields across a query package, in document order."""
-    temp_tables: dict[str, dict[str, tuple[str, tuple[QueryTypeRef, ...]]]] = {}
+    """Materialize temp-table fields across a query package, in document order.
+
+    *seed* carries temp tables already known from earlier parts of a split
+    package (see resolve_query_text_uses).
+    """
+    temp_tables: dict[str, dict[str, tuple[str, tuple[QueryTypeRef, ...]]]] = dict(seed or {})
     package = first_named_child(root, "query_package") or root
     for query in [
         child for child in getattr(package, "children", []) or [] if child.type == "query"
@@ -540,16 +671,24 @@ def build_temp_table_env(
 # ---------------------------------------------------------------------------
 
 
-def resolve_query_field_uses(root: Any, lookup: MetaFieldLookup) -> list[QueryFieldUse]:
+def resolve_query_field_uses(
+    root: Any,
+    lookup: MetaFieldLookup,
+    temp_tables: Mapping[str, dict[str, tuple[str, tuple[QueryTypeRef, ...]]]] | None = None,
+    row_offset: int = 0,
+) -> list[QueryFieldUse]:
     """Resolve all dotted field chains in a parsed SDBL tree.
 
     *root* is the tree root (`source_file`). Table-source names, cast types and
     virtual-table names are not field uses and are skipped; every remaining
     `dotted_identifier` inside a query expression is resolved against the alias
     environment of its enclosing select section plus package temp tables.
+
+    *temp_tables* seeds temp tables known from earlier split parts;
+    *row_offset* is recorded on every use (see QueryFieldUse.row_offset).
     """
     source_file = root
-    temp_tables = build_temp_table_env(source_file, lookup)
+    temp_tables = build_temp_table_env(source_file, lookup, temp_tables)
     section_envs: dict[int, dict[str, TableBinding]] = {}
     cache: dict[tuple[str, str], dict[str, tuple[str, str]] | None] = {}
     uses: list[QueryFieldUse] = []
@@ -557,20 +696,35 @@ def resolve_query_field_uses(root: Any, lookup: MetaFieldLookup) -> list[QueryFi
     def walk(node: Any) -> None:
         for child in getattr(node, "children", []) or []:
             walk(child)
-        if getattr(node, "type", None) != "dotted_identifier":
+        ntype = getattr(node, "type", None)
+        if ntype not in ("dotted_identifier", "cast_field_access"):
             return
         parent_type = getattr(getattr(node, "parent", None), "type", None)
         if parent_type != "query_expression":
             return
-        section = _enclosing_select_section(node)
-        if section is None:
-            return
-        section_id = id(section)
-        if section_id not in section_envs:
-            section_envs[section_id] = build_section_env(section, lookup, temp_tables)
-        parts = dotted_identifier_parts(node)
-        resolution = resolve_chain(parts, section_envs[section_id], lookup, cache)
-        uses.append(QueryFieldUse(node=node, parts=parts, resolution=resolution))
+        if ntype == "dotted_identifier":
+            section = _enclosing_select_section(node)
+            if section is None:
+                return
+            section_id = id(section)
+            if section_id not in section_envs:
+                section_envs[section_id] = build_section_env(section, lookup, temp_tables)
+            parts = dotted_identifier_parts(node)
+            resolution = resolve_chain(parts, section_envs[section_id], lookup, cache)
+            uses.append(
+                QueryFieldUse(node=node, parts=parts, resolution=resolution, row_offset=row_offset)
+            )
+        elif ntype == "cast_field_access":
+            field_names, resolution = _cast_field_access_resolution(node, lookup, cache)
+            if not field_names:
+                return
+            cast_expr = first_named_child(node, "cast_expression")
+            cast_type = child_by_field_name(cast_expr, "type") if cast_expr is not None else None
+            base_label = node_text(cast_type).strip() if cast_type is not None else "ВЫРАЗИТЬ(...)"
+            parts = (base_label, *field_names)
+            uses.append(
+                QueryFieldUse(node=node, parts=parts, resolution=resolution, row_offset=row_offset)
+            )
 
     walk(source_file)
     return uses
@@ -583,3 +737,97 @@ def _enclosing_select_section(node: Any) -> Any | None:
             return parent
         parent = getattr(parent, "parent", None)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Whole-text entry point with split fallback for partially unparseable texts
+# ---------------------------------------------------------------------------
+
+_RE_UNION = re.compile(r"(?:ОБЪЕДИНИТЬ(?:\s+ВСЕ)?|UNION(?:\s+ALL)?)(?!\w)", re.IGNORECASE)
+
+
+def _split_top_level(text: str, *, by_union: bool) -> list[tuple[int, str]]:
+    """Split prepared query text at top level: by ``;`` or by ОБЪЕДИНИТЬ [ВСЕ].
+
+    Returns (row offset, part text) pairs. Separators are honored only outside
+    string literals and, for unions, at zero parenthesis depth. Separator
+    characters are excluded from parts; line geometry inside parts is intact.
+    """
+    cuts: list[tuple[int, int]] = []  # (start, end) of separator spans
+    in_string = False
+    depth = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if in_string:
+            if ch == '"':
+                if i + 1 < n and text[i + 1] == '"':
+                    i += 2
+                    continue
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif not by_union and ch == ";" and depth == 0:
+            cuts.append((i, i + 1))
+        elif by_union and depth == 0 and ch in "ОоUu":
+            at_word_start = i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")
+            m = _RE_UNION.match(text, i) if at_word_start else None
+            if m is not None:
+                cuts.append((i, m.end()))
+                i = m.end()
+                continue
+        i += 1
+    parts: list[tuple[int, str]] = []
+    prev = 0
+    for start, end in [*cuts, (n, n)]:
+        part = text[prev:start]
+        parts.append((text.count("\n", 0, prev), part))
+        prev = end
+    return parts
+
+
+def resolve_query_text_uses(text: str, lookup: MetaFieldLookup) -> list[QueryFieldUse]:
+    """Prepare, parse and resolve a query text; recover partially on errors.
+
+    Pipeline entry point: applies prepare_query_text, parses the whole text
+    and, when the parse has errors, falls back to splitting the package by
+    top-level ``;`` (then broken parts by ОБЪЕДИНИТЬ) so that parseable parts
+    still yield resolved uses. Temp-table types accumulate across parts in
+    document order; uses carry row_offset back to the prepared text.
+    """
+    from onec_hbk_bsl.analysis.document_snapshot import _parse_sdbl_query_text
+
+    prepared = prepare_query_text(text)
+    tree, has_errors = _parse_sdbl_query_text(prepared)
+    root = getattr(tree, "root_node", None)
+    if root is not None and not has_errors:
+        return resolve_query_field_uses(root, lookup)
+
+    uses: list[QueryFieldUse] = []
+    temp_tables: dict[str, dict[str, tuple[str, tuple[QueryTypeRef, ...]]]] = {}
+
+    def try_part(offset: int, part: str) -> bool:
+        nonlocal temp_tables
+        if not part.strip():
+            return True
+        part_tree, part_errors = _parse_sdbl_query_text(part)
+        part_root = getattr(part_tree, "root_node", None)
+        if part_root is None or part_errors:
+            return False
+        uses.extend(resolve_query_field_uses(part_root, lookup, temp_tables, row_offset=offset))
+        temp_tables = build_temp_table_env(part_root, lookup, temp_tables)
+        return True
+
+    for offset, part in _split_top_level(prepared, by_union=False):
+        if try_part(offset, part):
+            continue
+        for sec_offset, section in _split_top_level(part, by_union=True):
+            try_part(offset + sec_offset, section)
+    return uses

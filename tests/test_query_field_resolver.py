@@ -9,7 +9,9 @@ from onec_hbk_bsl.analysis.query_field_resolver import (
     QueryTypeRef,
     SymbolIndexFieldLookup,
     normalize_type_info,
+    prepare_query_text,
     resolve_query_field_uses,
+    resolve_query_text_uses,
 )
 
 pytestmark = pytest.mark.skipif(_SDBL_LANGUAGE is None, reason="SDBL tree-sitter unavailable")
@@ -66,6 +68,40 @@ def _by_text(uses, text: str):
         if ".".join(use.parts) == text:
             return use
     raise AssertionError(f"no use {text!r} among {['.'.join(u.parts) for u in uses]}")
+
+
+class TestPrepareQueryText:
+    def test_unescapes_bsl_doubled_quotes(self) -> None:
+        assert prepare_query_text('ГДЕ Поле = ""СПВ-1""') == 'ГДЕ Поле = "СПВ-1"'
+        assert prepare_query_text('ГДЕ Поле = """"') == 'ГДЕ Поле = ""'
+
+    def test_blanks_builder_sections_preserving_lines(self) -> None:
+        text = "ВЫБРАТЬ Т.Поле\nИЗ Таблица КАК Т\n{ГДЕ\nТ.Поле = 1}"
+        prepared = prepare_query_text(text)
+        assert prepared.splitlines()[0] == "ВЫБРАТЬ Т.Поле"
+        assert prepared.count("\n") == text.count("\n")
+        assert "{" not in prepared and "ГДЕ\n" not in prepared.replace("ВЫБРАТЬ", "")
+        assert set(prepared.splitlines()[2]) <= {" "}
+
+    def test_braces_inside_string_literal_are_kept(self) -> None:
+        text = 'ГДЕ Поле = ""а{б}в""'
+        assert prepare_query_text(text) == 'ГДЕ Поле = "а{б}в"'
+
+    def test_prepared_builder_query_parses_clean(self) -> None:
+        text = (
+            "ВЫБРАТЬ\n"
+            "    Орг.ГоловнаяОрганизация\n"
+            "ИЗ\n"
+            "    Справочник.Организации КАК Орг\n"
+            "{ГДЕ\n"
+            "    Орг.ГоловнаяОрганизация = &Головная}"
+        )
+        tree, has_errors = _parse_sdbl_query_text(prepare_query_text(text))
+        assert tree is not None
+        assert not has_errors
+        uses = resolve_query_field_uses(tree.root_node, LOOKUP)
+        use = _by_text(uses, "Орг.ГоловнаяОрганизация")
+        assert use.resolution.identities == ("Справочник.Организации.ГоловнаяОрганизация",)
 
 
 class TestNormalizeTypeInfo:
@@ -248,6 +284,92 @@ class TestNestedQuerySource:
         assert use.resolution.identities == ("Справочник.Организации.ИНН",)
 
 
+class TestCastFieldAccess:
+    def test_single_field_after_cast_resolves(self) -> None:
+        query = """
+        ВЫБРАТЬ
+            ВЫРАЗИТЬ(Договор.Владелец КАК Справочник.Организации).ГоловнаяОрганизация
+        ИЗ
+            Справочник.ДоговорыКонтрагентов КАК Договор
+        """
+        use = _by_text(_uses(query), "Справочник.Организации.ГоловнаяОрганизация")
+        assert use.resolution.status == "resolved"
+        assert use.resolution.identities == ("Справочник.Организации.ГоловнаяОрганизация",)
+
+    def test_chain_after_cast_resolves_every_hop(self) -> None:
+        query = """
+        ВЫБРАТЬ
+            ВЫРАЗИТЬ(Договор.Владелец КАК Справочник.Организации).ГоловнаяОрганизация.ИНН
+        ИЗ
+            Справочник.ДоговорыКонтрагентов КАК Договор
+        """
+        use = _by_text(_uses(query), "Справочник.Организации.ГоловнаяОрганизация.ИНН")
+        assert use.resolution.status == "resolved"
+        assert use.resolution.identities == (
+            "Справочник.Организации.ГоловнаяОрганизация",
+            "Справочник.Организации.ИНН",
+        )
+
+    def test_cast_narrows_composite_type_before_dereference(self) -> None:
+        # Владелец сам составного типа (Организации|Контрагенты) — без ВЫРАЗИТЬ
+        # разыменование "ГоловнаяОрганизация" было бы ambiguous/unknown, но
+        # явный КАК снимает неоднозначность до дальнейшего обращения к полю.
+        query = """
+        ВЫБРАТЬ
+            ВЫРАЗИТЬ(Договор.Владелец КАК Справочник.Организации).ГоловнаяОрганизация
+        ИЗ
+            Справочник.ДоговорыКонтрагентов КАК Договор
+        """
+        uses = _uses(query)
+        cast_use = _by_text(uses, "Справочник.Организации.ГоловнаяОрганизация")
+        assert cast_use.resolution.status == "resolved"
+        # исходное поле Владелец при этом тоже отдельно учтено как use, и
+        # само по себе несёт составной тип (без сужения ВЫРАЗИТЬ дальнейшее
+        # обращение к его полю дало бы ambiguous)
+        raw_use = _by_text(uses, "Договор.Владелец")
+        assert raw_use.resolution.status == "resolved"
+        (raw_hop,) = raw_use.resolution.hops
+        assert {ref.name for ref in raw_hop.types} == {"Организации", "Контрагенты"}
+
+    def test_unresolvable_field_after_cast_is_unknown(self) -> None:
+        query = """
+        ВЫБРАТЬ
+            ВЫРАЗИТЬ(Договор.Владелец КАК Справочник.Организации).НетТакогоПоля
+        ИЗ
+            Справочник.ДоговорыКонтрагентов КАК Договор
+        """
+        use = _by_text(uses := _uses(query), "Справочник.Организации.НетТакогоПоля")
+        assert use.resolution.status == "unknown"
+        assert use is not None and uses
+
+    def test_cast_to_primitive_type_does_not_resolve(self) -> None:
+        query = """
+        ВЫБРАТЬ
+            ВЫРАЗИТЬ(Договор.Номер КАК СТРОКА(20)).Поле
+        ИЗ
+            Справочник.ДоговорыКонтрагентов КАК Договор
+        """
+        use = _by_text(_uses(query), "СТРОКА(20).Поле")
+        assert use.resolution.status == "unknown"
+
+    def test_temp_table_field_type_propagates_through_cast_dereference(self) -> None:
+        query = """
+        ВЫБРАТЬ
+            ВЫРАЗИТЬ(Договор.Владелец КАК Справочник.Организации).ГоловнаяОрганизация КАК Голова
+        ПОМЕСТИТЬ ВТ
+        ИЗ
+            Справочник.ДоговорыКонтрагентов КАК Договор
+        ;
+        ВЫБРАТЬ
+            ВТ.Голова.ИНН
+        ИЗ
+            ВТ КАК ВТ
+        """
+        use = _by_text(_uses(query), "ВТ.Голова.ИНН")
+        assert use.resolution.status == "resolved"
+        assert use.resolution.identities == ("Справочник.Организации.ИНН",)
+
+
 class TestUnknowns:
     def test_unknown_alias(self) -> None:
         query = """
@@ -279,6 +401,76 @@ class TestUnknowns:
         """
         use = _by_text(_uses(query), "Т.Поле")
         assert use.resolution.status == "unknown"
+
+
+class TestResolveQueryTextUses:
+    def test_clean_text_resolves_without_fallback(self) -> None:
+        text = """
+        ВЫБРАТЬ
+            Орг.ГоловнаяОрганизация
+        ИЗ
+            Справочник.Организации КАК Орг
+        """
+        uses = resolve_query_text_uses(text, LOOKUP)
+        use = _by_text(uses, "Орг.ГоловнаяОрганизация")
+        assert use.resolution.identities == ("Справочник.Организации.ГоловнаяОрганизация",)
+        assert use.row_offset == 0
+
+    def test_broken_package_part_does_not_block_others(self) -> None:
+        # Вторая часть пакета намеренно не разбирается текущей грамматикой
+        # (ВЫРАЗИТЬ с разыменованием); первая и третья должны разрешиться,
+        # включая протяжку ВТ из первой в третью.
+        text = (
+            "ВЫБРАТЬ\n"
+            "    Орг.ГоловнаяОрганизация КАК Голова\n"
+            "ПОМЕСТИТЬ ВТОрг\n"
+            "ИЗ\n"
+            "    Справочник.Организации КАК Орг\n"
+            ";\n"
+            "ВЫБРАТЬ\n"
+            "    ВЫРАЗИТЬ(Т.Поле КАК Справочник.Организации).ИНН\n"
+            "ИЗ\n"
+            "    Справочник.Организации КАК Т\n"
+            ";\n"
+            "ВЫБРАТЬ\n"
+            "    ВТ.Голова.ИНН\n"
+            "ИЗ\n"
+            "    ВТОрг КАК ВТ\n"
+        )
+        uses = resolve_query_text_uses(text, LOOKUP)
+        first = _by_text(uses, "Орг.ГоловнаяОрганизация")
+        assert first.row_offset == 0
+        third = _by_text(uses, "ВТ.Голова.ИНН")
+        assert third.resolution.status == "resolved"
+        assert third.resolution.identities == ("Справочник.Организации.ИНН",)
+        # абсолютная строка ВТ.Голова.ИНН в исходном тексте — 12 (0-based)
+        assert third.row_offset + third.node.start_point[0] == 12
+
+    def test_union_sections_recovered_separately(self) -> None:
+        text = (
+            "ВЫБРАТЬ\n"
+            "    ВЫРАЗИТЬ(А.Поле КАК Справочник.Организации).ИНН\n"
+            "ИЗ\n"
+            "    Справочник.Организации КАК А\n"
+            "ОБЪЕДИНИТЬ ВСЕ\n"
+            "ВЫБРАТЬ\n"
+            "    Орг.ГоловнаяОрганизация\n"
+            "ИЗ\n"
+            "    Справочник.Организации КАК Орг\n"
+        )
+        uses = resolve_query_text_uses(text, LOOKUP)
+        use = _by_text(uses, "Орг.ГоловнаяОрганизация")
+        assert use.resolution.identities == ("Справочник.Организации.ГоловнаяОрганизация",)
+        assert use.row_offset + use.node.start_point[0] == 6
+
+    def test_semicolon_inside_string_literal_is_not_a_separator(self) -> None:
+        text = (
+            'ВЫБРАТЬ\n    ""а;б"" КАК Константа,\n    Орг.ГоловнаяОрганизация\n'
+            "ИЗ\n    Справочник.Организации КАК Орг"
+        )
+        uses = resolve_query_text_uses(text, LOOKUP)
+        use = _by_text(uses, "Орг.ГоловнаяОрганизация")
+        assert use.resolution.status == "resolved"
 
 
 class TestSymbolIndexAdapter:
