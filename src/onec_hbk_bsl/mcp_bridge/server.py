@@ -50,11 +50,11 @@ from onec_hbk_bsl.analysis.diagnostics import (
     RULE_METADATA,
     DiagnosticEngine,
     normalize_rule_code_set,
-    parse_env_rule_filters,
 )
 from onec_hbk_bsl.analysis.fix_engine import apply_fixes as _apply_fixes
 from onec_hbk_bsl.analysis.formatter import default_formatter
 from onec_hbk_bsl.analysis.lsp_positions import utf16_len
+from onec_hbk_bsl.cli.config import ResolvedConfig, load_config, resolve_config
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.metadata_registry import defs_snapshot
@@ -153,12 +153,35 @@ def _resolve_workspace_root(workspace_root: str | None = None) -> str:
     return str(resolved)
 
 
+def _resolve_mcp_config(
+    workspace_root: str | None = None,
+    *,
+    select: str | None = None,
+    ignore: str | None = None,
+    indent_size: int | None = None,
+    insert_spaces: bool | None = None,
+) -> ResolvedConfig:
+    """Resolve MCP tool options through the shared configuration pipeline."""
+    root = _resolve_workspace_root(workspace_root)
+    explicit: dict[str, object] = {}
+    if select is not None and select.strip():
+        explicit["select"] = normalize_rule_code_set(select.split(","))
+    if ignore is not None and ignore.strip():
+        explicit["ignore"] = normalize_rule_code_set(ignore.split(","))
+    if indent_size is not None:
+        explicit["indent_size"] = indent_size
+    if insert_spaces is not None:
+        explicit["insert_spaces"] = insert_spaces
+    return resolve_config(load_config(root), **explicit)
+
+
 def _get_index(workspace_root: str | None = None) -> SymbolIndex:
     ws = _resolve_workspace_root(workspace_root)
+    max_size_bytes = _resolve_mcp_config(workspace_root).index_max_bytes
     if workspace_root is None:
         global _index
         if _index is None:
-            _index = SymbolIndex(db_path=_DB_PATH)
+            _index = SymbolIndex(db_path=_DB_PATH, max_size_bytes=max_size_bytes)
         return _index
 
     db_path = resolve_index_db_path(ws)
@@ -169,7 +192,7 @@ def _get_index(workspace_root: str | None = None) -> SymbolIndex:
             _index_cache.move_to_end(db_path)
             return existing
 
-        index = SymbolIndex(db_path=db_path)
+        index = SymbolIndex(db_path=db_path, max_size_bytes=max_size_bytes)
         _index_cache[db_path] = index
         _index_cache.move_to_end(db_path)
 
@@ -250,26 +273,6 @@ def _mcp_unused_diagnostics(file_path: str, idx: SymbolIndex) -> list[dict]:
     except Exception:
         logger.debug("MCP: unused diagnostics failed for %s", file_path, exc_info=True)
     return out
-
-
-def _resolve_mcp_check_file_select_ignore(
-    select: str | None,
-    ignore: str | None,
-) -> tuple[set[str] | None, set[str] | None]:
-    """
-    Tool parameters override environment when non-empty; otherwise use
-    ``BSL_SELECT`` / ``BSL_IGNORE`` (same as LSP).
-    """
-    env_sel, env_ign = parse_env_rule_filters()
-    if select and select.strip():
-        sel = normalize_rule_code_set(select.split(","))
-    else:
-        sel = env_sel
-    if ignore and ignore.strip():
-        ign = normalize_rule_code_set(ignore.split(","))
-    else:
-        ign = env_ign
-    return sel, ign
 
 
 # ---------------------------------------------------------------------------
@@ -606,13 +609,14 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             Optional BSL-DEAD entries include ``source``: ``onec-hbk-bsl · BSL-DEAD``.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
-        env_sel, env_ign = parse_env_rule_filters()
+        config = _resolve_mcp_config(workspace_root)
         idx = _get_index(workspace_root)
         engine = DiagnosticEngine(
             parser=_get_parser(),
             symbol_index=idx,
-            select=env_sel,
-            ignore=env_ign,
+            select=set(config.select) if config.select is not None else None,
+            ignore=set(config.ignore) if config.ignore is not None else None,
+            **config.engine_kwargs(),
         )
         issues = engine.check_file(path)
         diags = _mcp_diagnostic_list(issues)
@@ -716,13 +720,18 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             Dict with ``count``, ``has_errors``, and ``diagnostics`` list.
         """
         path = _resolve_path(file_path, workspace_root=workspace_root)
-        select_set, ignore_set = _resolve_mcp_check_file_select_ignore(select, ignore)
+        config = _resolve_mcp_config(
+            workspace_root,
+            select=select,
+            ignore=ignore,
+        )
         idx = _get_index(workspace_root)
         engine = DiagnosticEngine(
             parser=_get_parser(),
             symbol_index=idx,
-            select=select_set,
-            ignore=ignore_set,
+            select=set(config.select) if config.select is not None else None,
+            ignore=set(config.ignore) if config.ignore is not None else None,
+            **config.engine_kwargs(),
         )
         issues = engine.check_file(path)
         diags = _mcp_diagnostic_list(issues)
@@ -1077,7 +1086,14 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     def bsl_format(
         file_path: Annotated[str, "Absolute or workspace-relative path to the .bsl file"],
         write: Annotated[bool, "If True, write the formatted content back to the file"] = False,
-        indent_size: Annotated[int, "Spaces per indent level (default 4)"] = 4,
+        indent_size: Annotated[
+            int | None,
+            "Spaces per indent level (default: project config or 4)",
+        ] = None,
+        insert_spaces: Annotated[
+            bool | None,
+            "Whether indentation uses spaces (default: project config or false)",
+        ] = None,
         workspace_root: Annotated[
             str | None, "Workspace root for resolving workspace-relative file paths"
         ] = None,
@@ -1088,7 +1104,8 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         Args:
             file_path:   Path to the .bsl file.
             write:       If True, overwrite the file with formatted content.
-            indent_size: Indentation width (default 4).
+            indent_size: Indentation width (default: project config or 4).
+            insert_spaces: Whether indentation uses spaces.
 
         Returns:
             Dict with ``formatted`` text, ``changed`` flag, and (if write=True) ``written``.
@@ -1099,7 +1116,16 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         except OSError as exc:
             return {"error": str(exc), "file_path": path}
 
-        formatted = default_formatter.format(original, indent_size=indent_size)
+        config = _resolve_mcp_config(
+            workspace_root,
+            indent_size=indent_size,
+            insert_spaces=insert_spaces,
+        )
+        formatted = default_formatter.format(
+            original,
+            indent_size=config.indent_size,
+            insert_spaces=config.insert_spaces,
+        )
         changed = formatted != original
 
         result: dict = {

@@ -147,6 +147,20 @@ class WorkspaceState:
         self._invalidate_caches("config")
         return revisions
 
+    def replace_diagnostics_engine(self, diagnostics_engine: Any) -> WorkspaceRunContext:
+        """Atomically publish diagnostics configured for the current workspace."""
+        with self._lock:
+            diagnostics_engine._symbol_index = self._symbol_index
+            self._diagnostics_engine = diagnostics_engine
+            self._revisions = WorkspaceRevisions(
+                index=self._revisions.index,
+                metadata=self._revisions.metadata,
+                config=self._revisions.config + 1,
+            )
+            context = self.snapshot()
+        self._invalidate_caches("config")
+        return context
+
     def close(self) -> None:
         with self._lock:
             current = self._symbol_index

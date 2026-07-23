@@ -186,6 +186,67 @@ class TestBslCheckFileTool:
         result = mcp_module._resolve_path("relative/module.bsl")
         assert result == str(tmp_path / "relative" / "module.bsl")
 
+    def test_diagnostic_signature_matches_cli_lsp_and_mcp(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from onec_hbk_bsl.cli.check import check_files
+        from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+        from onec_hbk_bsl.lsp.server import (
+            _diagnostics_engine_from_config,
+            _resolve_workspace_config,
+        )
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        monkeypatch.delenv("BSL_SELECT", raising=False)
+        monkeypatch.delenv("BSL_IGNORE", raising=False)
+        bsl_path = _make_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            'select = ["BSL012"]\n',
+            encoding="utf-8",
+        )
+
+        cli_issues = check_files([bsl_path], jobs=1)
+        index = SymbolIndex(db_path=":memory:")
+        try:
+            lsp_engine = _diagnostics_engine_from_config(
+                _resolve_workspace_config(str(tmp_path)),
+                symbol_index=index,
+            )
+            lsp_issues = lsp_engine.check_file(bsl_path)
+        finally:
+            index.close()
+
+        monkeypatch.setattr(mcp_module, "_index", None)
+        mcp_result = _tool_fns(_make_app(tmp_path))["bsl_check_file"].fn(
+            file_path=bsl_path,
+            workspace_root=str(tmp_path),
+        )
+
+        def diagnostic_signature(issue) -> tuple[object, ...]:
+            return (
+                issue.code,
+                issue.line,
+                issue.character,
+                issue.severity.name,
+                issue.message,
+            )
+
+        cli_signature = [diagnostic_signature(issue) for issue in cli_issues]
+        lsp_signature = [diagnostic_signature(issue) for issue in lsp_issues]
+        mcp_signature = [
+            (
+                issue["code"],
+                issue["line"],
+                issue["character"],
+                issue["severity"],
+                issue["message"],
+            )
+            for issue in mcp_result["diagnostics"]
+        ]
+        assert cli_signature == lsp_signature == mcp_signature
+
 
 def _set_workspace_policy(mod, root: Path, monkeypatch=None) -> None:
     resolved = root.resolve()

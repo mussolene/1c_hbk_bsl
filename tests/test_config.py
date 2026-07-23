@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from onec_hbk_bsl.cli.config import _EMPTY, BslConfig, load_config
+from onec_hbk_bsl.cli.config import (
+    _EMPTY,
+    BslConfig,
+    ResolvedConfig,
+    load_config,
+    resolve_config,
+)
 
 # ---------------------------------------------------------------------------
 # BslConfig — rule selection
@@ -196,6 +202,120 @@ class TestBslConfigThresholds:
         cfg = BslConfig({"max-line-length": 100})
         kwargs = cfg.engine_kwargs()
         assert kwargs == {"max_line_length": 100}
+
+
+class TestResolvedConfig:
+    def test_precedence_matrix_covers_scalar_bool_and_collections(self) -> None:
+        project = BslConfig(
+            {
+                "format": "sarif",
+                "jobs": 8,
+                "exit-zero": True,
+                "select": ["BSL001"],
+                "exclude": ["project/**"],
+                "per-file-ignores": {"project.bsl": ["BSL001"]},
+                "insert-spaces": True,
+            }
+        )
+        resolved = resolve_config(
+            project,
+            environ={"BSL_SELECT": "BSL002"},
+            format="text",
+            jobs=0,
+            exit_zero=False,
+            exclude=[],
+            per_file_ignores={"explicit.bsl": ["BSL003"]},
+            insert_spaces=False,
+        )
+
+        assert resolved.format == "text"
+        assert resolved.jobs == 0
+        assert resolved.exit_zero is False
+        assert resolved.select == {"BSL002"}
+        assert resolved.exclude == []
+        assert resolved.index_exclude == []
+        assert resolved.per_file_ignores == {"explicit.bsl": ["BSL003"]}
+        assert resolved.insert_spaces is False
+
+    def test_environment_overrides_project_for_supported_values(self) -> None:
+        resolved = resolve_config(
+            BslConfig(
+                {
+                    "select": ["BSL001"],
+                    "ignore": ["BSL002"],
+                    "index-mode": "full",
+                    "index-max-bytes": 100,
+                }
+            ),
+            environ={
+                "BSL_SELECT": "BSL003",
+                "BSL_IGNORE": "BSL004",
+                "BSL_INDEX_MODE": "symbols",
+                "BSL_INDEX_MAX_BYTES": "200",
+            },
+        )
+
+        assert resolved.select == {"BSL003"}
+        assert resolved.ignore == {"BSL004"}
+        assert resolved.index_mode == "symbols"
+        assert resolved.index_max_bytes == 200
+
+    def test_defaults_are_complete_and_snapshot_is_immutable(self) -> None:
+        resolved = resolve_config(BslConfig({}), environ={})
+
+        assert isinstance(resolved, ResolvedConfig)
+        assert resolved.format == "text"
+        assert resolved.jobs == 0
+        assert resolved.exit_zero is False
+        assert resolved.indent_size == 4
+        assert resolved.insert_spaces is False
+        with pytest.raises(AttributeError, match="immutable"):
+            resolved._data = {}  # type: ignore[misc]
+
+    def test_same_fixture_resolves_identically_through_public_adapters(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from onec_hbk_bsl.cli.check import resolve_check_config
+        from onec_hbk_bsl.lsp.server import _resolve_workspace_config
+        from onec_hbk_bsl.mcp_bridge import server as mcp_server
+
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            "\n".join(
+                (
+                    'select = ["BSL001"]',
+                    'ignore = ["BSL002"]',
+                    'exclude = ["vendor/**"]',
+                    'per-file-ignores = { "legacy.bsl" = ["BSL003"] }',
+                    "insert-spaces = true",
+                    "indent-size = 2",
+                )
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.delenv("BSL_SELECT", raising=False)
+        monkeypatch.delenv("BSL_IGNORE", raising=False)
+        monkeypatch.delenv("BSL_INDEX_MODE", raising=False)
+        monkeypatch.delenv("BSL_INDEX_MAX_BYTES", raising=False)
+        monkeypatch.setattr(mcp_server, "_ALLOWED_WORKSPACE_ROOTS", (tmp_path.resolve(),))
+        monkeypatch.setattr(mcp_server, "_WORKSPACE", str(tmp_path.resolve()))
+
+        cli = resolve_check_config(load_config(str(tmp_path)))
+        lsp = _resolve_workspace_config(str(tmp_path))
+        mcp = mcp_server._resolve_mcp_config(str(tmp_path))
+
+        def signature(cfg: ResolvedConfig) -> tuple[object, ...]:
+            return (
+                cfg.select,
+                cfg.ignore,
+                cfg.exclude,
+                cfg.per_file_ignores,
+                cfg.indent_size,
+                cfg.insert_spaces,
+            )
+
+        assert signature(cli) == signature(lsp) == signature(mcp)
 
 
 # ---------------------------------------------------------------------------

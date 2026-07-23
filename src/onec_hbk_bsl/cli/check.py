@@ -42,7 +42,7 @@ from onec_hbk_bsl.analysis.diagnostics import (
     DiagnosticEngine,
     Severity,
 )
-from onec_hbk_bsl.cli.config import _EMPTY, BslConfig, load_config
+from onec_hbk_bsl.cli.config import _EMPTY, BslConfig, ResolvedConfig, load_config, resolve_config
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
@@ -84,6 +84,31 @@ def read_paths_from_file(path: str) -> list[str]:
     return [line for line in text.splitlines() if line]
 
 
+def resolve_check_config(
+    project: BslConfig | None,
+    *,
+    format: str | None = None,  # noqa: A002
+    jobs: int | None = None,
+    select: set[str] | None = None,
+    ignore: set[str] | None = None,
+    exit_zero: bool | None = None,
+    baseline: str | None = None,
+) -> ResolvedConfig:
+    """Normalize Python/CLI check options without reimplementing precedence."""
+    explicit: dict[str, Any] = {}
+    for key, value in (
+        ("format", format),
+        ("select", select),
+        ("ignore", ignore),
+        ("jobs", jobs),
+        ("exit_zero", exit_zero),
+        ("baseline", baseline),
+    ):
+        if value is not None:
+            explicit[key] = value
+    return resolve_config(project, **explicit)
+
+
 def check_files(
     paths: list[str],
     *,
@@ -104,10 +129,15 @@ def check_files(
     arguments win over config values. If *config* is omitted, project config is
     discovered from the first provided path.
     """
-    cfg = config or (load_config(paths[0]) if paths else _EMPTY)
-    effective_select = select if select is not None else cfg.select
-    effective_ignore = ignore if ignore is not None else cfg.ignore
-    effective_jobs = jobs if jobs is not None else (cfg.jobs if cfg.jobs is not None else 1)
+    project = config or (load_config(paths[0]) if paths else None)
+    cfg = resolve_check_config(
+        project,
+        jobs=jobs,
+        select=select,
+        ignore=ignore,
+    )
+    project_jobs_defined = project is not None and project.has("jobs")
+    effective_jobs = cfg.jobs if jobs is not None or project_jobs_defined else 1
     files = [
         str(Path(raw).resolve())
         for raw in paths
@@ -120,8 +150,8 @@ def check_files(
 
     diagnostics, error_occurred = _run_checks(
         sorted(files),
-        select=effective_select,
-        ignore=effective_ignore,
+        select=set(cfg.select) if cfg.select is not None else None,
+        ignore=set(cfg.ignore) if cfg.ignore is not None else None,
         jobs=effective_jobs,
         config=cfg,
         show_progress=False,
@@ -134,12 +164,12 @@ def check_files(
 
 def check(
     paths: list[str],
-    format: str = "text",
+    format: str | None = None,
     use_index: bool | None = None,
     select: set[str] | None = None,
     ignore: set[str] | None = None,
-    jobs: int = 0,
-    exit_zero: bool = False,
+    jobs: int | None = None,
+    exit_zero: bool | None = None,
     baseline: str | None = None,
     update_baseline: str | None = None,
     config: BslConfig | None = None,
@@ -163,17 +193,18 @@ def check(
     Returns:
         Exit code: 0 = clean, 1 = issues found, 2 = error.
     """
-    cfg = config or _EMPTY
-    if format not in {"text", "json", "sarif"}:
+    if format is not None and format not in {"text", "json", "sarif"}:
         raise ValueError(f"Unsupported output format: {format!r}. Use text, json, or sarif.")
 
-    # Merge config defaults with explicit flags (CLI wins over config)
-    effective_format = format if format != "text" or cfg.format is None else cfg.format
-    effective_jobs = jobs if jobs != 0 else (cfg.jobs if cfg.jobs is not None else 0)
-    effective_exit_zero = exit_zero or cfg.exit_zero
-    effective_baseline = baseline or cfg.baseline
-    effective_select = select if select is not None else cfg.select
-    effective_ignore = ignore if ignore is not None else cfg.ignore
+    cfg = resolve_check_config(
+        config,
+        format=format,
+        select=select,
+        ignore=ignore,
+        jobs=jobs,
+        exit_zero=exit_zero,
+        baseline=baseline,
+    )
 
     all_files = _collect_files(paths, cfg)
     if not all_files:
@@ -182,9 +213,9 @@ def check(
 
     all_diagnostics, error_occurred = _run_checks(
         sorted(all_files),
-        select=effective_select,
-        ignore=effective_ignore,
-        jobs=effective_jobs,
+        select=set(cfg.select) if cfg.select is not None else None,
+        ignore=set(cfg.ignore) if cfg.ignore is not None else None,
+        jobs=cfg.jobs,
         config=cfg,
         use_index=bool(use_index),
     )
@@ -205,10 +236,10 @@ def check(
         return 0
 
     # --baseline: suppress known issues
-    if effective_baseline:
+    if cfg.baseline:
         from onec_hbk_bsl.cli.baseline import filter_baseline, load_baseline
 
-        known = load_baseline(effective_baseline)
+        known = load_baseline(cfg.baseline)
         suppressed = len(all_diagnostics) - len(
             [d for d in all_diagnostics if (Path(d.file).name, d.code, d.line) not in known]
         )
@@ -216,9 +247,9 @@ def check(
         if suppressed:
             console.print(f"[dim]Suppressed {suppressed} baseline issue(s).[/dim]")
 
-    if effective_format == "json":
+    if cfg.format == "json":
         _print_json(all_diagnostics)
-    elif effective_format == "sarif":
+    elif cfg.format == "sarif":
         _print_sarif(all_diagnostics)
     else:
         _print_text(all_diagnostics)
@@ -227,7 +258,7 @@ def check(
             return 0
         _print_summary(all_diagnostics, len(all_files))
 
-    if effective_exit_zero:
+    if cfg.exit_zero:
         return 0
     return 0 if not all_diagnostics else 1
 
@@ -379,7 +410,7 @@ def _run_checks(
     select: set[str] | None,
     ignore: set[str] | None,
     jobs: int,
-    config: BslConfig | None = None,
+    config: BslConfig | ResolvedConfig | None = None,
     show_progress: bool = True,
     use_index: bool = False,
 ) -> tuple[list[Diagnostic], bool]:
@@ -699,7 +730,10 @@ def _print_summary(diagnostics: list[Diagnostic], file_count: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _collect_files(paths: list[str], config: BslConfig | None = None) -> list[str]:
+def _collect_files(
+    paths: list[str],
+    config: BslConfig | ResolvedConfig | None = None,
+) -> list[str]:
     """Recursively collect all .bsl/.os files from paths (files or dirs)."""
     cfg = config or _EMPTY
     result: list[str] = []

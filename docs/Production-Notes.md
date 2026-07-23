@@ -10,6 +10,7 @@ This runbook covers production usage of:
 ## Public Compatibility Contract
 - `onec-hbk-bsl` is the product contract: CLI, LSP, MCP, formatter and Python API.
 - The primary project config is `onec-hbk-bsl.toml`; `.bsl-language-server.json` is not a supported runtime config.
+- CLI, Python API, LSP, and MCP resolve settings in one order: explicit option, supported environment variable, project config, built-in default.
 - By default diagnostics run all public rules.
 - `BSL_SELECT` / `onecHbkBsl.diagnostics.select` select the exact rules to run.
 - `BSL_IGNORE` / `onecHbkBsl.diagnostics.ignore` suppress rules from the active rule set.

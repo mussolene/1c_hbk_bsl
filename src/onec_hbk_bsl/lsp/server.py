@@ -158,7 +158,6 @@ from onec_hbk_bsl.analysis.diagnostics import (
     DiagnosticEngine,
     Severity,
     lsp_compat_severity,
-    parse_env_rule_filters,
 )
 from onec_hbk_bsl.analysis.document_snapshot import (
     DocumentSnapshot,
@@ -175,7 +174,7 @@ from onec_hbk_bsl.analysis.platform_api import PlatformApi, get_platform_api
 from onec_hbk_bsl.analysis.symbols import extract_symbols
 from onec_hbk_bsl.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
 from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
-from onec_hbk_bsl.cli.config import load_config
+from onec_hbk_bsl.cli.config import ResolvedConfig, load_config, resolve_config
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
 from onec_hbk_bsl.indexer.metadata_registry import (
@@ -201,18 +200,26 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 logger = logging.getLogger(__name__)
 
 
+def _resolve_workspace_config(workspace_root: str) -> ResolvedConfig:
+    return resolve_config(load_config(workspace_root))
+
+
 def _resolve_workspace_index_config(workspace_root: str) -> tuple[str, int]:
-    config = load_config(workspace_root)
-    env_mode = os.environ.get("BSL_INDEX_MODE", "").strip().lower()
-    index_mode = env_mode if env_mode in {"off", "symbols", "full"} else config.index_mode
-    raw = os.environ.get("BSL_INDEX_MAX_BYTES", "").strip()
-    max_size_bytes = config.index_max_bytes
-    if raw:
-        try:
-            max_size_bytes = max(0, int(raw))
-        except ValueError:
-            pass
-    return index_mode, max_size_bytes
+    config = _resolve_workspace_config(workspace_root)
+    return config.index_mode, config.index_max_bytes
+
+
+def _diagnostics_engine_from_config(
+    config: ResolvedConfig,
+    *,
+    symbol_index: SymbolIndex,
+) -> DiagnosticEngine:
+    return DiagnosticEngine(
+        symbol_index=symbol_index,
+        select=set(config.select) if config.select is not None else None,
+        ignore=set(config.ignore) if config.ignore is not None else None,
+        **config.engine_kwargs(),
+    )
 
 
 def _workspace_index_mode(workspace_root: str) -> str:
@@ -325,14 +332,14 @@ class BslLanguageServer(LanguageServer):
             __version__,
             text_document_sync_kind=TextDocumentSyncKind.Full,
         )
-        self.index_mode, max_size_bytes = _resolve_workspace_index_config(os.getcwd())
+        self.resolved_config = _resolve_workspace_config(os.getcwd())
+        self.index_mode = self.resolved_config.index_mode
+        max_size_bytes = self.resolved_config.index_max_bytes
         db_path = ":memory:" if self.index_mode == "off" else resolve_index_db_path(os.getcwd())
         symbol_index = SymbolIndex(db_path=db_path, max_size_bytes=max_size_bytes)
-        _sel, _ign = parse_env_rule_filters()
-        diagnostics_engine = DiagnosticEngine(
+        diagnostics_engine = _diagnostics_engine_from_config(
+            self.resolved_config,
             symbol_index=symbol_index,
-            select=_sel,
-            ignore=_ign,
         )
         # quiet=True: suppress Rich progress bar that would corrupt the JSON-RPC stdio pipe.
         indexer = IncrementalIndexer(index=symbol_index, quiet=True)
@@ -595,8 +602,15 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
         workspace_root = params.root_path
 
     if workspace_root and Path(workspace_root).is_dir():
-        ls.index_mode, max_size_bytes = _resolve_workspace_index_config(workspace_root)
-        ls.workspace_state.mark_config_changed()
+        ls.resolved_config = _resolve_workspace_config(workspace_root)
+        ls.index_mode = ls.resolved_config.index_mode
+        max_size_bytes = ls.resolved_config.index_max_bytes
+        ls.workspace_state.replace_diagnostics_engine(
+            _diagnostics_engine_from_config(
+                ls.resolved_config,
+                symbol_index=ls.symbol_index,
+            )
+        )
         # Re-resolve DB path now that we know the actual workspace root
         db_path = ":memory:" if ls.index_mode == "off" else resolve_index_db_path(workspace_root)
         if db_path != ls.symbol_index.db_path:
@@ -3174,8 +3188,7 @@ def on_formatting(ls: BslLanguageServer, params: DocumentFormattingParams) -> li
     content = ls._doc_get(uri, "")
     if not content:
         return None
-    indent_size = params.options.tab_size if params.options else 4
-    insert_spaces = _resolve_insert_spaces(params.options)
+    indent_size, insert_spaces = _resolve_lsp_format_options(ls, params.options)
     try:
         formatted = default_formatter.format(
             content,
@@ -3208,8 +3221,7 @@ def on_range_formatting(
     content = ls._doc_get(uri, "")
     if not content:
         return None
-    indent_size = params.options.tab_size if params.options else 4
-    insert_spaces = _resolve_insert_spaces(params.options)
+    indent_size, insert_spaces = _resolve_lsp_format_options(ls, params.options)
     r = params.range
     start_line = max(0, int(r.start.line))
     end_line = max(0, int(r.end.line))
@@ -3269,8 +3281,7 @@ def on_type_formatting(
     if not content:
         return None
 
-    indent_size = (params.options.tab_size if params.options else None) or 4
-    insert_spaces = _resolve_insert_spaces(params.options)
+    indent_size, insert_spaces = _resolve_lsp_format_options(ls, params.options)
     lines = content.splitlines()
 
     # position.line is the newly-created line (where the cursor landed after Enter).
@@ -3334,6 +3345,22 @@ def _resolve_insert_spaces(options: Any) -> bool | None:
     if isinstance(value, bool):
         return value
     return None
+
+
+def _resolve_lsp_format_options(
+    ls: BslLanguageServer,
+    options: Any,
+) -> tuple[int, bool]:
+    """Resolve LSP formatting options through the canonical config pipeline."""
+    explicit: dict[str, Any] = {}
+    tab_size = getattr(options, "tab_size", None) if options is not None else None
+    if isinstance(tab_size, int):
+        explicit["indent_size"] = tab_size
+    insert_spaces = _resolve_insert_spaces(options)
+    if insert_spaces is not None:
+        explicit["insert_spaces"] = insert_spaces
+    resolved = resolve_config(ls.resolved_config, **explicit)
+    return resolved.indent_size, resolved.insert_spaces
 
 
 # ---------------------------------------------------------------------------

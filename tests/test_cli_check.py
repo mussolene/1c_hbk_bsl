@@ -410,6 +410,50 @@ class TestCheckNewFeatures:
         rc = check([str(tmp_path)], format="text", config=cfg)
         assert rc == 1
 
+    def test_explicit_text_overrides_json_config(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"format": "json", "select": ["BSL012"]})
+
+        rc = check([str(tmp_path)], format="text", config=cfg)
+
+        assert rc == 1
+        assert "BSL012" in capsys.readouterr().err
+
+    def test_explicit_jobs_zero_overrides_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _write_bsl(tmp_path, "t.bsl", "А = 1;\n")
+        cfg = BslConfig({"jobs": 8})
+        captured: dict[str, int] = {}
+
+        def fake_run_checks(_files, *, jobs, **_kwargs):
+            captured["jobs"] = jobs
+            return [], False
+
+        monkeypatch.setattr(check_module, "_run_checks", fake_run_checks)
+        assert check([str(tmp_path)], jobs=0, config=cfg) == 0
+        assert captured["jobs"] == 0
+
+    def test_explicit_false_overrides_exit_zero_config(self, tmp_path: Path) -> None:
+        _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        cfg = BslConfig({"exit-zero": True})
+
+        rc = check(
+            [str(tmp_path)],
+            format="text",
+            select={"BSL012"},
+            exit_zero=False,
+            config=cfg,
+        )
+
+        assert rc == 1
+
     def test_config_ignore_is_used_when_cli_ignore_is_absent(self, tmp_path: Path) -> None:
         _write_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
         cfg = BslConfig({"ignore": ["BSL012"]})

@@ -350,6 +350,57 @@ class TestMainFormat:
         assert exc_info.value.code == 0
         assert "\n  А = 1;" in path.read_text(encoding="utf-8")
 
+    def test_format_explicit_false_overrides_project_config(self, tmp_path: Path) -> None:
+        path = tmp_path / "dirty.bsl"
+        path.write_text("Процедура Тест()\nА = 1;\nКонецПроцедуры\n", encoding="utf-8")
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            "insert-spaces = true\nindent-size = 2\n",
+            encoding="utf-8",
+        )
+
+        with patch(
+            "sys.argv",
+            ["onec-hbk-bsl", "format", str(path), "--no-insert-spaces"],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 0
+        assert "\n\tА = 1;" in path.read_text(encoding="utf-8")
+
+    def test_check_explicit_default_values_override_project_config(self, tmp_path: Path) -> None:
+        path = tmp_path / "module.bsl"
+        path.write_text('Пароль = "секрет123";\n', encoding="utf-8")
+        (tmp_path / "onec-hbk-bsl.toml").write_text(
+            "\n".join(
+                (
+                    'format = "json"',
+                    "jobs = 8",
+                    "exit-zero = true",
+                    'select = ["BSL012"]',
+                )
+            ),
+            encoding="utf-8",
+        )
+
+        with patch(
+            "sys.argv",
+            [
+                "onec-hbk-bsl",
+                "check",
+                str(path),
+                "--format",
+                "text",
+                "--jobs",
+                "0",
+                "--no-exit-zero",
+            ],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+
     def test_format_subcommand_uses_project_exclude(self, tmp_path: Path) -> None:
         excluded = tmp_path / "src" / "installer" / "dirty.bsl"
         excluded.parent.mkdir(parents=True)

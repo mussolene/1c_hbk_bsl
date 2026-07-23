@@ -131,15 +131,10 @@ def _autoindex_if_empty(workspace: str, db_path: str) -> None:
 
 
 def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
-    from onec_hbk_bsl.cli.config import load_config
+    from onec_hbk_bsl.cli.config import load_config, resolve_config
     from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 
-    configured_mode = os.environ.get("BSL_INDEX_MODE", "").strip().lower()
-    index_mode = (
-        configured_mode
-        if configured_mode in {"off", "symbols", "full"}
-        else load_config(workspace).index_mode
-    )
+    index_mode = resolve_config(load_config(workspace)).index_mode
     os.environ["BSL_INDEX_MODE"] = index_mode
     db_path = ":memory:" if index_mode == "off" else resolve_index_db_path(workspace)
     # Set env vars BEFORE importing mcp_bridge/server so module-level globals pick them up
@@ -173,11 +168,11 @@ def _run_mcp(port: int, stdio: bool, workspace: str) -> None:
 
 def _run_check(
     paths: list[str],
-    fmt: str,
+    fmt: str | None,
     select: set[str] | None,
     ignore: set[str] | None,
-    jobs: int,
-    exit_zero: bool,
+    jobs: int | None,
+    exit_zero: bool | None,
     baseline: str | None,
     update_baseline: str | None,
     diff: bool,
@@ -253,14 +248,16 @@ def _run_format(
 ) -> int:
     """Format BSL files in-place, or only check whether formatting would change them."""
     from onec_hbk_bsl.analysis.formatter import default_formatter
-    from onec_hbk_bsl.cli.config import load_config
+    from onec_hbk_bsl.cli.config import load_config, resolve_config
 
     cfg = load_config(paths[0] if paths else os.getcwd())
-    effective_indent_size = (
-        indent_size if indent_size is not None else (cfg.indent_size if cfg.indent_size else 4)
-    )
-    effective_insert_spaces = insert_spaces if insert_spaces is not None else cfg.insert_spaces
-    files = _iter_bsl_source_files(paths, cfg)
+    explicit: dict[str, Any] = {}
+    if indent_size is not None:
+        explicit["indent_size"] = indent_size
+    if insert_spaces is not None:
+        explicit["insert_spaces"] = insert_spaces
+    resolved = resolve_config(cfg, **explicit)
+    files = _iter_bsl_source_files(paths, resolved)
     changed: list[Path] = []
     failed: list[tuple[Path, str]] = []
 
@@ -269,8 +266,8 @@ def _run_format(
             original = path.read_text(encoding="utf-8")
             formatted = default_formatter.format(
                 original,
-                indent_size=effective_indent_size,
-                insert_spaces=effective_insert_spaces,
+                indent_size=resolved.indent_size,
+                insert_spaces=resolved.insert_spaces,
             )
         except Exception as exc:  # noqa: BLE001
             failed.append((path, str(exc)))
@@ -374,7 +371,7 @@ def _run_index(
 ) -> int:
     import json
 
-    from onec_hbk_bsl.cli.config import load_config
+    from onec_hbk_bsl.cli.config import load_config, resolve_config
     from onec_hbk_bsl.indexer.db_path import (
         cleanup_index_storage,
         index_storage_lock,
@@ -384,12 +381,16 @@ def _run_index(
     from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
 
     workspace = str(Path(workspace).resolve())
+    explicit: dict[str, Any] = {}
     if mode is not None:
-        os.environ["BSL_INDEX_MODE"] = mode
+        explicit["index_mode"] = mode
     if max_bytes is not None:
-        os.environ["BSL_INDEX_MAX_BYTES"] = str(max_bytes)
-    elif "BSL_INDEX_MAX_BYTES" not in os.environ:
-        max_bytes = load_config(workspace).index_max_bytes
+        explicit["index_max_bytes"] = max_bytes
+    resolved = resolve_config(load_config(workspace), **explicit)
+    mode = resolved.index_mode
+    max_bytes = resolved.index_max_bytes
+    os.environ["BSL_INDEX_MODE"] = mode
+    os.environ["BSL_INDEX_MAX_BYTES"] = str(max_bytes)
     db_path = resolve_index_db_path(workspace)
 
     if clean:
@@ -515,8 +516,8 @@ Examples:
     check_parser.add_argument(
         "--format",
         choices=["text", "json", "sarif"],
-        default="text",
-        help="Output format (default: text)",
+        default=None,
+        help="Output format (default: config or text)",
     )
     check_parser.add_argument(
         "--select",
@@ -533,9 +534,9 @@ Examples:
     check_parser.add_argument(
         "--jobs",
         type=int,
-        default=0,
+        default=None,
         metavar="N",
-        help="Number of parallel worker threads (0 = auto, 1 = serial; default: 0)",
+        help="Number of parallel worker threads (0 = auto, 1 = serial; default: config or 0)",
     )
     check_parser.add_argument(
         "--no-config",
@@ -545,9 +546,9 @@ Examples:
     )
     check_parser.add_argument(
         "--exit-zero",
-        action="store_true",
-        default=False,
-        help="Always exit 0 even if issues are found",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Whether diagnostics should always exit 0 (default: config or false)",
     )
     check_parser.add_argument(
         "--baseline",
@@ -609,9 +610,9 @@ Examples:
     )
     format_parser.add_argument(
         "--insert-spaces",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=None,
-        help="Indent with spaces instead of tabs",
+        help="Whether to indent with spaces instead of tabs",
     )
 
     lsp_parser = subparsers.add_parser(

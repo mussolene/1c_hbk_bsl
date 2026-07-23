@@ -38,11 +38,17 @@ index-max-bytes          int    — hard size budget, 0 = unlimited
 from __future__ import annotations
 
 import fnmatch
+import os
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Final
 
-from onec_hbk_bsl.analysis.diagnostics import normalize_rule_code_set_strict
+from onec_hbk_bsl.analysis.diagnostics import (
+    normalize_rule_code_set,
+    normalize_rule_code_set_strict,
+)
 
 _CONFIG_SECTION = "onec-hbk-bsl"
 
@@ -52,6 +58,10 @@ class BslConfig:
 
     def __init__(self, data: dict[str, Any]) -> None:
         self._data = data
+
+    def has(self, key: str) -> bool:
+        """Return whether this source explicitly defines *key*."""
+        return key in self._data
 
     # ------------------------------------------------------------------
     # Rule selection
@@ -85,7 +95,10 @@ class BslConfig:
 
     @property
     def per_file_ignores(self) -> dict[str, list[str]]:
-        return dict(self._data.get("per-file-ignores", {}))
+        return {
+            str(pattern): list(codes)
+            for pattern, codes in self._data.get("per-file-ignores", {}).items()
+        }
 
     def is_excluded(self, file_path: str) -> bool:
         """Return True if *file_path* matches any exclude pattern."""
@@ -236,6 +249,168 @@ class BslConfig:
             "max_module_lines": self.max_module_lines,
         }
         return {k: v for k, v in mapping.items() if v is not None}
+
+
+class ResolvedConfig(BslConfig):
+    """Immutable configuration snapshot shared by every public adapter."""
+
+    __slots__ = ()
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        frozen = {key: _freeze_config_value(value) for key, value in data.items()}
+        object.__setattr__(self, "_data", MappingProxyType(frozen))
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("ResolvedConfig is immutable")
+
+
+def _freeze_config_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {str(key): _freeze_config_value(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return tuple(_freeze_config_value(item) for item in value)
+    return value
+
+
+_UNSET: Final = object()
+_THRESHOLD_KEYS: Final = (
+    "max-line-length",
+    "max-proc-lines",
+    "max-cognitive-complexity",
+    "max-mccabe-complexity",
+    "max-nesting-depth",
+    "max-params",
+    "max-returns",
+    "max-bool-ops",
+    "min-duplicate-uses",
+    "max-module-lines",
+)
+
+
+def environment_config(environ: Mapping[str, str] | None = None) -> BslConfig:
+    """Translate the established public environment variables into one config layer."""
+    values = os.environ if environ is None else environ
+    data: dict[str, Any] = {}
+
+    for env_key, config_key in (("BSL_SELECT", "select"), ("BSL_IGNORE", "ignore")):
+        raw = values.get(env_key, "").strip()
+        if raw:
+            normalized = normalize_rule_code_set(raw.split(","))
+            data[config_key] = sorted(normalized)
+
+    mode = values.get("BSL_INDEX_MODE", "").strip().lower()
+    if mode in {"off", "symbols", "full"}:
+        data["index-mode"] = mode
+
+    raw_max_bytes = values.get("BSL_INDEX_MAX_BYTES", "").strip()
+    if raw_max_bytes:
+        try:
+            max_bytes = int(raw_max_bytes)
+        except ValueError:
+            pass
+        else:
+            if max_bytes >= 0:
+                data["index-max-bytes"] = max_bytes
+
+    return BslConfig(data)
+
+
+def resolve_config(
+    project: BslConfig | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    select: set[str] | frozenset[str] | None | object = _UNSET,
+    ignore: set[str] | frozenset[str] | None | object = _UNSET,
+    exclude: list[str] | tuple[str, ...] | object = _UNSET,
+    index_exclude: list[str] | tuple[str, ...] | object = _UNSET,
+    per_file_ignores: Mapping[str, list[str] | tuple[str, ...]] | object = _UNSET,
+    format: str | None | object = _UNSET,  # noqa: A002
+    jobs: int | None | object = _UNSET,
+    exit_zero: bool | None | object = _UNSET,
+    baseline: str | None | object = _UNSET,
+    indent_size: int | None | object = _UNSET,
+    insert_spaces: bool | None | object = _UNSET,
+    index_mode: str | None | object = _UNSET,
+    index_max_bytes: int | None | object = _UNSET,
+) -> ResolvedConfig:
+    """Resolve ``explicit > environment > project > defaults`` once.
+
+    ``None`` is an explicit value when passed by an adapter only where the
+    corresponding public option uses it meaningfully. Omitting an argument
+    entirely is represented by the private sentinel.
+    """
+    project_layer = project or _EMPTY
+    environment_layer = environment_config(environ)
+    explicit_values = {
+        "select": select,
+        "ignore": ignore,
+        "exclude": exclude,
+        "index-exclude": index_exclude,
+        "per-file-ignores": per_file_ignores,
+        "format": format,
+        "jobs": jobs,
+        "exit-zero": exit_zero,
+        "baseline": baseline,
+        "indent-size": indent_size,
+        "insert-spaces": insert_spaces,
+        "index-mode": index_mode,
+        "index-max-bytes": index_max_bytes,
+    }
+    defaults: dict[str, Any] = {
+        "select": None,
+        "ignore": None,
+        "exclude": (),
+        "per-file-ignores": {},
+        "format": "text",
+        "jobs": 0,
+        "exit-zero": False,
+        "baseline": None,
+        "indent-size": 4,
+        "insert-spaces": False,
+        "index-mode": "full",
+        "index-max-bytes": 0,
+        **dict.fromkeys(_THRESHOLD_KEYS),
+    }
+
+    resolved: dict[str, Any] = {}
+    for key, default in defaults.items():
+        explicit = explicit_values.get(key, _UNSET)
+        if explicit is not _UNSET:
+            resolved[key] = explicit
+        elif environment_layer.has(key):
+            resolved[key] = environment_layer._data[key]
+        elif project_layer.has(key):
+            resolved[key] = project_layer._data[key]
+        else:
+            resolved[key] = default
+
+    if index_exclude is not _UNSET:
+        resolved["index-exclude"] = index_exclude
+    elif environment_layer.has("index-exclude"):
+        resolved["index-exclude"] = environment_layer._data["index-exclude"]
+    elif project_layer.has("index-exclude"):
+        resolved["index-exclude"] = project_layer._data["index-exclude"]
+    else:
+        resolved["index-exclude"] = resolved["exclude"]
+
+    snapshot = ResolvedConfig(resolved)
+    # Eager validation keeps adapter failures deterministic and source-independent.
+    _ = (
+        snapshot.select,
+        snapshot.ignore,
+        snapshot.format,
+        snapshot.jobs,
+        snapshot.index_mode,
+        snapshot.index_max_bytes,
+    )
+    for pattern, codes in snapshot.per_file_ignores.items():
+        normalize_rule_code_set_strict(
+            codes,
+            source=f"per-file-ignores for {pattern}",
+        )
+    return snapshot
 
 
 # Singleton representing "no config found"

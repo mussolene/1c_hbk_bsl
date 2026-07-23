@@ -13,6 +13,11 @@ It is a guardrail for future changes, not a user guide. User-facing docs live in
 - Suppressions: `// noqa: BSL###` and compatible `// BSLLS-off/on` comments.
 - `.bsl-language-server.json` is not a supported project config.
 - No separate Java analyzer is launched at runtime.
+- Configuration precedence is stable across CLI, Python API, LSP, and MCP:
+  explicit option > supported environment variable > project config > built-in default.
+- Supported config environment mappings are `BSL_SELECT`, `BSL_IGNORE`,
+  `BSL_INDEX_MODE`, and `BSL_INDEX_MAX_BYTES`; adding another mapping is a
+  public-surface change.
 
 ## Stable User Surfaces
 
