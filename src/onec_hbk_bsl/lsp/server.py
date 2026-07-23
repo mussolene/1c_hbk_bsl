@@ -64,6 +64,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_SELECTION_RANGE,
     TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
     TEXT_DOCUMENT_SIGNATURE_HELP,
+    WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS,
     WORKSPACE_SYMBOL,
     CallHierarchyIncomingCall,
     CallHierarchyIncomingCallsParams,
@@ -89,6 +90,7 @@ from lsprotocol.types import (
     DiagnosticSeverity,
     DiagnosticTag,
     DidChangeTextDocumentParams,
+    DidChangeWorkspaceFoldersParams,
     DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
     DidSaveTextDocumentParams,
@@ -189,6 +191,9 @@ from onec_hbk_bsl.lsp.document_state import (
     DiagnosticCacheKey,
     DiagnosticRun,
     DocumentDiagnosticsState,
+    WorkspaceEntry,
+    WorkspaceId,
+    WorkspaceRegistry,
     WorkspaceRunContext,
     WorkspaceState,
 )
@@ -353,6 +358,18 @@ class BslLanguageServer(LanguageServer):
             diagnostics_engine=diagnostics_engine,
             invalidate_caches=self._invalidate_workspace_caches,
         )
+        self.workspace_registry = WorkspaceRegistry()
+        initial_id = WorkspaceId.from_root(os.getcwd())
+        self.workspace_registry.add(
+            WorkspaceEntry(
+                workspace_id=initial_id,
+                state=self.workspace_state,
+                config=self.resolved_config,
+                index_mode=self.index_mode,
+            )
+        )
+        self._primary_workspace_id = initial_id
+        self._workspace_initialized = False
         # Backward-compat aliases used across existing tests and handlers.
         self._docs = self.doc_state.docs
         self._diag_timers = self.doc_state.diag_timers
@@ -368,7 +385,9 @@ class BslLanguageServer(LanguageServer):
         self._reindex_lock = threading.Lock()
         self._reindex_running = False
         self._reindex_pending = False
+        self._reindex_pending_roots: dict[str, str] = {}
         self._shutdown_event = threading.Event()
+        self._workspace_watch_stop: dict[WorkspaceId, threading.Event] = {}
         # Set in initialize from ClientCapabilities.text_document.diagnostic (LSP 3.17 pull).
         self.client_pull_diagnostics: bool = False
         self.client_diagnostic_refresh: bool = False
@@ -389,6 +408,127 @@ class BslLanguageServer(LanguageServer):
     def workspace_run_context(self) -> WorkspaceRunContext:
         return self.workspace_state.snapshot()
 
+    def workspace_entry_for_path(self, path: str) -> WorkspaceEntry:
+        try:
+            return self.workspace_registry.owner_for_path(path)
+        except ValueError:
+            entries = self.workspace_registry.entries()
+            if not self._workspace_initialized and len(entries) == 1:
+                return entries[0]
+            raise
+
+    def workspace_state_for_path(self, path: str) -> WorkspaceState:
+        return self.workspace_entry_for_path(path).state
+
+    def workspace_run_context_for_path(self, path: str) -> WorkspaceRunContext:
+        return self.workspace_state_for_path(path).snapshot()
+
+    def workspace_state_for_context(self, context: WorkspaceRunContext) -> WorkspaceState:
+        for entry in self.workspace_entries():
+            snapshot = entry.state.snapshot()
+            if snapshot.symbol_index is context.symbol_index:
+                return entry.state
+        raise ValueError("workspace context no longer belongs to an active root")
+
+    def symbol_index_for_path(self, path: str) -> SymbolIndex:
+        return self.workspace_run_context_for_path(path).symbol_index
+
+    def workspace_entries(self) -> tuple[WorkspaceEntry, ...]:
+        return self.workspace_registry.entries()
+
+    def _build_workspace_entry(self, root: str) -> WorkspaceEntry:
+        workspace_id = WorkspaceId.from_root(root)
+        config = _resolve_workspace_config(workspace_id.root)
+        index_mode = config.index_mode
+        db_path = ":memory:" if index_mode == "off" else resolve_index_db_path(workspace_id.root)
+        symbol_index = SymbolIndex(
+            db_path=db_path,
+            max_size_bytes=config.index_max_bytes,
+        )
+        state = WorkspaceState(
+            symbol_index=symbol_index,
+            indexer=IncrementalIndexer(index=symbol_index, quiet=True),
+            diagnostics_engine=_diagnostics_engine_from_config(
+                config,
+                symbol_index=symbol_index,
+            ),
+            invalidate_caches=self._invalidate_workspace_caches,
+        )
+        return WorkspaceEntry(
+            workspace_id=workspace_id,
+            state=state,
+            config=config,
+            index_mode=index_mode,
+        )
+
+    def configure_workspace_roots(self, roots: list[str]) -> None:
+        canonical = [WorkspaceId.from_root(root) for root in roots]
+        if len(set(canonical)) != len(canonical):
+            raise ValueError("duplicate or aliased workspace roots are ambiguous")
+        entries = [self._build_workspace_entry(workspace_id.root) for workspace_id in canonical]
+        persistent_paths = [
+            entry.state.snapshot().symbol_index.db_path
+            for entry in entries
+            if entry.state.snapshot().symbol_index.db_path != ":memory:"
+        ]
+        if len(set(persistent_paths)) != len(persistent_paths):
+            for entry in entries:
+                entry.state.close()
+            raise ValueError(
+                "multiple workspace roots resolve to the same persistent index database"
+            )
+        self._stop_all_workspace_watchers()
+        self.workspace_registry.close()
+        self.workspace_registry = WorkspaceRegistry()
+        for entry in entries:
+            self.workspace_registry.add(entry)
+        primary = entries[0]
+        self._primary_workspace_id = primary.workspace_id
+        self.workspace_state = primary.state
+        self.resolved_config = primary.config
+        self.index_mode = primary.index_mode
+        self._workspace_initialized = True
+        self._invalidate_workspace_caches("replace")
+
+    def add_workspace_root(self, root: str) -> WorkspaceEntry:
+        entry = self._build_workspace_entry(root)
+        try:
+            new_db_path = entry.state.snapshot().symbol_index.db_path
+            if new_db_path != ":memory:" and any(
+                current.state.snapshot().symbol_index.db_path == new_db_path
+                for current in self.workspace_entries()
+            ):
+                raise ValueError(
+                    "workspace root resolves to an index database already owned by another root"
+                )
+            self.workspace_registry.add(entry)
+        except Exception:
+            entry.state.close()
+            raise
+        self._workspace_initialized = True
+        return entry
+
+    def remove_workspace_root(self, root: str) -> WorkspaceEntry:
+        workspace_id = WorkspaceId.from_root(root)
+        stop = self._workspace_watch_stop.pop(workspace_id, None)
+        if stop is not None:
+            stop.set()
+        removed = self.workspace_registry.remove(workspace_id)
+        entries = self.workspace_registry.entries()
+        if workspace_id == self._primary_workspace_id and entries:
+            primary = entries[0]
+            self._primary_workspace_id = primary.workspace_id
+            self.workspace_state = primary.state
+            self.resolved_config = primary.config
+            self.index_mode = primary.index_mode
+        self._invalidate_workspace_caches("replace")
+        return removed
+
+    def _stop_all_workspace_watchers(self) -> None:
+        for stop in self._workspace_watch_stop.values():
+            stop.set()
+        self._workspace_watch_stop.clear()
+
     def _invalidate_workspace_caches(self, reason: str) -> None:
         self.doc_state.clear_semantic_caches(
             clear_indexed_snapshots=reason in {"replace", "metadata", "config"},
@@ -399,13 +539,14 @@ class BslLanguageServer(LanguageServer):
     def close(self) -> None:
         """Best-effort cleanup for interpreter shutdown and client disconnects."""
         self._shutdown_event.set()
+        self._stop_all_workspace_watchers()
         for timer in list(self._diag_timers.values()):
             try:
                 timer.cancel()
             except Exception:
                 logger.debug("LSP: diagnostic timer cancel failed", exc_info=True)
         try:
-            self.workspace_state.close()
+            self.workspace_registry.close()
         except Exception:
             logger.debug("LSP: symbol index close failed", exc_info=True)
 
@@ -441,14 +582,20 @@ def _start_branch_watcher(ls: BslLanguageServer, workspace_root: str) -> None:
     git_head = Path(workspace_root) / ".git" / "HEAD"
     if not git_head.exists():
         return  # not a git repo or .git is elsewhere (worktree etc.)
+    workspace_id = WorkspaceId.from_root(workspace_root)
+    stop_event = threading.Event()
+    previous = ls._workspace_watch_stop.get(workspace_id)
+    if previous is not None:
+        previous.set()
+    ls._workspace_watch_stop[workspace_id] = stop_event
 
     def _watch() -> None:
         try:
             from watchfiles import watch  # already in requirements
 
             logger.info("LSP: watching %s for branch changes", git_head)
-            for _ in watch(str(git_head), stop_event=ls._shutdown_event):
-                if ls._shutdown_event.is_set():
+            for _ in watch(str(git_head), stop_event=stop_event):
+                if stop_event.is_set() or ls._shutdown_event.is_set():
                     break
                 branch = _current_branch(git_head)
                 logger.warning(
@@ -481,41 +628,76 @@ def _schedule_workspace_reindex(
 
     If a reindex is already running, we only mark one pending pass and return.
     """
+    requested_root = WorkspaceId.from_root(workspace_root).root
     with ls._reindex_lock:
         if ls._reindex_running:
             ls._reindex_pending = True
+            pending_roots = getattr(ls, "_reindex_pending_roots", None)
+            if pending_roots is None:
+                pending_roots = {}
+                ls._reindex_pending_roots = pending_roots
+            pending_roots[requested_root] = reason
             logger.debug("LSP: re-index already running; mark pending (%s)", reason)
             return
         ls._reindex_running = True
         ls._reindex_pending = False
+        ls._reindex_pending_roots = {}
 
     def _worker() -> None:
+        current_root = requested_root
+        current_reason = reason
         try:
             while True:
                 try:
-                    context = ls.workspace_run_context()
-                    context.indexer.index_workspace(workspace_root, force=False)
-                    stats = context.symbol_index.get_stats()
-                    revisions = ls.workspace_state.mark_index_changed(
-                        expected_index=context.symbol_index,
-                        metadata_changed=True,
+                    if hasattr(ls, "workspace_state_for_path"):
+                        state = ls.workspace_state_for_path(current_root)
+                        context = state.snapshot()
+                    else:
+                        state = ls.workspace_state
+                        context = ls.workspace_run_context()
+                    stats: dict[str, Any] = {}
+
+                    def _index_current_root(
+                        *,
+                        run_context: WorkspaceRunContext = context,
+                        root: str = current_root,
+                        run_state: WorkspaceState = state,
+                        run_stats: dict[str, Any] = stats,
+                    ) -> bool:
+                        run_context.indexer.index_workspace(root, force=False)
+                        run_stats.update(run_context.symbol_index.get_stats())
+                        revisions = run_state.mark_index_changed(
+                            expected_index=run_context.symbol_index,
+                            metadata_changed=True,
+                        )
+                        return revisions is not None
+
+                    run_if_current = getattr(state, "run_if_current", None)
+                    completed = (
+                        run_if_current(context, _index_current_root)
+                        if run_if_current is not None
+                        else _index_current_root()
                     )
-                    if revisions is not None:
+                    if completed:
                         _refresh_open_document_diagnostics(ls)
-                    logger.info(
-                        "LSP: re-index complete (%s): %d symbols in %d files",
-                        reason,
-                        stats["symbol_count"],
-                        stats["file_count"],
-                    )
+                        logger.info(
+                            "LSP: re-index complete (%s): %d symbols in %d files",
+                            current_reason,
+                            stats["symbol_count"],
+                            stats["file_count"],
+                        )
                 except Exception as exc:
-                    logger.error("LSP: re-index failed (%s): %s", reason, exc)
+                    logger.error("LSP: re-index failed (%s): %s", current_reason, exc)
 
                 with ls._reindex_lock:
-                    if ls._reindex_pending:
-                        ls._reindex_pending = False
+                    pending_roots = getattr(ls, "_reindex_pending_roots", {})
+                    if pending_roots:
+                        current_root = sorted(pending_roots)[0]
+                        current_reason = pending_roots.pop(current_root)
+                        ls._reindex_pending = bool(pending_roots)
                         continue
                     ls._reindex_running = False
+                    ls._reindex_pending = False
                     break
         finally:
             with ls._reindex_lock:
@@ -550,6 +732,7 @@ def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
     """Return status-bar payload with counts, size, and reindex state."""
     context = ls.workspace_run_context()
     stats = context.symbol_index.get_stats()
+    workspace_roots = [entry.workspace_id.root for entry in ls.workspace_entries()]
     with ls._reindex_lock:
         reindex_running = ls._reindex_running
         reindex_pending = ls._reindex_pending
@@ -573,6 +756,8 @@ def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
         "last_commit": stats.get("last_commit"),
         "indexed_at": stats.get("indexed_at"),
         "workspace_root": stats.get("workspace_root"),
+        "workspace_roots": workspace_roots,
+        "workspace_count": len(workspace_roots),
         "index_revision": context.revisions.index,
         "metadata_revision": context.revisions.metadata,
         "config_revision": context.revisions.config,
@@ -594,49 +779,67 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
     ws_diags = getattr(ws, "diagnostics", None) if ws is not None else None
     ls.client_diagnostic_refresh = bool(getattr(ws_diags, "refresh_support", False))
 
-    workspace_root = None
+    workspace_roots: list[str] = []
     if params.workspace_folders:
-        workspace_root = _uri_to_path(params.workspace_folders[0].uri)
+        workspace_roots = [_uri_to_path(folder.uri) for folder in params.workspace_folders]
     elif params.root_uri:
-        workspace_root = _uri_to_path(params.root_uri)
+        workspace_roots = [_uri_to_path(params.root_uri)]
     elif params.root_path:
-        workspace_root = params.root_path
+        workspace_roots = [params.root_path]
 
-    if workspace_root and Path(workspace_root).is_dir():
-        ls.resolved_config = _resolve_workspace_config(workspace_root)
-        ls.index_mode = ls.resolved_config.index_mode
-        max_size_bytes = ls.resolved_config.index_max_bytes
-        ls.workspace_state.replace_diagnostics_engine(
-            _diagnostics_engine_from_config(
-                ls.resolved_config,
-                symbol_index=ls.symbol_index,
-            )
-        )
-        # Re-resolve DB path now that we know the actual workspace root
-        db_path = ":memory:" if ls.index_mode == "off" else resolve_index_db_path(workspace_root)
-        if db_path != ls.symbol_index.db_path:
-            symbol_index = SymbolIndex(
-                db_path=db_path,
-                max_size_bytes=max_size_bytes,
-            )
-            ls.workspace_state.replace_index(
-                symbol_index=symbol_index,
-                indexer=IncrementalIndexer(index=symbol_index, quiet=True),
-            )
-        else:
-            ls.symbol_index.max_size_bytes = max_size_bytes
-
-        if ls.index_mode == "off":
-            logger.info("LSP: persistent workspace index disabled")
-        else:
+    valid_roots = [root for root in workspace_roots if Path(root).is_dir()]
+    if valid_roots:
+        ls.configure_workspace_roots(valid_roots)
+        for entry in ls.workspace_entries():
+            workspace_root = entry.workspace_id.root
+            if entry.index_mode == "off":
+                logger.info("LSP: persistent workspace index disabled for %s", workspace_root)
+                continue
+            db_path = entry.state.snapshot().symbol_index.db_path
             logger.info(
                 "LSP: scheduling %s background index of %s (db: %s)",
-                ls.index_mode,
+                entry.index_mode,
                 workspace_root,
                 db_path,
             )
             _schedule_workspace_reindex(ls, workspace_root, reason="initialize")
             _start_branch_watcher(ls, workspace_root)
+
+
+@server.feature(WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS)
+def on_did_change_workspace_folders(
+    ls: BslLanguageServer,
+    params: DidChangeWorkspaceFoldersParams,
+) -> None:
+    """Add and remove root-local services without restarting the server."""
+    for folder in params.event.removed:
+        root = _uri_to_path(folder.uri)
+        try:
+            ls.remove_workspace_root(root)
+        except KeyError:
+            logger.warning("LSP: ignored removal of unknown workspace root %s", root)
+    for folder in params.event.added:
+        root = _uri_to_path(folder.uri)
+        if not Path(root).is_dir():
+            logger.warning("LSP: ignored invalid workspace root %s", root)
+            continue
+        try:
+            entry = ls.add_workspace_root(root)
+        except ValueError as exc:
+            logger.error("LSP: cannot add workspace root %s: %s", root, exc)
+            continue
+        if entry.index_mode == "off":
+            logger.info("LSP: persistent workspace index disabled")
+        else:
+            db_path = entry.state.snapshot().symbol_index.db_path
+            logger.info(
+                "LSP: scheduling %s background index of %s (db: %s)",
+                entry.index_mode,
+                root,
+                db_path,
+            )
+            _schedule_workspace_reindex(ls, root, reason="workspace-folder-added")
+            _start_branch_watcher(ls, root)
 
 
 # ---------------------------------------------------------------------------
@@ -738,15 +941,16 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
 
     # Re-index and run diagnostics in background
     def _run() -> None:
-        context = ls.workspace_run_context()
+        state = ls.workspace_state_for_path(path)
+        context = state.snapshot()
         result: object | None = None
 
         def _index() -> None:
             nonlocal result
             result = context.indexer.index_file(path)
-            ls.workspace_state.mark_index_changed(expected_index=context.symbol_index)
+            state.mark_index_changed(expected_index=context.symbol_index)
 
-        indexed = ls.workspace_state.run_if_current(
+        indexed = state.run_if_current(
             context,
             lambda: ls.doc_state.index_if_current(
                 uri,
@@ -791,15 +995,19 @@ def _finish_lsp_diagnostic_run(
     error: BaseException | None = None,
 ) -> bool:
     """Commit cache state while the workspace and document identities are both current."""
-    committed = ls.workspace_state.run_if_current(
-        workspace_context,
-        lambda: ls.doc_state.finish_diag_run(
-            uri,
-            run,
-            diagnostics=diagnostics,
-            error=error,
-        ),
-    )
+    try:
+        state = ls.workspace_state_for_context(workspace_context)
+        committed = state.run_if_current(
+            workspace_context,
+            lambda: ls.doc_state.finish_diag_run(
+                uri,
+                run,
+                diagnostics=diagnostics,
+                error=error,
+            ),
+        )
+    except ValueError:
+        committed = False
     if not run.event.is_set():
         ls.doc_state.finish_diag_run(
             uri,
@@ -828,7 +1036,7 @@ def _run_lsp_diagnostics(
 
     if content_for_hash is not None:
         content_hash = hash(content_for_hash)
-        workspace_context = ls.workspace_run_context()
+        workspace_context = ls.workspace_run_context_for_path(path)
         cache_key = DiagnosticCacheKey(content_hash, workspace_context.revisions)
         action, run = ls.doc_state.begin_diag_run(uri, cache_key, generation)
         if action == "stale":
@@ -917,7 +1125,7 @@ def _build_lsp_diagnostics_inner(
     import time as _time
 
     if workspace_context is None:
-        workspace_context = ls.workspace_run_context()
+        workspace_context = ls.workspace_run_context_for_path(path)
     cached = content_override if content_override is not None else ls._doc_get(uri)
 
     # Resolve content string used for hashing (prefer in-memory, fall back to disk).
@@ -1069,17 +1277,21 @@ def _schedule_snapshot_index(
 ) -> None:
     """Refresh the open-file index from an existing snapshot, without reparsing."""
     if workspace_context is None:
-        workspace_context = ls.workspace_run_context()
+        workspace_context = ls.workspace_run_context_for_path(path)
+    try:
+        state = ls.workspace_state_for_context(workspace_context)
+    except ValueError:
+        return
 
     def _run() -> None:
         def _index() -> None:
             result = workspace_context.indexer.index_snapshot(path, snapshot)
-            ls.workspace_state.mark_index_changed(
+            state.mark_index_changed(
                 expected_index=workspace_context.symbol_index,
             )
             logger.debug("LSP: snapshot-indexed %s: %s", path, result)
 
-        ls.workspace_state.run_if_current(
+        state.run_if_current(
             workspace_context,
             lambda: ls.doc_state.index_if_current(
                 uri,
@@ -1140,7 +1352,7 @@ def _maybe_start_async_pull_diagnostics(
         return None
 
     content_hash = hash(content)
-    workspace_context = ls.workspace_run_context()
+    workspace_context = ls.workspace_run_context_for_path(path)
     cache_key = DiagnosticCacheKey(content_hash, workspace_context.revisions)
     cached = ls.doc_state.get_diag_cache(uri)
     if cached is not None and cached[0] == cache_key:
@@ -1295,7 +1507,8 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
             pass
 
     # 2. Workspace symbol index (procedures, functions, exported variables)
-    symbols = ls.symbol_index.find_symbol(word, limit=20)
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
+    symbols = index.find_symbol(word, limit=20)
     if left_word:
         symbols = [symbol for symbol in symbols if symbol.get("is_export")]
     if not symbols:
@@ -1357,7 +1570,7 @@ def _hover_markdown(parts: list[str]) -> Hover:
     return Hover(contents=MarkupContent(kind=MarkupKind.Markdown, value="\n\n".join(parts)))
 
 
-def _workspace_symbol_hover(ls: BslLanguageServer, symbols: list[dict[str, Any]]) -> Hover:
+def _workspace_symbol_hover(index: SymbolIndex, symbols: list[dict[str, Any]]) -> Hover:
     sym = symbols[0]
     sig = sym.get("signature") or sym["name"]
     parts: list[str] = [f"```bsl\n{sig}\n```"]
@@ -1372,7 +1585,7 @@ def _workspace_symbol_hover(ls: BslLanguageServer, symbols: list[dict[str, Any]]
             f"- `{Path(item['file_path']).name}`, строка {item['line']}" for item in symbols
         )
         parts.append(f"*Определено в {len(symbols)} местах:*\n{locations}")
-    caller_count = ls.symbol_index.find_callers_count(sym["name"])
+    caller_count = index.find_callers_count(sym["name"])
     if caller_count:
         parts.append(f"*Вызывается в {caller_count} местах*")
     return _hover_markdown(parts)
@@ -1440,6 +1653,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     uri = params.text_document.uri
     pos = params.position
     content = ls._doc_get(uri, "")
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -1490,12 +1704,12 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     #   - word is a known platform TYPE name — type info takes priority
     _is_platform_type = ls.platform_api.find_type(word) is not None
     symbols = (
-        ls.symbol_index.find_symbol(word, limit=5)
+        index.find_symbol(word, limit=5)
         if not left_word and not _after_new and not _is_platform_type
         else []
     )
     if symbols:
-        return _workspace_symbol_hover(ls, symbols)
+        return _workspace_symbol_hover(index, symbols)
 
     # 2. Глобальная функция платформы 1С (не применимо к вызовам через точку)
     global_fn = ls.platform_api.find_global(word) if not left_word else None
@@ -1575,15 +1789,13 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     # Platform methods stay authoritative because their lookup runs first.
     if left_word:
         member_symbols = [
-            symbol
-            for symbol in ls.symbol_index.find_symbol(word, limit=5)
-            if symbol.get("is_export")
+            symbol for symbol in index.find_symbol(word, limit=5) if symbol.get("is_export")
         ]
         if member_symbols:
-            return _workspace_symbol_hover(ls, member_symbols)
+            return _workspace_symbol_hover(index, member_symbols)
 
     # 5. Метаданные конфигурации 1С
-    if hasattr(ls, "symbol_index") and ls.symbol_index.has_metadata():
+    if index.has_metadata():
         # 5a0. Root property Метаданные
         if not left_word and word.casefold() == METADATA_ROOT_NAME_CF:
             return _hover_markdown(
@@ -1603,7 +1815,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
             )
         # 5a. Hovering over a metadata object name (e.g. 'Контрагенты')
         if not left_word:
-            meta_obj = ls.symbol_index.find_meta_object(word)
+            meta_obj = index.find_meta_object(word)
             if meta_obj:
                 kind_str = meta_obj.get("kind", "")
                 synonym = meta_obj.get("synonym_ru", "")
@@ -1618,8 +1830,8 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
 
         # 5b. Hovering over a metadata member (e.g. 'Контрагенты.НаименованиеПолное')
         if left_word:
-            meta_obj_name = _metadata_object_name_from_chain(ls, _before_word) or left_word
-            members = ls.symbol_index.get_meta_members(meta_obj_name, word)
+            meta_obj_name = _metadata_object_name_from_chain(index, _before_word) or left_word
+            members = index.get_meta_members(meta_obj_name, word)
             word_lo = word.casefold()
             for m in members:
                 if m["name"].casefold() == word_lo:
@@ -1656,7 +1868,7 @@ def on_document_symbol(ls: BslLanguageServer, params: DocumentSymbolParams) -> l
         if symbols is not None:
             return symbols
 
-    rows = ls.symbol_index.get_file_symbols(path)
+    rows = ls.symbol_index_for_path(path).get_file_symbols(path)
     return [_document_symbol_from_row(row) for row in rows]
 
 
@@ -1721,7 +1933,26 @@ def on_workspace_symbol(
     if not query:
         return []
 
-    rows = ls.symbol_index.find_symbol(query, limit=30, fuzzy=True)
+    rows_with_root: list[tuple[str, dict[str, Any]]] = []
+    for entry in ls.workspace_entries():
+        rows_with_root.extend(
+            (entry.workspace_id.root, row)
+            for row in entry.state.snapshot().symbol_index.find_symbol(
+                query,
+                limit=30,
+                fuzzy=True,
+            )
+        )
+    rows_with_root.sort(
+        key=lambda item: (
+            item[1]["name"].casefold(),
+            str(item[1]["file_path"]).casefold(),
+            int(item[1]["line"]),
+            int(item[1]["character"]),
+            item[0],
+        )
+    )
+    rows = [row for _root, row in rows_with_root[:30]]
 
     result: list[SymbolInformation] = []
     for row in rows:
@@ -1759,6 +1990,7 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
     uri = params.text_document.uri
     pos = params.position
     content = ls._doc_get(uri, "")
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
@@ -1767,7 +1999,7 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
 
     # Include declaration if requested
     if params.context and params.context.include_declaration:
-        defs = ls.symbol_index.find_symbol(word, limit=5)
+        defs = index.find_symbol(word, limit=5)
         for sym in defs:
             line = max(0, sym["line"] - 1)
             locations.append(
@@ -1781,7 +2013,7 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
             )
 
     # All call sites
-    callers = ls.symbol_index.find_callers(word, limit=200)
+    callers = index.find_callers(word, limit=200)
     for c in callers:
         line = max(0, c["caller_line"] - 1)
         ch = _call_char_from_row(c)
@@ -1839,6 +2071,7 @@ def on_prepare_rename(ls: BslLanguageServer, params: PrepareRenameParams) -> Ran
     uri = params.text_document.uri
     pos = params.position
     content = ls._doc_get(uri, "")
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     word = _word_at_position(content, pos.line, pos.character)
     if not _is_bsl_identifier(word):
         return None
@@ -1848,7 +2081,7 @@ def on_prepare_rename(ls: BslLanguageServer, params: PrepareRenameParams) -> Ran
     if not symbols:
         symbols = [
             s
-            for s in ls.symbol_index.find_symbol(word, limit=1)
+            for s in index.find_symbol(word, limit=1)
             if s.get("kind") in ("procedure", "function")
         ]
     if not symbols:
@@ -1864,6 +2097,7 @@ def on_rename(ls: BslLanguageServer, params: RenameParams) -> WorkspaceEdit | No
     pos = params.position
     new_name = params.new_name
     content = ls._doc_get(uri, "")
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     word = _word_at_position(content, pos.line, pos.character)
     if not _is_bsl_identifier(word) or not _is_bsl_identifier(new_name):
         return None
@@ -1871,7 +2105,7 @@ def on_rename(ls: BslLanguageServer, params: RenameParams) -> WorkspaceEdit | No
     overrides = {_uri_to_path(open_uri): text for open_uri, text in ls._docs.items()}
     try:
         plan = build_rename_plan(
-            ls.symbol_index,
+            index,
             word,
             new_name,
             content_overrides=overrides,
@@ -1933,7 +2167,7 @@ def _call_char_from_row(call_row: dict[str, Any]) -> int:
 
 
 def _cached_symbol_lookup(
-    ls: BslLanguageServer,
+    index: SymbolIndex,
     cache: dict[tuple[str, int], list[dict[str, Any]]],
     name: str | None,
     limit: int = 1,
@@ -1943,7 +2177,7 @@ def _cached_symbol_lookup(
         return []
     key = (name.casefold(), limit)
     if key not in cache:
-        cache[key] = ls.symbol_index.find_symbol(name, limit=limit)
+        cache[key] = index.find_symbol(name, limit=limit)
     return cache[key]
 
 
@@ -1955,11 +2189,12 @@ def on_prepare_call_hierarchy(
     uri = params.text_document.uri
     pos = params.position
     content = ls._doc_get(uri, "")
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
 
-    symbols = ls.symbol_index.find_symbol(word, limit=5)
+    symbols = index.find_symbol(word, limit=5)
     if not symbols:
         return None
 
@@ -1972,7 +2207,13 @@ def on_call_hierarchy_incoming(
 ) -> list[CallHierarchyIncomingCall] | None:
     """Return all callers of the given symbol (incoming calls)."""
     item_name = params.item.name
-    callers = ls.symbol_index.find_callers(item_name, limit=200)
+    item_uri = getattr(params.item, "uri", None)
+    index = (
+        ls.symbol_index_for_path(_uri_to_path(item_uri))
+        if isinstance(item_uri, str)
+        else ls.symbol_index
+    )
+    callers = index.find_callers(item_name, limit=200)
     if not callers:
         return None
 
@@ -1986,7 +2227,7 @@ def on_call_hierarchy_incoming(
             end=Position(line=caller_line, character=caller_char + len(item_name)),
         )
         # Build a minimal CallHierarchyItem for the caller function
-        caller_syms = _cached_symbol_lookup(ls, caller_cache, c.get("caller_name"), limit=1)
+        caller_syms = _cached_symbol_lookup(index, caller_cache, c.get("caller_name"), limit=1)
         if caller_syms:
             from_item = _sym_to_call_hierarchy_item(caller_syms[0], ls)
         else:
@@ -2015,8 +2256,9 @@ def on_call_hierarchy_outgoing(
     caller_uri = params.item.uri
     caller_file = _uri_to_path(caller_uri)
     caller_name = params.item.name
+    index = ls.symbol_index_for_path(caller_file)
 
-    callees = ls.symbol_index.find_callees(caller_file, caller_name=caller_name)
+    callees = index.find_callees(caller_file, caller_name=caller_name)
     if not callees:
         return None
 
@@ -2030,7 +2272,7 @@ def on_call_hierarchy_outgoing(
             end=Position(line=call_line, character=call_char + len(c["callee_name"])),
         )
         # Resolve callee definition
-        callee_syms = _cached_symbol_lookup(ls, callee_cache, c["callee_name"], limit=1)
+        callee_syms = _cached_symbol_lookup(index, callee_cache, c["callee_name"], limit=1)
         if callee_syms:
             to_item = _sym_to_call_hierarchy_item(callee_syms[0], ls)
         else:
@@ -2087,6 +2329,7 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
        filtered by the current word prefix.
     """
     uri = params.text_document.uri
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     pos = params.position
     content = ls._doc_get(uri, "")
     lines = content.splitlines()
@@ -2133,7 +2376,7 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
 
         # ---- common module dot-completion: ОбщийМодуль. → exported symbols --
         if not items:
-            for sym in ls.symbol_index.get_module_exports(obj_name):
+            for sym in index.get_module_exports(obj_name):
                 label = sym["name"]
                 if member_prefix and not label.lower().startswith(member_prefix.lower()):
                     continue
@@ -2187,8 +2430,8 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
 
         # ---- metadata: Контрагенты. → attributes/TS; Справочники. → names ---
         if not items:
-            meta_obj_name = _metadata_object_name_from_chain(ls, before_dot) or obj_name
-            items = _meta_dot_completions(ls, meta_obj_name, member_prefix)
+            meta_obj_name = _metadata_object_name_from_chain(index, before_dot) or obj_name
+            items = _meta_dot_completions(index, meta_obj_name, member_prefix)
 
         # Return member completions even if empty (no global pollution on `.`)
         return CompletionList(is_incomplete=False, items=items)
@@ -2220,7 +2463,7 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
     # Workspace symbols (procedures/functions from the index)
     if prefix:
         try:
-            ws_symbols = ls.symbol_index.find_symbol(prefix, limit=30, fuzzy=True)
+            ws_symbols = index.find_symbol(prefix, limit=30, fuzzy=True)
         except Exception:  # noqa: BLE001
             logger.debug("Completion workspace symbol lookup failed", exc_info=True)
             ws_symbols = []
@@ -2303,7 +2546,7 @@ def _generate_doc_comment_at_line(
 
 
 def _metadata_object_name_from_chain(
-    ls: BslLanguageServer,
+    index: SymbolIndex,
     chain_expr: str,
 ) -> str | None:
     """Resolve a metadata object name from a dotted expression.
@@ -2313,7 +2556,7 @@ def _metadata_object_name_from_chain(
     - ``Справочники.Контрагенты.Товары`` -> ``Контрагенты``
     - ``Контрагенты.Товары`` -> ``Контрагенты`` (if object exists)
     """
-    if not chain_expr or not hasattr(ls, "symbol_index") or not ls.symbol_index.has_metadata():
+    if not chain_expr or not index.has_metadata():
         return None
 
     tokens = _re.findall(r"[А-ЯЁа-яёA-Za-z_]\w*", chain_expr)
@@ -2322,27 +2565,25 @@ def _metadata_object_name_from_chain(
 
     # Case 0: Метаданные.Коллекция.Объект
     if len(tokens) >= 3 and tokens[0].casefold() == METADATA_ROOT_NAME_CF:
-        if META_COLLECTION_ALIASES.get(tokens[1].casefold()) and ls.symbol_index.find_meta_object(
-            tokens[2]
-        ):
+        if META_COLLECTION_ALIASES.get(tokens[1].casefold()) and index.find_meta_object(tokens[2]):
             return tokens[2]
 
     # Case 1: known global metadata collection path.
     if len(tokens) >= 2 and META_COLLECTION_ALIASES.get(tokens[0].casefold()):
         second = tokens[1]
-        if ls.symbol_index.find_meta_object(second):
+        if index.find_meta_object(second):
             return second
 
     # Case 2: fallback — pick first token in the chain that is a known metadata object.
     for tok in tokens:
-        if ls.symbol_index.find_meta_object(tok):
+        if index.find_meta_object(tok):
             return tok
 
     return None
 
 
 def _meta_dot_completions(
-    ls: BslLanguageServer,
+    index: SymbolIndex,
     obj_name: str,
     member_prefix: str,
 ) -> list[CompletionItem]:
@@ -2357,7 +2598,7 @@ def _meta_dot_completions(
     """
     from lsprotocol.types import CompletionItem, CompletionItemKind  # noqa: PLC0415
 
-    if not hasattr(ls, "symbol_index") or not ls.symbol_index.has_metadata():
+    if not index.has_metadata():
         return []
 
     items: list[CompletionItem] = []
@@ -2382,7 +2623,7 @@ def _meta_dot_completions(
     # Case 1: global collection name
     collection = META_COLLECTION_ALIASES.get(obj_lo)
     if collection:
-        for meta_obj in ls.symbol_index.find_meta_objects_by_collection(collection, member_prefix):
+        for meta_obj in index.find_meta_objects_by_collection(collection, member_prefix):
             label = meta_obj["name"]
             kind = meta_obj.get("kind", "")
             synonym = meta_obj.get("synonym_ru", "")
@@ -2401,7 +2642,7 @@ def _meta_dot_completions(
         return items
 
     # Case 2: direct object name → members
-    for member in ls.symbol_index.get_meta_members(obj_name, member_prefix):
+    for member in index.get_meta_members(obj_name, member_prefix):
         label = member["name"]
         kind_str = member["kind"]
         if kind_str == "tabular_section":
@@ -3555,6 +3796,7 @@ def on_semantic_tokens_full(
 def on_inlay_hint(ls: BslLanguageServer, params: InlayHintParams) -> list[InlayHint] | None:
     """Show parameter name hints at function call sites."""
     uri = params.text_document.uri
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     content = ls._doc_get(uri, "")
     if not content:
         return None
@@ -3585,7 +3827,7 @@ def on_inlay_hint(ls: BslLanguageServer, params: InlayHintParams) -> list[InlayH
                 continue
 
             # Look up symbol to get parameter names
-            syms = ls.symbol_index.find_symbol(func_name, limit=1)
+            syms = index.find_symbol(func_name, limit=1)
             if not syms:
                 continue
             sig = syms[0].get("signature") or ""
@@ -3682,6 +3924,7 @@ def _param_label(param: str) -> str:
 def on_signature_help(ls: BslLanguageServer, params: SignatureHelpParams) -> SignatureHelp | None:
     """Show signature and active parameter for the call under the cursor."""
     uri = params.text_document.uri
+    index = ls.symbol_index_for_path(_uri_to_path(uri))
     content = ls._doc_get(uri, "")
     if not content:
         return None
@@ -3709,7 +3952,7 @@ def on_signature_help(ls: BslLanguageServer, params: SignatureHelpParams) -> Sig
     active_param = comma_count
 
     # Resolve signature (workspace first, then platform API).
-    sym = ls.symbol_index.find_symbol(func_name, limit=1)
+    sym = index.find_symbol(func_name, limit=1)
     signature_text: str | None = None
     doc: str | None = None
     if sym:
@@ -4355,19 +4598,24 @@ def on_bsl_status(ls: BslLanguageServer, params: object) -> dict:  # type: ignor
 @server.feature("bsl/reindexWorkspace")
 def on_bsl_reindex_workspace(ls: BslLanguageServer, params: dict) -> dict:  # type: ignore[type-arg]
     """Re-index the entire workspace (triggered from VSCode command)."""
-    if ls.index_mode == "off":
-        return {"success": False, "error": "Workspace index is disabled (index-mode=off)"}
     root = params.get("root", "")
     if not root or not Path(root).is_dir():
         return {"success": False, "error": f"Invalid root: {root}"}
+    try:
+        entry = ls.workspace_entry_for_path(root)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+    if entry.index_mode == "off" or (not ls._workspace_initialized and ls.index_mode == "off"):
+        return {"success": False, "error": "Workspace index is disabled (index-mode=off)"}
 
     import threading
 
     def _do() -> None:
         try:
-            context = ls.workspace_run_context()
+            state = entry.state
+            context = state.snapshot()
             context.indexer.index_workspace(root, force=True)
-            revisions = ls.workspace_state.mark_index_changed(
+            revisions = state.mark_index_changed(
                 expected_index=context.symbol_index,
                 metadata_changed=True,
             )
@@ -4388,9 +4636,10 @@ def on_bsl_reindex_file(ls: BslLanguageServer, params: dict) -> dict:  # type: i
     if not file_path or not Path(file_path).is_file():
         return {"success": False, "error": f"File not found: {file_path}"}
     try:
-        context = ls.workspace_run_context()
+        state = ls.workspace_state_for_path(file_path)
+        context = state.snapshot()
         context.indexer.index_file(file_path)
-        ls.workspace_state.mark_index_changed(expected_index=context.symbol_index)
+        state.mark_index_changed(expected_index=context.symbol_index)
         return {"success": True}
     except Exception as exc:
         return {"success": False, "error": str(exc)}

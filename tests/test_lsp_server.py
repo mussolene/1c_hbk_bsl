@@ -166,9 +166,11 @@ class TestBslLanguageServerInit:
         assert context_b.symbol_index is created[1]
         assert context_b.indexer.index is context_b.symbol_index
         assert context_b.diagnostics_engine._symbol_index is context_b.symbol_index
-        assert context_b.revisions.index == context_a.revisions.index + 1
-        assert context_b.revisions.metadata == context_a.revisions.metadata + 1
-        assert context_b.revisions.config == context_a.revisions.config + 1
+        # Revisions are root-local: a newly configured root starts its own
+        # monotonic sequence instead of inheriting another root's generation.
+        assert context_a.revisions.index == context_b.revisions.index == 1
+        assert context_a.revisions.metadata == context_b.revisions.metadata == 1
+        assert context_a.revisions.config == context_b.revisions.config == 1
         assert ls.doc_state.diag_result_cache == {}
         assert ls.doc_state.indexed_snapshot_cache == {}
         created[0].close.assert_called_once()
@@ -396,6 +398,245 @@ class TestDocumentDiagnosticsState:
         clear_config_caches()
 
         assert read_text_cached(str(config_file)) == "B"
+
+
+class TestWorkspaceRegistryMultiRoot:
+    @staticmethod
+    def _entry(root: Path, label: str):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.document_state import (
+            WorkspaceEntry,
+            WorkspaceId,
+            WorkspaceState,
+        )
+
+        index = SimpleNamespace(close=MagicMock(), label=label, db_path=":memory:")
+        state = WorkspaceState(
+            symbol_index=index,
+            indexer=SimpleNamespace(index=index),
+            diagnostics_engine=SimpleNamespace(_symbol_index=index),
+            invalidate_caches=lambda _reason: None,
+        )
+        return WorkspaceEntry(
+            workspace_id=WorkspaceId.from_root(str(root)),
+            state=state,
+            config=SimpleNamespace(label=label),
+            index_mode="full",
+        )
+
+    def test_nested_root_owns_its_files_and_states_are_isolated(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.lsp.document_state import WorkspaceRegistry
+
+        parent_root = tmp_path / "parent"
+        child_root = parent_root / "nested"
+        child_root.mkdir(parents=True)
+        parent = self._entry(parent_root, "parent")
+        child = self._entry(child_root, "child")
+        registry = WorkspaceRegistry()
+        registry.add(parent)
+        registry.add(child)
+
+        assert registry.owner_for_path(str(parent_root / "a.bsl")) is parent
+        assert registry.owner_for_path(str(child_root / "b.bsl")) is child
+        assert parent.state.snapshot().symbol_index is not child.state.snapshot().symbol_index
+        assert parent.config is not child.config
+
+    def test_remove_closes_index_and_rejects_stale_publication(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.lsp.document_state import WorkspaceRegistry
+
+        entry = self._entry(tmp_path / "removed", "removed")
+        registry = WorkspaceRegistry()
+        registry.add(entry)
+        context = entry.state.snapshot()
+        effects: list[str] = []
+
+        registry.remove(entry.workspace_id)
+
+        assert not entry.state.run_if_current(context, lambda: effects.append("stale"))
+        assert effects == []
+        context.symbol_index.close.assert_called_once()
+
+    def test_duplicate_or_aliased_root_is_rejected(self, tmp_path: Path) -> None:
+        import pytest
+
+        from onec_hbk_bsl.lsp.document_state import WorkspaceRegistry
+
+        root = tmp_path / "same"
+        root.mkdir()
+        registry = WorkspaceRegistry()
+        registry.add(self._entry(root, "first"))
+
+        with pytest.raises(ValueError, match="already registered"):
+            registry.add(self._entry(root / ".", "second"))
+
+    def test_registry_access_errors_and_close_retire_all_roots(self, tmp_path: Path) -> None:
+        import pytest
+
+        from onec_hbk_bsl.lsp.document_state import WorkspaceId, WorkspaceRegistry
+
+        first = self._entry(tmp_path / "first", "first")
+        second = self._entry(tmp_path / "second", "second")
+        missing = WorkspaceId.from_root(str(tmp_path / "missing"))
+        registry = WorkspaceRegistry()
+        registry.add(first)
+        registry.add(second)
+
+        assert registry.get(first.workspace_id) is first
+        with pytest.raises(KeyError, match="not registered"):
+            registry.get(missing)
+        with pytest.raises(KeyError, match="not registered"):
+            registry.remove(missing)
+        with pytest.raises(ValueError, match="outside registered workspace roots"):
+            registry.owner_for_path(str(tmp_path / "outside.bsl"))
+
+        registry.close()
+
+        assert registry.entries() == ()
+        first.state.snapshot().symbol_index.close.assert_called_once()
+        second.state.snapshot().symbol_index.close.assert_called_once()
+
+    def test_workspace_symbol_merge_has_stable_root_independent_order(self) -> None:
+        from types import SimpleNamespace
+
+        from lsprotocol.types import WorkspaceSymbolParams
+
+        from onec_hbk_bsl.lsp.server import on_workspace_symbol
+
+        def _entry(root: str, rows: list[dict]):
+            index = SimpleNamespace(find_symbol=lambda *_args, **_kwargs: list(rows))
+            state = SimpleNamespace(snapshot=lambda: SimpleNamespace(symbol_index=index))
+            return SimpleNamespace(
+                workspace_id=SimpleNamespace(root=root),
+                state=state,
+            )
+
+        alpha = {
+            "name": "Альфа",
+            "kind": "function",
+            "file_path": "/z/alpha.bsl",
+            "line": 2,
+            "character": 1,
+            "container": "",
+        }
+        beta = {
+            "name": "Бета",
+            "kind": "function",
+            "file_path": "/a/beta.bsl",
+            "line": 1,
+            "character": 0,
+            "container": "",
+        }
+        ls = SimpleNamespace(
+            workspace_entries=lambda: (_entry("/z", [beta]), _entry("/a", [alpha]))
+        )
+
+        result = on_workspace_symbol(ls, WorkspaceSymbolParams(query="а"))
+
+        assert [item.name for item in result] == ["Альфа", "Бета"]
+
+    def test_workspace_folder_notifications_add_and_retire_state(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from lsprotocol.types import (
+            DidChangeWorkspaceFoldersParams,
+            WorkspaceFolder,
+            WorkspaceFoldersChangeEvent,
+        )
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "initial.sqlite"))
+        ls = srv.BslLanguageServer()
+        root = tmp_path / "added"
+        root.mkdir()
+        entry = self._entry(root, "added")
+        entry = type(entry)(
+            workspace_id=entry.workspace_id,
+            state=entry.state,
+            config=entry.config,
+            index_mode="off",
+        )
+        monkeypatch.setattr(ls, "_build_workspace_entry", lambda _root: entry)
+
+        srv.on_did_change_workspace_folders(
+            ls,
+            DidChangeWorkspaceFoldersParams(
+                event=WorkspaceFoldersChangeEvent(
+                    added=[WorkspaceFolder(uri=root.as_uri(), name="added")],
+                    removed=[],
+                )
+            ),
+        )
+        assert ls.workspace_entry_for_path(str(root / "module.bsl")) is entry
+
+        srv.on_did_change_workspace_folders(
+            ls,
+            DidChangeWorkspaceFoldersParams(
+                event=WorkspaceFoldersChangeEvent(
+                    added=[],
+                    removed=[WorkspaceFolder(uri=root.as_uri(), name="added")],
+                )
+            ),
+        )
+        entry.state.snapshot().symbol_index.close.assert_called_once()
+        ls.close()
+
+    def test_shared_persistent_index_path_is_rejected_and_closed(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import pytest
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "initial.sqlite"))
+        ls = srv.BslLanguageServer()
+        roots = (tmp_path / "first", tmp_path / "second")
+        entries = [self._entry(root, root.name) for root in roots]
+        for entry in entries:
+            entry.state.snapshot().symbol_index.db_path = str(tmp_path / "shared.sqlite")
+        by_root = {entry.workspace_id.root: entry for entry in entries}
+        monkeypatch.setattr(ls, "_build_workspace_entry", by_root.__getitem__)
+
+        with pytest.raises(ValueError, match="same persistent index database"):
+            ls.configure_workspace_roots([str(root) for root in roots])
+
+        for entry in entries:
+            entry.state.snapshot().symbol_index.close.assert_called_once()
+        ls.close()
+
+    def test_lsp_roots_keep_same_named_symbols_and_configs_isolated(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.delenv("INDEX_DB_PATH", raising=False)
+        roots = (tmp_path / "a", tmp_path / "b")
+        for number, root in enumerate(roots, start=1):
+            root.mkdir()
+            (root / ".git").mkdir()
+            (root / "onec-hbk-bsl.toml").write_text(
+                f'select = ["BSL00{number}"]\n',
+                encoding="utf-8",
+            )
+            (root / "module.bsl").write_text(
+                f"Процедура ОдинаковоеИмя()\n\tЗначение = {number};\nКонецПроцедуры\n",
+                encoding="utf-8",
+            )
+
+        ls = srv.BslLanguageServer()
+        ls.configure_workspace_roots([str(root) for root in roots])
+        entries = ls.workspace_entries()
+        for root, entry in zip(roots, entries, strict=True):
+            entry.state.snapshot().indexer.index_file(str(root / "module.bsl"))
+
+        assert entries[0].config.select == {"BSL001"}
+        assert entries[1].config.select == {"BSL002"}
+        for root, entry in zip(roots, entries, strict=True):
+            rows = entry.state.snapshot().symbol_index.find_symbol("ОдинаковоеИмя")
+            assert {row["file_path"] for row in rows} == {str(root / "module.bsl")}
+        ls.close()
 
 
 # ---------------------------------------------------------------------------

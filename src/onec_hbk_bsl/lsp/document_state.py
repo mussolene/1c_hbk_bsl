@@ -3,7 +3,19 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class WorkspaceId:
+    """Canonical identity of one workspace root."""
+
+    root: str
+
+    @classmethod
+    def from_root(cls, root: str) -> WorkspaceId:
+        return cls(str(Path(root).resolve()))
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +75,7 @@ class WorkspaceState:
         self._revisions = WorkspaceRevisions(index=1, metadata=1, config=1)
         self._invalidate_caches = invalidate_caches
         self._closed_indexes: list[Any] = []
+        self._retired = False
 
     def snapshot(self) -> WorkspaceRunContext:
         with self._lock:
@@ -76,7 +89,9 @@ class WorkspaceState:
     def is_current(self, context: WorkspaceRunContext) -> bool:
         with self._lock:
             return (
-                context.symbol_index is self._symbol_index and context.revisions == self._revisions
+                not self._retired
+                and context.symbol_index is self._symbol_index
+                and context.revisions == self._revisions
             )
 
     def run_if_current(
@@ -87,7 +102,8 @@ class WorkspaceState:
         """Run an update while the complete workspace context is still current."""
         with self._lock:
             if (
-                context.symbol_index is not self._symbol_index
+                self._retired
+                or context.symbol_index is not self._symbol_index
                 or context.revisions != self._revisions
             ):
                 return False
@@ -125,7 +141,7 @@ class WorkspaceState:
     ) -> WorkspaceRevisions | None:
         """Advance revisions only when the writer still targets the current index."""
         with self._lock:
-            if expected_index is not self._symbol_index:
+            if self._retired or expected_index is not self._symbol_index:
                 return None
             self._revisions = WorkspaceRevisions(
                 index=self._revisions.index + 1,
@@ -163,6 +179,7 @@ class WorkspaceState:
 
     def close(self) -> None:
         with self._lock:
+            self._retired = True
             current = self._symbol_index
         self._close_index_once(current)
 
@@ -172,6 +189,76 @@ class WorkspaceState:
                 return
             self._closed_indexes.append(index)
         index.close()
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceEntry:
+    """Services and root-local configuration owned by one workspace."""
+
+    workspace_id: WorkspaceId
+    state: WorkspaceState
+    config: Any
+    index_mode: str
+
+
+class WorkspaceRegistry:
+    """Thread-safe multi-root ownership and lifecycle registry."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._entries: dict[WorkspaceId, WorkspaceEntry] = {}
+
+    def add(self, entry: WorkspaceEntry) -> None:
+        with self._lock:
+            if entry.workspace_id in self._entries:
+                raise ValueError(f"workspace root already registered: {entry.workspace_id.root}")
+            self._entries[entry.workspace_id] = entry
+
+    def remove(self, workspace_id: WorkspaceId) -> WorkspaceEntry:
+        with self._lock:
+            try:
+                entry = self._entries.pop(workspace_id)
+            except KeyError as exc:
+                raise KeyError(f"workspace root is not registered: {workspace_id.root}") from exc
+        entry.state.close()
+        return entry
+
+    def get(self, workspace_id: WorkspaceId) -> WorkspaceEntry:
+        with self._lock:
+            try:
+                return self._entries[workspace_id]
+            except KeyError as exc:
+                raise KeyError(f"workspace root is not registered: {workspace_id.root}") from exc
+
+    def entries(self) -> tuple[WorkspaceEntry, ...]:
+        with self._lock:
+            return tuple(self._entries[workspace_id] for workspace_id in sorted(self._entries))
+
+    def owner_for_path(self, path: str) -> WorkspaceEntry:
+        """Return the deepest containing root; reject missing or ambiguous owners."""
+        candidate_path = Path(path).resolve()
+        with self._lock:
+            matches = [
+                entry
+                for entry in self._entries.values()
+                if candidate_path == Path(entry.workspace_id.root)
+                or Path(entry.workspace_id.root) in candidate_path.parents
+            ]
+        if not matches:
+            raise ValueError(f"path is outside registered workspace roots: {candidate_path}")
+        depth = max(len(Path(entry.workspace_id.root).parts) for entry in matches)
+        owners = [entry for entry in matches if len(Path(entry.workspace_id.root).parts) == depth]
+        if len(owners) != 1:
+            roots = ", ".join(sorted(entry.workspace_id.root for entry in owners))
+            raise ValueError(f"ambiguous workspace ownership for {candidate_path}: {roots}")
+        return owners[0]
+
+    def close(self) -> None:
+        with self._lock:
+            entries = tuple(self._entries.values())
+            self._entries.clear()
+        for entry in entries:
+            entry.state.close()
 
 
 class DocumentDiagnosticsState:

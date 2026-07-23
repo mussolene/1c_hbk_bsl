@@ -226,6 +226,21 @@ receiver, so such calls return `receiver_ambiguity` without writing.
 | `textDocument/diagnostic` | Implemented | LSP 3.17 pull diagnostics; large files complete in background and request refresh |
 | `textDocument/publishDiagnostics` | Implemented | Adaptive debounced fallback for clients without pull support |
 | `textDocument/completion` | Implemented | Globals + workspace + metadata-aware members |
+
+### Multi-root ownership and lifecycle
+
+Each canonical workspace root owns an independent `WorkspaceState`: index,
+indexer, diagnostic engine, resolved config, and monotonic index/metadata/config
+revisions. Document requests are routed by the canonical file path. For nested
+workspace folders the deepest containing root owns the file; duplicate/aliased
+roots or any equally specific ownership are rejected explicitly.
+
+`workspace/didChangeWorkspaceFolders` creates or retires those states without a
+server restart. Retirement stops the root watcher, prevents stale contexts from
+committing diagnostics, and closes the root index exactly once. Workspace
+symbol results are merged in a stable name/path/range/root order. The
+single-root CLI and the primary-root LSP aliases remain backward compatible;
+cross-root symbol or diagnostic caches are not shared.
 | `textDocument/references` | Implemented | Via index |
 | `textDocument/rename` / `prepareRename` | Implemented | Shared exact-span `RenamePlan`; ambiguity refuses the edit |
 | `textDocument/signatureHelp` | Implemented | Parameter hints |
