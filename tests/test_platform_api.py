@@ -5,6 +5,7 @@ Tests for PlatformApi — 1C platform built-in type/function registry.
 from __future__ import annotations
 
 import json
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,14 @@ class TestSearch:
 
 
 class TestJsonLoading:
+    def test_packaged_platform_api_resources_are_loaded(self) -> None:
+        data_dir = resources.files("onec_hbk_bsl.data.platform_api")
+        api = PlatformApi(data_dir=data_dir)
+
+        assert api.find_type("HTTPСоединение") is not None
+        assert api.find_global("Сообщить") is not None
+        assert len(api.get_global_completions()) > 100
+
     def test_load_from_json_file(self, tmp_path: Path) -> None:
         """PlatformApi(data_dir=...) should merge JSON type definitions."""
         data_dir = tmp_path / "platform_api"

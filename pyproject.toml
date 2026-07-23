@@ -48,6 +48,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "onec_hbk_bsl.analysis.bsl_typo" = ["*.properties"]
+"onec_hbk_bsl.data.platform_api" = ["*.json"]
 
 # Version from git tags (e.g. v0.7.2). See scripts/README.md.
 [tool.setuptools_scm]
@@ -55,7 +56,7 @@ fallback_version = "0.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=src/onec_hbk_bsl --cov-report=term-missing --cov-fail-under=50"
+addopts = "-v --cov=src/onec_hbk_bsl --cov-report=term-missing --cov-fail-under=80"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
@@ -63,6 +64,26 @@ omit = [
     "*/tests/*",
 ]
 source = ["src/onec_hbk_bsl"]
+
+[tool.onec_hbk_bsl.quality]
+total = 80
+diff = 80
+
+[tool.onec_hbk_bsl.quality.components.parser]
+prefix = "src/onec_hbk_bsl/parser/"
+floor = 63
+
+[tool.onec_hbk_bsl.quality.components.lsp]
+prefix = "src/onec_hbk_bsl/lsp/"
+floor = 74
+
+[tool.onec_hbk_bsl.quality.components.mcp]
+prefix = "src/onec_hbk_bsl/mcp_bridge/"
+floor = 68
+
+[tool.onec_hbk_bsl.quality.components.index]
+prefix = "src/onec_hbk_bsl/indexer/"
+floor = 81
 
 [tool.ruff]
 line-length = 100

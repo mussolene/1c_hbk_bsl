@@ -7,11 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.43] - 2026-07-23
+
+### Added
+
+- `bsl_callers` и `bsl_callees` принимают `file_filter` и возвращают явный
+  ambiguity contract вместо выбора произвольного определения.
+- VS Code extension проверяется поведенческими тестами регистрации команд,
+  разрешения binary path и передачи настроек в LSP.
+- Единый release preflight собирает и проверяет wheel/sdist, четыре standalone
+  binary и четыре platform VSIX до первой внешней публикации; релиз содержит
+  детерминированный `SHA256SUMS`.
+
+### Changed
+
+- Designer metadata type tokens сохраняются из реальной XML-структуры без
+  усечения, включая composite-типы и form attributes.
+- Type inference корректно обрабатывает вложенные access chains и учитывает
+  затенение platform manager collections локальными переменными.
+- Coverage ratchet поднят до 80% и дополнен reviewable floors для parser, LSP,
+  MCP и index, diff coverage и сохраняемыми CI evidence artifacts.
+- Диагностические `BSL###` стали canonical machine IDs на CLI, LSP и MCP;
+  implementation state выводится из runtime registry, а версия LSP — из
+  package version.
+
 ### Fixed
 
 - Hover и переход к определению для пользовательских функций в цепочках вызовов
   используют workspace symbol index; `index-exclude` позволяет индексировать
   библиотеки независимо от диагностического `exclude`.
+- Core wheel и PyInstaller binary теперь содержат полный каталог platform API,
+  загружаемый через `importlib.resources`.
+- Обновлён frozen npm dependency tree; runtime и полный dev audit проходят без
+  high/critical advisories.
+- Каталог диагностик не публикует нераскрытые `%s` placeholders.
 
 ## [0.8.40] - 2026-07-13
 
@@ -435,7 +464,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.40...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.43...HEAD
+[0.8.43]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.42...v0.8.43
 [0.8.40]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.39...v0.8.40
 [0.8.39]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.38...v0.8.39
 [0.8.38]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.18...v0.8.38

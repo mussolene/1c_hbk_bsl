@@ -22,7 +22,7 @@ ROOT = Path(SPECPATH).resolve().parent
 SRC_MAIN = ROOT / "src" / "onec_hbk_bsl" / "__main__.py"
 
 # Project data. certifi/jsonschema/etc. come from PyInstaller hooks via the import graph.
-datas: list = [(str(ROOT / "data"), "data")]
+datas: list = collect_data_files("onec_hbk_bsl.data.platform_api")
 # MCP SDK may use importlib.metadata at runtime; keep its dist-info in the bundle.
 datas += copy_metadata("mcp")
 # Keep project metadata available in the bundle; runtime version lookup itself

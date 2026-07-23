@@ -49,6 +49,14 @@ class TestUriHelpers:
 
 
 class TestBslLanguageServerInit:
+    def test_lsp_diagnostic_code_is_canonical_bsl_id(self) -> None:
+        from onec_hbk_bsl.lsp.server import _lsp_diagnostic_code_fields
+
+        code, description = _lsp_diagnostic_code_fields("BSL009")
+        assert code == "BSL009"
+        assert description is not None
+        assert description.href == "urn:onec-hbk-bsl:rule:BSL009"
+
     def test_diagnostics_enabled_environment_switch(self, monkeypatch) -> None:
         from onec_hbk_bsl.lsp.server import _diagnostics_enabled
 
@@ -72,6 +80,13 @@ class TestBslLanguageServerInit:
 
         ls = BslLanguageServer()
         assert isinstance(ls.diagnostics_engine, DiagnosticEngine)
+
+    def test_server_version_uses_package_version(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        from onec_hbk_bsl import __version__
+        from onec_hbk_bsl.lsp.server import BslLanguageServer
+
+        assert BslLanguageServer().version == __version__
 
     def test_server_defaults_diagnostics_to_all_public_rules(
         self, tmp_path: Path, monkeypatch: object
@@ -255,7 +270,7 @@ class TestPublishDiagnostics:
 
         dead = [d for d in params.diagnostics if _is_dead(d)]
         assert len(dead) == 1
-        assert dead[0].code == "UnusedPrivateMethod"
+        assert dead[0].code == "BSL-DEAD"
         assert dead[0].source == "onec-hbk-bsl · BSL-DEAD"
         assert dead[0].severity == DiagnosticSeverity.Warning
         assert dead[0].tags and DiagnosticTag.Unnecessary in dead[0].tags

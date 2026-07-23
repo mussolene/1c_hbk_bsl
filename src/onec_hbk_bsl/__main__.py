@@ -32,6 +32,7 @@ Config file:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import multiprocessing
 import os
@@ -445,7 +446,7 @@ _COMMAND_ALIASES = {
     "--list-rules": "rules",
     "--init": "init",
 }
-_COMMANDS = {"check", "format", "lsp", "mcp", "index", "rules", "init"}
+_COMMANDS = {"check", "format", "lsp", "mcp", "index", "rules", "init", "_release-contract"}
 
 
 def _normalize_argv(argv: list[str]) -> list[str]:
@@ -701,8 +702,42 @@ Examples:
     )
 
     subparsers.add_parser("init", parents=[log_parent], help="Generate a starter onec-hbk-bsl.toml")
+    subparsers.add_parser("_release-contract", help=argparse.SUPPRESS)
 
     args = parser.parse_args(_normalize_argv(sys.argv[1:]))
+
+    if args.command == "_release-contract":
+        from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
+            DIAGNOSTIC_RUNTIME_RULE_CODES,
+        )
+        from onec_hbk_bsl.analysis.diagnostics import RULE_METADATA
+        from onec_hbk_bsl.analysis.platform_api import get_platform_api
+
+        api = get_platform_api()
+        types = sorted(api._types)  # noqa: SLF001 - internal release contract
+        globals_ = sorted(item.name for item in api._globals)  # noqa: SLF001
+        methods = sorted(
+            f"{type_name}.{method.name}"
+            for type_name, api_type in api._types.items()  # noqa: SLF001
+            for method in api_type.methods
+        )
+        print(
+            json.dumps(
+                {
+                    "version": __version__,
+                    "rules": sorted(RULE_METADATA),
+                    "runtime_rules": sorted(DIAGNOSTIC_RUNTIME_RULE_CODES),
+                    "platform_api": {
+                        "types": types,
+                        "globals": globals_,
+                        "methods": methods,
+                    },
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return
 
     if args.command == "rules":
         _setup_logging(args.log_level, use_rich=True)

@@ -38,6 +38,12 @@ import {
   isExecutable,
 } from "./binaryResolution";
 import { parseBslFoldingRanges, parseBslStructure, type BslStructureItem } from "./bslStructure";
+import {
+  COMMAND_IDS,
+  buildLocalLaunch,
+  buildServerEnvironment,
+  dockerExecEnvArgs,
+} from "./extensionContract";
 
 /** Shared log channel (also passed to LanguageClient for stderr/LSP trace). */
 let logChannel: vscode.OutputChannel | undefined;
@@ -161,7 +167,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.command = `${CONFIG_SECTION}.showStatus`;
+  statusBarItem.command = COMMAND_IDS[2];
   statusBarItem.text = "$(loading~spin) BSL";
   statusBarItem.tooltip = `${brand} — click to show index status`;
   statusBarItem.show();
@@ -192,10 +198,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Commands
   context.subscriptions.push(
-    vscode.commands.registerCommand(`${CONFIG_SECTION}.reindexWorkspace`, reindexWorkspace),
-    vscode.commands.registerCommand(`${CONFIG_SECTION}.reindexCurrentFile`, reindexCurrentFile),
-    vscode.commands.registerCommand(`${CONFIG_SECTION}.showStatus`, showStatus),
-    vscode.commands.registerCommand(`${CONFIG_SECTION}.showOutput`, () => {
+    vscode.commands.registerCommand(COMMAND_IDS[0], reindexWorkspace),
+    vscode.commands.registerCommand(COMMAND_IDS[1], reindexCurrentFile),
+    vscode.commands.registerCommand(COMMAND_IDS[2], showStatus),
+    vscode.commands.registerCommand(COMMAND_IDS[3], () => {
       logChannel?.show(true);
     }),
   );
@@ -462,32 +468,6 @@ function httpDownload(
 // Server options
 // ---------------------------------------------------------------------------
 
-/** Env vars passed into `docker exec -e …` so Docker LSP matches local binary parity. */
-const DOCKER_LSP_ENV_KEYS = [
-  "LOG_LEVEL",
-  "INDEX_DB_PATH",
-  "BSL_SELECT",
-  "BSL_IGNORE",
-  "BSL_DIAGNOSTICS_ENABLED",
-  "BSL_INDEX_MODE",
-  "BSL_INDEX_MAX_BYTES",
-] as const;
-
-/**
- * Build `-e KEY=value` pairs for `docker exec` from the same env we would pass to a local process.
- * Only forwards keys the server reads (avoids leaking the full host `process.env` into the container).
- */
-function dockerExecEnvArgs(env: NodeJS.ProcessEnv): string[] {
-  const out: string[] = [];
-  for (const key of DOCKER_LSP_ENV_KEYS) {
-    const v = env[key];
-    if (v !== undefined && v !== "") {
-      out.push("-e", `${key}=${v}`);
-    }
-  }
-  return out;
-}
-
 function buildServerOptions(
   binaryPath: string,
   config: vscode.WorkspaceConfiguration,
@@ -501,25 +481,7 @@ function buildServerOptions(
       : "INDEX_DB_PATH: (unset — server uses .git/onec-hbk-bsl_index.sqlite or ~/.cache/onec-hbk-bsl/…)",
   );
 
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    LOG_LEVEL: config.get<string>("logLevel", "info"),
-  };
-  if (indexDb.trim()) {
-    env.INDEX_DB_PATH = indexDb;
-  }
-  const indexMode = config.get<string>("indexMode", "project");
-  if (indexMode !== "project") { env.BSL_INDEX_MODE = indexMode; }
-  const indexMaxBytes = config.get<number>("indexMaxBytes", -1);
-  if (indexMaxBytes >= 0) { env.BSL_INDEX_MAX_BYTES = String(indexMaxBytes); }
-
-  const select = config.get<string[]>("diagnostics.select", []);
-  const ignore = config.get<string[]>("diagnostics.ignore", []);
-  env["BSL_DIAGNOSTICS_ENABLED"] = config.get<boolean>("diagnostics.enabled", true)
-    ? "1"
-    : "0";
-  if (select.length > 0) { env["BSL_SELECT"] = select.join(","); }
-  if (ignore.length > 0) { env["BSL_IGNORE"] = ignore.join(","); }
+  const env = buildServerEnvironment(config);
 
   if (useDocker) {
     const envArgs = dockerExecEnvArgs(env);
@@ -549,18 +511,15 @@ function buildServerOptions(
 
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const srv: Executable = {
-    command: binaryPath,
-    args: ["lsp"],
+    ...buildLocalLaunch(binaryPath, workspaceRoot, env),
     transport: TransportKind.stdio,
-    options: {
-      env,
-      // Helps onefile/relative paths; harmless when unset.
-      ...(workspaceRoot ? { cwd: workspaceRoot } : {}),
-    },
   };
   return {
     run: srv,
-    debug: { ...srv, args: ["lsp", "--log-level", "debug"] },
+    debug: {
+      ...buildLocalLaunch(binaryPath, workspaceRoot, env, true),
+      transport: TransportKind.stdio,
+    },
   };
 }
 

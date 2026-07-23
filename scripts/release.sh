@@ -47,15 +47,29 @@ fi
 echo "==> Verify Python"
 "$PYTHON" -m ruff check src tests scripts
 "$PYTHON" -m ruff format --check src tests scripts
-"$PYTHON" -m pytest -q
+QUALITY_DIR="$(mktemp -d /tmp/onec-hbk-bsl-quality.XXXXXX)"
+"$PYTHON" -m pytest -q \
+    --cov=src/onec_hbk_bsl \
+    --cov-report=json:"$QUALITY_DIR/coverage.json" \
+    --cov-report=xml:"$QUALITY_DIR/coverage.xml" \
+    --junitxml="$QUALITY_DIR/junit.xml" \
+    --durations=20
 
 echo "==> Verify VS Code extension"
 (
     cd vscode-extension
     env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm ci
+    npm run audit:security
+    npm run lint
     env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm run typecheck
     env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm run compile
+    npm test
 )
+
+echo "==> Verify repository release contract"
+"$PYTHON" scripts/verify_release.py source \
+    --coverage-json "$QUALITY_DIR/coverage.json" \
+    --version "$VERSION"
 
 echo "==> Build Python distributions as ${VERSION}"
 TMP_DIST="$(mktemp -d /tmp/onec-hbk-bsl-release.XXXXXX)"

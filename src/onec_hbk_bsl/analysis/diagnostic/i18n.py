@@ -3,6 +3,21 @@ from __future__ import annotations
 from onec_hbk_bsl.analysis.diagnostic.models import RuleDefinition, RuleLocale
 
 
+def render_rule_message(identifier: str, *args: object, locale: RuleLocale = "ru") -> str:
+    """Render a catalog template, rejecting missing or extra interpolation values."""
+    rule = get_rule(identifier, locale=locale)
+    template = rule.message_template
+    expected = template.count("%s")
+    if len(args) != expected:
+        raise ValueError(f"{rule.code} message expects {expected} argument(s), got {len(args)}")
+    if not args:
+        return template
+    try:
+        return template % args
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{rule.code} message arguments are invalid") from exc
+
+
 def get_rule(identifier: str, *, locale: RuleLocale = "ru") -> RuleDefinition:
     """
     Return the complete rule definition for ``BSL###`` code or BSLLS name.
@@ -26,13 +41,18 @@ def get_rule(identifier: str, *, locale: RuleLocale = "ru") -> RuleDefinition:
     english_description = str(meta.get("description") or meta.get("name") or code)
     severity = str(meta.get("severity") or "")
     tags = tuple(str(tag) for tag in (meta.get("tags") or ()))
-    implemented = bool(meta.get("implemented", False))
+    from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
+        DIAGNOSTIC_RUNTIME_RULE_CODES,
+    )
+
+    implemented = code in DIAGNOSTIC_RUNTIME_RULE_CODES
 
     if locale == "en":
         return RuleDefinition(
             code=code,
             name=name,
             description=english_description,
+            message_template=english_description,
             message=english_description,
             severity=severity,
             tags=tags,
@@ -41,11 +61,15 @@ def get_rule(identifier: str, *, locale: RuleLocale = "ru") -> RuleDefinition:
         )
 
     description = RULE_DESCRIPTIONS_RU.get(code) or english_description
-    message = RULE_MESSAGES_RU.get(code) or description
+    message_template = RULE_MESSAGES_RU.get(code) or description
+    # Diagnostics without structured interpolation values must never leak raw
+    # ``%s`` placeholders to CLI/LSP/MCP consumers.
+    message = description if "%s" in message_template else message_template
     return RuleDefinition(
         code=code,
         name=name,
         description=description,
+        message_template=message_template,
         message=message,
         severity=severity,
         tags=tags,
