@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Artifact preflight для pull request проверяет непустой раздел `Unreleased`,
   сохраняя строгую проверку датированного раздела версии для release tag.
+- `DiagnosticEngine` передаёт snapshot, строки и symbol index через immutable
+  request-local context без общего mutable состояния текущего документа.
 
 ### Security
 

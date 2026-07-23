@@ -5782,7 +5782,7 @@ class CommonModuleDiagnosticsRule(DiagnosticRuntimeRule):
             return run_bsl158_common_module_assign(
                 context.path,
                 context.lines,
-                getattr(context.diagnostics_engine, "_symbol_index", None),
+                context.symbol_index,
             )
         if code == "BSL159":
             return run_bsl159_common_module_invalid_type(context.path, context.lines)
@@ -5876,7 +5876,7 @@ class MethodContractDiagnosticsRule(DiagnosticRuntimeRule):
                 context.path, context.lines, procs, context.tree, proc_node_map
             )
         return run_bsl254_transferring_parameters(
-            getattr(context.diagnostics_engine, "_symbol_index", None),
+            context.symbol_index,
             context.path,
             context.lines,
             procs,
@@ -6128,7 +6128,7 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                     enabled=(code,),
                     snapshot=snapshot,
                     tree=context.tree,
-                    ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+                    ts_nodes_for_types_fn=context.ts_nodes_for_types,
                     ts_child_of_type_fn=_diag._ts_child_of_type,
                     ts_node_text_fn=_diag._ts_node_text,
                     utf8_byte_offset_to_lsp_character_fn=utf8_byte_offset_to_lsp_character,
@@ -6167,7 +6167,7 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                     procs=procs,
                     codes=(code,),
                     rule_enabled_fn=engine._rule_enabled,
-                    ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+                    ts_nodes_for_types_fn=context.ts_nodes_for_types,
                     rule_bsl171_fn=_run_bsl171_crazy_multiline_string,
                     rule_bsl248_fn=_run_bsl248_several_compiler_directives,
                     rule_bsl251_fn=_run_bsl251_ternary_operator_usage,
@@ -6188,7 +6188,7 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                     strip_inline_comment_preserve_strings_fn=(
                         _diag._strip_inline_comment_preserve_strings
                     ),
-                    ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+                    ts_nodes_for_types_fn=context.ts_nodes_for_types,
                     ts_child_of_type_fn=_diag._ts_child_of_type,
                     ts_node_text_fn=_diag._ts_node_text,
                     ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
@@ -6341,7 +6341,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
             return model.validate_bsl001_syntax_errors(
                 tree=context.tree,
                 parser_extract_errors_fn=engine._get_parser().extract_errors,
-                current_lines=getattr(engine, "_current_lines", []),
+                current_lines=context.lines,
             )
         if code == "BSL002":
             return model.validate_bsl002_method_size(
@@ -6439,7 +6439,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
             )
         if code == "BSL011":
             diags = []
-            metrics = engine._complexity_metrics_for_procs(context.lines, procs)
+            assert snapshot is not None
+            metrics = snapshot.complexity_metrics_for_procs(procs)
             for proc_model, (cc, _mc) in zip(context.procedure_models, metrics, strict=False):
                 diags.extend(
                     proc_model.validate_cognitive_complexity(
@@ -6449,7 +6450,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                         lines=context.lines,
                     )
                 )
-            assert snapshot is not None
             diags.extend(
                 Diagnostic(
                     file=context.path,
@@ -6551,7 +6551,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
             ]
         if code == "BSL019":
             diags = []
-            metrics = engine._complexity_metrics_for_procs(context.lines, procs)
+            assert snapshot is not None
+            metrics = snapshot.complexity_metrics_for_procs(procs)
             for proc_model, (_cog, cc) in zip(context.procedure_models, metrics, strict=False):
                 diags.extend(
                     proc_model.validate_mccabe_complexity(
@@ -6734,7 +6735,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 proc_node_map=proc_node_map,
                 find_proc_definition_node_fn=_diag._find_proc_definition_node,
                 ts_walk_fn=_diag._ts_walk,
-                ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+                ts_nodes_for_types_fn=context.ts_nodes_for_types,
                 utf8_byte_offset_to_lsp_character_fn=(_diag.utf8_byte_offset_to_lsp_character),
                 lines=context.lines,
             )
@@ -6807,7 +6808,7 @@ class DeprecatedApiDiagnosticsRule(DiagnosticRuntimeRule):
                 tree=context.tree,
                 symbols=symbols,
                 calls=calls,
-                symbol_index=getattr(context.diagnostics_engine, "_symbol_index", None),
+                symbol_index=context.symbol_index,
                 enabled_codes=(self.code,),
                 ts_walk_fn=_diag._ts_walk,
                 ts_node_text_fn=_diag._ts_node_text,

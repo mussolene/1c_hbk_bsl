@@ -8,7 +8,7 @@ from onec_hbk_bsl.analysis.diagnostic.execution import execute_diagnostic_rule_t
 from onec_hbk_bsl.analysis.diagnostic.models import Diagnostic
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class AnalysisFrame:
     path: str
     content: str
@@ -32,5 +32,6 @@ class PipelineExecutor:
             lines=frame.lines,
             tree=frame.tree,
             snapshot=frame.snapshot,
+            symbol_index=frame.symbol_index,
         )
         return execute_diagnostic_rule_tasks(rule_tasks)

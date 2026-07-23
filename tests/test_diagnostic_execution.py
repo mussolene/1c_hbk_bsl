@@ -6,7 +6,10 @@ from types import SimpleNamespace
 import onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner as runtime_runner
 from onec_hbk_bsl.analysis.diagnostic.cst import iter_ts_nodes
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
-from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import FileSystemAccessRule
+from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
+    CoreDiagnosticsRule,
+    FileSystemAccessRule,
+)
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
     append_diagnostic_runtime_rule_tasks,
 )
@@ -15,6 +18,7 @@ from onec_hbk_bsl.analysis.diagnostic.execution import (
     make_diagnostic_rule_task,
 )
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 
@@ -199,11 +203,39 @@ def test_core_fact_phase_materializes_only_enabled_fact_family() -> None:
     assert [diagnostic.code for diagnostic in result] == ["BSL014"]
 
 
+def test_core_complexity_fallback_reads_metrics_from_request_snapshot() -> None:
+    content = """\
+Процедура Сложная()
+    Если Истина Тогда
+        Возврат;
+    КонецЕсли;
+КонецПроцедуры
+"""
+    snapshot = build_document_snapshot("Module.bsl", content=content)
+    engine = DiagnosticEngine(
+        select={"BSL011", "BSL019"},
+        max_cognitive_complexity=0,
+        max_mccabe_complexity=0,
+    )
+    context = DiagnosticDocumentContext(
+        path=snapshot.path,
+        content=snapshot.content,
+        lines=snapshot.lines,
+        tree=snapshot.tree,
+        snapshot=snapshot,
+        diagnostics_engine=engine,
+    )
+
+    assert [diag.code for diag in CoreDiagnosticsRule("BSL011").run(context)] == ["BSL011"]
+    assert [diag.code for diag in CoreDiagnosticsRule("BSL019").run(context)] == ["BSL019"]
+
+
 def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:
     engine = DiagnosticEngine(select={"BSL022", "BSL066", "BSL215"})
     requested: list[set[str]] = []
 
-    def record_ts_nodes_for_types(tree, node_types: set[str]):
+    def record_ts_nodes_for_types(tree, node_types: set[str], *, snapshot=None):
+        _ = snapshot
         requested.append(set(node_types))
         return {node_type: [] for node_type in node_types}
 
@@ -244,7 +276,8 @@ def test_runtime_cst_prewarm_covers_late_runtime_consumers() -> None:
     engine = DiagnosticEngine(select=selected)
     requested: list[set[str]] = []
 
-    def record_ts_nodes_for_types(tree, node_types: set[str]):
+    def record_ts_nodes_for_types(tree, node_types: set[str], *, snapshot=None):
+        _ = snapshot
         requested.append(set(node_types))
         return {node_type: [] for node_type in node_types}
 

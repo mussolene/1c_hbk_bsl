@@ -677,7 +677,7 @@ def _run_deprecated_api_pool(
         tree=context.tree,
         symbols=symbols,
         calls=calls,
-        symbol_index=getattr(context.diagnostics_engine, "_symbol_index", None),
+        symbol_index=context.symbol_index,
         enabled_codes=enabled_codes,
         ts_walk_fn=_diag._ts_walk,
         ts_node_text_fn=_diag._ts_node_text,
@@ -703,14 +703,13 @@ def _run_light_pool_169_170_181_196_260(
 ) -> list[Diagnostic]:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
-    engine = context.diagnostics_engine
     return context.module_model.validate_bsl169_170_181_182_196_260_light_pool(
         lines=context.lines,
         procs=context.procedures,
         enabled=enabled_codes,
         snapshot=context.snapshot,
         tree=context.tree,
-        ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+        ts_nodes_for_types_fn=context.ts_nodes_for_types,
         ts_child_of_type_fn=_diag._ts_child_of_type,
         ts_node_text_fn=_diag._ts_node_text,
         utf8_byte_offset_to_lsp_character_fn=_diag.utf8_byte_offset_to_lsp_character,
@@ -735,7 +734,7 @@ def _run_light_pool_171_248_252_259_268(
         procs=context.procedures,
         codes=enabled_codes,
         rule_enabled_fn=engine._rule_enabled,
-        ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+        ts_nodes_for_types_fn=context.ts_nodes_for_types,
         rule_bsl171_fn=runtime_rules._run_bsl171_crazy_multiline_string,
         rule_bsl248_fn=runtime_rules._run_bsl248_several_compiler_directives,
         rule_bsl251_fn=runtime_rules._run_bsl251_ternary_operator_usage,
@@ -757,7 +756,7 @@ def _run_light_call_pool_202_223_243_249(
         enabled=enabled_codes,
         snapshot=context.snapshot,
         strip_inline_comment_preserve_strings_fn=_diag._strip_inline_comment_preserve_strings,
-        ts_nodes_for_types_fn=context.diagnostics_engine._ts_nodes_for_types,
+        ts_nodes_for_types_fn=context.ts_nodes_for_types,
         ts_child_of_type_fn=_diag._ts_child_of_type,
         ts_node_text_fn=_diag._ts_node_text,
         ts_method_call_arg_exprs_fn=_diag._ts_method_call_arg_exprs,
@@ -787,7 +786,7 @@ def _run_light_pool_221_222_239_271(
         strip_inline_comment_preserve_strings_fn=_diag._strip_inline_comment_preserve_strings,
         reserved_parameter_names_re=engine._reserved_parameter_names_re,
         ts_walk_fn=_diag._ts_walk,
-        ts_nodes_for_types_fn=engine._ts_nodes_for_types,
+        ts_nodes_for_types_fn=context.ts_nodes_for_types,
         ts_child_of_type_fn=_diag._ts_child_of_type,
         ts_node_text_fn=_diag._ts_node_text,
         utf8_byte_offset_to_lsp_character_fn=_diag.utf8_byte_offset_to_lsp_character,
@@ -975,28 +974,51 @@ def append_diagnostic_runtime_rule_tasks(
     lines: list[str],
     tree: Any,
     snapshot: Any | None,
+    symbol_index: Any | None = None,
 ) -> None:
     enabled_rule_codes = engine._enabled_rule_codes()
-    if engine._ts_nodes_for_types is not None:
-        runtime_cst_node_types = _runtime_cst_node_types_for_codes(enabled_rule_codes)
-        if enabled_rule_codes:
-            runtime_cst_node_types.add("string")
-        if runtime_cst_node_types:
-            engine._ts_nodes_for_types(tree, runtime_cst_node_types)
+
+    def ts_nodes_for_types(current_tree: Any, node_types: set[str]) -> dict[str, list[Any]]:
+        return engine._ts_nodes_for_types(
+            current_tree,
+            node_types,
+            snapshot=snapshot,
+        )
+
+    def global_method_calls_from_nodes(
+        method_call_nodes: list[Any],
+        line_texts: list[str],
+    ) -> list[dict[str, Any]]:
+        return engine._global_method_calls_from_nodes(
+            method_call_nodes,
+            line_texts,
+            snapshot=snapshot,
+        )
+
+    runtime_cst_node_types = _runtime_cst_node_types_for_codes(enabled_rule_codes)
+    if enabled_rule_codes:
+        runtime_cst_node_types.add("string")
+    if runtime_cst_node_types:
+        ts_nodes_for_types(tree, runtime_cst_node_types)
     runtime_call_context = None
     if enabled_rule_codes.intersection({"BSL066", "BSL097", "BSL217", "BSL218", "BSL277"}):
-        runtime_call_context = engine._runtime_call_context(tree, lines)
+        runtime_call_context = engine._runtime_call_context(
+            tree,
+            lines,
+            snapshot=snapshot,
+        )
     context = DiagnosticDocumentContext(
         path=path,
         content=content,
         lines=lines,
         tree=tree,
         snapshot=snapshot,
+        symbol_index=symbol_index,
         max_bool_ops=int(getattr(engine, "max_bool_ops", 3)),
         bsl036_enabled=bool(engine._rule_enabled("BSL036")),
         runtime_call_context=runtime_call_context,
-        ts_nodes_for_types=engine._ts_nodes_for_types,
-        global_method_calls_from_nodes=engine._global_method_calls_from_nodes,
+        ts_nodes_for_types=ts_nodes_for_types,
+        global_method_calls_from_nodes=global_method_calls_from_nodes,
         diagnostics_engine=engine,
     )
 
