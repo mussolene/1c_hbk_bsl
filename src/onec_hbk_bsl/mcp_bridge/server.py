@@ -400,12 +400,22 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     @mcp.tool(
         description=(
             "Find all call sites that call a given BSL procedure/function. "
-            "Returns caller file, line, and enclosing procedure name."
+            "Returns caller file, line, and enclosing procedure name. "
+            "If symbol_name matches definitions in multiple modules (common for "
+            "same-named event handlers declared independently per object), the "
+            "result is `{ambiguous: true, candidates: [...]}` instead of a graph — "
+            "pass file_filter to pick one."
         )
     )
     def bsl_callers(
         symbol_name: Annotated[str, "Name of the procedure or function to find callers of"],
         depth: Annotated[int, "How many levels of callers to traverse (default 3)"] = 3,
+        file_filter: Annotated[
+            str | None,
+            "Optional: restrict definition resolution to files matching this substring "
+            "(disambiguates when multiple objects define the same name; same convention "
+            "as bsl_find_symbol's file_filter)",
+        ] = None,
         workspace_root: Annotated[
             str | None, "Workspace root for resolving index DB and relative file paths"
         ] = None,
@@ -416,13 +426,20 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         Args:
             symbol_name: The procedure/function whose callers you want.
             depth:       Recursion depth for the callers tree (default 3).
+            file_filter: Restrict definition resolution to a specific owner file.
         """
-        graph = build_call_graph(_get_index(workspace_root), symbol_name, depth=depth)
-        return {
+        graph = build_call_graph(
+            _get_index(workspace_root), symbol_name, depth=depth, file_filter=file_filter
+        )
+        result = {
             "symbol_name": symbol_name,
             "definition": graph["definition"],
             "callers": graph["callers"],
         }
+        if graph.get("ambiguous"):
+            result["ambiguous"] = True
+            result["candidates"] = graph["candidates"]
+        return result
 
     # ------------------------------------------------------------------
     # bsl_callees
@@ -431,12 +448,22 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
     @mcp.tool(
         description=(
             "Find all procedures/functions called from within a given BSL symbol. "
-            "Returns callee name, call line, and resolved definition location."
+            "Returns callee name, call line, and resolved definition location. "
+            "If symbol_name matches definitions in multiple modules (common for "
+            "same-named event handlers declared independently per object), the "
+            "result is `{ambiguous: true, candidates: [...]}` instead of a graph — "
+            "pass file_filter to pick one."
         )
     )
     def bsl_callees(
         symbol_name: Annotated[str, "Name of the procedure or function to inspect"],
         depth: Annotated[int, "How many call levels to traverse (default 3)"] = 3,
+        file_filter: Annotated[
+            str | None,
+            "Optional: restrict definition resolution to files matching this substring "
+            "(disambiguates when multiple objects define the same name; same convention "
+            "as bsl_find_symbol's file_filter)",
+        ] = None,
         workspace_root: Annotated[
             str | None, "Workspace root for resolving index DB and relative file paths"
         ] = None,
@@ -447,13 +474,20 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         Args:
             symbol_name: The procedure/function to inspect.
             depth:       How deep to follow the call chain (default 3).
+            file_filter: Restrict definition resolution to a specific owner file.
         """
-        graph = build_call_graph(_get_index(workspace_root), symbol_name, depth=depth)
-        return {
+        graph = build_call_graph(
+            _get_index(workspace_root), symbol_name, depth=depth, file_filter=file_filter
+        )
+        result = {
             "symbol_name": symbol_name,
             "definition": graph["definition"],
             "callees": graph["callees"],
         }
+        if graph.get("ambiguous"):
+            result["ambiguous"] = True
+            result["candidates"] = graph["candidates"]
+        return result
 
     # ------------------------------------------------------------------
     # bsl_diagnostics

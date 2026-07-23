@@ -249,6 +249,7 @@ def build_call_graph(
     index: SymbolIndex,
     symbol_name: str,
     depth: int = 5,
+    file_filter: str | None = None,
 ) -> dict:
     """
     Build a JSON-serializable call graph rooted at *symbol_name*.
@@ -257,12 +258,18 @@ def build_call_graph(
       - ``name``: the queried symbol
       - ``callers``: recursive list of who calls this symbol (up to *depth*)
       - ``callees``: list of symbols resolved from the index (definitions)
-      - ``definition``: first definition location, if found
+      - ``definition``: definition location, if found and unambiguous
+      - ``ambiguous`` / ``candidates``: present instead of a resolved graph
+        when *symbol_name* matches multiple definitions and *file_filter*
+        doesn't narrow it down to exactly one.
 
     Args:
         index:       SymbolIndex instance to query.
         symbol_name: Name of the procedure/function to analyse.
         depth:       Maximum recursion depth for callers tree.
+        file_filter: Optional substring to restrict definition resolution to
+                     a specific owner file (same convention as
+                     ``SymbolIndex.find_symbol``'s ``file_filter``).
     """
     visited_callers: set[str] = set()
 
@@ -285,7 +292,25 @@ def build_call_graph(
         return result
 
     # Resolve callees by looking up the symbol's calls in the index
-    definitions = index.find_symbol(symbol_name)
+    definitions = index.find_symbol(symbol_name, file_filter=file_filter)
+
+    if len(definitions) > 1:
+        return {
+            "name": symbol_name,
+            "definition": {"file": None, "line": None, "signature": None},
+            "ambiguous": True,
+            "candidates": [
+                {
+                    "file": d["file_path"],
+                    "line": d["line"],
+                    "signature": d.get("signature"),
+                }
+                for d in definitions
+            ],
+            "callers": [],
+            "callees": [],
+        }
+
     definition = definitions[0] if definitions else None
 
     callees_raw: list[dict] = []
