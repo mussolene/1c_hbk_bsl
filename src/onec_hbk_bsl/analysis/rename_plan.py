@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
 from onec_hbk_bsl.analysis.lsp_positions import (
     utf8_byte_offset_to_lsp_character,
     utf16_len,
 )
-from onec_hbk_bsl.analysis.symbols import extract_symbols
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 _IDENTIFIER_RE = re.compile(r"^[А-ЯЁа-яёA-Za-z_]\w*$", re.UNICODE)
@@ -228,7 +228,7 @@ def _collect_occurrences(source: _Source, old_name: str, new_name: str) -> list[
 
 
 def _live_method_definitions(path: str, source: _Source) -> list[dict[str, Any]]:
-    tree = BslParser().parse_content(source.text, file_path=path)
+    facts = build_document_snapshot(path, content=source.text).semantic_facts()
     return [
         {
             "name": symbol.name,
@@ -238,7 +238,7 @@ def _live_method_definitions(path: str, source: _Source) -> list[dict[str, Any]]
             "character": symbol.character,
             "is_export": symbol.is_export,
         }
-        for symbol in extract_symbols(tree, path)
+        for symbol in facts.symbols
         if symbol.kind in _METHOD_KINDS
     ]
 

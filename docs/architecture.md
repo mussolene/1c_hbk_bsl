@@ -226,6 +226,13 @@ receiver, so such calls return `receiver_ambiguity` without writing.
 | `textDocument/diagnostic` | Implemented | LSP 3.17 pull diagnostics; large files complete in background and request refresh |
 | `textDocument/publishDiagnostics` | Implemented | Adaptive debounced fallback for clients without pull support |
 | `textDocument/completion` | Implemented | Globals + workspace + metadata-aware members |
+| `textDocument/references` | Implemented | Via index |
+| `textDocument/rename` / `prepareRename` | Implemented | Shared exact-span `RenamePlan`; ambiguity refuses the edit |
+| `textDocument/signatureHelp` | Implemented | Parameter hints |
+| `textDocument/formatting` / `rangeFormatting` | Implemented | `BslFormatter` stack |
+| Code lens / highlights / folding / code actions | Implemented | Editor structure and quick-fix surfaces |
+| Selection ranges | Implemented | Smart structural selection |
+| Semantic tokens / inlay hints | Implemented | Controlled by standard VS Code editor settings |
 
 ### Multi-root ownership and lifecycle
 
@@ -241,13 +248,23 @@ committing diagnostics, and closes the root index exactly once. Workspace
 symbol results are merged in a stable name/path/range/root order. The
 single-root CLI and the primary-root LSP aliases remain backward compatible;
 cross-root symbol or diagnostic caches are not shared.
-| `textDocument/references` | Implemented | Via index |
-| `textDocument/rename` / `prepareRename` | Implemented | Shared exact-span `RenamePlan`; ambiguity refuses the edit |
-| `textDocument/signatureHelp` | Implemented | Parameter hints |
-| `textDocument/formatting` / `rangeFormatting` | Implemented | `BslFormatter` stack |
-| Code lens / highlights / folding / code actions | Implemented | Editor structure and quick-fix surfaces |
-| Selection ranges | Implemented | Smart structural selection |
-| Semantic tokens / inlay hints | Implemented | Controlled by standard VS Code editor settings |
+
+### Immutable semantic fact boundary
+
+`SemanticFactSnapshot` is a surface-neutral immutable view derived from an
+existing `DocumentSnapshot`; it is not another parser or semantic engine. Every
+fact snapshot has a `FactRevision` containing the content hash and the
+index/metadata/config revisions. Every concrete fact carries a zero-based LSP
+`SourceSpan`.
+
+The first vertical slice normalizes existing symbol, call, and query extractors.
+One fact snapshot is cached per document/revision and reused by the BSL011/175
+diagnostic task group, open-document LSP navigation/outline, and live-source
+`RenamePlan` validation. Receiver and metadata facts expose explicit
+`resolved`, `ambiguous`, or `unknown` state; consumers must not turn an
+ambiguous fact into a navigation target or rename edit. Further rule-family
+migrations remain separate changes so diagnostic parity can be reviewed per
+family.
 
 ## Отношение к справочнику правил BSL (совместимость имён)
 

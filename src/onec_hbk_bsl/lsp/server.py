@@ -174,7 +174,6 @@ from onec_hbk_bsl.analysis.formatter import (
 from onec_hbk_bsl.analysis.lsp_positions import utf16_len
 from onec_hbk_bsl.analysis.platform_api import PlatformApi, get_platform_api
 from onec_hbk_bsl.analysis.rename_plan import RenameRefused, build_rename_plan
-from onec_hbk_bsl.analysis.symbols import extract_symbols
 from onec_hbk_bsl.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
 from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
 from onec_hbk_bsl.cli.config import ResolvedConfig, load_config, resolve_config
@@ -1507,8 +1506,16 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
             pass
 
     # 2. Workspace symbol index (procedures, functions, exported variables)
-    index = ls.symbol_index_for_path(_uri_to_path(uri))
-    symbols = index.find_symbol(word, limit=20)
+    path = _uri_to_path(uri)
+    index = ls.symbol_index_for_path(path)
+    open_symbols = _open_document_method_symbols(ls, uri, content) if content else []
+    symbols = [symbol for symbol in open_symbols if symbol["name"].casefold() == word.casefold()]
+    indexed_symbols = [
+        symbol
+        for symbol in index.find_symbol(word, limit=20)
+        if not symbols or str(symbol["file_path"]) != path
+    ]
+    symbols.extend(indexed_symbols)
     if left_word:
         symbols = [symbol for symbol in symbols if symbol.get("is_export")]
     if not symbols:
@@ -1894,7 +1901,10 @@ def _open_document_symbols(
     )
     if context is None:
         return None
-    return [_document_symbol_from_row(symbol) for symbol in extract_symbols(context.tree, path)]
+    return [
+        _document_symbol_from_row(symbol)
+        for symbol in _lsp_semantic_facts(ls, path, context).symbols
+    ]
 
 
 def _document_symbol_from_row(row: Any) -> DocumentSymbol:
@@ -1999,7 +2009,13 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
 
     # Include declaration if requested
     if params.context and params.context.include_declaration:
-        defs = index.find_symbol(word, limit=5)
+        defs = [
+            symbol
+            for symbol in _open_document_method_symbols(ls, uri, content)
+            if symbol["name"].casefold() == word.casefold()
+        ]
+        if not defs:
+            defs = index.find_symbol(word, limit=5)
         for sym in defs:
             line = max(0, sym["line"] - 1)
             locations.append(
@@ -2060,7 +2076,7 @@ def _open_document_method_symbols(
             "end_line": symbol.end_line,
             "end_character": symbol.end_character,
         }
-        for symbol in extract_symbols(context.tree, path)
+        for symbol in _lsp_semantic_facts(ls, path, context).symbols
         if symbol.kind in ("procedure", "function")
     ]
 
@@ -2725,6 +2741,24 @@ class _LspDocumentContext:
     @property
     def tree(self) -> Any:
         return self.snapshot.tree
+
+
+def _lsp_semantic_facts(
+    ls: BslLanguageServer,
+    path: str,
+    context: _LspDocumentContext,
+) -> Any:
+    """Bind open-document facts to the owning workspace semantic revisions."""
+    from onec_hbk_bsl.analysis.semantic_facts import FactRevision  # noqa: PLC0415
+
+    revisions = ls.workspace_run_context_for_path(path).revisions
+    revision = FactRevision.for_content(
+        context.snapshot.content,
+        index=revisions.index,
+        metadata=revisions.metadata,
+        config=revisions.config,
+    )
+    return context.snapshot.semantic_facts(revision)
 
 
 def _ast_node_text(node: Any) -> str:

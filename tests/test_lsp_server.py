@@ -1266,7 +1266,11 @@ class TestHandlerFunctions:
     def test_document_symbols_use_open_document_without_index(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
-        from onec_hbk_bsl.lsp.server import on_did_open, on_document_symbol
+        from onec_hbk_bsl.lsp.server import (
+            on_did_open,
+            on_document_symbol,
+            on_prepare_rename,
+        )
 
         ls = self._make_server(tmp_path, monkeypatch)
         ls.client_pull_diagnostics = True
@@ -1294,6 +1298,13 @@ class TestHandlerFunctions:
         assert symbols[0].detail == "Процедура ОткрытаяПроцедура(Параметр) Экспорт"
         assert symbols[0].range.start.line == 0
         assert symbols[1].range.start.line == 3
+
+        rename_params = MagicMock()
+        rename_params.text_document.uri = uri
+        rename_params.position.line = 0
+        rename_params.position.character = params.text_document.text.index("ОткрытаяПроцедура")
+        assert on_prepare_rename(ls, rename_params) is not None
+        assert ls._parsed_doc_cache[uri].snapshot.semantic_fact_build_count == 1
 
     def test_document_symbols_reflect_unsaved_changes(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock

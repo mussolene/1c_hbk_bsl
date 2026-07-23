@@ -1763,6 +1763,8 @@ class DocumentSnapshot:
     _runtime_call_context_cache: Any | None = None
     _global_method_calls_cache: Any | None = None
     _ternary_spans_cache: Any | None = None
+    _semantic_fact_snapshots: dict[Any, Any] | None = None
+    _semantic_fact_build_count: int = 0
     _cache_lock: threading.RLock = field(
         default_factory=threading.RLock,
         init=False,
@@ -3051,6 +3053,31 @@ class DocumentSnapshot:
     def set_global_method_calls(self, calls: Any) -> None:
         """Store global method-call facts shared by runtime rules."""
         self._global_method_calls_cache = calls
+
+    def semantic_facts(self, revision: Any | None = None) -> Any:
+        """Return one immutable fact snapshot for this content and semantic revision."""
+        from onec_hbk_bsl.analysis.semantic_facts import (  # noqa: PLC0415
+            FactRevision,
+            build_semantic_fact_snapshot,
+        )
+
+        if revision is None:
+            revision = FactRevision.for_content(self.content)
+        with self._cache_lock:
+            if self._semantic_fact_snapshots is None:
+                self._semantic_fact_snapshots = {}
+            facts = self._semantic_fact_snapshots.get(revision)
+            if facts is None:
+                facts = build_semantic_fact_snapshot(self, revision)
+                self._semantic_fact_snapshots[revision] = facts
+                self._semantic_fact_build_count += 1
+            return facts
+
+    @property
+    def semantic_fact_build_count(self) -> int:
+        """Number of distinct content/revision fact snapshots materialized."""
+        with self._cache_lock:
+            return self._semantic_fact_build_count
 
     def get_ternary_spans(self) -> Any | None:
         """Return cached textual ternary spans if they have been built."""

@@ -1009,6 +1009,7 @@ def append_diagnostic_runtime_rule_tasks(
         if snapshot is not None and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES
     )
     if fact_group_011_175 and snapshot is not None:
+        semantic_facts = snapshot.semantic_facts()
         rule_tasks.append(
             make_diagnostic_rule_task(
                 "+".join(fact_group_011_175),
@@ -1025,8 +1026,8 @@ def append_diagnostic_runtime_rule_tasks(
                             engine.max_cognitive_complexity
                         )
                     ),
-                    symbols=list(snapshot.symbols),
-                    calls=list(snapshot.calls),
+                    symbols=list(semantic_facts.symbols),
+                    calls=list(semantic_facts.calls),
                     enabled_codes=fact_group_011_175,
                     max_cognitive_complexity=engine.max_cognitive_complexity,
                 ),

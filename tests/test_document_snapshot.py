@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import FrozenInstanceError, fields
 from pathlib import Path
+
+import pytest
 
 from onec_hbk_bsl.analysis import document_snapshot as snapshot_mod
 from onec_hbk_bsl.analysis.document_snapshot import (
@@ -37,6 +40,39 @@ def test_snapshot_collects_core_document_views(tmp_path: Path) -> None:
     assert ("Тест", snapshot.procedures[0].start_idx, "procedure") in snapshot.proc_node_map
     assert any(call.callee_name == "Сообщить" for call in snapshot.calls)
     assert any(symbol.name == "Тест" and symbol.kind == "procedure" for symbol in snapshot.symbols)
+
+
+def test_semantic_fact_snapshot_is_immutable_revisioned_and_built_once(
+    tmp_path: Path,
+) -> None:
+    from onec_hbk_bsl.analysis.semantic_facts import FactRevision
+
+    content = """\
+Процедура Тест() Экспорт
+    Сообщить("ok");
+    Запрос = "ВЫБРАТЬ 1";
+КонецПроцедуры
+"""
+    path = str(tmp_path / "Module.bsl")
+    snapshot = build_document_snapshot(path, content=content)
+    revision = FactRevision.for_content(content, index=2, metadata=3, config=4)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        facts = list(pool.map(lambda _item: snapshot.semantic_facts(revision), range(16)))
+
+    assert all(item is facts[0] for item in facts)
+    assert snapshot.semantic_fact_build_count == 1
+    assert facts[0].revision == revision
+    assert facts[0].revision.content_sha256
+    assert facts[0].symbols[0].span.path == path
+    assert facts[0].calls[0].span.start_line == 1
+    assert facts[0].queries[0].span.start_line == 2
+    with pytest.raises(FrozenInstanceError):
+        facts[0].symbols[0].name = "ИзменитьНельзя"  # type: ignore[misc]
+
+    next_revision = FactRevision.for_content(content, index=3, metadata=3, config=4)
+    assert snapshot.semantic_facts(next_revision) is not facts[0]
+    assert snapshot.semantic_fact_build_count == 2
 
 
 def test_line_diagnostic_fact_has_no_user_message_payload() -> None:
