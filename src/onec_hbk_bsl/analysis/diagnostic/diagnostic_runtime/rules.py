@@ -6439,7 +6439,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
             )
         if code == "BSL011":
             diags = []
-            metrics = engine._complexity_metrics_for_procs(snapshot, context.lines, procs)
+            assert snapshot is not None
+            metrics = snapshot.complexity_metrics_for_procs(procs)
             for proc_model, (cc, _mc) in zip(context.procedure_models, metrics, strict=False):
                 diags.extend(
                     proc_model.validate_cognitive_complexity(
@@ -6449,7 +6450,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                         lines=context.lines,
                     )
                 )
-            assert snapshot is not None
             diags.extend(
                 Diagnostic(
                     file=context.path,
@@ -6551,7 +6551,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
             ]
         if code == "BSL019":
             diags = []
-            metrics = engine._complexity_metrics_for_procs(snapshot, context.lines, procs)
+            assert snapshot is not None
+            metrics = snapshot.complexity_metrics_for_procs(procs)
             for proc_model, (_cog, cc) in zip(context.procedure_models, metrics, strict=False):
                 diags.extend(
                     proc_model.validate_mccabe_complexity(

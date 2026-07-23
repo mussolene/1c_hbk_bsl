@@ -423,17 +423,6 @@ class DiagnosticEngine:
             ]
         return sorted(diagnostics, key=lambda d: (d.line, d.character))
 
-    def _complexity_metrics_for_procs(
-        self,
-        snapshot: Any,
-        lines: list[str],
-        procs: list[_ProcInfo],
-    ) -> list[tuple[int, int]]:
-        """Return cached ``(cognitive, mccabe)`` metrics for one document snapshot."""
-        if getattr(snapshot, "lines", None) is not lines:
-            raise RuntimeError("complexity metrics require the provided DocumentSnapshot")
-        return snapshot.complexity_metrics_for_procs(procs)
-
     def _global_method_calls_from_nodes(
         self,
         method_call_nodes: list[Any],
