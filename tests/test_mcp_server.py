@@ -264,6 +264,45 @@ class TestBslReferences:
         assert result["reference_count"] == 0
 
 
+class TestBslCallGraphAmbiguity:
+    def test_call_tools_report_stable_ambiguity_contract(self, tmp_path: Path) -> None:
+        first = _make_bsl(
+            tmp_path,
+            "a_module.bsl",
+            "Процедура ОдинаковыйОбработчик()\nКонецПроцедуры\n",
+        )
+        second = _make_bsl(
+            tmp_path,
+            "b_module.bsl",
+            "Процедура ОдинаковыйОбработчик()\nКонецПроцедуры\n",
+        )
+        app = _make_app(tmp_path)
+        tools = _tool_fns(app)
+        tools["bsl_index_file"].fn(file_path=second, workspace_root=str(tmp_path))
+        tools["bsl_index_file"].fn(file_path=first, workspace_root=str(tmp_path))
+
+        for tool_name in ("bsl_callers", "bsl_callees"):
+            ambiguous = tools[tool_name].fn(
+                symbol_name="ОдинаковыйОбработчик",
+                workspace_root=str(tmp_path),
+            )
+            assert ambiguous["ambiguous"] is True
+            assert ambiguous["candidate_count"] == 2
+            assert ambiguous["candidates_truncated"] is False
+            assert [candidate["file"] for candidate in ambiguous["candidates"]] == [
+                first,
+                second,
+            ]
+
+            narrowed = tools[tool_name].fn(
+                symbol_name="ОдинаковыйОбработчик",
+                file_filter="a_module.bsl",
+                workspace_root=str(tmp_path),
+            )
+            assert narrowed["definition"]["file"] == first
+            assert "ambiguous" not in narrowed
+
+
 class TestBslReadFile:
     def test_read_full_file(self, tmp_path) -> None:
         f = tmp_path / "mod.bsl"

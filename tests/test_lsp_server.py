@@ -2298,6 +2298,27 @@ class TestInferType:
         engine = BslTypeEngine(tree)
         assert engine.infer("О", 0) == "СправочникОбъект"
 
+    def test_local_value_shadows_global_manager_collection(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = (
+            "Справочники = Новый Запрос();\nРезультат = Справочники.Организации.НайтиПоКоду(1);\n"
+        )
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+
+        assert engine.infer("Справочники", 1) == "Запрос"
+        assert engine.infer("Результат", 1) is None
+
+    def test_unknown_manager_method_stays_unresolved(self) -> None:
+        from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
+
+        content = "Результат = Справочники.Организации.НесуществующийМетод();\n"
+        tree = self._parse(content)
+        engine = BslTypeEngine(tree)
+
+        assert engine.infer("Результат", 0) is None
+
 
 # ---------------------------------------------------------------------------
 # _node_to_dict helper (Iteration 4)

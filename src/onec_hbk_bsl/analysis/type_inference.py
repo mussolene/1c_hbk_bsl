@@ -426,8 +426,13 @@ class BslTypeEngine:
             return ""
 
         base_name = steps[0][1]
+        scoped_type = scope.get(base_name)
         global_type = _GLOBAL_MANAGER_TYPES.get(base_name.casefold())
-        if global_type and len(steps) > 1 and steps[1][0] == "prop":
+        if scoped_type is not None:
+            # A local value shadows a same-named platform collection.
+            current_type = scoped_type
+            remaining = steps[1:]
+        elif global_type and len(steps) > 1 and steps[1][0] == "prop":
             # Справочники.Организации... — the specific catalog/document
             # name doesn't change the manager's type (see class docstring).
             current_type = global_type

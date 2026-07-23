@@ -151,6 +151,42 @@ class TestUpsertAndFind:
         results = symbol_index.find_symbol("НесуществующийСимвол")
         assert results == []
 
+    def test_find_symbol_candidates_are_stable_and_report_total(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        for index in range(22):
+            file_path = f"/workspace/module_{21 - index:02d}.bsl"
+            symbol_index.upsert_file(
+                file_path,
+                [
+                    {
+                        "name": "ОдинаковыйОбработчик",
+                        "line": index + 1,
+                        "character": 0,
+                        "end_line": index + 2,
+                        "end_character": 0,
+                        "kind": "procedure",
+                        "is_export": False,
+                        "container": None,
+                        "signature": "Procedure ОдинаковыйОбработчик()",
+                        "doc_comment": "",
+                    }
+                ],
+                [],
+            )
+
+        candidates, total = symbol_index.find_symbol_candidates(
+            "одинаковыйобработчик",
+            limit=20,
+        )
+
+        assert total == 22
+        assert len(candidates) == 20
+        assert [row["file_path"] for row in candidates] == [
+            f"/workspace/module_{index:02d}.bsl" for index in range(20)
+        ]
+        assert all("candidate_count" not in row for row in candidates)
+
     def test_get_file_symbols_returns_all(self, symbol_index: SymbolIndex) -> None:
         symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
 
@@ -320,6 +356,39 @@ class TestMetadataMembers:
 
 
 class TestMetadataConfigurationSnapshot:
+    def test_legacy_type_wrapper_remains_supported(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        from onec_hbk_bsl.indexer.metadata_parser import _extract_type_info
+
+        attribute = ET.fromstring(  # noqa: S314 - trusted synthetic fixture
+            """\
+<Attribute>
+  <Properties>
+    <Type>
+      <TypeDescription><Types><Type>String</Type></Types></TypeDescription>
+    </Type>
+  </Properties>
+</Attribute>
+"""
+        )
+
+        assert _extract_type_info(attribute) == "String"
+
+    def test_form_attribute_type_info_is_not_truncated(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        from onec_hbk_bsl.indexer.metadata_parser import _extract_form_attribute_type_info
+
+        expected = " ".join(f"cfg:CatalogRef.Объект{index:02d}" for index in range(8))
+        values = "".join(f"<Type>cfg:CatalogRef.Объект{index:02d}</Type>" for index in range(8))
+        attribute = ET.fromstring(  # noqa: S314 - trusted synthetic fixture
+            f"<Attribute><Type>{values}</Type></Attribute>"
+        )
+
+        assert len(expected) > 120
+        assert _extract_form_attribute_type_info(attribute) == expected
+
     def test_structured_snapshot_projects_to_legacy_metadata_members(self, tmp_path: Path) -> None:
         root = tmp_path
         (root / "Configuration.xml").write_text(
@@ -337,8 +406,26 @@ class TestMetadataConfigurationSnapshot:
         )
         catalogs = root / "Catalogs"
         catalogs.mkdir()
+        # Composite type with enough reference targets to push the joined
+        # type_info string past 120 chars, to prove long values aren't truncated.
+        wide_composite_targets = [
+            "Организации",
+            "Контрагенты",
+            "ДоговорыКонтрагентов",
+            "ФизическиеЛица",
+            "СтруктурныеПодразделения",
+            "Пользователи",
+        ]
+        wide_composite_xml = "".join(
+            f"<v8:Type>cfg:CatalogRef.{name}</v8:Type>" for name in wide_composite_targets
+        )
+        expected_wide_composite = " ".join(
+            f"cfg:CatalogRef.{name}" for name in wide_composite_targets
+        )
+        assert len(expected_wide_composite) > 120
+
         (catalogs / "Контрагенты.xml").write_text(
-            """\
+            f"""\
 <MetaDataObject xmlns:v8="http://v8.1c.ru/8.3/MDClasses">
   <Catalog uuid="catalog-uuid">
     <Properties>
@@ -353,6 +440,12 @@ class TestMetadataConfigurationSnapshot:
             <v8:Type>xs:string</v8:Type>
             <v8:StringQualifiers><v8:Length>12</v8:Length></v8:StringQualifiers>
           </Type>
+        </Properties>
+      </Attribute>
+      <Attribute>
+        <Properties>
+          <Name>Ответственный</Name>
+          <Type>{wide_composite_xml}</Type>
         </Properties>
       </Attribute>
       <TabularSection>
@@ -403,8 +496,11 @@ class TestMetadataConfigurationSnapshot:
         assert catalog.name == "Контрагенты"
         assert catalog.type == "Catalog"
         assert catalog.uuid == "catalog-uuid"
-        assert [attr.name for attr in catalog.attributes] == ["ИНН"]
+        assert [attr.name for attr in catalog.attributes] == ["ИНН", "Ответственный"]
         assert catalog.attributes[0].type_info == "xs:string"
+        # Wide composite type_info must not be cut mid-token at 120 chars.
+        assert catalog.attributes[1].type_info == expected_wide_composite
+        assert len(catalog.attributes[1].type_info) > 120
         assert [table.name for table in catalog.table_parts] == ["Контакты"]
         assert [attr.name for attr in catalog.table_parts[0].attributes] == ["Телефон"]
         assert (
@@ -419,11 +515,15 @@ class TestMetadataConfigurationSnapshot:
         legacy = crawl_config(root)
         assert [(member.name, member.kind) for member in legacy[0].members] == [
             ("ИНН", "attribute"),
+            ("Ответственный", "attribute"),
             ("Контакты", "tabular_section"),
             ("Контакты.Телефон", "ts_attribute"),
             ("Объект", "form_attribute"),
             ("Записать", "form_command"),
         ]
+        responsible = next(m for m in legacy[0].members if m.name == "Ответственный")
+        assert responsible.type_info == expected_wide_composite
+        assert len(responsible.type_info) > 120
 
 
 class TestSqliteProfile:
