@@ -339,7 +339,7 @@ class TestMetadataConfigurationSnapshot:
         catalogs.mkdir()
         (catalogs / "Контрагенты.xml").write_text(
             """\
-<MetaDataObject>
+<MetaDataObject xmlns:v8="http://v8.1c.ru/8.3/MDClasses">
   <Catalog uuid="catalog-uuid">
     <Properties>
       <Name>Контрагенты</Name>
@@ -349,7 +349,10 @@ class TestMetadataConfigurationSnapshot:
       <Attribute>
         <Properties>
           <Name>ИНН</Name>
-          <Type><TypeDescription><Types><Type>String</Type></Types></TypeDescription></Type>
+          <Type>
+            <v8:Type>xs:string</v8:Type>
+            <v8:StringQualifiers><v8:Length>12</v8:Length></v8:StringQualifiers>
+          </Type>
         </Properties>
       </Attribute>
       <TabularSection>
@@ -358,7 +361,10 @@ class TestMetadataConfigurationSnapshot:
           <Attribute>
             <Properties>
               <Name>Телефон</Name>
-              <Type><TypeDescription><Types><Type>String</Type></Types></TypeDescription></Type>
+              <Type>
+                <v8:Type>cfg:CatalogRef.Контрагенты</v8:Type>
+                <v8:Type>cfg:CatalogRef.Организации</v8:Type>
+              </Type>
             </Properties>
           </Attribute>
         </ChildObjects>
@@ -398,8 +404,13 @@ class TestMetadataConfigurationSnapshot:
         assert catalog.type == "Catalog"
         assert catalog.uuid == "catalog-uuid"
         assert [attr.name for attr in catalog.attributes] == ["ИНН"]
+        assert catalog.attributes[0].type_info == "xs:string"
         assert [table.name for table in catalog.table_parts] == ["Контакты"]
         assert [attr.name for attr in catalog.table_parts[0].attributes] == ["Телефон"]
+        assert (
+            catalog.table_parts[0].attributes[0].type_info
+            == "cfg:CatalogRef.Контрагенты cfg:CatalogRef.Организации"
+        )
         assert [form.name for form in catalog.forms] == ["ФормаЭлемента"]
         assert [attr.name for attr in catalog.forms[0].attributes] == ["Объект"]
         assert [command.name for command in catalog.forms[0].commands] == ["Записать"]
