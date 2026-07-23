@@ -848,6 +848,48 @@ class SymbolIndex:
             }
             return self._read_list(lambda conn: conn.execute(sql, params).fetchall())
 
+    def find_symbol_candidates(
+        self,
+        name: str,
+        file_filter: str | None = None,
+        limit: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """
+        Return a stable page of exact symbol matches and the total match count.
+
+        This is intentionally separate from ``find_symbol``: interactive
+        hover/definition lookups retain their index-order fast path, while
+        ambiguity responses get deterministic ordering and an explicit
+        truncation contract.
+        """
+        sql = """
+            SELECT s.*, COUNT(*) OVER () AS candidate_count
+            FROM symbols s
+            WHERE s.name_lower = :name_lower
+              AND (:file_filter IS NULL OR s.file_path LIKE :file_like)
+            ORDER BY
+                s.file_path COLLATE NOCASE,
+                s.file_path,
+                s.line,
+                s.character,
+                s.kind,
+                s.id
+            LIMIT :limit
+        """
+        params = {
+            "name_lower": name.casefold(),
+            "file_filter": file_filter,
+            "file_like": f"%{file_filter}%" if file_filter else None,
+            "limit": limit,
+        }
+        rows = self._read_list(lambda conn: conn.execute(sql, params).fetchall())
+        if not rows:
+            return [], 0
+        candidate_count = int(rows[0].pop("candidate_count"))
+        for row in rows[1:]:
+            row.pop("candidate_count", None)
+        return rows, candidate_count
+
     def find_callers_count(self, callee_name: str) -> int:
         """Return the total number of call sites for *callee_name* (fast COUNT query)."""
         return self._read_int(

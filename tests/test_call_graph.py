@@ -227,6 +227,10 @@ class TestBuildCallGraph:
                 "signature": f"Procedure {symbol_name}()",
             }
         ]
+        mock_index.find_symbol_candidates.return_value = (
+            mock_index.find_symbol.return_value,
+            1,
+        )
         mock_index.find_callers.return_value = []
         mock_index.find_callees.return_value = []
         return mock_index
@@ -272,6 +276,7 @@ class TestBuildCallGraph:
 
         mock_index = MagicMock()
         mock_index.find_symbol.return_value = []
+        mock_index.find_symbol_candidates.return_value = ([], 0)
         mock_index.find_callers.return_value = []
         mock_index.find_callees.return_value = []
 
@@ -288,6 +293,49 @@ class TestBuildCallGraph:
         result = build_call_graph(mock_index, "ОбработатьЗаказ")
 
         assert result["callers"] == []
+
+    def test_ambiguous_definition_reports_count_and_truncation(self) -> None:
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
+
+        mock_index = MagicMock()
+        mock_index.find_symbol_candidates.return_value = (
+            [
+                {
+                    "file_path": f"/ws/module_{index:02d}.bsl",
+                    "line": index + 1,
+                    "signature": "Procedure ОдинаковыйОбработчик()",
+                }
+                for index in range(20)
+            ],
+            22,
+        )
+
+        result = build_call_graph(mock_index, "ОдинаковыйОбработчик")
+
+        assert result["ambiguous"] is True
+        assert result["candidate_count"] == 22
+        assert result["candidates_truncated"] is True
+        assert len(result["candidates"]) == 20
+        assert result["callers"] == []
+        assert result["callees"] == []
+
+    def test_file_filter_is_used_for_definition_resolution(self) -> None:
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
+
+        mock_index = self._make_mock_index(file_path="/ws/orders.bsl")
+
+        result = build_call_graph(
+            mock_index,
+            "ОбработатьЗаказ",
+            file_filter="orders.bsl",
+        )
+
+        assert result["definition"]["file"] == "/ws/orders.bsl"
+        mock_index.find_symbol_candidates.assert_called_once_with(
+            "ОбработатьЗаказ",
+            file_filter="orders.bsl",
+            limit=20,
+        )
 
     def test_callers_populated_from_index(self) -> None:
         from onec_hbk_bsl.analysis.call_graph import build_call_graph

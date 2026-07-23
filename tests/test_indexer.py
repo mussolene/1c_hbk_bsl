@@ -151,6 +151,42 @@ class TestUpsertAndFind:
         results = symbol_index.find_symbol("НесуществующийСимвол")
         assert results == []
 
+    def test_find_symbol_candidates_are_stable_and_report_total(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        for index in range(22):
+            file_path = f"/workspace/module_{21 - index:02d}.bsl"
+            symbol_index.upsert_file(
+                file_path,
+                [
+                    {
+                        "name": "ОдинаковыйОбработчик",
+                        "line": index + 1,
+                        "character": 0,
+                        "end_line": index + 2,
+                        "end_character": 0,
+                        "kind": "procedure",
+                        "is_export": False,
+                        "container": None,
+                        "signature": "Procedure ОдинаковыйОбработчик()",
+                        "doc_comment": "",
+                    }
+                ],
+                [],
+            )
+
+        candidates, total = symbol_index.find_symbol_candidates(
+            "одинаковыйобработчик",
+            limit=20,
+        )
+
+        assert total == 22
+        assert len(candidates) == 20
+        assert [row["file_path"] for row in candidates] == [
+            f"/workspace/module_{index:02d}.bsl" for index in range(20)
+        ]
+        assert all("candidate_count" not in row for row in candidates)
+
     def test_get_file_symbols_returns_all(self, symbol_index: SymbolIndex) -> None:
         symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
 
@@ -320,6 +356,39 @@ class TestMetadataMembers:
 
 
 class TestMetadataConfigurationSnapshot:
+    def test_legacy_type_wrapper_remains_supported(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        from onec_hbk_bsl.indexer.metadata_parser import _extract_type_info
+
+        attribute = ET.fromstring(  # noqa: S314 - trusted synthetic fixture
+            """\
+<Attribute>
+  <Properties>
+    <Type>
+      <TypeDescription><Types><Type>String</Type></Types></TypeDescription>
+    </Type>
+  </Properties>
+</Attribute>
+"""
+        )
+
+        assert _extract_type_info(attribute) == "String"
+
+    def test_form_attribute_type_info_is_not_truncated(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        from onec_hbk_bsl.indexer.metadata_parser import _extract_form_attribute_type_info
+
+        expected = " ".join(f"cfg:CatalogRef.Объект{index:02d}" for index in range(8))
+        values = "".join(f"<Type>cfg:CatalogRef.Объект{index:02d}</Type>" for index in range(8))
+        attribute = ET.fromstring(  # noqa: S314 - trusted synthetic fixture
+            f"<Attribute><Type>{values}</Type></Attribute>"
+        )
+
+        assert len(expected) > 120
+        assert _extract_form_attribute_type_info(attribute) == expected
+
     def test_structured_snapshot_projects_to_legacy_metadata_members(self, tmp_path: Path) -> None:
         root = tmp_path
         (root / "Configuration.xml").write_text(

@@ -534,7 +534,7 @@ def _extract_type_info(elem: ET.Element) -> str:
         for child in source
         if _strip_ns(child.tag) == "Type" and (child.text or "").strip()
     ]
-    return " ".join(tokens)[:120]
+    return " ".join(tokens)
 
 
 # -----------------------------------------------------------------------

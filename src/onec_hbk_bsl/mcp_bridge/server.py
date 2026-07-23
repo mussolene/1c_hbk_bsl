@@ -404,6 +404,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "If symbol_name matches definitions in multiple modules (common for "
             "same-named event handlers declared independently per object), the "
             "result is `{ambiguous: true, candidates: [...]}` instead of a graph — "
+            "candidate_count and candidates_truncated describe the stable result page; "
             "pass file_filter to pick one."
         )
     )
@@ -438,6 +439,8 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         }
         if graph.get("ambiguous"):
             result["ambiguous"] = True
+            result["candidate_count"] = graph["candidate_count"]
+            result["candidates_truncated"] = graph["candidates_truncated"]
             result["candidates"] = graph["candidates"]
         return result
 
@@ -452,6 +455,7 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "If symbol_name matches definitions in multiple modules (common for "
             "same-named event handlers declared independently per object), the "
             "result is `{ambiguous: true, candidates: [...]}` instead of a graph — "
+            "candidate_count and candidates_truncated describe the stable result page; "
             "pass file_filter to pick one."
         )
     )
@@ -486,6 +490,8 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         }
         if graph.get("ambiguous"):
             result["ambiguous"] = True
+            result["candidate_count"] = graph["candidate_count"]
+            result["candidates_truncated"] = graph["candidates_truncated"]
             result["candidates"] = graph["candidates"]
         return result
 

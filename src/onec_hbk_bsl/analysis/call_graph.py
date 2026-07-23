@@ -262,6 +262,8 @@ def build_call_graph(
       - ``ambiguous`` / ``candidates``: present instead of a resolved graph
         when *symbol_name* matches multiple definitions and *file_filter*
         doesn't narrow it down to exactly one.
+      - ``candidate_count`` / ``candidates_truncated``: total ambiguity
+        cardinality and whether the stable 20-item candidate page is partial.
 
     Args:
         index:       SymbolIndex instance to query.
@@ -292,13 +294,19 @@ def build_call_graph(
         return result
 
     # Resolve callees by looking up the symbol's calls in the index
-    definitions = index.find_symbol(symbol_name, file_filter=file_filter)
+    definitions, candidate_count = index.find_symbol_candidates(
+        symbol_name,
+        file_filter=file_filter,
+        limit=20,
+    )
 
-    if len(definitions) > 1:
+    if candidate_count > 1:
         return {
             "name": symbol_name,
             "definition": {"file": None, "line": None, "signature": None},
             "ambiguous": True,
+            "candidate_count": candidate_count,
+            "candidates_truncated": candidate_count > len(definitions),
             "candidates": [
                 {
                     "file": d["file_path"],
