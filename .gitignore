@@ -67,6 +67,8 @@ logs/
 # Temporary files
 tmp/
 .tmp/
+.artifacts/
+vscode-extension/out-test/
 .tmp_format_cmp/
 ._tmp_debug/
 ._tmp_mcp_debug/

@@ -144,6 +144,8 @@ from lsprotocol.types import (
     Diagnostic as LspDiagnostic,
 )
 
+from onec_hbk_bsl import __version__
+
 try:
     from pygls.server import LanguageServer  # pygls < 1.2
 except ImportError:
@@ -280,14 +282,9 @@ def _is_bsl_identifier(text: str) -> bool:
 
 
 def _lsp_diagnostic_code_fields(internal_code: str) -> tuple[str, CodeDescription | None]:
-    """Public ``code`` for Problems (BSLLS-style name) + optional URN for internal id."""
-    public = get_rule(internal_code).name
-    if internal_code == "BSL-DEAD":
-        public = "UnusedPrivateMethod"
-    elif internal_code == "BSL-LSP-ERR":
-        public = "DiagnosticsFailure"
+    """Return the canonical machine ID and its stable rule URI."""
     urn = f"urn:onec-hbk-bsl:rule:{internal_code}"
-    return public, CodeDescription(href=urn)
+    return internal_code, CodeDescription(href=urn)
 
 
 def _lsp_failure_diagnostic(message: str) -> LspDiagnostic:
@@ -313,7 +310,7 @@ class BslLanguageServer(LanguageServer):
     def __init__(self) -> None:
         super().__init__(
             "onec-hbk-bsl",
-            "v0.1.0",
+            __version__,
             text_document_sync_kind=TextDocumentSyncKind.Full,
         )
         self.index_mode = _workspace_index_mode(os.getcwd())

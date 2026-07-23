@@ -5,7 +5,7 @@ Provides symbol information for the built-in 1C platform objects and global
 functions, enabling LSP hover/completion and MCP search.
 
 Data is embedded in this module as a compact dict; additional definitions
-can be loaded from JSON files in ``data/platform_api/``.
+are loaded from JSON resources in ``onec_hbk_bsl.data.platform_api``.
 
 JSON file format (one object per file)::
 
@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from importlib import resources
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -1090,10 +1092,10 @@ class PlatformApi:
     Registry of 1C platform types and global functions.
 
     Supports completion, hover, and search for both Russian and English names.
-    Can be extended with JSON files from ``data/platform_api/``.
+    Can be extended with JSON resources from ``onec_hbk_bsl.data.platform_api``.
     """
 
-    def __init__(self, data_dir: str | Path | None = None) -> None:
+    def __init__(self, data_dir: str | Path | Traversable | None = None) -> None:
         self._types: dict[str, ApiType] = {}
         self._globals: list[ApiMethod] = []
         self._type_index: dict[str, str] = {}  # lowercase name → canonical name
@@ -1103,7 +1105,8 @@ class PlatformApi:
 
         # Load JSON files if directory is provided
         if data_dir is not None:
-            self._load_from_dir(Path(data_dir))
+            source = Path(data_dir) if isinstance(data_dir, (str, Path)) else data_dir
+            self._load_from_dir(source)
 
     # ------------------------------------------------------------------
     # Public API
@@ -1287,7 +1290,7 @@ class PlatformApi:
         if t.name_en:
             self._type_index[t.name_en.lower()] = t.name
 
-    def _load_from_dir(self, data_dir: Path) -> None:
+    def _load_from_dir(self, data_dir: Path | Traversable) -> None:
         """Load JSON type/globals definitions from *data_dir*.
 
         Files starting with ``_`` are treated as global-function lists
@@ -1296,7 +1299,15 @@ class PlatformApi:
         """
         if not data_dir.is_dir():
             return
-        for json_file in sorted(data_dir.glob("*.json")):
+        json_files = sorted(
+            (
+                entry
+                for entry in data_dir.iterdir()
+                if entry.is_file() and entry.name.endswith(".json")
+            ),
+            key=lambda entry: entry.name,
+        )
+        for json_file in json_files:
             try:
                 raw = json.loads(json_file.read_text(encoding="utf-8"))
                 if isinstance(raw, list):
@@ -1328,7 +1339,9 @@ class PlatformApi:
 _default_api: PlatformApi | None = None
 
 
-def get_platform_api(data_dir: str | Path | None = None) -> PlatformApi:
+def get_platform_api(
+    data_dir: str | Path | Traversable | None = None,
+) -> PlatformApi:
     """
     Return the shared PlatformApi instance, creating it on first call.
 
@@ -1336,11 +1349,7 @@ def get_platform_api(data_dir: str | Path | None = None) -> PlatformApi:
     """
     global _default_api
     if _default_api is None:
-        # Try the project-relative data/platform_api directory
         if data_dir is None:
-            here = Path(__file__).parent
-            candidate = here.parent.parent.parent / "data" / "platform_api"
-            if candidate.is_dir():
-                data_dir = candidate
+            data_dir = resources.files("onec_hbk_bsl.data.platform_api")
         _default_api = PlatformApi(data_dir=data_dir)
     return _default_api

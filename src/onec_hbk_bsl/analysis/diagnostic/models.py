@@ -64,6 +64,7 @@ class RuleDefinition:
     code: str
     name: str
     description: str
+    message_template: str
     message: str
     severity: str
     tags: tuple[str, ...]

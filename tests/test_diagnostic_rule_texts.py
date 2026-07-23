@@ -3,7 +3,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
+import pytest
+
+from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule, render_rule_message
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
     RULE_DESCRIPTIONS_RU,
@@ -122,6 +124,21 @@ def test_diagnostic_uses_i18n_message_by_default() -> None:
     )
 
     assert diag.message == get_rule("BSL236").message
+
+
+def test_catalog_never_exposes_unrendered_placeholders() -> None:
+    for code in RULE_METADATA:
+        assert "%s" not in get_rule(code).message
+
+
+def test_message_template_rendering_validates_arity() -> None:
+    assert render_rule_message("BSL196", "СтарыйМетод") == (
+        'Метод "СтарыйМетод" должен быть удален или переименован'
+    )
+    with pytest.raises(ValueError, match="expects 1 argument"):
+        render_rule_message("BSL196")
+    with pytest.raises(ValueError, match="expects 1 argument"):
+        render_rule_message("BSL196", "one", "two")
 
 
 def test_lsp_compat_severity_documents_bslls_facing_source_of_truth() -> None:

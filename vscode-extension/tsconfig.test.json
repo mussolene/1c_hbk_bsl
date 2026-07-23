@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "module": "Node16",
+    "target": "ES2022",
+    "outDir": "out-test",
+    "rootDir": ".",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/binaryResolution.ts",
+    "src/extensionContract.ts",
+    "test/**/*.ts"
+  ],
+  "exclude": ["node_modules", "out", "out-test"]
+}

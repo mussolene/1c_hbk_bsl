@@ -13,8 +13,11 @@
 Типичный релиз:
 
 1. Закоммитить изменения на `main`.
-2. `./scripts/release.sh X.Y.Z "release: vX.Y.Z"`. Не создавайте release tag вручную без локального release script: он запускает тот же Python distribution builder, что и CI, и ловит рассинхрон meta/core dependency metadata до публикации.
-3. GitHub Actions **Release** собирает артефакты, публикует Python-пакет в PyPI через Trusted Publishing и публикует платформенные VSIX; build jobs вызывают `scripts/sync_version.py`, чтобы frozen runtime и VSIX metadata совпадали с тегом.
+2. `./scripts/release.sh X.Y.Z "release: vX.Y.Z"`. Не создавайте release tag вручную без локального release script: он вызывает `scripts/verify_release.py`, проверяет coverage/contracts/npm policy и запускает тот же Python distribution builder, что и CI.
+3. GitHub Actions **Release preflight** из frozen `uv.lock`/`package-lock.json`
+   сначала строит полный набор wheel/sdist, standalone binaries и VSIX, выполняет
+   их contracts и только затем открывает publish jobs для PyPI, GitHub Release и
+   VS Marketplace. Проверенный набор публикуется вместе с `SHA256SUMS`.
 
 Для PyPI в настройках проекта PyPI должен быть добавлен Trusted Publisher:
 репозиторий `mussolene/1c_hbk_bsl`, workflow `.github/workflows/release.yml`,

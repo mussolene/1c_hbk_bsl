@@ -1,22 +1,90 @@
-name: Release
+name: Release preflight
 
 on:
+  workflow_call:
+    secrets:
+      VSCE_PAT:
+        required: false
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]*"
 
 permissions:
-  contents: write   # create GitHub Release
+  contents: write
 
 env:
   BINARY_NAME: onec-hbk-bsl
   PYTHON_VERSION: "3.14"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONHASHSEED: "0"
 
 jobs:
-  # ── 1. Build standalone binary per platform (PyInstaller onefile) ──────────
+  source-verification:
+    name: Source verification (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Frozen Python environment
+        run: uv sync --frozen --python "${{ matrix.python-version }}" --extra dev --extra build
+      - name: Python lint and format
+        run: |
+          ./.venv/bin/python -m ruff check src tests scripts
+          ./.venv/bin/python -m ruff format --check src tests scripts
+      - name: Python tests with quality artifacts
+        run: |
+          mkdir -p .artifacts
+          ./.venv/bin/python -m pytest -q \
+            --cov=src/onec_hbk_bsl \
+            --cov-report=term-missing \
+            --cov-report=json:.artifacts/coverage.json \
+            --cov-report=xml:.artifacts/coverage.xml \
+            --cov-report=html:.artifacts/htmlcov \
+            --junitxml=.artifacts/junit.xml \
+            --durations=20 | tee .artifacts/pytest.log
+          {
+            git rev-parse HEAD
+            ./.venv/bin/python --version
+            ./.venv/bin/python -m pytest --version
+            echo "PYTHONHASHSEED=${PYTHONHASHSEED}"
+          } > .artifacts/environment.txt
+      - name: Frozen extension dependencies and behavior tests
+        if: matrix.python-version == '3.12'
+        working-directory: vscode-extension
+        run: |
+          env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm ci
+          npm run audit:security
+          npm run lint
+          npm run typecheck
+          npm run compile
+          npm test
+      - name: Repository release contract
+        if: matrix.python-version == '3.12'
+        run: |
+          args=(source --coverage-json .artifacts/coverage.json)
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            args+=(--version "${GITHUB_REF_NAME#v}")
+          fi
+          ./.venv/bin/python scripts/verify_release.py "${args[@]}"
+      - name: Upload quality evidence
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v6
+        with:
+          name: quality-evidence
+          path: .artifacts/
+          retention-days: 14
+
   build-binary:
     name: Build binary (${{ matrix.target }})
+    needs: source-verification
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -35,71 +103,60 @@ jobs:
             runner: windows-2022
             asset: onec-hbk-bsl-win32-x64.exe
             ext: .exe
-
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ matrix.target }}-py314-${{ hashFiles('pyproject.toml', 'uv.lock') }}
-          restore-keys: pip-${{ matrix.target }}-py314-
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
-
-      - name: Install dependencies (PyInstaller + project)
-        run: uv pip install -e ".[dev,build]" --system
-
-      - name: Sync runtime version from Git
-        run: python scripts/sync_version.py --runtime-only
-
-      - name: Cache PyInstaller work directory
-        uses: actions/cache@v4
-        with:
-          path: build/pyinstaller
-          key: pyinstaller-${{ matrix.target }}-py314-${{ hashFiles('packaging/onec-hbk-bsl.spec', 'src/**/*.py', 'pyproject.toml', 'uv.lock') }}
-          restore-keys: pyinstaller-${{ matrix.target }}-py314-
-
-      - name: Build binary (PyInstaller)
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Frozen build environment
+        run: uv sync --frozen --python "${{ env.PYTHON_VERSION }}" --extra dev --extra build
+      - name: Resolve artifact version
         shell: bash
         run: |
-          python -m PyInstaller --clean --noconfirm \
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(uv run --frozen python -c \
+              'from setuptools_scm import get_version; print(get_version().split(".dev", 1)[0])')"
+          fi
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+      - name: Sync runtime version from Git
+        shell: bash
+        run: SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}" uv run --frozen python scripts/sync_version.py --runtime-only
+      - name: Build binary
+        shell: bash
+        run: |
+          uv run --frozen python -m PyInstaller --clean --noconfirm \
             --workpath build/pyinstaller \
             --distpath dist \
             packaging/onec-hbk-bsl.spec
-
-      - name: Smoke test binary version
+      - name: Execute binary contract
         shell: bash
         run: |
           dist/${{ env.BINARY_NAME }}${{ matrix.ext }} --version | tee version.txt
-          grep -F "onec-hbk-bsl ${GITHUB_REF_NAME#v}" version.txt
-
-      - name: Rename asset
-        shell: bash
-        run: mv dist/${{ env.BINARY_NAME }}${{ matrix.ext }} dist/${{ matrix.asset }}
-
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v6
+          dist/${{ env.BINARY_NAME }}${{ matrix.ext }} _release-contract \
+            > contract-${{ matrix.target }}.json
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            grep -F "onec-hbk-bsl ${GITHUB_REF_NAME#v}" version.txt
+          fi
+          mv dist/${{ env.BINARY_NAME }}${{ matrix.ext }} dist/${{ matrix.asset }}
+      - uses: actions/upload-artifact@v6
         with:
           name: binary-${{ matrix.target }}
-          path: dist/${{ matrix.asset }}
+          path: |
+            dist/${{ matrix.asset }}
+            contract-${{ matrix.target }}.json
           retention-days: 1
 
-  # ── 2. Package platform-specific VSIX ───────────────────────────────────────
   package-vsix:
     name: Package VSIX (${{ matrix.target }})
     needs: build-binary
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: darwin-arm64
@@ -110,214 +167,194 @@ jobs:
             asset: onec-hbk-bsl-linux-x64
           - target: win32-x64
             asset: onec-hbk-bsl-win32-x64.exe
-
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Set up Python (sync extension version from git tag)
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install setuptools-scm
-        run: pip install setuptools-scm
-
-      - name: Sync vscode-extension version from Git
-        run: python scripts/sync_version.py
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv sync --frozen --python "${{ env.PYTHON_VERSION }}" --extra dev
+      - name: Resolve and sync extension version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(uv run --frozen python -c \
+              'from setuptools_scm import get_version; print(get_version().split(".dev", 1)[0])')"
+          fi
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}" uv run --frozen python scripts/sync_version.py
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: vscode-extension/package-lock.json
-
-      - name: Install npm deps
+      - name: Frozen extension dependencies
         working-directory: vscode-extension
         run: env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm ci
-
-      - name: Typecheck extension (tsc --noEmit)
-        working-directory: vscode-extension
-        run: env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm run typecheck
-
-      - name: Webpack bundle (extension.js)
-        working-directory: vscode-extension
-        run: env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm run compile
-
-      - name: Download binary
-        uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v7
         with:
           name: binary-${{ matrix.target }}
-          path: vscode-extension/bin/
-
-      - name: Make binary executable
-        run: chmod +x vscode-extension/bin/${{ matrix.asset }} || true
-
-      - name: Rename binary to canonical name
+          path: downloaded-binary/
+      - name: Prepare bundled binary
         run: |
+          mkdir -p vscode-extension/bin
           if [[ "${{ matrix.target }}" == "win32-x64" ]]; then
-            mv vscode-extension/bin/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl.exe
+            cp downloaded-binary/dist/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl.exe
           else
-            mv vscode-extension/bin/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl
+            cp downloaded-binary/dist/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl
+            chmod +x vscode-extension/bin/onec-hbk-bsl
           fi
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Package VSIX (platform-specific)
+      - name: Package platform VSIX
         working-directory: vscode-extension
         run: |
-          unset npm_config_devdir NPM_CONFIG_DEVDIR
-          npx @vscode/vsce package \
-            --no-dependencies \
-            --target ${{ matrix.target }} \
-            --out onec-hbk-bsl-${{ steps.version.outputs.version }}-${{ matrix.target }}.vsix
-
-      - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v6
+          npm run typecheck
+          npm run compile
+          npx @vscode/vsce package --no-dependencies \
+            --target "${{ matrix.target }}" \
+            --out "onec-hbk-bsl-${VERSION}-${{ matrix.target }}.vsix"
+      - uses: actions/upload-artifact@v6
         with:
           name: vsix-${{ matrix.target }}
-          path: vscode-extension/onec-hbk-bsl-${{ steps.version.outputs.version }}-${{ matrix.target }}.vsix
+          path: vscode-extension/*.vsix
           retention-days: 1
 
-  # ── 3. Build Python distribution ──────────────────────────────────────────────
   build-wheel:
-    name: Build Python distribution
+    name: Build and execute Python distribution
+    needs: source-verification
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv sync --frozen --python "${{ env.PYTHON_VERSION }}" --extra dev --extra build
       - name: Build wheel and sdist
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          export SETUPTOOLS_SCM_PRETEND_VERSION="$VERSION"
-          pip install build twine
-          pip install setuptools-scm
-          python scripts/sync_version.py --runtime-only
-          PYTHON=python scripts/build_python_dist.sh "$VERSION" dist
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v6
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(uv run --frozen python -c \
+              'from onec_hbk_bsl import __version__; print(__version__.split(".dev", 1)[0])')"
+          fi
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}" uv run --frozen python scripts/sync_version.py --runtime-only
+          PYTHON=./.venv/bin/python scripts/build_python_dist.sh "${VERSION}" dist
+      - name: Install and execute built wheel outside checkout
+        run: |
+          ARTIFACT_VENV="$(mktemp -d)/venv"
+          uv venv --python "${{ env.PYTHON_VERSION }}" "${ARTIFACT_VENV}"
+          uv pip install --python "${ARTIFACT_VENV}/bin/python" \
+            "dist/onec_hbk_bsl_core-${VERSION}-py3-none-any.whl"
+          (
+            cd "$(dirname "${ARTIFACT_VENV}")"
+            "${ARTIFACT_VENV}/bin/onec-hbk-bsl" _release-contract
+          ) > contract-wheel.json
+      - uses: actions/upload-artifact@v6
         with:
           name: python-dist
-          path: dist/
+          path: |
+            dist/
+            contract-wheel.json
           retention-days: 1
 
-  # ── 4. Publish Python package to PyPI ─────────────────────────────────────────
+  preflight:
+    name: Full artifact preflight
+    needs: [source-verification, build-binary, package-vsix, build-wheel]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv sync --frozen --python "${{ env.PYTHON_VERSION }}" --extra dev
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts/
+      - name: Verify the complete artifact set
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(uv run --frozen python -c \
+              'from onec_hbk_bsl import __version__; print(__version__.split(".dev", 1)[0])')"
+          fi
+          uv run --frozen python scripts/verify_release.py artifacts \
+            --version "${VERSION}" \
+            --artifacts-dir artifacts \
+            --output-dir release-assets
+      - uses: actions/upload-artifact@v6
+        with:
+          name: verified-release-assets
+          path: release-assets/
+          retention-days: 7
+
   publish-pypi:
     name: Publish Python package to PyPI
-    needs: build-wheel
+    needs: preflight
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       contents: read
       id-token: write
-
     steps:
-      - name: Download Python distribution
-        uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v7
         with:
-          name: python-dist
-          path: dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          name: verified-release-assets
+          path: verified/
+      - name: Select verified Python distributions
+        run: |
+          mkdir pypi-dist
+          cp verified/*.whl verified/*.tar.gz pypi-dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          packages-dir: pypi-dist/
 
-  # ── 5. GitHub Release + VS Marketplace publish ──────────────────────────────
   publish:
-    name: Publish
-    needs: [build-binary, package-vsix, build-wheel]
+    name: Publish GitHub Release and VS Marketplace
+    needs: preflight
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: release
-
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
         with:
-          fetch-depth: 0
-
-      - name: Release version (tag without leading v)
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v7
-        with:
-          path: artifacts/
-
-      - name: Prepare release assets
-        run: |
-          mkdir -p release-assets
-          find artifacts/ -name "onec-hbk-bsl-*" -not -name "*.vsix" \
-            -exec cp {} release-assets/ \;
-          find artifacts/ -name "*.vsix" -exec cp {} release-assets/ \;
-          find artifacts/python-dist/ \( -name "*.whl" -o -name "*.tar.gz" \) \
-            -exec cp {} release-assets/ \;
-          ls -lh release-assets/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+          name: verified-release-assets
+          path: release-assets/
+      - uses: softprops/action-gh-release@v2
         with:
           name: 1C HBK BSL ${{ github.ref_name }}
-          body: |
-            ## 1C HBK BSL ${{ github.ref_name }}
-
-            ### Установка расширения VSCode
-            Установите из [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl)
-            или скачайте `.vsix` для вашей платформы ниже:
-            ```
-            code --install-extension onec-hbk-bsl-*.vsix
-            ```
-
-            ### Установка CLI
-            ```bash
-            pip install onec-hbk-bsl==${{ steps.version.outputs.version }}
-            ```
-
-            ### Файлы релиза
-            | Файл | Описание |
-            |---|---|
-            | `onec-hbk-bsl-darwin-arm64` | macOS Apple Silicon |
-            | `onec-hbk-bsl-darwin-x64` | macOS Intel |
-            | `onec-hbk-bsl-linux-x64` | Linux x86_64 |
-            | `onec-hbk-bsl-win32-x64.exe` | Windows x64 |
-            | `*.vsix` | VSCode расширение (платформо-специфичные) |
-            | `*.whl` | Python wheel |
+          generate_release_notes: true
           files: release-assets/*
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-
-      - name: Setup Node for vsce
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
-
-      - name: Publish to VS Marketplace
+      - name: Install frozen VS Marketplace publisher
+        working-directory: vscode-extension
+        run: env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm ci
+      - name: Publish verified VSIX packages
         working-directory: vscode-extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          env -u npm_config_devdir -u NPM_CONFIG_DEVDIR npm ci
-          unset npm_config_devdir NPM_CONFIG_DEVDIR
-          for vsix in ../artifacts/vsix-*/*.vsix; do
+          for vsix in ../release-assets/*.vsix; do
             for attempt in 1 2 3; do
-              echo "Publishing $vsix (attempt $attempt/3)"
               if npx @vscode/vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"; then
                 break
               fi
-              if [[ "$attempt" == "3" ]]; then
-                exit 1
-              fi
+              [[ "$attempt" == "3" ]] && exit 1
               sleep $((attempt * 30))
             done
           done

@@ -4,6 +4,7 @@ Tests for __main__ entry point — argument parsing and dispatch.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -412,6 +413,17 @@ class TestMainVersion:
             with pytest.raises(SystemExit) as exc_info:
                 main()
         assert exc_info.value.code == 0
+
+    def test_release_contract_is_machine_readable(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with patch("sys.argv", ["onec-hbk-bsl", "_release-contract"]):
+            main()
+        output = capsys.readouterr().out
+        output.encode("ascii")
+        contract = json.loads(output)
+        assert len(contract["rules"]) == 180
+        assert contract["rules"] == contract["runtime_rules"]
+        assert len(contract["platform_api"]["types"]) == 62
+        assert len(contract["platform_api"]["globals"]) == 601
 
 
 # ---------------------------------------------------------------------------

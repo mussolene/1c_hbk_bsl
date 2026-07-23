@@ -173,9 +173,11 @@
     "compile": "webpack --mode production",
     "watch": "webpack --mode development --watch",
     "typecheck": "tsc --noEmit -p ./",
+    "compile:test": "tsc -p ./tsconfig.test.json",
     "lint": "eslint .",
-    "pretest": "npm run compile",
-    "test": "node ./out/test/runTest.js",
+    "audit:security": "npm audit --omit=dev --audit-level=high && npm audit --audit-level=high",
+    "pretest": "npm run compile:test",
+    "test": "node --test out-test/test/*.test.js",
     "package": "unset npm_config_devdir NPM_CONFIG_DEVDIR; npx @vscode/vsce package --no-dependencies",
     "package:vsix": "unset npm_config_devdir NPM_CONFIG_DEVDIR; npx @vscode/vsce package --no-dependencies -o 1c-hbk-bsl-${npm_package_version}.vsix"
   },
