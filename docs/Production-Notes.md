@@ -51,9 +51,11 @@ When `useDocker` is true, the extension runs:
 
 ## MCP Compatibility Checklist
 - Symbol/code tools: status, find symbol, file symbols, callers/callees, references, search
-- File tools: read file, format, fix, rename, workspace scan
+- File tools: read file, format, fix, exact-span transactional rename, workspace scan
 - Metadata tools: meta object, meta collection, metadata index
 - Scope boundary: MCP tools stay project-local; external help MCPs are not proxied here.
+- Rename safety: dry-run and apply use one deterministic plan; collision,
+  receiver ambiguity, stale index, or changed content must refuse before writes.
 
 ## Multi-Project Safety
 - MCP tools use `workspace_root`/`config_root` where relevant.

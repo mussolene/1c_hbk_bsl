@@ -169,8 +169,9 @@ from onec_hbk_bsl.analysis.formatter import (
     _get_stripped_keyword,
     default_formatter,
 )
-from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
+from onec_hbk_bsl.analysis.lsp_positions import utf16_len
 from onec_hbk_bsl.analysis.platform_api import PlatformApi, get_platform_api
+from onec_hbk_bsl.analysis.rename_plan import RenameRefused, build_rename_plan
 from onec_hbk_bsl.analysis.symbols import extract_symbols
 from onec_hbk_bsl.analysis.type_inference import RETURN_TYPE_MAP as _TYPE_RETURN_MAP
 from onec_hbk_bsl.analysis.type_inference import BslTypeEngine
@@ -1832,53 +1833,6 @@ def _open_document_method_symbols(
     ]
 
 
-def _identifier_ranges_from_cst(content: str, name: str) -> list[Range]:
-    parser = BslParser()
-    tree = parser.parse_content(content)
-    root = getattr(tree, "root_node", None)
-    if root is None:
-        return []
-
-    lines = content.splitlines()
-    ranges: list[Range] = []
-
-    def visit(node: Any, parent_type: str = "") -> None:
-        node_type = getattr(node, "type", "")
-        if (
-            node_type == "identifier"
-            and parent_type in ("procedure_definition", "function_definition", "method_call")
-            and _ast_node_text(node).casefold() == name
-        ):
-            line0 = node.start_point[0]
-            line_text = lines[line0] if 0 <= line0 < len(lines) else ""
-            start = utf8_byte_offset_to_lsp_character(line_text, node.start_point[1])
-            ranges.append(
-                Range(
-                    start=Position(line=line0, character=start),
-                    end=Position(line=line0, character=start + utf16_len(_ast_node_text(node))),
-                )
-            )
-        for child in getattr(node, "children", []) or []:
-            visit(child, node_type)
-
-    visit(root)
-    return ranges
-
-
-def _add_rename_edit(
-    changes: dict[str, list[TextEdit]],
-    seen: set[tuple[str, int, int]],
-    uri: str,
-    edit_range: Range,
-    new_name: str,
-) -> None:
-    key = (uri, int(edit_range.start.line), int(edit_range.start.character))
-    if key in seen:
-        return
-    seen.add(key)
-    changes.setdefault(uri, []).append(TextEdit(range=edit_range, new_text=new_name))
-
-
 @server.feature(TEXT_DOCUMENT_PREPARE_RENAME)
 def on_prepare_rename(ls: BslLanguageServer, params: PrepareRenameParams) -> Range | None:
     """Check whether the symbol under the cursor can be renamed."""
@@ -1905,7 +1859,7 @@ def on_prepare_rename(ls: BslLanguageServer, params: PrepareRenameParams) -> Ran
 
 @server.feature(TEXT_DOCUMENT_RENAME)
 def on_rename(ls: BslLanguageServer, params: RenameParams) -> WorkspaceEdit | None:
-    """Rename the symbol under the cursor across the whole workspace."""
+    """Return the shared exact-span rename plan as an LSP workspace edit."""
     uri = params.text_document.uri
     pos = params.position
     new_name = params.new_name
@@ -1914,61 +1868,38 @@ def on_rename(ls: BslLanguageServer, params: RenameParams) -> WorkspaceEdit | No
     if not _is_bsl_identifier(word) or not _is_bsl_identifier(new_name):
         return None
 
+    overrides = {_uri_to_path(open_uri): text for open_uri, text in ls._docs.items()}
+    try:
+        plan = build_rename_plan(
+            ls.symbol_index,
+            word,
+            new_name,
+            content_overrides=overrides,
+        )
+    except RenameRefused:
+        return None
+
+    if not plan.files:
+        return None
+
     changes: dict[str, list[TextEdit]] = {}
-    seen: set[tuple[str, int, int]] = set()
-    open_uris = set(ls._docs)
-
-    open_symbols = _open_document_method_symbols(ls, uri, content) if content else []
-    indexed_symbols = [
-        s
-        for s in ls.symbol_index.find_symbol(word, limit=50)
-        if s.get("kind") in ("procedure", "function")
-    ]
-    if not any(s["name"].casefold() == word.casefold() for s in open_symbols + indexed_symbols):
-        return None
-
-    for open_uri, open_content in list(ls._docs.items()):
-        for r in _identifier_ranges_from_cst(open_content, word.casefold()):
-            _add_rename_edit(changes, seen, open_uri, r, new_name)
-
-    # Definitions
-    for sym in indexed_symbols:
-        file_uri = _path_to_uri(sym["file_path"])
-        if file_uri in open_uris:
-            continue
-        line = max(0, sym["line"] - 1)
-        _add_rename_edit(
-            changes,
-            seen,
-            file_uri,
-            Range(
-                start=Position(line=line, character=sym["character"]),
-                end=Position(line=line, character=sym["character"] + utf16_len(word)),
-            ),
-            new_name,
-        )
-
-    # Call sites
-    for c in ls.symbol_index.find_callers(word, limit=500):
-        file_uri = _path_to_uri(c["caller_file"])
-        if file_uri in open_uris:
-            continue
-        line = max(0, c["caller_line"] - 1)
-        character = _call_char_from_row(c)
-        _add_rename_edit(
-            changes,
-            seen,
-            file_uri,
-            Range(
-                start=Position(line=line, character=character),
-                end=Position(line=line, character=character + utf16_len(word)),
-            ),
-            new_name,
-        )
-
-    if not changes:
-        return None
-
+    for file_plan in plan.files:
+        changes[_path_to_uri(file_plan.file_path)] = [
+            TextEdit(
+                range=Range(
+                    start=Position(
+                        line=edit.start_line,
+                        character=edit.start_character,
+                    ),
+                    end=Position(
+                        line=edit.end_line,
+                        character=edit.end_character,
+                    ),
+                ),
+                new_text=edit.new_text,
+            )
+            for edit in file_plan.edits
+        ]
     return WorkspaceEdit(changes=changes)
 
 

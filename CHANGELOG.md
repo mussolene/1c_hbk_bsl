@@ -7,12 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- LSP и MCP используют общий immutable `RenamePlan` с точными semantic CST spans,
+  детерминированной сортировкой edits и content-hash preconditions; MCP
+  `bsl_rename(apply=true)` применяет многофайловый план транзакционно с полным
+  rollback при ошибке записи.
+
 ### Changed
 
 - CLI, Python API, LSP и MCP используют единый immutable config resolver с
   приоритетом explicit option → environment → project config → defaults;
   явные `--format text`, `--jobs 0`, `--no-exit-zero` и
   `--no-insert-spaces` корректно перекрывают конфиг проекта.
+- Неоднозначное определение, коллизия нового имени, stale index/content или
+  квалифицированный receiver без доказанной identity теперь отклоняют rename
+  до записи стабильным кодом ошибки.
 
 ## [0.8.44] - 2026-07-23
 

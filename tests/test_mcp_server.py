@@ -71,10 +71,10 @@ class TestCreateMcpApp:
 
         result = tools["bsl_contract_version"].fn()
 
-        assert result["schema_version"] == "0.4.0"
+        assert result["schema_version"] == "0.5.0"
         assert result["tool_modes"]["bsl_rename"] == {
-            "mode": "read_only",
-            "write_error_code": "write_disabled",
+            "mode": "transactional_write",
+            "span_policy": "exact_semantic",
         }
 
 
@@ -655,9 +655,7 @@ class TestBslRename:
         result = tools["bsl_rename"].fn(old_name="Тест", new_name="123invalid", apply=False)
         assert "error" in result
 
-    def test_rename_write_is_disabled_without_touching_file(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_rename_apply_changes_only_exact_semantic_spans(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.mcp_bridge import server as mcp_module
 
         source = tmp_path / "rename.bsl"
@@ -672,9 +670,6 @@ class TestBslRename:
             ),
             encoding="utf-8",
         )
-        before_bytes = source.read_bytes()
-        before_mtime = source.stat().st_mtime_ns
-
         tools = _tool_fns(_make_app(tmp_path))
         index = mcp_module._get_index(str(tmp_path))
         index.upsert_file(
@@ -703,10 +698,6 @@ class TestBslRename:
             ],
         )
 
-        def fail_index_access(_workspace_root: str | None = None):
-            raise AssertionError("write-disabled rename accessed the index")
-
-        monkeypatch.setattr(mcp_module, "_get_index", fail_index_access)
         result = tools["bsl_rename"].fn(
             old_name="СтароеИмя",
             new_name="НовоеИмя",
@@ -714,17 +705,17 @@ class TestBslRename:
             workspace_root=str(tmp_path),
         )
 
-        assert result == {
-            "error": {
-                "code": "write_disabled",
-                "message": (
-                    "bsl_rename write mode is disabled until semantic RenamePlan "
-                    "support is available"
-                ),
-            }
-        }
-        assert source.read_bytes() == before_bytes
-        assert source.stat().st_mtime_ns == before_mtime
+        assert result["applied"] is True
+        assert result["dry_run"] is False
+        assert result["total_occurrences"] == 2
+        assert source.read_text(encoding="utf-8") == (
+            "Процедура НовоеИмя()\n"
+            "    НовоеИмя();\n"
+            '    Текст = "СтароеИмя";\n'
+            "    // СтароеИмя не должно меняться\n"
+            "    СтароеИмя = 1;\n"
+            "КонецПроцедуры\n"
+        )
 
     def test_rename_preview_is_deterministic_and_read_only(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.mcp_bridge import server as mcp_module
@@ -775,16 +766,399 @@ class TestBslRename:
         second = tools["bsl_rename"].fn(**arguments)
 
         assert first == second
-        assert first == {
-            "dry_run": True,
-            "old_name": "СтароеИмя",
-            "new_name": "НовоеИмя",
-            "files_affected": 1,
-            "total_occurrences": 2,
-            "preview": [{"file_path": str(source), "lines_affected": 2}],
-        }
+        assert first["dry_run"] is True
+        assert first["applied"] is False
+        assert first["old_name"] == "СтароеИмя"
+        assert first["new_name"] == "НовоеИмя"
+        assert first["files_affected"] == 1
+        assert first["total_occurrences"] == 2
+        assert first["files"][0]["file_path"] == str(source)
+        assert [
+            (edit["start_line"], edit["start_character"]) for edit in first["files"][0]["edits"]
+        ] == [(0, 10), (1, 4)]
         assert source.read_bytes() == before_bytes
         assert source.stat().st_mtime_ns == before_mtime
+
+    def test_rename_allows_case_only_canonicalization(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        source = tmp_path / "case.bsl"
+        source.write_text(
+            "Процедура староеИмя()\n    СТАРОЕИМЯ();\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        tools = _tool_fns(_make_app(tmp_path))
+        index = mcp_module._get_index(str(tmp_path))
+        index.upsert_file(
+            str(source),
+            [
+                {
+                    "name": "староеИмя",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 19,
+                    "kind": "procedure",
+                    "is_export": 0,
+                    "signature": "староеИмя()",
+                    "doc_comment": None,
+                }
+            ],
+            [
+                {
+                    "caller_line": 2,
+                    "caller_character": 4,
+                    "caller_name": "староеИмя",
+                    "callee_name": "СТАРОЕИМЯ",
+                    "callee_args_count": 0,
+                }
+            ],
+        )
+
+        result = tools["bsl_rename"].fn(
+            old_name="староеИмя",
+            new_name="СтароеИмя",
+            apply=True,
+            workspace_root=str(tmp_path),
+        )
+
+        assert result["applied"] is True
+        assert source.read_text(encoding="utf-8") == (
+            "Процедура СтароеИмя()\n    СтароеИмя();\nКонецПроцедуры\n"
+        )
+
+    @pytest.mark.parametrize(
+        ("extra_source", "index_mutation", "expected_code"),
+        [
+            (
+                "Процедура НовоеИмя()\nКонецПроцедуры\n",
+                "collision",
+                "name_collision",
+            ),
+            (
+                "Процедура СтароеИмя()\n    Объект.СтароеИмя();\nКонецПроцедуры\n",
+                "qualified",
+                "receiver_ambiguity",
+            ),
+            (
+                "Процедура СтароеИмя()\n    ДругоеИмя();\nКонецПроцедуры\n",
+                "stale",
+                "stale_index",
+            ),
+        ],
+    )
+    def test_rename_refuses_unsafe_plan_before_write(
+        self,
+        tmp_path: Path,
+        extra_source: str,
+        index_mutation: str,
+        expected_code: str,
+    ) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        source = tmp_path / "unsafe.bsl"
+        source.write_text(extra_source, encoding="utf-8")
+        before = source.read_bytes()
+        tools = _tool_fns(_make_app(tmp_path))
+        index = mcp_module._get_index(str(tmp_path))
+        symbols = [
+            {
+                "name": "СтароеИмя",
+                "line": 1,
+                "character": 10,
+                "end_line": 1,
+                "end_character": 19,
+                "kind": "procedure",
+                "is_export": 0,
+                "signature": "СтароеИмя()",
+                "doc_comment": None,
+            }
+        ]
+        calls = [
+            {
+                "caller_line": 2,
+                "caller_character": 4 if index_mutation == "stale" else 11,
+                "caller_name": "СтароеИмя",
+                "callee_name": "СтароеИмя",
+                "callee_args_count": 0,
+            }
+        ]
+        if index_mutation == "collision":
+            symbols.append(
+                {
+                    "name": "НовоеИмя",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 18,
+                    "kind": "procedure",
+                    "is_export": 0,
+                    "signature": "НовоеИмя()",
+                    "doc_comment": None,
+                }
+            )
+            calls = []
+        index.upsert_file(str(source), symbols, calls)
+
+        result = tools["bsl_rename"].fn(
+            old_name="СтароеИмя",
+            new_name="НовоеИмя",
+            apply=True,
+            workspace_root=str(tmp_path),
+        )
+
+        assert result["error"]["code"] == expected_code
+        assert source.read_bytes() == before
+
+    def test_rename_rolls_back_all_files_when_second_replace_fails(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from onec_hbk_bsl.analysis import rename_plan
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        definition = tmp_path / "a_definition.bsl"
+        caller = tmp_path / "b_caller.bsl"
+        definition.write_text("Процедура СтароеИмя() Экспорт\nКонецПроцедуры\n", encoding="utf-8")
+        caller.write_text("Процедура Вызов()\n    СтароеИмя();\nКонецПроцедуры\n", encoding="utf-8")
+        before = {path: path.read_bytes() for path in (definition, caller)}
+
+        tools = _tool_fns(_make_app(tmp_path))
+        index = mcp_module._get_index(str(tmp_path))
+        index.upsert_file(
+            str(definition),
+            [
+                {
+                    "name": "СтароеИмя",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 19,
+                    "kind": "procedure",
+                    "is_export": 1,
+                    "signature": "СтароеИмя() Экспорт",
+                    "doc_comment": None,
+                }
+            ],
+            [],
+        )
+        index.upsert_file(
+            str(caller),
+            [
+                {
+                    "name": "Вызов",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 15,
+                    "kind": "procedure",
+                    "is_export": 0,
+                    "signature": "Вызов()",
+                    "doc_comment": None,
+                }
+            ],
+            [
+                {
+                    "caller_line": 2,
+                    "caller_character": 4,
+                    "caller_name": "Вызов",
+                    "callee_name": "СтароеИмя",
+                    "callee_args_count": 0,
+                }
+            ],
+        )
+
+        real_replace = rename_plan._replace_path
+        calls = 0
+
+        def fail_second(source: Path, destination: Path) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("injected second-file failure")
+            real_replace(source, destination)
+
+        monkeypatch.setattr(rename_plan, "_replace_path", fail_second)
+        result = tools["bsl_rename"].fn(
+            old_name="СтароеИмя",
+            new_name="НовоеИмя",
+            apply=True,
+            workspace_root=str(tmp_path),
+        )
+
+        assert result["error"]["code"] == "commit_failed"
+        assert {path: path.read_bytes() for path in (definition, caller)} == before
+
+    def test_rename_commit_refuses_changed_content_before_write(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.analysis.rename_plan import (
+            RenameRefused,
+            build_rename_plan,
+            commit_rename_plan,
+        )
+        from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
+
+        source = tmp_path / "stale.bsl"
+        source.write_text("Процедура СтароеИмя()\nКонецПроцедуры\n", encoding="utf-8")
+        index = SymbolIndex(db_path=str(tmp_path / "stale.sqlite"))
+        index.upsert_file(
+            str(source),
+            [
+                {
+                    "name": "СтароеИмя",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 19,
+                    "kind": "procedure",
+                    "is_export": 0,
+                    "signature": "СтароеИмя()",
+                    "doc_comment": None,
+                }
+            ],
+            [],
+        )
+        plan = build_rename_plan(index, "СтароеИмя", "НовоеИмя")
+        changed = "// параллельное изменение\nПроцедура СтароеИмя()\nКонецПроцедуры\n"
+        source.write_text(changed, encoding="utf-8")
+
+        with pytest.raises(RenameRefused, match="content hash changed") as exc_info:
+            commit_rename_plan(plan)
+
+        assert exc_info.value.code == "stale_content"
+        assert source.read_text(encoding="utf-8") == changed
+
+    def test_rename_refuses_multiple_same_name_definitions(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.mcp_bridge import server as mcp_module
+
+        tools = _tool_fns(_make_app(tmp_path))
+        index = mcp_module._get_index(str(tmp_path))
+        sources = [tmp_path / "first.bsl", tmp_path / "second.bsl"]
+        for source in sources:
+            source.write_text("Процедура СтароеИмя()\nКонецПроцедуры\n", encoding="utf-8")
+            index.upsert_file(
+                str(source),
+                [
+                    {
+                        "name": "СтароеИмя",
+                        "line": 1,
+                        "character": 10,
+                        "end_line": 1,
+                        "end_character": 19,
+                        "kind": "procedure",
+                        "is_export": 0,
+                        "signature": "СтароеИмя()",
+                        "doc_comment": None,
+                    }
+                ],
+                [],
+            )
+        before = {source: source.read_bytes() for source in sources}
+
+        result = tools["bsl_rename"].fn(
+            old_name="СтароеИмя",
+            new_name="НовоеИмя",
+            apply=True,
+            workspace_root=str(tmp_path),
+        )
+
+        assert result["error"]["code"] == "ambiguous_definition"
+        assert {source: source.read_bytes() for source in sources} == before
+
+    def test_lsp_and_mcp_build_equivalent_open_and_closed_file_plans(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, on_rename
+
+        definition = tmp_path / "definition.bsl"
+        caller = tmp_path / "caller.bsl"
+        definition_content = "Процедура СтароеИмя() Экспорт\n    СтароеИмя();\nКонецПроцедуры\n"
+        caller_content = "Процедура Вызов()\n    СтароеИмя();\nКонецПроцедуры\n"
+        definition.write_text(definition_content, encoding="utf-8")
+        caller.write_text(caller_content, encoding="utf-8")
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+
+        ls = BslLanguageServer()
+        ls.symbol_index.upsert_file(
+            str(definition),
+            [
+                {
+                    "name": "СтароеИмя",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 19,
+                    "kind": "procedure",
+                    "is_export": 1,
+                    "signature": "СтароеИмя() Экспорт",
+                    "doc_comment": None,
+                }
+            ],
+            [
+                {
+                    "caller_line": 2,
+                    "caller_character": 4,
+                    "caller_name": "СтароеИмя",
+                    "callee_name": "СтароеИмя",
+                    "callee_args_count": 0,
+                }
+            ],
+        )
+        ls.symbol_index.upsert_file(
+            str(caller),
+            [
+                {
+                    "name": "Вызов",
+                    "line": 1,
+                    "character": 10,
+                    "end_line": 1,
+                    "end_character": 15,
+                    "kind": "procedure",
+                    "is_export": 0,
+                    "signature": "Вызов()",
+                    "doc_comment": None,
+                }
+            ],
+            [
+                {
+                    "caller_line": 2,
+                    "caller_character": 4,
+                    "caller_name": "Вызов",
+                    "callee_name": "СтароеИмя",
+                    "callee_args_count": 0,
+                }
+            ],
+        )
+        definition_uri = definition.as_uri()
+        ls._docs[definition_uri] = definition_content
+        params = MagicMock()
+        params.text_document.uri = definition_uri
+        params.position.line = 0
+        params.position.character = 12
+        params.new_name = "НовоеИмя"
+
+        lsp_result = on_rename(ls, params)
+        assert lsp_result is not None
+        lsp_spans = {
+            (uri, edit.range.start.line, edit.range.start.character)
+            for uri, edits in lsp_result.changes.items()
+            for edit in edits
+        }
+
+        tools = _tool_fns(_make_app(tmp_path))
+        mcp_result = tools["bsl_rename"].fn(
+            old_name="СтароеИмя",
+            new_name="НовоеИмя",
+            apply=False,
+            workspace_root=str(tmp_path),
+        )
+        mcp_spans = {
+            (Path(file["file_path"]).as_uri(), edit["start_line"], edit["start_character"])
+            for file in mcp_result["files"]
+            for edit in file["edits"]
+        }
+
+        assert lsp_spans == mcp_spans
 
 
 class TestBslFix:

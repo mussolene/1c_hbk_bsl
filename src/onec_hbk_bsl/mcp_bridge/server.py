@@ -54,6 +54,11 @@ from onec_hbk_bsl.analysis.diagnostics import (
 from onec_hbk_bsl.analysis.fix_engine import apply_fixes as _apply_fixes
 from onec_hbk_bsl.analysis.formatter import default_formatter
 from onec_hbk_bsl.analysis.lsp_positions import utf16_len
+from onec_hbk_bsl.analysis.rename_plan import (
+    RenameRefused,
+    build_rename_plan,
+    commit_rename_plan,
+)
 from onec_hbk_bsl.cli.config import ResolvedConfig, load_config, resolve_config
 from onec_hbk_bsl.indexer.db_path import resolve_index_db_path
 from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
@@ -65,7 +70,7 @@ logger = logging.getLogger(__name__)
 
 # MCP JSON contract version — response shape for clients.
 # Tool payloads are for assistant context; lint/format correctness uses CST in analysis/.
-MCP_CONTRACT_VERSION = "0.4.0"
+MCP_CONTRACT_VERSION = "0.5.0"
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -304,8 +309,8 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
             "server": "onec-hbk-bsl",
             "tool_modes": {
                 "bsl_rename": {
-                    "mode": "read_only",
-                    "write_error_code": "write_disabled",
+                    "mode": "transactional_write",
+                    "span_policy": "exact_semantic",
                 }
             },
             "tools": [
@@ -1152,78 +1157,48 @@ def create_mcp_app(*, host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
 
     @mcp.tool(
         description=(
-            "Preview a BSL symbol rename across the entire workspace. "
-            "Write mode is disabled until semantic RenamePlan support is available."
+            "Build an exact-span semantic BSL RenamePlan across the workspace. "
+            "Optionally commit the complete plan transactionally."
         )
     )
     @_guard_workspace_access
     def bsl_rename(
         old_name: Annotated[str, "Current symbol name"],
         new_name: Annotated[str, "New symbol name"],
-        apply: Annotated[
-            bool, "Write mode request; currently returns write_disabled when True"
-        ] = False,
+        apply: Annotated[bool, "Commit the complete plan transactionally"] = False,
         workspace_root: Annotated[
             str | None, "Workspace root for resolving the index DB and file edits"
         ] = None,
     ) -> dict:
         """
-        Preview renaming *old_name* to *new_name* across the workspace.
+        Plan renaming *old_name* to *new_name* across the workspace.
 
-        ``apply=False`` (default) returns a dry-run preview — files and line counts
-        that would be changed — without touching disk. ``apply=True`` returns the
-        stable ``write_disabled`` error until semantic RenamePlan support is available.
+        ``apply=False`` (default) returns the immutable exact-span plan without
+        touching disk. ``apply=True`` validates every content hash, stages every
+        replacement, and rolls back the complete transaction on a write failure.
 
         Args:
             old_name: Symbol to rename.
             new_name: Replacement name (must be a valid BSL identifier).
-            apply:    Request write mode (currently disabled).
+            apply:    Commit the complete plan transactionally.
         """
-        if apply:
-            return {
-                "error": {
-                    "code": "write_disabled",
-                    "message": (
-                        "bsl_rename write mode is disabled until semantic RenamePlan "
-                        "support is available"
-                    ),
-                }
-            }
-
-        if not re.match(r"^[А-ЯЁа-яёA-Za-z_]\w*$", new_name, re.UNICODE):
-            return {"error": f"'{new_name}' is not a valid BSL identifier"}
-
         index = _get_index(workspace_root)
-        definitions = index.find_symbol(old_name, limit=50)
-        callers = index.find_callers(old_name, limit=1000)
-
-        # Group edits by file: {path: [(line_0based, old_name)]}
-        file_edits: dict[str, list[int]] = {}
-        for d in definitions:
-            file_edits.setdefault(d["file_path"], []).append(d["line"] - 1)
-        for c in callers:
-            file_edits.setdefault(c["caller_file"], []).append(c["caller_line"] - 1)
-
-        safe_file_edits: dict[str, list[int]] = {}
-        for file_path, lines in file_edits.items():
-            safe_path = _resolve_path(file_path, workspace_root=workspace_root)
-            safe_file_edits.setdefault(safe_path, []).extend(lines)
-        file_edits = safe_file_edits
-
-        preview = [
-            {"file_path": fp, "lines_affected": len(lines)}
-            for fp, lines in sorted(file_edits.items())
-        ]
-        total_changes = sum(len(v) for v in file_edits.values())
-
-        return {
-            "dry_run": True,
-            "old_name": old_name,
-            "new_name": new_name,
-            "files_affected": len(file_edits),
-            "total_occurrences": total_changes,
-            "preview": preview,
-        }
+        try:
+            plan = build_rename_plan(
+                index,
+                old_name,
+                new_name,
+                path_validator=lambda path: _resolve_path(path, workspace_root=workspace_root),
+            )
+            result = plan.as_dict()
+            result["dry_run"] = not apply
+            result["applied"] = False
+            if apply:
+                commit_rename_plan(plan)
+                result["applied"] = True
+            return result
+        except RenameRefused as exc:
+            return exc.as_dict()
 
     # ------------------------------------------------------------------
     # bsl_fix

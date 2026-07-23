@@ -205,6 +205,13 @@ MCP tools are intentionally scoped to the current BSL project workspace: code na
 diagnostics, formatting, fixes, search, and configuration metadata. External help/reference
 MCP servers are separate integrations and are not cross-bound into `onec-hbk-bsl`.
 
+`bsl_rename` contract version 0.5 builds the same immutable exact-span
+`RenamePlan` used by LSP. Dry-run responses include sorted file edits and
+content hashes. `apply=true` first validates every precondition, stages all
+files, and then replaces them as one transaction; a replacement failure rolls
+back every file already changed. Bare-name index data cannot prove a qualified
+receiver, so such calls return `receiver_ambiguity` without writing.
+
 ## LSP capabilities (current)
 
 | Capability | Status | Notes |
@@ -217,7 +224,7 @@ MCP servers are separate integrations and are not cross-bound into `onec-hbk-bsl
 | `textDocument/publishDiagnostics` | Implemented | Adaptive debounced fallback for clients without pull support |
 | `textDocument/completion` | Implemented | Globals + workspace + metadata-aware members |
 | `textDocument/references` | Implemented | Via index |
-| `textDocument/rename` / `prepareRename` | Implemented | Workspace edits |
+| `textDocument/rename` / `prepareRename` | Implemented | Shared exact-span `RenamePlan`; ambiguity refuses the edit |
 | `textDocument/signatureHelp` | Implemented | Parameter hints |
 | `textDocument/formatting` / `rangeFormatting` | Implemented | `BslFormatter` stack |
 | Code lens / highlights / folding / code actions | Implemented | Editor structure and quick-fix surfaces |

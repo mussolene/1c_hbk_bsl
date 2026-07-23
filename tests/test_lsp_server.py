@@ -2148,6 +2148,30 @@ class TestRenameSymbol:
         }
         assert {edit.new_text for edit in edits} == {"НовоеИмя"}
 
+    def test_rename_uses_utf16_exact_spans_after_non_bmp_text(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.analysis.lsp_positions import utf16_len
+        from onec_hbk_bsl.lsp.server import on_rename
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        uri = (tmp_path / "unicode.bsl").as_uri()
+        content = 'Процедура СтароеИмя()\n    Текст = "😀"; СтароеИмя();\nКонецПроцедуры\n'
+        ls._docs[uri] = content
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.splitlines()[0].index("СтароеИмя") + 2
+        params.new_name = "НовоеИмя"
+
+        result = on_rename(ls, params)
+
+        assert result is not None
+        call_edit = next(edit for edit in result.changes[uri] if edit.range.start.line == 1)
+        prefix = content.splitlines()[1].split("СтароеИмя", 1)[0]
+        assert call_edit.range.start.character == utf16_len(prefix)
+        assert call_edit.range.end.character == utf16_len(prefix + "СтароеИмя")
+
     def test_rename_rejects_invalid_new_identifier(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 

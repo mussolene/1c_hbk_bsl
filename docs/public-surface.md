@@ -18,6 +18,9 @@ It is a guardrail for future changes, not a user guide. User-facing docs live in
 - Supported config environment mappings are `BSL_SELECT`, `BSL_IGNORE`,
   `BSL_INDEX_MODE`, and `BSL_INDEX_MAX_BYTES`; adding another mapping is a
   public-surface change.
+- LSP rename and MCP `bsl_rename` share exact semantic spans. MCP rename dry-run
+  returns an immutable plan; `apply=true` is all-or-nothing and refuses
+  ambiguity, collisions, or stale content before writing.
 
 ## Stable User Surfaces
 
@@ -30,6 +33,7 @@ It is a guardrail for future changes, not a user guide. User-facing docs live in
 | CI adoption | `--exit-zero`, `--baseline`, `--update-baseline`, `--diff`, `--since`, `--paths-from` |
 | Workspace index | `--force`, `--status`, `--clean`, `--compact`, `--mode`, `--max-bytes` |
 | VS Code | diagnostics, formatting, definition/references/rename, call hierarchy, hover, completion, signature help, folding, code actions, inlay hints, semantic tokens |
+| MCP | project-local navigation/diagnostics plus exact-span transactional `bsl_rename` |
 | Python API | `check_files(...)`, `DiagnosticEngine` |
 
 Legacy flag aliases such as `--check`, `--lsp`, `--mcp`, `--index`,
