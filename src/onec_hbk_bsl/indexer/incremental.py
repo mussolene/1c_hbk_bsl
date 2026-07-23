@@ -1,8 +1,8 @@
 """
 Incremental BSL workspace indexer.
 
-Uses ``git diff`` to detect changed files since the last indexed commit,
-so only modified .bsl/.os files are re-parsed on each run.
+Uses committed, staged, unstaged and untracked Git deltas to detect changed
+files, so only modified .bsl/.os files are re-parsed on each run.
 """
 
 from __future__ import annotations
@@ -168,14 +168,15 @@ class IncrementalIndexer:
         )
         current_commit = self._get_current_commit(workspace)
 
-        if not force and last_commit and last_commit == current_commit:
-            logger.info("Index is up-to-date at %s. Nothing to do.", current_commit[:8])
-            return {"indexed": 0, "skipped": 0, "errors": 0}
-
         if not force and last_commit:
             files = self.get_changed_files(since_commit=last_commit, workspace=workspace)
+            if last_commit == current_commit and not files:
+                logger.info(
+                    "Index and worktree are up-to-date at %s. Nothing to do.", current_commit[:8]
+                )
+                return {"indexed": 0, "skipped": 0, "errors": 0}
             logger.info(
-                "Incremental index: %d changed files since %s",
+                "Incremental index: %d committed or worktree files since %s",
                 len(files),
                 last_commit[:8],
             )
@@ -342,35 +343,74 @@ class IncrementalIndexer:
         """
         Return absolute paths of .bsl/.os files changed since *since_commit*.
 
-        Uses ``git diff --name-only`` against the current HEAD.
+        Combines committed, staged, unstaged and untracked paths. Rename
+        detection is disabled so both the deleted old path and added new path
+        enter the update set.
         Falls back to full scan if git is unavailable.
         """
         from onec_hbk_bsl.cli.config import load_config  # noqa: PLC0415
 
         try:
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "-z", since_commit, "HEAD"],
-                capture_output=True,
-                cwd=workspace,
-                timeout=30,
+            commands = (
+                (
+                    "committed",
+                    [
+                        "git",
+                        "diff",
+                        "--name-only",
+                        "--no-renames",
+                        "-z",
+                        since_commit,
+                        "HEAD",
+                        "--",
+                    ],
+                ),
+                (
+                    "staged",
+                    [
+                        "git",
+                        "diff",
+                        "--cached",
+                        "--name-only",
+                        "--no-renames",
+                        "-z",
+                        "--",
+                    ],
+                ),
+                (
+                    "unstaged",
+                    [
+                        "git",
+                        "diff",
+                        "--name-only",
+                        "--no-renames",
+                        "-z",
+                        "--",
+                    ],
+                ),
+                (
+                    "untracked",
+                    ["git", "ls-files", "--others", "--exclude-standard", "-z", "--"],
+                ),
             )
-            if result.returncode != 0:
-                logger.warning(
-                    "git diff failed (rc=%d): %s. Falling back to full scan.",
-                    result.returncode,
-                    os.fsdecode(result.stderr).strip(),
+            raw_paths = b""
+            for delta_kind, command in commands:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    cwd=workspace,
+                    timeout=30,
                 )
-                return self._find_all_bsl_files(workspace)
+                if result.returncode != 0:
+                    logger.warning(
+                        "git %s delta failed (rc=%d): %s. Falling back to full scan.",
+                        delta_kind,
+                        result.returncode,
+                        os.fsdecode(result.stderr).strip(),
+                    )
+                    return self._find_all_bsl_files(workspace)
+                raw_paths += os.fsencode(result.stdout)
 
-            untracked = subprocess.run(
-                ["git", "ls-files", "--others", "--exclude-standard", "-z", "--"],
-                capture_output=True,
-                cwd=workspace,
-                timeout=30,
-            )
-            raw_paths = os.fsencode(result.stdout)
-            if untracked.returncode == 0:
-                raw_paths += os.fsencode(untracked.stdout)
             config = load_config(workspace)
             changed: set[str] = set()
             for raw_path in _split_git_paths(raw_paths):
