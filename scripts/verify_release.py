@@ -11,6 +11,7 @@ import re
 import subprocess
 import tomllib
 import zipfile
+from email.parser import Parser
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -25,9 +26,25 @@ REQUIRED_DOC_OWNERS = {
     "product-contract",
     "product-guide",
     "release-history",
+    "security-policy",
     "third-party",
 }
 REQUIRED_CHANGELOG_HISTORY = {"0.8.41", "0.8.42"}
+EXPECTED_PROJECT_URLS = {
+    "Changelog": "https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md",
+    "Documentation": "https://github.com/mussolene/1c_hbk_bsl/blob/main/README.md",
+    "Homepage": "https://github.com/mussolene/1c_hbk_bsl",
+    "Issues": "https://github.com/mussolene/1c_hbk_bsl/issues",
+    "Repository": "https://github.com/mussolene/1c_hbk_bsl",
+}
+EXPECTED_KEYWORDS = {"1c", "bsl", "formatter", "linter", "lsp", "mcp", "vscode"}
+REQUIRED_CLASSIFIERS = {
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+}
 
 
 def _load_quality_config() -> dict[str, Any]:
@@ -164,7 +181,9 @@ def _markdown_files(root: Path) -> list[Path]:
         root / "README.md",
         root / "CONTRIBUTING.md",
         root / "CHANGELOG.md",
+        root / "SECURITY.md",
         root / "vscode-extension" / "README.md",
+        *(root / ".github").rglob("*.md"),
         *(root / "docs").rglob("*.md"),
     ]
     return sorted({path for path in candidates if path.is_file()})
@@ -243,6 +262,70 @@ def verify_documentation_ownership(root: Path = ROOT) -> None:
         raise ValueError("documentation owners do not exist: " + ", ".join(absent_paths))
 
 
+def _project_public_metadata(path: Path) -> dict[str, Any]:
+    with path.open("rb") as stream:
+        project = tomllib.load(stream)["project"]
+    return {
+        "urls": project.get("urls"),
+        "keywords": set(project.get("keywords", ())),
+        "classifiers": set(project.get("classifiers", ())),
+    }
+
+
+def verify_package_metadata(root: Path = ROOT) -> None:
+    paths = (root / "pyproject.toml", root / "packages" / "onec-hbk-bsl" / "pyproject.toml")
+    metadata = [_project_public_metadata(path) for path in paths]
+    if metadata[0] != metadata[1]:
+        raise ValueError("core and meta package public metadata differ")
+    public = metadata[0]
+    if public["urls"] != EXPECTED_PROJECT_URLS:
+        raise ValueError("package project URLs do not match the public repository contract")
+    if public["keywords"] != EXPECTED_KEYWORDS:
+        raise ValueError("package keywords do not match the public repository contract")
+    missing = sorted(REQUIRED_CLASSIFIERS - public["classifiers"])
+    if missing:
+        raise ValueError("package classifiers are missing: " + ", ".join(missing))
+
+
+def verify_community_files(root: Path = ROOT) -> None:
+    security = (root / "SECURITY.md").read_text(encoding="utf-8")
+    required_security = (
+        "Latest published release",
+        "security/advisories/new",
+        "Do not open a public issue",
+    )
+    missing_security = [value for value in required_security if value not in security]
+    if missing_security:
+        raise ValueError("SECURITY.md is missing: " + ", ".join(missing_security))
+    if re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", security):
+        raise ValueError("SECURITY.md must not require a personal email address")
+
+    bug = root / ".github" / "ISSUE_TEMPLATE" / "bug_report.md"
+    text = bug.read_text(encoding="utf-8")
+    frontmatter = re.match(r"(?s)^---\n(?P<body>.*?)\n---\n", text)
+    if frontmatter is None:
+        raise ValueError("bug report template has invalid frontmatter")
+    fields = {
+        match.group(1): match.group(2).strip().strip('"')
+        for match in re.finditer(r"(?m)^([a-z_]+):\s*(.*)$", frontmatter.group("body"))
+    }
+    if set(fields) != {"about", "assignees", "labels", "name", "title"}:
+        raise ValueError("bug report frontmatter fields are incomplete")
+    required_bug_sections = ("## Version And Platform", "## Reproducer", "## Verification")
+    if any(section not in text for section in required_bug_sections):
+        raise ValueError("bug report template is missing required reproduction fields")
+
+    pull_request = (root / ".github" / "pull_request_template.md").read_text(encoding="utf-8")
+    required_pr_sections = (
+        "## Scope",
+        "## Version, Platform And Reproducer",
+        "## Verification",
+        "## Risk And Compatibility",
+    )
+    if any(section not in pull_request for section in required_pr_sections):
+        raise ValueError("pull request template is missing required verification fields")
+
+
 def verify_changelog_integrity(changelog_path: Path | None = None) -> None:
     path = changelog_path or ROOT / "CHANGELOG.md"
     changelog = path.read_text(encoding="utf-8")
@@ -310,6 +393,28 @@ def _normalized_contract(contract: dict[str, Any], version: str) -> dict[str, An
     return normalized
 
 
+def _wheel_public_metadata(path: Path) -> dict[str, Any]:
+    with zipfile.ZipFile(path) as archive:
+        metadata_name = next(
+            name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+        )
+        message = Parser().parsestr(archive.read(metadata_name).decode("utf-8"))
+    urls = dict(
+        value.split(", ", 1) for value in message.get_all("Project-URL", ()) if ", " in value
+    )
+    keywords = {
+        keyword.strip()
+        for value in message.get_all("Keywords", ())
+        for keyword in value.split(",")
+        if keyword.strip()
+    }
+    return {
+        "urls": urls,
+        "keywords": keywords,
+        "classifiers": set(message.get_all("Classifier", ())),
+    }
+
+
 def write_checksum_manifest(paths: list[Path], output_path: Path) -> None:
     lines = [
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
@@ -343,6 +448,17 @@ def verify_artifacts(artifacts_dir: Path, version: str, output_dir: Path) -> lis
             raise ValueError(f"artifact contract mismatch: {name}")
 
     core_wheel = artifacts[f"onec_hbk_bsl_core-{version}-py3-none-any.whl"]
+    meta_wheel = artifacts[f"onec_hbk_bsl-{version}-py3-none-any.whl"]
+    wheel_metadata = [_wheel_public_metadata(path) for path in (core_wheel, meta_wheel)]
+    if wheel_metadata[0] != wheel_metadata[1]:
+        raise ValueError("core and meta wheel public metadata differ")
+    if wheel_metadata[0]["urls"] != EXPECTED_PROJECT_URLS:
+        raise ValueError("wheel project URLs do not match the public repository contract")
+    if wheel_metadata[0]["keywords"] != EXPECTED_KEYWORDS:
+        raise ValueError("wheel keywords do not match the public repository contract")
+    missing_classifiers = sorted(REQUIRED_CLASSIFIERS - wheel_metadata[0]["classifiers"])
+    if missing_classifiers:
+        raise ValueError("wheel classifiers are missing: " + ", ".join(missing_classifiers))
     with zipfile.ZipFile(core_wheel) as archive:
         api_json = [
             name
@@ -420,6 +536,8 @@ def main() -> int:
         verify_generated_docs()
         verify_local_markdown_links()
         verify_documentation_ownership()
+        verify_package_metadata()
+        verify_community_files()
         verify_changelog_integrity()
         verify_release_dag()
         verify_coverage(

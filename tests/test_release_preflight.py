@@ -200,3 +200,11 @@ def test_changelog_integrity_requires_repaired_history_and_latest_base(tmp_path:
     )
     with pytest.raises(ValueError, match="latest dated release"):
         verify_release.verify_changelog_integrity(changelog)
+
+
+def test_core_and_meta_package_public_metadata_match() -> None:
+    verify_release.verify_package_metadata()
+
+
+def test_community_files_have_required_reporting_and_reproduction_fields() -> None:
+    verify_release.verify_community_files()

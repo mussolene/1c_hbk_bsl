@@ -5,13 +5,34 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "onec-hbk-bsl"
 dynamic = ["version"]
-description = "Meta package for onec-hbk-bsl"
+description = "Complete 1C Enterprise BSL toolkit with CLI, formatter, diagnostics, LSP, and MCP"
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["1c", "bsl", "linter", "formatter", "lsp", "mcp", "vscode"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Plugins",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Text Editors :: Integrated Development Environments (IDE)",
+]
 dependencies = [
     "onec-hbk-bsl-core[mcp]",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mussolene/1c_hbk_bsl"
+Documentation = "https://github.com/mussolene/1c_hbk_bsl/blob/main/README.md"
+Repository = "https://github.com/mussolene/1c_hbk_bsl"
+Issues = "https://github.com/mussolene/1c_hbk_bsl/issues"
+Changelog = "https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 all = [

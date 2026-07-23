@@ -19,6 +19,7 @@ owner instead of defining a second compatibility contract.
 | `extension-guide` | [vscode-extension/README.md](../vscode-extension/README.md) | Published extension settings, startup resolution, commands and editor behavior |
 | `diagnostics-reference` | [diagnostic-rules.md](diagnostic-rules.md) | Generated public rule identifiers, aliases, severity, descriptions and implementation state |
 | `release-history` | [CHANGELOG.md](../CHANGELOG.md) | Versioned user-visible changes reconstructed from release tags |
+| `security-policy` | [SECURITY.md](../SECURITY.md) | Supported versions and the confidential vulnerability reporting path |
 | `operations` | [Production-Notes.md](Production-Notes.md) | Operational runbook, go/no-go checks and dated verification snapshots; not a compatibility contract |
 | `architecture` | [architecture.md](architecture.md) | Current internal component, data-flow and storage design; not a product promise |
 | `third-party` | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Dependency provenance, notices and redistribution notes |

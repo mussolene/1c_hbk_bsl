@@ -9,6 +9,20 @@ description = "1C Enterprise BSL core formatter, diagnostics, LSP server, and CL
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["1c", "bsl", "linter", "formatter", "lsp", "mcp", "vscode"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Plugins",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Text Editors :: Integrated Development Environments (IDE)",
+]
 dependencies = [
     "tree-sitter>=0.24,<0.26",
     "tree-sitter-hbk>=0.1.11",
@@ -19,6 +33,13 @@ dependencies = [
     "pymorphy3>=2.0",
     "pymorphy3-dicts-ru>=2.4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mussolene/1c_hbk_bsl"
+Documentation = "https://github.com/mussolene/1c_hbk_bsl/blob/main/README.md"
+Repository = "https://github.com/mussolene/1c_hbk_bsl"
+Issues = "https://github.com/mussolene/1c_hbk_bsl/issues"
+Changelog = "https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 mcp = [

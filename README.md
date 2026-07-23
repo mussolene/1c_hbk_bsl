@@ -26,9 +26,10 @@ Cursor, CLI-линтер, formatter, LSP-сервер и MCP-сервер для
 `BSL###` коды правил, `onec-hbk-bsl.toml`, CLI/LSP/MCP и VS Code extension.
 
 Текущий релиз требует Python 3.12+ при установке из PyPI. Платформенные VSIX
-содержат готовый бинарник и не требуют системного Python. Датированный снимок
-проверок и методика замеров приведены в
-[Production notes](docs/Production-Notes.md#verification-snapshot-v0838).
+содержат готовый бинарник и не требуют системного Python. Исторический,
+versioned-снимок проверок v0.8.38 и методика замеров приведены в
+[Production notes](docs/Production-Notes.md#verification-snapshot-v0838);
+актуальный статус подтверждают CI badge и artifacts конкретного релиза.
 
 ## Быстрый Старт
 
@@ -197,6 +198,7 @@ for diagnostic in diagnostics:
 | [Public surface](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/public-surface.md) | Нормативный публичный контракт CLI/Python/LSP/MCP/package |
 | [Architecture](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/architecture.md) | Описательная архитектура сервера и анализатора |
 | [Production notes](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/Production-Notes.md) | Runbook, release checks и датированные snapshots |
+| [Security policy](https://github.com/mussolene/1c_hbk_bsl/blob/main/SECURITY.md) | Поддерживаемые версии и приватный канал для уязвимостей |
 | [Third-party notices](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/THIRD_PARTY_NOTICES.md) | Зависимости, лицензии и происхождение данных |
 
 ## Разработка
