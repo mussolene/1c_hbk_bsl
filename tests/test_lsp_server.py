@@ -119,6 +119,61 @@ class TestBslLanguageServerInit:
         ls.close()
         ls.symbol_index.close.assert_called_once()
 
+    def test_initialize_replaces_workspace_index_for_every_dependent_service(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import ClientCapabilities, InitializeParams
+
+        import onec_hbk_bsl.lsp.server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "initial.sqlite"))
+        ls = srv.BslLanguageServer()
+        roots = (tmp_path / "workspace-a", tmp_path / "workspace-b")
+        for root in roots:
+            root.mkdir()
+
+        created: list[object] = []
+
+        class _FakeIndex:
+            def __init__(self, db_path: str, max_size_bytes: int) -> None:
+                self.db_path = db_path
+                self.max_size_bytes = max_size_bytes
+                self.close = MagicMock()
+                created.append(self)
+
+        monkeypatch.setattr(srv, "SymbolIndex", _FakeIndex)
+        monkeypatch.setattr(srv, "resolve_index_db_path", lambda root: f"{root}/index.sqlite")
+        monkeypatch.setattr(srv, "_schedule_workspace_reindex", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(srv, "_start_branch_watcher", lambda *_args, **_kwargs: None)
+
+        srv.on_initialize(
+            ls,
+            InitializeParams(capabilities=ClientCapabilities(), root_path=str(roots[0])),
+        )
+        context_a = ls.workspace_run_context()
+        ls.doc_state.diag_result_cache["file:///stale.bsl"] = (object(), [])
+        ls.doc_state.indexed_snapshot_cache["file:///stale.bsl"] = 1
+        srv.on_initialize(
+            ls,
+            InitializeParams(capabilities=ClientCapabilities(), root_path=str(roots[1])),
+        )
+        context_b = ls.workspace_run_context()
+
+        assert len(created) == 2
+        assert context_a.symbol_index is created[0]
+        assert context_b.symbol_index is created[1]
+        assert context_b.indexer.index is context_b.symbol_index
+        assert context_b.diagnostics_engine._symbol_index is context_b.symbol_index
+        assert context_b.revisions.index == context_a.revisions.index + 1
+        assert context_b.revisions.metadata == context_a.revisions.metadata + 1
+        assert context_b.revisions.config == context_a.revisions.config + 1
+        assert ls.doc_state.diag_result_cache == {}
+        assert ls.doc_state.indexed_snapshot_cache == {}
+        created[0].close.assert_called_once()
+        created[1].close.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Document state service boundary
@@ -158,6 +213,107 @@ class TestDocumentDiagnosticsState:
         assert cached is not None
         assert cached[0] == 99
         assert cached[1] is payload
+
+    def test_semantic_cache_key_includes_workspace_revisions(self) -> None:
+        from onec_hbk_bsl.lsp.document_state import (
+            DiagnosticCacheKey,
+            DocumentDiagnosticsState,
+            WorkspaceRevisions,
+        )
+
+        state = DocumentDiagnosticsState()
+        uri = "file:///module.bsl"
+        first = DiagnosticCacheKey(99, WorkspaceRevisions(index=1, metadata=1, config=1))
+        changed = DiagnosticCacheKey(99, WorkspaceRevisions(index=2, metadata=1, config=1))
+        state.set_diag_cache(uri, first, [])
+
+        assert state.begin_diag_run(uri, first)[0] == "cached"
+        assert state.begin_diag_run(uri, changed)[0] == "run"
+
+    def test_workspace_state_replaces_services_and_closes_each_index_once(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.document_state import WorkspaceState
+
+        index_a = SimpleNamespace(close=MagicMock())
+        index_b = SimpleNamespace(close=MagicMock())
+        indexer_a = object()
+        indexer_b = object()
+        engine = SimpleNamespace(_symbol_index=index_a)
+        invalidations: list[str] = []
+        state = WorkspaceState(
+            symbol_index=index_a,
+            indexer=indexer_a,
+            diagnostics_engine=engine,
+            invalidate_caches=invalidations.append,
+        )
+
+        before = state.snapshot()
+        after = state.replace_index(symbol_index=index_b, indexer=indexer_b)
+        unchanged = state.replace_index(symbol_index=index_b, indexer=indexer_b)
+        state.close()
+        state.close()
+
+        assert before.symbol_index is index_a
+        assert after.symbol_index is index_b
+        assert after.indexer is indexer_b
+        assert after.diagnostics_engine._symbol_index is index_b
+        assert after.revisions.index == before.revisions.index + 1
+        assert after.revisions.metadata == before.revisions.metadata + 1
+        assert unchanged.revisions == after.revisions
+        assert invalidations == ["replace"]
+        index_a.close.assert_called_once()
+        index_b.close.assert_called_once()
+
+    def test_workspace_revisions_are_monotonic_and_ignore_stale_writers(self) -> None:
+        from types import SimpleNamespace
+
+        from onec_hbk_bsl.lsp.document_state import WorkspaceState
+
+        index = SimpleNamespace(close=lambda: None)
+        engine = SimpleNamespace(_symbol_index=index)
+        invalidations: list[str] = []
+        state = WorkspaceState(
+            symbol_index=index,
+            indexer=object(),
+            diagnostics_engine=engine,
+            invalidate_caches=invalidations.append,
+        )
+        initial = state.snapshot().revisions
+        index_only = state.mark_index_changed(expected_index=index)
+        with_metadata = state.mark_index_changed(
+            expected_index=index,
+            metadata_changed=True,
+        )
+        with_config = state.mark_config_changed()
+
+        assert index_only is not None
+        assert with_metadata is not None
+        assert index_only.index == initial.index + 1
+        assert index_only.metadata == initial.metadata
+        assert with_metadata.index == index_only.index + 1
+        assert with_metadata.metadata == index_only.metadata + 1
+        assert with_config.config == with_metadata.config + 1
+        assert state.mark_index_changed(expected_index=object()) is None
+        assert state.snapshot().revisions == with_config
+        assert invalidations == ["index", "metadata", "config"]
+
+    def test_clear_config_caches_refreshes_filesystem_views(self, tmp_path: Path) -> None:
+        from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (
+            clear_config_caches,
+            read_text_cached,
+        )
+
+        config_file = tmp_path / "Configuration.xml"
+        config_file.write_text("A", encoding="utf-8")
+        assert read_text_cached(str(config_file)) == "A"
+        config_file.write_text("B", encoding="utf-8")
+        assert read_text_cached(str(config_file)) == "A"
+
+        clear_config_caches()
+
+        assert read_text_cached(str(config_file)) == "B"
 
 
 # ---------------------------------------------------------------------------
@@ -2130,11 +2286,22 @@ class TestWorkspaceReindexSingleFlight:
 
         class _LS:
             def __init__(self) -> None:
+                from types import SimpleNamespace
+
                 self._reindex_lock = threading.Lock()
                 self._reindex_running = False
                 self._reindex_pending = False
                 self.indexer = _Indexer()
                 self.symbol_index = _SymbolIndex()
+                self.workspace_state = SimpleNamespace(mark_index_changed=lambda **_kwargs: None)
+
+            def workspace_run_context(self):
+                from types import SimpleNamespace
+
+                return SimpleNamespace(
+                    indexer=self.indexer,
+                    symbol_index=self.symbol_index,
+                )
 
         ls = _LS()
         _schedule_workspace_reindex(ls, "/workspace", reason="test")
@@ -2189,6 +2356,9 @@ class TestStatusAndReindexContract:
             result["db_size_bytes"] + result["wal_size_bytes"] + result["shm_size_bytes"]
         )
         assert result["index_size_bytes"] > 0
+        assert result["index_revision"] >= 1
+        assert result["metadata_revision"] >= 1
+        assert result["config_revision"] >= 1
 
     def test_workspace_index_mode_reads_project_config(self, tmp_path, monkeypatch) -> None:
         from onec_hbk_bsl.lsp.server import _workspace_index_mode

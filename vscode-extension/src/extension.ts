@@ -106,6 +106,9 @@ interface BslStatus {
   file_count: number;
   call_count?: number;
   meta_object_count?: number;
+  index_revision?: number;
+  metadata_revision?: number;
+  config_revision?: number;
   index_size_bytes?: number;
   db_size_bytes?: number;
   wal_size_bytes?: number;

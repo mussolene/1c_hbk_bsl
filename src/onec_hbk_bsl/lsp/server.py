@@ -151,6 +151,7 @@ try:
 except ImportError:
     from pygls.lsp.server import LanguageServer  # pygls >= 1.2
 
+from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import clear_config_caches
 from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import (
     _BSLLS_NAME_TO_CODE,
@@ -184,7 +185,12 @@ from onec_hbk_bsl.indexer.metadata_registry import (
     METADATA_ROOT_NAME_CF,
 )
 from onec_hbk_bsl.indexer.symbol_index import SymbolIndex
-from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+from onec_hbk_bsl.lsp.document_state import (
+    DiagnosticCacheKey,
+    DocumentDiagnosticsState,
+    WorkspaceRunContext,
+    WorkspaceState,
+)
 from onec_hbk_bsl.lsp.source_fragments import (
     parameter_name_from_declaration_fragment,
     split_commas_outside_double_quotes,
@@ -194,21 +200,26 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 logger = logging.getLogger(__name__)
 
 
-def _workspace_index_mode(workspace_root: str) -> str:
+def _resolve_workspace_index_config(workspace_root: str) -> tuple[str, int]:
+    config = load_config(workspace_root)
     env_mode = os.environ.get("BSL_INDEX_MODE", "").strip().lower()
-    if env_mode in {"off", "symbols", "full"}:
-        return env_mode
-    return load_config(workspace_root).index_mode
+    index_mode = env_mode if env_mode in {"off", "symbols", "full"} else config.index_mode
+    raw = os.environ.get("BSL_INDEX_MAX_BYTES", "").strip()
+    max_size_bytes = config.index_max_bytes
+    if raw:
+        try:
+            max_size_bytes = max(0, int(raw))
+        except ValueError:
+            pass
+    return index_mode, max_size_bytes
+
+
+def _workspace_index_mode(workspace_root: str) -> str:
+    return _resolve_workspace_index_config(workspace_root)[0]
 
 
 def _workspace_index_max_bytes(workspace_root: str) -> int:
-    raw = os.environ.get("BSL_INDEX_MAX_BYTES", "").strip()
-    if raw:
-        try:
-            return max(0, int(raw))
-        except ValueError:
-            pass
-    return load_config(workspace_root).index_max_bytes
+    return _resolve_workspace_index_config(workspace_root)[1]
 
 
 # Map BSL severity → LSP DiagnosticSeverity
@@ -313,22 +324,26 @@ class BslLanguageServer(LanguageServer):
             __version__,
             text_document_sync_kind=TextDocumentSyncKind.Full,
         )
-        self.index_mode = _workspace_index_mode(os.getcwd())
+        self.index_mode, max_size_bytes = _resolve_workspace_index_config(os.getcwd())
         db_path = ":memory:" if self.index_mode == "off" else resolve_index_db_path(os.getcwd())
-        self.symbol_index = SymbolIndex(
-            db_path=db_path, max_size_bytes=_workspace_index_max_bytes(os.getcwd())
-        )
+        symbol_index = SymbolIndex(db_path=db_path, max_size_bytes=max_size_bytes)
         _sel, _ign = parse_env_rule_filters()
-        self.diagnostics_engine = DiagnosticEngine(
-            symbol_index=self.symbol_index,
+        diagnostics_engine = DiagnosticEngine(
+            symbol_index=symbol_index,
             select=_sel,
             ignore=_ign,
         )
         # quiet=True: suppress Rich progress bar that would corrupt the JSON-RPC stdio pipe.
-        self.indexer = IncrementalIndexer(index=self.symbol_index, quiet=True)
+        indexer = IncrementalIndexer(index=symbol_index, quiet=True)
         self.platform_api: PlatformApi = get_platform_api()
         # Document/diagnostics mutable state is isolated in a dedicated service.
         self.doc_state = DocumentDiagnosticsState()
+        self.workspace_state = WorkspaceState(
+            symbol_index=symbol_index,
+            indexer=indexer,
+            diagnostics_engine=diagnostics_engine,
+            invalidate_caches=self._invalidate_workspace_caches,
+        )
         # Backward-compat aliases used across existing tests and handlers.
         self._docs = self.doc_state.docs
         self._diag_timers = self.doc_state.diag_timers
@@ -350,6 +365,28 @@ class BslLanguageServer(LanguageServer):
         self.client_diagnostic_refresh: bool = False
         atexit.register(self.close)
 
+    @property
+    def symbol_index(self) -> SymbolIndex:
+        return self.workspace_state.snapshot().symbol_index
+
+    @property
+    def indexer(self) -> IncrementalIndexer:
+        return self.workspace_state.snapshot().indexer
+
+    @property
+    def diagnostics_engine(self) -> DiagnosticEngine:
+        return self.workspace_state.snapshot().diagnostics_engine
+
+    def workspace_run_context(self) -> WorkspaceRunContext:
+        return self.workspace_state.snapshot()
+
+    def _invalidate_workspace_caches(self, reason: str) -> None:
+        self.doc_state.clear_semantic_caches(
+            clear_indexed_snapshots=reason in {"replace", "metadata", "config"},
+        )
+        if reason in {"replace", "metadata", "config"}:
+            clear_config_caches()
+
     def close(self) -> None:
         """Best-effort cleanup for interpreter shutdown and client disconnects."""
         self._shutdown_event.set()
@@ -359,7 +396,7 @@ class BslLanguageServer(LanguageServer):
             except Exception:
                 logger.debug("LSP: diagnostic timer cancel failed", exc_info=True)
         try:
-            self.symbol_index.close()
+            self.workspace_state.close()
         except Exception:
             logger.debug("LSP: symbol index close failed", exc_info=True)
 
@@ -447,8 +484,13 @@ def _schedule_workspace_reindex(
         try:
             while True:
                 try:
-                    ls.indexer.index_workspace(workspace_root, force=False)
-                    stats = ls.symbol_index.get_stats()
+                    context = ls.workspace_run_context()
+                    context.indexer.index_workspace(workspace_root, force=False)
+                    stats = context.symbol_index.get_stats()
+                    ls.workspace_state.mark_index_changed(
+                        expected_index=context.symbol_index,
+                        metadata_changed=True,
+                    )
                     logger.info(
                         "LSP: re-index complete (%s): %d symbols in %d files",
                         reason,
@@ -474,7 +516,8 @@ def _schedule_workspace_reindex(
 
 def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
     """Return status-bar payload with counts, size, and reindex state."""
-    stats = ls.symbol_index.get_stats()
+    context = ls.workspace_run_context()
+    stats = context.symbol_index.get_stats()
     with ls._reindex_lock:
         reindex_running = ls._reindex_running
         reindex_pending = ls._reindex_pending
@@ -498,6 +541,9 @@ def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
         "last_commit": stats.get("last_commit"),
         "indexed_at": stats.get("indexed_at"),
         "workspace_root": stats.get("workspace_root"),
+        "index_revision": context.revisions.index,
+        "metadata_revision": context.revisions.metadata,
+        "config_revision": context.revisions.config,
     }
 
 
@@ -525,17 +571,21 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
         workspace_root = params.root_path
 
     if workspace_root and Path(workspace_root).is_dir():
-        ls.index_mode = _workspace_index_mode(workspace_root)
+        ls.index_mode, max_size_bytes = _resolve_workspace_index_config(workspace_root)
+        ls.workspace_state.mark_config_changed()
         # Re-resolve DB path now that we know the actual workspace root
         db_path = ":memory:" if ls.index_mode == "off" else resolve_index_db_path(workspace_root)
         if db_path != ls.symbol_index.db_path:
-            ls.symbol_index.close()
-            ls.symbol_index = SymbolIndex(
-                db_path=db_path, max_size_bytes=_workspace_index_max_bytes(workspace_root)
+            symbol_index = SymbolIndex(
+                db_path=db_path,
+                max_size_bytes=max_size_bytes,
             )
-            ls.indexer = IncrementalIndexer(index=ls.symbol_index, quiet=True)
+            ls.workspace_state.replace_index(
+                symbol_index=symbol_index,
+                indexer=IncrementalIndexer(index=symbol_index, quiet=True),
+            )
         else:
-            ls.symbol_index.max_size_bytes = _workspace_index_max_bytes(workspace_root)
+            ls.symbol_index.max_size_bytes = max_size_bytes
 
         if ls.index_mode == "off":
             logger.info("LSP: persistent workspace index disabled")
@@ -645,7 +695,9 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
 
     # Re-index and run diagnostics in background
     def _run() -> None:
-        result = ls.indexer.index_file(path)
+        context = ls.workspace_run_context()
+        result = context.indexer.index_file(path)
+        ls.workspace_state.mark_index_changed(expected_index=context.symbol_index)
         logger.debug("LSP: re-indexed %s: %s", path, result)
         if _diagnostics_enabled():
             _publish_diagnostics(ls, uri, path)
@@ -678,10 +730,12 @@ def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[L
 
     if content_for_hash is not None:
         content_hash = hash(content_for_hash)
-        action, run = ls.doc_state.begin_diag_run(uri, content_hash)
+        workspace_context = ls.workspace_run_context()
+        cache_key = DiagnosticCacheKey(content_hash, workspace_context.revisions)
+        action, run = ls.doc_state.begin_diag_run(uri, cache_key)
         if action == "cached":
             cached = ls.doc_state.get_diag_cache(uri)
-            if cached is not None and cached[0] == content_hash:
+            if cached is not None and cached[0] == cache_key:
                 return cached[1]
         if action == "wait" and run is not None:
             run.event.wait()
@@ -690,7 +744,12 @@ def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[L
             return run.diagnostics or []
         if action == "run" and run is not None:
             try:
-                diagnostics = _build_lsp_diagnostics_inner(ls, uri, path)
+                diagnostics = _build_lsp_diagnostics_inner(
+                    ls,
+                    uri,
+                    path,
+                    workspace_context=workspace_context,
+                )
             except Exception as exc:
                 logger.exception("LSP: diagnostics failed for %s", path)
                 ls.doc_state.finish_diag_run(uri, run, error=exc)
@@ -705,10 +764,18 @@ def _build_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> list[L
         return [_lsp_failure_diagnostic(f"Diagnostics failed: {exc}")]
 
 
-def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> list[LspDiagnostic]:
+def _build_lsp_diagnostics_inner(
+    ls: BslLanguageServer,
+    uri: str,
+    path: str,
+    *,
+    workspace_context: WorkspaceRunContext | None = None,
+) -> list[LspDiagnostic]:
     """Run the diagnostic engine and unused-symbol pass (may raise)."""
     import time as _time
 
+    if workspace_context is None:
+        workspace_context = ls.workspace_run_context()
     cached = ls._doc_get(uri)
 
     # Resolve content string used for hashing (prefer in-memory, fall back to disk).
@@ -723,12 +790,14 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
     # Result cache: skip full parse+rules when content is identical to last run.
     if _content_for_hash is not None:
         _chash = hash(_content_for_hash)
+        cache_key = DiagnosticCacheKey(_chash, workspace_context.revisions)
         _cached_entry = ls.doc_state.get_diag_cache(uri)
-        if _cached_entry is not None and _cached_entry[0] == _chash:
+        if _cached_entry is not None and _cached_entry[0] == cache_key:
             logger.debug("LSP: diag cache hit for %s", uri)
             return _cached_entry[1]
     else:
         _chash = None
+        cache_key = None
 
     _t0 = _time.perf_counter()
     context_for_index: _LspDocumentContext | None = None
@@ -736,15 +805,15 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
         context = _get_lsp_document_context(ls, uri, cached, source_path=path)
         if context is not None:
             context_for_index = context
-            issues = ls.diagnostics_engine.check_snapshot(
+            issues = workspace_context.diagnostics_engine.check_snapshot(
                 context.snapshot,
-                symbol_index=ls.symbol_index,
+                symbol_index=workspace_context.symbol_index,
             )
         else:
-            issues = ls.diagnostics_engine.check_content(
+            issues = workspace_context.diagnostics_engine.check_content(
                 path,
                 cached,
-                symbol_index=ls.symbol_index,
+                symbol_index=workspace_context.symbol_index,
             )
     elif _content_for_hash is not None:
         context = _get_lsp_document_context(
@@ -755,16 +824,21 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
         )
         if context is not None:
             context_for_index = context
-            issues = ls.diagnostics_engine.check_snapshot(
+            issues = workspace_context.diagnostics_engine.check_snapshot(
                 context.snapshot,
-                symbol_index=ls.symbol_index,
+                symbol_index=workspace_context.symbol_index,
             )
         else:
-            issues = ls.diagnostics_engine.check_content(
-                path, _content_for_hash, symbol_index=ls.symbol_index
+            issues = workspace_context.diagnostics_engine.check_content(
+                path,
+                _content_for_hash,
+                symbol_index=workspace_context.symbol_index,
             )
     else:
-        issues = ls.diagnostics_engine.check_file(path, symbol_index=ls.symbol_index)
+        issues = workspace_context.diagnostics_engine.check_file(
+            path,
+            symbol_index=workspace_context.symbol_index,
+        )
     # Record elapsed time for adaptive debounce (no lock needed — float write is atomic).
     ls.doc_state.set_last_diag_time(uri, _time.perf_counter() - _t0)
 
@@ -827,7 +901,7 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
         )
 
     try:
-        for sym in ls.symbol_index.find_unused_symbols(path):
+        for sym in workspace_context.symbol_index.find_unused_symbols(path):
             name = sym.get("name", "")
             sym_line = max(0, sym["line"] - 1)
             sym_char = sym.get("character", 0)
@@ -854,10 +928,17 @@ def _build_lsp_diagnostics_inner(ls: BslLanguageServer, uri: str, path: str) -> 
         logger.debug("LSP: unused detection failed for %s: %s", path, exc)
 
     # Store result in cache for next identical-content request.
-    if _chash is not None:
-        ls.doc_state.set_diag_cache(uri, _chash, lsp_diags)
+    if _chash is not None and cache_key is not None:
+        ls.doc_state.set_diag_cache(uri, cache_key, lsp_diags)
         if context_for_index is not None:
-            _schedule_snapshot_index(ls, uri, path, _chash, context_for_index.snapshot)
+            _schedule_snapshot_index(
+                ls,
+                uri,
+                path,
+                _chash,
+                context_for_index.snapshot,
+                workspace_context=workspace_context,
+            )
 
     return lsp_diags
 
@@ -868,13 +949,22 @@ def _schedule_snapshot_index(
     path: str,
     content_hash: int,
     snapshot: DocumentSnapshot,
+    *,
+    workspace_context: WorkspaceRunContext | None = None,
 ) -> None:
     """Refresh the open-file index from an existing snapshot, without reparsing."""
     if not ls.doc_state.mark_snapshot_indexed(uri, content_hash):
         return
+    if workspace_context is None:
+        workspace_context = ls.workspace_run_context()
 
     def _run() -> None:
-        result = ls.indexer.index_snapshot(path, snapshot)
+        if not ls.workspace_state.is_current(workspace_context):
+            return
+        result = workspace_context.indexer.index_snapshot(path, snapshot)
+        ls.workspace_state.mark_index_changed(
+            expected_index=workspace_context.symbol_index,
+        )
         logger.debug("LSP: snapshot-indexed %s: %s", path, result)
 
     threading.Thread(target=_run, daemon=True, name="bsl-lsp-snapshot-index").start()
@@ -917,14 +1007,16 @@ def _maybe_start_async_pull_diagnostics(
         return None
 
     content_hash = hash(content)
+    workspace_context = ls.workspace_run_context()
+    cache_key = DiagnosticCacheKey(content_hash, workspace_context.revisions)
     cached = ls.doc_state.get_diag_cache(uri)
-    if cached is not None and cached[0] == content_hash:
+    if cached is not None and cached[0] == cache_key:
         return cached[1]
 
-    action, run = ls.doc_state.begin_diag_run(uri, content_hash)
+    action, run = ls.doc_state.begin_diag_run(uri, cache_key)
     if action == "cached":
         cached = ls.doc_state.get_diag_cache(uri)
-        return cached[1] if cached is not None and cached[0] == content_hash else []
+        return cached[1] if cached is not None and cached[0] == cache_key else []
     if action == "wait":
         return []
     if run is None:
@@ -932,7 +1024,12 @@ def _maybe_start_async_pull_diagnostics(
 
     def _run() -> None:
         try:
-            diagnostics = _build_lsp_diagnostics_inner(ls, uri, path)
+            diagnostics = _build_lsp_diagnostics_inner(
+                ls,
+                uri,
+                path,
+                workspace_context=workspace_context,
+            )
         except Exception as exc:
             logger.exception("LSP: async diagnostics failed for %s", path)
             ls.doc_state.finish_diag_run(uri, run, error=exc)
@@ -4159,7 +4256,12 @@ def on_bsl_reindex_workspace(ls: BslLanguageServer, params: dict) -> dict:  # ty
 
     def _do() -> None:
         try:
-            ls.indexer.index_workspace(root, force=True)
+            context = ls.workspace_run_context()
+            context.indexer.index_workspace(root, force=True)
+            ls.workspace_state.mark_index_changed(
+                expected_index=context.symbol_index,
+                metadata_changed=True,
+            )
             logger.info("LSP: reindex complete for %s", root)
         except Exception as exc:
             logger.error("LSP: reindex failed: %s", exc)
@@ -4175,7 +4277,9 @@ def on_bsl_reindex_file(ls: BslLanguageServer, params: dict) -> dict:  # type: i
     if not file_path or not Path(file_path).is_file():
         return {"success": False, "error": f"File not found: {file_path}"}
     try:
-        ls.indexer.index_file(file_path)
+        context = ls.workspace_run_context()
+        context.indexer.index_file(file_path)
+        ls.workspace_state.mark_index_changed(expected_index=context.symbol_index)
         return {"success": True}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
