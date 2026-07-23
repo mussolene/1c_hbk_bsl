@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   сохраняя строгую проверку датированного раздела версии для release tag.
 - `DiagnosticEngine` передаёт snapshot, строки и symbol index через immutable
   request-local context без общего mutable состояния текущего документа.
+- LSP публикует `SymbolIndex`, indexer и diagnostics engine через единый
+  workspace lifecycle с монотонными revisions и revision-aware caches.
 
 ### Security
 

@@ -455,3 +455,34 @@ def scheduled_job_handlers_by_module_cached(
             predefined = bool(predefined_match and predefined_match.group(1).casefold() == "true")
             handlers[parts[1].casefold()].append((handler, xml_file.stem, predefined))
     return {module_name: tuple(values) for module_name, values in handlers.items()}
+
+
+def clear_config_caches() -> None:
+    """Invalidate filesystem-derived configuration and metadata views."""
+    cached_functions = (
+        config_root_for_file,
+        crawl_config_cached,
+        metadata_name_index_cached,
+        metadata_typed_name_index_cached,
+        workspace_metadata_name_index_cached,
+        unsafe_find_by_code_metadata_index_cached,
+        read_text_cached,
+        current_module_xml_context,
+        current_metadata_object_for_file_cached,
+        common_module_index_cached,
+        common_module_path_index_cached,
+        common_module_info_cached,
+        common_module_privileged_map_cached,
+        common_module_proc_names_for_file_cached,
+        common_module_exported_proc_names_for_file_cached,
+        common_module_proc_names_for_module_cached,
+        common_module_exported_proc_names_for_module_cached,
+        roles_with_new_objects_cached,
+        config_protected_module_refs_cached,
+        config_has_protected_modules_cached,
+        event_subscription_handlers_by_module_cached,
+        event_subscription_handlers_cached,
+        scheduled_job_handlers_by_module_cached,
+    )
+    for cached_function in cached_functions:
+        cached_function.cache_clear()
