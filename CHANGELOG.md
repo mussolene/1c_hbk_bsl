@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Минимальная версия `tree-sitter-hbk` поднята до `0.1.11`: SDBL parser
+  поддерживает доступ к полю после `ВЫРАЗИТЬ(...)`, кортежи слева от `В`,
+  `УНИЧТОЖИТЬ` внутри пакета запросов и вложенные соединения.
+
 ### Fixed
 
 - Artifact preflight для pull request проверяет непустой раздел `Unreleased`,
