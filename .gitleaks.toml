@@ -13,6 +13,7 @@ useDefault = true
 description = "Diagnostic tests include fake token/password strings to assert BSL012 behavior"
 paths = [
   '''tests/test_diagnostics_extended\.py''',
+  '''tests/test_diagnostics_core_snapshot\.py''',
 ]
 
 [[allowlists]]
