@@ -255,10 +255,25 @@ def verify_artifacts(artifacts_dir: Path, version: str, output_dir: Path) -> lis
     return [*release_assets, checksum_path]
 
 
-def verify_changelog(version: str) -> None:
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    if not re.search(rf"(?m)^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog):
-        raise ValueError(f"CHANGELOG.md has no dated {version} section")
+def verify_changelog(
+    version: str,
+    *,
+    allow_unreleased: bool = False,
+    changelog_path: Path | None = None,
+) -> None:
+    path = changelog_path or ROOT / "CHANGELOG.md"
+    changelog = path.read_text(encoding="utf-8")
+    if re.search(rf"(?m)^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog):
+        return
+    if allow_unreleased:
+        section = re.search(
+            r"(?ms)^## \[Unreleased\]\s*\n(?P<body>.*?)(?=^## \[|\Z)",
+            changelog,
+        )
+        if section is not None and re.search(r"(?m)^- \S", section.group("body")):
+            return
+        raise ValueError("CHANGELOG.md has no non-empty Unreleased section")
+    raise ValueError(f"CHANGELOG.md has no dated {version} section")
 
 
 def main() -> int:
@@ -272,6 +287,7 @@ def main() -> int:
     artifact_parser.add_argument("--artifacts-dir", type=Path, required=True)
     artifact_parser.add_argument("--output-dir", type=Path, required=True)
     artifact_parser.add_argument("--version", required=True)
+    artifact_parser.add_argument("--allow-unreleased-changelog", action="store_true")
     args = parser.parse_args()
 
     if args.command == "source":
@@ -286,7 +302,7 @@ def main() -> int:
             verify_changelog(args.version)
         return 0
 
-    verify_changelog(args.version)
+    verify_changelog(args.version, allow_unreleased=args.allow_unreleased_changelog)
     verify_release_dag()
     verify_artifacts(args.artifacts_dir, args.version, args.output_dir)
     return 0
