@@ -156,6 +156,7 @@ jobs:
     needs: build-binary
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: darwin-arm64
@@ -201,9 +202,9 @@ jobs:
         run: |
           mkdir -p vscode-extension/bin
           if [[ "${{ matrix.target }}" == "win32-x64" ]]; then
-            cp downloaded-binary/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl.exe
+            cp downloaded-binary/dist/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl.exe
           else
-            cp downloaded-binary/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl
+            cp downloaded-binary/dist/${{ matrix.asset }} vscode-extension/bin/onec-hbk-bsl
             chmod +x vscode-extension/bin/onec-hbk-bsl
           fi
       - name: Package platform VSIX
