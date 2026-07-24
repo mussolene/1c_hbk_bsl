@@ -519,17 +519,15 @@ def _run_bsl011_175_snapshot_facts(
 def _run_deprecated_api_pool(
     context: DiagnosticDocumentContext,
     enabled_codes: tuple[str, ...],
+    semantic_facts: Any,
 ) -> list[Diagnostic]:
     from onec_hbk_bsl.analysis import diagnostics as _diag
 
-    snapshot = context.snapshot
-    symbols = list(getattr(snapshot, "symbols", []) or [])
-    calls = list(getattr(snapshot, "calls", []) or [])
     return context.module_model.validate_bsl175_176_177_179_195_deprecated_api_diagnostics(
         lines=context.lines,
         tree=context.tree,
-        symbols=symbols,
-        calls=calls,
+        symbols=list(semantic_facts.symbols),
+        calls=list(semantic_facts.calls),
         symbol_index=context.symbol_index,
         enabled_codes=enabled_codes,
         ts_walk_fn=_diag._ts_walk,
@@ -1085,9 +1083,15 @@ def append_diagnostic_runtime_rule_tasks(
         if code not in coarse_parallelized
     )
     if deprecated_api_pool:
+        semantic_facts = document_semantic_facts()
+        assert semantic_facts is not None
         add_task(
             deprecated_api_pool,
-            lambda codes=deprecated_api_pool: _run_deprecated_api_pool(context, codes),
+            lambda codes=deprecated_api_pool: _run_deprecated_api_pool(
+                context,
+                codes,
+                semantic_facts,
+            ),
         )
         deprecated_api_parallelized.update(deprecated_api_pool)
 

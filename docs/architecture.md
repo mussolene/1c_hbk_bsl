@@ -285,6 +285,14 @@ no-guessing contract instead of manufacturing receiver context.
 Further diagnostic rule-family migrations remain separate changes so parity
 can be reviewed per bounded family.
 
+The first bounded diagnostic follow-up is the BSL175/BSL176 deprecated-API
+symbol/call batch. Both local and large-file execution paths now receive the
+same `SemanticFactSnapshot.symbols/calls`; their public diagnostic signatures
+(severity, message, multiplicity, and ranges) remain unchanged. The
+metadata-property subcheck in BSL176 keeps its existing single targeted CST
+walk because it needs structured `property_access` and index membership, not a
+generic call fact.
+
 ## Отношение к справочнику правил BSL (совместимость имён)
 
 **onec-hbk-bsl** — отдельная кодовая база (Python, tree-sitter, свой LSP/MCP). Внешние анализаторы не вызываются в рантайме сервера; интеграция с ними относится только к внутренним исследовательским процессам разработки.

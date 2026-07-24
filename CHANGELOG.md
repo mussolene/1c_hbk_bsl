@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   facts populated by the existing type engine; resolved metadata identities
   are restricted to their concrete module, while ambiguous/unknown receivers
   no longer guess a same-named workspace target.
+- Deprecated API diagnostics BSL175/BSL176 now share the same immutable
+  symbol/call fact snapshot in local and large-file execution paths without
+  changing their severity, messages, multiplicity, or ranges.
 
 ## [0.8.45] - 2026-07-24
 

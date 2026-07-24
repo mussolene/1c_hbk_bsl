@@ -100,6 +100,41 @@ class TestBsl265UselessTernaryOperatorParity:
 
 # BSL175, BSL176, BSL177, BSL178, BSL179, BSL182, BSL195 — TestDeprecatedApiParityBatch
 class TestDeprecatedApiParityBatch:
+    @pytest.mark.parametrize("force_large_file_path", [False, True])
+    def test_bsl175_176_share_one_semantic_fact_snapshot(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        force_large_file_path: bool,
+    ) -> None:
+        from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime import runner
+        from onec_hbk_bsl.analysis.document_snapshot import DocumentSnapshot
+
+        content = (
+            "// Deprecated. Use НовыйМетод instead.\n"
+            "Процедура СтарыйМетод()\n"
+            "КонецПроцедуры\n\n"
+            "Процедура НовыйМетод()\n"
+            "    СтарыйМетод();\n"
+            "    ОчиститьЖурналРегистрации(Отбор);\n"
+            "КонецПроцедуры\n"
+        )
+        snapshots: list[DocumentSnapshot] = []
+        original = DocumentSnapshot.semantic_facts
+
+        def tracked(self: DocumentSnapshot, *args, **kwargs):
+            snapshots.append(self)
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(DocumentSnapshot, "semantic_facts", tracked)
+        if force_large_file_path:
+            monkeypatch.setattr(runner, "_PROCESS_HEAVY_GROUP_MIN_LINES", 1)
+        diags = _check(content, tmp_path, select={"BSL175", "BSL176"})
+
+        assert {diag.code for diag in diags} == {"BSL175", "BSL176"}
+        assert len(snapshots) == 1
+        assert snapshots[0].semantic_fact_build_count == 1
+
     def test_bsl175_deprecated_chart_attribute_and_global_method(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
