@@ -78,21 +78,19 @@ The ruff configuration is in `pyproject.toml` under `[tool.ruff]`.
 
 ## Adding a New Diagnostic Rule
 
-1. Read the rule description and create or update its contract in
+1. Read the rule description and create or update its public page in
    `docs/rule-contracts/BSL###.md`.
 2. Add or update metadata in `src/onec_hbk_bsl/analysis/diagnostics.py`.
 3. Reuse `DocumentSnapshot`, CST facts, or an existing domain model. Do not add
-   a regex fallback to a structural rule without an explicit contract reason.
+   a regex fallback to a structural rule without a documented semantic reason.
 4. Register execution through `analysis/diagnostic/diagnostic_runtime` and keep
    shared semantic work outside individual rule callbacks.
 5. Add focused positive, negative, range, and malformed-input tests.
-6. Run the contract validator and check the generated public rule reference:
+6. Regenerate and check the public rule reference:
 
 ```bash
-./.venv/bin/python scripts/validate_rule_contract.py docs/rule-contracts/BSL###.md
-./.venv/bin/python scripts/validate_rule_contract.py --catalog --check-selectors
 ./.venv/bin/python scripts/build_diagnostic_rules_doc.py
-git diff --exit-code -- docs/diagnostic-rules.md
+git diff --exit-code -- docs/diagnostic-rules.md docs/rule-contracts
 ./.venv/bin/python -m onec_hbk_bsl rules
 ```
 

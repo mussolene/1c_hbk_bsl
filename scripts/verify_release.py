@@ -18,16 +18,11 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ("darwin-arm64", "darwin-x64", "linux-x64", "win32-x64")
-REQUIRED_DOC_OWNERS = {
-    "architecture",
-    "diagnostics-reference",
-    "extension-guide",
-    "operations",
-    "product-contract",
-    "product-guide",
-    "release-history",
-    "security-policy",
-    "third-party",
+REQUIRED_PUBLIC_DOCS = {
+    "diagnostic-rules.md",
+    "extension.md",
+    "index.md",
+    "public-surface.md",
 }
 REQUIRED_CHANGELOG_HISTORY = {"0.8.41", "0.8.42"}
 EXPECTED_PROJECT_URLS = {
@@ -194,6 +189,13 @@ def verify_generated_docs() -> None:
     ]
     if incomplete:
         raise ValueError("rule pages without localized descriptions: " + ", ".join(incomplete))
+    internal = [
+        str(path.relative_to(ROOT))
+        for path in expected_pages
+        if "<!-- engineering-contract:start -->" in path.read_text(encoding="utf-8")
+    ]
+    if internal:
+        raise ValueError("public rule pages contain engineering contracts: " + ", ".join(internal))
 
 
 def verify_published_docs_independence(root: Path = ROOT) -> None:
@@ -271,35 +273,26 @@ def verify_local_markdown_links(root: Path = ROOT) -> None:
         raise ValueError("broken local documentation links:\n" + "\n".join(failures))
 
 
-def verify_documentation_ownership(root: Path = ROOT) -> None:
-    index = root / "docs" / "public-surface.md"
-    text = index.read_text(encoding="utf-8")
-    block = re.search(
-        r"(?ms)<!-- docs-index:start -->\s*(?P<body>.*?)\s*<!-- docs-index:end -->",
-        text,
-    )
-    if block is None:
-        raise ValueError("docs/public-surface.md has no bounded documentation ownership index")
-    rows = re.findall(
-        r"(?m)^\|\s*`(?P<key>[a-z0-9-]+)`\s*\|\s*\[[^\]]+\]\((?P<path>[^)]+)\)\s*\|",
-        block.group("body"),
-    )
-    keys = [key for key, _ in rows]
-    duplicates = sorted({key for key in keys if keys.count(key) > 1})
-    if duplicates:
-        raise ValueError("duplicate normative documentation owners: " + ", ".join(duplicates))
-    missing = sorted(REQUIRED_DOC_OWNERS - set(keys))
-    extra = sorted(set(keys) - REQUIRED_DOC_OWNERS)
-    if missing or extra:
-        raise ValueError(f"documentation ownership mismatch: missing={missing}, extra={extra}")
-    absent_paths = sorted(
-        path
-        for _, path in rows
-        if not path.startswith(("http://", "https://"))
-        and not (index.parent / unquote(path.split("#", 1)[0])).exists()
-    )
-    if absent_paths:
-        raise ValueError("documentation owners do not exist: " + ", ".join(absent_paths))
+def verify_public_documentation(root: Path = ROOT) -> None:
+    docs = root / "docs"
+    missing = sorted(name for name in REQUIRED_PUBLIC_DOCS if not (docs / name).is_file())
+    if missing:
+        raise ValueError("public documentation is missing: " + ", ".join(missing))
+
+    unlocalized: list[str] = []
+    for name in sorted(REQUIRED_PUBLIC_DOCS):
+        text = (docs / name).read_text(encoding="utf-8")
+        if "doc-lang-ru" not in text or "doc-lang-en" not in text:
+            unlocalized.append(name)
+    if unlocalized:
+        raise ValueError("public documentation is not bilingual: " + ", ".join(unlocalized))
+
+    package = json.loads((root / "vscode-extension" / "package.json").read_text(encoding="utf-8"))
+    extension = (docs / "extension.md").read_text(encoding="utf-8")
+    settings = package["contributes"]["configuration"]["properties"]
+    undocumented = sorted(key for key in settings if f"`{key}`" not in extension)
+    if undocumented:
+        raise ValueError("extension settings are undocumented: " + ", ".join(undocumented))
 
 
 def _project_public_metadata(path: Path) -> dict[str, Any]:
@@ -576,7 +569,7 @@ def main() -> int:
         verify_generated_docs()
         verify_published_docs_independence()
         verify_local_markdown_links()
-        verify_documentation_ownership()
+        verify_public_documentation()
         verify_package_metadata()
         verify_community_files()
         verify_changelog_integrity()

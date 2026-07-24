@@ -39,9 +39,11 @@ jobs:
         run: |
           ./.venv/bin/python -m ruff check src tests scripts
           ./.venv/bin/python -m ruff format --check src tests scripts
-      - name: Canonical rule contract gate
+      - name: Public diagnostic documentation gate
         if: matrix.python-version == '3.12'
-        run: ./.venv/bin/python scripts/validate_rule_contract.py --catalog --check-selectors
+        run: |
+          ./.venv/bin/python scripts/build_diagnostic_rules_doc.py
+          git diff --exit-code -- docs/diagnostic-rules.md docs/rule-contracts
       - name: Python tests with quality artifacts
         run: |
           mkdir -p .artifacts

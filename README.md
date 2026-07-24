@@ -24,9 +24,9 @@
 - умеет отдавать SARIF/JSON для CI;
 - предоставляет MCP-инструменты для локальных AI-ассистентов.
 
-Проект не запускает Java-анализатор в рантайме. Публичный контракт продукта:
-коды правил `BSL###`, файл `onec-hbk-bsl.toml`, интерфейсы CLI/LSP/MCP и
-расширение VS Code.
+Проект не запускает Java-анализатор в рантайме. В репозитории выпускаются два
+связанных продукта: Toolkit (`CLI`, LSP, MCP и Python API) и расширение
+VS Code / Cursor со встроенным сервером.
 
 При установке из PyPI требуется Python 3.12 или новее. Платформенные VSIX
 содержат готовый бинарный файл и не требуют системного Python. Актуальное
@@ -46,7 +46,7 @@
 macOS Apple Silicon, macOS Intel, Linux x64 и Windows x64.
 
 Настройки редактора, команды и порядок поиска сервера описаны в
-[руководстве по расширению](vscode-extension/README.md).
+[руководстве по расширению](https://mussolene.github.io/1c_hbk_bsl/extension/).
 
 ### CLI
 
@@ -92,8 +92,8 @@ index-max-bytes = 0      # 0 = unlimited
   `exclude`;
 - после изменения области индекса выполните `onec-hbk-bsl index . --force`.
 
-Полный контракт конфигурации и публичных интерфейсов:
-[Public surface](docs/public-surface.md#product-contract).
+Полное руководство по конфигурации и публичным интерфейсам:
+[Toolkit](https://mussolene.github.io/1c_hbk_bsl/public-surface/).
 
 ## Диагностики и подавления
 
@@ -107,7 +107,7 @@ index-max-bytes = 0      # 0 = unlimited
 // BSLLS:MethodSize-off
 ```
 
-Полный перечень с RU/EN-описаниями, исключениями и контрактами:
+Полный перечень с RU/EN-описаниями, примерами и исключениями:
 [опубликованный справочник диагностических правил](https://mussolene.github.io/1c_hbk_bsl/diagnostic-rules/).
 
 ## Основные команды
@@ -124,8 +124,6 @@ index-max-bytes = 0      # 0 = unlimited
 | Пересобрать индекс | `onec-hbk-bsl index . --force` |
 
 Режимы индекса: `off`, `symbols` и `full`. Перед `--clean` остановите LSP и MCP.
-Операционные подробности приведены в
-[Production notes](docs/Production-Notes.md#indexing-and-concurrency).
 
 ## Python и пакеты
 
@@ -154,9 +152,8 @@ for diagnostic in diagnostics:
 воспроизводимой средой выполнения управляет
 [`1c-develop`](https://github.com/mussolene/1c-develop).
 
-Сценарии совместного использования и правила выбора авторитетного источника
-описаны в единой
-[карте границ продукта](docs/architecture.md#product-boundaries-and-deployment-map).
+Эти проекты дополняют друг друга, но не требуются для установки Toolkit или
+расширения.
 
 ## Документация
 
@@ -165,18 +162,15 @@ for diagnostic in diagnostics:
 Она поддерживает русский и английский языки, системную светлую/тёмную тему,
 полнотекстовый поиск и прямые страницы всех 180 правил.
 
-Канонические владельцы фактов и полный индекс закреплены в
-[Documentation ownership](docs/public-surface.md#documentation-ownership).
-
-| Документ | Роль |
-|---|---|
-| [VS Code extension guide](vscode-extension/README.md) | Настройки и поведение расширения VS Code / Cursor |
-| [Diagnostic rules](docs/diagnostic-rules.md) | Генерируемый справочник правил |
-| [Public surface](docs/public-surface.md) | Публичный контракт CLI, Python, LSP, MCP и пакетов |
-| [Architecture](docs/architecture.md) | Архитектура сервера, анализатора и границы продукта |
-| [Production notes](docs/Production-Notes.md) | Эксплуатационные инструкции, релизные проверки и датированные снимки |
-| [Security policy](SECURITY.md) | Поддерживаемые версии и приватный канал для сообщений об уязвимостях |
-| [Third-party notices](docs/THIRD_PARTY_NOTICES.md) | Зависимости, лицензии и происхождение данных |
+- [Toolkit](https://mussolene.github.io/1c_hbk_bsl/public-surface/) — установка,
+  CLI, конфигурация, CI, LSP и MCP.
+- [Расширение VS Code / Cursor](https://mussolene.github.io/1c_hbk_bsl/extension/) —
+  установка, возможности, настройки и устранение проблем.
+- [Диагностические правила](https://mussolene.github.io/1c_hbk_bsl/diagnostic-rules/) —
+  180 карточек с описаниями, примерами и подавлениями.
+- [Security policy](SECURITY.md) и
+  [third-party notices](docs/THIRD_PARTY_NOTICES.md) — безопасность, лицензии и
+  происхождение данных.
 
 RU/EN-описания диагностик адаптированы из документационного корпуса
 [BSL Language Server](https://github.com/1c-syntax/bsl-language-server) и

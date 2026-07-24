@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Documentation is published as a searchable RU/EN Material site with
-  system/light/dark themes; all 180 `BSL###` pages now combine localized rule
-  guidance, compatible suppression forms, and their canonical engineering
-  contracts, while LSP diagnostics link directly to the published page.
+  system/light/dark themes and separate Toolkit and VS Code / Cursor guides;
+  all 180 `BSL###` pages contain localized rule guidance and compatible
+  suppression forms, while internal implementation dossiers are not published.
 - README landing page is reorganized around installation and common tasks,
   removes duplicated reference prose, and replaces retired Visual Studio
   Marketplace Shields endpoints with stable release, security, and install
@@ -515,7 +515,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BSL035: повторы строковых литералов учитываются **в пределах одной процедуры/функции** (и отдельно на уровне модуля), а не по всему файлу — убраны ложные срабатывания на одинаковых ключах `Вставить("…")` в разных методах.
 
 ### Added
-- Документация аудита: `docs/SECURITY_AUDIT.md`, `docs/THIRD_PARTY_NOTICES.md`, `docs/DATA_SOURCES.md`; ссылки из корневого `README.md`.
+- Документация безопасности и происхождения данных: `SECURITY.md`,
+  `docs/THIRD_PARTY_NOTICES.md`, `docs/DATA_SOURCES.md`.
 - `.gitleaks.toml` и workflow **Security** (Gitleaks в CI).
 
 ### Changed

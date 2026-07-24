@@ -45,7 +45,7 @@
           : target?.closest(".doc-lang-ru") && language === "en"
             ? "ru"
             : null;
-      if (hiddenLanguage || target?.closest(".engineering-contract")) {
+      if (hiddenLanguage) {
         const item = link.closest("li");
         if (item) {
           item.hidden = true;

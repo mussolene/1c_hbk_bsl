@@ -22,15 +22,6 @@
   border-radius: 0.6rem;
 }
 
-.md-typeset details.engineering-contract {
-  margin-top: 1rem;
-}
-
-.md-typeset details.engineering-contract > summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-
 html[lang^="ru"] .doc-lang-en,
 html[lang^="en"] .doc-lang-ru {
   display: none;

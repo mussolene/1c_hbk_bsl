@@ -1,97 +1,173 @@
-# Public Surface
+# <span class="doc-lang doc-lang-ru">Toolkit</span><span class="doc-lang doc-lang-en">Toolkit</span>
 
-This document defines what `onec-hbk-bsl` treats as product-facing API and UI.
-It is a guardrail for future changes, not a user guide. User-facing docs live on
-this site and in the
-[VS Code extension guide](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md).
+<div class="doc-lang doc-lang-ru" markdown="1">
 
-## Documentation Ownership
+Toolkit — это Python-пакет и автономный исполняемый файл `onec-hbk-bsl`.
+Он подходит для локальных проверок, CI, интеграции с редакторами и агентами.
 
-This table is the documentation index and the normative ownership registry.
-Each owner key appears exactly once and owns only the facts named in its scope.
-Other documents may explain or operate a surface, but must link to its canonical
-owner instead of defining a second compatibility contract.
+## Установка
 
-<!-- docs-index:start -->
-| Owner key | Canonical owner | Normative scope |
-|---|---|---|
-| `product-guide` | [Site home](index.md) | Product overview, installation, first-run examples and navigation into detailed docs |
-| `product-contract` | [public-surface.md](public-surface.md) | Stable CLI, Python, LSP, MCP, configuration and packaging compatibility |
-| `extension-guide` | [VS Code guide](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md) | Published extension settings, startup resolution, commands and editor behavior |
-| `diagnostics-reference` | [diagnostic-rules.md](diagnostic-rules.md) | Generated public rule identifiers, aliases, severity, descriptions and implementation state |
-| `release-history` | [CHANGELOG.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md) | Versioned user-visible changes reconstructed from release tags |
-| `security-policy` | [SECURITY.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/SECURITY.md) | Supported versions and the confidential vulnerability reporting path |
-| `operations` | [Production-Notes.md](Production-Notes.md) | Operational runbook, go/no-go checks and dated verification snapshots; not a compatibility contract |
-| `architecture` | [architecture.md](architecture.md) | Current internal component, data-flow and storage design; not a product promise |
-| `third-party` | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Dependency provenance, notices and redistribution notes |
-<!-- docs-index:end -->
+Для CLI, форматтера и Language Server:
 
-Product boundaries with adjacent repositories are defined only in the
-[product boundaries and deployment map](architecture.md#product-boundaries-and-deployment-map).
-This index must not create a second product-boundary specification.
+```bash
+pip install onec-hbk-bsl-core
+```
 
-## Product Contract
+Для полного набора, включая MCP:
 
-- Primary project config: `onec-hbk-bsl.toml`.
-- `pyproject.toml` support is a convenience for Python-centric projects.
-- Stable rule identifiers: `BSL###`.
-- Compatible rule aliases are accepted in `select` / `ignore` for existing BSL projects.
-- Suppressions: `// noqa: BSL###` and compatible `// BSLLS-off/on` comments.
-- `.bsl-language-server.json` is not a supported project config.
-- No separate Java analyzer is launched at runtime.
-- Configuration precedence is stable across CLI, Python API, LSP, and MCP:
-  explicit option > supported environment variable > project config > built-in default.
-- Supported config environment mappings are `BSL_SELECT`, `BSL_IGNORE`,
-  `BSL_INDEX_MODE`, and `BSL_INDEX_MAX_BYTES`; adding another mapping is a
-  public-surface change.
-- LSP rename and MCP `bsl_rename` share exact semantic spans. MCP rename dry-run
-  returns an immutable plan; `apply=true` is all-or-nothing and refuses
-  ambiguity, collisions, or stale content before writing.
+```bash
+pip install onec-hbk-bsl
+```
 
-## Stable User Surfaces
+Требуется Python 3.12+. В [GitHub Releases](https://github.com/mussolene/1c_hbk_bsl/releases)
+также публикуются автономные бинарники для macOS, Linux и Windows.
 
-| Surface | Stable contract |
+## Основные команды
+
+| Задача | Команда |
 |---|---|
-| CLI | `check`, `format`, `rules`, `init`, `lsp`, `mcp`, `index` |
-| Reports | `--format text`, `--format json`, `--format sarif` |
-| Rule control | `--select`, `--ignore`, config `ignore`, per-file ignores |
-| Check execution | `--jobs`, `--no-config`, `--fix` |
-| CI adoption | `--exit-zero`, `--baseline`, `--update-baseline`, `--diff`, `--since`, `--paths-from` |
-| Workspace index | `--force`, `--status`, `--clean`, `--compact`, `--mode`, `--max-bytes` |
-| VS Code | diagnostics, formatting, definition/references/rename, call hierarchy, hover, completion, signature help, folding, code actions, inlay hints, semantic tokens |
-| MCP | project-local navigation/diagnostics plus exact-span transactional `bsl_rename` |
-| Python API | `check_files(...)`, `DiagnosticEngine` |
+| Проверить проект | `onec-hbk-bsl check .` |
+| Исправить безопасные нарушения | `onec-hbk-bsl check . --fix` |
+| Отформатировать файлы | `onec-hbk-bsl format .` |
+| Показать правила | `onec-hbk-bsl rules` |
+| Создать конфигурацию | `onec-hbk-bsl init` |
+| Запустить Language Server | `onec-hbk-bsl lsp` |
+| Запустить локальный MCP-сервер | `onec-hbk-bsl mcp` |
+| Управлять индексом | `onec-hbk-bsl index --status` |
 
-Legacy flag aliases such as `--check`, `--lsp`, `--mcp`, `--index`,
-`--list-rules`, and `--init` remain supported for existing integrations. New
-behavior should be added to command forms first.
+Используйте `onec-hbk-bsl <команда> --help` для полного списка параметров.
 
-## Packaging
+## Конфигурация проекта
 
-- `onec-hbk-bsl-core`: CLI, formatter, diagnostics, Python API and LSP without MCP dependencies.
-- `onec-hbk-bsl`: full compatibility package depending on the same-version
-  `onec-hbk-bsl-core[mcp]` wheel.
-- Both PyPI distributions require Python 3.12 or newer.
-- Release VSIX artifacts bundle a standalone server for `darwin-arm64`,
-  `darwin-x64`, `linux-x64`, and `win32-x64`; they do not require a system Python.
-- The extension requires VS Code API 1.85 or newer and binds only `.bsl` / `.os`
-  file documents to the LSP client.
+Создайте `onec-hbk-bsl.toml` в корне проекта:
 
-Running `onec-hbk-bsl mcp` from a slim core installation without MCP should exit
-with a clear installation hint rather than an import traceback.
+```toml
+select = ["BSL012", "BSL236"]
+ignore = ["BSL002"]
+exclude = ["vendor", "*.gen.bsl"]
 
-## Non-Product Surface
+[per-file-ignores]
+"legacy/*.bsl" = ["BSL011"]
+```
 
-Do not expose these as stable CLI/API features:
+В `select` и `ignore` принимаются коды `BSL###` и совместимые псевдонимы.
+Форматы подавления для конкретного правила приведены в
+[каталоге диагностик](diagnostic-rules.md).
 
-- research or comparison scripts;
-- benchmark helpers;
-- MCP handler internals;
-- VS Code extension implementation details;
-- removed switches such as `--watch`, `--bench`, `--stats`, `--show-fix`,
-  `--check-profile`, `--paths-from0`, `--changed-lines-only`,
-  `--split-fragment`, `--format sonarqube`, `--sonar-root`.
+## Отчёты и CI
 
-Development docs may mention internal tools, but README and Marketplace docs
-should stay focused on how to install, configure, run, and troubleshoot the
-product.
+```bash
+onec-hbk-bsl check . --format sarif > onec-hbk-bsl.sarif
+onec-hbk-bsl check . --jobs 4
+onec-hbk-bsl check . --baseline baseline.json
+onec-hbk-bsl check . --diff --since origin/main
+```
+
+Доступны форматы `text`, `json` и `sarif`. Для постепенного внедрения можно
+использовать baseline, проверку diff и `--exit-zero`.
+
+## Language Server и MCP
+
+Language Server предоставляет диагностики, форматирование, definition,
+references, rename, hover, completion, signature help, folding, code actions,
+inlay hints и semantic tokens. Обычно его запускает
+[расширение VS Code / Cursor](extension.md).
+
+Локальный MCP-сервер открывает агентам диагностику, навигацию и безопасный
+план переименования в пределах указанного workspace. Запускайте его только для
+доверенных локальных клиентов.
+
+## Поддерживаемые входы
+
+- исходные файлы `.bsl` и `.os`;
+- выгрузка конфигурации из Конфигуратора в файлы;
+- проекты с `onec-hbk-bsl.toml`;
+- Python 3.12, 3.13 и 3.14.
+
+</div>
+
+<div class="doc-lang doc-lang-en" markdown="1">
+
+The Toolkit is distributed as Python packages and the standalone
+`onec-hbk-bsl` executable. It supports local checks, CI, editor integrations,
+and local agents.
+
+## Installation
+
+For the CLI, formatter, and Language Server:
+
+```bash
+pip install onec-hbk-bsl-core
+```
+
+For the complete package including MCP:
+
+```bash
+pip install onec-hbk-bsl
+```
+
+Python 3.12+ is required. Standalone macOS, Linux, and Windows binaries are also
+published in [GitHub Releases](https://github.com/mussolene/1c_hbk_bsl/releases).
+
+## Main commands
+
+| Task | Command |
+|---|---|
+| Check a project | `onec-hbk-bsl check .` |
+| Apply safe fixes | `onec-hbk-bsl check . --fix` |
+| Format files | `onec-hbk-bsl format .` |
+| List rules | `onec-hbk-bsl rules` |
+| Create a configuration | `onec-hbk-bsl init` |
+| Start the Language Server | `onec-hbk-bsl lsp` |
+| Start the local MCP server | `onec-hbk-bsl mcp` |
+| Inspect the index | `onec-hbk-bsl index --status` |
+
+Run `onec-hbk-bsl <command> --help` for the complete option list.
+
+## Project configuration
+
+Create `onec-hbk-bsl.toml` in the project root:
+
+```toml
+select = ["BSL012", "BSL236"]
+ignore = ["BSL002"]
+exclude = ["vendor", "*.gen.bsl"]
+
+[per-file-ignores]
+"legacy/*.bsl" = ["BSL011"]
+```
+
+Both `BSL###` codes and compatible aliases are accepted by `select` and
+`ignore`. Rule-specific suppression forms are documented in the
+[diagnostic catalog](diagnostic-rules.md).
+
+## Reports and CI
+
+```bash
+onec-hbk-bsl check . --format sarif > onec-hbk-bsl.sarif
+onec-hbk-bsl check . --jobs 4
+onec-hbk-bsl check . --baseline baseline.json
+onec-hbk-bsl check . --diff --since origin/main
+```
+
+The supported formats are `text`, `json`, and `sarif`. Baselines, diff checks,
+and `--exit-zero` help with gradual adoption.
+
+## Language Server and MCP
+
+The Language Server provides diagnostics, formatting, definition, references,
+rename, hover, completion, signature help, folding, code actions, inlay hints,
+and semantic tokens. It is normally started by the
+[VS Code / Cursor extension](extension.md).
+
+The local MCP server exposes diagnostics, navigation, and safe rename plans to
+agents within the configured workspace. Use it only with trusted local clients.
+
+## Supported inputs
+
+- `.bsl` and `.os` source files;
+- Designer configuration exports;
+- projects configured with `onec-hbk-bsl.toml`;
+- Python 3.12, 3.13, and 3.14.
+
+</div>

@@ -2,105 +2,104 @@
 
 <div class="doc-lang doc-lang-ru" markdown="1">
 
-Единый набор инструментов для разработки на встроенном языке 1С:
-форматирование, 180 диагностических правил, Language Server, CLI, Python API
-и MCP-интеграция.
-
-[Открыть каталог правил](diagnostic-rules.md){ .md-button .md-button--primary }
-[Начать работу](public-surface.md){ .md-button }
-
-## Что входит
+Инструменты качества и редакторская поддержка для встроенного языка
+«1С:Предприятия» (BSL). Репозиторий выпускает два связанных продукта.
 
 <div class="grid cards" markdown>
 
--   :material-shield-search:{ .lg .middle } **180 диагностик**
+-   :material-language-python:{ .lg .middle } **Toolkit**
 
     ---
 
-    Стабильные коды `BSL###`, совместимые псевдонимы, подавления и подробные
-    контракты поведения.
+    Python-пакет и автономные бинарники: 180 диагностик, форматтер, CLI,
+    Language Server, Python API, SARIF и локальный MCP-сервер.
 
--   :material-format-align-left:{ .lg .middle } **Форматтер**
+    [Установить Toolkit](public-surface.md){ .md-button }
 
-    ---
-
-    Детерминированное форматирование BSL через CLI, Python API и редактор.
-
--   :material-language-python:{ .lg .middle } **LSP и MCP**
+-   :material-microsoft-visual-studio-code:{ .lg .middle } **Расширение VS Code / Cursor**
 
     ---
 
-    Диагностика, навигация, переименование, подсказки и инструменты для агентов.
+    Готовая редакторская интеграция с подсветкой, диагностикой, форматированием,
+    навигацией, автодополнением, переименованием и встроенным сервером.
 
--   :material-console:{ .lg .middle } **CLI и CI**
-
-    ---
-
-    Текстовые, JSON и SARIF-отчёты, baseline, diff-проверки и параллельный запуск.
+    [Установить расширение](extension.md){ .md-button .md-button--primary }
 
 </div>
 
+## Как выбрать
+
+- Нужна проверка в терминале или CI — установите **Toolkit**.
+- Нужны подсказки и навигация в редакторе — установите **расширение**.
+- Для полного рабочего места используйте оба: расширение отвечает за редактор,
+  а CLI — за воспроизводимые проверки проекта и CI.
+
 ## Быстрый запуск
 
-```bash
-pip install onec-hbk-bsl
-onec-hbk-bsl check .
-```
+=== "VS Code / Cursor"
 
-Настройки проекта хранятся в `onec-hbk-bsl.toml`. Полный контракт команд,
-конфигурации и интеграций находится в разделе
-[«Публичные интерфейсы»](public-surface.md).
+    Установите `mussolene.1c-hbk-bsl` из Marketplace и откройте каталог с
+    файлами `.bsl` или `.os`. Системный Python не требуется.
+
+=== "CLI"
+
+    ```bash
+    pip install onec-hbk-bsl
+    onec-hbk-bsl check .
+    ```
+
+[Открыть каталог правил](diagnostic-rules.md){ .md-button }
 
 </div>
 
 <div class="doc-lang doc-lang-en" markdown="1">
 
-A unified toolkit for the 1C Enterprise built-in language: formatting,
-180 diagnostic rules, a Language Server, CLI, Python API, and MCP integration.
-
-[Browse diagnostic rules](diagnostic-rules.md){ .md-button .md-button--primary }
-[Public interfaces](public-surface.md){ .md-button }
-
-## Included capabilities
+Quality tooling and editor support for the 1C:Enterprise built-in language
+(BSL). The repository ships two related products.
 
 <div class="grid cards" markdown>
 
--   :material-shield-search:{ .lg .middle } **180 diagnostics**
+-   :material-language-python:{ .lg .middle } **Toolkit**
 
     ---
 
-    Stable `BSL###` codes, compatible aliases, suppressions, and detailed
-    behavioral contracts.
+    Python packages and standalone binaries providing 180 diagnostics, a
+    formatter, CLI, Language Server, Python API, SARIF, and a local MCP server.
 
--   :material-format-align-left:{ .lg .middle } **Formatter**
+    [Install the Toolkit](public-surface.md){ .md-button }
 
-    ---
-
-    Deterministic BSL formatting through the CLI, Python API, and editor.
-
--   :material-language-python:{ .lg .middle } **LSP and MCP**
+-   :material-microsoft-visual-studio-code:{ .lg .middle } **VS Code / Cursor extension**
 
     ---
 
-    Diagnostics, navigation, rename, editor assistance, and agent tools.
+    Ready-to-use editor integration with highlighting, diagnostics, formatting,
+    navigation, completion, rename, and a bundled server.
 
--   :material-console:{ .lg .middle } **CLI and CI**
-
-    ---
-
-    Text, JSON, and SARIF reports, baselines, diff checks, and parallel execution.
+    [Install the extension](extension.md){ .md-button .md-button--primary }
 
 </div>
 
+## Which one to use
+
+- Install the **Toolkit** for terminal and CI checks.
+- Install the **extension** for editor assistance and navigation.
+- Use both for a complete setup: the extension handles the editor while the
+  CLI provides reproducible project and CI checks.
+
 ## Quick start
 
-```bash
-pip install onec-hbk-bsl
-onec-hbk-bsl check .
-```
+=== "VS Code / Cursor"
 
-Project settings live in `onec-hbk-bsl.toml`. The complete command,
-configuration, and integration contract is documented under
-[Public interfaces](public-surface.md).
+    Install `mussolene.1c-hbk-bsl` from Marketplace and open a folder containing
+    `.bsl` or `.os` files. A system Python installation is not required.
+
+=== "CLI"
+
+    ```bash
+    pip install onec-hbk-bsl
+    onec-hbk-bsl check .
+    ```
+
+[Browse diagnostic rules](diagnostic-rules.md){ .md-button }
 
 </div>

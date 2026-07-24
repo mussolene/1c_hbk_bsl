@@ -146,36 +146,51 @@ def test_local_markdown_link_checker_validates_paths_and_anchors(tmp_path: Path)
         verify_release.verify_local_markdown_links(tmp_path)
 
 
-def test_documentation_ownership_rejects_duplicate_owner_keys(tmp_path: Path) -> None:
+def test_public_documentation_requires_bilingual_product_pages(tmp_path: Path) -> None:
     docs = tmp_path / "docs"
     docs.mkdir()
-    for owner in verify_release.REQUIRED_DOC_OWNERS:
-        (tmp_path / f"{owner}.md").write_text(f"# {owner}\n", encoding="utf-8")
-    rows = "\n".join(
-        f"| `{owner}` | [{owner}](../{owner}.md) | contract |"
-        for owner in sorted(verify_release.REQUIRED_DOC_OWNERS)
-    )
-    (docs / "public-surface.md").write_text(
-        "<!-- docs-index:start -->\n"
-        "| Owner key | Canonical owner | Scope |\n"
-        "|---|---|---|\n"
-        f"{rows}\n"
-        "<!-- docs-index:end -->\n",
+    extension = tmp_path / "vscode-extension"
+    extension.mkdir()
+    (extension / "package.json").write_text(
+        json.dumps({"contributes": {"configuration": {"properties": {"setting.one": {}}}}}),
         encoding="utf-8",
     )
-    verify_release.verify_documentation_ownership(tmp_path)
+    bilingual = '<div class="doc-lang-ru"></div><div class="doc-lang-en"></div>'
+    for name in verify_release.REQUIRED_PUBLIC_DOCS:
+        text = bilingual + ("`setting.one`" if name == "extension.md" else "")
+        (docs / name).write_text(text, encoding="utf-8")
+    verify_release.verify_public_documentation(tmp_path)
 
-    duplicated = rows + "\n| `architecture` | [duplicate](../architecture.md) | duplicate |"
-    (docs / "public-surface.md").write_text(
-        "<!-- docs-index:start -->\n"
-        "| Owner key | Canonical owner | Scope |\n"
-        "|---|---|---|\n"
-        f"{duplicated}\n"
-        "<!-- docs-index:end -->\n",
-        encoding="utf-8",
+    (docs / "index.md").write_text('<div class="doc-lang-ru"></div>', encoding="utf-8")
+    with pytest.raises(ValueError, match="not bilingual"):
+        verify_release.verify_public_documentation(tmp_path)
+
+
+def test_mkdocs_i18n_hook_removes_inactive_nested_blocks() -> None:
+    hook_path = SCRIPT.parent / "mkdocs_i18n.py"
+    hook_spec = importlib.util.spec_from_file_location("mkdocs_i18n", hook_path)
+    assert hook_spec is not None and hook_spec.loader is not None
+    hook = importlib.util.module_from_spec(hook_spec)
+    hook_spec.loader.exec_module(hook)
+    source = (
+        '# <span class="doc-lang doc-lang-ru">RU</span>'
+        '<span class="doc-lang doc-lang-en">EN</span>\n'
+        '<div class="doc-lang doc-lang-ru" markdown="1">\n'
+        'Русский\n<div class="grid cards">\nКарточка\n</div>\n</div>\n'
+        '<div class="doc-lang doc-lang-en" markdown="1">\nEnglish\n</div>\n'
     )
-    with pytest.raises(ValueError, match="duplicate normative"):
-        verify_release.verify_documentation_ownership(tmp_path)
+
+    rendered = hook.on_page_markdown(
+        source,
+        page=None,
+        config={"extra": {"doc_locale": "ru"}},
+        files=None,
+    )
+
+    assert "Русский" in rendered
+    assert "Карточка" in rendered
+    assert "English" not in rendered
+    assert ">EN<" not in rendered
 
 
 def test_published_docs_reject_adjacent_analyzer_links(tmp_path: Path) -> None:

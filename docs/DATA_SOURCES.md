@@ -21,7 +21,10 @@ Legal review cannot be automated. Before adding or updating data from internal o
 2. **No customer data** — no production infobases, dumps, or client-specific identifiers.
 3. **Trademarks** — use of “1C”, “1С:Предприятие”, etc. follows applicable trademark/naming policies for **descriptive** compatibility statements (as in README), not implied endorsement.
 
-If any past commit accidentally contained confidential material, follow the incident response steps in [SECURITY_AUDIT.md](SECURITY_AUDIT.md) (rotation + optional history rewrite).
+If a past commit accidentally contained confidential material, follow the
+reporting and incident-response process in
+[`SECURITY.md`](../SECURITY.md). Rotate exposed credentials before considering
+any coordinated history rewrite.
 
 ## Diagnostic Alias Provenance
 

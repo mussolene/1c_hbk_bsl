@@ -172,6 +172,8 @@ def test_all_rule_pages_have_current_generated_headers_and_localized_description
         actual = path.read_text(encoding="utf-8")
         assert actual == expected
         assert "<!-- localized-rule-description:start -->" in actual
+        assert "<!-- engineering-contract:start -->" not in actual
+        assert "Engineering contract" not in actual
         assert '<div class="doc-lang doc-lang-ru"' in actual
         assert '<div class="doc-lang doc-lang-en"' in actual
         assert f"# {path.stem} —" in actual

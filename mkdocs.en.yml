@@ -8,26 +8,11 @@ site_dir: site/en
 theme:
   language: en
 
+extra:
+  doc_locale: en
+
 nav:
   - Home: index.md
-  - Usage:
-      - Public interfaces: public-surface.md
-      - Client-server diagnostics: CLIENT_SERVER_DIAGNOSTICS.md
-      - Rule invocation: diagnostics_rule_invoke.md
-      - LSP path mapping: LSP_BRIDGE_PATH_MAPPING.md
-      - Operations: Production-Notes.md
-  - Rules:
-      - Rule catalog: diagnostic-rules.md
-  - Architecture:
-      - Overview: architecture.md
-      - CST policy: cst_policy.md
-      - Metadata registry: metadata_registry.md
-      - Data sources: DATA_SOURCES.md
-  - Development:
-      - Test migration: diagnostic-test-migration.md
-      - OACS workflow: oacs-development.md
-      - LSP soak runbook: lsp-soak-runbook.md
-  - Security:
-      - Audit: SECURITY_AUDIT.md
-      - Third-party notices: THIRD_PARTY_NOTICES.md
-      - LGPL-3.0: licenses/LGPL-3.0.md
+  - Toolkit: public-surface.md
+  - Extension: extension.md
+  - Rules: diagnostic-rules.md

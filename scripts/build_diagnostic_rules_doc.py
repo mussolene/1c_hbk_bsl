@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build the public diagnostic rules reference from the runtime registry.
 
-The rule contract files are the single canonical pages for both users and
-maintainers.  This builder owns only their bounded product-facing header; the
-manually curated descriptions and engineering contract remain untouched.
+The rule pages are a user-facing reference.  The builder owns their bounded
+metadata and configuration header and preserves the curated RU/EN description.
+Internal implementation dossiers are deliberately excluded from public docs.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ RULE_HEADER_START = "<!-- generated-rule-header:start -->"
 RULE_HEADER_END = "<!-- generated-rule-header:end -->"
 LOCALIZED_DESCRIPTION_END = "<!-- localized-rule-description:end -->"
 ENGINEERING_CONTRACT_START = "<!-- engineering-contract:start -->"
-ENGINEERING_CONTRACT_END = "<!-- engineering-contract:end -->"
 
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -77,24 +76,23 @@ def build_rule_header(code: str) -> str:
             "",
             "</div>",
             "",
-            "## Идентификаторы / Identifiers",
-            "",
-            "| Поле / Field | Значение / Value |",
-            "|---|---|",
-            f"| Код правила / Rule code | `{code}` |",
-            f"| Совместимый псевдоним / Compatible alias | `{alias}` |",
-            f"| Серьёзность / Severity | `{severity}` |",
-            "| Включено по умолчанию / Enabled by default | Да / Yes |",
-            f"| Реализовано / Implemented | {implemented} / {'Yes' if implemented == 'Да' else 'No'} |",
-            f"| Теги / Tags | {tags} |",
-            "",
             '<div class="doc-lang doc-lang-ru" markdown="1">',
             "",
-            "## Контракт поведения",
+            "## Идентификаторы",
+            "",
+            "| Поле | Значение |",
+            "|---|---|",
+            f"| Код правила | `{code}` |",
+            f"| Совместимый псевдоним | `{alias}` |",
+            f"| Серьёзность | `{severity}` |",
+            "| Включено по умолчанию | Да |",
+            f"| Реализовано | {implemented} |",
+            f"| Теги | {tags} |",
+            "",
+            "## Поведение",
             "",
             f"- Публичный идентификатор `{code}` и псевдоним `{alias}` стабильны.",
-            "- Правило сообщает только о случаях, описанных на этой странице и в",
-            "  проверяемом инженерном контракте.",
+            "- Правило сообщает о случаях, описанных на этой странице.",
             "- Подавления и проектная конфигурация применяются до публикации результата.",
             "- Для выполнения правила не требуется внешний анализатор или сетевой доступ.",
             "",
@@ -128,11 +126,21 @@ def build_rule_header(code: str) -> str:
             "",
             '<div class="doc-lang doc-lang-en" markdown="1">',
             "",
-            "## Behavioral contract",
+            "## Identifiers",
+            "",
+            "| Field | Value |",
+            "|---|---|",
+            f"| Rule code | `{code}` |",
+            f"| Compatible alias | `{alias}` |",
+            f"| Severity | `{severity}` |",
+            "| Enabled by default | Yes |",
+            f"| Implemented | {'Yes' if implemented == 'Да' else 'No'} |",
+            f"| Tags | {tags} |",
+            "",
+            "## Behavior",
             "",
             f"- The public identifier `{code}` and alias `{alias}` are stable.",
-            "- The rule reports only the cases documented on this page and in its",
-            "  verifiable engineering contract.",
+            "- The rule reports the cases documented on this page.",
             "- Suppressions and project configuration are applied before publication.",
             "- The rule requires neither an external analyzer nor network access.",
             "",
@@ -169,38 +177,14 @@ def build_rule_header(code: str) -> str:
     )
 
 
-def _wrap_engineering_contract(body: str) -> str:
-    if ENGINEERING_CONTRACT_START in body and ENGINEERING_CONTRACT_END in body:
-        return body
+def _public_rule_body(body: str) -> str:
+    """Keep only the localized user documentation from an existing page."""
+    if ENGINEERING_CONTRACT_START in body:
+        body = body.split(ENGINEERING_CONTRACT_START, 1)[0]
     if LOCALIZED_DESCRIPTION_END in body:
-        prefix, contract = body.split(LOCALIZED_DESCRIPTION_END, 1)
-        prefix = f"{prefix}{LOCALIZED_DESCRIPTION_END}".rstrip()
-    else:
-        prefix, contract = "", body
-    contract = contract.strip()
-    wrapped = "\n".join(
-        [
-            ENGINEERING_CONTRACT_START,
-            "",
-            "## Инженерный контракт / Engineering contract",
-            "",
-            '<details class="engineering-contract">',
-            '<summary><span class="doc-lang doc-lang-ru">Показать полный контракт реализации</span>'
-            '<span class="doc-lang doc-lang-en">Show the complete implementation contract</span>'
-            "</summary>",
-            "",
-            '<div markdown="1">',
-            "",
-            contract,
-            "",
-            "</div>",
-            "",
-            "</details>",
-            "",
-            ENGINEERING_CONTRACT_END,
-        ]
-    )
-    return f"{prefix}\n\n{wrapped}".strip() if prefix else wrapped
+        prefix, _ = body.split(LOCALIZED_DESCRIPTION_END, 1)
+        return f"{prefix}{LOCALIZED_DESCRIPTION_END}".strip()
+    return body.strip()
 
 
 def render_rule_page(code: str, current: str) -> str:
@@ -220,13 +204,13 @@ def render_rule_page(code: str, current: str) -> str:
         else:
             prefix_lines.insert(0, title)
         prefix = "\n".join(prefix_lines).strip()
-        body = _wrap_engineering_contract(after.lstrip())
+        body = _public_rule_body(after.lstrip())
         return f"{prefix}\n\n{header}\n\n{body}".rstrip() + "\n"
 
     lines = current.strip().splitlines()
     if lines and lines[0].startswith("# "):
         lines = lines[1:]
-    body = _wrap_engineering_contract("\n".join(lines).lstrip())
+    body = _public_rule_body("\n".join(lines).lstrip())
     return f"{title}\n\n{header}\n\n{body}".rstrip() + "\n"
 
 
@@ -242,13 +226,14 @@ def expected_rule_pages() -> dict[Path, str]:
 
 def build_markdown() -> str:
     lines = [
-        "# Диагностические правила",
+        '# <span class="doc-lang doc-lang-ru">Диагностические правила</span>'
+        '<span class="doc-lang doc-lang-en">Diagnostic rules</span>',
         "",
         '<div class="doc-lang doc-lang-ru" markdown="1">',
         "",
         "Справочник генерируется из runtime-реестра `onec-hbk-bsl`. Код правила",
-        "ведёт на единственную страницу с описанием, примерами, подавлениями и",
-        "полным инженерным контрактом.",
+        "ведёт на единственную страницу с описанием, примерами, настройкой и",
+        "способами подавления.",
         "",
         "</div>",
         "",
@@ -256,11 +241,13 @@ def build_markdown() -> str:
         "",
         "This reference is generated from the `onec-hbk-bsl` runtime registry. Every",
         "rule code links to its single page with usage documentation, examples,",
-        "suppressions, and the complete engineering contract.",
+        "configuration, and suppressions.",
         "",
         "</div>",
         "",
-        "## Идентификаторы / Identifiers",
+        '<div class="doc-lang doc-lang-ru" markdown="1">',
+        "",
+        "## Идентификаторы",
         "",
         "- `BSL###` — основной стабильный код для вывода, `select`, `ignore`,",
         "  `onec-hbk-bsl.toml`, SARIF/JSON и `// noqa: BSL###`.",
@@ -268,10 +255,30 @@ def build_markdown() -> str:
         "  комментариях `// BSLLS:<RuleName>-off/on`; вывод всегда использует `BSL###`.",
         "- Нумерация стабильна, но не обязана быть непрерывной.",
         "",
-        "## Каталог / Catalog",
+        "</div>",
         "",
-        "| Code | Compatible alias | Default | Severity | Русское описание | English description | Tags |",
-        "|---|---|---:|---|---|---|---|",
+        '<div class="doc-lang doc-lang-en" markdown="1">',
+        "",
+        "## Identifiers",
+        "",
+        "- `BSL###` is the stable identifier used in output, `select`, `ignore`,",
+        "  `onec-hbk-bsl.toml`, SARIF/JSON, and `// noqa: BSL###`.",
+        "- The compatible alias is accepted in input configuration and",
+        "  `// BSLLS:<RuleName>-off/on` comments; output always uses `BSL###`.",
+        "- Identifiers are stable but are not necessarily contiguous.",
+        "",
+        "</div>",
+        "",
+        '## <span class="doc-lang doc-lang-ru">Каталог</span>'
+        '<span class="doc-lang doc-lang-en">Catalog</span>',
+        "",
+        '| <span class="doc-lang doc-lang-ru">Код</span><span class="doc-lang doc-lang-en">Code</span> '
+        '| <span class="doc-lang doc-lang-ru">Псевдоним</span><span class="doc-lang doc-lang-en">Alias</span> '
+        '| <span class="doc-lang doc-lang-ru">По умолчанию</span><span class="doc-lang doc-lang-en">Default</span> '
+        '| <span class="doc-lang doc-lang-ru">Уровень</span><span class="doc-lang doc-lang-en">Severity</span> '
+        '| <span class="doc-lang doc-lang-ru">Описание</span><span class="doc-lang doc-lang-en">Description</span> '
+        '| <span class="doc-lang doc-lang-ru">Теги</span><span class="doc-lang doc-lang-en">Tags</span> |',
+        "|---|---|---:|---|---|---|",
     ]
 
     for code in sorted(RULE_METADATA, key=_rule_sort_key):
@@ -280,27 +287,16 @@ def build_markdown() -> str:
         row = [
             f"[`{code}`]({_rule_page_link(code)})",
             f"`{meta.get('name', '')}`",
-            "Yes",
+            '<span class="doc-lang doc-lang-ru">Да</span>'
+            '<span class="doc-lang doc-lang-en">Yes</span>',
             str(meta.get("severity", "")),
-            RULE_DESCRIPTIONS_RU.get(code, str(meta.get("description", ""))),
-            str(meta.get("description", "")),
+            '<span class="doc-lang doc-lang-ru">'
+            f"{RULE_DESCRIPTIONS_RU.get(code, str(meta.get('description', '')))}</span>"
+            '<span class="doc-lang doc-lang-en">'
+            f"{meta.get('description', '')}</span>",
             tags,
         ]
         lines.append("| " + " | ".join(_escape_table_cell(cell) for cell in row) + " |")
-
-    lines.extend(
-        [
-            "",
-            "## Сопровождение / Maintenance",
-            "",
-            "После изменения `RULE_METADATA`, `RULE_DESCRIPTIONS_RU` или поведения",
-            "правил обновите индекс и генерируемые заголовки страниц:",
-            "",
-            "```bash",
-            "./.venv/bin/python scripts/build_diagnostic_rules_doc.py",
-            "```",
-        ]
-    )
     return "\n".join(lines) + "\n"
 
 

@@ -7,6 +7,8 @@ edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
 strict: true
+hooks:
+  - scripts/mkdocs_i18n.py
 
 theme:
   name: material
@@ -78,6 +80,7 @@ extra_javascript:
   - assets/javascripts/language.js
 
 extra:
+  doc_locale: ru
   alternate:
     - name: Русский
       link: https://mussolene.github.io/1c_hbk_bsl/
@@ -92,27 +95,21 @@ extra:
 
 nav:
   - Главная: index.md
-  - Использование:
-      - Публичные интерфейсы: public-surface.md
-      - Клиент-серверные диагностики: CLIENT_SERVER_DIAGNOSTICS.md
-      - Вызов правил: diagnostics_rule_invoke.md
-      - Сопоставление путей LSP: LSP_BRIDGE_PATH_MAPPING.md
-      - Эксплуатация: Production-Notes.md
-  - Правила:
-      - Каталог правил: diagnostic-rules.md
-  - Архитектура:
-      - Обзор: architecture.md
-      - Политика CST: cst_policy.md
-      - Реестр метаданных: metadata_registry.md
-      - Источники данных: DATA_SOURCES.md
-  - Разработка:
-      - Миграция тестов: diagnostic-test-migration.md
-      - OACS workflow: oacs-development.md
-      - LSP soak runbook: lsp-soak-runbook.md
-  - Безопасность:
-      - Аудит: SECURITY_AUDIT.md
-      - Сторонние компоненты: THIRD_PARTY_NOTICES.md
-      - LGPL-3.0: licenses/LGPL-3.0.md
+  - Toolkit: public-surface.md
+  - Расширение: extension.md
+  - Правила: diagnostic-rules.md
 
 not_in_nav: |
   rule-contracts/*
+
+exclude_docs: |
+  DATA_SOURCES.md
+  Production-Notes.md
+  THIRD_PARTY_NOTICES.md
+  architecture.md
+  cst_policy.md
+  diagnostics_rule_invoke.md
+  licenses/*
+  lsp-soak-runbook.md
+  metadata_registry.md
+  oacs-development.md

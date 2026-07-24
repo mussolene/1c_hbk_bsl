@@ -86,7 +86,7 @@ exclude = ["vendor", "*.gen.bsl"]
 "legacy/*.bsl" = ["BSL002", "BSL011"]
 ```
 
-Справочник правил: [Diagnostic rules](https://github.com/mussolene/1c_hbk_bsl/blob/main/docs/diagnostic-rules.md).
+Справочник правил: [Diagnostic rules](https://mussolene.github.io/1c_hbk_bsl/diagnostic-rules/).
 
 ## Команды
 
@@ -127,4 +127,6 @@ docker exec -i -e LOG_LEVEL=... <container> onec-hbk-bsl lsp
 
 ## Репозиторий
 
-Исходный код и документация: <https://github.com/mussolene/1c_hbk_bsl>
+Полная документация: <https://mussolene.github.io/1c_hbk_bsl/extension/>
+
+Исходный код: <https://github.com/mussolene/1c_hbk_bsl>
