@@ -51,6 +51,8 @@ jobs:
         run: ./.venv/bin/python -m mkdocs build --strict --config-file mkdocs.yml --site-dir site
       - name: Build English site
         run: ./.venv/bin/python -m mkdocs build --strict --config-file mkdocs.en.yml --site-dir site/en
+      - name: Verify rendered documentation links
+        run: ./.venv/bin/python scripts/verify_release.py docs-links --site-dir site
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4

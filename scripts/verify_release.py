@@ -12,9 +12,10 @@ import subprocess
 import tomllib
 import zipfile
 from email.parser import Parser
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urldefrag, urljoin, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ("darwin-arm64", "darwin-x64", "linux-x64", "win32-x64")
@@ -271,6 +272,83 @@ def verify_local_markdown_links(root: Path = ROOT) -> None:
                     failures.append(f"{source.relative_to(root)}: missing anchor {raw_link}")
     if failures:
         raise ValueError("broken local documentation links:\n" + "\n".join(failures))
+
+
+class _RenderedPageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.ids: set[str] = set()
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        element_id = attributes.get("id")
+        if element_id:
+            self.ids.add(element_id)
+        href = attributes.get("href")
+        if tag == "a" and href:
+            self.links.append(href)
+
+
+def _rendered_page_url(site_dir: Path, page: Path) -> str:
+    relative = page.relative_to(site_dir).as_posix()
+    if relative == "index.html":
+        suffix = ""
+    elif relative.endswith("/index.html"):
+        suffix = relative.removesuffix("index.html")
+    else:
+        suffix = relative
+    return urljoin("https://mussolene.github.io/1c_hbk_bsl/", suffix)
+
+
+def verify_rendered_documentation_links(site_dir: Path) -> None:
+    site_dir = site_dir.resolve()
+    pages: dict[Path, _RenderedPageParser] = {}
+    page_urls: dict[Path, str] = {}
+    for page in sorted(site_dir.rglob("*.html")):
+        parser = _RenderedPageParser()
+        parser.feed(page.read_text(encoding="utf-8"))
+        resolved = page.resolve()
+        pages[resolved] = parser
+        page_urls[resolved] = _rendered_page_url(site_dir, page)
+
+    failures: list[str] = []
+    site_prefix = "/1c_hbk_bsl/"
+    site_host = "mussolene.github.io"
+    for source, parser in pages.items():
+        source_label = source.relative_to(site_dir)
+        for raw_link in parser.links:
+            target_url, fragment = urldefrag(urljoin(page_urls[source], raw_link))
+            parsed = urlparse(target_url)
+            if parsed.scheme not in {"", "http", "https"}:
+                continue
+            if parsed.netloc and parsed.netloc != site_host:
+                continue
+            if not parsed.path.startswith(site_prefix):
+                failures.append(f"{source_label}: path leaves published site: {raw_link}")
+                continue
+
+            relative_path = unquote(parsed.path.removeprefix(site_prefix))
+            if not relative_path or relative_path.endswith("/"):
+                target = site_dir / relative_path / "index.html"
+            else:
+                target = site_dir / relative_path
+            target = target.resolve()
+            try:
+                target.relative_to(site_dir)
+            except ValueError:
+                failures.append(f"{source_label}: path escapes site: {raw_link}")
+                continue
+            if not target.is_file():
+                failures.append(f"{source_label}: missing rendered target: {raw_link}")
+                continue
+            if fragment and target.suffix == ".html":
+                target_page = pages.get(target)
+                if target_page is None or unquote(fragment) not in target_page.ids:
+                    failures.append(f"{source_label}: missing rendered anchor: {raw_link}")
+
+    if failures:
+        raise ValueError("broken rendered documentation links:\n" + "\n".join(failures))
 
 
 def verify_public_documentation(root: Path = ROOT) -> None:
@@ -562,7 +640,13 @@ def main() -> int:
     artifact_parser.add_argument("--output-dir", type=Path, required=True)
     artifact_parser.add_argument("--version", required=True)
     artifact_parser.add_argument("--allow-unreleased-changelog", action="store_true")
+    docs_parser = subparsers.add_parser("docs-links")
+    docs_parser.add_argument("--site-dir", type=Path, required=True)
     args = parser.parse_args()
+
+    if args.command == "docs-links":
+        verify_rendered_documentation_links(args.site_dir)
+        return 0
 
     if args.command == "source":
         source_contract()

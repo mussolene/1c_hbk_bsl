@@ -12,7 +12,10 @@ extra:
   doc_locale: en
 
 nav:
-  - Home: index.md
-  - Toolkit: public-surface.md
-  - Extension: extension.md
-  - Rules: diagnostic-rules.md
+  - Overview:
+      - Home: index.md
+  - Products:
+      - Toolkit: public-surface.md
+      - VS Code / Cursor extension: extension.md
+  - Diagnostics:
+      - Rule catalog: diagnostic-rules.md

@@ -146,6 +146,28 @@ def test_local_markdown_link_checker_validates_paths_and_anchors(tmp_path: Path)
         verify_release.verify_local_markdown_links(tmp_path)
 
 
+def test_rendered_documentation_link_checker_validates_pages_and_anchors(
+    tmp_path: Path,
+) -> None:
+    site = tmp_path / "site"
+    target = site / "guide" / "index.html"
+    target.parent.mkdir(parents=True)
+    target.write_text('<h1 id="install">Install</h1>', encoding="utf-8")
+    (site / "index.html").write_text(
+        '<a href="guide/#install">Guide</a><a href="https://example.com/">External</a>',
+        encoding="utf-8",
+    )
+
+    verify_release.verify_rendered_documentation_links(site)
+
+    (site / "index.html").write_text(
+        '<a href="guide/#missing">Broken anchor</a><a href="architecture/">Broken page</a>',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="broken rendered documentation links"):
+        verify_release.verify_rendered_documentation_links(site)
+
+
 def test_public_documentation_requires_bilingual_product_pages(tmp_path: Path) -> None:
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -191,6 +213,36 @@ def test_mkdocs_i18n_hook_removes_inactive_nested_blocks() -> None:
     assert "Карточка" in rendered
     assert "English" not in rendered
     assert ">EN<" not in rendered
+
+
+def test_mkdocs_i18n_hook_groups_rules_in_diagnostics_navigation(
+    tmp_path: Path,
+) -> None:
+    hook_path = SCRIPT.parent / "mkdocs_i18n.py"
+    hook_spec = importlib.util.spec_from_file_location("mkdocs_i18n_nav", hook_path)
+    assert hook_spec is not None and hook_spec.loader is not None
+    hook = importlib.util.module_from_spec(hook_spec)
+    hook_spec.loader.exec_module(hook)
+    rules = tmp_path / "rule-contracts"
+    rules.mkdir()
+    for code in ("BSL001", "BSL049", "BSL050"):
+        (rules / f"{code}.md").write_text(f"# {code}\n", encoding="utf-8")
+    config = {
+        "docs_dir": str(tmp_path),
+        "extra": {"doc_locale": "ru"},
+        "nav": [{"Диагностики": [{"Каталог правил": "diagnostic-rules.md"}]}],
+    }
+
+    hook.on_config(config)
+
+    diagnostics = config["nav"][0]["Диагностики"]
+    assert diagnostics[1] == {
+        "BSL001–BSL050": [
+            {"BSL001": "rule-contracts/BSL001.md"},
+            {"BSL049": "rule-contracts/BSL049.md"},
+            {"BSL050": "rule-contracts/BSL050.md"},
+        ]
+    }
 
 
 def test_published_docs_reject_adjacent_analyzer_links(tmp_path: Path) -> None:
