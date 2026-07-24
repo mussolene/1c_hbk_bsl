@@ -31,6 +31,31 @@ versioned-снимок проверок v0.8.38 и методика замеро
 [Production notes](docs/Production-Notes.md#verification-snapshot-v0838);
 актуальный статус подтверждают CI badge и artifacts конкретного релиза.
 
+## Место в экосистеме
+
+`onec-hbk-bsl` — локальный code-intelligence слой для текущего checkout. Он
+индексирует именно открытый workspace и владеет диагностикой, LSP-навигацией,
+форматированием, rename/fix и графом вызовов. Он не является общей базой
+справки по платформе и не управляет runtime-окружением.
+
+Соседние проекты закрывают другие уровни:
+
+| Слой | Проект | Источник истины |
+|---|---|---|
+| Runtime / orchestration | [`1c-develop`](https://github.com/mussolene/1c-develop) | воспроизводимый контейнер, 1С runtime, тестовые и агентные инструменты |
+| Shared help/context service | [`onec-context-mcp`](https://github.com/mussolene/onec-context-mcp) | централизованные platform help, API, standards, snippets и versioned context |
+| Source-first project context | [`onec-context-toolkit`](https://github.com/mussolene/onec-context-toolkit) | packs из конкретного `ConfigDump`/HBK, target/version binding и drift |
+| Local BSL code intelligence | **этот репозиторий** | текущие `.bsl`/`.os`, metadata XML и локальный индекс checkout |
+
+Обычно агенту, который меняет код, нужен `onec-hbk-bsl` и **один** подходящий
+help/context route: общий `onec-context-mcp` либо project-bound packs toolkit.
+`1c-develop` добавляется только когда нужен воспроизводимый 1С runtime. Не
+подключайте два источника одной и той же справки/metadata без явного
+приоритета: их версии и свежесть могут различаться.
+
+Полная карта deployment-сценариев, authority и совместного подключения:
+[Product boundaries and deployment map](docs/architecture.md#product-boundaries-and-deployment-map).
+
 ## Быстрый Старт
 
 ### VS Code / Cursor

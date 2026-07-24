@@ -13,6 +13,75 @@
 2. **LSP server** (pygls) — VS Code / Cursor: определение, ссылки, переименование, дополнение, подсказки сигнатур, форматирование, диагностики
 3. **CLI** — `onec-hbk-bsl check`, `index`, и т.д.
 
+## Product boundaries and deployment map
+
+### Слои ответственности
+
+Эти проекты дополняют друг друга, но не образуют один обязательный монолит:
+
+| Слой | Владелец | Отвечает за | Не отвечает за |
+|---|---|---|---|
+| Runtime / orchestration | [`1c-develop`](https://github.com/mussolene/1c-develop) | воспроизводимый контейнер, 1С runtime, VNC/RDP, тестовые утилиты, запуск агентных инструментов | актуальность локального code index и содержание platform help |
+| Shared help/context | [`onec-context-mcp`](https://github.com/mussolene/onec-context-mcp) | централизованный сервис platform help/API, standards, snippets и versioned metadata context | изменение текущего checkout, LSP и точные локальные refactoring edits |
+| Source-first project context | [`onec-context-toolkit`](https://github.com/mussolene/onec-context-toolkit) | сборка и проверка version/target-bound packs из HBK и `ConfigDump`, drift, read-only export | редакторная навигация и владение runtime-контейнером |
+| Local code intelligence | `onec-hbk-bsl` | диагностики, formatter, LSP/MCP/CLI, символы, вызовы, metadata XML и безопасные edits в текущем workspace | общая энциклопедия 1С, HBK ingest и runtime orchestration |
+
+Главное правило authority: изменение кода и навигация опираются на текущий
+checkout через `onec-hbk-bsl`; справочные утверждения — на version-exact
+help/context; выполнение и интеграционные тесты — на выбранный 1С runtime.
+Context из другой ветки или версии конфигурации не должен автоматически
+становиться основанием для edit в локальном workspace.
+
+### Deployment-сценарии
+
+#### 1. Centralized help для команды
+
+- Один общий `onec-context-mcp` индексирует platform help, standards и
+  разрешённые versioned context datasets.
+- На рабочих местах `onec-hbk-bsl` индексирует каждый локальный checkout.
+- `1c-develop` не обязателен; он подключается для воспроизводимого запуска 1С
+  и тестов.
+
+Это основной командный вариант, когда дорогой HBK/knowledge ingest не нужно
+повторять у каждого разработчика.
+
+#### 2. Branch/project context
+
+- `onec-context-toolkit` строит packs из зафиксированного `ConfigDump`/HBK и
+  сохраняет target, platform/config version и source snapshot.
+- Packs обновляются при изменении выбранной ветки или версии и могут
+  экспортироваться как read-only runtime bundle.
+- `onec-hbk-bsl` всё равно работает с локальным checkout; project pack даёт
+  контекст и подтверждение, но не подменяет локальный индекс для navigation и
+  edits.
+
+Такой режим подходит базовым конфигурациям, release branches и другим
+контекстам, которые меняются реже рабочего дерева.
+
+#### 3. Local dev workspace
+
+- `onec-hbk-bsl` запускается через extension/LSP, CLI или локальный MCP и
+  следит за текущей папкой.
+- Toolkit добавляется локально только когда нужны exact HBK, metadata/code/full
+  packs, multi-target выбор или offline context.
+- Для небольшого расширения/обработки без отдельной context-базы достаточно
+  `onec-hbk-bsl`; общий help service можно подключить отдельно.
+
+### Что подключать агенту
+
+| Задача | Обязательный слой | Опционально | Не смешивать без явного приоритета |
+|---|---|---|---|
+| Редактирование и навигация в текущем BSL | `onec-hbk-bsl` | один help/context route | два code index для одного checkout |
+| Вопрос по API/стандарту платформы | `onec-context-mcp` **или** toolkit platform pack | `onec-hbk-bsl` для проверки употребления в проекте | help snapshots разных версий |
+| Анализ зафиксированной конфигурации/ветки | toolkit metadata/code/full pack | `onec-hbk-bsl` на соответствующем checkout | project pack другой версии как authority для edit |
+| Запуск 1С, Vanessa или интеграционных тестов | `1c-develop` либо другой явно выбранный runtime | оба analysis/context слоя | считать контейнер источником актуального кода без bind mount/sync |
+| CI lint/SARIF | `onec-hbk-bsl` CLI | `1c-develop` для runtime tests | общий help ingest в каждом CI job без необходимости |
+
+Если подключены `onec-context-mcp` и toolkit одновременно, агент обязан назвать,
+какой источник авторитетен для platform version, metadata target и конкретного
+ответа. Молчаливое объединение результатов запрещено: одинаковые имена при
+разных версиях дают правдоподобные, но неверные ответы.
+
 ## Component Diagram
 
 ```
