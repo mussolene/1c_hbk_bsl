@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `noqa`, `bsl-disable` and compatible `BSLLS:…-off` suppressions now share a
+  deterministic line/range contract: trailing markers affect one line,
+  standalone markers open a range, and family-specific enable markers close it.
 - Documentation is published as a searchable RU/EN Material site with
   system/light/dark themes and separate Toolkit and VS Code / Cursor guides;
   all 180 `BSL###` pages contain localized rule guidance and compatible

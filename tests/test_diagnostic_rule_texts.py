@@ -178,3 +178,17 @@ def test_all_rule_pages_have_current_generated_headers_and_localized_description
         assert '<div class="doc-lang doc-lang-en"' in actual
         assert f"# {path.stem} —" in actual
         assert path.is_relative_to(root / "docs")
+
+
+def test_rule_header_explains_suppression_scopes_unambiguously() -> None:
+    header = _load_rules_doc_builder().build_rule_header("BSL002")
+
+    assert "Все три семейства подавлений работают для текущей строки и диапазона" in header
+    assert "Если открывающий комментарий стоит после кода" in header
+    assert "// noqa-enable: BSL002" in header
+    assert "// bsl-enable: BSL002" in header
+    assert "// BSLLS:MethodSize-on" in header
+    assert "должны принадлежать одному семейству" in header
+    assert "support both a current line and a range" in header
+    assert "When an opening comment follows code" in header
+    assert "must belong to the same family" in header
