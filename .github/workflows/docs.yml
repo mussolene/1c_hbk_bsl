@@ -6,6 +6,7 @@ on:
     paths:
       - "docs/**"
       - "scripts/build_diagnostic_rules_doc.py"
+      - "scripts/mkdocs_i18n.py"
       - "scripts/verify_release.py"
       - "mkdocs*.yml"
       - "pyproject.toml"
@@ -16,6 +17,7 @@ on:
     paths:
       - "docs/**"
       - "scripts/build_diagnostic_rules_doc.py"
+      - "scripts/mkdocs_i18n.py"
       - "scripts/verify_release.py"
       - "mkdocs*.yml"
       - "pyproject.toml"

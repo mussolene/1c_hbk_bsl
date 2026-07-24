@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from onec_hbk_bsl.analysis.diagnostics import RULE_DESCRIPTIONS_RU, RULE_METADATA
+
 _DIV_OPEN = re.compile(r"<div\b", re.IGNORECASE)
 _DIV_CLOSE = re.compile(r"</div>", re.IGNORECASE)
 
@@ -20,12 +22,24 @@ def _rule_sort_key(path: Path) -> tuple[int, str]:
     return (int(suffix) if suffix.isdigit() else 10_000, code)
 
 
-def _rule_navigation(docs_dir: Path) -> list[dict[str, list[dict[str, str]]]]:
+def _rule_label(code: str, locale: str) -> str:
+    if locale == "en":
+        title = str(RULE_METADATA.get(code, {}).get("description", "")).strip()
+    else:
+        title = RULE_DESCRIPTIONS_RU.get(code, "").strip()
+    return title or code
+
+
+def _rule_navigation(
+    docs_dir: Path,
+    locale: str,
+) -> list[dict[str, list[dict[str, str]]]]:
     groups: dict[int, list[dict[str, str]]] = {}
     for path in sorted((docs_dir / "rule-contracts").glob("BSL*.md"), key=_rule_sort_key):
         number = _rule_sort_key(path)[0]
         start = ((number - 1) // 50) * 50 + 1
-        groups.setdefault(start, []).append({path.stem: f"rule-contracts/{path.name}"})
+        label = _rule_label(path.stem, locale)
+        groups.setdefault(start, []).append({label: f"rule-contracts/{path.name}"})
     return [
         {f"BSL{start:03d}–BSL{start + 49:03d}": pages} for start, pages in sorted(groups.items())
     ]
@@ -37,7 +51,7 @@ def on_config(config: Any) -> Any:
     section_title = "Diagnostics" if locale == "en" else "Диагностики"
     for item in config.get("nav", []):
         if isinstance(item, dict) and section_title in item:
-            item[section_title].extend(_rule_navigation(Path(config["docs_dir"])))
+            item[section_title].extend(_rule_navigation(Path(config["docs_dir"]), locale))
             break
     return config
 

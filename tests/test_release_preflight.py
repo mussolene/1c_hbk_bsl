@@ -225,7 +225,7 @@ def test_mkdocs_i18n_hook_groups_rules_in_diagnostics_navigation(
     hook_spec.loader.exec_module(hook)
     rules = tmp_path / "rule-contracts"
     rules.mkdir()
-    for code in ("BSL001", "BSL049", "BSL050"):
+    for code in ("BSL001", "BSL047", "BSL051"):
         (rules / f"{code}.md").write_text(f"# {code}\n", encoding="utf-8")
     config = {
         "docs_dir": str(tmp_path),
@@ -238,10 +238,19 @@ def test_mkdocs_i18n_hook_groups_rules_in_diagnostics_navigation(
     diagnostics = config["nav"][0]["Диагностики"]
     assert diagnostics[1] == {
         "BSL001–BSL050": [
-            {"BSL001": "rule-contracts/BSL001.md"},
-            {"BSL049": "rule-contracts/BSL049.md"},
-            {"BSL050": "rule-contracts/BSL050.md"},
+            {"Ошибка разбора исходного кода": "rule-contracts/BSL001.md"},
+            {"Магические даты": "rule-contracts/BSL047.md"},
         ]
+    }
+    assert diagnostics[2] == {"BSL051–BSL100": [{"Недостижимый код": "rule-contracts/BSL051.md"}]}
+
+    config["extra"]["doc_locale"] = "en"
+    config["nav"] = [{"Diagnostics": [{"Rule catalog": "diagnostic-rules.md"}]}]
+    hook.on_config(config)
+
+    diagnostics = config["nav"][0]["Diagnostics"]
+    assert diagnostics[1]["BSL001–BSL050"][0] == {
+        "Source code parse error": "rule-contracts/BSL001.md"
     }
 
 
