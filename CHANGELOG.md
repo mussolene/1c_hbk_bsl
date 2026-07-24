@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.46] - 2026-07-24
+
 ### Changed
 
 - Query metadata diagnostics BSL187/236/238 and query-aware LSP
@@ -19,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated API diagnostics BSL175/BSL176 now share the same immutable
   symbol/call fact snapshot in local and large-file execution paths without
   changing their severity, messages, multiplicity, or ranges.
+- Product boundaries between local code intelligence, centralized help/context,
+  source-first project packs, and runtime orchestration are documented with
+  three deployment scenarios and explicit source-authority rules.
 
 ## [0.8.45] - 2026-07-24
 
@@ -593,7 +598,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.45...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.46...HEAD
+[0.8.46]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.45...v0.8.46
 [0.8.45]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.44...v0.8.45
 [0.8.44]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.43...v0.8.44
 [0.8.43]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.42...v0.8.43
