@@ -25,9 +25,9 @@ owner instead of defining a second compatibility contract.
 | `third-party` | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Dependency provenance, notices and redistribution notes |
 <!-- docs-index:end -->
 
-Product boundaries with adjacent repositories are tracked only in
-[issue #8](https://github.com/mussolene/1c_hbk_bsl/issues/8). This index must
-not create a second product-boundary backlog.
+Product boundaries with adjacent repositories are defined only in the
+[product boundaries and deployment map](architecture.md#product-boundaries-and-deployment-map).
+This index must not create a second product-boundary specification.
 
 ## Product Contract
 

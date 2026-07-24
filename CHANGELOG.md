@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README landing page is reorganized around installation and common tasks,
+  removes duplicated reference prose, and replaces retired Visual Studio
+  Marketplace Shields endpoints with stable release, security, and install
+  links.
+
 ## [0.8.46] - 2026-07-24
 
 ### Changed
