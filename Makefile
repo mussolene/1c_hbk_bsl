@@ -182,10 +182,10 @@ index:
 		echo "Использование: make index WORKSPACE=/path/to/1c/config"; \
 		exit 1; \
 	fi
-	onec-hbk-bsl --index $(WORKSPACE)
+	onec-hbk-bsl index $(WORKSPACE)
 
 mcp:
-	onec-hbk-bsl --mcp --port 8051
+	onec-hbk-bsl mcp --port 8051
 
 lsp:
-	onec-hbk-bsl --lsp
+	onec-hbk-bsl lsp

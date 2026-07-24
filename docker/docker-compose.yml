@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Persistent volume for the SQLite index database
 volumes:
   bsl_index_data:
@@ -38,7 +36,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8051/health')"
+          "import os,socket; socket.create_connection(('127.0.0.1', int(os.environ.get('MCP_PORT', '8051'))), 5).close()"
         ]
       interval: 30s
       timeout: 10s
@@ -48,4 +46,4 @@ services:
     # Optional: run a full reindex on startup before starting the MCP server
     # Uncomment to enable:
     # command: >
-    #   sh -c "onec-hbk-bsl --index /workspace --force && onec-hbk-bsl --mcp"
+    #   sh -c "onec-hbk-bsl index /workspace --force && onec-hbk-bsl mcp"

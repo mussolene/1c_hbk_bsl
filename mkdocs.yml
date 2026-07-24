@@ -109,12 +109,8 @@ not_in_nav: |
 
 exclude_docs: |
   DATA_SOURCES.md
-  Production-Notes.md
   THIRD_PARTY_NOTICES.md
-  architecture.md
   cst_policy.md
-  diagnostics_rule_invoke.md
   licenses/*
   lsp-soak-runbook.md
-  metadata_registry.md
   oacs-development.md

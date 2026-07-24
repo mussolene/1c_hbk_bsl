@@ -5,16 +5,13 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
-# Install build tools
-RUN pip install --no-cache-dir uv
-
 # Copy only dependency manifests first (cache layer)
 COPY pyproject.toml ./
 COPY src/ ./src/
 
-# Create a venv and install all dependencies
+# Create a venv with the MCP runtime dependency set.
 RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir -e ".[dev]"
+    /opt/venv/bin/pip install --no-cache-dir ".[mcp]"
 
 # ---------------------------------------------------------------------------
 # Stage 2: runtime
@@ -29,11 +26,7 @@ RUN apt-get update && \
 # Copy venv from builder
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy application source
-COPY src/ /app/src/
-
 ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHONPATH="/app/src"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -50,8 +43,8 @@ VOLUME ["/data", "/workspace"]
 
 EXPOSE 8051
 
-# Health check — MCP server exposes /health on the HTTP port
+# Check that the MCP HTTP listener accepts connections.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${MCP_PORT:-8051}/health')" || exit 1
+    CMD python -c "import os,socket; socket.create_connection(('127.0.0.1', int(os.environ.get('MCP_PORT', '8051'))), 5).close()" || exit 1
 
-CMD ["onec-hbk-bsl", "--mcp"]
+CMD ["onec-hbk-bsl", "mcp"]

@@ -7,7 +7,6 @@ prune .agent
 prune .claude
 prune .codex
 prune .github
-prune assets
 prune build
 prune corpus-largest-3
 prune data
@@ -28,7 +27,6 @@ exclude AGENTS.md
 exclude CLAUDE.md
 exclude CONTRIBUTING.md
 exclude Makefile
-exclude env.example
 exclude uv.lock
 
 global-exclude __pycache__

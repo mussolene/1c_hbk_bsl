@@ -60,6 +60,12 @@ environment `pypi`. API-токен в GitHub secrets для этого пути 
 перед изменением семейства правил, чтобы планировать работу по shared runtime
 facts, а не по красивым, но неисполнительным фазам.
 
+`registry phase` (`line`, `cst`, `proc`, `region`, `index`, `hybrid`, `module`,
+`other`) — классификация для метрик и бенчмарков. Она строится из явных
+переопределений и метаданных правил и попадает в
+`DiagnosticEngine.last_metrics["rule_invoke"]`, но не управляет исполнением.
+Источник фактического плана — `analysis/diagnostic/diagnostic_runtime/runner.py`.
+
 ## BSLLS parity для диагностик
 
 **`compare_diag_bslls.py`** сравнивает выбранные правила onec-hbk-bsl и BSLLS:
