@@ -3054,7 +3054,12 @@ class DocumentSnapshot:
         """Store global method-call facts shared by runtime rules."""
         self._global_method_calls_cache = calls
 
-    def semantic_facts(self, revision: Any | None = None) -> Any:
+    def semantic_facts(
+        self,
+        revision: Any | None = None,
+        *,
+        metadata_resolver: Any | None = None,
+    ) -> Any:
         """Return one immutable fact snapshot for this content and semantic revision."""
         from onec_hbk_bsl.analysis.semantic_facts import (  # noqa: PLC0415
             FactRevision,
@@ -3068,7 +3073,11 @@ class DocumentSnapshot:
                 self._semantic_fact_snapshots = {}
             facts = self._semantic_fact_snapshots.get(revision)
             if facts is None:
-                facts = build_semantic_fact_snapshot(self, revision)
+                facts = build_semantic_fact_snapshot(
+                    self,
+                    revision,
+                    metadata_resolver=metadata_resolver,
+                )
                 self._semantic_fact_snapshots[revision] = facts
                 self._semantic_fact_build_count += 1
             return facts

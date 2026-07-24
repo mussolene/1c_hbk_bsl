@@ -1619,6 +1619,43 @@ class TestHandlerFunctions:
         assert result is not None
         assert "Число(15,2)" in str(result.contents)
 
+    def test_query_metadata_hover_uses_semantic_fact_resolution(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_hover
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        content = 'Запрос.Текст = "ВЫБРАТЬ Таблица.Ссылка ИЗ Справочник.Известный КАК Таблица";\n'
+        uri = (tmp_path / "Module.bsl").as_uri()
+        ls._docs[uri] = content
+        ls.symbol_index.has_metadata = lambda: True
+        ls.symbol_index.find_meta_object_candidates = lambda name, object_kind=None: (
+            [
+                {
+                    "name": name,
+                    "kind": object_kind,
+                    "synonym_ru": "",
+                    "collection": "Справочники",
+                }
+            ]
+            if name == "Известный" and object_kind == "Catalog"
+            else []
+        )
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.index("Известный") + 2
+
+        result = on_hover(ls, params)
+
+        assert result is not None
+        assert "Catalog.Известный" in str(result.contents)
+        context = ls._parsed_doc_cache[uri]
+        assert context.snapshot.semantic_fact_build_count == 1
+
     def test_on_signature_help_empty_doc_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
@@ -1931,6 +1968,55 @@ class TestHandlerFunctions:
         assert result is not None
         labels = [i.label for i in result.items]
         assert "Сумма" in labels
+
+    def test_query_metadata_completion_uses_resolved_kind(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_completion
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        content = 'Запрос.Текст = "ВЫБРАТЬ * ИЗ Справочник.Известный.Су";\n'
+        uri = (tmp_path / "Module.bsl").as_uri()
+        ls._docs[uri] = content
+        ls.symbol_index.has_metadata = lambda: True
+        ls.symbol_index.find_meta_object_candidates = lambda name, object_kind=None: (
+            [
+                {
+                    "name": name,
+                    "kind": object_kind,
+                    "synonym_ru": "",
+                    "collection": "Справочники",
+                }
+            ]
+            if name == "Известный" and object_kind == "Catalog"
+            else []
+        )
+        ls.symbol_index.get_meta_members = lambda obj, prefix="", object_kind=None: (
+            [
+                {
+                    "name": "Сумма",
+                    "kind": "attribute",
+                    "type_info": "Число",
+                    "synonym_ru": "",
+                    "object_name": obj,
+                    "object_kind": object_kind,
+                }
+            ]
+            if obj == "Известный" and prefix == "Су" and object_kind == "Catalog"
+            else []
+        )
+
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = content.index('";')
+
+        result = on_completion(ls, params)
+
+        assert result is not None
+        assert [item.label for item in result.items] == ["Сумма"]
+        context = ls._parsed_doc_cache[uri]
+        assert context.snapshot.semantic_fact_build_count == 1
 
 
 # ---------------------------------------------------------------------------

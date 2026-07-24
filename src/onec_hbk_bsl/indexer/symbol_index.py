@@ -1271,15 +1271,33 @@ class SymbolIndex:
             for member in rows
         ]
 
-    def find_meta_object(self, object_name: str) -> dict[str, Any] | None:
-        """Return metadata object info by name, or None if not found."""
-        row = self._read_optional_row(
+    def find_meta_object_candidates(
+        self,
+        object_name: str,
+        *,
+        object_kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return deterministic exact-name candidates without guessing across kinds."""
+        if object_kind is None:
+            return self._read_list(
+                lambda conn: conn.execute(
+                    "SELECT name, kind, synonym_ru, collection FROM meta_objects "
+                    "WHERE name_lower = ? ORDER BY kind, name",
+                    (object_name.casefold(),),
+                ).fetchall()
+            )
+        return self._read_list(
             lambda conn: conn.execute(
-                "SELECT name, kind, synonym_ru, collection FROM meta_objects WHERE name_lower = ? LIMIT 1",
-                (object_name.casefold(),),
-            ).fetchone()
+                "SELECT name, kind, synonym_ru, collection FROM meta_objects "
+                "WHERE name_lower = ? AND kind = ? ORDER BY name",
+                (object_name.casefold(), object_kind),
+            ).fetchall()
         )
-        return dict(row) if row else None
+
+    def find_meta_object(self, object_name: str) -> dict[str, Any] | None:
+        """Return the first deterministic metadata object candidate for compatibility."""
+        candidates = self.find_meta_object_candidates(object_name)
+        return candidates[0] if candidates else None
 
     def find_meta_objects_by_collection(
         self, collection: str, prefix: str = ""

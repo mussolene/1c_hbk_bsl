@@ -4,72 +4,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from onec_hbk_bsl.analysis.sdbl_cst import (
-    QUERY_METADATA_ROOTS,
-    ancestor,
-    dotted_identifier_parts,
-    iter_nodes,
-    nullable_join_field_uses_without_isnull,
-    query_source_uses,
-    query_temp_table_names,
-    source_alias_name,
-)
-
-_QUERY_METADATA_ROOT_TO_KIND: dict[str, str] = {
-    "бизнеспроцесс": "BusinessProcess",
-    "businessprocess": "BusinessProcess",
-    "документ": "Document",
-    "document": "Document",
-    "журналдокументов": "DocumentJournal",
-    "documentjournal": "DocumentJournal",
-    "справочник": "Catalog",
-    "catalog": "Catalog",
-    "перечисление": "Enum",
-    "enum": "Enum",
-    "планвидовхарактеристик": "ChartOfCharacteristicTypes",
-    "chartofcharacteristictypes": "ChartOfCharacteristicTypes",
-    "планывидовхарактеристик": "ChartOfCharacteristicTypes",
-    "chartsofcharacteristictypes": "ChartOfCharacteristicTypes",
-    "плансчетов": "ChartOfAccounts",
-    "chartofaccounts": "ChartOfAccounts",
-    "планысчетов": "ChartOfAccounts",
-    "chartsofaccounts": "ChartOfAccounts",
-    "планвидоврасчета": "ChartOfCalculationTypes",
-    "chartofcalculationtypes": "ChartOfCalculationTypes",
-    "регистрсведений": "InformationRegister",
-    "informationregister": "InformationRegister",
-    "регистрнакопления": "AccumulationRegister",
-    "accumulationregister": "AccumulationRegister",
-    "регистрбухгалтерии": "AccountingRegister",
-    "accountingregister": "AccountingRegister",
-    "регистррасчета": "CalculationRegister",
-    "calculationregister": "CalculationRegister",
-    "задача": "Task",
-    "task": "Task",
-    "планобмена": "ExchangePlan",
-    "exchangeplan": "ExchangePlan",
-    "внешнийисточникданных": "ExternalDataSource",
-    "externaldatasource": "ExternalDataSource",
-    "константа": "Constant",
-    "constant": "Constant",
-    "отчет": "Report",
-    "report": "Report",
-    "обработка": "DataProcessor",
-    "dataprocessor": "DataProcessor",
-}
-
-_QUERY_METADATA_ROOT_PATTERN = "|".join(
-    re.escape(root) for root in sorted(QUERY_METADATA_ROOTS, key=len, reverse=True)
-)
-
-_QUERY_METADATA_TYPE_REF_RE = re.compile(
-    r"\b(?:ССЫЛКА|REFS?)\s+"
-    rf"(({_QUERY_METADATA_ROOT_PATTERN})\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)"
-    r"|"
-    r"\b(?:КАК|AS)\s+"
-    rf"(({_QUERY_METADATA_ROOT_PATTERN})\.[A-Za-zА-Яа-яЁё_]\w*(?:\.[A-Za-zА-Яа-яЁё_]\w*)*)\s*\)",
-    re.IGNORECASE,
-)
 _BSL174_REGISTER_FOLDERS: frozenset[str] = frozenset(
     {
         "InformationRegisters",
@@ -527,151 +461,10 @@ def _diag_module() -> Any:
     return _diag
 
 
-def _missing_metadata_name(
-    source: str,
-    meta_names: set[tuple[str, str]],
-) -> str | None:
-    parts = source.split(".")
-    if not parts:
-        return None
-    if len(parts) == 1:
-        return None
-    root = parts[0].casefold()
-    kind = _QUERY_METADATA_ROOT_TO_KIND.get(root)
-    if kind is None:
-        return None
-    object_name = parts[1]
-    if (kind.casefold(), object_name.casefold()) in meta_names:
-        return None
-    return ".".join(parts[:2])
-
-
-def _bsl238_redundant_ref_nodes(root: Any) -> list[Any]:
-    query_scopes = list(iter_nodes(root, "query"))
-    if not query_scopes:
-        query_scopes = [root]
-
-    out: list[Any] = []
-    for scope in query_scopes:
-        out.extend(_bsl238_redundant_ref_nodes_in_scope(scope))
-    return out
-
-
-def _bsl238_nearest_query(node: Any) -> Any | None:
-    parent = getattr(node, "parent", None)
-    while parent is not None:
-        if getattr(parent, "type", None) == "query":
-            return parent
-        parent = getattr(parent, "parent", None)
-    return None
-
-
-def _bsl238_same_node(left: Any | None, right: Any | None) -> bool:
-    return (
-        left is not None
-        and right is not None
-        and getattr(left, "id", None) == getattr(right, "id", None)
-    )
-
-
-def _bsl238_source_owner(node: Any) -> Any | None:
-    parent = getattr(node, "parent", None)
-    while parent is not None:
-        if getattr(parent, "type", None) in {"table_source", "join_clause"}:
-            return parent
-        if getattr(parent, "type", None) in {"from_clause", "query", "source_file"}:
-            return None
-        parent = getattr(parent, "parent", None)
-    return None
-
-
-def _bsl238_redundant_ref_nodes_in_scope(scope: Any) -> list[Any]:
-    simple_source_aliases: set[str] = set()
-    tabular_section_aliases: set[str] = set()
-    tabular_section_roots = {
-        "бизнеспроцесс",
-        "businessprocess",
-        "документ",
-        "document",
-        "справочник",
-        "catalog",
-    }
-    for source_use in query_source_uses(scope):
-        if not _bsl238_same_node(_bsl238_nearest_query(source_use.node), scope):
-            continue
-        source_parts = source_use.source.split(".")
-        source_owner = _bsl238_source_owner(source_use.node)
-        alias = source_alias_name(source_owner) if source_owner is not None else None
-        if not alias:
-            continue
-        alias_cf = alias.casefold()
-        if len(source_parts) == 1:
-            simple_source_aliases.add(alias_cf)
-        elif len(source_parts) >= 3 and source_parts[0].casefold() in tabular_section_roots:
-            tabular_section_aliases.add(alias_cf)
-
-    out: list[Any] = []
-    for dotted in iter_nodes(scope, "dotted_identifier"):
-        if not _bsl238_same_node(_bsl238_nearest_query(dotted), scope):
-            continue
-        from_clause = ancestor(dotted, "from_clause")
-        if from_clause is not None and _bsl238_same_node(_bsl238_nearest_query(from_clause), scope):
-            continue
-        parts = dotted_identifier_parts(dotted)
-        if len(parts) < 3:
-            continue
-        ref_indexes = [
-            idx
-            for idx, part in enumerate(parts[1:], start=1)
-            if part.casefold() in {"ссылка", "reference", "ref"}
-        ]
-        if not ref_indexes:
-            continue
-        root_alias = parts[0].casefold()
-        last_ref_index = ref_indexes[-1]
-        if root_alias in (simple_source_aliases | tabular_section_aliases) and last_ref_index == 1:
-            continue
-        out.append(dotted)
-    return out
-
-
-def _run_bsl187_on_sdbl_tree(path: str, block: Any) -> list[Any]:
-    tree = getattr(block, "sdbl_tree", None)
-    root = getattr(tree, "root_node", None)
-    if root is None:
-        return []
-
-    _diag = _diag_module()
-    diags: list[Any] = []
-    seen: set[int] = set()
-    for usage in nullable_join_field_uses_without_isnull(root):
-        node = usage.join_node
-        key = getattr(node, "id", 0)
-        if key in seen:
-            continue
-        seen.add(key)
-        start_line, start_char = block.original_lsp_position(
-            node.start_point[0], node.start_point[1]
-        )
-        end_line, end_char = block.original_lsp_position(node.end_point[0], node.end_point[1])
-        diags.append(
-            _diag.Diagnostic(
-                file=path,
-                line=start_line + 1,
-                character=start_char,
-                end_line=end_line + 1,
-                end_character=end_char,
-                severity=_diag.Severity.ERROR,
-                code="BSL187",
-            )
-        )
-    return diags
-
-
 def applicable_bsl174_187_236_238_codes(
     path: str,
     enabled: tuple[str, ...],
-    query_blocks: list[Any] | None,
+    query_facts: tuple[Any, ...] | None,
 ) -> tuple[str, ...]:
     _diag = _diag_module()
     enabled_set = set(enabled)
@@ -687,11 +480,11 @@ def applicable_bsl174_187_236_238_codes(
         ):
             out.append("BSL174")
 
-    if query_blocks and "BSL187" in enabled_set:
+    if query_facts and "BSL187" in enabled_set:
         out.append("BSL187")
-    if query_blocks and "BSL236" in enabled_set:
+    if query_facts and "BSL236" in enabled_set:
         out.append("BSL236")
-    if query_blocks and "BSL238" in enabled_set:
+    if query_facts and "BSL238" in enabled_set:
         out.append("BSL238")
     return tuple(code for code in enabled if code in out)
 
@@ -700,17 +493,12 @@ def run_bsl174_187_236_238_query_metadata_pool(
     path: str,
     lines: list[str],
     enabled: tuple[str, ...],
-    query_blocks: list[Any] | None = None,
+    query_facts: tuple[Any, ...] | None = None,
     cleaned_lines: list[str] | None = None,
 ) -> list[Any]:
     _diag = _diag_module()
     enabled_set = set(enabled)
     diags: list[Any] = []
-    root = _diag._config_root_for_file(path)
-    meta_names: set[tuple[str, str]] = set()
-    if "BSL236" in enabled_set and root is not None:
-        meta_names = set(_diag._metadata_typed_name_index_cached(root))
-
     object_xml = _diag._current_object_xml_path(path)
     object_context = _diag._current_module_xml_context(path)
     if (
@@ -735,95 +523,49 @@ def run_bsl174_187_236_238_query_metadata_pool(
                     )
                 )
 
-    if query_blocks is None:
-        all_query_lines = []
-    else:
-        all_query_lines = [_diag._query_block_content_line_tuples(block) for block in query_blocks]
-    if "BSL187" in enabled_set and query_blocks is not None:
-        for block in query_blocks:
-            diags.extend(_run_bsl187_on_sdbl_tree(path, block))
-
-    temp_table_names: set[str] = set()
-    if "BSL236" in enabled_set and query_blocks is not None:
-        for block in query_blocks:
-            root_node = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
-            if root_node is not None:
-                temp_table_names.update(query_temp_table_names(root_node))
-
-    for block_idx, query_lines in enumerate(all_query_lines):
-        if not query_lines:
-            continue
-        block = query_blocks[block_idx] if query_blocks is not None else None
-        root_node = getattr(getattr(block, "sdbl_tree", None), "root_node", None)
-        if "BSL236" in enabled_set and root_node is not None:
-            for source_use in query_source_uses(root_node):
-                source = source_use.source
-                if source.casefold() in temp_table_names:
-                    continue
-                missing_name = _missing_metadata_name(source, meta_names)
-                if meta_names and missing_name is not None and block is not None:
-                    start_line, start_char = block.original_lsp_position(
-                        source_use.node.start_point[0],
-                        source_use.node.start_point[1],
-                    )
-                    diags.append(
-                        _diag.Diagnostic(
-                            file=path,
-                            line=start_line + 1,
-                            character=start_char,
-                            end_line=start_line + 1,
-                            end_character=start_char + len(missing_name),
-                            severity=_diag.Severity.ERROR,
-                            code="BSL236",
-                        )
-                    )
-        if "BSL238" in enabled_set and root_node is not None and block is not None:
-            for node in _bsl238_redundant_ref_nodes(root_node):
-                start_line, start_char = block.original_lsp_position(
-                    node.start_point[0], node.start_point[1]
-                )
-                end_line, end_char = block.original_lsp_position(
-                    node.end_point[0], node.end_point[1]
-                )
+    for query in query_facts or ():
+        if "BSL187" in enabled_set:
+            for span in query.nullable_join_spans:
                 diags.append(
                     _diag.Diagnostic(
                         file=path,
-                        line=start_line + 1,
-                        character=start_char,
-                        end_line=end_line + 1,
-                        end_character=end_char,
+                        line=span.start_line + 1,
+                        character=span.start_character,
+                        end_line=span.end_line + 1,
+                        end_character=span.end_character,
+                        severity=_diag.Severity.ERROR,
+                        code="BSL187",
+                    )
+                )
+        if "BSL236" in enabled_set:
+            for context in query.metadata_contexts:
+                if not context.catalog_available or context.state != "unknown":
+                    continue
+                span = context.span
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=span.start_line + 1,
+                        character=span.start_character,
+                        end_line=span.end_line + 1,
+                        end_character=span.end_character,
+                        severity=_diag.Severity.ERROR,
+                        code="BSL236",
+                    )
+                )
+        if "BSL238" in enabled_set:
+            for span in query.redundant_reference_spans:
+                diags.append(
+                    _diag.Diagnostic(
+                        file=path,
+                        line=span.start_line + 1,
+                        character=span.start_character,
+                        end_line=span.end_line + 1,
+                        end_character=span.end_character,
                         severity=_diag.Severity.WARNING,
                         code="BSL238",
                     )
                 )
-        for line_no, content_base, _content, head, _ended in query_lines:
-            if 0 < line_no <= len(lines) and lines[line_no - 1].lstrip().startswith("//"):
-                continue
-            if "BSL236" in enabled_set:
-                source_matches: list[tuple[str, int]] = []
-                for match in _QUERY_METADATA_TYPE_REF_RE.finditer(head):
-                    source = match.group(1) or match.group(3)
-                    if source is None:
-                        continue
-                    source_start = match.start(1) if match.group(1) else match.start(3)
-                    source_matches.append((source, source_start))
-                for source, source_start in source_matches:
-                    if source.casefold() in temp_table_names:
-                        continue
-                    missing_name = _missing_metadata_name(source, meta_names)
-                    if meta_names and missing_name is not None:
-                        col = content_base + source_start
-                        diags.append(
-                            _diag.Diagnostic(
-                                file=path,
-                                line=line_no,
-                                character=col,
-                                end_line=line_no,
-                                end_character=col + len(missing_name),
-                                severity=_diag.Severity.ERROR,
-                                code="BSL236",
-                            )
-                        )
     return diags
 
 

@@ -431,6 +431,25 @@ class TestMetadataMembers:
         assert [member["name"] for member in catalog] == ["ПолеСправочника"]
         assert [member["name"] for member in document] == ["ПолеДокумента"]
 
+    def test_find_meta_object_candidates_preserves_kind_ambiguity(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        symbol_index.upsert_metadata(
+            [
+                MetaObject(name="ОбщийОбъект", kind="Document"),
+                MetaObject(name="ОбщийОбъект", kind="Catalog"),
+            ]
+        )
+
+        candidates = symbol_index.find_meta_object_candidates("ОбщийОбъект")
+        catalog = symbol_index.find_meta_object_candidates(
+            "ОбщийОбъект",
+            object_kind="Catalog",
+        )
+
+        assert [candidate["kind"] for candidate in candidates] == ["Catalog", "Document"]
+        assert [candidate["kind"] for candidate in catalog] == ["Catalog"]
+
 
 class TestMetadataConfigurationSnapshot:
     def test_legacy_type_wrapper_remains_supported(self) -> None:

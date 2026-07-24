@@ -1598,6 +1598,43 @@ def _workspace_symbol_hover(index: SymbolIndex, symbols: list[dict[str, Any]]) -
     return _hover_markdown(parts)
 
 
+def _metadata_fact_at_position(facts: Any, line: int, character: int) -> Any | None:
+    """Return the narrowest query metadata context containing an LSP position."""
+    matches = [
+        context
+        for context in facts.metadata_contexts
+        if context.span.start_line == line == context.span.end_line
+        and context.span.start_character <= character <= context.span.end_character
+    ]
+    if not matches:
+        return None
+    return min(
+        matches,
+        key=lambda context: context.span.end_character - context.span.start_character,
+    )
+
+
+def _query_metadata_fact_before_dot(
+    facts: Any,
+    line: int,
+    dot_character: int,
+    prefix_line: str,
+) -> Any | None:
+    """Resolve direct ``Kind.Object.`` completion from an immutable query fact."""
+    matches = []
+    for context in facts.metadata_contexts:
+        span = context.span
+        if span.start_line != line or span.end_line != line or span.end_character > dot_character:
+            continue
+        between = prefix_line[span.end_character : dot_character]
+        if between.strip():
+            continue
+        matches.append(context)
+    if not matches:
+        return None
+    return max(matches, key=lambda context: context.span.end_character)
+
+
 def _format_doc_comment(raw: str) -> str:
     """Strip BSL ``// `` line prefixes and render the doc comment as Markdown.
 
@@ -1666,6 +1703,49 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
         return None
 
     left_word = _left_word_at_position(content, pos.line, pos.character)
+    path = _uri_to_path(uri)
+    document_context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+        source_path=path,
+    )
+    if document_context is not None:
+        metadata_context = _metadata_fact_at_position(
+            _lsp_semantic_facts(ls, path, document_context),
+            pos.line,
+            pos.character,
+        )
+        if metadata_context is not None and metadata_context.catalog_available:
+            identity = (
+                f"{metadata_context.collection}.{metadata_context.name}"
+                if metadata_context.collection
+                else metadata_context.name
+            )
+            if metadata_context.state == "resolved":
+                return _hover_markdown(
+                    [
+                        f"**{identity}** *(источник метаданных запроса)*",
+                        f"Разрешено как `{metadata_context.candidate_names[0]}`.",
+                    ]
+                )
+            if metadata_context.state == "ambiguous":
+                candidates = ", ".join(
+                    f"`{candidate}`" for candidate in metadata_context.candidate_names
+                )
+                return _hover_markdown(
+                    [
+                        f"**{identity}** *(неоднозначный источник метаданных)*",
+                        f"Кандидаты: {candidates}.",
+                    ]
+                )
+            return _hover_markdown(
+                [
+                    f"**{identity}** *(неизвестный источник метаданных)*",
+                    "Объект не найден в активном индексе конфигурации.",
+                ]
+            )
 
     # Detect `Новый TypeName` context: check word immediately before cursor on same line.
     lines = content.splitlines()
@@ -2345,7 +2425,8 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
        filtered by the current word prefix.
     """
     uri = params.text_document.uri
-    index = ls.symbol_index_for_path(_uri_to_path(uri))
+    path = _uri_to_path(uri)
+    index = ls.symbol_index_for_path(path)
     pos = params.position
     content = ls._doc_get(uri, "")
     lines = content.splitlines()
@@ -2446,8 +2527,37 @@ def on_completion(ls: BslLanguageServer, params: CompletionParams) -> Completion
 
         # ---- metadata: Контрагенты. → attributes/TS; Справочники. → names ---
         if not items:
-            meta_obj_name = _metadata_object_name_from_chain(index, before_dot) or obj_name
-            items = _meta_dot_completions(index, meta_obj_name, member_prefix)
+            metadata_kind = None
+            document_context = _get_lsp_document_context(
+                ls,
+                uri,
+                content,
+                allow_sync_build=_allow_sync_local_scope_parse(content),
+                source_path=path,
+            )
+            query_context = (
+                _query_metadata_fact_before_dot(
+                    _lsp_semantic_facts(ls, path, document_context),
+                    pos.line,
+                    dot_idx,
+                    prefix_line,
+                )
+                if document_context is not None
+                else None
+            )
+            if query_context is not None:
+                if not query_context.catalog_available or query_context.state != "resolved":
+                    return CompletionList(is_incomplete=False, items=[])
+                meta_obj_name = query_context.name
+                metadata_kind = query_context.collection
+            else:
+                meta_obj_name = _metadata_object_name_from_chain(index, before_dot) or obj_name
+            items = _meta_dot_completions(
+                index,
+                meta_obj_name,
+                member_prefix,
+                object_kind=metadata_kind,
+            )
 
         # Return member completions even if empty (no global pollution on `.`)
         return CompletionList(is_incomplete=False, items=items)
@@ -2602,6 +2712,8 @@ def _meta_dot_completions(
     index: SymbolIndex,
     obj_name: str,
     member_prefix: str,
+    *,
+    object_kind: str | None = None,
 ) -> list[CompletionItem]:
     """
     Return metadata-based completion items for ``obj_name.member_prefix``.
@@ -2658,7 +2770,12 @@ def _meta_dot_completions(
         return items
 
     # Case 2: direct object name → members
-    for member in index.get_meta_members(obj_name, member_prefix):
+    members = (
+        index.get_meta_members(obj_name, member_prefix, object_kind=object_kind)
+        if object_kind is not None
+        else index.get_meta_members(obj_name, member_prefix)
+    )
+    for member in members:
         label = member["name"]
         kind_str = member["kind"]
         if kind_str == "tabular_section":
@@ -2758,7 +2875,28 @@ def _lsp_semantic_facts(
         metadata=revisions.metadata,
         config=revisions.config,
     )
-    return context.snapshot.semantic_facts(revision)
+    index = ls.symbol_index_for_path(path)
+    metadata_resolver = None
+    if getattr(index, "has_metadata", lambda: False)():
+
+        def _resolve_metadata(kind: str, name: str) -> tuple[str, ...]:
+            find_candidates = getattr(index, "find_meta_object_candidates", None)
+            if callable(find_candidates):
+                candidates = find_candidates(name, object_kind=kind)
+            else:
+                candidate = index.find_meta_object(name)
+                candidates = (
+                    [candidate]
+                    if candidate is not None and str(candidate.get("kind", "")) == kind
+                    else []
+                )
+            return tuple(f"{candidate['kind']}.{candidate['name']}" for candidate in candidates)
+
+        metadata_resolver = _resolve_metadata
+    return context.snapshot.semantic_facts(
+        revision,
+        metadata_resolver=metadata_resolver,
+    )
 
 
 def _ast_node_text(node: Any) -> str:

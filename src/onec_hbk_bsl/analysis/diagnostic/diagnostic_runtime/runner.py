@@ -882,6 +882,45 @@ def append_diagnostic_runtime_rule_tasks(
         if codes:
             rule_tasks.append(("+".join(codes), fn))
 
+    semantic_fact_snapshot: Any | None = None
+
+    def document_semantic_facts(*, resolve_metadata: bool = False) -> Any | None:
+        """Build one request-local fact snapshot before diagnostic tasks fan out."""
+        nonlocal semantic_fact_snapshot
+        if snapshot is None:
+            return None
+        if semantic_fact_snapshot is not None:
+            return semantic_fact_snapshot
+
+        from onec_hbk_bsl.analysis.semantic_facts import FactRevision  # noqa: PLC0415
+
+        metadata_resolver = None
+        metadata_revision = 0
+        if resolve_metadata:
+            from onec_hbk_bsl.analysis import diagnostics as _diag  # noqa: PLC0415
+
+            config_root = _diag._config_root_for_file(path)
+            metadata_names = (
+                frozenset(_diag._metadata_typed_name_index_cached(config_root))
+                if config_root is not None
+                else frozenset()
+            )
+            if metadata_names:
+
+                def _resolve_metadata(kind: str, name: str) -> tuple[str, ...]:
+                    key = (kind.casefold(), name.casefold())
+                    return (f"{kind}.{name}",) if key in metadata_names else ()
+
+                metadata_resolver = _resolve_metadata
+                metadata_revision = 1
+
+        revision = FactRevision.for_content(content, metadata=metadata_revision)
+        semantic_fact_snapshot = snapshot.semantic_facts(
+            revision,
+            metadata_resolver=metadata_resolver,
+        )
+        return semantic_fact_snapshot
+
     def add_aggregated_query_tasks() -> None:
         query_text_191_201 = enabled_codes(_QUERY_TEXT_191_201_CODES)
         query_text_220_235_269 = enabled_codes(_QUERY_TEXT_220_235_269_CODES)
@@ -945,10 +984,12 @@ def append_diagnostic_runtime_rule_tasks(
                 run_bsl174_187_236_238_query_metadata_pool,
             )
 
+            fact_snapshot = document_semantic_facts(resolve_metadata="BSL236" in query_metadata)
+            query_facts = fact_snapshot.queries if fact_snapshot is not None else ()
             query_metadata = applicable_bsl174_187_236_238_codes(
                 context.path,
                 query_metadata,
-                query_blocks,
+                query_facts,
             )
             add_task(
                 query_metadata,
@@ -956,7 +997,7 @@ def append_diagnostic_runtime_rule_tasks(
                     context.path,
                     context.lines,
                     codes,
-                    query_blocks,
+                    query_facts,
                     context.lines,
                 ),
             )
@@ -1009,7 +1050,8 @@ def append_diagnostic_runtime_rule_tasks(
         if snapshot is not None and len(lines) >= _PROCESS_HEAVY_GROUP_MIN_LINES
     )
     if fact_group_011_175 and snapshot is not None:
-        semantic_facts = snapshot.semantic_facts()
+        semantic_facts = document_semantic_facts()
+        assert semantic_facts is not None
         rule_tasks.append(
             make_diagnostic_rule_task(
                 "+".join(fact_group_011_175),

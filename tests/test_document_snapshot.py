@@ -75,6 +75,48 @@ def test_semantic_fact_snapshot_is_immutable_revisioned_and_built_once(
     assert snapshot.semantic_fact_build_count == 2
 
 
+def test_semantic_query_facts_resolve_metadata_once_and_preserve_unknown(
+    tmp_path: Path,
+) -> None:
+    from onec_hbk_bsl.analysis.semantic_facts import FactRevision
+
+    content = """\
+Процедура Тест()
+    Запрос.Текст = "ВЫБРАТЬ
+    |    Таблица.Ссылка
+    |ИЗ Справочник.Известный КАК Таблица
+    |ЛЕВОЕ СОЕДИНЕНИЕ Документ.Неизвестный КАК Связь
+    |ПО Таблица.Ссылка = Связь.Ссылка";
+КонецПроцедуры
+"""
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+    calls: list[tuple[str, str]] = []
+
+    def resolve(kind: str, name: str) -> tuple[str, ...]:
+        calls.append((kind, name))
+        return (f"{kind}.{name}",) if name == "Известный" else ()
+
+    revision = FactRevision.for_content(content, metadata=7)
+    facts = snapshot.semantic_facts(revision, metadata_resolver=resolve)
+    repeated = snapshot.semantic_facts(revision, metadata_resolver=resolve)
+
+    assert repeated is facts
+    assert snapshot.semantic_fact_build_count == 1
+    assert calls == [
+        ("Catalog", "Известный"),
+        ("Document", "Неизвестный"),
+    ]
+    contexts = {(context.collection, context.name): context for context in facts.metadata_contexts}
+    known = contexts[("Catalog", "Известный")]
+    missing = contexts[("Document", "Неизвестный")]
+    assert known.state == "resolved"
+    assert known.candidate_names == ("Catalog.Известный",)
+    assert known.catalog_available is True
+    assert missing.state == "unknown"
+    assert missing.candidate_names == ()
+    assert missing.span.end_character > missing.span.start_character
+
+
 def test_line_diagnostic_fact_has_no_user_message_payload() -> None:
     assert {field.name for field in fields(LineDiagnosticFact)} == {
         "line_idx",

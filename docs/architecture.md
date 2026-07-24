@@ -260,11 +260,20 @@ index/metadata/config revisions. Every concrete fact carries a zero-based LSP
 The first vertical slice normalizes existing symbol, call, and query extractors.
 One fact snapshot is cached per document/revision and reused by the BSL011/175
 diagnostic task group, open-document LSP navigation/outline, and live-source
-`RenamePlan` validation. Receiver and metadata facts expose explicit
-`resolved`, `ambiguous`, or `unknown` state; consumers must not turn an
-ambiguous fact into a navigation target or rename edit. Further rule-family
-migrations remain separate changes so diagnostic parity can be reviewed per
-family.
+`RenamePlan` validation.
+
+Query facts additionally normalize typed metadata source contexts, nullable
+outer-join spans, redundant reference-dereference spans, and temporary-table
+names from the existing SDBL CST helpers. BSL187/236/238 and query-aware LSP
+hover/completion consume that same immutable snapshot. Metadata contexts retain
+the exact metadata kind, catalog availability, deterministic candidates, and
+an explicit `resolved`, `ambiguous`, or `unknown` state; consumers must not
+guess through ambiguity. Text-only query style diagnostics, XML ownership
+policies, and runtime-call policies remain with their existing domain facts
+instead of expanding the shared boundary with diagnostic-specific fields.
+
+Further receiver/type and rule-family migrations remain separate changes so
+diagnostic parity can be reviewed per family.
 
 ## Отношение к справочнику правил BSL (совместимость имён)
 

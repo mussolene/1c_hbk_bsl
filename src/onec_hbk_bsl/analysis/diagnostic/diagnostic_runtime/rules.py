@@ -5898,14 +5898,44 @@ class QueryMetadataDiagnosticsRule(DiagnosticRuntimeRule):
 
         code = self.code
         procs = context.procedures
-        query_blocks = context.query_text_blocks
 
         if code in {"BSL174", "BSL187", "BSL236", "BSL238"}:
+            from onec_hbk_bsl.analysis import diagnostics as _diag  # noqa: PLC0415
+            from onec_hbk_bsl.analysis.semantic_facts import FactRevision  # noqa: PLC0415
+
+            metadata_resolver = None
+            metadata_revision = 0
+            if code == "BSL236":
+                config_root = _diag._config_root_for_file(context.path)
+                metadata_names = (
+                    frozenset(_diag._metadata_typed_name_index_cached(config_root))
+                    if config_root is not None
+                    else frozenset()
+                )
+                if metadata_names:
+
+                    def _resolve_metadata(kind: str, name: str) -> tuple[str, ...]:
+                        return (
+                            (f"{kind}.{name}",)
+                            if (kind.casefold(), name.casefold()) in metadata_names
+                            else ()
+                        )
+
+                    metadata_resolver = _resolve_metadata
+                    metadata_revision = 1
+            revision = FactRevision.for_content(
+                context.content,
+                metadata=metadata_revision,
+            )
+            facts = context.snapshot.semantic_facts(
+                revision,
+                metadata_resolver=metadata_resolver,
+            )
             return run_bsl174_187_236_238_query_metadata_pool(
                 context.path,
                 context.lines,
                 (code,),
-                query_blocks,
+                facts.queries,
                 context.lines,
             )
         if code in {"BSL244", "BSL253", "BSL261"}:

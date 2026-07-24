@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Query metadata diagnostics BSL187/236/238 and query-aware LSP
+  hover/completion now reuse one immutable revision-aware fact snapshot with
+  exact metadata kind, conservative resolution state, and source spans.
+
 ## [0.8.45] - 2026-07-24
 
 ### Added

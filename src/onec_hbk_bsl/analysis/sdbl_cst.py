@@ -50,6 +50,49 @@ QUERY_METADATA_ROOTS: frozenset[str] = frozenset(
     }
 )
 
+QUERY_METADATA_ROOT_TO_KIND: dict[str, str] = {
+    "бизнеспроцесс": "BusinessProcess",
+    "businessprocess": "BusinessProcess",
+    "документ": "Document",
+    "document": "Document",
+    "журналдокументов": "DocumentJournal",
+    "documentjournal": "DocumentJournal",
+    "справочник": "Catalog",
+    "catalog": "Catalog",
+    "перечисление": "Enum",
+    "enum": "Enum",
+    "планвидовхарактеристик": "ChartOfCharacteristicTypes",
+    "chartofcharacteristictypes": "ChartOfCharacteristicTypes",
+    "планывидовхарактеристик": "ChartOfCharacteristicTypes",
+    "chartsofcharacteristictypes": "ChartOfCharacteristicTypes",
+    "плансчетов": "ChartOfAccounts",
+    "chartofaccounts": "ChartOfAccounts",
+    "планысчетов": "ChartOfAccounts",
+    "chartsofaccounts": "ChartOfAccounts",
+    "планвидоврасчета": "ChartOfCalculationTypes",
+    "chartofcalculationtypes": "ChartOfCalculationTypes",
+    "регистрсведений": "InformationRegister",
+    "informationregister": "InformationRegister",
+    "регистрнакопления": "AccumulationRegister",
+    "accumulationregister": "AccumulationRegister",
+    "регистрбухгалтерии": "AccountingRegister",
+    "accountingregister": "AccountingRegister",
+    "регистррасчета": "CalculationRegister",
+    "calculationregister": "CalculationRegister",
+    "задача": "Task",
+    "task": "Task",
+    "планобмена": "ExchangePlan",
+    "exchangeplan": "ExchangePlan",
+    "внешнийисточникданных": "ExternalDataSource",
+    "externaldatasource": "ExternalDataSource",
+    "константа": "Constant",
+    "constant": "Constant",
+    "отчет": "Report",
+    "report": "Report",
+    "обработка": "DataProcessor",
+    "dataprocessor": "DataProcessor",
+}
+
 
 def node_text(node: Any) -> str:
     text = getattr(node, "text", b"")
@@ -213,6 +256,95 @@ def query_temp_table_names(root: Any) -> frozenset[str]:
         if name:
             names.add(name.casefold())
     return frozenset(names)
+
+
+def redundant_reference_nodes(root: Any) -> list[Any]:
+    """Return redundant ``.Ссылка``-style dereferences with query-local alias scope."""
+    query_scopes = list(iter_nodes(root, "query"))
+    if not query_scopes:
+        query_scopes = [root]
+
+    result: list[Any] = []
+    for scope in query_scopes:
+        result.extend(_redundant_reference_nodes_in_scope(scope))
+    return result
+
+
+def _nearest_query(node: Any) -> Any | None:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) == "query":
+            return parent
+        parent = getattr(parent, "parent", None)
+    return None
+
+
+def _same_node(left: Any | None, right: Any | None) -> bool:
+    return (
+        left is not None
+        and right is not None
+        and getattr(left, "id", None) == getattr(right, "id", None)
+    )
+
+
+def _source_owner(node: Any) -> Any | None:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if getattr(parent, "type", None) in {"table_source", "join_clause"}:
+            return parent
+        if getattr(parent, "type", None) in {"from_clause", "query", "source_file"}:
+            return None
+        parent = getattr(parent, "parent", None)
+    return None
+
+
+def _redundant_reference_nodes_in_scope(scope: Any) -> list[Any]:
+    simple_source_aliases: set[str] = set()
+    tabular_section_aliases: set[str] = set()
+    tabular_section_roots = {
+        "бизнеспроцесс",
+        "businessprocess",
+        "документ",
+        "document",
+        "справочник",
+        "catalog",
+    }
+    for source_use in query_source_uses(scope):
+        if not _same_node(_nearest_query(source_use.node), scope):
+            continue
+        source_parts = source_use.source.split(".")
+        source_owner = _source_owner(source_use.node)
+        alias = source_alias_name(source_owner) if source_owner is not None else None
+        if not alias:
+            continue
+        alias_cf = alias.casefold()
+        if len(source_parts) == 1:
+            simple_source_aliases.add(alias_cf)
+        elif len(source_parts) >= 3 and source_parts[0].casefold() in tabular_section_roots:
+            tabular_section_aliases.add(alias_cf)
+
+    result: list[Any] = []
+    for dotted in iter_nodes(scope, "dotted_identifier"):
+        if not _same_node(_nearest_query(dotted), scope):
+            continue
+        from_clause = ancestor(dotted, "from_clause")
+        if from_clause is not None and _same_node(_nearest_query(from_clause), scope):
+            continue
+        parts = dotted_identifier_parts(dotted)
+        if len(parts) < 3:
+            continue
+        ref_indexes = [
+            index
+            for index, part in enumerate(parts[1:], start=1)
+            if part.casefold() in {"ссылка", "reference", "ref"}
+        ]
+        if not ref_indexes:
+            continue
+        root_alias = parts[0].casefold()
+        if root_alias in (simple_source_aliases | tabular_section_aliases) and ref_indexes[-1] == 1:
+            continue
+        result.append(dotted)
+    return result
 
 
 def _join_kind(join_node: Any) -> str:
