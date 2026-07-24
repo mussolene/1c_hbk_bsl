@@ -396,6 +396,34 @@ class BslTypeEngine:
             return f"{type_name}.{next(iter(specific))}"
         return sorted(f"{type_name}.{name}" for name in specific)
 
+    def infer_node(
+        self,
+        node: Any,
+        line0: int,
+        metadata_only: bool = False,
+    ) -> str | list[str] | None:
+        """Resolve an existing CST expression/access node without adding heuristics."""
+        generic, specific = self.infer_node_types(node, line0)
+        return specific if metadata_only else generic
+
+    def infer_node_types(
+        self,
+        node: Any,
+        line0: int,
+    ) -> tuple[str | None, str | list[str] | None]:
+        """Return generic and metadata-specific types from one existing CST resolution."""
+        scope = self.scope_at_line(line0)
+        if getattr(node, "type", None) in {"access", "call_expression", "property_access"}:
+            type_name, specific = self._resolve_access_chain(node, scope)
+        else:
+            type_name, specific = self._resolve_expr(node, scope)
+        generic = type_name or None
+        if not specific or not type_name:
+            return generic, None
+        if len(specific) == 1:
+            return generic, f"{type_name}.{next(iter(specific))}"
+        return generic, sorted(f"{type_name}.{name}" for name in specific)
+
     # ------------------------------------------------------------------
     # Implicit object/record-set module variables (Ссылка / ЭтотОбъект)
     # ------------------------------------------------------------------

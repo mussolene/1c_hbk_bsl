@@ -117,6 +117,42 @@ def test_semantic_query_facts_resolve_metadata_once_and_preserve_unknown(
     assert missing.span.end_character > missing.span.start_character
 
 
+def test_semantic_receiver_facts_preserve_resolution_and_exact_span(tmp_path: Path) -> None:
+    from onec_hbk_bsl.analysis.semantic_facts import FactRevision
+
+    content = (
+        "Элемент = Справочники.Организации.СоздатьЭлемент();\n"
+        "Элемент.Записать();\n"
+        "Неясный.Выполнить();\n"
+    )
+    snapshot = build_document_snapshot(str(tmp_path / "Module.bsl"), content=content)
+
+    def resolve(node: object, line0: int) -> tuple[str | None, str | list[str] | None]:
+        text = node.text.decode("utf-8")  # type: ignore[attr-defined]
+        if text == "Элемент":
+            return "СправочникОбъект", "СправочникОбъект.Организации"
+        if text == "Неясный":
+            return "ДокументСсылка", ["ДокументСсылка.А", "ДокументСсылка.Б"]
+        return None, None
+
+    facts = snapshot.semantic_facts(
+        FactRevision.for_content(content, metadata=9),
+        receiver_resolver=resolve,
+    )
+    receivers = {receiver.expression: receiver for receiver in facts.receivers}
+
+    resolved = receivers["Элемент"]
+    assert resolved.state == "resolved"
+    assert resolved.candidate_types == ("СправочникОбъект.Организации",)
+    assert resolved.span.start_line == 1
+    assert resolved.span.start_character == 0
+    assert resolved.span.end_character == len("Элемент")
+
+    ambiguous = receivers["Неясный"]
+    assert ambiguous.state == "ambiguous"
+    assert ambiguous.candidate_types == ("ДокументСсылка.А", "ДокументСсылка.Б")
+
+
 def test_line_diagnostic_fact_has_no_user_message_payload() -> None:
     assert {field.name for field in fields(LineDiagnosticFact)} == {
         "line_idx",

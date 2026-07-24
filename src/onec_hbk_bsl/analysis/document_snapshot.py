@@ -3059,6 +3059,7 @@ class DocumentSnapshot:
         revision: Any | None = None,
         *,
         metadata_resolver: Any | None = None,
+        receiver_resolver: Any | None = None,
     ) -> Any:
         """Return one immutable fact snapshot for this content and semantic revision."""
         from onec_hbk_bsl.analysis.semantic_facts import (  # noqa: PLC0415
@@ -3077,6 +3078,7 @@ class DocumentSnapshot:
                     self,
                     revision,
                     metadata_resolver=metadata_resolver,
+                    receiver_resolver=receiver_resolver,
                 )
                 self._semantic_fact_snapshots[revision] = facts
                 self._semantic_fact_build_count += 1

@@ -1468,7 +1468,25 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
         return None
 
     origin_range = _word_range_at_position(content, pos.line, pos.character)
-    left_word = _left_word_at_position(content, pos.line, pos.character)
+    receiver = None
+    path = _uri_to_path(uri)
+    document_context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+        source_path=path,
+    )
+    if document_context is not None:
+        call_fact = _call_fact_at_position(
+            _lsp_semantic_facts(ls, path, document_context),
+            pos.line,
+            pos.character,
+            word,
+        )
+        if call_fact is not None and call_fact.receiver.state != "resolved":
+            return None
+        receiver = call_fact.receiver if call_fact is not None else None
 
     # 1. Check local scope first (parameters, Перем, loop vars, assignments).
     #    Local variables shadow same-named globals — resolve them without index.
@@ -1506,7 +1524,6 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
             pass
 
     # 2. Workspace symbol index (procedures, functions, exported variables)
-    path = _uri_to_path(uri)
     index = ls.symbol_index_for_path(path)
     open_symbols = _open_document_method_symbols(ls, uri, content) if content else []
     symbols = [symbol for symbol in open_symbols if symbol["name"].casefold() == word.casefold()]
@@ -1516,8 +1533,8 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
         if not symbols or str(symbol["file_path"]) != path
     ]
     symbols.extend(indexed_symbols)
-    if left_word:
-        symbols = [symbol for symbol in symbols if symbol.get("is_export")]
+    if receiver is not None:
+        symbols = _filter_symbols_for_receiver(symbols, receiver)
     if not symbols:
         return None
 
@@ -1614,6 +1631,66 @@ def _metadata_fact_at_position(facts: Any, line: int, character: int) -> Any | N
     )
 
 
+def _call_fact_at_position(
+    facts: Any,
+    line: int,
+    character: int,
+    callee_name: str,
+) -> Any | None:
+    """Return the qualified call fact whose callee contains an LSP position."""
+    name_cf = callee_name.casefold()
+    for call in facts.calls:
+        span = call.span
+        if (
+            call.receiver is not None
+            and call.callee_name.casefold() == name_cf
+            and span.start_line == line == span.end_line
+            and span.start_character <= character < span.end_character
+        ):
+            return call
+    return None
+
+
+_RECEIVER_MODULE_TARGETS: dict[str, tuple[str, str]] = {
+    "СправочникОбъект": ("Catalogs", "ObjectModule.bsl"),
+    "СправочникМенеджер": ("Catalogs", "ManagerModule.bsl"),
+    "ДокументОбъект": ("Documents", "ObjectModule.bsl"),
+    "ДокументМенеджер": ("Documents", "ManagerModule.bsl"),
+    "РегистрСведенийНаборЗаписей": ("InformationRegisters", "RecordSetModule.bsl"),
+}
+
+
+def _receiver_target_suffix(receiver: Any) -> str | None:
+    """Map one proven metadata receiver identity to its module path suffix."""
+    if receiver is None or receiver.state != "resolved" or len(receiver.candidate_types) != 1:
+        return None
+    identity = receiver.candidate_types[0]
+    type_name, separator, object_name = identity.rpartition(".")
+    if not separator or not object_name:
+        return None
+    target = _RECEIVER_MODULE_TARGETS.get(type_name)
+    if target is None:
+        return None
+    folder, module_name = target
+    return f"/{folder}/{object_name}/Ext/{module_name}".casefold()
+
+
+def _filter_symbols_for_receiver(
+    symbols: list[dict[str, Any]],
+    receiver: Any,
+) -> list[dict[str, Any]]:
+    """Keep only exported symbols belonging to the proven receiver module."""
+    suffix = _receiver_target_suffix(receiver)
+    if suffix is None:
+        return []
+    return [
+        symbol
+        for symbol in symbols
+        if symbol.get("is_export")
+        and str(symbol.get("file_path", "")).replace("\\", "/").casefold().endswith(suffix)
+    ]
+
+
 def _query_metadata_fact_before_dot(
     facts: Any,
     line: int,
@@ -1704,6 +1781,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
 
     left_word = _left_word_at_position(content, pos.line, pos.character)
     path = _uri_to_path(uri)
+    receiver_call = None
     document_context = _get_lsp_document_context(
         ls,
         uri,
@@ -1712,8 +1790,9 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
         source_path=path,
     )
     if document_context is not None:
+        semantic_facts = _lsp_semantic_facts(ls, path, document_context)
         metadata_context = _metadata_fact_at_position(
-            _lsp_semantic_facts(ls, path, document_context),
+            semantic_facts,
             pos.line,
             pos.character,
         )
@@ -1746,6 +1825,25 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
                     "Объект не найден в активном индексе конфигурации.",
                 ]
             )
+        receiver_call = _call_fact_at_position(
+            semantic_facts,
+            pos.line,
+            pos.character,
+            word,
+        )
+        if receiver_call is not None:
+            if receiver_call.receiver.state == "ambiguous":
+                candidates = ", ".join(
+                    f"`{candidate}`" for candidate in receiver_call.receiver.candidate_types
+                )
+                return _hover_markdown(
+                    [
+                        f"**{word}** *(неоднозначный receiver)*",
+                        f"Кандидаты: {candidates}.",
+                    ]
+                )
+            if receiver_call.receiver.state == "unknown":
+                return None
 
     # Detect `Новый TypeName` context: check word immediately before cursor on same line.
     lines = content.splitlines()
@@ -1833,8 +1931,13 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     # 4. Метод/свойство типа платформы (через точку или по имени)
     #    Сначала уточняем тип по левому слову (если есть точка)
     type_methods = []
-    if left_word:
-        parent_type = ls.platform_api.find_type(left_word)
+    if receiver_call is not None or left_word:
+        parent_type_name = left_word
+        if receiver_call is not None and receiver_call.receiver.state == "resolved":
+            identity = receiver_call.receiver.candidate_types[0]
+            inferred_type, separator, _object_name = identity.rpartition(".")
+            parent_type_name = inferred_type if separator else identity
+        parent_type = ls.platform_api.find_type(parent_type_name)
         if parent_type:
             # Ищем конкретный метод в конкретном типе
             word_lo = word.lower()
@@ -1852,7 +1955,7 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
                             parts.append("*Только для чтения*")
                         return _hover_markdown(parts)
 
-    if not type_methods:
+    if not type_methods and receiver_call is None and not left_word:
         type_methods = ls.platform_api.find_type_method(word)
 
     if type_methods:
@@ -1874,10 +1977,11 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
 
     # 4b. Exported workspace functions may also be called as object members.
     # Platform methods stay authoritative because their lookup runs first.
-    if left_word:
-        member_symbols = [
-            symbol for symbol in index.find_symbol(word, limit=5) if symbol.get("is_export")
-        ]
+    if receiver_call is not None:
+        member_symbols = _filter_symbols_for_receiver(
+            index.find_symbol(word, limit=20),
+            receiver_call.receiver,
+        )
         if member_symbols:
             return _workspace_symbol_hover(index, member_symbols)
 
@@ -2084,6 +2188,25 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
+    receiver = None
+    path = _uri_to_path(uri)
+    document_context = _get_lsp_document_context(
+        ls,
+        uri,
+        content,
+        allow_sync_build=_allow_sync_local_scope_parse(content),
+        source_path=path,
+    )
+    if document_context is not None:
+        call_fact = _call_fact_at_position(
+            _lsp_semantic_facts(ls, path, document_context),
+            pos.line,
+            pos.character,
+            word,
+        )
+        if call_fact is not None and call_fact.receiver.state != "resolved":
+            return None
+        receiver = call_fact.receiver if call_fact is not None else None
 
     locations: list[Location] = []
 
@@ -2096,6 +2219,8 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
         ]
         if not defs:
             defs = index.find_symbol(word, limit=5)
+        if receiver is not None:
+            defs = _filter_symbols_for_receiver(defs, receiver)
         for sym in defs:
             line = max(0, sym["line"] - 1)
             locations.append(
@@ -2109,19 +2234,27 @@ def on_references(ls: BslLanguageServer, params: ReferenceParams) -> list[Locati
             )
 
     # All call sites
-    callers = index.find_callers(word, limit=200)
-    for c in callers:
-        line = max(0, c["caller_line"] - 1)
-        ch = _call_char_from_row(c)
+    if receiver is not None:
         locations.append(
             Location(
-                uri=_path_to_uri(c["caller_file"]),
-                range=Range(
-                    start=Position(line=line, character=ch),
-                    end=Position(line=line, character=ch + len(word)),
-                ),
+                uri=uri,
+                range=_word_range_at_position(content, pos.line, pos.character),
             )
         )
+    else:
+        callers = index.find_callers(word, limit=200)
+        for c in callers:
+            line = max(0, c["caller_line"] - 1)
+            ch = _call_char_from_row(c)
+            locations.append(
+                Location(
+                    uri=_path_to_uri(c["caller_file"]),
+                    range=Range(
+                        start=Position(line=line, character=ch),
+                        end=Position(line=line, character=ch + len(word)),
+                    ),
+                )
+            )
 
     return locations if locations else None
 
@@ -2893,9 +3026,18 @@ def _lsp_semantic_facts(
             return tuple(f"{candidate['kind']}.{candidate['name']}" for candidate in candidates)
 
         metadata_resolver = _resolve_metadata
+    engine = context.type_engine
+    if engine is None:
+        engine = BslTypeEngine(context.tree, module_path=path)
+        context.type_engine = engine
+
+    def _resolve_receiver(node: Any, line0: int) -> tuple[str | None, str | list[str] | None]:
+        return engine.infer_node_types(node, line0)
+
     return context.snapshot.semantic_facts(
         revision,
         metadata_resolver=metadata_resolver,
+        receiver_resolver=_resolve_receiver,
     )
 
 

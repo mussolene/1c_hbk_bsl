@@ -9,7 +9,7 @@ Provides:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character
@@ -69,6 +69,12 @@ class Call:
     callee_name: str
     caller_character: int = 0  # 0-based column of callee token
     callee_args_count: int = 0
+    receiver_expression: str | None = None
+    receiver_line: int = 0
+    receiver_character: int = 0
+    receiver_end_line: int = 0
+    receiver_end_character: int = 0
+    receiver_node: Any | None = field(default=None, repr=False, compare=False)
 
 
 def extract_calls(tree: Any, file_path: str) -> list[Call]:
@@ -167,6 +173,29 @@ def _ts_method_call_to_record(
     line_idx = node.start_point[0]
     line_text = lines[line_idx] if line_idx < len(lines) else ""
     caller_character = utf8_byte_offset_to_lsp_character(line_text, node.start_point[1])
+    receiver_node = _qualified_receiver_node(node)
+    receiver_expression = _node_text(receiver_node) if receiver_node is not None else None
+    receiver_line = 0
+    receiver_character = 0
+    receiver_end_line = 0
+    receiver_end_character = 0
+    if receiver_node is not None:
+        receiver_start_idx = int(receiver_node.start_point[0])
+        receiver_end_idx = int(receiver_node.end_point[0])
+        receiver_start_text = (
+            lines[receiver_start_idx] if 0 <= receiver_start_idx < len(lines) else ""
+        )
+        receiver_end_text = lines[receiver_end_idx] if 0 <= receiver_end_idx < len(lines) else ""
+        receiver_line = receiver_start_idx + 1
+        receiver_character = utf8_byte_offset_to_lsp_character(
+            receiver_start_text,
+            receiver_node.start_point[1],
+        )
+        receiver_end_line = receiver_end_idx + 1
+        receiver_end_character = utf8_byte_offset_to_lsp_character(
+            receiver_end_text,
+            receiver_node.end_point[1],
+        )
 
     return Call(
         caller_file=file_path,
@@ -175,7 +204,34 @@ def _ts_method_call_to_record(
         caller_name=container,
         callee_name=callee_name,
         callee_args_count=args_count,
+        receiver_expression=receiver_expression,
+        receiver_line=receiver_line,
+        receiver_character=receiver_character,
+        receiver_end_line=receiver_end_line,
+        receiver_end_character=receiver_end_character,
+        receiver_node=receiver_node,
     )
+
+
+def _qualified_receiver_node(method_call: Any) -> Any | None:
+    """Return the CST subtree immediately left of a qualified method call."""
+    parent = getattr(method_call, "parent", None)
+    if getattr(parent, "type", None) not in {"access", "call_expression", "property_access"}:
+        return None
+    children = list(getattr(parent, "children", ()) or ())
+    try:
+        method_index = children.index(method_call)
+    except ValueError:
+        return None
+    for child in reversed(children[:method_index]):
+        if getattr(child, "type", None) in {
+            "access",
+            "call_expression",
+            "identifier",
+            "property_access",
+        }:
+            return child
+    return None
 
 
 # ---------------------------------------------------------------------------

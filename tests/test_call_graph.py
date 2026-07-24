@@ -203,6 +203,21 @@ class TestExtractCallsRealParser:
         # sample.bsl calls ЗаписатьЛог in several places
         assert "ЗаписатьЛог" in callee_names
 
+    def test_qualified_call_keeps_receiver_expression_and_lsp_span(self) -> None:
+        from onec_hbk_bsl.analysis.call_graph import extract_calls
+        from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+        content = "Элемент.ПолучитьОбъект().Записать();\n"
+        tree = BslParser().parse_content(content)
+        calls = extract_calls(tree, file_path="/workspace/Module.bsl")
+        записать = next(call for call in calls if call.callee_name == "Записать")
+
+        assert записать.receiver_expression == "Элемент.ПолучитьОбъект()"
+        assert записать.receiver_line == 1
+        assert записать.receiver_character == 0
+        assert записать.receiver_end_line == 1
+        assert записать.receiver_end_character == len("Элемент.ПолучитьОбъект()")
+
 
 # ---------------------------------------------------------------------------
 # build_call_graph

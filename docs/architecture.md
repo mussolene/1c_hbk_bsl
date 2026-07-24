@@ -272,8 +272,18 @@ guess through ambiguity. Text-only query style diagnostics, XML ownership
 policies, and runtime-call policies remain with their existing domain facts
 instead of expanding the shared boundary with diagnostic-specific fields.
 
-Further receiver/type and rule-family migrations remain separate changes so
-diagnostic parity can be reviewed per family.
+Qualified call facts additionally retain the exact receiver expression/span
+and bind it to the existing `BslTypeEngine` result as `resolved`, `ambiguous`,
+or `unknown`. LSP hover, definition, and references use a resolved metadata
+identity only when it maps to the concrete object/manager/record-set module;
+they do not fall back to an unrelated exported symbol with the same name.
+Ambiguous and unknown receivers therefore produce no navigation or rename
+target. The MCP definition/reference tools remain explicitly name-based
+because their public input has no document position; they preserve the same
+no-guessing contract instead of manufacturing receiver context.
+
+Further diagnostic rule-family migrations remain separate changes so parity
+can be reviewed per bounded family.
 
 ## Отношение к справочнику правил BSL (совместимость имён)
 

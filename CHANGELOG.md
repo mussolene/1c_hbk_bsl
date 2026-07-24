@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query metadata diagnostics BSL187/236/238 and query-aware LSP
   hover/completion now reuse one immutable revision-aware fact snapshot with
   exact metadata kind, conservative resolution state, and source spans.
+- Qualified-call hover, definition, and references now consume exact receiver
+  facts populated by the existing type engine; resolved metadata identities
+  are restricted to their concrete module, while ambiguous/unknown receivers
+  no longer guess a same-named workspace target.
 
 ## [0.8.45] - 2026-07-24
 

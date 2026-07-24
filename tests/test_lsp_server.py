@@ -1508,7 +1508,7 @@ class TestHandlerFunctions:
         # No symbols found for this name → returns None or empty list
         assert result is None or result == []
 
-    def test_chained_workspace_call_has_hover_and_definition(self, tmp_path, monkeypatch) -> None:
+    def test_unknown_chained_workspace_call_is_not_guessed(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
         from onec_hbk_bsl.lsp.server import on_definition, on_hover
@@ -1533,13 +1533,86 @@ class TestHandlerFunctions:
         params.position.line = 0
         params.position.character = content.index("УникальныйЧленЦепочки") + 2
 
+        assert on_hover(ls, params) is None
+        assert on_definition(ls, params) is None
+
+    def test_resolved_receiver_filters_hover_definition_and_references(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_definition, on_hover, on_references
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        target = tmp_path / "Catalogs" / "Организации" / "Ext" / "ObjectModule.bsl"
+        distractor = tmp_path / "Catalogs" / "Склады" / "Ext" / "ObjectModule.bsl"
+        target.parent.mkdir(parents=True)
+        distractor.parent.mkdir(parents=True)
+        target.write_text(
+            "// Правильный объект.\n"
+            "Процедура УникальныйМетодПолучателя() Экспорт\n"
+            "КонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        distractor.write_text(
+            "// Другой объект.\nПроцедура УникальныйМетодПолучателя() Экспорт\nКонецПроцедуры\n",
+            encoding="utf-8",
+        )
+        ls.indexer.index_file(str(target))
+        ls.indexer.index_file(str(distractor))
+
+        content = (
+            "Элемент = Справочники.Организации.СоздатьЭлемент();\n"
+            "Элемент.УникальныйМетодПолучателя();\n"
+        )
+        caller = tmp_path / "Caller.bsl"
+        uri = caller.as_uri()
+        ls._docs[uri] = content
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 1
+        params.position.character = content.splitlines()[1].index("УникальныйМетодПолучателя") + 2
+        params.context.include_declaration = True
+
         hover = on_hover(ls, params)
         definition = on_definition(ls, params)
+        references = on_references(ls, params)
 
         assert hover is not None
-        assert "Возвращает служебный модуль" in str(hover.contents)
-        assert definition and definition[0].target_uri == library.as_uri()
-        assert definition[0].target_selection_range.start.line == 1
+        assert "Правильный объект" in str(hover.contents)
+        assert definition and [link.target_uri for link in definition] == [target.as_uri()]
+        assert references is not None
+        assert [location.uri for location in references] == [target.as_uri(), uri]
+
+    def test_ambiguous_receiver_has_no_navigation_or_reference_target(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_definition, on_hover, on_references
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        content = (
+            "Функция Ф(Ссылка) Экспорт\n"
+            '\tЕсли ТипЗнч(Ссылка) = Тип("ДокументСсылка.А")\n'
+            '\t\tИЛИ ТипЗнч(Ссылка) = Тип("ДокументСсылка.Б") Тогда\n'
+            "\t\tСсылка.УникальныйМетодПолучателя();\n"
+            "\tКонецЕсли;\n"
+            "КонецФункции\n"
+        )
+        uri = (tmp_path / "Caller.bsl").as_uri()
+        ls._docs[uri] = content
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 3
+        params.position.character = content.splitlines()[3].index("УникальныйМетодПолучателя") + 2
+        params.context.include_declaration = True
+
+        hover = on_hover(ls, params)
+        assert hover is not None
+        assert "неоднозначный receiver" in str(hover.contents)
+        assert on_definition(ls, params) is None
+        assert on_references(ls, params) is None
 
     def test_chained_workspace_call_does_not_resolve_private_symbol(
         self, tmp_path, monkeypatch

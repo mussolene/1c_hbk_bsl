@@ -20,6 +20,7 @@ from onec_hbk_bsl.analysis.sdbl_cst import (
 
 ResolutionState = Literal["resolved", "ambiguous", "unknown"]
 MetadataResolver = Callable[[str, str], tuple[str, ...]]
+ReceiverResolver = Callable[[Any, int], tuple[str | None, str | list[str] | None]]
 
 _QUERY_METADATA_ROOT_PATTERN = "|".join(
     re.escape(root) for root in sorted(QUERY_METADATA_ROOTS, key=len, reverse=True)
@@ -196,10 +197,49 @@ def _symbol_fact(symbol: Any, path: str) -> SymbolFact:
     )
 
 
-def _call_fact(call: Any, path: str) -> CallFact:
+def _call_fact(
+    call: Any,
+    path: str,
+    receiver_resolver: ReceiverResolver | None,
+) -> CallFact:
     start_line = max(0, int(call.caller_line) - 1)
     character = int(call.caller_character)
     callee_name = str(call.callee_name)
+    receiver = None
+    receiver_node = getattr(call, "receiver_node", None)
+    receiver_expression = getattr(call, "receiver_expression", None)
+    if receiver_expression and int(getattr(call, "receiver_line", 0)) > 0:
+        state: ResolutionState = "unknown"
+        candidates: tuple[str, ...] = ()
+        if receiver_resolver is not None and receiver_node is not None:
+            generic, specific = receiver_resolver(receiver_node, int(call.receiver_line) - 1)
+            if isinstance(specific, list):
+                candidates = tuple(sorted(set(specific), key=str.casefold))
+                if len(candidates) > 1:
+                    state = "ambiguous"
+                elif candidates:
+                    state = "resolved"
+                elif generic:
+                    candidates = (generic,)
+                    state = "resolved"
+            elif isinstance(specific, str):
+                candidates = (specific,)
+                state = "resolved"
+            elif generic:
+                candidates = (generic,)
+                state = "resolved"
+        receiver = ReceiverFact(
+            expression=str(receiver_expression),
+            span=SourceSpan(
+                path=path,
+                start_line=int(call.receiver_line) - 1,
+                start_character=int(call.receiver_character),
+                end_line=max(int(call.receiver_line), int(call.receiver_end_line)) - 1,
+                end_character=int(call.receiver_end_character),
+            ),
+            state=state,
+            candidate_types=candidates,
+        )
     return CallFact(
         caller_name=call.caller_name,
         callee_name=callee_name,
@@ -211,7 +251,7 @@ def _call_fact(call: Any, path: str) -> CallFact:
             end_character=character + utf16_len(callee_name),
         ),
         callee_args_count=int(call.callee_args_count),
-        receiver=None,
+        receiver=receiver,
     )
 
 
@@ -383,18 +423,20 @@ def build_semantic_fact_snapshot(
     revision: FactRevision,
     *,
     metadata_resolver: MetadataResolver | None = None,
+    receiver_resolver: ReceiverResolver | None = None,
 ) -> SemanticFactSnapshot:
     """Normalize existing snapshot extractors without re-parsing or re-walking the CST."""
     path = str(snapshot.path)
+    calls = tuple(_call_fact(call, path, receiver_resolver) for call in snapshot.calls)
     queries = tuple(
         _query_fact(block, path, metadata_resolver) for block in snapshot.query_text_blocks
     )
     return SemanticFactSnapshot(
         revision=revision,
         symbols=tuple(_symbol_fact(symbol, path) for symbol in snapshot.symbols),
-        calls=tuple(_call_fact(call, path) for call in snapshot.calls),
+        calls=calls,
         queries=queries,
-        receivers=(),
+        receivers=tuple(call.receiver for call in calls if call.receiver is not None),
         metadata_contexts=tuple(
             context for query in queries for context in query.metadata_contexts
         ),
