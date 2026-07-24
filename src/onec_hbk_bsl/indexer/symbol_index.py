@@ -80,14 +80,16 @@ CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS calls (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    caller_file       TEXT NOT NULL,
-    caller_line       INTEGER NOT NULL,
-    caller_character  INTEGER NOT NULL DEFAULT 0,
-    caller_name       TEXT,               -- name of the containing procedure/function
-    callee_name       TEXT NOT NULL,
-    callee_name_lower TEXT NOT NULL DEFAULT '',  -- casefold(callee_name)
-    callee_args_count INTEGER DEFAULT 0
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    caller_file          TEXT NOT NULL,
+    caller_line          INTEGER NOT NULL,
+    caller_character     INTEGER NOT NULL DEFAULT 0,
+    caller_name          TEXT,               -- name of the containing procedure/function
+    callee_name          TEXT NOT NULL,
+    callee_name_lower    TEXT NOT NULL DEFAULT '',  -- casefold(callee_name)
+    callee_args_count    INTEGER DEFAULT 0,
+    receiver_expression  TEXT                -- raw qualifier text (`Модуль` in `Модуль.Функция(...)`),
+                                              -- NULL for bare/unqualified calls
 );
 
 CREATE INDEX IF NOT EXISTS idx_calls_caller      ON calls(caller_file, caller_line);
@@ -313,6 +315,8 @@ class SymbolIndex:
             conn.execute("ALTER TABLE calls ADD COLUMN caller_character INTEGER NOT NULL DEFAULT 0")
         if "callee_name_lower" not in existing_calls:
             conn.execute("ALTER TABLE calls ADD COLUMN callee_name_lower TEXT NOT NULL DEFAULT ''")
+        if "receiver_expression" not in existing_calls:
+            conn.execute("ALTER TABLE calls ADD COLUMN receiver_expression TEXT")
 
         existing_git_state = {row[1] for row in conn.execute("PRAGMA table_info(git_state)")}
         if "index_mode" not in existing_git_state:
@@ -704,11 +708,11 @@ class SymbolIndex:
             """
             INSERT INTO calls (
                 caller_file, caller_line, caller_character, caller_name,
-                callee_name, callee_name_lower, callee_args_count
+                callee_name, callee_name_lower, callee_args_count, receiver_expression
             )
             VALUES (
                 :caller_file, :caller_line, :caller_character, :caller_name,
-                :callee_name, :callee_name_lower, :callee_args_count
+                :callee_name, :callee_name_lower, :callee_args_count, :receiver_expression
             )
             """,
             [
@@ -720,6 +724,7 @@ class SymbolIndex:
                     "callee_name": c.get("callee_name", ""),
                     "callee_name_lower": c.get("callee_name", "").casefold(),
                     "callee_args_count": c.get("callee_args_count", 0),
+                    "receiver_expression": c.get("receiver_expression"),
                 }
                 for c in calls
             ],
@@ -938,6 +943,7 @@ class SymbolIndex:
         callee_name: str,
         limit: int | None = 50,
         scope_file: str | None = None,
+        receiver_name: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Find all call sites that call *callee_name*.
@@ -951,11 +957,28 @@ class SymbolIndex:
                          callers should be scoped to the defining file to
                          avoid attributing an unrelated same-named local
                          procedure's callers to it.
+            receiver_name: When given, restrict *qualified* call sites
+                         (``Модуль.Функция(...)``) to ones whose qualifier
+                         names this exact module/object — the last dotted
+                         segment of ``receiver_expression`` is compared
+                         case-insensitively (covers both
+                         ``ОбщийМодуль.Функция`` and
+                         ``Справочники.Объект.Функция`` shapes). Bare/
+                         unqualified calls (``receiver_expression IS NULL``)
+                         are never excluded by this filter — a same-named
+                         exported symbol elsewhere still can't be ruled out
+                         for those (see
+                         ``tmp/fixed/onec-hbk-bsl-issue-calls-drop-qualifier.md``).
+                         Use for symbols with multiple same-named
+                         definitions, where an unfiltered lookup would
+                         attribute every qualified caller in the workspace
+                         to whichever definition happened to be resolved.
 
         Returns dicts with: caller_file, caller_line, caller_name, callee_name.
         """
         sql = """
                 SELECT c.caller_file, c.caller_line, c.caller_character, c.caller_name, c.callee_name,
+                       c.receiver_expression,
                        s.signature as caller_signature
                 FROM calls c
                 LEFT JOIN symbols s ON s.name_lower = c.callee_name_lower AND s.file_path = c.caller_file
@@ -965,6 +988,14 @@ class SymbolIndex:
         if scope_file is not None:
             sql += " AND c.caller_file = ?"
             params.append(scope_file)
+        if receiver_name is not None:
+            sql += """ AND (
+                c.receiver_expression IS NULL
+                OR LOWER(c.receiver_expression) = LOWER(?)
+                OR LOWER(c.receiver_expression) LIKE '%.' || LOWER(?)
+            )"""
+            params.append(receiver_name)
+            params.append(receiver_name)
         sql += " ORDER BY c.caller_file, c.caller_line"
         if limit is not None:
             sql += " LIMIT ?"

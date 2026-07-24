@@ -746,4 +746,5 @@ def _call_to_dict(call: Any) -> dict:  # noqa: ANN401
         "caller_name": call.caller_name,
         "callee_name": call.callee_name,
         "callee_args_count": call.callee_args_count,
+        "receiver_expression": getattr(call, "receiver_expression", None),
     }

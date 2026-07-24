@@ -67,6 +67,10 @@ logs/
 # Temporary files
 tmp/
 .tmp/
+
+# Contributor-facing explainer docs for the maintainer (PR descriptions,
+# fix write-ups) — never part of the merged codebase, see file header.
+docs/contrib_tmp/
 .artifacts/
 vscode-extension/out-test/
 .tmp_format_cmp/

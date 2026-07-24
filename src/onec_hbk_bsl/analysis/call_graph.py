@@ -296,6 +296,21 @@ def _extract_from_source(content: str, file_path: str) -> list[Call]:
     return calls
 
 
+def _definition_receiver_name(file_path: str) -> str | None:
+    """Best-effort module/object name for *file_path* (e.g. ``ЗарплатаКадрыПовтИсп``
+    for a common module, ``Организации`` for a catalog manager module), for
+    matching against a qualified call site's raw ``receiver_expression``.
+
+    Deferred import: ``config_helpers`` pulls in ``document_snapshot``, which
+    imports ``Call`` from this module — a module-level import here would cycle.
+    """
+    from onec_hbk_bsl.analysis.diagnostic.helpers.config_helpers import (  # noqa: PLC0415
+        current_module_xml_context,
+    )
+
+    return current_module_xml_context(file_path).get("object_name")
+
+
 # ---------------------------------------------------------------------------
 # Call graph builder
 # ---------------------------------------------------------------------------
@@ -321,6 +336,13 @@ def build_call_graph(
       - ``candidate_count`` / ``candidates_truncated``: total ambiguity
         cardinality and whether the stable 20-item candidate page is partial.
 
+    For an exported symbol resolved via *file_filter* out of several
+    same-named definitions, ``callers`` attributes qualified call sites
+    (``Модуль.Функция(...)``) to this definition only when the qualifier
+    names its own module/object; bare/unqualified call sites are still
+    returned unfiltered (genuinely unresolved — see
+    ``tmp/fixed/onec-hbk-bsl-issue-calls-drop-qualifier.md``).
+
     Args:
         index:       SymbolIndex instance to query.
         symbol_name: Name of the procedure/function to analyse.
@@ -331,11 +353,18 @@ def build_call_graph(
     """
     visited_callers: set[str] = set()
 
-    def _callers_tree(name: str, d: int, scope_file: str | None) -> list[dict]:
+    def _callers_tree(
+        name: str,
+        d: int,
+        scope_file: str | None,
+        receiver_name: str | None = None,
+    ) -> list[dict]:
         if d <= 0 or name in visited_callers:
             return []
         visited_callers.add(name)
-        rows = index.find_callers(name, limit=20, scope_file=scope_file)
+        rows = index.find_callers(
+            name, limit=20, scope_file=scope_file, receiver_name=receiver_name
+        )
         result = []
         for row in rows:
             caller = row.get("caller_name") or row.get("caller_file", "")
@@ -380,9 +409,26 @@ def build_call_graph(
     # A non-exported symbol can only be called (unqualified) from within its
     # own module, so scope callers to the defining file to avoid attributing
     # an unrelated same-named local procedure's callers to this definition.
+    #
+    # An exported symbol has no such file scope. If *file_filter* was needed
+    # to resolve `definition` to one specific candidate, the bare name is
+    # ambiguous workspace-wide (candidate_count above already reflects the
+    # *filtered* count — always 1 here — so ambiguity must be re-checked
+    # without file_filter). In that case, qualified callers
+    # (`Модуль.Функция(...)`) do carry the owning module/object name — match
+    # that against this definition's own module/object name to avoid
+    # attributing a qualified call to a *different* same-named definition.
+    # Bare/unqualified callers stay unscoped (unresolved on purpose, see
+    # tmp/fixed/onec-hbk-bsl-issue-calls-drop-qualifier.md).
     scope_file = None
-    if definition is not None and not definition.get("is_export"):
-        scope_file = definition["file_path"]
+    receiver_name = None
+    if definition is not None:
+        if not definition.get("is_export"):
+            scope_file = definition["file_path"]
+        elif file_filter is not None:
+            _, total_candidate_count = index.find_symbol_candidates(symbol_name, limit=1)
+            if total_candidate_count > 1:
+                receiver_name = _definition_receiver_name(definition["file_path"])
 
     callees_raw: list[dict] = []
     if definition:
@@ -403,7 +449,7 @@ def build_call_graph(
             "line": definition["line"] if definition else None,
             "signature": definition["signature"] if definition else None,
         },
-        "callers": _callers_tree(symbol_name, depth, scope_file),
+        "callers": _callers_tree(symbol_name, depth, scope_file, receiver_name),
         "callees": [
             {
                 "callee_name": c.get("callee_name"),
