@@ -368,4 +368,8 @@ generic call fact.
 
 ## Further work
 
-Ongoing work and release notes: [CHANGELOG.md](../CHANGELOG.md) and project issues. Долгосрочные темы (не исчерпывающе): более глубокий вывод типов, расширенная поддержка EDT-выгрузки без Designer XML, производительность индексации на очень больших конфигурациях.
+Ongoing work and release notes:
+[CHANGELOG.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md)
+and project issues. Долгосрочные темы (не исчерпывающе): более глубокий вывод
+типов, расширенная поддержка EDT-выгрузки без Designer XML, производительность
+индексации на очень больших конфигурациях.

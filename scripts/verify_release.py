@@ -32,7 +32,7 @@ REQUIRED_DOC_OWNERS = {
 REQUIRED_CHANGELOG_HISTORY = {"0.8.41", "0.8.42"}
 EXPECTED_PROJECT_URLS = {
     "Changelog": "https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md",
-    "Documentation": "https://github.com/mussolene/1c_hbk_bsl/blob/main/README.md",
+    "Documentation": "https://mussolene.github.io/1c_hbk_bsl/",
     "Homepage": "https://github.com/mussolene/1c_hbk_bsl",
     "Issues": "https://github.com/mussolene/1c_hbk_bsl/issues",
     "Repository": "https://github.com/mussolene/1c_hbk_bsl",
@@ -174,6 +174,43 @@ def verify_generated_docs() -> None:
     actual = (ROOT / "docs" / "diagnostic-rules.md").read_text(encoding="utf-8")
     if actual != expected:
         raise ValueError("docs/diagnostic-rules.md is stale")
+    expected_pages = module.expected_rule_pages()
+    actual_paths = set((ROOT / "docs" / "rule-contracts").glob("BSL*.md"))
+    if actual_paths != set(expected_pages):
+        missing = sorted(str(path.relative_to(ROOT)) for path in set(expected_pages) - actual_paths)
+        extra = sorted(str(path.relative_to(ROOT)) for path in actual_paths - set(expected_pages))
+        raise ValueError(f"rule documentation coverage mismatch: missing={missing}, extra={extra}")
+    stale = [
+        str(path.relative_to(ROOT))
+        for path, content in expected_pages.items()
+        if path.read_text(encoding="utf-8") != content
+    ]
+    if stale:
+        raise ValueError("stale generated rule page headers: " + ", ".join(stale))
+    incomplete = [
+        str(path.relative_to(ROOT))
+        for path in expected_pages
+        if "<!-- localized-rule-description:start -->" not in path.read_text(encoding="utf-8")
+    ]
+    if incomplete:
+        raise ValueError("rule pages without localized descriptions: " + ", ".join(incomplete))
+
+
+def verify_published_docs_independence(root: Path = ROOT) -> None:
+    forbidden_link = re.compile(
+        r"\]\(https?://(?:www\.)?github\.com/1c-syntax/bsl-language-server(?:[)/#?]|$)",
+        re.IGNORECASE,
+    )
+    failures: list[str] = []
+    for path in sorted((root / "docs").rglob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        if forbidden_link.search(text):
+            failures.append(str(path.relative_to(root)))
+    if failures:
+        raise ValueError(
+            "published documentation links to an adjacent analyzer repository: "
+            + ", ".join(failures)
+        )
 
 
 def _markdown_files(root: Path) -> list[Path]:
@@ -256,7 +293,10 @@ def verify_documentation_ownership(root: Path = ROOT) -> None:
     if missing or extra:
         raise ValueError(f"documentation ownership mismatch: missing={missing}, extra={extra}")
     absent_paths = sorted(
-        path for _, path in rows if not (index.parent / unquote(path.split("#", 1)[0])).exists()
+        path
+        for _, path in rows
+        if not path.startswith(("http://", "https://"))
+        and not (index.parent / unquote(path.split("#", 1)[0])).exists()
     )
     if absent_paths:
         raise ValueError("documentation owners do not exist: " + ", ".join(absent_paths))
@@ -534,6 +574,7 @@ def main() -> int:
     if args.command == "source":
         source_contract()
         verify_generated_docs()
+        verify_published_docs_independence()
         verify_local_markdown_links()
         verify_documentation_ownership()
         verify_package_metadata()

@@ -1,6 +1,7 @@
 # Metadata folder / kind / collection registry
 
-The single source of truth is [`src/onec_hbk_bsl/indexer/metadata_registry.py`](../src/onec_hbk_bsl/indexer/metadata_registry.py):
+The single source of truth is
+[`src/onec_hbk_bsl/indexer/metadata_registry.py`](https://github.com/mussolene/1c_hbk_bsl/blob/main/src/onec_hbk_bsl/indexer/metadata_registry.py):
 
 - **`FOLDER_TO_KIND`** — Designer XML export folder name → internal `kind` string.
 - **`KIND_TO_COLLECTION`** — `kind` → Russian name of the global `Метаданные.<Коллекция>` property.

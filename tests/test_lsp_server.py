@@ -55,7 +55,14 @@ class TestBslLanguageServerInit:
         code, description = _lsp_diagnostic_code_fields("BSL009")
         assert code == "BSL009"
         assert description is not None
-        assert description.href == "urn:onec-hbk-bsl:rule:BSL009"
+        assert description.href == ("https://mussolene.github.io/1c_hbk_bsl/rule-contracts/BSL009/")
+
+    def test_lsp_internal_diagnostic_has_no_broken_public_link(self) -> None:
+        from onec_hbk_bsl.lsp.server import _lsp_diagnostic_code_fields
+
+        code, description = _lsp_diagnostic_code_fields("BSL-LSP-ERR")
+        assert code == "BSL-LSP-ERR"
+        assert description is None
 
     def test_diagnostics_enabled_environment_switch(self, monkeypatch) -> None:
         from onec_hbk_bsl.lsp.server import _diagnostics_enabled

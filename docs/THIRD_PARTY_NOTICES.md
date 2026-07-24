@@ -1,6 +1,9 @@
 # Third-party notices
 
-This project (**onec-hbk-bsl**) is distributed under the [MIT License](../LICENSE). It builds on many open-source packages. This file summarizes **runtime** and **tooling** dependencies for compliance review. It is not legal advice.
+This project (**onec-hbk-bsl**) is distributed under the
+[MIT License](https://github.com/mussolene/1c_hbk_bsl/blob/main/LICENSE). It builds on
+many open-source packages. This file summarizes **runtime** and **tooling**
+dependencies for compliance review. It is not legal advice.
 
 ## Regenerate (Python)
 
@@ -52,13 +55,13 @@ Transitive dependencies include **MIT**, **Apache-2.0**, **BSD-2/3-Clause**, **I
 | **PyInstaller** | GPL-2.0-or-later (bootloader and tools have additional permissive terms; see [PyInstaller licensing](https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt)) | Used in CI and local builds to produce standalone onefile binaries (`packaging/onec-hbk-bsl.spec` — import graph from `__main__.py`, no `collect_all`). |
 | pytest, pytest-cov, ruff | MIT / Apache-2.0 | Tests and lint only — not shipped in the wheel. |
 
-## High-level credits (see also [README](../README.md))
+## High-level credits
 
 | Project | License | Role |
 |---------|---------|------|
 | [vsc-language-1c-bsl](https://github.com/1c-syntax/vsc-language-1c-bsl) | MIT | Platform API reference data lineage (see [DATA_SOURCES.md](DATA_SOURCES.md)) |
 | [tree-sitter-hbk](https://pypi.org/project/tree-sitter-hbk/) / [mussolene/tree-sitter-bsl](https://github.com/mussolene/tree-sitter-bsl) | MIT | Grammar |
-| [bsl-language-server](https://github.com/1c-syntax/bsl-language-server) | LGPL-3.0 | Diagnostic **codes/names** reference only — **not** linked or bundled as a runtime dependency |
+| BSL Language Server documentation corpus | [LGPL-3.0](licenses/LGPL-3.0.md) | Adapted RU/EN diagnostic descriptions are redistributed in `docs/rule-contracts/`; runtime code is not linked or bundled |
 
 ## VS Code extension — production `npm` dependencies
 
@@ -78,4 +81,4 @@ DevDependencies (webpack, typescript, eslint, etc.) are used only at build time 
 
 ## MIT compatibility
 
-All identified **runtime** dependencies used to deliver **onec-hbk-bsl** and the **published VSIX** are under permissive licenses commonly considered **compatible** with distributing this project under MIT, subject to retaining copyright notices where required (Apache-2.0, BSD, etc.). **GPL/LGPL** does not apply to the shipped Python wheel’s dependency tree as of the last automated scan; the **bsl-language-server** relationship is documentary/reference only.
+All identified **runtime** dependencies used to deliver **onec-hbk-bsl** and the **published VSIX** are under permissive licenses commonly considered **compatible** with distributing this project under MIT, subject to retaining copyright notices where required (Apache-2.0, BSD, etc.). **GPL/LGPL** does not apply to the shipped Python wheel’s dependency tree as of the last automated scan. Adapted diagnostic prose remains covered by its documented LGPL-3.0 provenance.

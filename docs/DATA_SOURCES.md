@@ -2,9 +2,10 @@
 
 ## Purpose
 
-Files under [`src/onec_hbk_bsl/data/`](../src/onec_hbk_bsl/data/)
+Files under
+[`src/onec_hbk_bsl/data/`](https://github.com/mussolene/1c_hbk_bsl/tree/main/src/onec_hbk_bsl/data/)
 (including
-[`src/onec_hbk_bsl/data/platform_api/`](../src/onec_hbk_bsl/data/platform_api/))
+[`src/onec_hbk_bsl/data/platform_api/`](https://github.com/mussolene/1c_hbk_bsl/tree/main/src/onec_hbk_bsl/data/platform_api/))
 support completions, hovers, and metadata indexing. They must come from
 **sources you have the right to publish**.
 
@@ -24,4 +25,7 @@ If any past commit accidentally contained confidential material, follow the inci
 
 ## Diagnostic Alias Provenance
 
-The project accepts compatibility aliases for diagnostic selection and suppression comments. The alias list is documentary/reference metadata; this repository does **not** ship or link the Java implementation of **bsl-language-server** as a dependency of the Python analyzer. If your policy requires stricter separation, keep references in provenance/license documents only and avoid copying substantial excerpts from LGPL-covered source files.
+The project accepts compatibility aliases for diagnostic selection and suppression comments.
+The aliases are local runtime metadata; no adjacent analyzer is launched, linked, or required.
+Adapted diagnostic prose is vendored in this repository and covered by the provenance
+record in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -306,9 +306,11 @@ def _is_bsl_identifier(text: str) -> bool:
 
 
 def _lsp_diagnostic_code_fields(internal_code: str) -> tuple[str, CodeDescription | None]:
-    """Return the canonical machine ID and its stable rule URI."""
-    urn = f"urn:onec-hbk-bsl:rule:{internal_code}"
-    return internal_code, CodeDescription(href=urn)
+    """Return the canonical machine ID and its published rule documentation URL."""
+    if not _re.fullmatch(r"BSL\d{3}", internal_code):
+        return internal_code, None
+    url = f"https://mussolene.github.io/1c_hbk_bsl/rule-contracts/{internal_code}/"
+    return internal_code, CodeDescription(href=url)
 
 
 def _lsp_failure_diagnostic(message: str) -> LspDiagnostic:

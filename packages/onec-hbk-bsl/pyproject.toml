@@ -29,7 +29,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/mussolene/1c_hbk_bsl"
-Documentation = "https://github.com/mussolene/1c_hbk_bsl/blob/main/README.md"
+Documentation = "https://mussolene.github.io/1c_hbk_bsl/"
 Repository = "https://github.com/mussolene/1c_hbk_bsl"
 Issues = "https://github.com/mussolene/1c_hbk_bsl/issues"
 Changelog = "https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md"

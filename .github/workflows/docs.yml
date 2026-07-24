@@ -1,0 +1,70 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "scripts/build_diagnostic_rules_doc.py"
+      - "scripts/verify_release.py"
+      - "mkdocs*.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "scripts/build_diagnostic_rules_doc.py"
+      - "scripts/verify_release.py"
+      - "mkdocs*.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Frozen documentation environment
+        run: uv sync --frozen --python "3.14" --group docs
+      - name: Verify generated documentation
+        run: |
+          ./.venv/bin/python scripts/build_diagnostic_rules_doc.py
+          git diff --exit-code
+      - name: Build Russian site
+        run: ./.venv/bin/python -m mkdocs build --strict --config-file mkdocs.yml --site-dir site
+      - name: Build English site
+        run: ./.venv/bin/python -m mkdocs build --strict --config-file mkdocs.en.yml --site-dir site/en
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

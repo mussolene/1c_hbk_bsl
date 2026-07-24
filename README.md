@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml/badge.svg)](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/ci.yml)
 [![Security](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/security.yml/badge.svg)](https://github.com/mussolene/1c_hbk_bsl/actions/workflows/security.yml)
+[![Documentation](https://img.shields.io/badge/docs-Material-4051B5?logo=materialformkdocs&logoColor=white)](https://mussolene.github.io/1c_hbk_bsl/)
 [![GitHub Release](https://img.shields.io/github/v/release/mussolene/1c_hbk_bsl?sort=semver)](https://github.com/mussolene/1c_hbk_bsl/releases/latest)
 [![PyPI](https://img.shields.io/pypi/v/onec-hbk-bsl)](https://pypi.org/project/onec-hbk-bsl/)
 [![VS Marketplace](https://img.shields.io/badge/VS%20Marketplace-install-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=mussolene.1c-hbk-bsl)
@@ -106,7 +107,8 @@ index-max-bytes = 0      # 0 = unlimited
 // BSLLS:MethodSize-off
 ```
 
-Полный перечень: [справочник диагностических правил](docs/diagnostic-rules.md).
+Полный перечень с RU/EN-описаниями, исключениями и контрактами:
+[опубликованный справочник диагностических правил](https://mussolene.github.io/1c_hbk_bsl/diagnostic-rules/).
 
 ## Основные команды
 
@@ -158,6 +160,11 @@ for diagnostic in diagnostics:
 
 ## Документация
 
+Полная документация публикуется на
+[mussolene.github.io/1c_hbk_bsl](https://mussolene.github.io/1c_hbk_bsl/).
+Она поддерживает русский и английский языки, системную светлую/тёмную тему,
+полнотекстовый поиск и прямые страницы всех 180 правил.
+
 Канонические владельцы фактов и полный индекс закреплены в
 [Documentation ownership](docs/public-surface.md#documentation-ownership).
 
@@ -170,6 +177,11 @@ for diagnostic in diagnostics:
 | [Production notes](docs/Production-Notes.md) | Эксплуатационные инструкции, релизные проверки и датированные снимки |
 | [Security policy](SECURITY.md) | Поддерживаемые версии и приватный канал для сообщений об уязвимостях |
 | [Third-party notices](docs/THIRD_PARTY_NOTICES.md) | Зависимости, лицензии и происхождение данных |
+
+RU/EN-описания диагностик адаптированы из документационного корпуса
+[BSL Language Server](https://github.com/1c-syntax/bsl-language-server) и
+распространяются с сохранением указанной в
+[сторонних уведомлениях](docs/THIRD_PARTY_NOTICES.md) лицензии.
 
 ## Разработка
 

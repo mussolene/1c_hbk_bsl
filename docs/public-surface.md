@@ -1,8 +1,9 @@
 # Public Surface
 
 This document defines what `onec-hbk-bsl` treats as product-facing API and UI.
-It is a guardrail for future changes, not a user guide. User-facing docs live in
-[README.md](../README.md) and [vscode-extension/README.md](../vscode-extension/README.md).
+It is a guardrail for future changes, not a user guide. User-facing docs live on
+this site and in the
+[VS Code extension guide](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md).
 
 ## Documentation Ownership
 
@@ -14,12 +15,12 @@ owner instead of defining a second compatibility contract.
 <!-- docs-index:start -->
 | Owner key | Canonical owner | Normative scope |
 |---|---|---|
-| `product-guide` | [README.md](../README.md) | Product overview, installation, first-run examples and navigation into detailed docs |
+| `product-guide` | [Site home](index.md) | Product overview, installation, first-run examples and navigation into detailed docs |
 | `product-contract` | [public-surface.md](public-surface.md) | Stable CLI, Python, LSP, MCP, configuration and packaging compatibility |
-| `extension-guide` | [vscode-extension/README.md](../vscode-extension/README.md) | Published extension settings, startup resolution, commands and editor behavior |
+| `extension-guide` | [VS Code guide](https://github.com/mussolene/1c_hbk_bsl/blob/main/vscode-extension/README.md) | Published extension settings, startup resolution, commands and editor behavior |
 | `diagnostics-reference` | [diagnostic-rules.md](diagnostic-rules.md) | Generated public rule identifiers, aliases, severity, descriptions and implementation state |
-| `release-history` | [CHANGELOG.md](../CHANGELOG.md) | Versioned user-visible changes reconstructed from release tags |
-| `security-policy` | [SECURITY.md](../SECURITY.md) | Supported versions and the confidential vulnerability reporting path |
+| `release-history` | [CHANGELOG.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/CHANGELOG.md) | Versioned user-visible changes reconstructed from release tags |
+| `security-policy` | [SECURITY.md](https://github.com/mussolene/1c_hbk_bsl/blob/main/SECURITY.md) | Supported versions and the confidential vulnerability reporting path |
 | `operations` | [Production-Notes.md](Production-Notes.md) | Operational runbook, go/no-go checks and dated verification snapshots; not a compatibility contract |
 | `architecture` | [architecture.md](architecture.md) | Current internal component, data-flow and storage design; not a product promise |
 | `third-party` | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Dependency provenance, notices and redistribution notes |

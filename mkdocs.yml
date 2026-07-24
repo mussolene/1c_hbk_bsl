@@ -1,0 +1,118 @@
+site_name: 1C HBK BSL
+site_description: Formatter, diagnostics, language server, CLI, and MCP tools for 1C BSL
+site_url: https://mussolene.github.io/1c_hbk_bsl/
+repo_name: mussolene/1c_hbk_bsl
+repo_url: https://github.com/mussolene/1c_hbk_bsl
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+  language: ru
+  favicon: assets/images/favicon.svg
+  logo: assets/images/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.indexes
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Использовать светлую тему
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep-orange
+      toggle:
+        icon: material/brightness-7
+        name: Использовать тёмную тему
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Использовать системную тему
+
+plugins:
+  - search:
+      lang:
+        - ru
+        - en
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+extra_javascript:
+  - assets/javascripts/language.js
+
+extra:
+  alternate:
+    - name: Русский
+      link: https://mussolene.github.io/1c_hbk_bsl/
+      lang: ru
+    - name: English
+      link: https://mussolene.github.io/1c_hbk_bsl/en/
+      lang: en
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mussolene/1c_hbk_bsl
+      name: 1C HBK BSL on GitHub
+
+nav:
+  - Главная: index.md
+  - Использование:
+      - Публичные интерфейсы: public-surface.md
+      - Клиент-серверные диагностики: CLIENT_SERVER_DIAGNOSTICS.md
+      - Вызов правил: diagnostics_rule_invoke.md
+      - Сопоставление путей LSP: LSP_BRIDGE_PATH_MAPPING.md
+      - Эксплуатация: Production-Notes.md
+  - Правила:
+      - Каталог правил: diagnostic-rules.md
+  - Архитектура:
+      - Обзор: architecture.md
+      - Политика CST: cst_policy.md
+      - Реестр метаданных: metadata_registry.md
+      - Источники данных: DATA_SOURCES.md
+  - Разработка:
+      - Миграция тестов: diagnostic-test-migration.md
+      - OACS workflow: oacs-development.md
+      - LSP soak runbook: lsp-soak-runbook.md
+  - Безопасность:
+      - Аудит: SECURITY_AUDIT.md
+      - Сторонние компоненты: THIRD_PARTY_NOTICES.md
+      - LGPL-3.0: licenses/LGPL-3.0.md
+
+not_in_nav: |
+  rule-contracts/*

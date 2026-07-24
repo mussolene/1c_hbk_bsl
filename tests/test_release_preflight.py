@@ -178,6 +178,21 @@ def test_documentation_ownership_rejects_duplicate_owner_keys(tmp_path: Path) ->
         verify_release.verify_documentation_ownership(tmp_path)
 
 
+def test_published_docs_reject_adjacent_analyzer_links(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    page = docs / "index.md"
+    page.write_text("# Docs\n\nNo adjacent links.\n", encoding="utf-8")
+    verify_release.verify_published_docs_independence(tmp_path)
+
+    page.write_text(
+        "# Docs\n\n[Adjacent](https://github.com/1c-syntax/bsl-language-server)\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="adjacent analyzer"):
+        verify_release.verify_published_docs_independence(tmp_path)
+
+
 def test_changelog_integrity_requires_repaired_history_and_latest_base(tmp_path: Path) -> None:
     changelog = tmp_path / "CHANGELOG.md"
     changelog.write_text(

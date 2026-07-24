@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Documentation is published as a searchable RU/EN Material site with
+  system/light/dark themes; all 180 `BSL###` pages now combine localized rule
+  guidance, compatible suppression forms, and their canonical engineering
+  contracts, while LSP diagnostics link directly to the published page.
 - README landing page is reorganized around installation and common tasks,
   removes duplicated reference prose, and replaces retired Visual Studio
   Marketplace Shields endpoints with stable release, security, and install

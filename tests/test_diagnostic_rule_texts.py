@@ -160,3 +160,19 @@ def test_unknown_rule_title_does_not_use_generic_translation_fallback() -> None:
 def test_diagnostic_rules_doc_is_generated_from_registry() -> None:
     doc_path = Path(__file__).resolve().parents[1] / "docs" / "diagnostic-rules.md"
     assert doc_path.read_text(encoding="utf-8") == _load_rules_doc_builder().build_markdown()
+
+
+def test_all_rule_pages_have_current_generated_headers_and_localized_descriptions() -> None:
+    root = Path(__file__).resolve().parents[1]
+    builder = _load_rules_doc_builder()
+    pages = builder.expected_rule_pages()
+
+    assert len(pages) == 180
+    for path, expected in pages.items():
+        actual = path.read_text(encoding="utf-8")
+        assert actual == expected
+        assert "<!-- localized-rule-description:start -->" in actual
+        assert '<div class="doc-lang doc-lang-ru"' in actual
+        assert '<div class="doc-lang doc-lang-en"' in actual
+        assert f"# {path.stem} —" in actual
+        assert path.is_relative_to(root / "docs")

@@ -75,6 +75,7 @@ vscode-extension/out-test/
 ._tmp_mcp_debug2/
 .nosync/
 target/
+site/
 
 # Local work directories (not for public distribution)
 loadtest-results/
