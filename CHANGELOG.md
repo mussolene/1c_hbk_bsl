@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- VS Code / Cursor extension now requires VS Code API 1.91 or newer and uses
+  the current language client and security-clean packaging toolchain.
 - `noqa`, `bsl-disable` and compatible `BSLLS:…-off` suppressions now share a
   deterministic line/range contract: trailing markers affect one line,
   standalone markers open a range, and family-specific enable markers close it.
