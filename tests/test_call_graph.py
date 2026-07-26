@@ -390,7 +390,7 @@ class TestBuildCallGraph:
         build_call_graph(mock_index, "ОбработатьЗаказ")
 
         mock_index.find_callers.assert_called_once_with(
-            "ОбработатьЗаказ", limit=20, scope_file="/ws/orders.bsl"
+            "ОбработатьЗаказ", limit=20, scope_file="/ws/orders.bsl", receiver_name=None
         )
 
     def test_exported_definition_leaves_callers_unscoped(self) -> None:
@@ -415,7 +415,7 @@ class TestBuildCallGraph:
         build_call_graph(mock_index, "ОбработатьЗаказ")
 
         mock_index.find_callers.assert_called_once_with(
-            "ОбработатьЗаказ", limit=20, scope_file=None
+            "ОбработатьЗаказ", limit=20, scope_file=None, receiver_name=None
         )
 
     def test_callees_populated_from_index(self) -> None:
@@ -502,3 +502,82 @@ class TestBuildCallGraph:
         assert "ambiguous" not in result
         assert result["definition"]["file"] == "/ws/ObjectA.bsl"
         assert [c["caller_file"] for c in result["callers"]] == ["/ws/ObjectA.bsl"]
+
+    def test_qualified_callers_attributed_to_matching_exported_definition(
+        self, symbol_index: Any
+    ) -> None:
+        """
+        Two common modules each export their own ГоловнаяОрганизация. A third
+        module calls both, once through each module's qualifier, plus one bare
+        call. Resolving one definition via file_filter must retain its
+        qualified and unresolved bare calls while excluding the other
+        module's qualified call.
+        """
+        from onec_hbk_bsl.analysis.call_graph import build_call_graph
+
+        for module_name in ("ЗарплатаКадрыПовтИсп", "РегламентированнаяОтчетность"):
+            symbol_index.upsert_file(
+                f"/ws/CommonModules/{module_name}/Ext/Module.bsl",
+                [
+                    {
+                        "name": "ГоловнаяОрганизация",
+                        "line": 1,
+                        "character": 0,
+                        "end_line": 5,
+                        "end_character": 0,
+                        "kind": "function",
+                        "is_export": True,
+                        "container": None,
+                        "signature": "Function ГоловнаяОрганизация(Организация) Экспорт",
+                        "doc_comment": "",
+                    }
+                ],
+                [],
+            )
+
+        symbol_index.upsert_file(
+            "/ws/CommonModules/ЗарплатаКадры/Ext/Module.bsl",
+            [],
+            [
+                {
+                    "caller_line": 10,
+                    "caller_character": 1,
+                    "caller_name": "Функция1",
+                    "callee_name": "ГоловнаяОрганизация",
+                    "callee_args_count": 1,
+                    # BSL identifiers are case-insensitive. Deliberately use
+                    # another Cyrillic case than the metadata path.
+                    "receiver_expression": "зарплатакадрыповтисп",
+                },
+                {
+                    "caller_line": 20,
+                    "caller_character": 1,
+                    "caller_name": "Функция2",
+                    "callee_name": "ГоловнаяОрганизация",
+                    "callee_args_count": 1,
+                    "receiver_expression": "РегламентированнаяОтчетность",
+                },
+                {
+                    "caller_line": 30,
+                    "caller_character": 1,
+                    "caller_name": "Функция3",
+                    "callee_name": "ГоловнаяОрганизация",
+                    "callee_args_count": 1,
+                    "receiver_expression": None,
+                },
+            ],
+        )
+
+        result = build_call_graph(
+            symbol_index,
+            "ГоловнаяОрганизация",
+            depth=1,
+            file_filter="ЗарплатаКадрыПовтИсп",
+        )
+
+        assert "ambiguous" not in result
+        assert (
+            result["definition"]["file"] == "/ws/CommonModules/ЗарплатаКадрыПовтИсп/Ext/Module.bsl"
+        )
+        callers = {c["caller_name"] for c in result["callers"]}
+        assert callers == {"Функция1", "Функция3"}

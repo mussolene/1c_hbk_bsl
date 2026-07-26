@@ -46,7 +46,7 @@ import {
 } from "./extensionContract";
 
 /** Shared log channel (also passed to LanguageClient for stderr/LSP trace). */
-let logChannel: vscode.OutputChannel | undefined;
+let logChannel: vscode.LogOutputChannel | undefined;
 
 let extensionContext: vscode.ExtensionContext | undefined;
 
@@ -160,7 +160,7 @@ function formatStatusSummary(status: BslStatus): string {
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   extensionContext = context;
-  const channel = vscode.window.createOutputChannel(outputChannelName(context));
+  const channel = vscode.window.createOutputChannel(outputChannelName(context), { log: true });
   logChannel = channel;
   context.subscriptions.push(channel);
   logLine("Extension activating…");
@@ -531,7 +531,7 @@ function buildServerOptions(
 // ---------------------------------------------------------------------------
 
 function buildClientOptions(
-  outputChannel: vscode.OutputChannel,
+  outputChannel: vscode.LogOutputChannel,
   ctx: vscode.ExtensionContext,
 ): LanguageClientOptions {
   return {

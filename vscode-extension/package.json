@@ -19,7 +19,7 @@
     "theme": "dark"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages",
@@ -182,18 +182,18 @@
     "package:vsix": "unset npm_config_devdir NPM_CONFIG_DEVDIR; npx @vscode/vsce package --no-dependencies -o 1c-hbk-bsl-${npm_package_version}.vsix"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "10.1.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.28.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.91.0",
     "@vscode/test-electron": "^2.3.0",
-    "@vscode/vsce": "^3.7.1",
-    "eslint": "^9.28.0",
+    "@vscode/vsce": "^3.9.2",
+    "eslint": "^10.8.0",
     "ts-loader": "^9.5.4",
     "typescript": "^5.3.0",
-    "typescript-eslint": "^8.34.0",
+    "typescript-eslint": "^8.65.0",
     "webpack": "^5.105.4",
     "webpack-cli": "^6.0.1"
   }
