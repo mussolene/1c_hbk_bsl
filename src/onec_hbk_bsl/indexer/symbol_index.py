@@ -965,10 +965,8 @@ class SymbolIndex:
                          ``ОбщийМодуль.Функция`` and
                          ``Справочники.Объект.Функция`` shapes). Bare/
                          unqualified calls (``receiver_expression IS NULL``)
-                         are never excluded by this filter — a same-named
-                         exported symbol elsewhere still can't be ruled out
-                         for those (see
-                         ``tmp/fixed/onec-hbk-bsl-issue-calls-drop-qualifier.md``).
+                         are never excluded by this filter because a same-named
+                         exported symbol elsewhere still cannot be ruled out.
                          Use for symbols with multiple same-named
                          definitions, where an unfiltered lookup would
                          attribute every qualified caller in the workspace

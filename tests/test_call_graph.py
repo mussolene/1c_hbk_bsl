@@ -507,13 +507,11 @@ class TestBuildCallGraph:
         self, symbol_index: Any
     ) -> None:
         """
-        Regression test for tmp/fixed/onec-hbk-bsl-issue-calls-drop-qualifier.md:
-        two common modules each export their own ГоловнаяОрганизация. A third
+        Two common modules each export their own ГоловнаяОрганизация. A third
         module calls both, once through each module's qualifier, plus one bare
-        (unqualified) call. Resolving ЗарплатаКадрыПовтИсп's definition via
-        file_filter must attribute the qualified call that actually names it,
-        exclude the qualified call naming the other module, and still surface
-        the bare call (unresolved by design, not silently dropped).
+        call. Resolving one definition via file_filter must retain its
+        qualified and unresolved bare calls while excluding the other
+        module's qualified call.
         """
         from onec_hbk_bsl.analysis.call_graph import build_call_graph
 
@@ -547,7 +545,9 @@ class TestBuildCallGraph:
                     "caller_name": "Функция1",
                     "callee_name": "ГоловнаяОрганизация",
                     "callee_args_count": 1,
-                    "receiver_expression": "ЗарплатаКадрыПовтИсп",
+                    # BSL identifiers are case-insensitive. Deliberately use
+                    # another Cyrillic case than the metadata path.
+                    "receiver_expression": "зарплатакадрыповтисп",
                 },
                 {
                     "caller_line": 20,
@@ -576,6 +576,8 @@ class TestBuildCallGraph:
         )
 
         assert "ambiguous" not in result
-        assert result["definition"]["file"] == "/ws/CommonModules/ЗарплатаКадрыПовтИсп/Ext/Module.bsl"
+        assert (
+            result["definition"]["file"] == "/ws/CommonModules/ЗарплатаКадрыПовтИсп/Ext/Module.bsl"
+        )
         callers = {c["caller_name"] for c in result["callers"]}
         assert callers == {"Функция1", "Функция3"}

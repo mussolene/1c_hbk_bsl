@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from onec_hbk_bsl.indexer.metadata_parser import (
@@ -255,6 +256,50 @@ class TestFindCallers:
 
         scoped = symbol_index.find_callers("ПередЗаписью", scope_file="/workspace/ObjectA.bsl")
         assert {c["caller_file"] for c in scoped} == {"/workspace/ObjectA.bsl"}
+
+    def test_receiver_filter_uses_unicode_casefold(self, symbol_index: SymbolIndex) -> None:
+        calls = [
+            {
+                "caller_line": 1,
+                "caller_character": 0,
+                "caller_name": "Проверить",
+                "callee_name": "ГоловнаяОрганизация",
+                "callee_args_count": 0,
+                "receiver_expression": "ЗАРПЛАТАКАДРЫПОВТИСП",
+            },
+            {
+                "caller_line": 2,
+                "caller_character": 0,
+                "caller_name": "Проверить",
+                "callee_name": "ГоловнаяОрганизация",
+                "callee_args_count": 0,
+                "receiver_expression": "РегламентированнаяОтчетность",
+            },
+        ]
+        symbol_index.upsert_file(SAMPLE_FILE, [], calls)
+
+        callers = symbol_index.find_callers(
+            "ГоловнаяОрганизация",
+            receiver_name="зарплатакадрыповтисп",
+        )
+
+        assert [caller["caller_line"] for caller in callers] == [1]
+
+
+class TestSchemaMigration:
+    def test_existing_calls_table_gets_receiver_expression(self, tmp_path: Path) -> None:
+        db = tmp_path / "legacy.sqlite"
+        index = SymbolIndex(str(db))
+        index.close()
+        with sqlite3.connect(db) as connection:
+            connection.execute("ALTER TABLE calls DROP COLUMN receiver_expression")
+
+        migrated = SymbolIndex(str(db))
+        migrated.close()
+        with sqlite3.connect(db) as connection:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(calls)")}
+
+        assert "receiver_expression" in columns
 
     def test_find_callees_by_file(self, symbol_index: SymbolIndex) -> None:
         symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)

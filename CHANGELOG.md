@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Call graph attribution now preserves call receiver expressions in the
+  SQLite index and excludes qualified calls to other same-named exported
+  methods, while retaining unresolved bare calls.
+
 ### Changed
 
 - `noqa`, `bsl-disable` and compatible `BSLLS:…-off` suppressions now share a

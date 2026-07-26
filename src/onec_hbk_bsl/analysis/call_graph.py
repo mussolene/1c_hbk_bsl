@@ -340,8 +340,7 @@ def build_call_graph(
     same-named definitions, ``callers`` attributes qualified call sites
     (``Модуль.Функция(...)``) to this definition only when the qualifier
     names its own module/object; bare/unqualified call sites are still
-    returned unfiltered (genuinely unresolved — see
-    ``tmp/fixed/onec-hbk-bsl-issue-calls-drop-qualifier.md``).
+    returned unfiltered because their target remains unresolved.
 
     Args:
         index:       SymbolIndex instance to query.
@@ -418,8 +417,8 @@ def build_call_graph(
     # (`Модуль.Функция(...)`) do carry the owning module/object name — match
     # that against this definition's own module/object name to avoid
     # attributing a qualified call to a *different* same-named definition.
-    # Bare/unqualified callers stay unscoped (unresolved on purpose, see
-    # tmp/fixed/onec-hbk-bsl-issue-calls-drop-qualifier.md).
+    # Bare/unqualified callers stay unscoped because their target remains
+    # unresolved.
     scope_file = None
     receiver_name = None
     if definition is not None:

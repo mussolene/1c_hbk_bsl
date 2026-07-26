@@ -29,15 +29,3 @@ Completion bar:
   printed, or committed.
 
 See `docs/oacs-development.md` for repository-specific command examples.
-
-## Maintainer-facing explainer docs (`docs/contrib_tmp/`)
-
-When a fix is non-trivial and the maintainer/upstream author needs a
-write-up to review it (not project documentation, not a `tmp/` working
-note), put it in `docs/contrib_tmp/`. That directory is gitignored — it
-exists so these files can be drafted, read, and copy-pasted into a PR
-description or message, but can never end up committed or merged by
-accident. Every file placed there must open with a short blockquote
-noting it explains a change to the maintainer and is not part of the
-project docs (see any existing file in `docs/contrib_tmp/` for the exact
-wording). Do not remove `docs/contrib_tmp/` from `.gitignore`.
