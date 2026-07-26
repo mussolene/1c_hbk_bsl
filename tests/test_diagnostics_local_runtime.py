@@ -942,7 +942,41 @@ class TestRuleSelection:
         diags = _check(content, tmp_path)
         assert "BSL012" not in _codes(diags)
 
-    # ── BSLLS block suppression ──────────────────────────────────────────
+    @pytest.mark.parametrize(
+        ("opening", "closing"),
+        [
+            ("// noqa: BSL012", "// noqa-enable: BSL012"),
+            ("// bsl-disable: BSL012", "// bsl-enable: BSL012"),
+        ],
+    )
+    def test_inline_families_suppress_ranges(
+        self, tmp_path: Path, opening: str, closing: str
+    ) -> None:
+        content = (
+            f'{opening}\nПароль = "СуперСекрет2024!";\n{closing}\nПароль = "МойПароль123@#";\n'
+        )
+        diags = _check(content, tmp_path)
+        lines_bsl012 = {d.line for d in diags if d.code == "BSL012"}
+        assert 2 not in lines_bsl012
+        assert 4 in lines_bsl012
+
+    @pytest.mark.parametrize("opening", ["// noqa", "// bsl-disable"])
+    def test_inline_families_suppress_all_until_eof(self, tmp_path: Path, opening: str) -> None:
+        content = f'{opening}\nПароль = "секрет123";\n'
+        diags = _check(content, tmp_path)
+        assert not _codes(diags)
+
+    def test_range_closer_only_closes_its_own_family(self, tmp_path: Path) -> None:
+        content = (
+            "// noqa: BSL012\n"
+            "// bsl-enable: BSL012\n"
+            'Пароль = "секрет123";\n'
+            "// noqa-enable: BSL012\n"
+        )
+        diags = _check(content, tmp_path)
+        assert "BSL012" not in _codes(diags)
+
+    # ── All suppression families: line and range ─────────────────────────
 
     def test_bslls_block_off_on(self, tmp_path: Path) -> None:
         """BSLLS:Rule-off suppresses from that line; -on re-enables."""

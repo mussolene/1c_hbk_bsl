@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `noqa`, `bsl-disable` and compatible `BSLLS:…-off` suppressions now share a
+  deterministic line/range contract: trailing markers affect one line,
+  standalone markers open a range, and family-specific enable markers close it.
 - Documentation is published as a searchable RU/EN Material site with
   system/light/dark themes and separate Toolkit and VS Code / Cursor guides;
   all 180 `BSL###` pages contain localized rule guidance and compatible
@@ -470,7 +473,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Реестр вызова правил (`diagnostics_rule_registry`): фазы (`RulePhase`), `infer_rule_invoke`, `build_enabled_invoke_snapshot`; метрика `last_metrics["rule_invoke"]` в движке.
-- Документация [docs/diagnostics_rule_invoke.md](docs/diagnostics_rule_invoke.md); тесты [tests/test_diagnostics_rule_registry.py](tests/test_diagnostics_rule_registry.py).
+- Документация классификации вызовов правил; тесты [tests/test_diagnostics_rule_registry.py](tests/test_diagnostics_rule_registry.py).
 
 ### Changed
 
@@ -485,7 +488,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **LSP:** `textDocument/diagnostic` (pull) для клиентов с LSP 3.17; при поддержке pull не шлём `publishDiagnostics` на каждое изменение; группировка Problems: `source` = `onec-hbk-bsl · <код правила>`; MCP: `source` для BSL-DEAD выровнен с LSP.
-- Документация: [docs/Production-Notes.md](docs/Production-Notes.md) — индексация и параллелизм.
+- Документация по индексации и параллелизму.
 
 ## [0.6.9] - 2026-03-22
 

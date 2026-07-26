@@ -94,9 +94,9 @@ git diff --exit-code -- docs/diagnostic-rules.md docs/rule-contracts
 ./.venv/bin/python -m onec_hbk_bsl rules
 ```
 
-See [docs/cst_policy.md](docs/cst_policy.md) for structural-rule policy and
-[docs/diagnostics_rule_invoke.md](docs/diagnostics_rule_invoke.md) for runtime
-execution phases.
+See [docs/cst_policy.md](docs/cst_policy.md) for structural-rule policy.
+Use `scripts/diagnostic_rule_matrix.py` before changing a rule family to inspect
+its current runtime group and shared facts.
 
 ### Rule severity guidelines
 
@@ -107,19 +107,15 @@ execution phases.
 | INFORMATION | Style suggestions                                        |
 | HINT        | Very minor nits, auto-fixable issues                     |
 
-## Architecture Overview
-
-See [docs/architecture.md](docs/architecture.md) for the component diagram,
-data flow, and SQLite schema. Operational notes: [docs/Production-Notes.md](docs/Production-Notes.md).
-
 ## Documentation (user-facing changes)
 
 If the PR changes LSP/MCP behavior, diagnostic rules, VS Code settings in `vscode-extension/package.json`, or MCP tool names:
 
-- Update [README.md](README.md) and/or [docs/Production-Notes.md](docs/Production-Notes.md) as needed.
+- Update [README.md](README.md), [docs/public-surface.md](docs/public-surface.md),
+  or [docs/extension.md](docs/extension.md) as needed.
 - For new or renamed rules, verify `./.venv/bin/python -m onec_hbk_bsl rules`
-  and update user-facing docs when behavior changes.
-- Optional: add a line to [CHANGELOG.md](CHANGELOG.md) for user-visible behavior changes.
+  and regenerate the rule reference.
+- Add a line to [CHANGELOG.md](CHANGELOG.md) for user-visible behavior changes.
 
 ## Pull Request Checklist
 
@@ -129,5 +125,5 @@ If the PR changes LSP/MCP behavior, diagnostic rules, VS Code settings in `vscod
 - [ ] `./.venv/bin/python -m pytest -q` passes
 - [ ] Extension lint, typecheck, and compile pass when extension code or settings change
 - [ ] Generated diagnostic documentation and rule contracts are current
-- [ ] `docs/architecture.md` or `README.md` / `docs/Production-Notes.md` updated if public behavior or settings changed
+- [ ] Public product or extension documentation updated if behavior or settings changed
 - [ ] Commit message is descriptive (what & why, not just what)

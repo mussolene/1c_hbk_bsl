@@ -24,14 +24,26 @@ BSL017  CommandModuleExportMethods  — Export modifier in a command or form mod
 
 Suppression
 -----------
+All comment families support a single line and a range.  An opening marker
+after code suppresses only that line; the same marker on its own line opens a
+range.  ``noqa-enable``, ``bsl-enable``, or the BSLLS ``-on`` marker closes it.
+
 Inline suppression on a specific line::
 
     Если Условие Тогда  // noqa: BSL004
     Исключение  // bsl-disable: BSL028
+    Исключение  // BSLLS:MagicNumber-off
     Исключение  // noqa            ← suppresses ALL rules on this line
 
-BSL Language Server (BSLLS) block suppression — compatible with existing
-1c-syntax/bsl-language-server annotations::
+Range suppression::
+
+    // noqa: BSL004
+    ... code without BSL004 ...
+    // noqa-enable: BSL004
+
+    // bsl-disable: BSL028
+    ... code without BSL028 ...
+    // bsl-enable: BSL028
 
     // BSLLS:CognitiveComplexity-off   ← disable from this line onward
     ... complex code ...
@@ -1984,13 +1996,23 @@ def _mask_strings_and_comments_for_counter(line: str, in_string_at_start: bool =
     return "".join(chars)
 
 
-# Inline noqa/bsl-disable
+# ``noqa`` / ``bsl-disable`` opening marker.  Placement defines the scope:
+# trailing after code means one line; a standalone marker opens a range.
 _RE_NOQA = re.compile(
-    r"//\s*(?:noqa|bsl-disable)(?:\s*:\s*(?P<codes>[A-Z0-9,\s]+))?",
+    r"//\s*(?P<marker>noqa|bsl-disable)"
+    r"(?:\s*:\s*(?P<codes>[A-Z0-9,\s]+))?\s*$",
     re.IGNORECASE,
 )
 
-# BSL Language Server (BSLLS) block-level suppression
+# Range-closing marker paired with the family that opened it.
+_RE_INLINE_SUPPRESSION_ENABLE = re.compile(
+    r"//\s*(?P<marker>noqa-enable|bsl-enable)"
+    r"(?:\s*:\s*(?P<codes>[A-Z0-9,\s]+))?\s*$",
+    re.IGNORECASE,
+)
+
+# BSLLS opening/closing suppression.  A trailing ``-off`` is line-only; a
+# standalone ``-off`` opens a range closed by ``-on``.
 # Format: // BSLLS[:DiagnosticName]-off|on|выкл|вкл
 _RE_BSLLS = re.compile(
     r"//\s*BSLLS(?::(?P<name>[A-Za-z]+))?-(?P<flag>off|on|выкл|вкл)\b",
