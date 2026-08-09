@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   diagnostics with the same code and reason are grouped, while distinct causes
   remain separate in the VS Code Problems panel.
 
+### Security
+
+- Patched transitive extension dependencies `brace-expansion`, `fast-uri`,
+  `js-yaml` and `undici` to versions without their reported high-severity
+  vulnerabilities.
+
 ## [0.8.47] - 2026-07-26
 
 ### Fixed
