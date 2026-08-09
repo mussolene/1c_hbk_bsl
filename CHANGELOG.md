@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.48] - 2026-08-09
+
+### Fixed
+
+- Diagnostics now preserve their concrete runtime reason, including deprecated
+  API names and replacements, when delivered through CLI, LSP and MCP; only
+  diagnostics with the same code and reason are grouped, while distinct causes
+  remain separate in the VS Code Problems panel.
+
 ## [0.8.47] - 2026-07-26
 
 ### Fixed
@@ -623,7 +632,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.47...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.48...HEAD
+[0.8.48]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.47...v0.8.48
 [0.8.47]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.46...v0.8.47
 [0.8.46]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.45...v0.8.46
 [0.8.45]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.44...v0.8.45
