@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 from pathlib import Path
 
@@ -126,6 +127,55 @@ def test_diagnostic_uses_i18n_message_by_default() -> None:
     assert diag.message == get_rule("BSL236").message
 
 
+def test_diagnostic_renders_structured_message_arguments() -> None:
+    diag = Diagnostic(
+        file="m.bsl",
+        line=1,
+        character=0,
+        end_line=1,
+        end_character=12,
+        severity=Severity.INFORMATION,
+        code="BSL176",
+        message_args=("СтарыйМетод", " Используйте НовыйМетод."),
+    )
+
+    assert diag.message == (
+        'Удалите обращение к устаревшему "СтарыйМетод". Используйте НовыйМетод.'
+    )
+    assert diag.to_dict()["message"] == diag.message
+
+
+def test_diagnostic_accepts_explicit_occurrence_message() -> None:
+    diag = Diagnostic(
+        file="m.bsl",
+        line=1,
+        character=0,
+        end_line=1,
+        end_character=12,
+        severity=Severity.INFORMATION,
+        code="BSL175",
+        message='Метод "СтарыйМетод" устарел. Используйте "НовыйМетод".',
+    )
+
+    assert diag.message == 'Метод "СтарыйМетод" устарел. Используйте "НовыйМетод".'
+
+
+def test_diagnostic_rejects_ambiguous_or_unrendered_message() -> None:
+    common = dict(
+        file="m.bsl",
+        line=1,
+        character=0,
+        end_line=1,
+        end_character=1,
+        severity=Severity.ERROR,
+        code="BSL196",
+    )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        Diagnostic(**common, message="Текст", message_args=("Метод",))
+    with pytest.raises(ValueError, match="unrendered placeholder"):
+        Diagnostic(**common, message='Метод "%s" устарел')
+
+
 def test_catalog_never_exposes_unrendered_placeholders() -> None:
     for code in RULE_METADATA:
         assert "%s" not in get_rule(code).message
@@ -139,6 +189,32 @@ def test_message_template_rendering_validates_arity() -> None:
         render_rule_message("BSL196")
     with pytest.raises(ValueError, match="expects 1 argument"):
         render_rule_message("BSL196", "one", "two")
+
+
+def test_parameterized_rules_supply_occurrence_message_data() -> None:
+    root = Path(__file__).resolve().parents[1] / "src" / "onec_hbk_bsl"
+    parameterized_codes = {
+        code for code in RULE_METADATA if "%s" in get_rule(code).message_template
+    }
+    missing: list[str] = []
+    for source_path in root.rglob("*.py"):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+            keywords = {item.arg: item.value for item in call.keywords if item.arg is not None}
+            code_node = keywords.get("code")
+            if not (
+                isinstance(code_node, ast.Constant)
+                and isinstance(code_node.value, str)
+                and code_node.value in parameterized_codes
+            ):
+                continue
+            function_name = ast.unparse(call.func)
+            if not function_name.endswith(("Diagnostic", "add_range", "add_match")):
+                continue
+            if "message" not in keywords and "message_args" not in keywords:
+                missing.append(f"{source_path.relative_to(root)}:{call.lineno}:{code_node.value}")
+
+    assert missing == []
 
 
 def test_lsp_compat_severity_documents_bslls_facing_source_of_truth() -> None:

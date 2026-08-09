@@ -792,6 +792,72 @@ class TestPublishDiagnostics:
         params = call_args[0][0]
         assert params.uri == uri
 
+    def test_lsp_groups_only_identical_diagnostic_reasons(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.analysis.diagnostics import Diagnostic, Severity
+        from onec_hbk_bsl.lsp.server import BslLanguageServer, _build_lsp_diagnostics_inner
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))
+        ls = BslLanguageServer()
+        path = str(tmp_path / "module.bsl")
+        uri = (tmp_path / "module.bsl").as_uri()
+        context = ls.workspace_state.snapshot()
+        issues = [
+            Diagnostic(
+                file=path,
+                line=1,
+                character=0,
+                end_line=1,
+                end_character=5,
+                severity=Severity.INFORMATION,
+                code="BSL176",
+                message_args=("СтарыйМетод", ""),
+            ),
+            Diagnostic(
+                file=path,
+                line=2,
+                character=0,
+                end_line=2,
+                end_character=5,
+                severity=Severity.INFORMATION,
+                code="BSL176",
+                message_args=("СтарыйМетод", ""),
+            ),
+            Diagnostic(
+                file=path,
+                line=3,
+                character=0,
+                end_line=3,
+                end_character=5,
+                severity=Severity.INFORMATION,
+                code="BSL176",
+                message_args=("ДругойМетод", ""),
+            ),
+        ]
+        context.diagnostics_engine.check_content = MagicMock(return_value=issues)
+        context.diagnostics_engine.check_snapshot = MagicMock(return_value=issues)
+        context.symbol_index.find_unused_symbols = MagicMock(return_value=[])
+
+        diagnostics = _build_lsp_diagnostics_inner(
+            ls,
+            uri,
+            path,
+            workspace_context=context,
+            content_override="",
+        )
+
+        assert len(diagnostics) == 2
+        repeated = next(d for d in diagnostics if "СтарыйМетод" in d.message)
+        distinct = next(d for d in diagnostics if "ДругойМетод" in d.message)
+        assert repeated.message.endswith("(2 вхождений)")
+        assert repeated.related_information is not None
+        assert len(repeated.related_information) == 1
+        assert distinct.related_information is None
+        ls.close()
+
     def test_publish_diagnostics_missing_file_no_crash(self, tmp_path: Path, monkeypatch) -> None:
         """_publish_diagnostics should not raise for nonexistent files (Problems still update)."""
         monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "idx.sqlite"))

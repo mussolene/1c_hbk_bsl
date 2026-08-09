@@ -434,7 +434,7 @@ def run_bsl152_cached_public(
 def run_bsl154_code_after_async(path: str, tree: object | None) -> list[Any]:
     Diagnostic, Severity = _diag_types()
     diags: list[Any] = []
-    for line_1, c0, end_line_1, c1, _method in bsl154_code_after_async_spans_cst(path, tree):
+    for line_1, c0, end_line_1, c1, method in bsl154_code_after_async_spans_cst(path, tree):
         diags.append(
             Diagnostic(
                 file=path,
@@ -444,6 +444,7 @@ def run_bsl154_code_after_async(path: str, tree: object | None) -> list[Any]:
                 end_character=c1,
                 severity=Severity.WARNING,
                 code="BSL154",
+                message_args=(method,),
             )
         )
     return diags
@@ -471,7 +472,7 @@ def run_bsl156_code_out_of_region(path: str, lines: list[str], procs: list[_Proc
 def run_bsl158_common_module_assign(path: str, lines: list[str], symbol_index: Any) -> list[Any]:
     Diagnostic, Severity = _diag_types()
     diags: list[Any] = []
-    for line_1, c0, c1, _name in bsl158_common_module_assign_spans(lines, symbol_index):
+    for line_1, c0, c1, name in bsl158_common_module_assign_spans(lines, symbol_index):
         diags.append(
             Diagnostic(
                 file=path,
@@ -481,6 +482,7 @@ def run_bsl158_common_module_assign(path: str, lines: list[str], symbol_index: A
                 end_character=c1,
                 severity=Severity.ERROR,
                 code="BSL158",
+                message_args=(name,),
             )
         )
     return diags

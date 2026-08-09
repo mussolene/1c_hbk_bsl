@@ -99,7 +99,7 @@ class TestBsl212MissedRequiredParameter:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL212"}) if d.code == "BSL212"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL212")
+        assert diags[0].message == "Укажите обязательный параметр Параметр"
 
     def test_qualified_call_does_not_resolve_to_local_method(self, tmp_path: Path) -> None:
         content = """\

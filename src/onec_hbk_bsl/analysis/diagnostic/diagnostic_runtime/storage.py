@@ -21,6 +21,8 @@ class DiagnosticStorage:
         character: int,
         end_line: int,
         end_character: int,
+        message: str = "",
+        message_args: tuple[object, ...] = (),
     ) -> None:
         self.diagnostics.append(
             Diagnostic(
@@ -31,6 +33,8 @@ class DiagnosticStorage:
                 end_character=end_character,
                 severity=severity,
                 code=code,
+                message=message,
+                message_args=message_args,
             )
         )
 
@@ -42,6 +46,8 @@ class DiagnosticStorage:
         line: int,
         start: int,
         end: int,
+        message: str = "",
+        message_args: tuple[object, ...] = (),
     ) -> None:
         self.add_range(
             code=code,
@@ -50,4 +56,6 @@ class DiagnosticStorage:
             character=start,
             end_line=line,
             end_character=end,
+            message=message,
+            message_args=message_args,
         )

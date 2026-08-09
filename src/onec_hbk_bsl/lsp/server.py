@@ -1178,17 +1178,18 @@ def _build_lsp_diagnostics_inner(
     # Record elapsed time for adaptive debounce (no lock needed — float write is atomic).
     ls.doc_state.set_last_diag_time(uri, _time.perf_counter() - _t0)
 
-    # Group diagnostics by rule code to reduce Problems panel clutter.
-    # Rules that fire many times in one file are collapsed into a single entry
-    # with the extra locations in relatedInformation (up to 50 per rule).
+    # Group identical diagnostics to reduce Problems panel clutter without
+    # merging distinct causes reported by the same rule.
+    # Repeated occurrences are collapsed into a single entry with the extra
+    # locations in relatedInformation (up to 50 per message).
     # This prevents the VS Code Problems panel from being truncated at ~52 k entries
     # when a large workspace has many repetitions of the same rule per file.
-    _rule_buckets: dict[str, list] = {}
+    _rule_buckets: dict[tuple[str, str], list] = {}
     for d in issues:
-        _rule_buckets.setdefault(d.code, []).append(d)
+        _rule_buckets.setdefault((d.code, d.message), []).append(d)
 
     lsp_diags: list[LspDiagnostic] = []
-    for code, group in _rule_buckets.items():
+    for (code, message), group in _rule_buckets.items():
         pub, code_desc = _lsp_diagnostic_code_fields(code)
         first = group[0]
         rest = group[1:]
@@ -1205,17 +1206,17 @@ def _build_lsp_diagnostics_inner(
                             end=Position(line=d.end_line - 1, character=d.end_character),
                         ),
                     ),
-                    message=get_rule(code).message,
+                    message=d.message,
                 )
                 for d in rest[:50]  # LSP spec: no hard limit, but 50 is practical
             ]
 
-        msg = get_rule(code).message
+        msg = message
         if rest:
             total = len(group)
             msg = f"{msg} ({total} вхождений)"
             if total > 51:
-                msg += " — показаны первые 51"
+                msg += ", показаны первые 51"
 
         lsp_diags.append(
             LspDiagnostic(

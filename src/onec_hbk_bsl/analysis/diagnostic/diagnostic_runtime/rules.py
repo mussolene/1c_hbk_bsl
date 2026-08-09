@@ -475,8 +475,10 @@ def _diagnostics_bsl052_identical_expressions(
             continue
         if operator_text == "/" and duplicate_key in _BSL052_DEFAULT_POPULAR_DIVISORS:
             continue
+        operand_text = _bsl052_operand_display(left if left_key == duplicate_key else right)
         storage.add_range(
             code="BSL052",
+            message_args=(_ts_node_text(operator), operand_text),
             line=int(node.start_point[0]) + 1,
             character=utf8_byte_offset_to_lsp_character(
                 context.lines[int(node.start_point[0])], int(node.start_point[1])

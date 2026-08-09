@@ -201,9 +201,13 @@ class TestBslCheckFileTool:
 
         monkeypatch.delenv("BSL_SELECT", raising=False)
         monkeypatch.delenv("BSL_IGNORE", raising=False)
-        bsl_path = _make_bsl(tmp_path, "t.bsl", 'Пароль = "секрет123";\n')
+        bsl_path = _make_bsl(
+            tmp_path,
+            "t.bsl",
+            "Если Количество > Количество Тогда\nКонецЕсли;\n",
+        )
         (tmp_path / "onec-hbk-bsl.toml").write_text(
-            'select = ["BSL012"]\n',
+            'select = ["BSL052"]\n',
             encoding="utf-8",
         )
 
@@ -246,6 +250,8 @@ class TestBslCheckFileTool:
             for issue in mcp_result["diagnostics"]
         ]
         assert cli_signature == lsp_signature == mcp_signature
+        assert 'оператора ">"' in cli_signature[0][4]
+        assert '"Количество"' in cli_signature[0][4]
 
 
 def _set_workspace_policy(mod, root: Path, monkeypatch=None) -> None:

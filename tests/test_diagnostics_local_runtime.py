@@ -145,7 +145,10 @@ class TestDeprecatedApiParityBatch:
         diags = _check(content, tmp_path, select={"BSL175"})
         bsl175 = [d for d in diags if d.code == "BSL175"]
         assert len(bsl175) == 2
-        assert all(d.message == _rule_msg("BSL175") for d in bsl175)
+        assert {d.message for d in bsl175} == {
+            'Атрибут "ОтображатьШкалу" устарел. Вместо него стоит использовать "ОтображатьШкалы"',
+            'Метод "ОчиститьЖурналРегистрации" устарел и больше не используется',
+        }
 
     def test_bsl175_deprecated_chart_method_and_enum(self, tmp_path: Path) -> None:
         content = """\
@@ -185,7 +188,9 @@ class TestDeprecatedApiParityBatch:
         bsl176 = [d for d in diags if d.code == "BSL176"]
         assert len(bsl176) == 1
         assert bsl176[0].line == 6
-        assert bsl176[0].message == _rule_msg("BSL176")
+        assert bsl176[0].message == (
+            'Удалите обращение к устаревшему "СтарыйМетод". Используйте "НовыйМетод".'
+        )
 
     def test_bsl176_same_file_ru_deprecated_method_call(self, tmp_path: Path) -> None:
         content = """\
@@ -283,7 +288,7 @@ class TestDeprecatedApiParityBatch:
         bsl176 = [d for d in diags if d.code == "BSL176"]
         assert len(bsl176) == 1
         assert (bsl176[0].line, bsl176[0].character, bsl176[0].end_character) == (2, 50, 71)
-        assert bsl176[0].message == _rule_msg("BSL176")
+        assert bsl176[0].message == ('Удалите обращение к устаревшему "УдалитьСтарыйРеквизит".')
 
     def test_bsl176_deleted_prefix_method_call_is_not_metadata_property(
         self, tmp_path: Path
@@ -1847,7 +1852,9 @@ class TestBsl052IdenticalExpressions:
         assert [(d.line, d.character, d.end_character, d.severity) for d in diags] == [
             (2, 5, 28, Severity.ERROR),
         ]
-        assert diags[0].message == _rule_msg("BSL052")
+        assert diags[0].message == (
+            'Слева и справа от оператора ">" находятся одинаковые подвыражения: "Количество"'
+        )
 
     def test_addition_with_identical_operands_is_not_reported(self, tmp_path: Path) -> None:
         content = """\

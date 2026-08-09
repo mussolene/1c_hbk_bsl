@@ -25,12 +25,23 @@ class Diagnostic:
     end_character: int
     severity: Severity
     code: str
+    message: str = ""
+    message_args: tuple[object, ...] = ()
 
-    @property
-    def message(self) -> str:
-        from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
+    def __post_init__(self) -> None:
+        from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule, render_rule_message
 
-        return get_rule(self.code).message
+        if self.message and self.message_args:
+            raise ValueError("diagnostic message and message_args are mutually exclusive")
+        self.message_args = tuple(self.message_args)
+        if not self.message:
+            self.message = (
+                render_rule_message(self.code, *self.message_args)
+                if self.message_args
+                else get_rule(self.code).message
+            )
+        if "%s" in self.message:
+            raise ValueError(f"{self.code} diagnostic message contains an unrendered placeholder")
 
     def to_dict(self, *, include_rule_name: bool = False) -> dict:
         d = {

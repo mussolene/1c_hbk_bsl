@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostic.rules.common_module_rules import (
     common_module_has_api_region,
     common_module_name_convention_issues,
@@ -81,7 +80,9 @@ def test_bsl158_assign_to_indexed_common_module(tmp_path: Path) -> None:
     engine = DiagnosticEngine(select={"BSL158"}, symbol_index=_FakeIndex158())
     diags = [d for d in engine.check_file(str(p)) if d.code == "BSL158"]
     assert len(diags) == 1
-    assert diags[0].message == get_rule("BSL158").message
+    assert diags[0].message == (
+        "Переименуйте переменную, т.к МойОбщийМодуль - это имя общего модуля"
+    )
 
 
 def test_bsl158_noop_without_metadata_index(tmp_path: Path) -> None:

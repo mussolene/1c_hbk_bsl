@@ -215,7 +215,7 @@ class DiagnosticEngine:
 
         try:
             tree = self._get_parser().parse_content(content, file_path=path)
-        except Exception:
+        except Exception as exc:
             return [
                 Diagnostic(
                     file=path,
@@ -225,6 +225,7 @@ class DiagnosticEngine:
                     end_character=0,
                     severity=Severity.ERROR,
                     code="BSL001",
+                    message_args=(f"Не удалось разобрать содержимое: {exc}",),
                 )
             ]
         diagnostics = self._run_rules(path, content, tree, symbol_index=symbol_index)
@@ -273,7 +274,7 @@ class DiagnosticEngine:
         if tree is None:
             try:
                 content = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-            except OSError:
+            except OSError as exc:
                 return [
                     Diagnostic(
                         file=path,
@@ -283,12 +284,13 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
+                        message_args=(f"Не удалось прочитать файл: {exc}",),
                     )
                 ]
 
             try:
                 tree = self._get_parser().parse_content(content, file_path=path)
-            except Exception:
+            except Exception as exc:
                 return [
                     Diagnostic(
                         file=path,
@@ -298,12 +300,13 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
+                        message_args=(f"Не удалось разобрать файл: {exc}",),
                     )
                 ]
         else:
             try:
                 content = Path(path).read_text(encoding="utf-8-sig", errors="replace")
-            except OSError:
+            except OSError as exc:
                 return [
                     Diagnostic(
                         file=path,
@@ -313,6 +316,7 @@ class DiagnosticEngine:
                         end_character=0,
                         severity=Severity.ERROR,
                         code="BSL001",
+                        message_args=(f"Не удалось прочитать файл: {exc}",),
                     )
                 ]
         return self._run_rules(path, content, tree, symbol_index=symbol_index)

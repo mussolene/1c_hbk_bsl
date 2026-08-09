@@ -520,6 +520,10 @@ def run_bsl174_187_236_238_query_metadata_pool(
                         end_character=_bsl174_owner_range_end(line_text),
                         severity=_diag.Severity.WARNING,
                         code="BSL174",
+                        message_args=(
+                            match.group(1).strip(),
+                            object_context.get("object_name", ""),
+                        ),
                     )
                 )
 
@@ -569,12 +573,13 @@ def run_bsl174_187_236_238_query_metadata_pool(
     return diags
 
 
-def _bsl274_form_xml_has_wrong_data_path(_diag: Any, form_xml: Path) -> bool:
+def _bsl274_wrong_data_path(_diag: Any, form_xml: Path) -> tuple[str, str] | None:
     form_text = _diag._read_text_cached(str(form_xml))
-    return any(
-        match.group(1).strip().startswith("~")
-        for match in _diag._RE_XML_DATAPATH.finditer(form_text)
-    )
+    for match in _diag._RE_XML_DATAPATH.finditer(form_text):
+        data_path = match.group(1).strip()
+        if data_path.startswith("~"):
+            return data_path, form_xml.parents[1].name
+    return None
 
 
 def _bsl274_form_xmls_without_modules(config_root: str) -> list[Path]:
@@ -675,6 +680,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         end_character=_metadata_owner_range_end(line_text),
                         severity=_diag.Severity.ERROR,
                         code="BSL189",
+                        message_args=(object_name, "объекта метаданных"),
                     )
                 )
             if meta_obj is not None:
@@ -695,6 +701,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                                 end_character=_metadata_owner_range_end(line_text),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL189",
+                                message_args=(check_name, "реквизита или табличной части"),
                             )
                         )
                         break
@@ -708,6 +715,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     end_character=_metadata_owner_range_end(line_text),
                     severity=_diag.Severity.WARNING,
                     code="BSL211",
+                    message_args=(object_name, 80),
                 )
             )
         if "BSL241" in enabled_set and meta_obj is not None:
@@ -726,6 +734,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL241",
+                            message_args=(raw_name[0], meta_obj.name),
                         )
                     )
                     break
@@ -739,23 +748,27 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL241",
+                            message_args=(raw_name[1], raw_name[0]),
                         )
                     )
                     break
 
     if "BSL274" in enabled_set:
-        has_wrong_data_path = False
+        wrong_data_path: tuple[str, str] | None = None
         if _diag.path_is_likely_form_module_bsl(path):
             form_xml = _diag._current_form_xml_path(path)
-            has_wrong_data_path = form_xml is not None and _bsl274_form_xml_has_wrong_data_path(
-                _diag, form_xml
-            )
+            if form_xml is not None:
+                wrong_data_path = _bsl274_wrong_data_path(_diag, form_xml)
         elif low_path.endswith("/ext/managedapplicationmodule.bsl") and root is not None:
-            has_wrong_data_path = any(
-                _bsl274_form_xml_has_wrong_data_path(_diag, form_xml)
-                for form_xml in _bsl274_form_xmls_without_modules(root)
+            wrong_data_path = next(
+                (
+                    violation
+                    for form_xml in _bsl274_form_xmls_without_modules(root)
+                    if (violation := _bsl274_wrong_data_path(_diag, form_xml)) is not None
+                ),
+                None,
             )
-        if has_wrong_data_path:
+        if wrong_data_path is not None:
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -765,6 +778,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     end_character=max(len(line_text.rstrip()), 1),
                     severity=_diag.Severity.ERROR,
                     code="BSL274",
+                    message_args=wrong_data_path,
                 )
             )
 
@@ -773,7 +787,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
         and low_path.endswith("/ext/managedapplicationmodule.bsl")
         and root is not None
     ):
-        for _role_name in _diag._roles_with_new_objects_cached(root):
+        for role_name in _diag._roles_with_new_objects_cached(root):
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -783,11 +797,12 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     end_character=max(len(line_text.rstrip()), 1),
                     severity=_diag.Severity.ERROR,
                     code="BSL246",
+                    message_args=(role_name,),
                 )
             )
 
     if "BSL232" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl") and root is not None:
-        for _protected_ref in _diag._config_protected_module_refs_cached(root):
+        for protected_ref in _diag._config_protected_module_refs_cached(root):
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -797,11 +812,12 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                     end_character=max(len(line_text.rstrip()), 1),
                     severity=_diag.Severity.WARNING,
                     code="BSL232",
+                    message_args=(protected_ref,),
                 )
             )
     if "BSL214" in enabled_set and low_path.endswith("/ext/sessionmodule.bsl") and root is not None:
         proc_names_by_module: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
-        for _subscription_name, handler in _diag._event_subscription_handlers_cached(root):
+        for subscription_name, handler in _diag._event_subscription_handlers_cached(root):
             invalid = False
             split = _diag._split_common_module_method_path(handler)
             if split is None:
@@ -839,6 +855,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         end_character=_metadata_owner_range_end(line_text),
                         severity=_diag.Severity.ERROR,
                         code="BSL214",
+                        message_args=(subscription_name,),
                     )
                 )
     if "BSL231" in enabled_set and root is not None:
@@ -873,6 +890,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=match.end("meth"),
                             severity=_diag.Severity.WARNING,
                             code="BSL231",
+                            message_args=(f"{match.group('mod')}.{match.group('meth')}",),
                         )
                     )
             if current_privileged and current_common:
@@ -891,6 +909,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=match.end("meth"),
                             severity=_diag.Severity.WARNING,
                             code="BSL231",
+                            message_args=(match.group("meth"),),
                         )
                     )
 
@@ -928,6 +947,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                                 end_character=match.end("meth"),
                                 severity=_diag.Severity.ERROR,
                                 code="BSL213",
+                                message_args=(match.group("meth"), match.group("mod")),
                             )
                         )
         if "BSL214" in enabled_set:
@@ -945,6 +965,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL214",
+                            message_args=(handler,),
                         )
                     )
         if "BSL242" in enabled_set and low_path.endswith("/ext/module.bsl"):
@@ -963,6 +984,10 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                         end_character=max(len(line_text.rstrip()), 1),
                         severity=_diag.Severity.ERROR,
                         code="BSL242",
+                        message=(
+                            f'Общий модуль "{module_name}" обработчика регламентного задания '
+                            "должен выполняться на сервере"
+                        ),
                     )
                 )
             for handler, job_name, predefined in module_handlers:
@@ -978,6 +1003,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
+                            message_args=(handler, job_name),
                         )
                     )
                     continue
@@ -992,6 +1018,10 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=end_char,
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
+                            message=(
+                                f'Обработчик регламентного задания "{handler}" должен быть '
+                                "экспортным"
+                            ),
                         )
                     )
                 if predefined and (proc.optional_count > 0 or proc.params):
@@ -1005,6 +1035,10 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=end_char,
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
+                            message=(
+                                f'Обработчик предопределенного регламентного задания "{handler}" '
+                                "не должен принимать параметры"
+                            ),
                         )
                     )
                 if _bsl242_proc_body_is_empty(lines, proc):
@@ -1018,6 +1052,7 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=end_char,
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
+                            message=f'Обработчик регламентного задания "{handler}" не должен быть пустым',
                         )
                     )
                 if handler in handlers_seen and handlers_seen[handler] != job_name:
@@ -1030,6 +1065,10 @@ def run_bsl189_211_213_214_231_232_241_242_246_274_metadata_pool(
                             end_character=max(len(line_text.rstrip()), 1),
                             severity=_diag.Severity.ERROR,
                             code="BSL242",
+                            message=(
+                                f'Один обработчик "{handler}" используется регламентными '
+                                f'заданиями "{handlers_seen[handler]}" и "{job_name}"'
+                            ),
                         )
                     )
                 handlers_seen[handler] = job_name
@@ -1101,6 +1140,7 @@ def run_bsl244_253_261_runtime_pool(
                                     end_character=_bsl244_call_end_character(line, open_paren_idx),
                                     severity=_diag.Severity.ERROR,
                                     code="BSL244",
+                                    message_args=(match.group("call"),),
                                 )
                             )
 

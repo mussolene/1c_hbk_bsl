@@ -53,6 +53,7 @@ def _make_diag(
         end_character=10,
         severity=severity,
         code=code,
+        message=message,
     )
 
 
@@ -219,6 +220,7 @@ class TestPrintJson:
         assert "line" in item
         assert item["line"] == 5
         assert item["rule_name"] == "SelfAssign"
+        assert item["message"] == "test"
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +283,7 @@ class TestPrintSarif:
         data = json.loads(captured.out)
         result = data["runs"][0]["results"][0]
         assert result["ruleId"] == "BSL009"
-        assert "message" in result
+        assert result["message"]["text"] == "test"
         assert "locations" in result
         loc = result["locations"][0]["physicalLocation"]
         assert loc["region"]["startLine"] == 3

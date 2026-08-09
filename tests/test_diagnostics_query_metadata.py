@@ -802,7 +802,9 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL189")
+        assert diags[0].message == (
+            "Запрещено использовать имя `Документ` для `реквизита или табличной части`"
+        )
         assert (diags[0].line, diags[0].character, diags[0].end_line, diags[0].end_character) == (
             1,
             0,
@@ -843,7 +845,9 @@ class TestTailParityBatches:
         ]
 
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL189")
+        assert diags[0].message == (
+            "Запрещено использовать имя `Документы` для `реквизита или табличной части`"
+        )
 
     def test_bsl189_reports_register_dimension_forbidden_name(self, tmp_path: Path) -> None:
         root = tmp_path / "Config"
@@ -1132,7 +1136,9 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
 
         assert "BSL242" in _codes(diags)
-        assert next(d.message for d in diags if d.code == "BSL242") == _rule_msg("BSL242")
+        assert next(d.message for d in diags if d.code == "BSL242") == (
+            'Общий модуль "Фоновые" обработчика регламентного задания должен выполняться на сервере'
+        )
 
     def test_scheduled_job_handler_skips_unreferenced_client_common_module(
         self, tmp_path: Path
@@ -1180,7 +1186,10 @@ class TestTailParityBatches:
         diags = DiagnosticEngine(select={"BSL242"}).check_file(str(module))
 
         assert "BSL242" in _codes(diags)
-        assert next(d.message for d in diags if d.code == "BSL242") == _rule_msg("BSL242")
+        assert next(d.message for d in diags if d.code == "BSL242") == (
+            'Обработчик регламентного задания "CommonModule.Фоновые.Выполнить" '
+            "не должен быть пустым"
+        )
 
     @pytest.mark.platform
     @_requires_sdbl

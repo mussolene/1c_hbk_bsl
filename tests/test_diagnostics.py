@@ -55,7 +55,8 @@ class TestBsl001SyntaxErrors:
             syntax_errors[0].end_character,
         ) == (2, 4, 2, 23)
         assert syntax_errors[0].severity is Severity.ERROR
-        assert syntax_errors[0].message == get_rule("BSL001").message
+        assert syntax_errors[0].message.startswith("Ошибка разбора исходного кода.")
+        assert "Если Тогда" in syntax_errors[0].message
 
     def test_valid_file_has_no_syntax_errors(self, sample_bsl_path: str) -> None:
         """sample.bsl is syntactically valid — should produce no BSL001 errors."""

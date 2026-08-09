@@ -1265,6 +1265,7 @@ class ModuleModel:
                             end_character=end_char,
                             severity=severity,
                             code="BSL275",
+                            message_args=(handler_name, service_dir.name),
                         )
                     )
         if "BSL278" in enabled_set and low.endswith("/ext/module.bsl") and "/webservices/" in low:
@@ -1423,6 +1424,7 @@ class ModuleModel:
                         end_character=c1,
                         severity=Severity.ERROR,
                         code="BSL169",
+                        message_args=(proc.name,),
                     )
                 )
             if "BSL170" in enabled_set and not is_form_or_command and not split_module_fragment:
@@ -1472,6 +1474,7 @@ class ModuleModel:
                         end_character=c1,
                         severity=Severity.ERROR,
                         code="BSL196",
+                        message_args=(proc.name,),
                     )
                 )
             if "BSL181" in enabled_set:
@@ -1562,7 +1565,7 @@ class ModuleModel:
         enabled = set(enabled_codes)
         diags: list[Diagnostic] = []
 
-        deprecated_locals: dict[str, str] = {}
+        deprecated_locals: dict[str, tuple[str, str | None]] = {}
         deprecated_callers: set[str] = set()
         if "BSL176" in enabled:
             for sym in symbols:
@@ -1574,7 +1577,13 @@ class ModuleModel:
                 name = getattr(sym, "name", "")
                 if not name:
                     continue
-                deprecated_locals[name.casefold()] = name
+                replacement_match = re.search(
+                    r"\b(?:Используйте|Use)\s+[\"'«]?([A-Za-zА-Яа-яЁё_]\w*)",
+                    doc_comment,
+                    re.IGNORECASE,
+                )
+                replacement = replacement_match.group(1) if replacement_match else None
+                deprecated_locals[name.casefold()] = (name, replacement)
                 deprecated_callers.add(name.casefold())
 
         for idx, line in enumerate(lines):
@@ -1601,6 +1610,10 @@ class ModuleModel:
                                 end_character=match.end("name"),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
+                                message=(
+                                    f'Метод "{name}" устарел. Вместо него стоит использовать '
+                                    f'"{replacement}"'
+                                ),
                             )
                         )
                     else:
@@ -1613,6 +1626,10 @@ class ModuleModel:
                                 end_character=match.end("name"),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
+                                message=(
+                                    f'Атрибут "{name}" устарел. Вместо него стоит использовать '
+                                    f'"{replacement}"'
+                                ),
                             )
                         )
                 for match in bsl175_method_re.finditer(clean):
@@ -1629,6 +1646,10 @@ class ModuleModel:
                             end_character=match.end("name"),
                             severity=Severity.INFORMATION,
                             code="BSL175",
+                            message=(
+                                f'Метод "{name}" устарел. Вместо него стоит использовать '
+                                f'"{replacement}"'
+                            ),
                         )
                     )
                 for match in bsl175_child_form_items_re.finditer(clean):
@@ -1645,6 +1666,10 @@ class ModuleModel:
                             end_character=match.end("name"),
                             severity=Severity.INFORMATION,
                             code="BSL175",
+                            message=(
+                                f'Используется старое наименование "{name}". Вместо него '
+                                f'необходимо использовать "{replacement}"'
+                            ),
                         )
                     )
                 for match in bsl175_enum_name_re.finditer(clean):
@@ -1661,6 +1686,10 @@ class ModuleModel:
                             end_character=match.end("name"),
                             severity=Severity.INFORMATION,
                             code="BSL175",
+                            message=(
+                                f'Используется старое наименование "{name}". Вместо него '
+                                f'необходимо использовать "{replacement}"'
+                            ),
                         )
                     )
                 for match in bsl175_global_method_re.finditer(clean):
@@ -1676,6 +1705,7 @@ class ModuleModel:
                             end_character=match.end("name"),
                             severity=Severity.INFORMATION,
                             code="BSL175",
+                            message=f'Метод "{name}" устарел и больше не используется',
                         )
                     )
 
@@ -1691,6 +1721,10 @@ class ModuleModel:
                 if caller_name and caller_name.casefold() in deprecated_callers:
                     continue
                 start_char = int(getattr(call, "caller_character", 0))
+                replacement = deprecated_locals[callee_cf][1]
+                replacement_hint = (
+                    f' Используйте "{replacement}".' if replacement is not None else ""
+                )
                 diags.append(
                     Diagnostic(
                         file=self.path,
@@ -1700,6 +1734,7 @@ class ModuleModel:
                         end_character=start_char + len(callee_name),
                         severity=Severity.INFORMATION,
                         code="BSL176",
+                        message_args=(callee_name, replacement_hint),
                     )
                 )
 
@@ -1743,6 +1778,7 @@ class ModuleModel:
                         end_character=start_char + len(callee_name),
                         severity=Severity.INFORMATION,
                         code="BSL176",
+                        message_args=(callee_name, ""),
                     )
                 )
 
@@ -1858,6 +1894,7 @@ class ModuleModel:
                     end_character=end_character,
                     severity=Severity.INFORMATION,
                     code="BSL176",
+                    message_args=(prop_name, ""),
                 )
             )
         return diags
@@ -2795,6 +2832,7 @@ class ModuleModel:
                     end_character=error["end_column"],
                     severity=Severity.ERROR,
                     code="BSL001",
+                    message_args=(error["message"],),
                 )
             )
         return diags
@@ -3097,6 +3135,7 @@ class ModuleModel:
                             end_character=col + len(param),
                             severity=Severity.WARNING,
                             code="BSL239",
+                            message_args=(param,),
                         )
                     )
 
@@ -3147,6 +3186,7 @@ class ModuleModel:
                         end_character=end_char,
                         severity=Severity.ERROR,
                         code="BSL271",
+                        message_args=(type_name,),
                     )
                 )
         return diags

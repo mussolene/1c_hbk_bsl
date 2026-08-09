@@ -269,6 +269,7 @@ def run_bsl212_missed_required_parameter(
                 end_character=end_character,
                 severity=_diag.Severity.ERROR,
                 code="BSL212",
+                message_args=(", ".join(missed),),
             )
         )
     return diags
@@ -774,6 +775,7 @@ def run_bsl240_rewrite_method_parameter(
                             end_character=int(event["end_char"]),
                             severity=_diag.Severity.WARNING,
                             code="BSL240",
+                            message_args=(event["lhs"],),
                         )
                     )
                 elif lhs in rhs_identifiers:
