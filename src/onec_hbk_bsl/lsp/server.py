@@ -4113,9 +4113,13 @@ def on_semantic_tokens_full(
 def on_inlay_hint(ls: BslLanguageServer, params: InlayHintParams) -> list[InlayHint] | None:
     """Show parameter name hints at function call sites."""
     uri = params.text_document.uri
-    index = ls.symbol_index_for_path(_uri_to_path(uri))
     content = ls._doc_get(uri, "")
     if not content:
+        return None
+    try:
+        index = ls.symbol_index_for_path(_uri_to_path(uri))
+    except ValueError:
+        logger.debug("LSP: skipping inlay hints outside workspace: %s", uri)
         return None
 
     r = params.range

@@ -2563,6 +2563,28 @@ class TestInlayHints:
         result = on_inlay_hint(ls, params)
         assert result in (None, [])
 
+    def test_outside_workspace_returns_no_hints(self, tmp_path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_inlay_hint
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        ls.configure_workspace_roots([str(workspace)])
+        external = tmp_path / "C:" / "git" / "kontur" / "МенеджерКриптографии" / "ObjectModule.bsl"
+        uri = external.as_uri()
+        ls._docs[uri] = "Процедура Тест()\nКонецПроцедуры\n"
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.range.start.line = 0
+        params.range.end.line = 1
+
+        try:
+            assert on_inlay_hint(ls, params) is None
+        finally:
+            ls.close()
+
 
 # ---------------------------------------------------------------------------
 # Rename Symbol

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.49] - 2026-08-19
+
+### Fixed
+
+- LSP inlay hint requests for open documents outside registered workspace roots
+  now return no hints instead of failing the JSON-RPC request with an internal
+  error.
+
 ## [0.8.48] - 2026-08-09
 
 ### Fixed
@@ -638,7 +646,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.48...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.49...HEAD
+[0.8.49]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.48...v0.8.49
 [0.8.48]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.47...v0.8.48
 [0.8.47]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.46...v0.8.47
 [0.8.46]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.45...v0.8.46
