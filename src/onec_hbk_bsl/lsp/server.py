@@ -788,7 +788,15 @@ def on_initialize(ls: BslLanguageServer, params: InitializeParams) -> None:
     elif params.root_path:
         workspace_roots = [params.root_path]
 
-    valid_roots = [root for root in workspace_roots if Path(root).is_dir()]
+    valid_roots: list[str] = []
+    for root in workspace_roots:
+        if Path(root).is_dir():
+            valid_roots.append(root)
+        else:
+            logger.warning(
+                "LSP: ignored invalid workspace root during initialize (not a directory): %s",
+                root,
+            )
     if valid_roots:
         ls.configure_workspace_roots(valid_roots)
         for entry in ls.workspace_entries():
@@ -1470,9 +1478,15 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
     if not word:
         return None
 
+    path = _uri_to_path(uri)
+    try:
+        index = ls.symbol_index_for_path(path)
+    except ValueError:
+        logger.debug("LSP: skipping definition outside workspace: %s", uri)
+        return None
+
     origin_range = _word_range_at_position(content, pos.line, pos.character)
     receiver = None
-    path = _uri_to_path(uri)
     document_context = _get_lsp_document_context(
         ls,
         uri,
@@ -1527,7 +1541,6 @@ def on_definition(ls: BslLanguageServer, params: DefinitionParams) -> list[Locat
             pass
 
     # 2. Workspace symbol index (procedures, functions, exported variables)
-    index = ls.symbol_index_for_path(path)
     open_symbols = _open_document_method_symbols(ls, uri, content) if content else []
     symbols = [symbol for symbol in open_symbols if symbol["name"].casefold() == word.casefold()]
     indexed_symbols = [
@@ -1777,13 +1790,17 @@ def on_hover(ls: BslLanguageServer, params: HoverParams) -> Hover | None:
     uri = params.text_document.uri
     pos = params.position
     content = ls._doc_get(uri, "")
-    index = ls.symbol_index_for_path(_uri_to_path(uri))
     word = _word_at_position(content, pos.line, pos.character)
     if not word:
         return None
 
     left_word = _left_word_at_position(content, pos.line, pos.character)
     path = _uri_to_path(uri)
+    try:
+        index = ls.symbol_index_for_path(path)
+    except ValueError:
+        logger.debug("LSP: skipping hover outside workspace: %s", uri)
+        return None
     receiver_call = None
     document_context = _get_lsp_document_context(
         ls,

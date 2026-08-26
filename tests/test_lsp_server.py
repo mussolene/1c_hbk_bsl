@@ -183,6 +183,30 @@ class TestBslLanguageServerInit:
         created[0].close.assert_called_once()
         created[1].close.assert_not_called()
 
+    def test_initialize_logs_rejected_workspace_root(
+        self, tmp_path: Path, monkeypatch, caplog
+    ) -> None:
+        from lsprotocol.types import ClientCapabilities, InitializeParams
+
+        import onec_hbk_bsl.lsp.server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "initial.sqlite"))
+        ls = srv.BslLanguageServer()
+        missing_root = tmp_path / "missing-workspace"
+
+        try:
+            srv.on_initialize(
+                ls,
+                InitializeParams(
+                    capabilities=ClientCapabilities(),
+                    root_path=str(missing_root),
+                ),
+            )
+            assert "ignored invalid workspace root during initialize" in caplog.text
+            assert str(missing_root) in caplog.text
+        finally:
+            ls.close()
+
 
 # ---------------------------------------------------------------------------
 # Document state service boundary
@@ -449,6 +473,31 @@ class TestWorkspaceRegistryMultiRoot:
         assert registry.owner_for_path(str(child_root / "b.bsl")) is child
         assert parent.state.snapshot().symbol_index is not child.state.snapshot().symbol_index
         assert parent.config is not child.config
+
+    def test_extended_windows_roots_own_normal_cyrillic_paths(self, tmp_path: Path) -> None:
+        from dataclasses import replace
+
+        from onec_hbk_bsl.lsp.document_state import WorkspaceId, WorkspaceRegistry
+
+        cases = (
+            (
+                r"\\?\C:\workspace",
+                r"C:\workspace\DataProcessors\Кириллица\Ext\ObjectModule.bsl",
+            ),
+            (
+                r"\\?\UNC\server\share\workspace",
+                r"\\server\share\workspace\DataProcessors\Кириллица\ObjectModule.bsl",
+            ),
+        )
+        for number, (root, path) in enumerate(cases):
+            entry = replace(
+                self._entry(tmp_path, f"windows-{number}"),
+                workspace_id=WorkspaceId(root),
+            )
+            registry = WorkspaceRegistry()
+            registry.add(entry)
+
+            assert registry.owner_for_path(path) is entry
 
     def test_remove_closes_index_and_rejects_stale_publication(self, tmp_path: Path) -> None:
         from onec_hbk_bsl.lsp.document_state import WorkspaceRegistry
@@ -1580,6 +1629,31 @@ class TestHandlerFunctions:
         result = on_definition(ls, params)
         # No symbols found for this name → returns None or empty list
         assert result is None or result == []
+
+    def test_hover_and_definition_outside_workspace_return_none(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_definition, on_hover
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        ls.configure_workspace_roots([str(workspace)])
+        external = tmp_path / "outside" / "Кириллица" / "ObjectModule.bsl"
+        uri = external.as_uri()
+        ls._docs[uri] = "Тест();\n"
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.position.line = 0
+        params.position.character = 2
+
+        try:
+            assert on_hover(ls, params) is None
+            assert on_definition(ls, params) is None
+        finally:
+            ls.close()
 
     def test_unknown_chained_workspace_call_is_not_guessed(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock

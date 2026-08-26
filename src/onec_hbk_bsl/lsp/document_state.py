@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ntpath
+import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 
@@ -236,18 +238,21 @@ class WorkspaceRegistry:
 
     def owner_for_path(self, path: str) -> WorkspaceEntry:
         """Return the deepest containing root; reject missing or ambiguous owners."""
-        candidate_path = Path(path).resolve()
+        candidate_parts, candidate_path = _workspace_path_parts(path)
         with self._lock:
-            matches = [
-                entry
+            roots = [
+                (entry, _workspace_path_parts(entry.workspace_id.root)[0])
                 for entry in self._entries.values()
-                if candidate_path == Path(entry.workspace_id.root)
-                or Path(entry.workspace_id.root) in candidate_path.parents
+            ]
+            matches = [
+                (entry, root_parts)
+                for entry, root_parts in roots
+                if candidate_parts[: len(root_parts)] == root_parts
             ]
         if not matches:
             raise ValueError(f"path is outside registered workspace roots: {candidate_path}")
-        depth = max(len(Path(entry.workspace_id.root).parts) for entry in matches)
-        owners = [entry for entry in matches if len(Path(entry.workspace_id.root).parts) == depth]
+        depth = max(len(root_parts) for _entry, root_parts in matches)
+        owners = [entry for entry, root_parts in matches if len(root_parts) == depth]
         if len(owners) != 1:
             roots = ", ".join(sorted(entry.workspace_id.root for entry in owners))
             raise ValueError(f"ambiguous workspace ownership for {candidate_path}: {roots}")
@@ -259,6 +264,23 @@ class WorkspaceRegistry:
             self._entries.clear()
         for entry in entries:
             entry.state.close()
+
+
+def _workspace_path_parts(path: str) -> tuple[tuple[str, ...], str]:
+    """Return comparable lexical parts for native and extended Windows paths."""
+    windows_path = PureWindowsPath(path)
+    if windows_path.drive:
+        normalized = ntpath.normpath(path)
+        if normalized.startswith("\\\\?\\UNC\\"):
+            normalized = "\\\\" + normalized[8:]
+        elif normalized.startswith("\\\\?\\"):
+            normalized = normalized[4:]
+        normalized = ntpath.normcase(ntpath.normpath(normalized))
+        return PureWindowsPath(normalized).parts, normalized
+
+    resolved = str(Path(path).resolve())
+    normalized = os.path.normcase(os.path.normpath(resolved))
+    return Path(normalized).parts, normalized
 
 
 class DocumentDiagnosticsState:

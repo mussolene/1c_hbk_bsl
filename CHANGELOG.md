@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.50] - 2026-08-26
+
+### Fixed
+
+- Windows workspace ownership now treats extended-length drive and UNC paths
+  as equivalent to their regular forms, so Cyrillic directories no longer
+  break hover or go-to-definition for files inside an open workspace.
+- Hover and go-to-definition requests outside registered workspace roots now
+  return no result instead of failing JSON-RPC, and rejected initialization
+  roots are reported in the server log.
+
 ## [0.8.49] - 2026-08-19
 
 ### Fixed
@@ -646,7 +657,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.49...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.50...HEAD
+[0.8.50]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.49...v0.8.50
 [0.8.49]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.48...v0.8.49
 [0.8.48]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.47...v0.8.48
 [0.8.47]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.46...v0.8.47
