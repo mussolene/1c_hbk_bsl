@@ -36,7 +36,7 @@ After chat compaction, interruption, resume, or handoff:
 
 ```bash
 acs memory query --query "<task intent>" --scope project --json
-acs context build --intent "<task intent>" --scope project --json
+acs context build --intent repo_development --query "<actual task>" --scope project --render-prompt --json
 acs resume --scope project --json
 git status --short
 ```
@@ -65,7 +65,7 @@ acs status --json
 
 ```bash
 acs memory query --query "<task intent>" --scope project --json
-acs context build --intent "<task intent>" --scope project --json
+acs context build --intent repo_development --query "<actual task>" --scope project --render-prompt --json
 ```
 
 Keep task acceptance criteria in the conversation or in normal project docs.
