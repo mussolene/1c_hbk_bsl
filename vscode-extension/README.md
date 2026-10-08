@@ -10,7 +10,7 @@ completion, hover, rename, semantic tokens и inlay hints.
 2. Откройте workspace с `.bsl` / `.os`.
 3. Дождитесь запуска сервера. Диагностики появятся в Problems.
 
-Требуется VS Code / Cursor с API VS Code 1.85+. Marketplace публикует отдельные
+Требуется VS Code / Cursor с API VS Code 1.91+. Marketplace публикует отдельные
 VSIX для macOS Apple Silicon, macOS Intel, Linux x64 и Windows x64. В VSIX уже
 вложен исполняемый файл сервера, поэтому системный Python не нужен.
 

@@ -44,6 +44,29 @@ environment `pypi`. API-токен в GitHub secrets для этого пути 
 
 Это именно исследовательский / development-only прогон, не тестовый fixture pipeline.
 
+## Замеры LSP
+
+`lsp_soak_profile.py` сохраняет прежний режим прямого вызова обработчиков для
+длительных прогонов и предоставляет отдельный режим настоящего stdio транспорта:
+
+```bash
+./.venv/bin/python scripts/lsp_soak_profile.py --transport --transport-runs 10 --output-dir .tmp/transport
+./.venv/bin/python scripts/lsp_soak_profile.py --transport --transport-padding-bytes 1000000 --output-dir .tmp/transport-async
+```
+
+Transport использует временный синтетический документ, BSL001 и индекс off.
+Измеряются initialize, hover, completion и серия правок до окончательной
+диагностики. Для большого документа требуется запрос refresh и маркер последней
+версии; первоначальный пустой отчет не считается завершением. Есть ограничение
+времени и завершение дочернего процесса. Отчет содержит samples, p50/p95 и
+статусы, без исходников, URI и абсолютного пути рабочей области. Cancellation
+считается подтвержденным только при ответе RequestCancelled, иначе UNKNOWN.
+Режим рассчитан на POSIX, как и исходный инструмент с модулем resource.
+
+Это не измерение отрисовки VS Code или всего набора правил. Прямой режим и
+dev_corpus_bench выводят частные пути, поэтому сырые отчеты хранить локально.
+Приоритеты развития и границы измерений: [карта продукта](../docs/product-roadmap.md).
+
 ## Матрица диагностических правил
 
 **`diagnostic_rule_matrix.py`** строит development-only карту правил по текущей

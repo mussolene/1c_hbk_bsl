@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from typing import Any
 
 from onec_hbk_bsl.analysis.bsl_typo.lexicon import CODE_TOKEN_EXACT_IGNORE, SOURCE_TYPO_TOKENS
@@ -304,6 +305,7 @@ def _collect_forced_method_candidates(source_bytes: bytes) -> list[SpellCandidat
 
 def _collect_forced_source_token_candidates(source_bytes: bytes) -> list[SpellCandidate]:
     source_text = source_bytes.decode("utf-8", errors="replace")
+    line_starts: list[int] | None = None
     result: list[SpellCandidate] = []
     for token in SOURCE_TYPO_TOKENS:
         token_re = re.compile(
@@ -313,14 +315,14 @@ def _collect_forced_source_token_candidates(source_bytes: bytes) -> list[SpellCa
         for match in token_re.finditer(source_text):
             start = match.start("name")
             end = match.end("name")
-            line, character = _line_char_from_byte_offset(
-                source_bytes,
-                len(source_text[:start].encode("utf-8")),
-            )
-            end_line, end_character = _line_char_from_byte_offset(
-                source_bytes,
-                len(source_text[:end].encode("utf-8")),
-            )
+            if line_starts is None:
+                line_starts = [0, *(newline.end() for newline in re.finditer("\n", source_text))]
+            line_idx = bisect_right(line_starts, start) - 1
+            line = line_idx + 1
+            character = start - line_starts[line_idx]
+            # The matched identifier cannot contain a newline. Offsets are
+            # already Unicode characters, so no source-prefix encoding is needed.
+            end_line, end_character = line, end - line_starts[line_idx]
             result.append(
                 SpellCandidate(
                     text=match.group("name"),

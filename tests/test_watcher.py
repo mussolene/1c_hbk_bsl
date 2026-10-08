@@ -7,7 +7,9 @@ and a real filesystem); instead we test the debounce helpers directly.
 
 from __future__ import annotations
 
+import sys
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,6 +33,28 @@ class TestFileWatcherInit:
 
 
 class TestDebounceLogic:
+    def test_cancelled_timer_cannot_consume_rescheduled_batch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        timer = MagicMock()
+        monkeypatch.setattr("onec_hbk_bsl.indexer.watcher.threading.Timer", timer)
+        fw = FileWatcher()
+        cb = MagicMock()
+        fw._schedule_callback(["/a.bsl"], cb)
+        old_call = timer.call_args
+        fw._schedule_callback(["/b.bsl"], cb)
+        current_call = timer.call_args
+
+        # Timer.cancel cannot prevent a callback that has already started.
+        old_call.args[1](*old_call.kwargs["args"])
+        cb.assert_not_called()
+        assert fw._pending == {"/a.bsl", "/b.bsl"}
+        assert fw._timer is timer.return_value
+
+        current_call.args[1](*current_call.kwargs["args"])
+        cb.assert_called_once()
+        assert set(cb.call_args.args[0]) == {"/a.bsl", "/b.bsl"}
+
     def test_schedule_callback_adds_paths(self) -> None:
         fw = FileWatcher(debounce=10.0)  # long timeout so it doesn't fire
         cb = MagicMock()
@@ -86,7 +110,7 @@ class TestFireCallback:
         fw = FileWatcher()
         fw._pending = {"/a.bsl"}
         cb = MagicMock()
-        fw._fire_callback(cb)
+        fw._fire_callback(cb, fw._timer_generation)
         assert fw._pending == set()
         cb.assert_called_once_with(["/a.bsl"])
 
@@ -98,17 +122,44 @@ class TestFireCallback:
             raise RuntimeError("oops")
 
         # Should not raise
-        fw._fire_callback(bad_cb)
+        fw._fire_callback(bad_cb, fw._timer_generation)
 
     def test_fire_callback_skips_when_empty(self) -> None:
         fw = FileWatcher()
         fw._pending = set()
         cb = MagicMock()
-        fw._fire_callback(cb)
+        fw._fire_callback(cb, fw._timer_generation)
         cb.assert_not_called()
 
 
 class TestStop:
+    def test_stop_discards_batch_and_rejects_late_events(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        timer = MagicMock()
+        monkeypatch.setattr("onec_hbk_bsl.indexer.watcher.threading.Timer", timer)
+        fw = FileWatcher()
+        cb = MagicMock()
+        fw._schedule_callback(["/old.bsl"], cb)
+        old_call = timer.call_args
+        fw.stop()
+        assert fw._pending == set()
+        fw._schedule_callback(["/late.bsl"], cb)
+        assert timer.call_count == 1
+        assert fw._pending == set()
+
+        def watch(workspace, *, stop_event):
+            assert not stop_event.is_set()
+            yield {(1, "/new.bsl")}
+            current_call = timer.call_args
+            old_call.args[1](*old_call.kwargs["args"])
+            cb.assert_not_called()
+            current_call.args[1](*current_call.kwargs["args"])
+
+        monkeypatch.setitem(sys.modules, "watchfiles", SimpleNamespace(watch=watch))
+        fw.watch("/workspace", cb)
+        cb.assert_called_once_with(["/new.bsl"])
+
     def test_stop_sets_event(self) -> None:
         fw = FileWatcher()
         assert not fw._stop_event.is_set()
@@ -138,4 +189,43 @@ class TestWatchMissingDependency:
 
         # Should return immediately instead of blocking or raising
         fw.watch("/nonexistent/workspace", cb)
+        cb.assert_not_called()
+
+
+class TestWatchEvents:
+    def test_save_delete_and_rename_paths_are_coalesced(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        timer = MagicMock()
+        monkeypatch.setattr("onec_hbk_bsl.indexer.watcher.threading.Timer", timer)
+        cb = MagicMock()
+
+        def watch(workspace, *, stop_event):
+            yield {(2, "/save.bsl"), (3, "/old.bsl"), (2, "/ignore.txt")}
+            yield {(1, "/renamed.OS"), (3, "/save.bsl"), (1, "/save.bsl")}
+            call = timer.call_args
+            call.args[1](*call.kwargs["args"])
+
+        monkeypatch.setitem(sys.modules, "watchfiles", SimpleNamespace(watch=watch))
+        fw = FileWatcher()
+        fw.watch("/workspace", cb)
+        cb.assert_called_once()
+        assert set(cb.call_args.args[0]) == {"/save.bsl", "/old.bsl", "/renamed.OS"}
+
+    def test_watch_exit_discards_pending_paths(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        timer = MagicMock()
+        monkeypatch.setattr("onec_hbk_bsl.indexer.watcher.threading.Timer", timer)
+
+        def watch(workspace, *, stop_event):
+            yield {(2, "/old.bsl")}
+
+        monkeypatch.setitem(sys.modules, "watchfiles", SimpleNamespace(watch=watch))
+        fw = FileWatcher()
+        cb = MagicMock()
+        fw.watch("/workspace", cb)
+        assert fw._pending == set()
+        call = timer.call_args
+        call.args[1](*call.kwargs["args"])
         cb.assert_not_called()

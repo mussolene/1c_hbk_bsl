@@ -8,6 +8,7 @@ helper functions and server object creation in isolation.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import create_autospec
 
 # ---------------------------------------------------------------------------
 # URI helpers
@@ -1100,7 +1101,9 @@ class TestPublishDiagnostics:
         ls = BslLanguageServer()
         ls.client_pull_diagnostics = True
         ls.client_diagnostic_refresh = True
-        ls.workspace_diagnostic_refresh = MagicMock()  # type: ignore[method-assign]
+        ls.workspace_diagnostic_refresh = create_autospec(
+            ls.workspace_diagnostic_refresh, return_value=None
+        )  # type: ignore[method-assign]
         ls._docs[uri] = content
 
         params = DocumentDiagnosticParams(text_document=TextDocumentIdentifier(uri=uri))
@@ -1115,7 +1118,7 @@ class TestPublishDiagnostics:
         target()
 
         srv._build_lsp_diagnostics_inner.assert_called_once()
-        ls.workspace_diagnostic_refresh.assert_called_once()
+        ls.workspace_diagnostic_refresh.assert_called_once_with(None)
 
 
 # ---------------------------------------------------------------------------
@@ -3286,13 +3289,15 @@ class TestWorkspaceReindexSingleFlight:
         ls = BslLanguageServer()
         ls.client_pull_diagnostics = True
         ls.client_diagnostic_refresh = True
-        ls.workspace_diagnostic_refresh = MagicMock()  # type: ignore[method-assign]
+        ls.workspace_diagnostic_refresh = create_autospec(
+            ls.workspace_diagnostic_refresh, return_value=None
+        )  # type: ignore[method-assign]
         ls.indexer.index_workspace = MagicMock()  # type: ignore[method-assign]
 
         _schedule_workspace_reindex(ls, str(tmp_path), reason="test")
 
         ls.indexer.index_workspace.assert_called_once_with(str(tmp_path), force=False)
-        ls.workspace_diagnostic_refresh.assert_called_once()
+        ls.workspace_diagnostic_refresh.assert_called_once_with(None)
         assert ls._reindex_running is False
 
 

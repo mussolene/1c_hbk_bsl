@@ -11,7 +11,7 @@
 
 ## Требования и первый запуск
 
-1. Используйте VS Code или Cursor с API VS Code 1.85+.
+1. Используйте VS Code или Cursor с API VS Code 1.91+.
 2. Установите расширение.
 3. Откройте каталог с файлами `.bsl` или `.os`.
 4. Дождитесь запуска сервера; найденные нарушения появятся в Problems.
@@ -114,7 +114,7 @@ separate Python or Toolkit installation is normally unnecessary.
 
 ## Requirements and first run
 
-1. Use VS Code or Cursor with VS Code API 1.85+.
+1. Use VS Code or Cursor with VS Code API 1.91+.
 2. Install the extension.
 3. Open a folder containing `.bsl` or `.os` files.
 4. Wait for the server to start; findings appear in Problems.

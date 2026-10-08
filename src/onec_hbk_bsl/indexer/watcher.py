@@ -43,6 +43,7 @@ class FileWatcher:
         self._stop_event = threading.Event()
         self._pending: set[str] = set()
         self._timer: threading.Timer | None = None
+        self._timer_generation = 0
         self._lock = threading.Lock()
 
     def watch(self, workspace: str, callback: Callable[[list[str]], None]) -> None:
@@ -95,19 +96,27 @@ class FileWatcher:
         callback: Callable[[list[str]], None],
     ) -> None:
         with self._lock:
+            if self._stop_event.is_set():
+                return
             self._pending.update(paths)
             if self._timer is not None:
                 self._timer.cancel()
+            self._timer_generation += 1
             self._timer = threading.Timer(
                 self.debounce,
                 self._fire_callback,
-                args=(callback,),
+                args=(callback, self._timer_generation),
             )
             self._timer.daemon = True
             self._timer.start()
 
-    def _fire_callback(self, callback: Callable[[list[str]], None]) -> None:
+    def _fire_callback(
+        self, callback: Callable[[list[str]], None], generation: int
+    ) -> None:
         with self._lock:
+            # A cancelled timer may already be waiting to acquire this lock.
+            if generation != self._timer_generation or self._stop_event.is_set():
+                return
             paths = list(self._pending)
             self._pending.clear()
             self._timer = None
@@ -121,6 +130,8 @@ class FileWatcher:
 
     def _cancel_pending(self) -> None:
         with self._lock:
+            self._timer_generation += 1
+            self._pending.clear()
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None

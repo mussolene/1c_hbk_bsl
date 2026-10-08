@@ -5,9 +5,44 @@ from onec_hbk_bsl.analysis.bsl_typo import (
     contains_latin_letter,
     split_by_character_type_camel_case,
 )
-from onec_hbk_bsl.analysis.bsl_typo.candidates import collect_spell_candidates
+from onec_hbk_bsl.analysis.bsl_typo.candidates import (
+    _collect_forced_source_token_candidates,
+    collect_spell_candidates,
+)
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 from onec_hbk_bsl.parser.bsl_parser import BslParser
+
+
+def test_forced_source_candidates_keep_unicode_ranges_and_skip_negative_twins() -> None:
+    name = "ПрефиксРасшифровкиФормулы"
+    content = (
+        '// 😀 кириллица и ё\r\n'
+        f'\tПерем {name};\r\n'
+        'Перем РасшифровкаФормулы;\n'
+        '// Перем РасшифровкиФормулы;\n'
+        f'Var {name};'
+    )
+    candidates = _collect_forced_source_token_candidates(content.encode())
+    assert [(c.text, c.line, c.character, c.end_line, c.end_character) for c in candidates] == [
+        (name, 2, 7, 2, 7 + len(name)),
+        (name, 5, 4, 5, 4 + len(name)),
+    ]
+
+
+def test_forced_source_candidates_do_not_rescan_source_prefixes(monkeypatch) -> None:
+    def reject_prefix_scan(*args, **kwargs):
+        raise AssertionError("coordinates must use the line index")
+
+    monkeypatch.setattr(
+        "onec_hbk_bsl.analysis.bsl_typo.candidates._line_char_from_byte_offset",
+        reject_prefix_scan,
+    )
+    content = "Перем РасшифровкиФормулы;\n" * 1000
+    candidates = _collect_forced_source_token_candidates(content.encode())
+    assert len(candidates) == 1000
+    assert candidates[-1].line == 1000
+    assert candidates[-1].character == 6
+    assert candidates[-1].end_character == 6 + len("РасшифровкиФормулы")
 
 
 def test_cyrillic_pe_is_not_latin() -> None:

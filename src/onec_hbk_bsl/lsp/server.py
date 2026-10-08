@@ -716,7 +716,7 @@ def _refresh_open_document_diagnostics(ls: BslLanguageServer) -> None:
         if not ls.client_diagnostic_refresh:
             return
         try:
-            ls.workspace_diagnostic_refresh()
+            ls.workspace_diagnostic_refresh(None)
         except Exception:
             logger.debug("LSP: workspace/diagnostic/refresh failed", exc_info=True)
         return
@@ -1424,7 +1424,7 @@ def _maybe_start_async_pull_diagnostics(
                 workspace_context=workspace_context,
             )
         try:
-            ls.workspace_diagnostic_refresh()
+            ls.workspace_diagnostic_refresh(None)
         except Exception:
             logger.debug("LSP: workspace/diagnostic/refresh failed", exc_info=True)
 
