@@ -485,6 +485,16 @@ class TestBsllsConfig:
         assert load_config(str(source)).select == {"BSL014"}
         assert not load_config(str(source)).ignore
 
+    @pytest.mark.parametrize("mode", ["only", "Only", "oNlY"])
+    def test_mode_is_case_insensitive_like_bslls(self, tmp_path, mode):
+        (tmp_path / ".bsl-language-server.json").write_text(
+            json.dumps({"diagnostics": {"mode": mode, "parameters": {"LineLength": True}}}),
+            encoding="utf-8",
+        )
+        cfg = resolve_config(load_config(str(tmp_path)), environ={})
+        assert cfg.select == {"BSL014"}
+        assert cfg.ignore is None
+
     def test_invalid_json_does_not_silently_enable_all_rules(self, tmp_path):
         (tmp_path / ".bsl-language-server.json").write_text("{broken", encoding="utf-8")
         with pytest.raises(ValueError, match="Invalid BSLLS configuration"):

@@ -343,7 +343,9 @@ def _load_bslls_config(path: Path) -> dict[str, Any]:
         raise ValueError("BSLLS configuration and diagnostics must be JSON objects")
     diagnostics = data.get("diagnostics", {})
     mode = diagnostics.get("mode", "ON")
-    if not isinstance(mode, str) or mode not in {"ON", "OFF", "ALL", "ONLY", "EXCEPT"}:
+    if isinstance(mode, str):
+        mode = mode.upper()
+    if mode not in ("ON", "OFF", "ALL", "ONLY", "EXCEPT"):
         raise ValueError("Unsupported BSLLS diagnostics.mode; use ON, OFF, ALL, ONLY or EXCEPT")
     parameters = diagnostics.get("parameters", {})
     if not isinstance(parameters, dict):
