@@ -1169,11 +1169,8 @@ def _credential_fact_for_node(node: Any, lines: list[str]) -> LineDiagnosticFact
     )
 
 
-def _ts_point_to_lsp_character(container_node: Any, point: Any) -> int:
-    node_text = _ts_node_text(container_node)
-    row = point[0]
-    local_row = row - container_node.start_point[0]
-    lines = node_text.splitlines()
+def _ts_point_to_lsp_character(lines: list[str], start_row: int, point: Any) -> int:
+    local_row = point[0] - start_row
     if local_row < 0 or local_row >= len(lines):
         return point[1]
     return utf8_byte_offset_to_lsp_character(lines[local_row], point[1])
@@ -1285,6 +1282,11 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
         elif child_type == "EXPORT_KEYWORD":
             is_export = True
         elif child_type == "parameters":
+            # Reuse the decoded source for every parameter endpoint.
+            # Reading and splitting the whole routine per endpoint scales with
+            # both its body size and its parameter count.
+            source_lines = _ts_node_text(node).splitlines()
+            start_row = node.start_point[0]
             open_node = None
             close_node = None
             parameter_nodes: list[Any] = []
@@ -1302,15 +1304,21 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
                     last_param = parameter_nodes[-1]
                     params_start_idx = first_param.start_point[0]
                     params_start_character = _ts_point_to_lsp_character(
-                        node, first_param.start_point
+                        source_lines, start_row, first_param.start_point
                     )
                     params_end_idx = last_param.end_point[0]
-                    params_end_character = _ts_point_to_lsp_character(node, last_param.end_point)
+                    params_end_character = _ts_point_to_lsp_character(
+                        source_lines, start_row, last_param.end_point
+                    )
                 else:
                     params_start_idx = open_node.end_point[0]
-                    params_start_character = _ts_point_to_lsp_character(node, open_node.end_point)
+                    params_start_character = _ts_point_to_lsp_character(
+                        source_lines, start_row, open_node.end_point
+                    )
                     params_end_idx = close_node.start_point[0]
-                    params_end_character = _ts_point_to_lsp_character(node, close_node.start_point)
+                    params_end_character = _ts_point_to_lsp_character(
+                        source_lines, start_row, close_node.start_point
+                    )
             for param in parameter_nodes:
                 param_name = ""
                 param_identifier = None
@@ -1332,9 +1340,13 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
                             (
                                 param_name,
                                 param_identifier.start_point[0],
-                                _ts_point_to_lsp_character(node, param_identifier.start_point),
+                                _ts_point_to_lsp_character(
+                                    source_lines, start_row, param_identifier.start_point
+                                ),
                                 param_identifier.end_point[0],
-                                _ts_point_to_lsp_character(node, param_identifier.end_point),
+                                _ts_point_to_lsp_character(
+                                    source_lines, start_row, param_identifier.end_point
+                                ),
                             )
                         )
                     if is_val:

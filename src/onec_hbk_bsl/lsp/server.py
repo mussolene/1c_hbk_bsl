@@ -4003,29 +4003,6 @@ _SEMANTIC_LEGEND = SemanticTokensLegend(
     token_modifiers=["declaration", "definition", "readonly", "static", "deprecated"],
 )
 
-# Longer keywords first (e.g. ИЛИ before И). BSL is case-insensitive — use IGNORECASE.
-_ST_KEYWORD_RE = _re.compile(
-    r"(?<![А-ЯЁа-яёA-Za-z_\d])("
-    r"Процедура|КонецПроцедуры|Функция|КонецФункции"
-    r"|Если|ИначеЕсли|Иначе|КонецЕсли|Тогда"
-    r"|Для|Каждого|Из|По|Пока|Цикл|КонецЦикла"
-    r"|Попытка|Исключение|КонецПопытки"
-    r"|Возврат|Прервать|Продолжить|Новый|Перем|Знач|Экспорт"
-    r"|Истина|Ложь|Неопределено|Null"
-    r"|ИЛИ|И|НЕ"
-    r"|Procedure|EndProcedure|Function|EndFunction"
-    r"|If|ElsIf|Else|EndIf|Then"
-    r"|For|Each|In|To|While|Do|EndDo"
-    r"|Try|Except|EndTry"
-    r"|Return|Break|Continue|New|Var|Val|Export"
-    r"|True|False|Undefined|And|Or|Not"
-    r")(?![А-ЯЁа-яёA-Za-z_\d])",
-    _re.UNICODE | _re.IGNORECASE,
-)
-_ST_NUMBER_RE = _re.compile(r"\b\d+(?:\.\d+)?\b")
-_ST_STRING_RE = _re.compile(r'"[^"]*"')
-_ST_COMMENT_RE = _re.compile(r"//.*$")
-_ST_CALL_RE = _re.compile(r"([А-ЯЁа-яёA-Za-z_]\w*)\s*\(", _re.UNICODE)
 # Line-start preprocessor (same scope as TextMate keyword.other.preprocessor.bsl)
 _ST_PREPROCESSOR_LINE_RE = _re.compile(
     r"^\s*#("
@@ -4054,67 +4031,69 @@ def on_semantic_tokens_full(
     if not content:
         return None
 
+    from onec_hbk_bsl.analysis.formatter_tokens import FormatToken, format_tokens  # noqa: PLC0415
+
+    codec = ls.workspace.position_codec
+    lines = content.splitlines()
+    lexical_tokens: list[FormatToken] = []
+    for token in format_tokens(content):
+        if token.type != "PREPROCESSOR":
+            lexical_tokens.append(token)
+            continue
+        directive = _ST_PREPROCESSOR_LINE_RE.match(token.text)
+        if directive is None:
+            continue
+        lexical_tokens.append(
+            FormatToken("PREPROCESSOR_KEYWORD", directive.group(), token.line, token.column)
+        )
+        lexical_tokens.extend(
+            FormatToken(
+                part.type, part.text, token.line, token.column + directive.end() + part.column
+            )
+            for part in format_tokens(token.text[directive.end() :])
+        )
     data: list[int] = []
     prev_line = 0
     prev_start = 0
 
-    def _emit(line: int, start: int, length: int, token_type: int, modifiers: int = 0) -> None:
-        nonlocal prev_line, prev_start
+    prev_source_start = 0
+
+    def _emit(line: int, start: int, text: str, token_type: int) -> None:
+        nonlocal prev_line, prev_start, prev_source_start
+        # Tokens are ordered and disjoint. Convert only the new span, so a long
+        # line does not require rescanning its growing prefix for every token.
+        source_start = prev_source_start if line == prev_line else 0
+        client_start = (prev_start if line == prev_line else 0) + codec.client_num_units(
+            lines[line][source_start:start]
+        )
         delta_line = line - prev_line
-        delta_start = start if delta_line > 0 else start - prev_start
-        data.extend([delta_line, delta_start, length, token_type, modifiers])
+        delta_start = client_start if delta_line > 0 else client_start - prev_start
+        data.extend([delta_line, delta_start, codec.client_num_units(text), token_type, 0])
         prev_line = line
-        prev_start = start
+        prev_start = client_start
+        prev_source_start = start
 
-    # Collect all tokens per line, sorted by start position
-    for line_idx, line_text in enumerate(content.splitlines()):
-        tokens: list[tuple[int, int, int]] = []  # (start, length, type)
-
-        # Comments — scan first so we know their range
-        cm = _ST_COMMENT_RE.search(line_text)
-        comment_start = cm.start() if cm else len(line_text)
-        if cm:
-            tokens.append((cm.start(), len(cm.group()), _ST_COMMENT))
-
-        # Only scan code before the comment
-        code_part = line_text[:comment_start]
-
-        # String literals
-        string_ranges = [(m.start(), m.end()) for m in _ST_STRING_RE.finditer(code_part)]
-        for sr_start, sr_end in string_ranges:
-            tokens.append((sr_start, sr_end - sr_start, _ST_STRING))
-
-        def _in_string(pos: int, sr: list = string_ranges) -> bool:  # noqa: B008
-            return any(s <= pos < e for s, e in sr)
-
-        # Numbers
-        for m in _ST_NUMBER_RE.finditer(code_part):
-            if not _in_string(m.start()):
-                tokens.append((m.start(), len(m.group()), _ST_NUMBER))
-
-        # Preprocessor (#Если / #Область / …) — keyword styling
-        for m in _ST_PREPROCESSOR_LINE_RE.finditer(line_text):
-            if m.start() >= comment_start:
-                continue
-            tokens.append((m.start(), len(m.group()), _ST_KEYWORD))
-
-        # Keywords
-        for m in _ST_KEYWORD_RE.finditer(code_part):
-            if not _in_string(m.start()):
-                tokens.append((m.start(), len(m.group()), _ST_KEYWORD))
-
-        # Function calls
-        for m in _ST_CALL_RE.finditer(code_part):
-            if not _in_string(m.start(1)):
-                tokens.append((m.start(1), len(m.group(1)), _ST_FUNCTION))
-
-        # Sort by start position, deduplicate (prefer earlier type in priority)
-        tokens.sort(key=lambda t: t[0])
-        seen_starts: set[int] = set()
-        for start, length, ttype in tokens:
-            if start not in seen_starts:
-                seen_starts.add(start)
-                _emit(line_idx, start, length, ttype)
+    # The existing scanner owns strings, escaped quotes, multiline continuations
+    # and comments, so each lexical span can have only one semantic token.
+    for offset, token in enumerate(lexical_tokens):
+        line = token.line - 1
+        token_type = None
+        if token.type.endswith("_KEYWORD"):
+            token_type = _ST_KEYWORD
+        elif token.type in {'"', "string_content", "|", "DATETIME"}:
+            token_type = _ST_STRING
+        elif token.type == "LINE_COMMENT":
+            token_type = _ST_COMMENT
+        elif token.type == "number":
+            token_type = _ST_NUMBER
+        elif (
+            token.type == "identifier"
+            and offset + 1 < len(lexical_tokens)
+            and lexical_tokens[offset + 1].type == "("
+        ):
+            token_type = _ST_FUNCTION
+        if token_type is not None:
+            _emit(line, token.column, token.text, token_type)
 
     if not data:
         return None
@@ -4139,80 +4118,70 @@ def on_inlay_hint(ls: BslLanguageServer, params: InlayHintParams) -> list[InlayH
         logger.debug("LSP: skipping inlay hints outside workspace: %s", uri)
         return None
 
-    r = params.range
+    context = _get_lsp_document_context(ls, uri, content)
+    if context is None or context.snapshot.root_node is None:
+        return None
+
+    requested_range = params.range
     lines = content.splitlines()
+    codec = ls.workspace.position_codec
     hints: list[InlayHint] = []
-
-    # Pattern: identifier followed by '(' — find calls and match to known symbols
-    call_re = _re.compile(r"([А-ЯЁа-яёA-Za-z_]\w*)\s*\(([^)]*)\)", _re.UNICODE)
-
-    _decl_before_name = _re.compile(
-        r"(?:Процедура|Функция|Procedure|Function)\s*$",
-        _re.IGNORECASE,
-    )
-
-    for line_idx in range(r.start.line, min(r.end.line + 1, len(lines))):
-        line_text = lines[line_idx]
-        for m in call_re.finditer(line_text):
-            # Declaration line: Имя(...) lists parameters, not call arguments — skip inlays.
-            prefix_before_name = line_text[: m.start(1)].rstrip()
-            if _decl_before_name.search(prefix_before_name):
+    pending = [context.snapshot.root_node]
+    while pending:
+        node = pending.pop()
+        if (
+            node.end_point[0] < requested_range.start.line
+            or node.start_point[0] > requested_range.end.line
+        ):
+            continue
+        pending.extend(reversed(node.named_children))
+        if node.type != "method_call":
+            continue
+        name = node.child_by_field_name("name")
+        arguments = node.child_by_field_name("arguments")
+        if name is None or arguments is None:
+            continue
+        syms = index.find_symbol(name.text.decode("utf-8"), limit=1)
+        if not syms:
+            continue
+        signature = syms[0].get("signature") or ""
+        param_match = _re.search(r"\(([^)]*)\)", signature)
+        if param_match is None:
+            continue
+        param_names = [
+            parameter_name_from_declaration_fragment(fragment)
+            for fragment in split_commas_outside_double_quotes(param_match.group(1))
+            if fragment.strip()
+        ]
+        call_arguments = (
+            child
+            for child in arguments.named_children
+            if child.type in {"expression", "omitted_argument"}
+        )
+        for param_name, argument in zip(param_names, call_arguments, strict=False):
+            if argument.type == "omitted_argument" or not param_name:
                 continue
-
-            func_name = m.group(1)
-            args_text = m.group(2).strip()
-            if not args_text:
+            if param_name.casefold() == argument.text.decode("utf-8").strip().casefold():
                 continue
-
-            # Look up symbol to get parameter names
-            syms = index.find_symbol(func_name, limit=1)
-            if not syms:
+            line, byte_column = argument.start_point
+            character = codec.client_num_units(
+                lines[line].encode("utf-8")[:byte_column].decode("utf-8")
+            )
+            position_key = (line, character)
+            if not (
+                (requested_range.start.line, requested_range.start.character)
+                <= position_key
+                <= (requested_range.end.line, requested_range.end.character)
+            ):
                 continue
-            sig = syms[0].get("signature") or ""
-            # Extract param names from signature: FuncName(Param1, Param2 = default)
-            import re as _re_inner
-
-            param_match = _re_inner.search(r"\(([^)]*)\)", sig)
-            if not param_match:
-                continue
-            params_str = param_match.group(1)
-            param_names = [
-                parameter_name_from_declaration_fragment(p)
-                for p in split_commas_outside_double_quotes(params_str)
-                if p.strip()
-            ]
-            param_names = [n for n in param_names if n]
-            if not param_names:
-                continue
-
-            # Split args by comma keeping raw (unstripped) chunks to track real offsets
-            raw_args = split_commas_outside_double_quotes(m.group(2))
-
-            # Emit hint for each positional arg.
-            # Track offset in the raw group(2) text to correctly handle ", " separators
-            # and multi-byte Cyrillic characters (Python len() counts code points, matching
-            # LSP UTF-16 for BMP characters).
-            arg_start = m.start(2)
-            pos_in_raw = 0
-            for i, raw_arg in enumerate(raw_args):
-                if i >= len(param_names):
-                    break
-                arg_stripped = raw_arg.strip()
-                leading = len(raw_arg) - len(raw_arg.lstrip())
-                param_name = param_names[i]
-                if not param_name or param_name.casefold() == arg_stripped.casefold():
-                    pos_in_raw += len(raw_arg) + 1  # +1 for ','
-                    continue
-                char = arg_start + pos_in_raw + leading
-                hints.append(
-                    InlayHint(
-                        position=Position(line=line_idx, character=char),
-                        label=f"{param_name}:",
-                        kind=InlayHintKind.Parameter,
-                        padding_right=True,
-                    )
+            hints.append(
+                InlayHint(
+                    position=Position(line=line, character=character),
+                    label=f"{param_name}:",
+                    kind=InlayHintKind.Parameter,
+                    padding_right=True,
                 )
-                pos_in_raw += len(raw_arg) + 1  # +1 for ','
+            )
 
     return hints if hints else None
 

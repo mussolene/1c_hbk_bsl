@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -388,3 +389,171 @@ class TestLoadConfig:
         assert _EMPTY.select is None
         assert _EMPTY.ignore is None
         assert _EMPTY.exclude == []
+
+
+class TestBsllsConfig:
+    @pytest.mark.parametrize(
+        ("mode", "enabled", "disabled"),
+        [
+            ("ON", {"BSL014", "BSL011", "BSL008"}, {"BSL002", "BSL150"}),
+            ("ONLY", {"BSL014", "BSL011", "BSL008"}, {"BSL002", "BSL150", "BSL030"}),
+            ("EXCEPT", {"BSL150", "BSL030"}, {"BSL014", "BSL011", "BSL008", "BSL002"}),
+            ("ALL", {"BSL014", "BSL011", "BSL008", "BSL002", "BSL150"}, set()),
+            ("OFF", set(), {"BSL014", "BSL011", "BSL008", "BSL002", "BSL150"}),
+        ],
+    )
+    def test_modes_match_upstream_selection_semantics(self, tmp_path, mode, enabled, disabled):
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+
+        (tmp_path / ".bsl-language-server.json").write_text(
+            json.dumps(
+                {
+                    "diagnostics": {
+                        "mode": mode,
+                        "parameters": {
+                            "LineLength": True,
+                            "CognitiveComplexity": {},
+                            "TooManyReturns": True,
+                            "MethodSize": False,
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        cfg = resolve_config(load_config(str(tmp_path)), environ={})
+        engine = DiagnosticEngine(select=cfg.select, ignore=cfg.ignore, **cfg.engine_kwargs())
+        assert all(engine._rule_enabled(code) for code in enabled)
+        assert all(not engine._rule_enabled(code) for code in disabled)
+
+    @pytest.mark.parametrize(
+        "diagnostics", [{"mode": "ONLY"}, {"mode": "ONLY", "parameters": {"LineLength": False}}]
+    )
+    def test_empty_only_runs_no_rules(self, tmp_path, diagnostics):
+        from onec_hbk_bsl.cli.check import check_files
+
+        (tmp_path / ".bsl-language-server.json").write_text(
+            json.dumps({"diagnostics": diagnostics}), encoding="utf-8"
+        )
+        source = tmp_path / "module.bsl"
+        source.write_text("Сообщить(1)\n", encoding="utf-8")
+        assert check_files([str(source)], use_index=False) == []
+
+    def test_thresholds_reach_engine_and_native_settings_override(self, tmp_path):
+        from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
+
+        (tmp_path / ".bsl-language-server.json").write_text(
+            json.dumps(
+                {
+                    "diagnostics": {
+                        "mode": "ONLY",
+                        "parameters": {
+                            "LineLength": {"maxLineLength": 20},
+                            "NumberOfOptionalParams": {"maxOptionalParamsCount": 1},
+                            "BadWords": {"badWords": "запрет", "findInComments": False},
+                            "ReservedParameterNames": {"reservedWords": "запрет"},
+                            "AllFunctionPathMustHaveReturn": {"loopsExecutedAtLeastOnce": False},
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (tmp_path / "onec-hbk-bsl.toml").write_text("max-line-length = 30\n", encoding="utf-8")
+        cfg = resolve_config(load_config(str(tmp_path)), environ={})
+        engine = DiagnosticEngine(select=cfg.select, ignore=cfg.ignore, **cfg.engine_kwargs())
+        assert engine.max_line_length == 30
+        assert engine.max_optional_params == 1
+        assert engine.bad_words_find_in_comments is False
+        assert engine._bad_words_re.pattern == "запрет"
+        assert engine._reserved_parameter_names_re.pattern == "^(?:запрет)$"
+        assert engine.bsl148_loops_executed_at_least_once is False
+        diagnostics = engine.check_content(str(tmp_path / "module.bsl"), "А" * 31 + " = 1;\n")
+        assert any(d.code == "BSL014" for d in diagnostics)
+
+    def test_json_discovered_from_file_and_nearest_directory(self, tmp_path):
+        (tmp_path / ".bsl-language-server.json").write_text(
+            '{"diagnostics":{"mode":"OFF"}}', encoding="utf-8"
+        )
+        subdir = tmp_path / "src"
+        subdir.mkdir()
+        (subdir / "pyproject.toml").write_text(
+            '[tool."onec-hbk-bsl"]\nselect = ["BSL014"]\n', encoding="utf-8"
+        )
+        source = subdir / "module.bsl"
+        source.touch()
+        assert load_config(str(source)).select == {"BSL014"}
+        assert not load_config(str(source)).ignore
+
+    def test_invalid_json_does_not_silently_enable_all_rules(self, tmp_path):
+        (tmp_path / ".bsl-language-server.json").write_text("{broken", encoding="utf-8")
+        with pytest.raises(ValueError, match="Invalid BSLLS configuration"):
+            load_config(str(tmp_path))
+
+    @pytest.mark.parametrize(
+        "diagnostics",
+        [
+            {"mode": "INVALID"},
+            {"mode": []},
+            {"parameters": []},
+            {"parameters": {"LineLength": 12}},
+            {"parameters": {"LineLength": {"maxLineLength": True}}},
+        ],
+    )
+    def test_invalid_diagnostic_values_are_rejected(self, tmp_path, diagnostics):
+        (tmp_path / ".bsl-language-server.json").write_text(
+            json.dumps({"diagnostics": diagnostics}), encoding="utf-8"
+        )
+        with pytest.raises(ValueError):
+            load_config(str(tmp_path))
+
+    def test_unsupported_parameters_are_reported(self, tmp_path):
+        (tmp_path / ".bsl-language-server.json").write_text(
+            json.dumps(
+                {
+                    "diagnostics": {
+                        "parameters": {
+                            "LineLength": {"excludeTrailingComments": True},
+                            "UnknownMember": True,
+                        },
+                        "skipSupport": "withSupport",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        with pytest.warns(UserWarning, match="excludeTrailingComments.*UnknownMember.*skipSupport"):
+            load_config(str(tmp_path))
+
+    def test_json_and_pyproject_merge_through_all_public_adapters(self, tmp_path, monkeypatch):
+        from onec_hbk_bsl.cli.check import resolve_check_config
+        from onec_hbk_bsl.lsp.server import _resolve_workspace_config
+        from onec_hbk_bsl.mcp_bridge import server as mcp_server
+
+        (tmp_path / ".bsl-language-server.json").write_text(
+            json.dumps(
+                {
+                    "diagnostics": {
+                        "mode": "ONLY",
+                        "parameters": {"LineLength": {"maxLineLength": 42}},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool."onec-hbk-bsl"]\nexclude = ["vendor"]\n', encoding="utf-8"
+        )
+        for name in ("BSL_SELECT", "BSL_IGNORE", "BSL_INDEX_MODE", "BSL_INDEX_MAX_BYTES"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr(mcp_server, "_ALLOWED_WORKSPACE_ROOTS", (tmp_path.resolve(),))
+        monkeypatch.setattr(mcp_server, "_WORKSPACE", str(tmp_path.resolve()))
+        configs = [
+            resolve_check_config(load_config(str(tmp_path))),
+            _resolve_workspace_config(str(tmp_path)),
+            mcp_server._resolve_mcp_config(str(tmp_path)),
+        ]
+        for cfg in configs:
+            assert cfg.select == {"BSL014"}
+            assert cfg.max_line_length == 42
+            assert cfg.exclude == ["vendor"]

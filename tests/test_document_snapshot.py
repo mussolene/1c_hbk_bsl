@@ -42,6 +42,26 @@ def test_snapshot_collects_core_document_views(tmp_path: Path) -> None:
     assert any(symbol.name == "Тест" and symbol.kind == "procedure" for symbol in snapshot.symbols)
 
 
+def test_procedure_parameter_ranges_preserve_multiline_utf16_coordinates() -> None:
+    content = (
+        '\nПроцедура Пример(Знач Первый = "😀", Второй = 2,\n'
+        '    Третий = "текст") Экспорт\n' + "    Значение = 1;\n" * 1000 + "КонецПроцедуры\n"
+    )
+    snapshot = build_document_snapshot("synthetic.bsl", content=content)
+
+    proc = snapshot.procedures[0]
+    assert proc.params == ["Первый", "Второй", "Третий"]
+    assert proc.val_params == ["Первый"]
+    assert proc.optional_params == frozenset(proc.params)
+    assert (proc.params_start_idx, proc.params_start_character) == (1, 17)
+    assert (proc.params_end_idx, proc.params_end_character) == (2, 20)
+    assert proc.param_ranges == (
+        ("Первый", 1, 22, 1, 28),
+        ("Второй", 1, 37, 1, 43),
+        ("Третий", 2, 4, 2, 10),
+    )
+
+
 def test_semantic_fact_snapshot_is_immutable_revisioned_and_built_once(
     tmp_path: Path,
 ) -> None:

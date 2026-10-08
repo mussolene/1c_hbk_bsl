@@ -343,6 +343,11 @@ def format_tokens(content: str) -> list[FormatToken]:
                     emitted_string_token_on_line = True
                     continue
                 if char == '"':
+                    if pos + 1 < length and line[pos + 1] == '"':
+                        tokens.append(FormatToken("string_content", '""', line_no, pos))
+                        pos += 2
+                        emitted_string_token_on_line = True
+                        continue
                     tokens.append(FormatToken('"', '"', line_no, pos))
                     pos += 1
                     in_multiline_string = False

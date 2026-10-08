@@ -2,8 +2,9 @@
 Configuration loader for onec-hbk-bsl.
 
 Searches (in order of increasing priority):
-1. ``pyproject.toml`` — ``[tool."onec-hbk-bsl"]`` section
-2. ``onec-hbk-bsl.toml`` — ``[onec-hbk-bsl]`` section or root-level keys
+1. ``.bsl-language-server.json`` (supported diagnostic settings)
+2. ``pyproject.toml`` — ``[tool."onec-hbk-bsl"]`` section
+3. ``onec-hbk-bsl.toml`` — ``[onec-hbk-bsl]`` section or root-level keys
 
 Walk starts from *search_from* (defaults to cwd) and ascends to the filesystem
 root, stopping at the first file that contains a onec-hbk-bsl configuration.
@@ -38,23 +39,27 @@ index-max-bytes          int    — hard size budget, 0 = unlimited
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import tomllib
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final
 
 from onec_hbk_bsl.analysis.diagnostics import (
+    RULE_METADATA,
     normalize_rule_code_set,
     normalize_rule_code_set_strict,
+    resolve_rule_token_to_code,
 )
 
 _CONFIG_SECTION = "onec-hbk-bsl"
 
 
 class BslConfig:
-    """Merged configuration built from a TOML section."""
+    """Merged project configuration from native TOML and BSLLS JSON."""
 
     def __init__(self, data: dict[str, Any]) -> None:
         self._data = data
@@ -248,7 +253,11 @@ class BslConfig:
             "min_duplicate_uses": self.min_duplicate_uses,
             "max_module_lines": self.max_module_lines,
         }
-        return {k: v for k, v in mapping.items() if v is not None}
+        result = {k: v for k, v in mapping.items() if v is not None}
+        for key in _EXTRA_ENGINE_KEYS:
+            if self.has(key):
+                result[key.replace("-", "_")] = self._data[key]
+        return result
 
 
 class ResolvedConfig(BslConfig):
@@ -272,6 +281,128 @@ def _freeze_config_value(value: Any) -> Any:
     if isinstance(value, (list, tuple, set, frozenset)):
         return tuple(_freeze_config_value(item) for item in value)
     return value
+
+
+# Supported engine parameters beyond the established TOML threshold properties.
+_EXTRA_ENGINE_KEYS: Final = (
+    "max-optional-params",
+    "bad-words-pattern",
+    "bad-words-find-in-comments",
+    "reserved-parameter-names-pattern",
+    "bsl148-loops-executed-at-least-once",
+)
+
+# BSLLS v1.0.7 annotation defaults. Unmapped upstream rules are not enabled locally.
+_BSLLS_DISABLED_BY_DEFAULT: Final = frozenset(
+    {
+        "BadWords",
+        "CodeAfterAsyncCall",
+        "DenyIncompleteValues",
+        "FieldsFromJoinsWithoutIsNull",
+        "FunctionNameStartsWithGet",
+        "FileSystemAccess",
+        "FunctionOutParameter",
+        "InternetAccess",
+        "MissingTempStorageDeletion",
+        "TooManyReturns",
+        "TernaryOperatorUsage",
+        "UnknownMember",
+        "UseSystemInformation",
+        "UsingLikeInQuery",
+    }
+)
+_BSLLS_PARAMETER_KEYS: Final = {
+    "BSL002": {"maxMethodSize": ("max-proc-lines", int)},
+    "BSL008": {"maxReturnsCount": ("max-returns", int)},
+    "BSL011": {"complexityThreshold": ("max-cognitive-complexity", int)},
+    "BSL014": {"maxLineLength": ("max-line-length", int)},
+    "BSL015": {"maxOptionalParamsCount": ("max-optional-params", int)},
+    "BSL020": {"maxAllowedLevel": ("max-nesting-depth", int)},
+    "BSL031": {"maxParamsCount": ("max-params", int)},
+    "BSL036": {"maxIfConditionComplexity": ("max-bool-ops", int)},
+    "BSL148": {"loopsExecutedAtLeastOnce": ("bsl148-loops-executed-at-least-once", bool)},
+    "BSL150": {
+        "badWords": ("bad-words-pattern", str),
+        "findInComments": ("bad-words-find-in-comments", bool),
+    },
+    "BSL239": {"reservedWords": ("reserved-parameter-names-pattern", str)},
+}
+
+
+def _load_bslls_config(path: Path) -> dict[str, Any]:
+    """Adapt supported BSLLS diagnostic settings to the shared configuration layer.
+
+    Unsupported settings are reported rather than silently presented as compatible.
+    Invalid JSON is an error: silently running all rules would conceal a bad config.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Invalid BSLLS configuration: {path}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("diagnostics", {}), dict):
+        raise ValueError("BSLLS configuration and diagnostics must be JSON objects")
+    diagnostics = data.get("diagnostics", {})
+    mode = diagnostics.get("mode", "ON")
+    if not isinstance(mode, str) or mode not in {"ON", "OFF", "ALL", "ONLY", "EXCEPT"}:
+        raise ValueError("Unsupported BSLLS diagnostics.mode; use ON, OFF, ALL, ONLY or EXCEPT")
+    parameters = diagnostics.get("parameters", {})
+    if not isinstance(parameters, dict):
+        raise ValueError("BSLLS diagnostics.parameters must be a JSON object")
+
+    configured: dict[str, bool | dict[str, Any]] = {}
+    result: dict[str, Any] = {}
+    unsupported: list[str] = []
+    for name, value in parameters.items():
+        code = resolve_rule_token_to_code(name)
+        if code is None:
+            unsupported.append(f"parameters.{name}")
+            continue
+        if not isinstance(value, (bool, dict)):
+            raise ValueError(f"BSLLS parameters.{name} must be a boolean or JSON object")
+        configured[code] = value
+        if isinstance(value, dict):
+            supported = _BSLLS_PARAMETER_KEYS.get(code, {})
+            for parameter, setting in value.items():
+                if parameter not in supported:
+                    unsupported.append(f"parameters.{name}.{parameter}")
+                    continue
+                key, expected_type = supported[parameter]
+                if type(setting) is not expected_type:
+                    raise ValueError(f"BSLLS parameters.{name}.{parameter} has invalid type")
+                result[key] = setting
+
+    disabled_defaults = {
+        code
+        for name in _BSLLS_DISABLED_BY_DEFAULT
+        if (code := resolve_rule_token_to_code(name)) is not None
+    }
+    enabled: set[str] = set()
+    for code in RULE_METADATA:
+        value = configured.get(code)
+        explicit = value is True or isinstance(value, dict)
+        if (
+            mode == "ALL"
+            or (mode == "ONLY" and explicit)
+            or (mode == "EXCEPT" and code not in configured)
+            or (
+                mode == "ON"
+                and (explicit or (code not in configured and code not in disabled_defaults))
+            )
+        ):
+            enabled.add(code)
+    # Empty select has historically meant all rules, so an empty ONLY/OFF uses ignore.
+    result["select"] = sorted(enabled) if enabled else None
+    result["ignore"] = sorted(set(RULE_METADATA) - enabled) if not enabled else []
+    for key in diagnostics:
+        if key not in {"mode", "parameters"}:
+            unsupported.append(key)
+    if unsupported:
+        warnings.warn(
+            "Unsupported BSLLS diagnostic settings: " + ", ".join(sorted(unsupported)),
+            UserWarning,
+            stacklevel=2,
+        )
+    return result
 
 
 _UNSET: Final = object()
@@ -372,6 +503,7 @@ def resolve_config(
         "index-mode": "full",
         "index-max-bytes": 0,
         **dict.fromkeys(_THRESHOLD_KEYS),
+        **{key: project_layer._data[key] for key in _EXTRA_ENGINE_KEYS if project_layer.has(key)},
     }
 
     resolved: dict[str, Any] = {}
@@ -424,12 +556,21 @@ def load_config(search_from: str | None = None) -> BslConfig:
     Priority (first wins):
     - ``onec-hbk-bsl.toml`` in any ancestor directory
     - ``pyproject.toml`` with a ``[tool."onec-hbk-bsl"]`` section
+    - ``.bsl-language-server.json`` diagnostic settings
+
+    Native TOML keys override JSON keys in the same directory. The nearest
+    directory with configuration wins; ancestor configurations are not merged.
 
     Returns :data:`_EMPTY` (empty config) if nothing is found.
     """
     start = Path(search_from).resolve() if search_from else Path.cwd()
+    if start.is_file():
+        start = start.parent
 
     for directory in [start, *start.parents]:
+        bslls_file = directory / ".bsl-language-server.json"
+        bslls = _load_bslls_config(bslls_file) if bslls_file.is_file() else {}
+
         # onec-hbk-bsl.toml takes highest priority
         cfg_file = directory / "onec-hbk-bsl.toml"
         if cfg_file.exists():
@@ -438,7 +579,7 @@ def load_config(search_from: str | None = None) -> BslConfig:
                     data = tomllib.load(f)
                 # Support [onec-hbk-bsl] section or root-level keys
                 section = data.get(_CONFIG_SECTION, data)
-                return BslConfig(section)
+                return BslConfig({**bslls, **section})
             except Exception:
                 pass
 
@@ -450,8 +591,11 @@ def load_config(search_from: str | None = None) -> BslConfig:
                     data = tomllib.load(f)
                 section = data.get("tool", {}).get(_CONFIG_SECTION)
                 if section:
-                    return BslConfig(section)
+                    return BslConfig({**bslls, **section})
             except Exception:
                 pass
+
+        if bslls_file.is_file():
+            return BslConfig(bslls)
 
     return _EMPTY

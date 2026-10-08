@@ -39,6 +39,55 @@ pip install onec-hbk-bsl
 
 ## Конфигурация проекта
 
+Файл `.bsl-language-server.json` также читается общим загрузчиком CLI, LSP и MCP.
+Поиск идет от файла или каталога вверх. Используется ближайший каталог с
+конфигурацией; в нем `onec-hbk-bsl.toml` имеет приоритет над секцией
+`[tool."onec-hbk-bsl"]` в `pyproject.toml`, а соответствующие ключи выбранного
+TOML переопределяют JSON. Настройки из разных каталогов не объединяются.
+
+```json
+{
+  "diagnostics": {
+    "mode": "ONLY",
+    "parameters": {
+      "LineLength": {"maxLineLength": 100},
+      "NumberOfOptionalParams": {"maxOptionalParamsCount": 2}
+    }
+  }
+}
+```
+
+Режимы следуют BSLLS: `ON` учитывает включение по умолчанию и явные значения;
+`ONLY` включает только значения `true` и объекты параметров; `EXCEPT` исключает
+все перечисленные правила, включая значения `false`; `ALL` включает все
+реализованные правила независимо от значений; `OFF` отключает все правила.
+Пустой `ONLY` также отключает все правила. Значения включения по умолчанию
+зафиксированы по BSLLS v1.0.7; они применяются при наличии JSON, собственные
+значения без JSON сохраняются.
+
+Поддерживаемые параметры JSON:
+
+| Диагностика | Параметры |
+| --- | --- |
+| MethodSize | maxMethodSize |
+| TooManyReturns | maxReturnsCount |
+| CognitiveComplexity | complexityThreshold |
+| LineLength | maxLineLength |
+| NumberOfOptionalParams | maxOptionalParamsCount |
+| NestedStatements | maxAllowedLevel |
+| NumberOfParams | maxParamsCount |
+| IfConditionComplexity | maxIfConditionComplexity |
+| AllFunctionPathMustHaveReturn | loopsExecutedAtLeastOnce |
+| BadWords | badWords, findInComments |
+| ReservedParameterNames | reservedWords |
+
+Неизвестные правила, остальные параметры правил и остальные ключи `diagnostics`
+вызывают предупреждение. В частности, пока не перенесены настройки severity,
+metadata, skipSupport и computeTrigger. Остальные разделы файла относятся к
+функциям BSLLS и не управляют нашим сервером. Поврежденный JSON и неверные типы
+поддерживаемых значений вызывают ошибку. После изменения JSON перезапустите LSP.
+
+
 Создайте `onec-hbk-bsl.toml` в корне проекта:
 
 ```toml

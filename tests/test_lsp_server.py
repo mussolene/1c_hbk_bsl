@@ -2491,6 +2491,9 @@ class TestSemanticTokens:
 
         ls = BslLanguageServer()
         ls.text_document_publish_diagnostics = MagicMock()
+        from pygls.workspace import Workspace
+
+        ls.protocol._workspace = Workspace(None)
         return ls
 
     def test_semantic_tokens_returns_data(self, tmp_path, monkeypatch) -> None:
@@ -2586,6 +2589,84 @@ class TestSemanticTokens:
         assert covers(src.index("или")), "expected keyword token on или (OR)"
         assert covers(src.index("нЕ")), "expected keyword token on mixed-case нЕ (NOT)"
 
+    def test_semantic_tokens_lexical_boundaries_and_encoding(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from pygls.workspace import Workspace
+
+        from onec_hbk_bsl.lsp.server import on_semantic_tokens_full
+
+        source = (
+            "  #Если Клиент Тогда // Если Ф(7)\n"
+            'Адрес = "https://сервер/😀"; Сообщить(42); // Если Ф(7)\n'
+            'Текст = "Начало\n'
+            "  |https://сервер/😀 Если Ф(7)\n"
+            '  |Он сказал ""Если Ф(7)"""; Сообщить(43);\n'
+            'Текст = "Он сказал ""Если Ф(7)"""; Сообщить(44);\n'
+        )
+        for encoding in ("utf-16", "utf-8", "utf-32"):
+            ls = self._make_server(tmp_path, monkeypatch)
+            ls.protocol._workspace = Workspace(None, position_encoding=encoding)
+            codec = ls.workspace.position_codec
+            ls._docs["file:///tokens.bsl"] = source
+            params = MagicMock()
+            params.text_document.uri = "file:///tokens.bsl"
+            result = on_semantic_tokens_full(ls, params)
+            assert result is not None
+            spans = []
+            row = column = previous_end = 0
+            for offset in range(0, len(result.data), 5):
+                delta_row, delta_col, length, kind, _ = result.data[offset : offset + 5]
+                row += delta_row
+                column = delta_col if delta_row else column + delta_col
+                if delta_row:
+                    previous_end = 0
+                assert column >= previous_end, (encoding, row, column, previous_end)
+                previous_end = column + length
+                line = source.splitlines()[row]
+                wire_encoding = {"utf-16": "utf-16-le", "utf-32": "utf-32-le"}.get(
+                    encoding, encoding
+                )
+                raw = line.encode(wire_encoding)
+                scale = 2 if encoding == "utf-16" else 4 if encoding == "utf-32" else 1
+                text = raw[column * scale : (column + length) * scale].decode(wire_encoding)
+                spans.append((row, column, text, kind))
+            calls = [(row, column) for row, column, text, kind in spans if kind == 1]
+            assert calls == [
+                (row, codec.client_num_units(line[: line.index("Сообщить")]))
+                for row, line in enumerate(source.splitlines())
+                if "Сообщить" in line
+            ]
+            comments = [(row, text) for row, _, text, kind in spans if kind == 5]
+            assert comments == [(0, "// Если Ф(7)"), (1, "// Если Ф(7)")]
+            assert not any(kind in (0, 1, 4) for row, _, _, kind in spans if row == 3)
+            ls.close()
+
+    def test_semantic_token_coordinate_conversion_is_linear(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.server import on_semantic_tokens_full
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        source = 'Ф("😀", 123); ' * 500
+        ls._docs["file:///long-line.bsl"] = source
+        codec = ls.workspace.position_codec
+        original = codec.client_num_units
+        converted_characters = 0
+
+        def count_characters(text):
+            nonlocal converted_characters
+            converted_characters += len(text)
+            return original(text)
+
+        monkeypatch.setattr(codec, "client_num_units", count_characters)
+        params = MagicMock()
+        params.text_document.uri = "file:///long-line.bsl"
+        result = on_semantic_tokens_full(ls, params)
+        assert result is not None
+        assert converted_characters <= 2 * len(source)
+        ls.close()
+
     def test_semantic_tokens_empty_returns_none(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
 
@@ -2612,6 +2693,9 @@ class TestInlayHints:
 
         ls = BslLanguageServer()
         ls.text_document_publish_diagnostics = MagicMock()
+        from pygls.workspace import Workspace
+
+        ls.protocol._workspace = Workspace(None)
         return ls
 
     def test_no_inlay_on_function_declaration_with_znach(self, tmp_path, monkeypatch) -> None:
@@ -2636,6 +2720,73 @@ class TestInlayHints:
         params.range.end.line = 10
         result = on_inlay_hint(ls, params)
         assert result in (None, [])
+
+    def test_inlay_hints_use_call_arguments_and_client_coordinates(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import Position, Range
+        from pygls.workspace import Workspace
+
+        from onec_hbk_bsl.lsp.server import on_inlay_hint
+
+        source = 'Текст = "Ф(1, 2)"; // Ф(1, 2)\nФ("😀", Ф(1, 2), // Комментарий\n  3);\n'
+        for encoding in ("utf-16", "utf-8", "utf-32"):
+            ls = self._make_server(tmp_path, monkeypatch)
+            ls.protocol._workspace = Workspace(None, position_encoding=encoding)
+            index = MagicMock()
+            index.find_symbol.return_value = [{"signature": "Ф(Первый, Второй, Третий)"}]
+            monkeypatch.setattr(
+                ls, "symbol_index_for_path", lambda path, call_index=index: call_index
+            )
+            uri = "file:///hints.bsl"
+            ls._docs[uri] = source
+            params = MagicMock()
+            params.text_document.uri = uri
+            params.range = Range(start=Position(0, 0), end=Position(3, 0))
+            hints = on_inlay_hint(ls, params)
+            assert hints is not None
+            codec = ls.workspace.position_codec
+            line = source.splitlines()[1]
+            expected = {
+                (1, codec.client_num_units(line[: line.index('"')]), "Первый:"),
+                (1, codec.client_num_units(line[: line.index("Ф(", 1)]), "Второй:"),
+                (1, codec.client_num_units(line[: line.index("1")]), "Первый:"),
+                (1, codec.client_num_units(line[: line.index("2")]), "Второй:"),
+                (2, 2, "Третий:"),
+            }
+            assert {(h.position.line, h.position.character, h.label) for h in hints} == expected
+            assert all(h.kind.value == 2 for h in hints)
+            params.range = Range(start=Position(2, 2), end=Position(2, 3))
+            hints = on_inlay_hint(ls, params)
+            assert hints is not None
+            assert [(h.position.line, h.position.character, h.label) for h in hints] == [
+                (2, 2, "Третий:")
+            ]
+            ls.close()
+
+    def test_omitted_arguments_keep_parameter_positions(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import Position, Range
+
+        from onec_hbk_bsl.lsp.server import on_inlay_hint
+
+        ls = self._make_server(tmp_path, monkeypatch)
+        index = MagicMock()
+        index.find_symbol.return_value = [{"signature": "Ф(Первый, Второй, Третий)"}]
+        monkeypatch.setattr(ls, "symbol_index_for_path", lambda path: index)
+        uri = "file:///omitted.bsl"
+        ls._docs[uri] = "Ф(, 4, 5);"
+        params = MagicMock()
+        params.text_document.uri = uri
+        params.range = Range(start=Position(0, 0), end=Position(0, 10))
+        hints = on_inlay_hint(ls, params)
+        assert hints is not None
+        assert [(hint.position.character, hint.label) for hint in hints] == [
+            (4, "Второй:"),
+            (7, "Третий:"),
+        ]
+        ls.close()
 
     def test_outside_workspace_returns_no_hints(self, tmp_path, monkeypatch) -> None:
         from unittest.mock import MagicMock
