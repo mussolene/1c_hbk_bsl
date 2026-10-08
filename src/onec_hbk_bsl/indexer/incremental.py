@@ -490,19 +490,33 @@ class IncrementalIndexer:
     # ------------------------------------------------------------------
 
     def _index_files(
-        self, files: list[str], workspace: str, *, prune_missing: bool = False
+        self,
+        files: list[str],
+        workspace: str,
+        *,
+        prune_missing: bool = False,
+        apply_file: Callable[[str, dict[str, Any] | None], bool] | None = None,
     ) -> dict:
         indexed = 0
         skipped = 0
         errors = 0
         pruned = 0
 
+        def apply_guarded(path: str, parsed: dict[str, Any] | None) -> bool:
+            assert apply_file is not None
+            with index_storage_lock(self.index.db_path) as acquired:
+                return bool(acquired and apply_file(path, parsed))
+
         bulk_enabled = os.environ.get("BSL_INDEX_SQLITE_BULK", "1").strip().lower() not in (
             "0",
             "false",
             "no",
         )
-        bulk_ctx = self.index.bulk_write if bulk_enabled and len(files) > 0 else nullcontext
+        bulk_ctx = (
+            self.index.bulk_write
+            if apply_file is None and bulk_enabled and len(files) > 0
+            else nullcontext
+        )
 
         progress_ctx = (
             nullcontext()
@@ -532,14 +546,20 @@ class IncrementalIndexer:
                         and str(Path(path).resolve()) not in eligible
                     }
                     for path in stale:
-                        self.index.remove_file(path)
+                        if apply_file is None:
+                            self.index.remove_file(path)
+                        else:
+                            apply_guarded(path, None)
                     pruned = len(stale)
 
                 existing: list[str] = []
                 for path in files:
                     if not Path(path).exists():
                         # File was deleted — remove from index
-                        self.index.remove_file(path)
+                        if apply_file is None:
+                            self.index.remove_file(path)
+                        else:
+                            apply_guarded(path, None)
                         skipped += 1
                         if self._on_progress:
                             self._on_progress(indexed + skipped + errors, len(files), path)
@@ -557,9 +577,15 @@ class IncrementalIndexer:
                         if "error" in parsed:
                             errors += 1
                         else:
-                            self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
-                            indexed += 1
-                            if indexed % 100 == 0:
+                            applied = (
+                                apply_guarded(path, parsed)
+                                if apply_file is not None
+                                else self.index.upsert_file(
+                                    path, parsed["symbols"], parsed["calls"]
+                                )
+                            )
+                            indexed += int(applied is not False)
+                            if apply_file is None and indexed % 100 == 0:
                                 self._enforce_size_limit()
                         if self._on_progress:
                             self._on_progress(indexed + skipped + errors, len(files), path)
@@ -606,9 +632,15 @@ class IncrementalIndexer:
                         if "error" in parsed:
                             errors += 1
                         else:
-                            self.index.upsert_file(path, parsed["symbols"], parsed["calls"])
-                            indexed += 1
-                            if indexed % 100 == 0:
+                            applied = (
+                                apply_guarded(path, parsed)
+                                if apply_file is not None
+                                else self.index.upsert_file(
+                                    path, parsed["symbols"], parsed["calls"]
+                                )
+                            )
+                            indexed += int(applied is not False)
+                            if apply_file is None and indexed % 100 == 0:
                                 self._enforce_size_limit()
 
                         if self._on_progress:
@@ -620,7 +652,8 @@ class IncrementalIndexer:
                     for t in workers:
                         t.join(timeout=0.1)
 
-                self._enforce_size_limit()
+                if apply_file is None:
+                    self._enforce_size_limit()
 
         logger.info(
             "Indexing complete: %d indexed, %d skipped, %d pruned, %d errors",

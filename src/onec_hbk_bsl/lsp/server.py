@@ -64,6 +64,7 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_SELECTION_RANGE,
     TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
     TEXT_DOCUMENT_SIGNATURE_HELP,
+    WORKSPACE_DID_CHANGE_WATCHED_FILES,
     WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS,
     WORKSPACE_SYMBOL,
     CallHierarchyIncomingCall,
@@ -90,6 +91,7 @@ from lsprotocol.types import (
     DiagnosticSeverity,
     DiagnosticTag,
     DidChangeTextDocumentParams,
+    DidChangeWatchedFilesParams,
     DidChangeWorkspaceFoldersParams,
     DidCloseTextDocumentParams,
     DidOpenTextDocumentParams,
@@ -387,6 +389,7 @@ class BslLanguageServer(LanguageServer):
         self._reindex_running = False
         self._reindex_pending = False
         self._reindex_pending_roots: dict[str, str] = {}
+        self._reindex_pending_files: dict[str, set[str]] = {}
         self._shutdown_event = threading.Event()
         self._workspace_watch_stop: dict[WorkspaceId, threading.Event] = {}
         # Set in initialize from ClientCapabilities.text_document.diagnostic (LSP 3.17 pull).
@@ -540,12 +543,15 @@ class BslLanguageServer(LanguageServer):
     def close(self) -> None:
         """Best-effort cleanup for interpreter shutdown and client disconnects."""
         self._shutdown_event.set()
+        with self._reindex_lock:
+            self._reindex_pending_roots.clear()
+            self._reindex_pending_files.clear()
+            self._reindex_pending = False
         self._stop_all_workspace_watchers()
-        for timer in list(self._diag_timers.values()):
-            try:
-                timer.cancel()
-            except Exception:
-                logger.debug("LSP: diagnostic timer cancel failed", exc_info=True)
+        self.doc_state.close()
+        with self._parsed_doc_cache_lock:
+            self._parsed_doc_cache.clear()
+            self._parsed_doc_cache_versions.clear()
         try:
             self.workspace_registry.close()
         except Exception:
@@ -624,6 +630,8 @@ def _schedule_workspace_reindex(
     ls: BslLanguageServer,
     workspace_root: str,
     reason: str = "manual",
+    *,
+    files: set[str] | None = None,
 ) -> None:
     """Schedule workspace reindex with single-flight semantics.
 
@@ -631,25 +639,43 @@ def _schedule_workspace_reindex(
     """
     requested_root = WorkspaceId.from_root(workspace_root).root
     with ls._reindex_lock:
+        if getattr(ls, "_shutdown_event", threading.Event()).is_set():
+            return
         if ls._reindex_running:
             ls._reindex_pending = True
             pending_roots = getattr(ls, "_reindex_pending_roots", None)
             if pending_roots is None:
                 pending_roots = {}
                 ls._reindex_pending_roots = pending_roots
+            pending_files = getattr(ls, "_reindex_pending_files", {})
+            ls._reindex_pending_files = pending_files
+            if files is None:
+                pending_files.pop(requested_root, None)
+            elif requested_root not in pending_roots or requested_root in pending_files:
+                pending_files.setdefault(requested_root, set()).update(files)
             pending_roots[requested_root] = reason
             logger.debug("LSP: re-index already running; mark pending (%s)", reason)
             return
         ls._reindex_running = True
+        worker_token = object()
+        ls._reindex_worker_token = worker_token
         ls._reindex_pending = False
         ls._reindex_pending_roots = {}
+        ls._reindex_pending_files = {}
 
     def _worker() -> None:
         current_root = requested_root
         current_reason = reason
+        current_files = files
         try:
             while True:
                 try:
+                    if getattr(ls, "_shutdown_event", threading.Event()).is_set():
+                        break
+                    if current_files is not None:
+                        entry = ls.workspace_registry.get(WorkspaceId.from_root(current_root))
+                        if entry.index_mode == "off":
+                            current_files = set()
                     if hasattr(ls, "workspace_state_for_path"):
                         state = ls.workspace_state_for_path(current_root)
                         context = state.snapshot()
@@ -664,19 +690,86 @@ def _schedule_workspace_reindex(
                         root: str = current_root,
                         run_state: WorkspaceState = state,
                         run_stats: dict[str, Any] = stats,
+                        run_files: set[str] | None = current_files,
                     ) -> bool:
-                        run_context.indexer.index_workspace(root, force=False)
+                        if run_files is None:
+                            run_context.indexer.index_workspace(root, force=False)
+                        else:
+                            expected_context = run_context
+                            applied_count = 0
+                            run_context.indexer._apply_workspace_settings(root)
+                            if run_context.indexer._index_mode == "off":
+                                return False
+                            paths = []
+                            for path in sorted(run_files):
+                                try:
+                                    owner = ls.workspace_registry.owner_for_path(path)
+                                except ValueError:
+                                    continue
+                                if (
+                                    owner.state is not run_state
+                                    or ls.doc_state.get_doc(_path_to_uri(path)) is not None
+                                    or owner.config.is_index_excluded(path)
+                                ):
+                                    continue
+                                paths.append(path)
+                            if not paths:
+                                return False
+
+                            def apply_file(path: str, parsed: dict[str, Any] | None) -> bool:
+                                def commit() -> bool:
+                                    nonlocal expected_context, applied_count
+                                    with ls.doc_state.lock:
+                                        if ls._shutdown_event.is_set():
+                                            return False
+                                        try:
+                                            owner = ls.workspace_registry.owner_for_path(path)
+                                        except ValueError:
+                                            return False
+                                        if (
+                                            owner.state is not run_state
+                                            or owner.index_mode == "off"
+                                            or owner.config.is_index_excluded(path)
+                                            or ls.doc_state.get_doc(_path_to_uri(path)) is not None
+                                        ):
+                                            return False
+                                        if parsed is None:
+                                            run_context.symbol_index.remove_file(path)
+                                        else:
+                                            run_context.symbol_index.upsert_file(
+                                                path, parsed["symbols"], parsed["calls"]
+                                            )
+                                        run_state.mark_index_changed(
+                                            expected_index=run_context.symbol_index
+                                        )
+                                        expected_context = run_state.snapshot()
+                                        applied_count += 1
+                                        run_context.indexer._enforce_size_limit()
+                                        return True
+
+                                return bool(run_state.run_if_current(expected_context, commit))
+
+                            run_context.indexer._index_files(paths, root, apply_file=apply_file)
+                            if not applied_count:
+                                return False
+                            current_stats = run_state.run_if_current(
+                                expected_context, run_context.symbol_index.get_stats
+                            )
+                            if not isinstance(current_stats, dict):
+                                return False
+                            run_stats.update(current_stats)
+                            return True
                         run_stats.update(run_context.symbol_index.get_stats())
                         revisions = run_state.mark_index_changed(
                             expected_index=run_context.symbol_index,
-                            metadata_changed=True,
+                            metadata_changed=run_files is None,
                         )
                         return revisions is not None
 
                     run_if_current = getattr(state, "run_if_current", None)
                     completed = (
                         run_if_current(context, _index_current_root)
-                        if run_if_current is not None
+                        if current_files is None and run_if_current is not None
                         else _index_current_root()
                     )
                     if completed:
@@ -695,6 +788,7 @@ def _schedule_workspace_reindex(
                     if pending_roots:
                         current_root = sorted(pending_roots)[0]
                         current_reason = pending_roots.pop(current_root)
+                        current_files = ls._reindex_pending_files.pop(current_root, None)
                         ls._reindex_pending = bool(pending_roots)
                         continue
                     ls._reindex_running = False
@@ -702,7 +796,7 @@ def _schedule_workspace_reindex(
                     break
         finally:
             with ls._reindex_lock:
-                if ls._reindex_running and not ls._reindex_pending:
+                if ls._reindex_worker_token is worker_token and not ls._reindex_pending:
                     ls._reindex_running = False
 
     threading.Thread(target=_worker, daemon=True, name="bsl-workspace-reindex").start()
@@ -710,7 +804,7 @@ def _schedule_workspace_reindex(
 
 def _refresh_open_document_diagnostics(ls: BslLanguageServer) -> None:
     """Refresh pull diagnostics or re-publish open documents after a semantic reindex."""
-    if not _diagnostics_enabled():
+    if getattr(ls, "_shutdown_event", threading.Event()).is_set() or not _diagnostics_enabled():
         return
     if ls.client_pull_diagnostics:
         if not ls.client_diagnostic_refresh:
@@ -721,12 +815,14 @@ def _refresh_open_document_diagnostics(ls: BslLanguageServer) -> None:
             logger.debug("LSP: workspace/diagnostic/refresh failed", exc_info=True)
         return
     for uri in ls.doc_state.open_uris():
-        threading.Thread(
-            target=_publish_diagnostics,
-            args=(ls, uri, _uri_to_path(uri)),
-            daemon=True,
-            name="bsl-lsp-reindex-diagnostics",
-        ).start()
+        _, generation = ls.doc_state.get_doc_snapshot(uri)
+        ls.doc_state.schedule_diagnostics(
+            uri,
+            lambda uri=uri, generation=generation: _publish_diagnostics(
+                ls, uri, _uri_to_path(uri), expected_generation=generation
+            ),
+            generation=generation,
+        )
 
 
 def _status_payload(ls: BslLanguageServer) -> dict[str, Any]:
@@ -856,17 +952,42 @@ def on_did_change_workspace_folders(
 # ---------------------------------------------------------------------------
 
 
+@server.feature(WORKSPACE_DID_CHANGE_WATCHED_FILES)
+def on_did_change_watched_files(ls: BslLanguageServer, params: DidChangeWatchedFilesParams) -> None:
+    """Batch changed source paths through the existing workspace index worker."""
+    batches: dict[WorkspaceId, set[str]] = {}
+    if ls._shutdown_event.is_set():
+        return
+    for event in params.changes:
+        path = str(Path(_uri_to_path(event.uri)).resolve())
+        if Path(path).suffix.casefold() not in {".bsl", ".os"}:
+            continue
+        try:
+            entry = ls.workspace_registry.owner_for_path(path)
+        except ValueError:
+            continue
+        if entry.index_mode == "off":
+            continue
+        batches.setdefault(entry.workspace_id, set()).add(path)
+    for workspace_id, paths in batches.items():
+        _schedule_workspace_reindex(ls, workspace_id.root, reason="watched-files", files=paths)
+
+
 @server.feature(TEXT_DOCUMENT_DID_OPEN)
 def on_did_open(ls: BslLanguageServer, params: DidOpenTextDocumentParams) -> None:
     """Cache document content on open; push diagnostics only if client has no pull support."""
     doc = params.text_document
-    ls.doc_state.set_doc(doc.uri, doc.text)
+    generation = ls.doc_state.set_doc(doc.uri, doc.text)
     ls.doc_state.clear_cache_for_uri(doc.uri)
     _schedule_local_scope_cache(ls, doc.uri, doc.text)
     logger.debug("LSP: opened %s", doc.uri)
     path = _uri_to_path(doc.uri)
     if _diagnostics_enabled() and not ls.client_pull_diagnostics:
-        threading.Thread(target=_publish_diagnostics, args=(ls, doc.uri, path), daemon=True).start()
+        ls.doc_state.schedule_diagnostics(
+            doc.uri,
+            lambda: _publish_diagnostics(ls, doc.uri, path, expected_generation=generation),
+            generation=generation,
+        )
 
 
 _DIAG_DEBOUNCE_SECS = 0.6  # fallback default; adaptive debounce used when timing is known
@@ -919,9 +1040,14 @@ def on_did_change(ls: BslLanguageServer, params: DidChangeTextDocumentParams) ->
     path = _uri_to_path(uri)
 
     def _run() -> None:
-        ls.doc_state.pop_timer(uri)
-        _publish_diagnostics(ls, uri, path)
+        if ls.doc_state.pop_timer(uri, expected=timer) is timer:
+            ls.doc_state.schedule_diagnostics(
+                uri,
+                lambda: _publish_diagnostics(ls, uri, path, expected_generation=generation),
+                generation=generation,
+            )
 
+    _, generation = ls.doc_state.get_doc_snapshot(uri)
     timer = threading.Timer(_adaptive_debounce(ls, uri), _run)
     ls.doc_state.set_timer(uri, timer)
     timer.start()
@@ -971,9 +1097,9 @@ def on_did_save(ls: BslLanguageServer, params: DidSaveTextDocumentParams) -> Non
         if indexed:
             logger.debug("LSP: re-indexed %s: %s", path, result)
         if indexed and _diagnostics_enabled():
-            _publish_diagnostics(ls, uri, path)
+            _publish_diagnostics(ls, uri, path, expected_generation=generation)
 
-    threading.Thread(target=_run, daemon=True).start()
+    ls.doc_state.schedule_diagnostics(uri, _run, generation=generation)
 
 
 @server.feature(TEXT_DOCUMENT_DID_CLOSE)
@@ -1032,9 +1158,14 @@ def _run_lsp_diagnostics(
     ls: BslLanguageServer,
     uri: str,
     path: str,
+    *,
+    expected_generation: int | None = None,
+    schedule_index: bool = True,
 ) -> tuple[list[LspDiagnostic], int, DiagnosticCacheKey | None, bool]:
     """Build diagnostics and return the generation identity and CAS outcome."""
     content_for_hash, generation = ls.doc_state.get_doc_snapshot(uri)
+    if expected_generation is not None and generation != expected_generation:
+        return [], generation, None, False
     if not _diagnostics_enabled():
         return [], generation, None, True
     if content_for_hash is None:
@@ -1095,7 +1226,7 @@ def _run_lsp_diagnostics(
                 workspace_context,
                 diagnostics=diagnostics,
             )
-            if committed:
+            if committed and schedule_index:
                 context_for_index = _get_lsp_document_context(
                     ls,
                     uri,
@@ -1311,22 +1442,52 @@ def _schedule_snapshot_index(
             ),
         )
 
-    threading.Thread(target=_run, daemon=True, name="bsl-lsp-snapshot-index").start()
+    ls.doc_state.schedule_diagnostics(uri, _run, generation=generation, channel="index")
 
 
-def _publish_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> None:
+def _publish_diagnostics(
+    ls: BslLanguageServer, uri: str, path: str, *, expected_generation: int | None = None
+) -> None:
     """Push diagnostics (clients without textDocument/diagnostic pull support)."""
-    lsp_diags, generation, cache_key, committed = _run_lsp_diagnostics(ls, uri, path)
+    lsp_diags, generation, cache_key, committed = _run_lsp_diagnostics(
+        ls, uri, path, expected_generation=expected_generation, schedule_index=False
+    )
     if not committed:
         return
-    ls.doc_state.publish_if_current(
-        uri,
-        generation,
-        cache_key,
-        lambda: ls.text_document_publish_diagnostics(
-            PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags)
-        ),
-    )
+    context = ls.workspace_run_context_for_path(path)
+    if cache_key is not None and cache_key.revisions != context.revisions:
+        return
+    try:
+        state = ls.workspace_state_for_context(context)
+        published = state.run_if_current(
+            context,
+            lambda: ls.doc_state.publish_if_current(
+                uri,
+                generation,
+                cache_key,
+                lambda: ls.text_document_publish_diagnostics(
+                    PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diags)
+                ),
+            ),
+        )
+    except ValueError:
+        return
+    if not published or cache_key is None:
+        return
+    content, current_generation = ls.doc_state.get_doc_snapshot(uri)
+    if content is None or current_generation != generation:
+        return
+    document_context = _get_lsp_document_context(ls, uri, content, source_path=path)
+    if document_context is not None:
+        _schedule_snapshot_index(
+            ls,
+            uri,
+            path,
+            generation,
+            cache_key.content_hash,
+            document_context.snapshot,
+            workspace_context=context,
+        )
 
 
 def _content_for_lsp_diagnostics(ls: BslLanguageServer, uri: str, path: str) -> str | None:
@@ -1368,18 +1529,10 @@ def _maybe_start_async_pull_diagnostics(
     if cached is not None and cached[0] == cache_key:
         return cached[1]
 
-    action, run = ls.doc_state.begin_diag_run(uri, cache_key, generation)
-    if action == "stale":
-        return []
-    if action == "cached":
-        cached = ls.doc_state.get_diag_cache(uri)
-        return cached[1] if cached is not None and cached[0] == cache_key else []
-    if action == "wait":
-        return []
-    if run is None:
-        return None
-
     def _run() -> None:
+        action, run = ls.doc_state.begin_diag_run(uri, cache_key, generation)
+        if action != "run" or run is None:
+            return
         try:
             diagnostics = _build_lsp_diagnostics_inner(
                 ls,
@@ -1407,6 +1560,22 @@ def _maybe_start_async_pull_diagnostics(
         )
         if not committed:
             return
+
+        def refresh() -> None:
+            try:
+                ls.workspace_diagnostic_refresh(None)
+            except Exception:
+                logger.debug("LSP: workspace/diagnostic/refresh failed", exc_info=True)
+
+        try:
+            state = ls.workspace_state_for_context(workspace_context)
+            state.run_if_current(
+                workspace_context,
+                lambda: ls.doc_state.publish_if_current(uri, generation, cache_key, refresh),
+            )
+        except ValueError:
+            return
+
         context_for_index = _get_lsp_document_context(
             ls,
             uri,
@@ -1423,12 +1592,8 @@ def _maybe_start_async_pull_diagnostics(
                 context_for_index.snapshot,
                 workspace_context=workspace_context,
             )
-        try:
-            ls.workspace_diagnostic_refresh(None)
-        except Exception:
-            logger.debug("LSP: workspace/diagnostic/refresh failed", exc_info=True)
 
-    threading.Thread(target=_run, daemon=True, name="bsl-lsp-diagnostics").start()
+    ls.doc_state.schedule_diagnostics(uri, _run, generation=generation)
     return []
 
 
@@ -3362,6 +3527,9 @@ def _clear_local_scope_cache(ls: BslLanguageServer, uri: str) -> None:
 
 def _schedule_local_scope_cache(ls: BslLanguageServer, uri: str, content: str) -> None:
     """Build local scope data in the background for large documents only."""
+    if ls._shutdown_event.is_set():
+        return
+    _, generation = ls.doc_state.get_doc_snapshot(uri)
     if _allow_sync_local_scope_parse(content):
         _clear_local_scope_cache(ls, uri)
         return
@@ -3381,13 +3549,15 @@ def _schedule_local_scope_cache(ls: BslLanguageServer, uri: str, content: str) -
             logger.debug("LSP: parsed document cache build failed for %s", uri, exc_info=True)
             return
         with ls._parsed_doc_cache_lock:
-            if ls._parsed_doc_cache_versions.get(uri) == version and ls._doc_get(uri) == content:
+            if ls._parsed_doc_cache_versions.get(uri) == version and ls.doc_state.get_doc_snapshot(
+                uri
+            ) == (content, generation):
                 ls._parsed_doc_cache[uri] = cache
             else:
                 return
         _compute_cached_code_lens_metrics(ls, uri, content, version)
 
-    threading.Thread(target=_worker, daemon=True, name="bsl-parsed-document-cache").start()
+    ls.doc_state.schedule_diagnostics(uri, _worker, generation=generation, channel="local_scope")
 
 
 def _cached_scope_vars(

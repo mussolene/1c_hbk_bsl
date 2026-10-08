@@ -146,7 +146,7 @@ class TestDeprecatedApiParityBatch:
         bsl175 = [d for d in diags if d.code == "BSL175"]
         assert len(bsl175) == 1
         assert {d.message for d in bsl175} == {
-            'Атрибут "ОтображатьШкалу" устарел. Вместо него стоит использовать "ОтображатьШкалы"',
+            'Атрибут "ОтображатьШкалу" устарел. Вместо него стоит использовать ОтображатьШкалы',
         }
 
         assert len([d for d in diags if d.code == "BSL176"]) == 1
@@ -190,7 +190,7 @@ class TestDeprecatedApiParityBatch:
         assert len(bsl176) == 1
         assert bsl176[0].line == 6
         assert bsl176[0].message == (
-            'Удалите обращение к устаревшему "СтарыйМетод". Используйте "НовыйМетод".'
+            'Удалите обращение к устаревшему "СтарыйМетод". Use НовыйМетод instead.'
         )
 
     def test_bsl176_same_file_ru_deprecated_method_call(self, tmp_path: Path) -> None:
@@ -1553,6 +1553,29 @@ class TestBsl041DeprecatedMessage:
 
 # BSL042 — TestBsl042UnusedLocalMethod
 class TestBsl042UnusedLocalMethod:
+    @pytest.mark.parametrize(
+        "receiver", ["Other", "Other.\n Child", "GetOther()", "ThisObject", "ЭтотОбъект"]
+    )
+    def test_qualified_other_method_does_not_use_local_method(
+        self, tmp_path: Path, receiver: str
+    ) -> None:
+        content = (
+            "Procedure Local()\nEndProcedure\n"
+            f"Procedure Caller() Export\n {receiver}.Local();\nEndProcedure\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL042"})
+        assert len(diags) == 1
+        assert diags[0].message == 'Метод "Local" не вызывается в теле модуля'
+        assert (diags[0].line, diags[0].character, diags[0].end_character) == (1, 10, 15)
+
+    def test_qualified_call_with_unicode_and_suppression(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Локальный() // noqa: BSL042\nКонецПроцедуры\n"
+            "Процедура Вызывающий() Экспорт\n"
+            ' Текст = "😀"; Другой.Локальный();\nКонецПроцедуры\n'
+        )
+        assert not _check(content, tmp_path, select={"BSL042"})
+
     def test_unused_local_method_detected(self, tmp_path: Path) -> None:
         content = """\
             Процедура НеИспользуется()
@@ -1868,6 +1891,33 @@ class TestBsl051UnreachableCode:
 
 # BSL052 — TestBsl052IdenticalExpressions
 class TestBsl052IdenticalExpressions:
+    @pytest.mark.parametrize("count", [500, 1000])
+    @pytest.mark.parametrize("duplicate", [False, True])
+    def test_long_logical_chain_has_no_recursive_traversal(
+        self, tmp_path: Path, count: int, duplicate: bool
+    ) -> None:
+        terms = [f"Value{i}" for i in range(count)]
+        if duplicate:
+            terms[-1] = terms[0]
+        content = "If " + " And ".join(terms) + " Then\nEndIf;\n"
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert len(diags) == int(duplicate)
+        if duplicate:
+            assert diags[0].line == 1
+            assert "Value0" in diags[0].message
+
+    @pytest.mark.parametrize("same", [False, True])
+    def test_deep_structural_keys_and_display_remain_exact(
+        self, tmp_path: Path, same: bool
+    ) -> None:
+        left = " And ".join(f"Value{i}" for i in range(500))
+        right = left if same else left.replace("Value499", "Other")
+        content = f"If ({left}) = ({right}) Then\nEndIf;\n"
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert len(diags) == int(same)
+        if same:
+            assert left in diags[0].message
+
     def test_if_true_is_not_reported_as_identical_expressions(self, tmp_path: Path) -> None:
         content = """\
             Если Истина Тогда
@@ -3011,7 +3061,7 @@ class TestBsl065MissingReturnedValueDescription:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL065"}) if d.code == "BSL065"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL065")
+        assert diags[0].message == "Удалите описание возвращаемого значения для процедуры"
 
     def test_function_with_return_description_before_directive(self, tmp_path: Path) -> None:
         """Doc block may be separated from declaration by compiler directives."""
@@ -3198,7 +3248,7 @@ class TestAdditionalParityBatch:
         assert len(bsl249) == 1
         assert bsl249[0].character == 11
         assert bsl249[0].severity is Severity.ERROR
-        assert bsl249[0].message == _rule_msg("BSL249")
+        assert bsl249[0].message == "Замените конструктор Цвет на получение элемента стиля"
 
     def test_bsl249_uses_bslls_constructor_set(self, tmp_path: Path) -> None:
         diags = _check("Значение = Новый Кисть();\n", tmp_path, select={"BSL249"})
@@ -3230,7 +3280,7 @@ class TestAdditionalParityBatch:
         bsl153 = [d for d in diags if d.code == "BSL153"]
         assert len(bsl153) == 1
         assert bsl153[0].character == 26
-        assert bsl153[0].message == _rule_msg("BSL153")
+        assert bsl153[0].message == 'Ключевое слово "ИЗ" написано не канонически'
 
     def test_bsl221_missing_declared_language_detected(self, tmp_path: Path) -> None:
         diags = _check("Сообщение = НСтр(\"en = 'Done'\");\n", tmp_path, select={"BSL221"})

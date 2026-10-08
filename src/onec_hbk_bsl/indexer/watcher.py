@@ -110,9 +110,7 @@ class FileWatcher:
             self._timer.daemon = True
             self._timer.start()
 
-    def _fire_callback(
-        self, callback: Callable[[list[str]], None], generation: int
-    ) -> None:
+    def _fire_callback(self, callback: Callable[[list[str]], None], generation: int) -> None:
         with self._lock:
             # A cancelled timer may already be waiting to acquire this lock.
             if generation != self._timer_generation or self._stop_event.is_set():

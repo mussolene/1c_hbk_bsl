@@ -350,6 +350,8 @@ def _add_node_range(
     lines: list[str],
     start_node: Any,
     end_node: Any,
+    message_args: tuple[object, ...] = (),
+    message_variant: str = "",
 ) -> None:
     start = start_node.start_point
     end = end_node.end_point
@@ -360,6 +362,8 @@ def _add_node_range(
         character=_point_char(lines, start),
         end_line=int(end[0]),
         end_character=_point_char(lines, end),
+        message_args=message_args,
+        message_variant=message_variant,
     )
 
 
@@ -407,6 +411,8 @@ def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) 
 
     called_by_other_proc: set[str] = set()
     for call in calls:
+        if getattr(call, "receiver_expression", None):
+            continue
         callee = str(getattr(call, "callee_name", "") or "").casefold()
         if not callee:
             continue
@@ -451,6 +457,8 @@ def _diagnostics_bsl052_identical_expressions(
         return []
 
     storage = DiagnosticStorage(context.path)
+    expression_keys: dict[int, int] = {}
+    expression_ids: dict[tuple[Any, ...], int] = {}
     if context.ts_nodes_for_types is not None:
         nodes = context.ts_nodes_for_types(context.tree, {"binary_expression"})["binary_expression"]
     else:
@@ -465,14 +473,6 @@ def _diagnostics_bsl052_identical_expressions(
         operator_text = _ts_node_text(operator).casefold()
         if operator_text in {"+", "*", "."}:
             continue
-        anchor = node
-        while getattr(getattr(anchor, "parent", None), "type", None) in {
-            "expression",
-            "binary_expression",
-            "parenthesized_expression",
-            "unary_expression",
-        }:
-            anchor = anchor.parent
         matches: list[Any] = []
         if operator_text in {"и", "and", "или", "or"}:
             parent = node.parent
@@ -485,14 +485,20 @@ def _diagnostics_bsl052_identical_expressions(
             ):
                 continue
             operands = _bsl052_logical_operands(node, operator_text)
-            keys = [_bsl052_expression_key(operand) for operand in operands]
+            keys = [
+                _bsl052_expression_key(operand, expression_keys, expression_ids)
+                for operand in operands
+            ]
             tail = operands[-1]
-            tail_keys: set[tuple[Any, ...]] = set()
+            tail_keys: set[int] = set()
             while True:
                 tail_operands = _bsl052_logical_operands(tail, operator_text)
                 if len(tail_operands) < 2:
                     break
-                tail_keys.update(_bsl052_expression_key(item) for item in tail_operands)
+                tail_keys.update(
+                    _bsl052_expression_key(item, expression_keys, expression_ids)
+                    for item in tail_operands
+                )
                 tail = tail_operands[-1]
             matches = [
                 operand
@@ -500,13 +506,23 @@ def _diagnostics_bsl052_identical_expressions(
                 if keys[index] in keys[index + 1 :] or keys[index] in tail_keys
             ]
         else:
-            left_key = _bsl052_expression_key(left)
-            if left_key and left_key == _bsl052_expression_key(right):
+            left_key = _bsl052_expression_key(left, expression_keys, expression_ids)
+            if left_key == _bsl052_expression_key(right, expression_keys, expression_ids):
                 if (
                     operator_text != "/"
                     or _ts_node_text(left).strip() not in _BSL052_DEFAULT_POPULAR_DIVISORS
                 ):
                     matches = [left]
+        if not matches:
+            continue
+        anchor = node
+        while getattr(getattr(anchor, "parent", None), "type", None) in {
+            "expression",
+            "binary_expression",
+            "parenthesized_expression",
+            "unary_expression",
+        }:
+            anchor = anchor.parent
         for operand in matches:
             storage.add_range(
                 code="BSL052",
@@ -540,56 +556,87 @@ def _bsl052_binary_parts(node: Any) -> tuple[Any, Any, Any] | None:
     return children[op_index - 1], children[op_index], children[op_index + 1]
 
 
-def _bsl052_expression_key(node: Any) -> tuple[Any, ...]:
-    children = [
-        child
-        for child in _ts_children(node)
-        if getattr(child, "type", None) not in {"line_comment", "comment"}
-    ]
-    node_type = getattr(node, "type", None)
-    if node_type in {"expression", "const_expression", "parenthesized_expression"}:
-        meaningful = [child for child in children if getattr(child, "type", None) not in {"(", ")"}]
-        if len(meaningful) == 1:
-            return _bsl052_expression_key(meaningful[0])
-    if node_type == "binary_expression":
-        parts = _bsl052_binary_parts(node)
+def _bsl052_expression_key(
+    node: Any, cache: dict[int, int], identities: dict[tuple[Any, ...], int]
+) -> int:
+    """Intern structural facts without recursive traversal, hashing or comparison."""
+    pending = [(node, False)]
+    while pending:
+        current, ready = pending.pop()
+        if current.id in cache:
+            continue
+        children = [
+            child
+            for child in _ts_children(current)
+            if getattr(child, "type", None) not in {"line_comment", "comment"}
+        ]
+        node_type = getattr(current, "type", None)
+        transparent = False
+        if node_type in {"expression", "const_expression", "parenthesized_expression"}:
+            meaningful = [child for child in children if child.type not in {"(", ")"}]
+            if len(meaningful) == 1:
+                children = meaningful
+                transparent = True
+        parts = _bsl052_binary_parts(current) if node_type == "binary_expression" else None
+        if parts is not None:
+            children = [parts[0], parts[2]]
+        if not ready and children and node_type not in {"string", "date"}:
+            pending.append((current, True))
+            pending.extend((child, False) for child in reversed(children))
+            continue
+        if transparent:
+            cache[current.id] = cache[children[0].id]
+            continue
         if parts is not None:
             operator = _ts_node_text(parts[1]).casefold()
             operator = {"и": "and", "или": "or"}.get(operator, operator)
-            operands = (_bsl052_expression_key(parts[0]), _bsl052_expression_key(parts[2]))
+            operands = tuple(cache[child.id] for child in children)
             if operator in {"=", "*", "and", "or"}:
-                operands = tuple(sorted(operands, key=repr))
-            return (node_type, operator, operands)
-    if node_type in {"string", "date"}:
-        return (node_type, _ts_node_text(node))
-    if children:
-        return (node_type, tuple(_bsl052_expression_key(child) for child in children))
-    return (node_type, _ts_node_text(node).casefold())
+                operands = tuple(sorted(operands))
+            key = (node_type, operator, operands)
+        elif node_type in {"string", "date"}:
+            key = (node_type, _ts_node_text(current))
+        elif children:
+            key = (node_type, tuple(cache[child.id] for child in children))
+        else:
+            key = (node_type, _ts_node_text(current).casefold())
+        cache[current.id] = identities.setdefault(key, len(identities) + 1)
+    return cache[node.id]
 
 
 def _bsl052_operand_display(node: Any) -> str:
-    children = [
-        child
-        for child in _ts_children(node)
-        if getattr(child, "type", None) not in {"line_comment", "comment", "(", ")"}
-    ]
-    if (
-        getattr(node, "type", None)
-        in {"expression", "parenthesized_expression", "const_expression"}
-        and len(children) == 1
-    ):
-        return _bsl052_operand_display(children[0])
-    if getattr(node, "type", None) == "binary_expression":
-        parts = _bsl052_binary_parts(node)
+    tokens: list[str] = []
+    pending: list[Any] = [node]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, str):
+            tokens.append(current)
+            continue
+        children = [
+            child
+            for child in _ts_children(current)
+            if getattr(child, "type", None) not in {"line_comment", "comment", "(", ")"}
+        ]
+        if (
+            getattr(current, "type", None)
+            in {"expression", "parenthesized_expression", "const_expression"}
+            and len(children) == 1
+        ):
+            pending.append(children[0])
+            continue
+        parts = _bsl052_binary_parts(current) if current.type == "binary_expression" else None
         if parts is not None:
-            return f"{_bsl052_operand_display(parts[0])} {_ts_node_text(parts[1])} {_bsl052_operand_display(parts[2])}"
-    return _ts_node_text(node).strip()
+            pending.extend([parts[2], " ", _ts_node_text(parts[1]), " ", parts[0]])
+        else:
+            tokens.append(_ts_node_text(current).strip())
+    return "".join(tokens)
 
 
 def _bsl052_logical_operands(node: Any, operator_text: str) -> list[Any]:
     operands: list[Any] = []
-
-    def collect(current: Any, *, root: bool = False) -> None:
+    pending = [(node, True)]
+    while pending:
+        current, root = pending.pop()
         node_type = getattr(current, "type", None)
         if node_type == "expression" or (root and node_type == "parenthesized_expression"):
             children = [
@@ -598,17 +645,14 @@ def _bsl052_logical_operands(node: Any, operator_text: str) -> list[Any]:
                 if getattr(child, "type", None) not in {"line_comment", "comment", "(", ")"}
             ]
             if len(children) == 1:
-                collect(children[0], root=root)
-                return
+                pending.append((children[0], root))
+                continue
         if getattr(current, "type", None) == "binary_expression":
             parts = _bsl052_binary_parts(current)
             if parts is not None and _ts_node_text(parts[1]).casefold() == operator_text:
-                collect(parts[0])
-                collect(parts[2])
-                return
+                pending.extend([(parts[2], False), (parts[0], False)])
+                continue
         operands.append(current)
-
-    collect(node, root=True)
     return operands
 
 
@@ -756,6 +800,7 @@ def _diagnostics_bsl173_deleting_collection_item(
                     lines=context.lines,
                     start_node=call_statement,
                     end_node=call_expression,
+                    message_args=(collection_original,),
                 )
     return storage.diagnostics
 
@@ -1605,6 +1650,7 @@ class CanonicalSpellingKeywordsRule(DiagnosticRuntimeRule):
                     start=match.start(),
                     end=match.end(),
                     severity=Severity.INFORMATION,
+                    message_args=(word,),
                 )
         return storage.diagnostics
 
@@ -1966,6 +2012,7 @@ class UsingServiceTagRule(DiagnosticRuntimeRule):
                 end_line=idx,
                 end_character=len(line),
                 severity=Severity.INFORMATION,
+                message_args=(match.group(),),
             )
         return storage.diagnostics
 
@@ -2260,6 +2307,7 @@ class MagicNumberRule(DiagnosticRuntimeRule):
             lines=lines,
             start_node=number,
             end_node=number,
+            message_args=(value,),
         )
 
     @classmethod
@@ -2656,6 +2704,7 @@ class MagicDateRule(DiagnosticRuntimeRule):
                         start=match.start(),
                         end=match.end(),
                         severity=Severity.INFORMATION,
+                        message_args=(match.group(),),
                     )
         return storage.diagnostics
 
@@ -4854,22 +4903,24 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
             call_node = call["node"]
             args = self._call_params(call_node)
             if len(args) < 5:
-                self._add_call(storage, context.lines, call_node)
+                self._add_call(storage, context.lines, call_node, "wrongNumberMessage")
                 continue
             if args[1] is None:
-                self._add_call(storage, context.lines, call_node)
+                self._add_call(storage, context.lines, call_node, "noSecondParameter")
                 continue
             if args[4] is None:
-                self._add_call(storage, context.lines, call_node)
+                self._add_call(storage, context.lines, call_node, "noComment")
                 continue
             except_roots = except_blocks.get(id(call_node))
             if except_roots is None:
                 continue
             if not self._has_error_log_level(args[1]):
-                self._add_call(storage, context.lines, call_node)
+                self._add_call(
+                    storage, context.lines, call_node, "noErrorLogLevelInsideExceptBlock"
+                )
                 continue
             if not self._is_comment_correct(except_roots, args[4]):
-                self._add_call(storage, context.lines, call_node)
+                self._add_call(storage, context.lines, call_node, "noDetailErrorDescription")
         return storage.diagnostics
 
     @staticmethod
@@ -5076,7 +5127,9 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
         )
 
     @staticmethod
-    def _add_call(storage: DiagnosticStorage, lines: list[str], call_node: Any) -> None:
+    def _add_call(
+        storage: DiagnosticStorage, lines: list[str], call_node: Any, variant: str
+    ) -> None:
         _add_node_range(
             storage,
             code=UsageWriteLogEventRule.code,
@@ -5084,6 +5137,7 @@ class UsageWriteLogEventRule(DiagnosticRuntimeRule):
             lines=lines,
             start_node=call_node,
             end_node=call_node,
+            message_variant=variant,
         )
 
 
@@ -6271,6 +6325,8 @@ class LightPoolDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.ERROR,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.invalid_character_facts
             ]
@@ -6409,6 +6465,8 @@ class MissingSpaceRuntimeRule(DiagnosticRuntimeRule):
                 end_character=fact.end_character,
                 severity=Severity.INFORMATION,
                 code=self.code,
+                message_args=fact.message_args,
+                message_variant=fact.message_variant,
             )
             for fact in context.snapshot.missing_space_facts
         ]
@@ -6438,6 +6496,7 @@ class TypoRuntimeRule(DiagnosticRuntimeRule):
                 end_character=d["end_character"],
                 severity=Severity.INFORMATION,
                 code=d["code"],
+                message_args=d["message_args"],
             )
             for d in rows
         ]
@@ -6583,6 +6642,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.ERROR,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.hardcoded_credential_facts
             ]
@@ -6598,6 +6659,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.commented_code_facts
             ]
@@ -6612,6 +6675,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.line_too_long_facts(engine.max_line_length)
             ]
@@ -6636,6 +6701,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.non_standard_region_facts
             ]
@@ -6652,6 +6719,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.command_or_form_export_facts
             ]
@@ -6704,6 +6773,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.deprecated_warning_facts
             ]
@@ -6721,6 +6792,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.empty_region_facts
             ]
@@ -6793,6 +6866,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.complex_condition_facts(engine.max_bool_ops)
             ]
@@ -6809,6 +6884,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.this_form_usage_facts
             ]
@@ -6882,6 +6959,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.select_top_without_order_facts
             ]
@@ -6896,6 +6975,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
+                    message_args=fact.message_args,
+                    message_variant=fact.message_variant,
                 )
                 for fact in snapshot.duplicate_region_facts
             ]

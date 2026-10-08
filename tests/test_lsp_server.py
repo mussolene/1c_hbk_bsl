@@ -215,6 +215,97 @@ class TestBslLanguageServerInit:
 
 
 class TestDocumentDiagnosticsState:
+    def test_global_budget_covers_channels_and_reopen(self) -> None:
+        import threading
+
+        from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+
+        state = DocumentDiagnosticsState()
+        release = threading.Event()
+        started = [threading.Event(), threading.Event()]
+        finished = threading.Event()
+        scope_finished = threading.Event()
+        calls = []
+
+        def blocking(number):
+            started[number].set()
+            assert release.wait(5)
+
+        for number in range(2):
+            uri = f"file:///{number}.bsl"
+            state.set_doc(uri, "first")
+            state.schedule_diagnostics(uri, lambda number=number: blocking(number))
+        assert all(event.wait(5) for event in started)
+        state.close_document("file:///0.bsl")
+        generation = state.set_doc("file:///0.bsl", "reopened")
+        for number in range(100):
+            state.schedule_diagnostics(
+                "file:///0.bsl",
+                lambda number=number: (calls.append(number), scope_finished.set()),
+                channel="local_scope",
+                generation=generation,
+            )
+        state.schedule_diagnostics("file:///1.bsl", finished.set, channel="index")
+        assert state._running_workers == state._worker_limit == 2
+        assert len(state.diag_pending) == 2
+        assert calls == []
+        release.set()
+        assert finished.wait(5)
+        assert scope_finished.wait(5)
+        assert calls == [99]
+        state.close()
+
+    def test_latest_job_is_bounded_and_close_wakes_waiters(self) -> None:
+        import threading
+
+        from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+
+        state = DocumentDiagnosticsState()
+        uri = "file:///burst.bsl"
+        first_generation = state.set_doc(uri, "first")
+        _, run = state.begin_diag_run(uri, "first")
+        assert run is not None
+        started = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+        calls = []
+
+        def first() -> None:
+            started.set()
+            assert release.wait(5)
+            calls.append(0)
+
+        state.schedule_diagnostics(uri, first)
+        assert started.wait(5)
+        for number in range(1, 100):
+            state.schedule_diagnostics(uri, lambda number=number: calls.append(number))
+        state.schedule_diagnostics(uri, lambda: (calls.append(100), finished.set()))
+        assert len(state.diag_workers) == len(state.diag_pending) == 1
+        release.set()
+        assert finished.wait(5)
+        assert calls == [0, 100]
+        state.close_document(uri)
+        assert run.event.is_set()
+        assert not state.diag_workers and not state.diag_pending
+        reopened_generation = state.set_doc(uri, "first")
+        assert reopened_generation > first_generation
+        assert not state.finish_diag_run(uri, run, diagnostics=["stale"])
+        state.close()
+        state.schedule_diagnostics(uri, lambda: calls.append("shutdown"))
+        assert not state.diag_workers and not state.docs
+
+    def test_old_timer_cannot_remove_new_timer(self) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp.document_state import DocumentDiagnosticsState
+
+        state = DocumentDiagnosticsState()
+        old, new = MagicMock(), MagicMock()
+        state.set_timer("uri", old)
+        state.set_timer("uri", new)
+        assert state.pop_timer("uri", expected=old) is None
+        assert state.pop_timer("uri", expected=new) is new
+
     def test_close_document_cleans_all_per_uri_state(self) -> None:
         from unittest.mock import MagicMock
 
@@ -701,7 +792,375 @@ class TestWorkspaceRegistryMultiRoot:
 # ---------------------------------------------------------------------------
 
 
+class TestWatchedFiles:
+    def test_slow_parse_does_not_block_snapshot_or_write_retired_index(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DidChangeWatchedFilesParams, FileChangeType, FileEvent
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "index.sqlite"))
+        ls = srv.BslLanguageServer()
+        ls.configure_workspace_roots([str(tmp_path)])
+        entry = ls.workspace_entry_for_path(str(tmp_path))
+        context = entry.state.snapshot()
+        source = tmp_path / "slow.bsl"
+        source.write_text("Процедура Тест()\nКонецПроцедуры", encoding="utf-8")
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+        snapshot_ready = threading.Event()
+        original_batch = context.indexer._index_files
+
+        def parse(_path):
+            started.set()
+            assert release.wait(5)
+            return {"symbols": [], "calls": []}
+
+        def batch(*args, **kwargs):
+            try:
+                return original_batch(*args, **kwargs)
+            finally:
+                finished.set()
+
+        monkeypatch.setattr(context.indexer, "_parse_file", parse)
+        monkeypatch.setattr(context.indexer, "_index_files", batch)
+        upsert = MagicMock(wraps=context.symbol_index.upsert_file)
+        monkeypatch.setattr(context.symbol_index, "upsert_file", upsert)
+        srv.on_did_change_watched_files(
+            ls,
+            DidChangeWatchedFilesParams(
+                changes=[FileEvent(uri=source.as_uri(), type=FileChangeType.Changed)]
+            ),
+        )
+        assert started.wait(5)
+
+        def read_snapshot():
+            entry.state.snapshot()
+            snapshot_ready.set()
+
+        reader = threading.Thread(target=read_snapshot)
+        reader.start()
+        try:
+            assert snapshot_ready.wait(1), "workspace snapshot blocked by source parsing"
+            ls.workspace_registry.remove(entry.workspace_id)
+        finally:
+            release.set()
+        assert finished.wait(5)
+        reader.join(timeout=5)
+        upsert.assert_not_called()
+        ls.close()
+
+    def test_multiple_roots_off_removed_and_shutdown(self, tmp_path: Path, monkeypatch) -> None:
+        from unittest.mock import ANY, MagicMock
+
+        from lsprotocol.types import DidChangeWatchedFilesParams, FileChangeType, FileEvent
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.delenv("INDEX_DB_PATH", raising=False)
+        roots = [tmp_path / name for name in ("first", "second", "off")]
+        for root in roots:
+            root.mkdir()
+        (roots[-1] / "onec-hbk-bsl.toml").write_text('index-mode = "off"\n', encoding="utf-8")
+        ls = srv.BslLanguageServer()
+        ls.configure_workspace_roots([str(root) for root in roots])
+        entries = [ls.workspace_entry_for_path(str(root)) for root in roots]
+        assert entries[-1].index_mode == "off"
+        threads = []
+
+        class CapturedThread:
+            def __init__(self, target, **_kwargs):
+                self.target = target
+                threads.append(self)
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr(srv.threading, "Thread", CapturedThread)
+        contexts = [entry.state.snapshot() for entry in entries]
+        for context in contexts:
+            context.indexer._index_files = MagicMock()
+        params = DidChangeWatchedFilesParams(
+            changes=[
+                FileEvent(uri=(root / "module.bsl").as_uri(), type=FileChangeType.Changed)
+                for root in roots
+            ]
+        )
+        srv.on_did_change_watched_files(ls, params)
+        assert len(threads) == 1
+        threads[0].target()
+        for root, context in zip(roots[:2], contexts[:2], strict=True):
+            context.indexer._index_files.assert_called_once_with(
+                [str(root / "module.bsl")], str(root), apply_file=ANY
+            )
+        contexts[-1].indexer._index_files.assert_not_called()
+        srv.on_did_change_watched_files(ls, params)
+        ls.workspace_registry.remove(entries[1].workspace_id)
+        threads[-1].target()
+        assert contexts[1].indexer._index_files.call_count == 1
+        ls.close()
+        count = len(threads)
+        srv.on_did_change_watched_files(ls, params)
+        assert len(threads) == count
+        assert not ls._reindex_pending_files and not ls._reindex_pending_roots
+
+    def test_batches_create_change_delete_and_preserves_open_content(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DidChangeWatchedFilesParams, FileChangeType, FileEvent
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.delenv("INDEX_DB_PATH", raising=False)
+        root = tmp_path / "workspace"
+        root.mkdir()
+        ls = srv.BslLanguageServer()
+        ls.configure_workspace_roots([str(root)])
+        state = ls.workspace_state_for_path(str(root))
+        context = state.snapshot()
+        old = root / "old.bsl"
+        old.write_text("Процедура Старое()\nКонецПроцедуры", encoding="utf-8")
+        context.indexer.index_file(str(old))
+        old.unlink()
+        new = root / "new.bsl"
+        new.write_text("Процедура Новое()\nКонецПроцедуры", encoding="utf-8")
+        changed = root / "changed.os"
+        changed.write_text("Процедура Измененное()\nКонецПроцедуры", encoding="utf-8")
+        unsaved = root / "open.bsl"
+        unsaved.write_text("Процедура СДиска()\nКонецПроцедуры", encoding="utf-8")
+        ls.doc_state.set_doc(unsaved.as_uri(), "Процедура ВРедакторе()\nКонецПроцедуры")
+        context.indexer.index_workspace = MagicMock()
+        finished = threading.Event()
+        ls.client_pull_diagnostics = ls.client_diagnostic_refresh = True
+        ls.workspace_diagnostic_refresh = MagicMock(side_effect=lambda *_: finished.set())
+        before = context.revisions
+        srv.on_did_change_watched_files(
+            ls,
+            DidChangeWatchedFilesParams(
+                changes=[
+                    FileEvent(uri=old.as_uri(), type=FileChangeType.Deleted),
+                    FileEvent(uri=new.as_uri(), type=FileChangeType.Created),
+                    FileEvent(uri=changed.as_uri(), type=FileChangeType.Changed),
+                    FileEvent(uri=changed.as_uri(), type=FileChangeType.Changed),
+                    FileEvent(uri=unsaved.as_uri(), type=FileChangeType.Changed),
+                    FileEvent(uri=(tmp_path / "outside.bsl").as_uri(), type=FileChangeType.Created),
+                ]
+            ),
+        )
+        assert finished.wait(5)
+        assert not context.symbol_index.find_symbol("Старое")
+        assert context.symbol_index.find_symbol("Новое")
+        assert context.symbol_index.find_symbol("Измененное")
+        assert not context.symbol_index.find_symbol("СДиска")
+        assert ls.doc_state.get_doc(unsaved.as_uri()).startswith("Процедура ВРедакторе")
+        after = state.snapshot().revisions
+        assert after.index > before.index and after.metadata == before.metadata
+        context.indexer.index_workspace.assert_not_called()
+        ls.close()
+
+    def test_watched_file_bursts_merge_pending_paths(self, tmp_path: Path, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+
+        from lsprotocol.types import DidChangeWatchedFilesParams, FileChangeType, FileEvent
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "index.sqlite"))
+        ls = srv.BslLanguageServer()
+        ls.configure_workspace_roots([str(tmp_path)])
+        threads = []
+
+        class CapturedThread:
+            def __init__(self, target, **_kwargs):
+                self.target = target
+                threads.append(self)
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr(srv.threading, "Thread", CapturedThread)
+        entry = ls.workspace_entry_for_path(str(tmp_path))
+        context = entry.state.snapshot()
+        context.indexer._index_files = MagicMock()
+        context.indexer.index_workspace = MagicMock()
+        for number in range(100):
+            srv.on_did_change_watched_files(
+                ls,
+                DidChangeWatchedFilesParams(
+                    changes=[
+                        FileEvent(
+                            uri=(tmp_path / f"{number}.bsl").as_uri(), type=FileChangeType.Changed
+                        )
+                    ]
+                ),
+            )
+        assert len(threads) == 1
+        assert len(ls._reindex_pending_roots) == 1
+        assert len(ls._reindex_pending_files[str(tmp_path)]) == 99
+        threads[0].target()
+        assert context.indexer._index_files.call_count == 2
+        assert len(context.indexer._index_files.call_args.args[0]) == 99
+        context.indexer.index_workspace.assert_not_called()
+        assert not ls._reindex_running and not ls._reindex_pending_files
+        ls.close()
+
+
 class TestPublishDiagnostics:
+    def test_closed_push_job_does_not_read_disk_or_restore_state(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "index.sqlite"))
+        source = tmp_path / "closed.bsl"
+        source.write_text("Процедура Тест()\nКонецПроцедуры", encoding="utf-8")
+        ls = srv.BslLanguageServer()
+        uri = source.as_uri()
+        generation = ls.doc_state.set_doc(uri, "old")
+        ls.doc_state.close_document(uri)
+        build = MagicMock()
+        monkeypatch.setattr(srv, "_build_lsp_diagnostics_inner", build)
+        ls.text_document_publish_diagnostics = MagicMock()
+        srv._publish_diagnostics(ls, uri, str(source), expected_generation=generation)
+        build.assert_not_called()
+        ls.text_document_publish_diagnostics.assert_not_called()
+        assert not ls.doc_state.diag_result_cache and not ls.doc_state.diag_inflight
+        ls.close()
+
+    def test_close_during_async_work_discards_all_effects(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "index.sqlite"))
+        monkeypatch.setattr(srv, "_ASYNC_PULL_DIAGNOSTICS_MIN_BYTES", 1)
+        ls = srv.BslLanguageServer()
+        ls.client_pull_diagnostics = ls.client_diagnostic_refresh = True
+        ls.workspace_diagnostic_refresh = MagicMock()
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+        uri = (tmp_path / "closed.bsl").as_uri()
+
+        def build(*_a, **_kw):
+            started.set()
+            assert release.wait(5)
+            return ["old"]
+
+        original_finish = srv._finish_lsp_diagnostic_run
+
+        def finish(*args, **kwargs):
+            committed = original_finish(*args, **kwargs)
+            finished.set()
+            return committed
+
+        monkeypatch.setattr(srv, "_build_lsp_diagnostics_inner", build)
+        monkeypatch.setattr(srv, "_finish_lsp_diagnostic_run", finish)
+        snapshot_index = MagicMock()
+        monkeypatch.setattr(srv, "_schedule_snapshot_index", snapshot_index)
+        ls.doc_state.set_doc(uri, "old")
+        srv._maybe_start_async_pull_diagnostics(ls, uri, str(tmp_path / "closed.bsl"))
+        assert started.wait(5)
+        run = ls.doc_state.diag_inflight[uri]
+        ls.close()
+        assert run.event.is_set()
+        assert not ls.doc_state.docs and not ls.doc_state.diag_pending
+        assert not ls.doc_state.diag_workers and not ls.doc_state.diag_inflight
+        release.set()
+        assert finished.wait(5)
+        assert ls.doc_state.get_diag_cache(uri) is None
+        ls.workspace_diagnostic_refresh.assert_not_called()
+        snapshot_index.assert_not_called()
+
+    def test_local_scope_burst_keeps_only_latest_parse(self, tmp_path: Path, monkeypatch) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "index.sqlite"))
+        monkeypatch.setattr(srv, "_SYNC_LOCAL_SCOPE_PARSE_MAX_BYTES", 1)
+        ls = srv.BslLanguageServer()
+        uri = (tmp_path / "scope.bsl").as_uri()
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+        contents = []
+
+        def build(content, *_a, **_kw):
+            contents.append(content)
+            if content == "first":
+                started.set()
+                assert release.wait(5)
+            return MagicMock()
+
+        monkeypatch.setattr(srv, "_build_lsp_document_context", build)
+        monkeypatch.setattr(srv, "_compute_cached_code_lens_metrics", lambda *_: finished.set())
+        ls.doc_state.set_doc(uri, "first")
+        srv._schedule_local_scope_cache(ls, uri, "first")
+        assert started.wait(5)
+        for number in range(100):
+            text = f"content{number}"
+            ls.doc_state.set_doc(uri, text)
+            srv._schedule_local_scope_cache(ls, uri, text)
+        assert ls.doc_state._running_workers == 1 and len(ls.doc_state.diag_pending) == 1
+        release.set()
+        assert finished.wait(5)
+        assert contents == ["first", "content99"]
+        ls.close()
+        assert not ls._parsed_doc_cache and not ls._parsed_doc_cache_versions
+
+    def test_async_burst_runs_only_first_and_latest(self, tmp_path: Path, monkeypatch) -> None:
+        import threading
+        from unittest.mock import MagicMock
+
+        from onec_hbk_bsl.lsp import server as srv
+
+        monkeypatch.setenv("INDEX_DB_PATH", str(tmp_path / "index.sqlite"))
+        monkeypatch.setattr(srv, "_ASYNC_PULL_DIAGNOSTICS_MIN_BYTES", 1)
+        ls = srv.BslLanguageServer()
+        ls.client_pull_diagnostics = ls.client_diagnostic_refresh = True
+        ls.workspace_diagnostic_refresh = MagicMock()
+        started, release, latest = threading.Event(), threading.Event(), threading.Event()
+        contents = []
+        uri = (tmp_path / "burst.bsl").as_uri()
+
+        def build(*_args, content_override, **_kwargs):
+            contents.append(content_override)
+            if content_override == "first":
+                started.set()
+                assert release.wait(5)
+            return [content_override]
+
+        def refresh(_params):
+            latest.set()
+
+        ls.workspace_diagnostic_refresh.side_effect = refresh
+        monkeypatch.setattr(srv, "_build_lsp_diagnostics_inner", build)
+        monkeypatch.setattr(srv, "_get_lsp_document_context", lambda *_a, **_k: None)
+        ls.doc_state.set_doc(uri, "first")
+        srv._maybe_start_async_pull_diagnostics(ls, uri, str(tmp_path / "burst.bsl"))
+        assert started.wait(5)
+        for number in range(100):
+            ls.doc_state.set_doc(uri, str(number))
+            assert (
+                srv._maybe_start_async_pull_diagnostics(ls, uri, str(tmp_path / "burst.bsl")) == []
+            )
+        assert len(ls.doc_state.diag_workers) == len(ls.doc_state.diag_pending) == 1
+        release.set()
+        assert latest.wait(5)
+        assert contents == ["first", "99"]
+        assert ls.doc_state.get_diag_cache(uri)[1] == ["99"]
+        ls.workspace_diagnostic_refresh.assert_called_once()
+        ls.close()
+
     def test_stale_run_finishing_last_does_not_publish_over_latest(
         self, tmp_path: Path, monkeypatch
     ) -> None:

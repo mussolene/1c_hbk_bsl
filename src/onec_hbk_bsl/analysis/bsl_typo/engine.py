@@ -144,6 +144,7 @@ def spellcheck_candidate_diagnostics(
             "end_character": issue.candidate.end_character,
             "code": "BSL256",
             "message": cfg.message_fmt % issue.word,
+            "message_args": (issue.word,),
         }
         for issue in issues
     ]

@@ -16,11 +16,11 @@ from onec_hbk_bsl.parser.bsl_parser import BslParser
 def test_forced_source_candidates_keep_unicode_ranges_and_skip_negative_twins() -> None:
     name = "ПрефиксРасшифровкиФормулы"
     content = (
-        '// 😀 кириллица и ё\r\n'
-        f'\tПерем {name};\r\n'
-        'Перем РасшифровкаФормулы;\n'
-        '// Перем РасшифровкиФормулы;\n'
-        f'Var {name};'
+        "// 😀 кириллица и ё\r\n"
+        f"\tПерем {name};\r\n"
+        "Перем РасшифровкаФормулы;\n"
+        "// Перем РасшифровкиФормулы;\n"
+        f"Var {name};"
     )
     candidates = _collect_forced_source_token_candidates(content.encode())
     assert [(c.text, c.line, c.character, c.end_line, c.end_character) for c in candidates] == [
@@ -167,3 +167,20 @@ def test_distinct_typo_fragments_in_one_candidate_emit_one_diagnostic(
 
     assert len(diagnostics) == 1
     assert diagnostics[0].code == "BSL256"
+
+
+def test_typo_worker_preserves_occurrence_word_and_range(monkeypatch) -> None:
+    from onec_hbk_bsl.analysis.bsl_typo.models import SpellCandidate
+    from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.runner import (
+        _run_bsl256_typo_candidates,
+    )
+
+    monkeypatch.setattr(
+        "onec_hbk_bsl.analysis.bsl_typo.engine.default_spell_fn",
+        lambda word: word == "Поздниее",
+    )
+    candidate = SpellCandidate("Поздниее", 2, 7, 2, 15, "string")
+    diagnostics = _run_bsl256_typo_candidates("m.bsl", [candidate])
+    assert [(d.line, d.character, d.end_line, d.end_character, d.message) for d in diagnostics] == [
+        (2, 7, 2, 15, 'Возможная опечатка в "Поздниее"')
+    ]

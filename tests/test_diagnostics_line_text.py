@@ -880,7 +880,10 @@ class TestBsl029MagicNumber:
         """
         diags = _check(content, tmp_path, select={"BSL029"})
         diag = next(d for d in diags if d.code == "BSL029")
-        assert diag.message == _rule_msg("BSL029")
+        assert (
+            diag.message
+            == 'Создайте константу с понятным названием, присвойте ей значение "9" и используйте эту константу вместо магического числа.'
+        )
 
     def test_direct_decimal_return_is_allowed(self, tmp_path: Path) -> None:
         content = """\
@@ -1270,7 +1273,10 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3)
         bsl035 = [d for d in diags if d.code == "BSL035"]
         assert bsl035
-        assert bsl035[0].message == _rule_msg("BSL035")
+        assert (
+            bsl035[0].message
+            == 'Необходимо избавиться от многократного использования строкового литерала "ОченьДлиннаяСтрока"'
+        )
 
     def test_two_uses_no_warning_with_threshold_3(self, tmp_path: Path) -> None:
         content = """\
@@ -1342,7 +1348,10 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3, select={"BSL035"})
         bsl035 = [d for d in diags if d.code == "BSL035"]
         assert [(d.line, d.character, d.end_character) for d in bsl035] == [(2, 8, 27)]
-        assert bsl035[0].message == _rule_msg("BSL035")
+        assert (
+            bsl035[0].message
+            == 'Необходимо избавиться от многократного использования строкового литерала "Код ""240"" места"'
+        )
 
     def test_duplicate_grouping_is_case_insensitive(self, tmp_path: Path) -> None:
         content = """\
@@ -1355,7 +1364,10 @@ class TestBsl035DuplicateStringLiteral:
         diags = _check(content, tmp_path, min_duplicate_uses=3, select={"BSL035"})
         bsl035 = [d for d in diags if d.code == "BSL035"]
         assert len(bsl035) == 1
-        assert bsl035[0].message == _rule_msg("BSL035")
+        assert (
+            bsl035[0].message
+            == 'Необходимо избавиться от многократного использования строкового литерала "Раздел"'
+        )
 
 
 # BSL153 — TestBsl153FormModuleParity
@@ -1466,7 +1478,10 @@ class TestBsl149AssignAliasFieldsInQueryFixture:
         assert bsl149[0].character > 0
         assert bsl149[0].end_character > bsl149[0].character
         assert bsl149[0].severity is Severity.WARNING
-        assert bsl149[0].message == _rule_msg("BSL149")
+        assert (
+            bsl149[0].message
+            == 'Полю "ТранспортноеСообщение.Ссылка" не назначен псевдоним или пропущено ключевое слово КАК'
+        )
 
     def test_multiline_case_with_alias_no_warning(self, tmp_path: Path) -> None:
         content = """\

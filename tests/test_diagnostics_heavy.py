@@ -9,7 +9,7 @@ import pytest
 from onec_hbk_bsl.analysis.diagnostics import (
     DiagnosticEngine,
 )
-from tests.diagnostic_test_support import _check, _codes, _rule_msg
+from tests.diagnostic_test_support import _check, _codes
 
 pytestmark = [pytest.mark.performance, pytest.mark.slow]
 
@@ -252,7 +252,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         ]
         assert len(diags) == 1
         assert diags[0].line == 2
-        assert diags[0].message == _rule_msg("BSL256")
+        assert diags[0].message == 'Возможная опечатка в "Поздниее"'
 
     def test_bslls_typo_scans_assignment_property_selectively(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -272,7 +272,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
         ]
         assert len(diags) == 1
         assert diags[0].line == 2
-        assert diags[0].message == _rule_msg("BSL256")
+        assert diags[0].message == 'Возможная опечатка в "Поздниее"'
 
     def test_bslls_typo_forces_reference_fragment_and_reports_next(
         self, tmp_path: Path, monkeypatch
@@ -290,7 +290,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             for d in DiagnosticEngine(select={"BSL256"}).check_file(str(path))
             if d.code == "BSL256"
         ]
-        assert {d.message for d in diags} == {_rule_msg("BSL256")}
+        assert {d.message for d in diags} == {'Возможная опечатка в "Сис"'}
 
     def test_bslls_typo_skips_multiline_string_tokens(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -350,7 +350,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             if d.code == "BSL256"
         ]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL256")
+        assert diags[0].message == 'Возможная опечатка в "Атмена"'
 
     def test_bslls_typo_skips_marketplace_terms(self, tmp_path: Path) -> None:
         content = 'Процедура Тест()\n    Сообщить("Маркетплейсы и маркетплейсы");\nКонецПроцедуры\n'
@@ -380,7 +380,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             if d.code == "BSL256"
         ]
         messages = {d.message for d in diags}
-        assert messages == {_rule_msg("BSL256")}
+        assert messages == {'Возможная опечатка в "Кор"', 'Возможная опечатка в "Физлица"'}
 
     def test_bslls_typo_skips_generic_domain_terms(self, tmp_path: Path) -> None:
         content = (
@@ -411,7 +411,7 @@ class TestBsl208Bsl256MixedScriptVsTypo:
             if d.code == "BSL256"
         ]
         messages = {d.message for d in diags}
-        assert messages == {_rule_msg("BSL256")}
+        assert messages == {'Возможная опечатка в "Кор"', 'Возможная опечатка в "Прото"'}
 
     def test_bslls_typo_anchor_not_shifted_on_crlf_lines(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setattr(

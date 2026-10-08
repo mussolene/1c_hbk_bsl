@@ -27,17 +27,18 @@ class Diagnostic:
     code: str
     message: str = ""
     message_args: tuple[object, ...] = ()
+    message_variant: str = ""
 
     def __post_init__(self) -> None:
         from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule, render_rule_message
 
-        if self.message and self.message_args:
+        if self.message and (self.message_args or self.message_variant):
             raise ValueError("diagnostic message and message_args are mutually exclusive")
         self.message_args = tuple(self.message_args)
         if not self.message:
             self.message = (
-                render_rule_message(self.code, *self.message_args)
-                if self.message_args
+                render_rule_message(self.code, *self.message_args, variant=self.message_variant)
+                if self.message_args or self.message_variant
                 else get_rule(self.code).message
             )
         if "%s" in self.message:

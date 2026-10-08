@@ -88,6 +88,19 @@ class TestBsl193FunctionOutParameter:
 
 # BSL212 — TestBsl212MissedRequiredParameter
 class TestBsl212MissedRequiredParameter:
+    @pytest.mark.parametrize("prefix", ["Other.\n", "Other.Child.\n", "GetOther().\n"])
+    def test_multiline_qualified_call_does_not_resolve_to_local_method(
+        self, tmp_path: Path, prefix: str
+    ) -> None:
+        content = (
+            "Procedure Caller() Export\n"
+            f" {prefix} Local();\nEndProcedure\n"
+            "Procedure Local(Required)\nEndProcedure\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL042", "BSL212"})
+        assert [d.code for d in diags] == ["BSL042"]
+        assert diags[0].line == 5
+
     def test_local_call_missing_required_parameter_reports(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
@@ -99,7 +112,7 @@ class TestBsl212MissedRequiredParameter:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL212"}) if d.code == "BSL212"]
         assert len(diags) == 1
-        assert diags[0].message == "Укажите обязательный параметр Параметр"
+        assert diags[0].message == "Укажите обязательный параметр 'Параметр'"
 
     def test_qualified_call_does_not_resolve_to_local_method(self, tmp_path: Path) -> None:
         content = """\
@@ -192,7 +205,7 @@ class TestBsl215MissingParameterDescriptionParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert len(diags) == 1
-        assert all(d.message == _rule_msg("BSL215") for d in diags)
+        assert [d.message for d in diags] == ['Необходимо добавить описание параметра "Стр"']
 
     def test_documented_params_without_signature_params_are_stale(self, tmp_path: Path) -> None:
         content = """\
@@ -217,7 +230,7 @@ class TestBsl215MissingParameterDescriptionParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL215")
+        assert diags[0].message == "Необходимо исправить порядок описаний параметров"
 
     def test_param_with_multiple_types_is_documented(self, tmp_path: Path) -> None:
         content = """\
@@ -282,8 +295,13 @@ class TestBsl215MissingParameterDescriptionParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL215"}) if d.code == "BSL215"]
         assert [(d.line, d.character, d.end_character, d.message) for d in diags] == [
-            (4, 10, 16, _rule_msg("BSL215")),
-            (4, 17, 28, _rule_msg("BSL215")),
+            (
+                4,
+                10,
+                16,
+                'Необходимо удалить описания параметров "УправлениеДоступомПереопределяемый.Метод.Ограничение", отсутствующих в сигнатуре метода',
+            ),
+            (4, 17, 28, 'Необходимо добавить описание параметра "Ограничение"'),
         ]
 
     def test_param_see_reference_without_terminal_dot_is_documented(self, tmp_path: Path) -> None:
@@ -1055,7 +1073,10 @@ class TestMethodAndStatementMessageParity:
         bsl224 = [d for d in _check(content, tmp_path, select={"BSL224"}) if d.code == "BSL224"]
 
         assert len(bsl224) == 1
-        assert bsl224[0].message == _rule_msg("BSL224")
+        assert (
+            bsl224[0].message
+            == 'Уберите инициализацию параметров конструктора "Структура" вложенными методами'
+        )
 
     def test_bsl227_message_matches_bslls(self, tmp_path: Path) -> None:
         content = """\
@@ -1085,7 +1106,10 @@ class TestBsl224NestedFunctionInParameters:
 
         assert len(diags) == 1
         assert diags[0].line == 2
-        assert diags[0].message == _rule_msg("BSL224")
+        assert (
+            diags[0].message
+            == 'Уберите инициализацию параметров метода "ВыполнитьКоманду" вложенными методами'
+        )
 
     def test_oneline_nested_call_is_allowed_by_default(self, tmp_path: Path) -> None:
         content = """\
@@ -1390,7 +1414,9 @@ class TestBsl254TransferringParameters:
             target="Module.bsl",
         )
         assert _codes(diags) == ["BSL254"]
-        assert diags[0].message == _rule_msg("BSL254")
+        assert (
+            diags[0].message == 'Установите модификатор "Знач" для параметра Документ метода Сервер'
+        )
 
     def test_server_method_without_client_call_is_not_reported(self, tmp_path: Path) -> None:
         diags = self._check_indexed(
@@ -1433,9 +1459,9 @@ class TestBsl254TransferringParameters:
         bsl254 = [d for d in diags if d.code == "BSL254"]
         assert [d.line for d in bsl254] == [8, 9, 10]
         assert [d.message for d in bsl254] == [
-            _rule_msg("BSL254"),
-            _rule_msg("BSL254"),
-            _rule_msg("BSL254"),
+            'Установите модификатор "Знач" для параметра Адрес метода Сервер',
+            'Установите модификатор "Знач" для параметра ВыводитьОшибку метода Сервер',
+            'Установите модификатор "Знач" для параметра ТипАрхива метода Сервер',
         ]
 
     def test_reassigned_parameter_is_not_reported(self, tmp_path: Path) -> None:

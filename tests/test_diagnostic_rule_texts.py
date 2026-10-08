@@ -103,7 +103,7 @@ def test_rule_catalog_can_return_english_rule_text() -> None:
     assert rule.code == "BSL238"
     assert rule.name == "RefOveruse"
     assert rule.description == 'Overuse "Reference" in a query'
-    assert rule.message == 'Overuse "Reference" in a query'
+    assert rule.message == 'Get rid of getting the "Reference" field in the query.'
 
 
 def test_bsl241_rule_catalog_severity_matches_emitted_error() -> None:
@@ -178,7 +178,21 @@ def test_diagnostic_rejects_ambiguous_or_unrendered_message() -> None:
 
 def test_catalog_never_exposes_unrendered_placeholders() -> None:
     for code in RULE_METADATA:
-        assert "%s" not in get_rule(code).message
+        for locale in ("ru", "en"):
+            assert "%s" not in get_rule(code, locale=locale).message
+            assert "%d" not in get_rule(code, locale=locale).message
+
+
+@pytest.mark.parametrize("code", ["BSL002", "BSL011", "BSL019"])
+def test_english_numeric_message_templates(code: str) -> None:
+    message = render_rule_message(code, "Method", 11, 10, locale="en")
+    assert '"Method"' in message
+    assert "11" in message
+    assert "10" in message
+    with pytest.raises(ValueError, match="expects 3 argument"):
+        render_rule_message(code, "Method", locale="en")
+    with pytest.raises(ValueError, match="arguments are invalid"):
+        render_rule_message(code, "Method", "eleven", 10, locale="en")
 
 
 def test_message_template_rendering_validates_arity() -> None:
@@ -545,3 +559,265 @@ def test_module_body_complexity_preserves_computed_value(tmp_path: Path) -> None
     assert [diag.message for diag in diagnostics] == [
         'Уменьшите когнитивную сложность "body" с 3 до 2'
     ]
+
+
+@pytest.mark.parametrize(
+    ("code", "args", "ru", "en"),
+    [
+        (
+            "BSL014",
+            (121, 120),
+            "Длина строки 121 превышает максимально допустимую 120",
+            "String length 121 exceeded maximum 120",
+        ),
+        (
+            "BSL022",
+            ("Предупреждение", "ПоказатьПредупреждение"),
+            "Вместо модального метода `Предупреждение` необходимо использовать `ПоказатьПредупреждение`",
+            "Instead of the modal method `Предупреждение`, use `ПоказатьПредупреждение`",
+        ),
+        ("BSL023", ("// TODO",), 'Найден служебный тег "// TODO"', 'Found service tag "// TODO"'),
+        (
+            "BSL026",
+            ("API",),
+            'Область "API" не содержит функций или процедур',
+            'The region "API" does not contain functions.',
+        ),
+        (
+            "BSL029",
+            ("42",),
+            'Создайте константу с понятным названием, присвойте ей значение "42" и используйте эту константу вместо магического числа.',
+            'Assign this magic number "42" to a well-named constant, and use the constant instead.',
+        ),
+        (
+            "BSL035",
+            ('"test"',),
+            'Необходимо избавиться от многократного использования строкового литерала "test"',
+            'Need to get rid of reuse of string literal "test"',
+        ),
+        (
+            "BSL047",
+            ('"20000101"',),
+            'Создайте переменную с понятным названием, присвойте ей значение ""20000101"" и используйте эту константу вместо магической даты.',
+            'Assign this magic number ""20000101"" to a well-named constant, and use the constant instead.',
+        ),
+        (
+            "BSL131",
+            ("API",),
+            'Нужно удалить дубли раздела "API"',
+            'Delete duplicates of region "API"',
+        ),
+        (
+            "BSL149",
+            ("Table.Ref",),
+            'Полю "Table.Ref" не назначен псевдоним или пропущено ключевое слово КАК',
+            'The field "Table.Ref" has no alias assigned or the AS keyword is missing',
+        ),
+        (
+            "BSL153",
+            ("iF",),
+            'Ключевое слово "iF" написано не канонически',
+            'Keyword "iF" is not written canonically',
+        ),
+        (
+            "BSL173",
+            ("Items",),
+            'Не следует удалять элементы коллекции "Items" при ее обходе оператором "Для каждого ... Из ... Цикл"',
+            'Don\'t delete elements of collection "Items" when iterating through collection using the operator "For each ... In ... Do"',
+        ),
+        (
+            "BSL176",
+            ("Old", " Следует использовать: New"),
+            'Удалите обращение к устаревшему "Old". Следует использовать: New',
+            'Remove access to deprecated "Old". Use instead: New',
+        ),
+        (
+            "BSL181",
+            ('"Key"', "Items"),
+            'Проверьте повторную вставку "Key" в коллекцию Items',
+            'Check the re-addition of "Key" to the collection with name Items ',
+        ),
+        (
+            "BSL212",
+            ("'Arg'",),
+            "Укажите обязательный параметр 'Arg'",
+            "Specify a required parameter 'Arg'",
+        ),
+        (
+            "BSL216",
+            ("Слева и справа", "="),
+            "Слева и справа от '=' не хватает пробела",
+            "Left and right of the '=' missing space",
+        ),
+        (
+            "BSL221",
+            ("[ru, en]",),
+            "Добавьте строки для языков: [ru, en]",
+            "Add lines for languages: [ru, en]",
+        ),
+        ("BSL222", ("[ru]",), "Добавьте строки для языков: [ru]", "Add lines for languages: [ru]"),
+        (
+            "BSL224",
+            ("конструктора", "Structure"),
+            'Уберите инициализацию параметров конструктора "Structure" вложенными методами',
+            'Remove parameter initialization for constructor "Structure" by nested methods',
+        ),
+        (
+            "BSL249",
+            ("Color",),
+            "Замените конструктор Color на получение элемента стиля",
+            "Replace constructor Color to get style element",
+        ),
+        (
+            "BSL254",
+            ("Arg", "Server"),
+            'Установите модификатор "Знач" для параметра Arg метода Server',
+            'Set the modifier "ByValue" for the "Arg" parameter of the "Server" method',
+        ),
+        (
+            "BSL256",
+            ("Misspelled",),
+            'Возможная опечатка в "Misspelled"',
+            'Possible typo in word "Misspelled"',
+        ),
+        (
+            "BSL259",
+            ("Unknown",),
+            'Неизвестный символ препроцессора "Unknown"',
+            'Unknown preprocessor symbol "Unknown"',
+        ),
+        (
+            "BSL268",
+            ("FindByCode",),
+            'Не следует использовать  метод "FindByCode" и поиск по строке',
+            'Don\'t use method "FindByCode" and finding by string.',
+        ),
+    ],
+)
+def test_remaining_occurrence_templates_in_both_locales(
+    code: str, args: tuple[object, ...], ru: str, en: str
+) -> None:
+    assert render_rule_message(code, *args) == ru
+    assert render_rule_message(code, *args, locale="en") == en
+
+
+@pytest.mark.parametrize(
+    ("code", "variant", "args", "ru", "en"),
+    [
+        (
+            "BSL065",
+            "isProcedure",
+            (),
+            "Удалите описание возвращаемого значения для процедуры",
+            "Remove returned values description for procedure",
+        ),
+        (
+            "BSL175",
+            "deprecatedAttributeMessage",
+            ("Old", "New"),
+            'Атрибут "Old" устарел. Вместо него стоит использовать New',
+            '"Old" attribute is deprecated. You should use New',
+        ),
+        (
+            "BSL175",
+            "deprecatedMethodsMessage",
+            ("Old", "New"),
+            'Метод "Old" устарел. Вместо него стоит использовать "New"',
+            '"Old" method is deprecated. You should use "New"',
+        ),
+        (
+            "BSL175",
+            "deprecatedEnumNameMessage",
+            ("Old", "New"),
+            'Используется старое наименование "Old". Вместо него необходимо использовать "New"',
+            'Deprecated enum name "Old". You should use "New" instead.',
+        ),
+        (
+            "BSL204",
+            "diagnosticMessageDash",
+            (),
+            'Нужно исправить на правильный символ "-"',
+            'Correct character to "-"',
+        ),
+        (
+            "BSL204",
+            "diagnosticMessageSpace",
+            (),
+            "Нужно заменить символ неразрывного пробела на обычный пробел",
+            "Replace non-breaking space character with space character",
+        ),
+        (
+            "BSL215",
+            "missingDescription",
+            ("Arg",),
+            'Необходимо добавить описание параметра "Arg"',
+            'Add description for the "Arg" parameter',
+        ),
+        (
+            "BSL215",
+            "emptyDescription",
+            ("Arg",),
+            'Необходимо добавить описание типа параметра "Arg"',
+            'Add type description for the "Arg" parameter',
+        ),
+        (
+            "BSL215",
+            "missingInSignature",
+            ("Arg",),
+            'Необходимо удалить описания параметров "Arg", отсутствующих в сигнатуре метода',
+            'Remove description for the "Arg", they are missing in the signature',
+        ),
+        (
+            "BSL215",
+            "wrongOrder",
+            (),
+            "Необходимо исправить порядок описаний параметров",
+            "Correct the order for parameter descriptions",
+        ),
+        (
+            "BSL224",
+            "diagnosticMessageWithoutName",
+            ("конструктора",),
+            "Уберите инициализацию параметров конструктора вложенными методами",
+            "Remove parameter initialization for constructor by nested methods",
+        ),
+        (
+            "BSL262",
+            "wrongNumberMessage",
+            (),
+            "Неверное число параметров метода",
+            "Incorrect number of method parameters",
+        ),
+        (
+            "BSL262",
+            "noSecondParameter",
+            (),
+            'Не указан 2й параметр с типом "УровеньЖурналаРегистрации"',
+            'The 2nd parameter with the type "EventLogLevel" is missing',
+        ),
+        (
+            "BSL262",
+            "noDetailErrorDescription",
+            (),
+            'В тексте комментария нет вызова "ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())"',
+            'There is no call to "DetailErrorDescription(ErrorInfo())" in the comment text',
+        ),
+    ],
+)
+def test_occurrence_message_variants_in_both_locales(
+    code: str, variant: str, args: tuple[object, ...], ru: str, en: str
+) -> None:
+    assert render_rule_message(code, *args, variant=variant) == ru
+    assert render_rule_message(code, *args, variant=variant, locale="en") == en
+    diag = Diagnostic(
+        file="m.bsl",
+        line=2,
+        character=3,
+        end_line=2,
+        end_character=8,
+        severity=Severity.WARNING,
+        code=code,
+        message_args=args,
+        message_variant=variant,
+    )
+    assert diag.to_dict()["message"] == ru

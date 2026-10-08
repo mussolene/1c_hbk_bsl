@@ -574,7 +574,7 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=80)
         bsl014 = [d for d in diags if d.code == "BSL014"]
         assert len(bsl014) >= 1
-        assert bsl014[0].message == _rule_msg("BSL014")
+        assert bsl014[0].message == "Длина строки 130 превышает максимально допустимую 80"
 
     def test_short_line_no_warning(self, tmp_path: Path) -> None:
         content = "Процедура Тест()\n    А = 1;\nКонецПроцедуры\n"
@@ -593,7 +593,7 @@ class TestBsl014LineTooLong:
         diags = _check(content, tmp_path, max_line_length=25, select={"BSL014"})
         bsl014 = [d for d in diags if d.code == "BSL014"]
         assert len(bsl014) == 1
-        assert bsl014[0].message == _rule_msg("BSL014")
+        assert bsl014[0].message == "Длина строки 26 превышает максимально допустимую 25"
         assert bsl014[0].end_character == 26
 
     def test_query_text_keyword_line_exception_no_warning(self, tmp_path: Path) -> None:
@@ -890,14 +890,14 @@ class TestBsl216MissingSpace:
         content = 'ПотокXML.ЗаписатьКонецЭлемента();// "ФИО"\n'
         diags = _check(content, tmp_path, select={"BSL216"})
         assert [(d.line, d.character, d.message) for d in diags if d.code == "BSL216"] == [
-            (1, 32, _rule_msg("BSL216")),
+            (1, 32, "Справа от ';' не хватает пробела"),
         ]
 
     def test_comma_before_string_reports_when_plus_is_inside_string(self, tmp_path: Path) -> None:
         content = 'Результат = ?(Настройки.Погрешность," ± " + Погрешность, "");\n'
         diags = _check(content, tmp_path, select={"BSL216"})
         assert [(d.line, d.character, d.message) for d in diags if d.code == "BSL216"] == [
-            (1, 35, _rule_msg("BSL216")),
+            (1, 35, "Справа от ',' не хватает пробела"),
         ]
 
     def test_unary_minus_after_indexer_open_bracket_no_warning(self, tmp_path: Path) -> None:
@@ -916,7 +916,7 @@ class TestBsl026EmptyRegion:
         diags = _check(content, tmp_path)
         bsl026 = [d for d in diags if d.code == "BSL026"]
         assert len(bsl026) >= 1
-        assert bsl026[0].message == _rule_msg("BSL026")
+        assert bsl026[0].message == 'Область "ПустаяОбласть" не содержит функций или процедур'
 
     def test_region_with_code_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -1383,7 +1383,7 @@ class TestBsl131DuplicateRegion:
 
         diags = DiagnosticEngine(select={"BSL131"}).check_file(str(p))
         assert [d.code for d in diags] == ["BSL131"]
-        assert diags[0].message == _rule_msg("BSL131")
+        assert diags[0].message == 'Нужно удалить дубли раздела "Тест"'
         assert (diags[0].line, diags[0].character, diags[0].end_line, diags[0].end_character) == (
             1,
             1,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
+from onec_hbk_bsl.analysis.diagnostic.i18n import render_rule_message
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
 
 
@@ -107,7 +107,7 @@ def test_bsl173_uses_catalog_message(tmp_path: Path) -> None:
 КонецПроцедуры
 """
     diag = _single_diag(content, "BSL173", tmp_path)
-    assert diag.message == get_rule("BSL173").message
+    assert diag.message == render_rule_message("BSL173", "Коллекция")
 
 
 def test_bsl036_uses_bslls_condition_parts_threshold(tmp_path: Path) -> None:

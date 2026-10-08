@@ -1,13 +1,39 @@
 from __future__ import annotations
 
+import re
+
 from onec_hbk_bsl.analysis.diagnostic.models import RuleDefinition, RuleLocale
 
 
-def render_rule_message(identifier: str, *args: object, locale: RuleLocale = "ru") -> str:
+def render_rule_message(
+    identifier: str, *args: object, locale: RuleLocale = "ru", variant: str = ""
+) -> str:
     """Render a catalog template, rejecting missing or extra interpolation values."""
     rule = get_rule(identifier, locale=locale)
     template = rule.message_template
-    expected = template.count("%s")
+    if variant:
+        from onec_hbk_bsl.analysis.diagnostics import RULE_MESSAGES_EN, RULE_MESSAGES_RU
+
+        templates = RULE_MESSAGES_EN if locale == "en" else RULE_MESSAGES_RU
+        template = templates[f"{rule.code}.{variant}"]
+    if locale == "en" and args:
+        if rule.code == "BSL216":
+            sides = {
+                "Слева": "To the left",
+                "Справа": "To the right",
+                "Слева и справа": "Left and right",
+            }
+            args = (sides.get(str(args[0]), args[0]), *args[1:])
+        elif (
+            rule.code == "BSL176"
+            and len(args) == 2
+            and str(args[1]).startswith(" Следует использовать: ")
+        ):
+            args = (args[0], str(args[1]).replace(" Следует использовать: ", " Use instead: ", 1))
+        elif rule.code == "BSL224":
+            kinds = {"метода": "method", "конструктора": "constructor"}
+            args = (kinds.get(str(args[0]), args[0]), *args[1:])
+    expected = sum(placeholder != "%%" for placeholder in re.findall(r"%(?:%|s|d)", template))
     if len(args) != expected:
         raise ValueError(f"{rule.code} message expects {expected} argument(s), got {len(args)}")
     if not args:
@@ -29,6 +55,7 @@ def get_rule(identifier: str, *, locale: RuleLocale = "ru") -> RuleDefinition:
     from onec_hbk_bsl.analysis.diagnostics import (
         _CODE_TO_PRIMARY_BSLLS_NAME,
         RULE_DESCRIPTIONS_RU,
+        RULE_MESSAGES_EN,
         RULE_MESSAGES_RU,
         RULE_METADATA,
         resolve_rule_token_to_code,
@@ -48,12 +75,13 @@ def get_rule(identifier: str, *, locale: RuleLocale = "ru") -> RuleDefinition:
     implemented = code in DIAGNOSTIC_RUNTIME_RULE_CODES
 
     if locale == "en":
+        template = RULE_MESSAGES_EN.get(code) or english_description
         return RuleDefinition(
             code=code,
             name=name,
             description=english_description,
-            message_template=english_description,
-            message=english_description,
+            message_template=template,
+            message=english_description if re.search(r"%[sd]", template) else template,
             severity=severity,
             tags=tags,
             implemented=implemented,
@@ -63,8 +91,8 @@ def get_rule(identifier: str, *, locale: RuleLocale = "ru") -> RuleDefinition:
     description = RULE_DESCRIPTIONS_RU.get(code) or english_description
     message_template = RULE_MESSAGES_RU.get(code) or description
     # Diagnostics without structured interpolation values must never leak raw
-    # ``%s`` placeholders to CLI/LSP/MCP consumers.
-    message = description if "%s" in message_template else message_template
+    # Interpolation placeholders must not reach CLI/LSP/MCP consumers.
+    message = description if re.search(r"%[sd]", message_template) else message_template
     return RuleDefinition(
         code=code,
         name=name,

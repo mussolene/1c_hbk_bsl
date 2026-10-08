@@ -343,6 +343,7 @@ class ProcedureModel:
                     end_character=col + len(self.name),
                     severity=Severity.WARNING,
                     code="BSL065",
+                    message_variant="isProcedure",
                 )
             ]
         if self.kind == "function" and (

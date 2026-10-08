@@ -670,6 +670,7 @@ def _run_bsl256_typo_candidates(path: str, candidates: list[SpellCandidate]) -> 
             end_character=d["end_character"],
             severity=Severity.INFORMATION,
             code=d["code"],
+            message_args=d["message_args"],
         )
         for d in rows
     ]
@@ -692,6 +693,8 @@ def _same_line_fact_diagnostic(
         end_character=int(fact.end_character),
         severity=severity,
         code=code,
+        message_args=fact.message_args,
+        message_variant=fact.message_variant,
     )
 
 

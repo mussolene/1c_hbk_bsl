@@ -173,13 +173,18 @@ def test_semantic_receiver_facts_preserve_resolution_and_exact_span(tmp_path: Pa
     assert ambiguous.candidate_types == ("ДокументСсылка.А", "ДокументСсылка.Б")
 
 
-def test_line_diagnostic_fact_has_no_user_message_payload() -> None:
+def test_line_diagnostic_fact_carries_values_without_rendered_message() -> None:
     assert {field.name for field in fields(LineDiagnosticFact)} == {
         "line_idx",
         "character",
         "end_character",
         "end_line_idx",
+        "message_args",
+        "message_variant",
     }
+    fact = LineDiagnosticFact(0, 0, 1)
+    assert fact.message_args == ()
+    assert fact.message_variant == ""
 
 
 def test_cst_string_ranges_skip_line_comment() -> None:
@@ -356,3 +361,16 @@ def test_global_method_call_facts_are_reused_from_snapshot(tmp_path: Path) -> No
 
     assert len(first) == 2
     assert second is first
+
+
+def test_procedure_collectors_accept_deep_module_expression() -> None:
+    from onec_hbk_bsl.analysis.document_snapshot import find_procedure_names_from_tree
+
+    condition = " And ".join(f"Value{i}" for i in range(1000))
+    content = (
+        f"If {condition} Then\nEndIf;\n"
+        "Procedure First()\nEndProcedure\nFunction Second()\nEndFunction\n"
+    )
+    snapshot = build_document_snapshot("Module.bsl", content=content)
+    assert [proc.name for proc in snapshot.procedures] == ["First", "Second"]
+    assert find_procedure_names_from_tree(snapshot.tree) == {"first", "second"}

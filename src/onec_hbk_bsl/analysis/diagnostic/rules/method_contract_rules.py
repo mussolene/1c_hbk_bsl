@@ -222,14 +222,13 @@ def run_bsl212_missed_required_parameter(
     diags: list[Any] = []
     line_starts = _diag.line_start_offsets(content)
     for call in calls:
+        if getattr(call, "receiver_expression", None):
+            continue
         callee_name = call.callee_name.casefold()
         callee = proc_by_name.get(callee_name)
         if callee is None:
             continue
         line_text = lines[call.caller_line - 1] if 0 <= call.caller_line - 1 < len(lines) else ""
-        before_call = line_text[: call.caller_character].rstrip()
-        if before_call.endswith("."):
-            continue
         required_params = required_params_by_name.get(callee_name, ())
         if not required_params:
             continue
@@ -269,7 +268,7 @@ def run_bsl212_missed_required_parameter(
                 end_character=end_character,
                 severity=_diag.Severity.ERROR,
                 code="BSL212",
-                message_args=(", ".join(missed),),
+                message_args=(", ".join(f"'{name}'" for name in missed),),
             )
         )
     return diags
@@ -392,6 +391,12 @@ def run_bsl215_missing_parameter_description(
             missing_params = list(proc.params)
             documented_cf = {}
         if missing_params and not documented_cf:
+            reference_names = list(stale_reference_entries)
+            reference_names.extend(
+                match.group(1)
+                for line in doc_comment.lines[(doc_comment.params_section_offset or 0) + 1 :]
+                if (match := re.search(r"(?:См\.|See)\s+([\w.]+)\s*\(", line, re.IGNORECASE))
+            )
             diags.append(
                 _diag.Diagnostic(
                     file=path,
@@ -401,6 +406,10 @@ def run_bsl215_missing_parameter_description(
                     end_character=header_col + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
+                    message_variant="missingInSignature" if reference_names else "",
+                    message_args=(", ".join(dict.fromkeys(reference_names)),)
+                    if reference_names
+                    else (),
                 )
             )
         else:
@@ -419,6 +428,8 @@ def run_bsl215_missing_parameter_description(
                         end_character=col + len(pname),
                         severity=_diag.Severity.WARNING,
                         code="BSL215",
+                        message_variant="missingDescription",
+                        message_args=(pname,),
                     )
                 )
 
@@ -439,6 +450,8 @@ def run_bsl215_missing_parameter_description(
                     end_character=col + len(pname),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
+                    message_variant="emptyDescription",
+                    message_args=(pname,),
                 )
             )
         seen_actual_docs: set[str] = set()
@@ -460,6 +473,8 @@ def run_bsl215_missing_parameter_description(
                     end_character=header_col + len(proc.name),
                     severity=_diag.Severity.WARNING,
                     code="BSL215",
+                    message_variant="missingInSignature",
+                    message_args=(", ".join(dict.fromkeys(extra)),),
                 )
             )
         elif not missing_params and documented_entries:
@@ -477,6 +492,7 @@ def run_bsl215_missing_parameter_description(
                         end_character=header_col + len(proc.name),
                         severity=_diag.Severity.WARNING,
                         code="BSL215",
+                        message_variant="wrongOrder",
                     )
                 )
     return diags
@@ -612,6 +628,7 @@ def run_bsl254_transferring_parameters(
                     end_character=c1,
                     severity=_diag.Severity.WARNING,
                     code="BSL254",
+                    message_args=(param_name, proc.name),
                 )
             )
     return diags
@@ -714,6 +731,10 @@ def run_bsl224_nested_function_in_parameters(
                     ),
                     severity=_diag.Severity.INFORMATION,
                     code="BSL224",
+                    message_args=(
+                        "конструктора" if node_type == "new_expression" else "метода",
+                        name,
+                    ),
                 )
             )
             seen.add((start_line_idx, start_char))

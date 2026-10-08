@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import ntpath
 import os
 import threading
@@ -296,6 +297,12 @@ class DocumentDiagnosticsState:
         self.diag_inflight: dict[str, DiagnosticRun] = {}
         self.indexed_snapshot_cache: dict[str, tuple[int, int]] = {}
         self.published_diagnostics: dict[str, tuple[int, Any]] = {}
+        self._generation = 0
+        self._closed = False
+        self.diag_workers: dict[tuple[str, str], object] = {}
+        self.diag_pending: dict[tuple[str, str], tuple[int, Callable[[], None]]] = {}
+        self._running_workers = 0
+        self._worker_limit = 2
 
     def get_doc(self, uri: str, default: str | None = None) -> str | None:
         with self.lock:
@@ -311,8 +318,11 @@ class DocumentDiagnosticsState:
     def set_doc(self, uri: str, text: str) -> int:
         """Store text and advance the monotonic generation for this URI."""
         with self.lock:
+            if self._closed:
+                return 0
             self.docs[uri] = text
-            generation = self.doc_generations.get(uri, 0) + 1
+            self._generation += 1
+            generation = self._generation
             self.doc_generations[uri] = generation
             return generation
 
@@ -320,13 +330,87 @@ class DocumentDiagnosticsState:
         with self.lock:
             return tuple(self.docs)
 
-    def pop_timer(self, uri: str) -> threading.Timer | None:
+    def pop_timer(
+        self, uri: str, expected: threading.Timer | None = None
+    ) -> threading.Timer | None:
         with self.lock:
+            if expected is not None and self.diag_timers.get(uri) is not expected:
+                return None
             return self.diag_timers.pop(uri, None)
 
     def set_timer(self, uri: str, timer: threading.Timer) -> None:
         with self.lock:
+            if self._closed:
+                timer.cancel()
+                return
             self.diag_timers[uri] = timer
+
+    def schedule_diagnostics(
+        self,
+        uri: str,
+        action: Callable[[], None],
+        *,
+        generation: int | None = None,
+        channel: str = "diagnostics",
+    ) -> None:
+        """Bound background work globally, retaining only the latest URI/channel job."""
+        with self.lock:
+            current_generation = self.doc_generations.get(uri, 0)
+            if self._closed or (generation is not None and current_generation != generation):
+                return
+            self.diag_pending[(uri, channel)] = (current_generation, action)
+            if self._running_workers >= self._worker_limit or not any(
+                key not in self.diag_workers for key in self.diag_pending
+            ):
+                return
+            self._running_workers += 1
+
+        def work() -> None:
+            while True:
+                with self.lock:
+                    key = next(
+                        (key for key in self.diag_pending if key not in self.diag_workers), None
+                    )
+                    if key is None:
+                        self._running_workers -= 1
+                        return
+                    generation, action = self.diag_pending.pop(key)
+                    if self._closed or self.doc_generations.get(key[0], 0) != generation:
+                        continue
+                    token = object()
+                    self.diag_workers[key] = token
+                try:
+                    action()
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "LSP: diagnostics worker failed for %s", key[0]
+                    )
+                finally:
+                    with self.lock:
+                        if self.diag_workers.get(key) is token:
+                            self.diag_workers.pop(key, None)
+
+        threading.Thread(target=work, daemon=True, name="bsl-lsp-diagnostics").start()
+
+    def close(self) -> None:
+        """Release document jobs and wake waiters without joining expensive work."""
+        with self.lock:
+            self._closed = True
+            for uri in tuple(
+                set(self.docs)
+                | {key[0] for key in self.diag_workers}
+                | set(self.diag_inflight)
+                | set(self.diag_timers)
+                | set(self.diag_result_cache)
+                | set(self.doc_generations)
+                | set(self.diag_last_time)
+                | set(self.indexed_snapshot_cache)
+                | set(self.published_diagnostics)
+                | {key[0] for key in self.diag_pending}
+            ):
+                timer = self.close_document(uri)
+                if timer is not None:
+                    timer.cancel()
 
     def clear_cache_for_uri(self, uri: str) -> None:
         with self.lock:
@@ -339,7 +423,8 @@ class DocumentDiagnosticsState:
 
     def set_last_diag_time(self, uri: str, seconds: float) -> None:
         with self.lock:
-            self.diag_last_time[uri] = seconds
+            if not self._closed and uri in self.docs:
+                self.diag_last_time[uri] = seconds
 
     def get_diag_cache(self, uri: str) -> tuple[Any, list[Any]] | None:
         with self.lock:
@@ -360,7 +445,7 @@ class DocumentDiagnosticsState:
             current_generation = self.doc_generations.get(uri, 0)
             if generation is None:
                 generation = current_generation
-            if generation != current_generation:
+            if self._closed or generation != current_generation:
                 return "stale", None
             cached = self.diag_result_cache.get(uri)
             if cached is not None and cached[0] == cache_key:
@@ -372,6 +457,8 @@ class DocumentDiagnosticsState:
                 and current.generation == generation
             ):
                 return "wait", current
+            if current is not None:
+                current.event.set()
             run = DiagnosticRun(cache_key, generation)
             self.diag_inflight[uri] = run
             return "run", run
@@ -388,7 +475,8 @@ class DocumentDiagnosticsState:
         """CAS-complete a diagnostics run and wake waiters."""
         with self.lock:
             committed = (
-                self.diag_inflight.get(uri) is run
+                not self._closed
+                and self.diag_inflight.get(uri) is run
                 and self.doc_generations.get(uri, 0) == run.generation
                 and workspace_is_current
             )
@@ -418,7 +506,7 @@ class DocumentDiagnosticsState:
     ) -> bool:
         """Run one index update only while its document generation is current."""
         with self.lock:
-            if self.doc_generations.get(uri, 0) != generation:
+            if self._closed or self.doc_generations.get(uri, 0) != generation:
                 return False
             current = self.docs.get(uri)
             if current is not None and hash(current) != content_hash:
@@ -439,7 +527,7 @@ class DocumentDiagnosticsState:
     ) -> bool:
         """Publish a diagnostic identity once while its generation is current."""
         with self.lock:
-            if self.doc_generations.get(uri, 0) != generation:
+            if self._closed or self.doc_generations.get(uri, 0) != generation:
                 return False
             identity = (generation, cache_key)
             if self.published_diagnostics.get(uri) == identity:
@@ -455,7 +543,15 @@ class DocumentDiagnosticsState:
             self.doc_generations.pop(uri, None)
             self.diag_last_time.pop(uri, None)
             self.diag_result_cache.pop(uri, None)
-            self.diag_inflight.pop(uri, None)
+            run = self.diag_inflight.pop(uri, None)
+            if run is not None:
+                run.event.set()
+            for key in tuple(self.diag_workers):
+                if key[0] == uri:
+                    self.diag_workers.pop(key, None)
+            for key in tuple(self.diag_pending):
+                if key[0] == uri:
+                    self.diag_pending.pop(key, None)
             self.indexed_snapshot_cache.pop(uri, None)
             self.published_diagnostics.pop(uri, None)
             return timer

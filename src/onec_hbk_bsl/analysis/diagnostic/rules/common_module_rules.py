@@ -679,6 +679,7 @@ def run_bsl173_deleting_collection_item(path: str, lines: list[str], procs: list
                                     end_character=dm.end(),
                                     severity=Severity.ERROR,
                                     code="BSL173",
+                                    message_args=(m.group(2),),
                                 )
                             )
                 j += 1

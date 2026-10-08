@@ -19,67 +19,108 @@ from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
 from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
 from onec_hbk_bsl.analysis.symbols import _extract_doc_comment
 
-_BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS = frozenset(
-    name.casefold()
-    for name in (
-        "УстановитьКраткийЗаголовокПриложения",
-        "SetShortApplicationCaption",
-        "ПолучитьКраткийЗаголовокПриложения",
-        "GetShortApplicationCaption",
-        "УстановитьЗаголовокКлиентскогоПриложения",
-        "SetClientApplicationCaption",
-        "ПолучитьЗаголовокКлиентскогоПриложения",
-        "GetClientApplicationCaption",
-        "ТекущийВариантОсновногоШрифтаКлиентскогоПриложения",
-        "ClientApplicationBaseFontCurrentVariant",
-        "ТекущийВариантИнтерфейсаКлиентскогоПриложения",
-        "ClientApplicationInterfaceCurrentVariant",
-        "КраткоеПредставлениеОшибки",
-        "BriefErrorDescription",
-        "ПодробноеПредставлениеОшибки",
-        "DetailErrorDescription",
-        "ПоказатьИнформациюОбОшибке",
-        "ShowErrorInfo",
-        "НайтиНедопустимыеСимволыXML",
-        "FindDisallowedXMLCharacters",
-        "УстановитьВнешнююКомпоненту",
-        "InstallAddIn",
-        "ОчиститьЖурналРегистрации",
-        "ClearEventLog",
-        "ПодключитьРасширениеРаботыСКриптографией",
-        "AttachCryptoExtension",
-        "УстановитьРасширениеРаботыСКриптографией",
-        "InstallCryptoExtension",
-        "ПользователиWindows",
-        "WindowsUsers",
-        "ПолучитьСоответствиеОбъектаИРеквизитаФормы",
-        "GetObjectAndFormAttributeConformity",
-        "УстановитьСоответствиеОбъектаИРеквизитаФормы",
-        "SetObjectAndFormAttributeConformity",
-        "ЗапроситьРазрешениеПользователя",
-        "RequestUserPermission",
-        "НачатьПолучениеФайлов",
-        "BeginGettingFiles",
-        "НачатьПомещениеФайла",
-        "BeginPutFile",
-        "НачатьПомещениеФайлов",
-        "BeginPuttingFiles",
-        "ПодключитьРасширениеРаботыСФайлами",
-        "AttachFileSystemExtension",
-        "ПолучитьФайл",
-        "GetFile",
-        "ПолучитьФайлы",
-        "GetFiles",
-        "ПоместитьФайл",
-        "PutFile",
-        "ПоместитьФайлы",
-        "PutFiles",
-        "УстановитьРасширениеРаботыСФайлами",
-        "InstallFileSystemExtension",
-        "ВыполнитьОбработкуЗаданий",
-        "ProcessJobs",
+_BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS: dict[str, tuple[str, tuple[str, ...]]] = {
+    alias.casefold(): (name, replacements)
+    for name, aliases, replacements in (
+        (
+            "УстановитьКраткийЗаголовокПриложения",
+            ("SetShortApplicationCaption",),
+            ("КлиентскоеПриложение.УстановитьКраткийЗаголовок",),
+        ),
+        (
+            "ПолучитьКраткийЗаголовокПриложения",
+            ("GetShortApplicationCaption",),
+            ("КлиентскоеПриложение.ПолучитьКраткийЗаголовок",),
+        ),
+        (
+            "УстановитьЗаголовокКлиентскогоПриложения",
+            ("SetClientApplicationCaption",),
+            ("КлиентскоеПриложение.УстановитьЗаголовок",),
+        ),
+        (
+            "ПолучитьЗаголовокКлиентскогоПриложения",
+            ("GetClientApplicationCaption",),
+            ("КлиентскоеПриложение.ПолучитьЗаголовок",),
+        ),
+        (
+            "ТекущийВариантОсновногоШрифтаКлиентскогоПриложения",
+            ("ClientApplicationBaseFontCurrentVariant",),
+            ("КлиентскоеПриложение.ТекущийВариантОсновногоШрифта",),
+        ),
+        (
+            "ТекущийВариантИнтерфейсаКлиентскогоПриложения",
+            ("ClientApplicationInterfaceCurrentVariant",),
+            ("КлиентскоеПриложение.ТекущийВариантИнтерфейса",),
+        ),
+        (
+            "КраткоеПредставлениеОшибки",
+            ("BriefErrorDescription",),
+            ("ОбработкаОшибок.КраткоеПредставлениеОшибки",),
+        ),
+        (
+            "ПодробноеПредставлениеОшибки",
+            ("DetailErrorDescription",),
+            ("ОбработкаОшибок.ПодробноеПредставлениеОшибки",),
+        ),
+        (
+            "ПоказатьИнформациюОбОшибке",
+            ("ShowErrorInfo",),
+            ("ОбработкаОшибок.ПоказатьИнформациюОбОшибке",),
+        ),
+        ("НайтиНедопустимыеСимволыXML", ("FindDisallowedXMLCharacters",), ()),
+        ("УстановитьВнешнююКомпоненту", ("InstallAddIn",), ("НачатьУстановкуВнешнейКомпоненты",)),
+        ("ОчиститьЖурналРегистрации", ("ClearEventLog",), ()),
+        (
+            "ПодключитьРасширениеРаботыСКриптографией",
+            ("AttachCryptoExtension",),
+            ("НачатьПодключениеРасширенияРаботыСКриптографией",),
+        ),
+        (
+            "УстановитьРасширениеРаботыСКриптографией",
+            ("InstallCryptoExtension",),
+            ("НачатьУстановкуРасширенияРаботыСКриптографией",),
+        ),
+        ("ПользователиWindows", ("WindowsUsers",), ("ПользователиОС",)),
+        (
+            "ПолучитьСоответствиеОбъектаИРеквизитаФормы",
+            ("GetObjectAndFormAttributeConformity",),
+            ("ПолучитьСоответствиеОбъектаИФормы",),
+        ),
+        (
+            "УстановитьСоответствиеОбъектаИРеквизитаФормы",
+            ("SetObjectAndFormAttributeConformity",),
+            ("УстановитьСоответствиеОбъектаИФормы",),
+        ),
+        (
+            "ЗапроситьРазрешениеПользователя",
+            ("RequestUserPermission",),
+            ("НачатьЗапросРазрешенияПользователя",),
+        ),
+        ("НачатьПолучениеФайлов", ("BeginGettingFiles",), ("НачатьПолучениеФайловССервера",)),
+        ("НачатьПомещениеФайла", ("BeginPutFile",), ("НачатьПомещениеФайлаНаСервер",)),
+        (
+            "НачатьПомещениеФайлов",
+            ("BeginPuttingFiles",),
+            ("НачатьПомещениеФайлаНаСервер", "НачатьПомещениеФайловНаСервер"),
+        ),
+        (
+            "ПодключитьРасширениеРаботыСФайлами",
+            ("AttachFileSystemExtension",),
+            ("НачатьПодключениеРасширенияРаботыСФайлами",),
+        ),
+        ("ПолучитьФайл", ("GetFile",), ("НачатьПолучениеФайлаССервера",)),
+        ("ПолучитьФайлы", ("GetFiles",), ("НачатьПолучениеФайловССервера",)),
+        ("ПоместитьФайл", ("PutFile",), ("НачатьПомещениеФайлаНаСервер",)),
+        ("ПоместитьФайлы", ("PutFiles",), ("НачатьПомещениеФайловНаСервер",)),
+        (
+            "УстановитьРасширениеРаботыСФайлами",
+            ("InstallFileSystemExtension",),
+            ("НачатьУстановкуРасширенияРаботыСФайлами",),
+        ),
+        ("ВыполнитьОбработкуЗаданий", ("ProcessJobs",), ()),
     )
-)
+    for alias in (name, *aliases)
+}
 
 
 def _bsl_string_spans_before_comment(line: str) -> list[tuple[int, int]]:
@@ -616,6 +657,7 @@ class ModuleModel:
                         end_character=col + len(val) + 2,
                         severity=Severity.INFORMATION,
                         code="BSL035",
+                        message_args=(f'"{val}"',),
                     )
                 )
         return diags
@@ -893,6 +935,7 @@ class ModuleModel:
                             ),
                             severity=Severity.WARNING,
                             code="BSL259",
+                            message_args=(name,),
                         )
                     )
             return diags
@@ -914,6 +957,7 @@ class ModuleModel:
                         end_character=ident.end(),
                         severity=Severity.WARNING,
                         code="BSL259",
+                        message_args=(name,),
                     )
                 )
         return diags
@@ -983,6 +1027,7 @@ class ModuleModel:
                         ),
                         severity=Severity.WARNING,
                         code="BSL268",
+                        message_args=(ts_node_text_fn(ident),),
                     )
                 )
             return diags
@@ -1011,6 +1056,7 @@ class ModuleModel:
                     end_character=end,
                     severity=Severity.WARNING,
                     code="BSL268",
+                    message_args=(match.group("name"),),
                 )
             )
         return diags
@@ -1573,6 +1619,7 @@ class ModuleModel:
                                     end_character=end_character,
                                     severity=Severity.WARNING,
                                     code="BSL181",
+                                    message_args=(arg, target),
                                 )
                             )
                         elif control_depth == 0:
@@ -1611,7 +1658,7 @@ class ModuleModel:
         enabled = set(enabled_codes)
         diags: list[Diagnostic] = []
 
-        deprecated_locals: dict[str, tuple[str, str | None]] = {}
+        deprecated_locals: dict[str, tuple[str, str]] = {}
         deprecated_callers: set[str] = set()
         if "BSL176" in enabled:
             for sym in symbols:
@@ -1623,13 +1670,13 @@ class ModuleModel:
                 name = getattr(sym, "name", "")
                 if not name:
                     continue
-                replacement_match = re.search(
-                    r"\b(?:Используйте|Use)\s+[\"'«]?([A-Za-zА-Яа-яЁё_]\w*)",
+                deprecation = re.search(
+                    r"(?:Устарел[ао]?|Deprecated)\.[ \t]*(.*)",
                     doc_comment,
-                    re.IGNORECASE,
+                    re.IGNORECASE | re.DOTALL,
                 )
-                replacement = replacement_match.group(1) if replacement_match else None
-                deprecated_locals[name.casefold()] = (name, replacement)
+                hint = deprecation.group(1).strip() if deprecation else ""
+                deprecated_locals[name.casefold()] = (name, " " + hint if hint else "")
                 deprecated_callers.add(name.casefold())
 
         enum_ranges: dict[tuple[int, int], tuple[int, int]] = {}
@@ -1685,10 +1732,8 @@ class ModuleModel:
                                 end_character=utf16_len(line[: match.end("name")]),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
-                                message=(
-                                    f'Метод "{name}" устарел. Вместо него стоит использовать '
-                                    f'"{replacement}"'
-                                ),
+                                message_variant="deprecatedMethodsMessage",
+                                message_args=(name, replacement),
                             )
                         )
                     else:
@@ -1701,10 +1746,8 @@ class ModuleModel:
                                 end_character=utf16_len(line[: match.end("name")]),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
-                                message=(
-                                    f'Атрибут "{name}" устарел. Вместо него стоит использовать '
-                                    f'"{replacement}"'
-                                ),
+                                message_variant="deprecatedAttributeMessage",
+                                message_args=(name, replacement),
                             )
                         )
                 for match in bsl175_method_re.finditer(clean):
@@ -1721,10 +1764,8 @@ class ModuleModel:
                             end_character=utf16_len(line[: match.end("name")]),
                             severity=Severity.INFORMATION,
                             code="BSL175",
-                            message=(
-                                f'Метод "{name}" устарел. Вместо него стоит использовать '
-                                f'"{replacement}"'
-                            ),
+                            message_variant="deprecatedMethodsMessage",
+                            message_args=(name, replacement),
                         )
                     )
                 for match in bsl175_child_form_items_re.finditer(clean):
@@ -1741,10 +1782,8 @@ class ModuleModel:
                             end_character=utf16_len(line[: match.end("name")]),
                             severity=Severity.INFORMATION,
                             code="BSL175",
-                            message=(
-                                f'Используется старое наименование "{name}". Вместо него '
-                                f'необходимо использовать "{replacement}"'
-                            ),
+                            message_variant="deprecatedAttributeMessage",
+                            message_args=(name, replacement),
                         )
                     )
                 for match in bsl175_enum_name_re.finditer(clean):
@@ -1765,10 +1804,8 @@ class ModuleModel:
                             end_character=enum_end_character,
                             severity=Severity.INFORMATION,
                             code="BSL175",
-                            message=(
-                                f'Используется старое наименование "{name}". Вместо него '
-                                f'необходимо использовать "{replacement}"'
-                            ),
+                            message_variant="deprecatedEnumNameMessage",
+                            message_args=(name, replacement),
                         )
                     )
         if "BSL176" in enabled and deprecated_locals:
@@ -1787,10 +1824,7 @@ class ModuleModel:
                 if callee_cf not in deprecated_locals:
                     continue
                 start_char = int(getattr(call, "caller_character", 0))
-                replacement = deprecated_locals[callee_cf][1]
-                replacement_hint = (
-                    f' Используйте "{replacement}".' if replacement is not None else ""
-                )
+                replacement_hint = deprecated_locals[callee_cf][1]
                 diags.append(
                     Diagnostic(
                         file=self.path,
@@ -1851,7 +1885,13 @@ class ModuleModel:
                         end_character=start_char + len(callee_name),
                         severity=Severity.INFORMATION,
                         code="BSL176",
-                        message_args=(callee_name, ""),
+                        message_args=(
+                            _BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS[callee_cf][0],
+                            " Следует использовать: "
+                            + ", ".join(_BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS[callee_cf][1])
+                            if _BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS[callee_cf][1]
+                            else "",
+                        ),
                     )
                 )
 
@@ -2937,6 +2977,7 @@ class ModuleModel:
                                 end_character=end_character,
                                 severity=Severity.ERROR,
                                 code="BSL249",
+                                message_args=(m.group("name"),),
                             )
                         )
         return diags
@@ -2997,6 +3038,7 @@ class ModuleModel:
                             end_character=match.end(),
                             severity=Severity.WARNING if code == "BSL222" else Severity.INFORMATION,
                             code=code,
+                            message_args=("[" + ", ".join(sorted(missing)) + "]",),
                         )
                     )
 

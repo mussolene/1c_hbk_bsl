@@ -24,7 +24,7 @@ from onec_hbk_bsl.analysis.diagnostic.execution import (
     make_diagnostic_rule_task,
 )
 from onec_hbk_bsl.analysis.diagnostics import DiagnosticEngine
-from onec_hbk_bsl.analysis.document_snapshot import build_document_snapshot
+from onec_hbk_bsl.analysis.document_snapshot import LineDiagnosticFact, build_document_snapshot
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
 
@@ -366,10 +366,10 @@ def test_core_fact_phase_materializes_only_enabled_fact_family() -> None:
         def __init__(self) -> None:
             self.accessed: list[str] = []
 
-        def line_too_long_facts(self, max_line_length: int) -> list[SimpleNamespace]:
+        def line_too_long_facts(self, max_line_length: int) -> list[LineDiagnosticFact]:
             self.accessed.append(f"line_too_long:{max_line_length}")
             return [
-                SimpleNamespace(
+                LineDiagnosticFact(
                     line_idx=0,
                     character=0,
                     end_line_idx=None,

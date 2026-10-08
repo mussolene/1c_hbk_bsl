@@ -969,6 +969,8 @@ class LineDiagnosticFact:
     character: int
     end_character: int
     end_line_idx: int | None = None
+    message_args: tuple[object, ...] = ()
+    message_variant: str = ""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -1222,6 +1224,10 @@ def _bsl022_modal_facts_from_nodes(
     lines: list[str],
     procedures: list[ProcInfo],
 ) -> list[LineDiagnosticFact]:
+    from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
+        _BSL272_SYNC_REPLACEMENTS,
+    )
+
     facts: list[LineDiagnosticFact] = []
     for node in method_calls:
         if getattr(getattr(node, "parent", None), "type", None) == "call_expression":
@@ -1243,6 +1249,14 @@ def _bsl022_modal_facts_from_nodes(
                 character=character,
                 end_line_idx=end_line_idx,
                 end_character=end_character,
+                message_args=(
+                    method_name,
+                    _BSL272_SYNC_REPLACEMENTS[
+                        "DOMESSAGEBOX"
+                        if method_name.casefold() == "warning"
+                        else method_name.upper()
+                    ],
+                ),
             )
         )
     return facts
@@ -1252,6 +1266,10 @@ def _bsl022_modal_facts_from_lines(
     lines: list[str],
     procedures: list[ProcInfo],
 ) -> list[LineDiagnosticFact]:
+    from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.rules import (
+        _BSL272_SYNC_REPLACEMENTS,
+    )
+
     facts: list[LineDiagnosticFact] = []
     for idx, line in enumerate(lines):
         if line.strip().startswith("//"):
@@ -1269,6 +1287,14 @@ def _bsl022_modal_facts_from_lines(
                 line_idx=idx,
                 character=match.start("name"),
                 end_character=_call_end_character(line, match.end() - 1),
+                message_args=(
+                    match.group("name"),
+                    _BSL272_SYNC_REPLACEMENTS[
+                        "DOMESSAGEBOX"
+                        if match.group("name").casefold() == "warning"
+                        else match.group("name").upper()
+                    ],
+                ),
             )
         )
     return facts
@@ -1391,27 +1417,30 @@ def _ts_node_to_proc_info(node: Any) -> ProcInfo | None:
 
 
 def _collect_procs_from_node(node: Any, result: list[ProcInfo]) -> None:
-    if getattr(node, "type", None) in ("procedure_definition", "function_definition"):
-        proc = _ts_node_to_proc_info(node)
-        if proc:
-            result.append(proc)
-        return
-    for child in _iter_ts_children(node):
-        _collect_procs_from_node(child, result)
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if getattr(current, "type", None) in ("procedure_definition", "function_definition"):
+            proc = _ts_node_to_proc_info(current)
+            if proc:
+                result.append(proc)
+            continue
+        pending.extend(reversed(list(_iter_ts_children(current))))
 
 
 def _collect_proc_names_from_node(node: Any, result: set[str]) -> None:
-    node_type = getattr(node, "type", None)
-    if node_type in ("procedure_definition", "function_definition"):
-        for child in _iter_ts_children(node):
-            if getattr(child, "type", None) == "identifier":
-                name = _ts_node_text(child)
-                if name:
-                    result.add(name.casefold())
-                break
-        return
-    for child in _iter_ts_children(node):
-        _collect_proc_names_from_node(child, result)
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if getattr(current, "type", None) in ("procedure_definition", "function_definition"):
+            for child in _iter_ts_children(current):
+                if getattr(child, "type", None) == "identifier":
+                    name = _ts_node_text(child)
+                    if name:
+                        result.add(name.casefold())
+                    break
+            continue
+        pending.extend(reversed(list(_iter_ts_children(current))))
 
 
 def _find_procedures_from_tree(tree: Any) -> list[ProcInfo]:
@@ -2163,7 +2192,21 @@ class DocumentSnapshot:
             right_missing = end < len(clean) and clean[end] not in " \t"
             if not left_missing and not right_missing:
                 continue
-            facts.append(LineDiagnosticFact(line_idx, start, end))
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx,
+                    start,
+                    end,
+                    message_args=(
+                        "Слева и справа"
+                        if left_missing and right_missing
+                        else "Слева"
+                        if left_missing
+                        else "Справа",
+                        clean[start:end],
+                    ),
+                )
+            )
         return facts
 
     def _missing_arithmetic_space_facts(
@@ -2182,7 +2225,24 @@ class DocumentSnapshot:
             arithmetic_cols = sorted(set(arithmetic_cols) | {len(line) - len(stripped_line)})
         facts: list[LineDiagnosticFact] = []
         for col in arithmetic_cols:
-            facts.append(LineDiagnosticFact(line_idx, col, col + 1))
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx,
+                    col,
+                    col + 1,
+                    message_args=(
+                        "Слева и справа"
+                        if col > 0
+                        and line[col - 1] not in " \t"
+                        and col + 1 < len(line)
+                        and line[col + 1] not in " \t"
+                        else "Слева"
+                        if col > 0 and line[col - 1] not in " \t"
+                        else "Справа",
+                        line[col],
+                    ),
+                )
+            )
         return facts
 
     def _missing_comma_space_facts(
@@ -2199,6 +2259,7 @@ class DocumentSnapshot:
                 line_idx,
                 comma_col,
                 comma_col + 1,
+                message_args=("Справа", ","),
             )
             for comma_col in comma_cols
         ]
@@ -2227,6 +2288,7 @@ class DocumentSnapshot:
                     line_idx,
                     semicolon_col,
                     semicolon_col + 1,
+                    message_args=("Справа", ";"),
                 )
             )
         if m_semicolon:
@@ -2235,6 +2297,7 @@ class DocumentSnapshot:
                     line_idx,
                     m_semicolon.start(),
                     m_semicolon.end(),
+                    message_args=("Справа", ";"),
                 )
             )
         return facts
@@ -2253,19 +2316,37 @@ class DocumentSnapshot:
             right_missing = end < len(clean) and clean[end] not in " \t"
             if not left_missing and not right_missing:
                 continue
-            facts.append(LineDiagnosticFact(line_idx, start, end))
+            facts.append(
+                LineDiagnosticFact(
+                    line_idx,
+                    start,
+                    end,
+                    message_args=(
+                        "Слева и справа"
+                        if left_missing and clean[start - 1] != "(" and right_missing
+                        else "Слева"
+                        if left_missing and clean[start - 1] != "("
+                        else "Справа",
+                        line[start:end],
+                    ),
+                )
+            )
         for m_kw in _RE_BSL216_LEFT_KEYWORDS.finditer(clean):
             start = m_kw.start(1)
             end = m_kw.end(1)
             if start <= 0 or clean[start - 1] in " \t":
                 continue
-            facts.append(LineDiagnosticFact(line_idx, start, end))
+            facts.append(
+                LineDiagnosticFact(line_idx, start, end, message_args=("Слева", line[start:end]))
+            )
         for m_kw in _RE_BSL216_RIGHT_KEYWORDS.finditer(clean):
             start = m_kw.start(1)
             end = m_kw.end(1)
             if end >= len(clean) or clean[end] in " \t":
                 continue
-            facts.append(LineDiagnosticFact(line_idx, start, end))
+            facts.append(
+                LineDiagnosticFact(line_idx, start, end, message_args=("Справа", line[start:end]))
+            )
         return facts
 
     @property
@@ -2670,6 +2751,7 @@ class DocumentSnapshot:
                     character=line_text.index("#"),
                     end_character=end_match.end(),
                     end_line_idx=end_idx,
+                    message_args=(region.name,),
                 )
             )
         self._empty_region_facts = facts
@@ -2701,6 +2783,7 @@ class DocumentSnapshot:
                     line_idx=first.start_idx,
                     character=start,
                     end_character=end,
+                    message_args=(first.name,),
                 )
             )
             reported.add(key)
@@ -2847,6 +2930,11 @@ class DocumentSnapshot:
                     line_idx=line_idx,
                     character=anchor,
                     end_character=end_character,
+                    message_variant=(
+                        "diagnosticMessageSpace"
+                        if line[pos] == "\u00a0"
+                        else "diagnosticMessageDash"
+                    ),
                 )
             )
         self._invalid_character_facts = facts
@@ -3076,6 +3164,7 @@ class DocumentSnapshot:
                     line_idx=idx,
                     character=0,
                     end_character=reported_length,
+                    message_args=(reported_length, max_line_length),
                 )
             )
         self._line_too_long_facts_cache[max_line_length] = facts

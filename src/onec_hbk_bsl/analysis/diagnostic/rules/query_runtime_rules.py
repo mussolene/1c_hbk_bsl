@@ -199,6 +199,12 @@ def _run_bsl149_on_sdbl_tree(path: str, lines: list[str], block: Any) -> list[An
                 end_character=end_char,
                 severity=_diag.Severity.WARNING,
                 code="BSL149",
+                message_args=(
+                    "".join(
+                        token if token.startswith('"') else re.sub(r"\s+", "", token)
+                        for token in re.findall(r'"(?:""|[^"])*"|[^\"]+', field_text)
+                    ),
+                ),
             )
         )
     return diags
