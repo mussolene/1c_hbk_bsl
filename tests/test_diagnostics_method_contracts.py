@@ -534,7 +534,7 @@ class TestBsl007UnusedLocalVariableParity:
         diags = _check(content, tmp_path)
         bsl007 = [d for d in diags if d.code == "BSL007"]
         assert len(bsl007) >= 1
-        assert bsl007[0].message == _rule_msg("BSL007")
+        assert bsl007[0].message == "Удалите неиспользуемую переменную НеИспользуемая"
 
     def test_used_var_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -694,7 +694,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL007")
+        assert diags[0].message == "Удалите неиспользуемую переменную Элемент"
 
     def test_repeated_for_variable_reports_first_symbol(self, tmp_path: Path) -> None:
         content = """\
@@ -733,7 +733,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL007")
+        assert diags[0].message == "Удалите неиспользуемую переменную ИмяСобытия"
 
     def test_member_access_name_does_not_count_as_local_read(self, tmp_path: Path) -> None:
         content = """\
@@ -744,7 +744,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL007")
+        assert diags[0].message == "Удалите неиспользуемую переменную Вложения"
 
     def test_string_assignment_unused_is_not_filtered_out(self, tmp_path: Path) -> None:
         content = """\
@@ -754,7 +754,7 @@ class TestBsl007UnusedLocalVariableParity:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL007")
+        assert diags[0].message == "Удалите неиспользуемую переменную ИмяСобытия"
 
     def test_query_text_does_not_mark_variable_as_used(self, tmp_path: Path) -> None:
         content = """\
@@ -817,7 +817,7 @@ class TestBsl007UnusedLocalVariableParity:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
-        assert all(d.message == _rule_msg("BSL007") for d in diags)
+        assert diags == []
 
     def test_plain_string_receiver_name_does_not_count_as_use(self, tmp_path: Path) -> None:
         content = """\
@@ -827,7 +827,10 @@ class TestBsl007UnusedLocalVariableParity:
             КонецПроцедуры
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL007"}) if d.code == "BSL007"]
-        assert any(d.message == _rule_msg("BSL007") for d in diags)
+        assert [d.message for d in diags] == [
+            "Удалите неиспользуемую переменную ЦелеваяФорма",
+            "Удалите неиспользуемую переменную ИмяОбработчика",
+        ]
 
     def test_object_module_is_skipped(self, tmp_path: Path) -> None:
         content = """\
@@ -916,7 +919,10 @@ class TestBsl008TooManyReturnStatements:
         diags = _check(content, tmp_path, max_returns=3, select={"BSL008"})
         bsl008 = [d for d in diags if d.code == "BSL008"]
         assert len(bsl008) >= 1
-        assert bsl008[0].message == _rule_msg("BSL008")
+        assert (
+            bsl008[0].message
+            == 'Сократите количество возвратов в методе "МногоВозвратов" с "4" до максимально допустимого "3"'
+        )
 
     def test_few_returns_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -997,7 +1003,7 @@ class TestBsl031NumberOfParams:
         diags = _check(content, tmp_path, max_params=7)
         bsl031 = [d for d in diags if d.code == "BSL031"]
         assert len(bsl031) >= 1
-        assert bsl031[0].message == _rule_msg("BSL031")
+        assert bsl031[0].message == "Уменьшите количество параметров c 8 до допустимого 7"
 
     def test_acceptable_params_no_warning(self, tmp_path: Path) -> None:
         content = "Процедура Тест(А, Б, В)\nКонецПроцедуры\n"
@@ -1252,9 +1258,9 @@ class TestBsl062UnusedParameter:
         """
         diags = _check(content, tmp_path, select={"BSL062"})
         assert [d.message for d in diags if d.code == "BSL062"] == [
-            _rule_msg("BSL062"),
-            _rule_msg("BSL062"),
-            _rule_msg("BSL062"),
+            'Уберите неиспользуемый параметр "ПараметрКоманды"',
+            'Уберите неиспользуемый параметр "ПараметрыВыполненияКоманды"',
+            'Уберите неиспользуемый параметр "Параметры"',
         ]
 
     def test_unused_parameters_reported_in_export_notify_completion_handler(
@@ -1267,7 +1273,9 @@ class TestBsl062UnusedParameter:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL062"})
-        assert [d.message for d in diags if d.code == "BSL062"] == [_rule_msg("BSL062")]
+        assert [d.message for d in diags if d.code == "BSL062"] == [
+            'Уберите неиспользуемый параметр "Параметры"'
+        ]
 
     def test_optional_param_flagged_bslls_parity(self, tmp_path: Path) -> None:
         content = """\
@@ -1277,8 +1285,8 @@ class TestBsl062UnusedParameter:
         """
         diags = _check(content, tmp_path, select={"BSL062"})
         assert [d.message for d in diags if d.code == "BSL062"] == [
-            _rule_msg("BSL062"),
-            _rule_msg("BSL062"),
+            'Уберите неиспользуемый параметр "Скидка"',
+            'Уберите неиспользуемый параметр "Валюта"',
         ]
 
     def test_command_param_reported_bslls_parity(self, tmp_path: Path) -> None:
@@ -1300,8 +1308,8 @@ class TestBsl062UnusedParameter:
         """
         diags = _check(content, tmp_path, select={"BSL062"})
         assert [d.message for d in diags if d.code == "BSL062"] == [
-            _rule_msg("BSL062"),
-            _rule_msg("BSL062"),
+            'Уберите неиспользуемый параметр "Отказ"',
+            'Уберите неиспользуемый параметр "ДополнительныеПараметры"',
         ]
 
     def test_on_object_create_handler_skipped_bslls_parity(self, tmp_path: Path) -> None:
@@ -1666,3 +1674,42 @@ class TestBsl240RewriteMethodParameter:
         """
         diags = _check(content, tmp_path, select={"BSL240"})
         assert "BSL240" not in _codes(diags)
+
+
+class TestBsl176PublicDeprecationParity:
+    def test_leading_blank_line_preserves_deprecated_method_doc(self, tmp_path: Path) -> None:
+        content = (
+            "\nOldMethod();\nobject.OldMethod();\n"
+            "// Deprecated.\nProcedure OldMethod()\nOldMethod();\nEndProcedure\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL176"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(2, 0, 9)]
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "SetShortApplicationCaption",
+            "GetClientApplicationCaption",
+            "ClearEventLog",
+            "InstallCryptoExtension",
+            "AttachFileSystemExtension",
+            "PutFile",
+            "BeginPutFile",
+            "GetFiles",
+            "BeginGettingFiles",
+            "PutFiles",
+            "BeginPuttingFiles",
+            "RequestUserPermission",
+            "FindDisallowedXMLCharacters",
+        ],
+    )
+    def test_platform_global_alias_does_not_match_receiver_method(
+        self, tmp_path: Path, name: str
+    ) -> None:
+        content = f'{name}();\nobject.{name}();\n// {name}();\ntext = "{name}()";\n'
+        diags = _check(content, tmp_path, select={"BSL176"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 0, len(name))]
+
+    def test_platform_global_call_inside_deprecated_method_is_ignored(self, tmp_path: Path) -> None:
+        content = "// Deprecated.\nProcedure OldMethod()\nClearEventLog();\nEndProcedure\n"
+        assert _check(content, tmp_path, select={"BSL176"}) == []

@@ -851,14 +851,14 @@ class TestBsl200IncorrectLineBreak:
 
 # BSL029 — TestBsl029MagicNumber
 class TestBsl029MagicNumber:
-    def test_magic_number_detected(self, tmp_path: Path) -> None:
+    def test_direct_numeric_return_is_allowed(self, tmp_path: Path) -> None:
         content = """\
             Функция Тест()
                 Возврат 42;
             КонецФункции
         """
         diags = _check(content, tmp_path)
-        assert "BSL029" in _codes(diags)
+        assert "BSL029" not in _codes(diags)
 
     def test_zero_one_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -882,14 +882,14 @@ class TestBsl029MagicNumber:
         diag = next(d for d in diags if d.code == "BSL029")
         assert diag.message == _rule_msg("BSL029")
 
-    def test_decimal_less_than_one_detected(self, tmp_path: Path) -> None:
+    def test_direct_decimal_return_is_allowed(self, tmp_path: Path) -> None:
         content = """\
             Функция Тест()
                 Возврат 0.15;
             КонецФункции
         """
         diags = _check(content, tmp_path, select={"BSL029"})
-        assert "BSL029" in _codes(diags)
+        assert "BSL029" not in _codes(diags)
 
     def test_array_index_literal_not_flagged(self, tmp_path: Path) -> None:
         content = """\
@@ -1791,3 +1791,121 @@ class TestBsl186ExtraCommas:
         """
         diags = _check(content, tmp_path, select={"BSL186"})
         assert [(diag.line, diag.character, diag.end_character) for diag in diags] == [(3, 16, 17)]
+
+
+class TestPublicRangeParity026175253:
+    def test_empty_region_spans_both_directives(self, tmp_path: Path) -> None:
+        content = (
+            "  #Region Outer // heading\n"
+            "    #Region Inner\n"
+            "    // comment\n"
+            "    #EndRegion // tail\n"
+            "  #EndRegion // tail\n"
+            "#Region Used\nvalue = 1;\n#EndRegion\n"
+            "#Region Unclosed\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL026"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 2, 5, 12),
+            (2, 4, 4, 14),
+        ]
+
+    def test_deprecated_property_and_enum_context_ranges(self, tmp_path: Path) -> None:
+        content = (
+            "Procedure Test()\n"
+            "    Chart.ShowLegend = True;\n"
+            "    value = ChildFormItemsGroup.Horizontal;\n"
+            "    value = ОриентацияМетокДиаграммы\n        .Авто;\n"
+            '    text = "Chart.ShowLegend"; // Chart.ShowLegend\n'
+            "EndProcedure\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL175"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 9, 2, 20),
+            (3, 31, 3, 42),
+            (4, 12, 5, 13),
+        ]
+
+    def test_platform_deprecations_retained_after_upstream_removal(self, tmp_path: Path) -> None:
+        content = (
+            "Procedure Test()\n"
+            "    Chart.ColorPalette = True;\n"
+            "    Chart.GetPalette();\n"
+            "    ClearEventLog(Filter);\n"
+            "EndProcedure\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL175"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 9, 22),
+            (3, 9, 20),
+        ]
+
+        assert len(_check(content, tmp_path, select={"BSL176"})) == 1
+
+    @pytest.mark.parametrize(
+        ("statement", "anchor"),
+        [
+            ("Chart.ShowLegend = True;", ".ShowLegend"),
+            ("Chart.GetPalette();", ".GetPalette"),
+            ("Х = ChildFormItemsGroup.Horizontal;", ".Horizontal"),
+            (
+                "Х = ОриентацияМетокДиаграммы.Горизонтальная;",
+                "ОриентацияМетокДиаграммы.Горизонтальная",
+            ),
+        ],
+    )
+    def test_deprecated_api_after_non_bmp_literal_uses_utf16_range(
+        self, tmp_path: Path, statement: str, anchor: str
+    ) -> None:
+        prefix = 'Текст = "😀"; '
+        diags = _check(prefix + statement + "\n", tmp_path, select={"BSL175"})
+        start = len(prefix.encode("utf-16-le")) // 2 + statement.index(anchor)
+        end = start + len(anchor.encode("utf-16-le")) // 2
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, start, 1, end)
+        ]
+
+    def test_external_resource_spans_whole_constructor(self, tmp_path: Path) -> None:
+        content = (
+            "Procedure Test()\n"
+            '    connection = New HTTPConnection(\n        "example.org");\n'
+            "    profile = New InternetMailProfile;\n"
+            '    configured = New HTTPConnection("example.org", , , , , 10);\n'
+            '    text = "New HTTPConnection()"; // New HTTPConnection()\n'
+            "EndProcedure\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL253"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (2, 17, 3, 22),
+            (4, 14, 4, 37),
+        ]
+
+    @pytest.mark.parametrize("value", ["Timeout()", "settings.Timeout", "values[0]", "5 + 1"])
+    def test_computed_timeout_assignment_is_configured(self, tmp_path: Path, value: str) -> None:
+        content = (
+            "Procedure Test()\n"
+            "    profile = New InternetMailProfile;\n"
+            f"    profile.Timeout = {value};\n"
+            "EndProcedure\n"
+        )
+        assert _check(content, tmp_path, select={"BSL253"}) == []
+
+    def test_timeout_assignment_to_other_resource_does_not_configure(self, tmp_path: Path) -> None:
+        content = (
+            "Procedure Test()\n"
+            "    profile = New InternetMailProfile;\n"
+            "    other.Timeout = Timeout();\n"
+            "EndProcedure\n"
+        )
+        assert len(_check(content, tmp_path, select={"BSL253"})) == 1
+
+    def test_empty_region_survives_malformed_preceding_loop(self, tmp_path: Path) -> None:
+        content = (
+            "For Each item In items Do\n"
+            "#Region CrossesLoop\n"
+            "EndDo;\n"
+            "#EndRegion\n"
+            "#Region Empty\n\n#EndRegion\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL026"})
+        assert [(d.line, d.end_line) for d in diags] == [(5, 7)]

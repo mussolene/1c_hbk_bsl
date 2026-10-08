@@ -64,7 +64,7 @@ class TestBsl237RedundantAccessToObjectParity:
 
 # BSL265 — TestBsl265UselessTernaryOperatorParity
 class TestBsl265UselessTernaryOperatorParity:
-    def test_boolean_literal_branch_with_boolean_member_is_reported(self, tmp_path: Path) -> None:
+    def test_one_boolean_literal_and_member_branch_is_allowed(self, tmp_path: Path) -> None:
         content = """\
             Процедура Проверить()
                 УсловиеВыполнено = ?(НастройкиКС.Безусловно, Истина, ДанныеКС.ТипПлательщика1);
@@ -72,10 +72,9 @@ class TestBsl265UselessTernaryOperatorParity:
         """
         diags = _check(content, tmp_path, select={"BSL265"})
         bsl265 = [d for d in diags if d.code == "BSL265"]
-        assert len(bsl265) == 1
-        assert bsl265[0].line == 2
+        assert not bsl265
 
-    def test_boolean_literal_branch_with_boolean_call_is_reported(self, tmp_path: Path) -> None:
+    def test_one_boolean_literal_and_call_branch_is_allowed(self, tmp_path: Path) -> None:
         content = """\
             Процедура Проверить()
                 Если ?(СтрНайти(Узел.Обязательность, "О") <> 0,
@@ -84,7 +83,7 @@ class TestBsl265UselessTernaryOperatorParity:
             КонецПроцедуры
         """
         diags = _check(content, tmp_path, select={"BSL265"})
-        assert "BSL265" in _codes(diags)
+        assert "BSL265" not in _codes(diags)
 
     def test_boolean_literal_branch_with_non_boolean_value_is_clean(self, tmp_path: Path) -> None:
         content = """\
@@ -116,6 +115,7 @@ class TestDeprecatedApiParityBatch:
             "КонецПроцедуры\n\n"
             "Процедура НовыйМетод()\n"
             "    СтарыйМетод();\n"
+            "    Chart.ShowLegend = True;\n"
             "    ОчиститьЖурналРегистрации(Отбор);\n"
             "КонецПроцедуры\n"
         )
@@ -142,13 +142,14 @@ class TestDeprecatedApiParityBatch:
                 ОчиститьЖурналРегистрации(Отбор);
             КонецПроцедуры
         """
-        diags = _check(content, tmp_path, select={"BSL175"})
+        diags = _check(content, tmp_path, select={"BSL175", "BSL176"})
         bsl175 = [d for d in diags if d.code == "BSL175"]
-        assert len(bsl175) == 2
+        assert len(bsl175) == 1
         assert {d.message for d in bsl175} == {
             'Атрибут "ОтображатьШкалу" устарел. Вместо него стоит использовать "ОтображатьШкалы"',
-            'Метод "ОчиститьЖурналРегистрации" устарел и больше не используется',
         }
+
+        assert len([d for d in diags if d.code == "BSL176"]) == 1
 
     def test_bsl175_deprecated_chart_method_and_enum(self, tmp_path: Path) -> None:
         content = """\
@@ -338,7 +339,7 @@ class TestDeprecatedApiParityBatch:
         assert len(diags) == 1
         assert (diags[0].line, diags[0].character, diags[0].end_character) == (2, 12, 40)
 
-    def test_bsl176_deprecated_platform_qualified_method(self, tmp_path: Path) -> None:
+    def test_bsl176_recommended_platform_qualified_method_is_current(self, tmp_path: Path) -> None:
         content = """\
             Процедура Тест()
                 Текст = ОбработкаОшибок.ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());
@@ -346,8 +347,7 @@ class TestDeprecatedApiParityBatch:
         """
         diags = _check(content, tmp_path, select={"BSL176"})
         bsl176 = [d for d in diags if d.code == "BSL176"]
-        assert len(bsl176) == 1
-        assert (bsl176[0].line, bsl176[0].character, bsl176[0].end_character) == (2, 28, 56)
+        assert bsl176 == []
 
     def test_bsl177_deprecated_client_app_method(self, tmp_path: Path) -> None:
         content = """\
@@ -857,7 +857,10 @@ class TestBsl003NonExportInApiRegion:
         bsl003 = [d for d in diags if d.code == "BSL003"]
         assert len(bsl003) >= 1
         assert bsl003[0].character == 10
-        assert bsl003[0].message == _rule_msg("BSL003")
+        assert (
+            bsl003[0].message
+            == 'Переместите неэкспортный метод "МоеАПИ" из области "ПрограммныйИнтерфейс"'
+        )
 
     def test_export_in_api_region_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -910,6 +913,56 @@ class TestBsl009SelfAssign:
         content = "// Х = Х;\n"
         diags = _check(content, tmp_path)
         assert "BSL009" not in _codes(diags)
+
+
+class TestBsl009PublicAssignmentParity:
+    @pytest.mark.parametrize(
+        ("statement", "expected"),
+        [
+            ("А = а;", True),
+            ("Структура.Чтото = СтруКтура.ЧТото;", True),
+            ("Объект[Индекс] = объект[индекс];", True),
+            ('Объект["Ключ"] = Объект["Ключ"];', True),
+            ('Объект["Ключ"] = Объект["ключ"];', False),
+            ('Объект["a"] = Объект["A"];', False),
+            ('Объект["Ключ" + Суффикс] = объект["Ключ" + суффикс];', True),
+            ('Объект["Ключ" + Суффикс] = объект["ключ" + суффикс];', False),
+            ('Объект["😀"] = Объект["😀"];', True),
+            ("Объект . Поле = Объект.Поле;", True),
+            ("Объект.Поле = Поле;", False),
+            ("А = (А);", False),
+            ("А = А + 0;", False),
+            ("Объект[Индекс] = Объект[ДругойИндекс];", False),
+            ("А = ;", False),
+            ("// А = А;", False),
+            ('Текст = "А = А;";', False),
+        ],
+    )
+    def test_case_properties_indices_and_assignment_range(
+        self, tmp_path: Path, statement: str, expected: bool
+    ) -> None:
+        diags = _check(statement + "\n", tmp_path, select={"BSL009"})
+        assert len(diags) == int(expected)
+        if expected:
+            end = len(statement.rstrip(";").encode("utf-16-le")) // 2
+            assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+                (1, 0, 1, end)
+            ]
+
+    def test_multiline_assignment_excludes_semicolon_and_comments(self, tmp_path: Path) -> None:
+        content = "Объект.Поле = // комментарий\n    объект.поле;\n"
+        diags = _check(content, tmp_path, select={"BSL009"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 0, 2, 15)
+        ]
+
+    def test_unrelated_parse_error_does_not_hide_valid_assignment(self, tmp_path: Path) -> None:
+        content = "А = А;\nЕсли Тогда\nКонецЕсли;\n"
+        diags = _check(content, tmp_path, select={"BSL009"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 0, 5)]
+
+    def test_default_parameter_is_not_assignment(self, tmp_path: Path) -> None:
+        assert not _check("Процедура Тест(А = А)\nКонецПроцедуры\n", tmp_path, select={"BSL009"})
 
 
 # BSL007, BSL009, BSL012, BSL014, BSL029 — TestRuleSelection
@@ -1507,7 +1560,7 @@ class TestBsl042UnusedLocalMethod:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL042"}) if d.code == "BSL042"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL042")
+        assert diags[0].message == 'Метод "НеИспользуется" не вызывается в теле модуля'
 
     def test_called_local_method_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -1537,7 +1590,7 @@ class TestBsl042UnusedLocalMethod:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL042"}) if d.code == "BSL042"]
         assert len(diags) == 1
-        assert diags[0].message == _rule_msg("BSL042")
+        assert diags[0].message == 'Метод "Рекурсия" не вызывается в теле модуля'
 
     def test_extension_override_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -1850,7 +1903,7 @@ class TestBsl052IdenticalExpressions:
         """
         diags = [d for d in _check(content, tmp_path, select={"BSL052"}) if d.code == "BSL052"]
         assert [(d.line, d.character, d.end_character, d.severity) for d in diags] == [
-            (2, 5, 28, Severity.ERROR),
+            (1, 5, 28, Severity.ERROR),
         ]
         assert diags[0].message == (
             'Слева и справа от оператора ">" находятся одинаковые подвыражения: "Количество"'
@@ -1905,6 +1958,120 @@ class TestBsl052IdenticalExpressions:
         """
         diags = _check(content, tmp_path, select={"BSL052"})
         assert "BSL052" not in _codes(diags)
+
+
+class TestBsl029PublicExpressionParity:
+    @pytest.mark.parametrize(
+        ("statement", "expected"),
+        [
+            ("Возврат 42;", []),
+            ("Возврат 0.15;", []),
+            ("Возврат -42;", []),
+            ("Возврат А + 42;", ["42"]),
+            ("Возврат Макс(55);", ["55"]),
+            ("Возврат Дата(2020, 1, 2);", []),
+            ("Значение = Date(2020, 1, 2, 12, 30, 0);", []),
+            ("Значение = Дата(НачалоГода * 10000);", ["10000"]),
+            ("Значение = Объект.Дата(2020, 1, 2);", ["2020", "2"]),
+            ('Значение = Новый("Цвет", 255, 255, 255);', ["255", "255", "255"]),
+            ('Значение = Новый("Тип", Дата(2020, 1, 2), 255);', ["255"]),
+            ("Значение = ?(А = 11, 15, 3);", ["11"]),
+            ("Значение = ?(А, Макс(15), 3);", ["15"]),
+            ("Значение = Не (Б = 5);", ["5"]),
+            ("Значение = -(10 + 20);", ["10", "20"]),
+            ("Значение = А + +5;", ["5"]),
+            ("Значение = -10 + 20;", ["10", "20"]),
+            ("Метод(-5);", ["5"]),
+            ("Значение = А + 0 + 1 - 1;", []),
+            ("Значение = Массив[20];", []),
+            ('Значение = "Число 42"; // Метод(55)\n', []),
+        ],
+    )
+    def test_expression_context_and_number_anchors(
+        self, tmp_path: Path, statement: str, expected: list[str]
+    ) -> None:
+        content = "Функция Тест()\n" + statement + "\nКонецФункции\n"
+        diags = _check(content, tmp_path, select={"BSL029"})
+        assert [statement[d.character : d.end_character] for d in diags] == expected
+        assert all(d.line == 2 and d.end_line == 2 for d in diags)
+
+    def test_multiline_ternary_branch_is_named_by_its_assignment(self, tmp_path: Path) -> None:
+        content = "Значение = ?(Условие,\n    15,\n    3);\n"
+        assert not _check(content, tmp_path, select={"BSL029"})
+
+    def test_default_parameter_and_preprocessor_comments_are_ignored(self, tmp_path: Path) -> None:
+        content = (
+            "#Если Клиент Тогда\n"
+            "Процедура Тест(Параметр = 566)\n"
+            "// Метод(99);\n"
+            "Метод(42); // noqa: BSL029\n"
+            "КонецПроцедуры\n"
+            "#КонецЕсли\n"
+        )
+        assert not _check(content, tmp_path, select={"BSL029"})
+
+
+class TestBsl052PublicExpressionParity:
+    @pytest.mark.parametrize(
+        ("expression", "expected_count"),
+        [
+            ("(А = 1) Или (1 = А)", 1),
+            ("А = 1 Или (А = 1)", 1),
+            ("(А И Б) Или (Б И А)", 1),
+            ("(А И Б) И (А И Б)", 1),
+            ("(А И А) И (А И А)", 3),
+            ("А И (Б И А)", 1),
+            ("А И ((А И Б) И В)", 0),
+            ("А И Б И А", 1),
+            ("А И А И Б", 1),
+            ("А И А И А", 2),
+            ("(А Или А)", 1),
+            ("А + А", 0),
+            ("А * А", 0),
+            ("60 / 60", 0),
+            ("5 / 5 > 0", 1),
+            ('"a" = "a"', 1),
+            ('"a" = "A"', 0),
+            ('"a b" = "ab"', 0),
+            ('("a" + "b") = ("b" + "a")', 0),
+            ('("a" + "b") = ("a" + "b")', 1),
+            ("(Левый + Правый) = (Правый + Левый)", 0),
+            ("(Левый + Правый) = (Левый + Правый)", 1),
+            ("А И Б Или А И В", 0),
+        ],
+    )
+    def test_structural_equality_and_full_expression_anchor(
+        self, tmp_path: Path, expression: str, expected_count: int
+    ) -> None:
+        content = "Результат = " + expression + ";\n"
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert len(diags) == expected_count
+        assert all(
+            (d.line, d.character, d.end_line, d.end_character) == (1, 12, 1, 12 + len(expression))
+            for d in diags
+        )
+
+    def test_operand_message_omits_grouping_parentheses(self, tmp_path: Path) -> None:
+        diags = _check("Результат = (А = 1) И (А = 1);\n", tmp_path, select={"BSL052"})
+        assert len(diags) == 1
+        assert diags[0].message.endswith('подвыражения: "А = 1"')
+
+    def test_comments_and_multiline_comparison_anchor(self, tmp_path: Path) -> None:
+        content = "Результат = А = 1\n    Или // комментарий\n    1 = А;\n"
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 12, 3, 9)
+        ]
+
+    def test_repeated_string_comparison_has_full_multiline_range(self, tmp_path: Path) -> None:
+        content = 'Если Код = "ИД5"\n    Или Код = "ИД10"\n    Или Код = "ИД10" Тогда\nКонецЕсли;\n'
+        diags = _check(content, tmp_path, select={"BSL052"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 5, 3, 20)
+        ]
+
+    def test_unfinished_expression_does_not_crash(self, tmp_path: Path) -> None:
+        assert not _check("Результат = А Или;\n", tmp_path, select={"BSL052"})
 
 
 # BSL054 — TestBsl054ModuleLevelVariable
@@ -2246,6 +2413,121 @@ class TestBsl060DoubleNegation:
         content = "// НЕ НЕ Флаг\n"
         diags = _check(content, tmp_path, select={"BSL060"})
         assert "BSL060" not in _codes(diags)
+
+
+class TestBsl060PublicExpressionParity:
+    @pytest.mark.parametrize(
+        ("expression", "expected_count"),
+        [
+            ("Не (Отказ <> Ложь)", 1),
+            ("Не (Отказ <> НеЛитерал)", 1),
+            ("Не (Не Значение)", 1),
+            ("НЕ НЕ Ложь", 1),
+            ("НЕ НЕ Истина", 1),
+            ("Не Не Значение И Условие", 1),
+            ("Не Значение <> Неопределено И Условие", 1),
+            ("Не (Значение <> Неопределено И Условие)", 0),
+            ("Не (Значение <> Неопределено Или Условие)", 0),
+            ("Не (Не Значение И Условие)", 0),
+            ("(Не Значение) <> ДругоеЗначение", 0),
+            ("Не Значение = Неопределено", 0),
+            ("Не (Значение = Неопределено)", 0),
+        ],
+    )
+    def test_semantic_negation_parent_and_logical_boundaries(
+        self, tmp_path: Path, expression: str, expected_count: int
+    ) -> None:
+        diags = _check("Результат = " + expression + ";\n", tmp_path, select={"BSL060"})
+        assert len(diags) == expected_count
+
+    def test_grouped_inequality_ends_on_right_operand(self, tmp_path: Path) -> None:
+        content = "Результат = Не (Отказ <> Ложь);\n"
+        diags = _check(content, tmp_path, select={"BSL060"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 12, 1, 29)
+        ]
+
+    def test_comment_inside_group_and_multiline_range(self, tmp_path: Path) -> None:
+        content = "Результат = Не ( // комментарий\n    Отказ <> Ложь);\n"
+        diags = _check(content, tmp_path, select={"BSL060"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 12, 2, 17)
+        ]
+
+    def test_comment_between_negated_operand_and_comparison(self, tmp_path: Path) -> None:
+        content = "Результат = Не Отказ // комментарий\n    <> Ложь;\n"
+        diags = _check(content, tmp_path, select={"BSL060"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 12, 2, 11)
+        ]
+
+    @pytest.mark.parametrize(
+        ("expression", "expected_ranges"),
+        [
+            ("Не (Не Б <> В)", [(12, 23), (16, 25)]),
+            ("Не (Б <> (В + Г))", [(12, 25)]),
+            ("Не (Б <> Не В)", [(12, 23)]),
+            ("Не (Не (Не Б))", [(12, 22), (16, 24)]),
+        ],
+    )
+    def test_nested_semantic_operators_use_representing_token_ranges(
+        self, tmp_path: Path, expression: str, expected_ranges: list[tuple[int, int]]
+    ) -> None:
+        diags = _check("Результат = " + expression + ";\n", tmp_path, select={"BSL060"})
+        assert [(d.character, d.end_character) for d in diags] == expected_ranges
+
+    def test_strings_and_malformed_negation_are_ignored(self, tmp_path: Path) -> None:
+        assert not _check(
+            'Текст = "Не Не Значение";\nРезультат = Не (<>);\n',
+            tmp_path,
+            select={"BSL060"},
+        )
+
+
+class TestBsl265PublicLiteralParity:
+    @pytest.mark.parametrize(
+        ("expression", "expected"),
+        [
+            ("?(Истина, 1, 0)", True),
+            ("?(False, 0, 1)", True),
+            ("?(А, Истина, Ложь)", True),
+            ("?(А, False, True)", True),
+            ("?(А, Истина, True)", True),
+            ("?(А, False, Ложь)", True),
+            ("?(А, Истина, Б <> 0)", False),
+            ("?(А, Не Б, Ложь)", False),
+            ("?(А, Истина, ЕстьЗначение())", False),
+            ("?(Настройки.Условие, Истина, Данные.Флаг)", False),
+            ("?((Истина), 1, 0)", False),
+            ("?(Не Ложь, 1, 0)", False),
+            ("?(А, (Истина), Ложь)", False),
+        ],
+    )
+    def test_only_direct_boolean_literals_are_redundant(
+        self, tmp_path: Path, expression: str, expected: bool
+    ) -> None:
+        diags = _check("Результат = " + expression + ";\n", tmp_path, select={"BSL265"})
+        assert len(diags) == int(expected)
+        assert all(
+            (d.line, d.character, d.end_line, d.end_character) == (1, 12, 1, 12 + len(expression))
+            for d in diags
+        )
+
+    def test_nested_and_multiline_ternaries_keep_separate_ranges(self, tmp_path: Path) -> None:
+        content = "Результат = ?(Истина,\n    ?(Условие, Истина, Ложь), 0);\n"
+        diags = _check(content, tmp_path, select={"BSL265"})
+        assert [(d.line, d.character, d.end_line, d.end_character) for d in diags] == [
+            (1, 12, 2, 32),
+            (2, 4, 2, 28),
+        ]
+
+    def test_comments_are_not_part_of_boolean_literal(self, tmp_path: Path) -> None:
+        content = "Результат = ?(Истина // комментарий\n    , 1, 0);\n"
+        assert len(_check(content, tmp_path, select={"BSL265"})) == 1
+
+    def test_strings_comments_and_malformed_ternaries_are_ignored(self, tmp_path: Path) -> None:
+        content = '// ?(Истина, 1, 0);\nТекст = "?(Истина, 1, 0)";\nРезультат = ?(Истина,);\n'
+        assert not _check(content, tmp_path, select={"BSL265"})
 
 
 # BSL218 — TestBsl218MissingTemporaryFileDeletion
@@ -3870,3 +4152,60 @@ class TestRuleMetadataCompleteness:
 
         missing = set(_BSLLS_NAME_TO_CODE.values()) - set(RULE_METADATA.keys())
         assert not missing, f"Missing BSLLS RULE_METADATA entries: {missing}"
+
+
+class TestBsl033PublicCstParity:
+    def test_module_property_alias_dynamic_constructor_and_broken_tail(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            'query = New("Query");\n'
+            "holder.query = query;\n"
+            "While condition Do\n"
+            "    holder.query.Execute().Unload();\n"
+            "EndDo;\n"
+            "For broken In broken Do\nEndDo;\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL033"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(4, 4, 35)]
+
+    def test_first_foreach_iterable_is_once_nested_iterable_is_repeated(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "query = New Query;\n"
+            "For Each row In query.Execute().Unload() Do\nEndDo;\n"
+            "For i = 1 To 10 Do\n"
+            "    For Each row In query.Execute().Unload() Do\nEndDo;\nEndDo;\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL033"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(5, 20, 44)]
+
+    def test_loop_assignment_merges_possible_query_type(self, tmp_path: Path) -> None:
+        content = (
+            "query = New Query;\n"
+            "While condition Do\n"
+            "    query = 1;\n"
+            "    query.Execute();\n"
+            "EndDo;\n"
+            "query = 1;\n"
+            "While condition Do\n    query.Execute();\nEndDo;\n"
+        )
+        assert [d.line for d in _check(content, tmp_path, select={"BSL033"})] == [4]
+
+    def test_broken_local_constructor_does_not_invent_query_type(self, tmp_path: Path) -> None:
+        content = (
+            "query = New Query(, broken + );\n"
+            "While condition Do\n    query.Execute();\nEndDo;\n"
+            '// query = New Query;\ntext = "query.Execute()";\n'
+        )
+        assert _check(content, tmp_path, select={"BSL033"}) == []
+
+    @pytest.mark.parametrize("type_expression", ["typeName", '"Query" + suffix'])
+    def test_unknown_dynamic_type_is_not_assumed_query(
+        self, tmp_path: Path, type_expression: str
+    ) -> None:
+        content = (
+            f"query = New({type_expression});\nWhile condition Do\n    query.Execute();\nEndDo;\n"
+        )
+        assert _check(content, tmp_path, select={"BSL033"}) == []

@@ -92,6 +92,7 @@ class ProcedureModel:
                 end_character=end_character,
                 severity=Severity.INFORMATION,
                 code="BSL031",
+                message_args=(total, max_params),
             )
         ]
 
@@ -110,6 +111,7 @@ class ProcedureModel:
                 end_character=end_character,
                 severity=Severity.INFORMATION,
                 code="BSL015",
+                message_args=(self.optional_count, max_optional_params),
             )
         ]
 
@@ -151,6 +153,7 @@ class ProcedureModel:
                 end_character=end_col,
                 severity=Severity.WARNING,
                 code="BSL002",
+                message_args=(self.name, length, max_proc_lines),
             )
         ]
 
@@ -172,6 +175,7 @@ class ProcedureModel:
                 end_character=end_col or len(line_text),
                 severity=Severity.WARNING,
                 code="BSL008",
+                message_args=(self.name, len(returns), max_returns),
             )
         ]
 
@@ -224,6 +228,7 @@ class ProcedureModel:
                 end_character=len(header),
                 severity=Severity.WARNING,
                 code="BSL042",
+                message_args=(self.name,),
             )
         ]
 
@@ -253,6 +258,7 @@ class ProcedureModel:
                     end_character=end_char or len(line_text),
                     severity=Severity.WARNING,
                     code="BSL003",
+                    message_args=(self.name, region.name),
                 )
             ]
         return []
@@ -366,7 +372,8 @@ class ProcedureModel:
             r"(?:ПриСозданииОбъекта|OnObjectCreate)", self.name, re.IGNORECASE
         ):
             return []
-        body_lines = lines[self.start_idx + 1 : self.end_idx]
+        body_start_idx = self.params_end_idx if self.params_end_idx is not None else self.start_idx
+        body_lines = lines[body_start_idx + 1 : self.end_idx]
         if not any(line.strip() and not line.lstrip().startswith("//") for line in body_lines):
             return []
         if used_casefold is None and used_casefold_factory is not None:
@@ -401,6 +408,7 @@ class ProcedureModel:
                     end_character=end_character,
                     severity=Severity.WARNING,
                     code="BSL062",
+                    message_args=(param_name,),
                 )
             )
         return diags
@@ -441,6 +449,7 @@ class ProcedureModel:
                 end_character=end_col,
                 severity=Severity.WARNING,
                 code="BSL011",
+                message_args=(self.name, cognitive_complexity, max_cognitive_complexity),
             )
         ]
 
@@ -464,6 +473,7 @@ class ProcedureModel:
                 end_character=end_col,
                 severity=Severity.WARNING,
                 code="BSL019",
+                message_args=(self.name, mccabe_complexity, max_mccabe_complexity),
             )
         ]
 

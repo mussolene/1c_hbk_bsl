@@ -484,6 +484,7 @@ def _run_bsl011_175_snapshot_facts(
                 end_character=fact.end_character,
                 severity=Severity.WARNING,
                 code="BSL011",
+                message_args=("body", fact.complexity, max_cognitive_complexity),
             )
             for fact in module_body_cognitive_facts
         )
@@ -508,8 +509,6 @@ def _run_bsl011_175_snapshot_facts(
                 bsl175_child_form_items_re=_diag._RE_BSL175_CHILD_FORM_ITEMS,
                 bsl175_enum_replacements=_diag._BSL175_ENUM_REPLACEMENTS,
                 bsl175_enum_name_re=_diag._RE_BSL175_ENUM_NAME,
-                bsl175_global_method_re=_diag._RE_BSL175_GLOBAL_METHOD,
-                bsl175_global_methods=_diag._BSL175_GLOBAL_METHODS,
             )
             if diag.code == "BSL175"
         )
@@ -543,8 +542,6 @@ def _run_deprecated_api_pool(
         bsl175_child_form_items_re=_diag._RE_BSL175_CHILD_FORM_ITEMS,
         bsl175_enum_replacements=_diag._BSL175_ENUM_REPLACEMENTS,
         bsl175_enum_name_re=_diag._RE_BSL175_ENUM_NAME,
-        bsl175_global_method_re=_diag._RE_BSL175_GLOBAL_METHOD,
-        bsl175_global_methods=_diag._BSL175_GLOBAL_METHODS,
     )
 
 
@@ -744,6 +741,7 @@ def _run_core_fact_rule(
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code="BSL011",
+                    message_args=("body", fact.complexity, max_cognitive_complexity),
                 )
                 for fact in facts
             )

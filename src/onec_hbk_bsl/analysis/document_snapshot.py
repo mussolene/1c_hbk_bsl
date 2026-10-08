@@ -966,6 +966,13 @@ class LineDiagnosticFact:
     end_line_idx: int | None = None
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CognitiveComplexityFact(LineDiagnosticFact):
+    """Module-body anchor with its already computed cognitive complexity."""
+
+    complexity: int
+
+
 @dataclass(frozen=True)
 class RegionInfo:
     """#Область / #Region block in the source."""
@@ -1755,7 +1762,7 @@ class DocumentSnapshot:
     _complexity_metrics_cache: dict[tuple[tuple[int, int], ...], list[tuple[int, int]]] | None = (
         None
     )
-    _module_body_cognitive_facts_cache: dict[int, list[LineDiagnosticFact]] | None = None
+    _module_body_cognitive_facts_cache: dict[int, list[CognitiveComplexityFact]] | None = None
     _missing_space_facts: list[LineDiagnosticFact] | None = None
     _incorrect_line_break_facts: list[LineDiagnosticFact] | None = None
     _hardcoded_credential_facts: list[LineDiagnosticFact] | None = None
@@ -2019,7 +2026,7 @@ class DocumentSnapshot:
     def module_body_cognitive_complexity_facts(
         self,
         max_cognitive_complexity: int,
-    ) -> list[LineDiagnosticFact]:
+    ) -> list[CognitiveComplexityFact]:
         """Return cached BSL011 facts for complex module-body code blocks."""
         if self._module_body_cognitive_facts_cache is None:
             self._module_body_cognitive_facts_cache = {}
@@ -2027,7 +2034,7 @@ class DocumentSnapshot:
         if cached is not None:
             return cached
 
-        facts: list[LineDiagnosticFact] = []
+        facts: list[CognitiveComplexityFact] = []
         cursor = 0
         for proc in sorted(self.procedures, key=lambda item: item.start_idx):
             facts.extend(
@@ -2053,7 +2060,7 @@ class DocumentSnapshot:
         start_idx: int,
         end_idx: int,
         max_cognitive_complexity: int,
-    ) -> list[LineDiagnosticFact]:
+    ) -> list[CognitiveComplexityFact]:
         if start_idx > end_idx:
             return []
         cognitive, _mccabe = _calc_complexity_metrics_from_lines(
@@ -2072,7 +2079,8 @@ class DocumentSnapshot:
             if match is None:
                 continue
             return [
-                LineDiagnosticFact(
+                CognitiveComplexityFact(
+                    complexity=cognitive,
                     line_idx=idx,
                     character=match.start(),
                     end_character=match.end(),
@@ -2634,11 +2642,18 @@ class DocumentSnapshot:
                 continue
             line_idx = region.start_idx
             line_text = self.lines[line_idx] if line_idx < len(self.lines) else ""
+            end_idx = min(region.end_idx, len(self.lines) - 1)
+            end_match = re.match(
+                r"\s*#(?:КонецОбласти|EndRegion)\b", self.lines[end_idx], re.IGNORECASE
+            )
+            if end_match is None:
+                continue
             facts.append(
                 LineDiagnosticFact(
                     line_idx=line_idx,
-                    character=0,
-                    end_character=len(line_text),
+                    character=line_text.index("#"),
+                    end_character=end_match.end(),
+                    end_line_idx=end_idx,
                 )
             )
         self._empty_region_facts = facts

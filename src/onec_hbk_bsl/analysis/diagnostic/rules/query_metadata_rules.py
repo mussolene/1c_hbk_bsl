@@ -210,18 +210,22 @@ def _bsl253_assignment_lhs_text(_diag: Any, assignment: Any) -> str:
     return text.split("=", 1)[0].strip() if "=" in text else ""
 
 
-def _bsl253_assignment_rhs_is_number_or_variable(_diag: Any, assignment: Any) -> bool:
-    seen_equals = False
-    for child in getattr(assignment, "children", []) or []:
-        if _diag._ts_node_text(child) == "=":
-            seen_equals = True
-            continue
-        if not seen_equals or getattr(child, "type", None) != "expression":
-            continue
-        expr_text = _diag._ts_node_text(child).strip()
-        return bool(re.fullmatch(r"\d+(?:[.,]\d+)?|\w+", expr_text, re.IGNORECASE))
-    rhs = _diag._ts_node_text(assignment).split("=", 1)[-1].strip().rstrip(";")
-    return bool(re.fullmatch(r"\d+(?:[.,]\d+)?|\w+", rhs, re.IGNORECASE))
+def _bsl253_assignment_rhs_is_number_or_variable(assignment: Any) -> bool:
+    value = assignment.child_by_field_name("right")
+    while value is not None and value.type in {
+        "expression",
+        "const_expression",
+        "binary_expression",
+        "unary_expression",
+        "parenthesized_expression",
+    }:
+        value = next((child for child in value.named_children if child.type != "operator"), None)
+    return value is not None and value.type in {
+        "number",
+        "identifier",
+        "property_access",
+        "method_call",
+    }
 
 
 def _bsl253_assignment_variable(_diag: Any, assignment: Any) -> str:
@@ -236,7 +240,7 @@ def _bsl253_timeout_assignment_target(_diag: Any, assignment: Any) -> str:
     obj, prop = lhs.rsplit(".", 1)
     if prop.strip().casefold() not in {"таймаут", "timeout"}:
         return ""
-    if not _bsl253_assignment_rhs_is_number_or_variable(_diag, assignment):
+    if not _bsl253_assignment_rhs_is_number_or_variable(assignment):
         return ""
     return obj.strip()
 
@@ -324,16 +328,22 @@ def _bsl253_timeout_diagnostics_from_cst(
             new_expression_line_idx=new_expression.start_point[0] + 1,
         ):
             continue
-        line_idx = type_node.start_point[0]
+        line_idx = new_expression.start_point[0]
         line_text = lines[line_idx] if 0 <= line_idx < len(lines) else ""
-        character = _diag.utf8_byte_offset_to_lsp_character(line_text, type_node.start_point[1])
-        end_character = _diag.utf8_byte_offset_to_lsp_character(line_text, type_node.end_point[1])
+        character = _diag.utf8_byte_offset_to_lsp_character(
+            line_text, new_expression.start_point[1]
+        )
+        end_idx = new_expression.end_point[0]
+        end_text = lines[end_idx] if 0 <= end_idx < len(lines) else ""
+        end_character = _diag.utf8_byte_offset_to_lsp_character(
+            end_text, new_expression.end_point[1]
+        )
         diags.append(
             _diag.Diagnostic(
                 file=path,
                 line=line_idx + 1,
                 character=character,
-                end_line=line_idx + 1,
+                end_line=end_idx + 1,
                 end_character=end_character,
                 severity=_diag.Severity.ERROR,
                 code="BSL253",

@@ -58,7 +58,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=5)
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) >= 1
-        assert bsl011[0].message == _rule_msg("BSL011")
+        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 23 до 5'
 
     def test_simple_function_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -86,7 +86,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=5, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == _rule_msg("BSL011")
+        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 6 до 5'
 
     def test_ternary_with_space_counts_with_current_nesting(self, tmp_path: Path) -> None:
         content = """\
@@ -102,7 +102,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=5, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == _rule_msg("BSL011")
+        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 6 до 5'
 
     def test_multiline_same_boolean_run_not_counted_twice(self, tmp_path: Path) -> None:
         content = """\
@@ -128,7 +128,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=7, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == _rule_msg("BSL011")
+        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 10 до 7'
 
     def test_try_does_not_count_but_except_counts_structurally(self, tmp_path: Path) -> None:
         content = """\
@@ -144,7 +144,7 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=0, select={"BSL011"})
         bsl011 = [d for d in diags if d.code == "BSL011"]
         assert len(bsl011) == 1
-        assert bsl011[0].message == _rule_msg("BSL011")
+        assert bsl011[0].message == 'Уменьшите когнитивную сложность "Сложная" с 1 до 0'
 
     def test_inline_empty_except_closes_nesting_on_same_line(self, tmp_path: Path) -> None:
         content = """\
@@ -677,7 +677,7 @@ class TestBsl019CyclomaticComplexity:
         diags = _check(content, tmp_path, max_mccabe_complexity=5)
         bsl019 = [d for d in diags if d.code == "BSL019"]
         assert len(bsl019) >= 1
-        assert bsl019[0].message == _rule_msg("BSL019")
+        assert bsl019[0].message == 'Уменьшите цикломатическую сложность "Сложная" с 9 до 5'
 
     def test_simple_function_no_warning(self, tmp_path: Path) -> None:
         content = """\
@@ -1431,3 +1431,148 @@ class TestBsl190FormDataToValue:
         content = 'Текст = "ДанныеФормыВЗначение";\n'
         diags = _check(content, tmp_path, select={"BSL190"})
         assert "BSL190" not in _codes(diags)
+
+
+class TestUnusedVariableCstParity:
+    def test_duplicate_method_names_keep_reads_in_their_own_scope(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Тест()\nКонецПроцедуры\n"
+            "Процедура Тест()\n Данные = Новый Массив;\n"
+            " Данные.Добавить(1);\nКонецПроцедуры\n"
+        )
+        assert _check(content, tmp_path, select={"BSL007"}) == []
+
+    def test_late_local_declaration_does_not_hide_first_dynamic_write(self, tmp_path: Path) -> None:
+        content = (
+            "Процедура Тест()\n Сообщить(1);\n Перем Поздняя;\n Поздняя = 1;\nКонецПроцедуры\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(4, 1, 8)]
+        assert diags[0].message == "Удалите неиспользуемую переменную Поздняя"
+
+    def test_parameter_modifier_cannot_declare_an_implicit_variable(self, tmp_path: Path) -> None:
+        assert (
+            _check("Процедура Тест()\n Знач = 1;\nКонецПроцедуры\n", tmp_path, select={"BSL007"})
+            == []
+        )
+
+    def test_multiline_property_assignment_is_not_a_local_declaration(self, tmp_path: Path) -> None:
+        content = "Процедура Тест(Таблица)\n Таблица.Колонки.\n Строка = Таблица.Добавить();\nКонецПроцедуры\n"
+        assert _check(content, tmp_path, select={"BSL007"}) == []
+
+    def test_recovers_module_assignments_after_broken_regions(self, tmp_path: Path) -> None:
+        content = (
+            "#Region Name\nProcedure It()\n#EndRegion\nEndProcedure\nA = 0;\n#Region Tail\nB = 0;\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(5, 0, 1), (7, 0, 1)]
+
+    def test_recovers_method_after_misplaced_module_declaration(self, tmp_path: Path) -> None:
+        # The misplaced module declaration is malformed; the following method
+        # still has an unambiguous assignment in the recovered CST.
+        content = "Процедура Первая()\nКонецПроцедуры\nПерем Кэш Экспорт;\nПроцедура Вторая()\n Результат = 1;\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(5, 1, 10)]
+
+    @pytest.mark.parametrize(
+        "module",
+        [
+            "ObjectModule.bsl",
+            "RecordSetModule.bsl",
+            "ManagedApplicationModule.bsl",
+            "ExternalConnectionModule.bsl",
+        ],
+    )
+    def test_metadata_excluded_module_types(self, tmp_path: Path, module: str) -> None:
+        path = tmp_path / module
+        path.write_text("Перем Кэш;\n", encoding="utf-8")
+        assert DiagnosticEngine(select={"BSL007"}).check_file(str(path)) == []
+
+    def test_non_bmp_prefix_keeps_utf16_anchor(self, tmp_path: Path) -> None:
+        content = 'Процедура Тест()\n Сообщить("😀"); Кэш = 1;\nКонецПроцедуры\n'
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(2, 17, 20)]
+
+    def test_os_script_is_checked(self, tmp_path: Path) -> None:
+        path = tmp_path / "module.os"
+        path.write_text("Кэш = 1;\n", encoding="utf-8")
+        diags = DiagnosticEngine(select={"BSL007"}).check_file(str(path))
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 0, 3)]
+
+    def test_module_annotations_share_first_declaration(self, tmp_path: Path) -> None:
+        content = "&НаКлиенте\nПерем Кэш;\n&НаСервере\nПерем Кэш;\n"
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(2, 6, 9)]
+
+    def test_multiple_statements_and_multiline_strings(self, tmp_path: Path) -> None:
+        content = 'Процедура Тест()\n А = "А"; Б = 2;\n В =\n "текст\n |А Б";\nКонецПроцедуры\n'
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [
+            (2, 1, 2),
+            (2, 10, 11),
+            (3, 1, 2),
+        ]
+
+    def test_module_assignments_report_first_identifier_once(self, tmp_path: Path) -> None:
+        diags = _check('Кэш = "текст";\nКэш = 2;\n', tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 0, 3)]
+
+    @pytest.mark.parametrize("literal", ["😀", "😀😀"])
+    def test_assignment_after_non_bmp_literal_uses_utf16_range(self, literal: str) -> None:
+        prefix = f'Текст = "{literal}"; '
+        diags = DiagnosticEngine(select={"BSL007"}).check_content(
+            "synthetic.bsl", prefix + "А = 1;"
+        )
+        target = next(diag for diag in diags if diag.message_args == ("А",))
+        start = len(prefix.encode("utf-16-le")) // 2
+        assert (target.line, target.character, target.end_line, target.end_character) == (
+            1,
+            start,
+            1,
+            start + 1,
+        )
+
+    def test_procedure_assignments_shadow_module_body_variables(self, tmp_path: Path) -> None:
+        content = "Кэш = 1;\nПроцедура Тест()\n Кэш = 2;\n Сообщить(Кэш);\nКонецПроцедуры\n"
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 0, 3)]
+
+    def test_preprocessor_names_are_not_reads_and_deleted_code_is_ignored(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "Перем Кэш;\n#Область Кэш\n#Удаление\nУдаленная = 1;\n#КонецУдаления\n#КонецОбласти\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 6, 9)]
+
+    def test_export_marker_applies_to_each_variable(self, tmp_path: Path) -> None:
+        content = "Перем Первый Экспорт, Второй, Третий Экспорт;\n"
+        diags = _check(content, tmp_path, select={"BSL007"})
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 22, 28)]
+
+    def test_read_negative_twins_and_parameter_overlap(self, tmp_path: Path) -> None:
+        content = "Перем Кэш;\nПроцедура Тест(Параметр)\n Кэш = Параметр; Локальная = Кэш;\n Сообщить(Локальная);\nКонецПроцедуры\n"
+        assert _check(content, tmp_path, select={"BSL007", "BSL062"}) == []
+
+
+class TestUnusedParameterLanguageContract:
+    @pytest.mark.parametrize("suffix", [".bsl", ".os"])
+    def test_project_contract_includes_both_languages(self, tmp_path: Path, suffix: str) -> None:
+        # The project deliberately checks BSL too; upstream restricts this rule to OS.
+        path = tmp_path / ("module" + suffix)
+        path.write_text(
+            "Процедура Тест(Параметр)\n Сообщить(1);\nКонецПроцедуры\n", encoding="utf-8"
+        )
+        diags = DiagnosticEngine(select={"BSL062"}).check_file(str(path))
+        assert [(d.line, d.character, d.end_character) for d in diags] == [(1, 15, 23)]
+
+    @pytest.mark.parametrize("suffix", [".bsl", ".os"])
+    def test_multiline_empty_method_has_no_unused_parameters(
+        self, tmp_path: Path, suffix: str
+    ) -> None:
+        path = tmp_path / ("module" + suffix)
+        path.write_text(
+            "Процедура Тест(\n Параметр)\n // комментарий\nКонецПроцедуры\n", encoding="utf-8"
+        )
+        assert DiagnosticEngine(select={"BSL062"}).check_file(str(path)) == []

@@ -15,7 +15,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from onec_hbk_bsl.analysis.diagnostic.i18n import get_rule
 from onec_hbk_bsl.analysis.diagnostics import Diagnostic, DiagnosticEngine, Severity
 
 # ---------------------------------------------------------------------------
@@ -155,7 +154,10 @@ class TestBsl002LongProcedure:
         bsl002 = [d for d in issues if d.code == "BSL002"]
         assert len(bsl002) >= 1
         assert bsl002[0].severity == Severity.WARNING
-        assert bsl002[0].message == get_rule("BSL002").message
+        assert (
+            bsl002[0].message
+            == 'Длина метода "ДлиннаяПроцедура" равна 209, что больше установленного лимита в 200 строк'
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -17,19 +16,68 @@ from onec_hbk_bsl.analysis.diagnostic.rules.module_structure_rules import (
     is_split_module_fragment,
 )
 from onec_hbk_bsl.analysis.document_snapshot import ProcInfo, RegionInfo
+from onec_hbk_bsl.analysis.lsp_positions import utf8_byte_offset_to_lsp_character, utf16_len
+from onec_hbk_bsl.analysis.symbols import _extract_doc_comment
 
 _BSL176_PLATFORM_DEPRECATED_GLOBAL_METHODS = frozenset(
     name.casefold()
     for name in (
+        "УстановитьКраткийЗаголовокПриложения",
+        "SetShortApplicationCaption",
+        "ПолучитьКраткийЗаголовокПриложения",
+        "GetShortApplicationCaption",
+        "УстановитьЗаголовокКлиентскогоПриложения",
+        "SetClientApplicationCaption",
+        "ПолучитьЗаголовокКлиентскогоПриложения",
+        "GetClientApplicationCaption",
+        "ТекущийВариантОсновногоШрифтаКлиентскогоПриложения",
+        "ClientApplicationBaseFontCurrentVariant",
+        "ТекущийВариантИнтерфейсаКлиентскогоПриложения",
+        "ClientApplicationInterfaceCurrentVariant",
         "КраткоеПредставлениеОшибки",
         "BriefErrorDescription",
         "ПодробноеПредставлениеОшибки",
         "DetailErrorDescription",
         "ПоказатьИнформациюОбОшибке",
         "ShowErrorInfo",
+        "НайтиНедопустимыеСимволыXML",
+        "FindDisallowedXMLCharacters",
         "УстановитьВнешнююКомпоненту",
         "InstallAddIn",
-        "НайтиНедопустимыеСимволыXML",
+        "ОчиститьЖурналРегистрации",
+        "ClearEventLog",
+        "ПодключитьРасширениеРаботыСКриптографией",
+        "AttachCryptoExtension",
+        "УстановитьРасширениеРаботыСКриптографией",
+        "InstallCryptoExtension",
+        "ПользователиWindows",
+        "WindowsUsers",
+        "ПолучитьСоответствиеОбъектаИРеквизитаФормы",
+        "GetObjectAndFormAttributeConformity",
+        "УстановитьСоответствиеОбъектаИРеквизитаФормы",
+        "SetObjectAndFormAttributeConformity",
+        "ЗапроситьРазрешениеПользователя",
+        "RequestUserPermission",
+        "НачатьПолучениеФайлов",
+        "BeginGettingFiles",
+        "НачатьПомещениеФайла",
+        "BeginPutFile",
+        "НачатьПомещениеФайлов",
+        "BeginPuttingFiles",
+        "ПодключитьРасширениеРаботыСФайлами",
+        "AttachFileSystemExtension",
+        "ПолучитьФайл",
+        "GetFile",
+        "ПолучитьФайлы",
+        "GetFiles",
+        "ПоместитьФайл",
+        "PutFile",
+        "ПоместитьФайлы",
+        "PutFiles",
+        "УстановитьРасширениеРаботыСФайлами",
+        "InstallFileSystemExtension",
+        "ВыполнитьОбработкуЗаданий",
+        "ProcessJobs",
     )
 )
 
@@ -264,7 +312,7 @@ def _path_matches_bsl007_module_types(path: str) -> bool:
     if low.endswith("/ext/module.bsl"):
         return False
 
-    return low.endswith(".bsl")
+    return low.endswith((".bsl", ".os"))
 
 
 def _bsl260_access_metadata_key(access_text: str) -> tuple[str, str] | None:
@@ -1559,8 +1607,6 @@ class ModuleModel:
         bsl175_child_form_items_re,
         bsl175_enum_replacements: dict[str, str],
         bsl175_enum_name_re,
-        bsl175_global_method_re,
-        bsl175_global_methods: set[str],
     ) -> list[Diagnostic]:
         enabled = set(enabled_codes)
         diags: list[Diagnostic] = []
@@ -1571,7 +1617,7 @@ class ModuleModel:
             for sym in symbols:
                 if getattr(sym, "kind", "") not in {"procedure", "function"}:
                     continue
-                doc_comment = getattr(sym, "doc_comment", "") or ""
+                doc_comment = _extract_doc_comment(lines, sym.line - 1)
                 if not bsl176_deprecated_doc_predicate_fn(doc_comment):
                     continue
                 name = getattr(sym, "name", "")
@@ -1585,6 +1631,35 @@ class ModuleModel:
                 replacement = replacement_match.group(1) if replacement_match else None
                 deprecated_locals[name.casefold()] = (name, replacement)
                 deprecated_callers.add(name.casefold())
+
+        enum_ranges: dict[tuple[int, int], tuple[int, int]] = {}
+        if (
+            "BSL175" in enabled
+            and tree is not None
+            and ts_walk_fn is not None
+            and any(bsl175_enum_name_re.search(line) for line in lines)
+        ):
+            for node in ts_walk_fn(tree.root_node):
+                if getattr(node, "type", "") != "identifier":
+                    continue
+                line_idx = node.start_point[0]
+                start_index = len(
+                    lines[line_idx].encode("utf-8")[: node.start_point[1]].decode("utf-8")
+                )
+                if bsl175_enum_name_re.match(lines[line_idx], start_index) is None:
+                    continue
+                while node.parent is not None and node.parent.type in {
+                    "access",
+                    "property_access",
+                    "method_call",
+                    "index_access",
+                }:
+                    node = node.parent
+                end_line_idx = node.end_point[0]
+                enum_ranges[(line_idx, start_index)] = (
+                    end_line_idx,
+                    utf8_byte_offset_to_lsp_character_fn(lines[end_line_idx], node.end_point[1]),
+                )
 
         for idx, line in enumerate(lines):
             if line_comment_re.match(line):
@@ -1605,9 +1680,9 @@ class ModuleModel:
                             Diagnostic(
                                 file=self.path,
                                 line=idx + 1,
-                                character=match.start("name"),
+                                character=utf16_len(line[: match.start("name") - 1]),
                                 end_line=idx + 1,
-                                end_character=match.end("name"),
+                                end_character=utf16_len(line[: match.end("name")]),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
                                 message=(
@@ -1621,9 +1696,9 @@ class ModuleModel:
                             Diagnostic(
                                 file=self.path,
                                 line=idx + 1,
-                                character=match.start("name"),
+                                character=utf16_len(line[: match.start("name") - 1]),
                                 end_line=idx + 1,
-                                end_character=match.end("name"),
+                                end_character=utf16_len(line[: match.end("name")]),
                                 severity=Severity.INFORMATION,
                                 code="BSL175",
                                 message=(
@@ -1641,9 +1716,9 @@ class ModuleModel:
                         Diagnostic(
                             file=self.path,
                             line=idx + 1,
-                            character=match.start("name"),
+                            character=utf16_len(line[: match.start("name") - 1]),
                             end_line=idx + 1,
-                            end_character=match.end("name"),
+                            end_character=utf16_len(line[: match.end("name")]),
                             severity=Severity.INFORMATION,
                             code="BSL175",
                             message=(
@@ -1661,9 +1736,9 @@ class ModuleModel:
                         Diagnostic(
                             file=self.path,
                             line=idx + 1,
-                            character=match.start("name"),
+                            character=utf16_len(line[: match.start("name") - 1]),
                             end_line=idx + 1,
-                            end_character=match.end("name"),
+                            end_character=utf16_len(line[: match.end("name")]),
                             severity=Severity.INFORMATION,
                             code="BSL175",
                             message=(
@@ -1673,6 +1748,10 @@ class ModuleModel:
                         )
                     )
                 for match in bsl175_enum_name_re.finditer(clean):
+                    enum_end_line, enum_end_character = enum_ranges.get(
+                        (idx, match.start("name")),
+                        (idx, utf16_len(line[: match.end("name")])),
+                    )
                     name = match.group("name")
                     replacement = bsl175_enum_replacements.get(name.casefold())
                     if not replacement:
@@ -1681,9 +1760,9 @@ class ModuleModel:
                         Diagnostic(
                             file=self.path,
                             line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
+                            character=utf16_len(line[: match.start("name")]),
+                            end_line=enum_end_line + 1,
+                            end_character=enum_end_character,
                             severity=Severity.INFORMATION,
                             code="BSL175",
                             message=(
@@ -1692,33 +1771,20 @@ class ModuleModel:
                             ),
                         )
                     )
-                for match in bsl175_global_method_re.finditer(clean):
-                    name = match.group("name")
-                    if name.casefold() not in bsl175_global_methods:
-                        continue
-                    diags.append(
-                        Diagnostic(
-                            file=self.path,
-                            line=idx + 1,
-                            character=match.start("name"),
-                            end_line=idx + 1,
-                            end_character=match.end("name"),
-                            severity=Severity.INFORMATION,
-                            code="BSL175",
-                            message=f'Метод "{name}" устарел и больше не используется',
-                        )
-                    )
-
         if "BSL176" in enabled and deprecated_locals:
             for call in calls:
+                if getattr(call, "receiver", None) is not None or getattr(
+                    call, "receiver_expression", None
+                ):
+                    continue
+                caller_name = getattr(call, "caller_name", None)
+                if caller_name and caller_name.casefold() in deprecated_callers:
+                    continue
                 callee_name = getattr(call, "callee_name", "")
                 if not callee_name:
                     continue
                 callee_cf = callee_name.casefold()
                 if callee_cf not in deprecated_locals:
-                    continue
-                caller_name = getattr(call, "caller_name", None)
-                if caller_name and caller_name.casefold() in deprecated_callers:
                     continue
                 start_char = int(getattr(call, "caller_character", 0))
                 replacement = deprecated_locals[callee_cf][1]
@@ -1746,6 +1812,13 @@ class ModuleModel:
             }
 
             for call in calls:
+                if getattr(call, "receiver", None) is not None or getattr(
+                    call, "receiver_expression", None
+                ):
+                    continue
+                caller_name = getattr(call, "caller_name", None)
+                if caller_name and caller_name.casefold() in deprecated_callers:
+                    continue
                 callee_name = getattr(call, "callee_name", "")
                 if not callee_name:
                     continue
@@ -2286,373 +2359,183 @@ class ModuleModel:
         self,
         *,
         lines: list[str],
-        procs: list[ProcInfo],
         snapshot,
-        strip_inline_comment_preserve_strings_fn,
-        bsl007_strip_double_quoted_segments_fn,
-        bsl007_simple_assign_at_start_re,
-        var_local_re,
-        region_line_re,
-        preproc_line_re,
-        compiler_directive_re,
-        module_assign_re,
     ) -> list[Diagnostic]:
         if not _path_matches_bsl007_module_types(self.path):
             return []
 
-        re_for_index_header = re.compile(
-            r"^\s*(?:Для\s+(?:каждого\s+)?|For\s+(?:Each\s+)?)(\w+)\s*(?:=|\b(?:Из|In)\b)",
-            re.IGNORECASE,
-        )
-        diags: list[Diagnostic] = []
-        inside_proc: set[int] = set()
-        for proc in procs:
-            for i in range(proc.start_idx, proc.end_idx + 1):
-                inside_proc.add(i)
+        root = getattr(getattr(snapshot, "tree", None), "root_node", None)
+        if root is None or not isinstance(getattr(root, "text", None), bytes):
+            return []
 
-        lines_are_masked = snapshot is not None
-        code_lines = snapshot.counter_lines if snapshot is not None else lines
-
-        def read_words_ignoring_member_access(code_fragment: str) -> set[str]:
-            reads: set[str] = set()
-            for match in re.finditer(r"\b\w+\b", code_fragment, re.IGNORECASE):
-                if match.start() > 0 and code_fragment[match.start() - 1] == ".":
+        # Resolve declarations and writes before reads so that local declarations
+        # shadow module variables independently of source order.
+        scopes: dict[int, dict[str, tuple[Any, bool]]] = {0: {}}
+        node_scopes: dict[int, int] = {}
+        nodes: list[Any] = []
+        stack = [(root, 0)]
+        declaration_ids: set[int] = set()
+        writes: list[tuple[int, Any]] = []
+        parameters: dict[int, set[str]] = {0: set()}
+        executable_scopes: set[int] = set()
+        deleting = False
+        while stack:
+            node, scope = stack.pop()
+            if node.type == "preprocessor":
+                directive = node.text.decode("utf-8").strip().casefold()
+                if directive in {"#удаление", "#delete"}:
+                    deleting = True
                     continue
-                if re.match(r"\s*\(", code_fragment[match.end() :]):
+                elif directive in {"#конецудаления", "#enddelete"}:
+                    deleting = False
                     continue
-                reads.add(match.group(0).casefold())
-            return reads
-
-        def read_names_by_line(raw_line: str) -> set[str]:
-            if not raw_line.strip():
-                return set()
-            if lines_are_masked:
-                code_clean = raw_line
-            else:
-                code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
-                code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
-            match = bsl007_simple_assign_at_start_re.match(code_clean)
-            if match:
-                tail = code_clean[match.end() :]
-                reads = read_words_ignoring_member_access(tail)
-                lhs = match.group(1).casefold()
-                if re.match(rf"^\s*{re.escape(match.group(1))}\s*\(", tail, re.IGNORECASE):
-                    reads.discard(lhs)
-                return reads
-            return read_words_ignoring_member_access(code_clean)
-
-        def read_names_by_unmasked_fragment(raw_fragment: str) -> set[str]:
-            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_fragment)
-            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
-            return read_words_ignoring_member_access(code_clean)
-
-        def tail_after_query_string_close(raw_line: str) -> str:
-            idx = 0
-            while idx < len(raw_line):
-                quote_pos = raw_line.find('"', idx)
-                if quote_pos < 0:
-                    return ""
-                if quote_pos + 1 < len(raw_line) and raw_line[quote_pos + 1] == '"':
-                    idx = quote_pos + 2
-                    continue
-                return raw_line[quote_pos + 1 :]
-            return ""
-
-        def query_line_read_names(idx: int, line: str) -> set[str]:
-            if idx not in query_line_indices:
-                return read_names_by_line(line)
-            if line.lstrip().startswith("|"):
-                return read_names_by_unmasked_fragment(tail_after_query_string_close(lines[idx]))
-            return read_names_by_line(line)
-
-        def double_quoted_segments(raw_line: str) -> list[str]:
-            segments: list[str] = []
-            i, n = 0, len(raw_line)
-            while i < n:
-                if raw_line[i] != '"':
-                    i += 1
-                    continue
-                i += 1
-                chars: list[str] = []
-                while i < n:
-                    ch = raw_line[i]
-                    if ch == '"':
-                        if i + 1 < n and raw_line[i + 1] == '"':
-                            chars.append('"')
-                            i += 2
-                            continue
-                        i += 1
-                        break
-                    chars.append(ch)
-                    i += 1
-                segments.append("".join(chars))
-            return segments
-
-        def dotted_roots_in_strings(raw_line: str) -> set[str]:
-            roots: set[str] = set()
-            for segment in double_quoted_segments(raw_line):
-                for match in re.finditer(r"\b(?P<name>\w+)\s*\.", segment):
-                    roots.add(match.group("name").casefold())
-            return roots
-
-        def leading_assignment_name(raw_line: str) -> str | None:
-            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
-            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
-            match = bsl007_simple_assign_at_start_re.match(code_clean)
-            if not match:
-                return None
-            return match.group(1).casefold()
-
-        def line_has_dynamic_execute_call(raw_line: str) -> bool:
-            code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
-            code_clean = bsl007_strip_double_quoted_segments_fn(code_no_comments)
-            return bool(
-                re.search(r"(?<![\w.])(?:Выполнить|Execute)\s*\(", code_clean, re.IGNORECASE)
-            )
-
-        query_line_indices = snapshot.query_line_indices if snapshot is not None else frozenset()
-        line_read_names = [query_line_read_names(idx, line) for idx, line in enumerate(code_lines)]
-        file_read_counts: Counter[str] = Counter()
-        for names in line_read_names:
-            file_read_counts.update(names)
-
-        def module_var_declarations() -> list[tuple[str, int, int, bool]]:
-            declarations: list[tuple[str, int, int, bool]] = []
-            idx = 0
-            while idx < len(lines):
-                if idx in inside_proc:
-                    idx += 1
-                    continue
-                line = lines[idx]
-                stripped = line.strip()
-                if not stripped or stripped.startswith("//"):
-                    idx += 1
-                    continue
-                if region_line_re.match(line) or preproc_line_re.match(line):
-                    idx += 1
-                    continue
-                if compiler_directive_re.match(stripped):
-                    idx += 1
-                    continue
-                start_match = re.match(r"^\s*(?:Перем|Var)\b", line, re.IGNORECASE)
-                if not start_match:
-                    idx += 1
-                    continue
-
-                block: list[tuple[int, str, int]] = [(idx, line, start_match.end())]
-                end_idx = idx
-                while ";" not in lines[end_idx] and end_idx + 1 < len(lines):
-                    end_idx += 1
-                    if end_idx in inside_proc:
-                        break
-                    block.append((end_idx, lines[end_idx], 0))
-
-                block_text = "\n".join(item[1] for item in block)
-                exported_block = bool(
-                    re.search(r"\b(?:Экспорт|Export)\b", block_text, re.IGNORECASE)
-                )
-
-                for abs_idx, raw_line, start_col in block:
-                    code_no_comments = strip_inline_comment_preserve_strings_fn(raw_line)
-                    if abs_idx == end_idx:
-                        code_no_comments = code_no_comments.split(";", 1)[0]
-                    for match in re.finditer(
-                        r"\b\w+\b", code_no_comments[start_col:], re.IGNORECASE
-                    ):
-                        var_name = match.group(0)
-                        if var_name.casefold() in {"перем", "var", "экспорт", "export"}:
-                            continue
-                        declarations.append(
-                            (var_name, abs_idx, start_col + match.start(), exported_block)
+            if deleting:
+                continue
+            if node.type in {"procedure_definition", "function_definition"}:
+                scope = node.id
+                scopes[scope] = {}
+                parameters[scope] = set()
+            node_scopes[node.id] = scope
+            nodes.append(node)
+            if scope and node.type.endswith("_statement") and node.type != "var_statement":
+                executable_scopes.add(scope)
+            if node.type in {"var_definition", "var_statement"}:
+                names = []
+                for child in node.named_children:
+                    if child.type == "identifier":
+                        names.append(child)
+                    elif child.type == "variable_spec":
+                        names.extend(n for n in child.named_children if n.type == "identifier")
+                for name in names:
+                    declaration_ids.add(name.id)
+                    exported = any(child.type == "EXPORT_KEYWORD" for child in name.parent.children)
+                    if name.parent.type == "variable_spec":
+                        exported = exported or (
+                            name == names[-1]
+                            and any(child.type == "EXPORT_KEYWORD" for child in node.children)
                         )
-
-                idx = end_idx + 1
-            return declarations
-
-        module_declared_cf: set[str] = set()
-        module_declarations = module_var_declarations()
-        for var_name, _abs_idx, _char_pos, _exported in module_declarations:
-            module_declared_cf.add(var_name.casefold())
-
-        for var_name, abs_idx, char_pos, exported in module_declarations:
-            if exported:
-                continue
-            var_cf = var_name.casefold()
-            uses = file_read_counts.get(var_cf, 0) - (
-                1 if var_cf in line_read_names[abs_idx] else 0
-            )
-            if uses > 0:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=abs_idx + 1,
-                    character=char_pos,
-                    end_line=abs_idx + 1,
-                    end_character=char_pos + len(var_name),
-                    severity=Severity.WARNING,
-                    code="BSL007",
+                    if scope not in executable_scopes:
+                        scopes[scope].setdefault(
+                            name.text.decode("utf-8").casefold(), (name, exported)
+                        )
+            elif node.type == "parameter":
+                for name in node.named_children:
+                    if name.type == "identifier":
+                        declaration_ids.add(name.id)
+                        parameters[scope].add(name.text.decode("utf-8").casefold())
+            elif node.type in {"assignment_statement", "for_statement", "for_each_statement"}:
+                target = next(
+                    (child for child in node.named_children if child.type == "identifier"), None
                 )
-            )
+                if target is not None and (
+                    node.type != "assignment_statement"
+                    or (node.named_children[0] == target and node.children[1].type == "=")
+                ):
+                    declaration_ids.add(target.id)
+                    # Some grammar versions accept the parameter modifier as
+                    # an assignment target, although it cannot name a variable.
+                    if target.text.decode("utf-8").casefold() not in {"знач", "val"}:
+                        writes.append((scope, target))
+            stack.extend((child, scope) for child in reversed(node.named_children))
 
-        for idx, line in enumerate(lines):
-            if idx in inside_proc:
+        # Module body assignments define module symbols even when they occur
+        # after a method that refers to them.
+        explicit_module_names = set(scopes[0])
+        for scope, target in sorted(writes, key=lambda item: (item[0] != 0, item[1].start_byte)):
+            name = target.text.decode("utf-8").casefold()
+            if (
+                name in parameters[scope]
+                or name in scopes[scope]
+                or (scope and name in explicit_module_names)
+            ):
                 continue
-            stripped = line.strip()
-            if not stripped or stripped.startswith("//"):
-                continue
-            if region_line_re.match(line) or preproc_line_re.match(line):
-                continue
-            if compiler_directive_re.match(stripped):
-                continue
-            match = module_assign_re.match(line)
-            if not match:
-                continue
-            var_name = match.group(1)
-            if file_read_counts.get(var_name.casefold(), 0) > 0:
-                continue
-            diags.append(
-                Diagnostic(
-                    file=self.path,
-                    line=idx + 1,
-                    character=line.find(var_name) if var_name in line else 0,
-                    end_line=idx + 1,
-                    end_character=len(line.rstrip()),
-                    severity=Severity.WARNING,
-                    code="BSL007",
-                )
-            )
+            scopes[scope][name] = (target, False)
 
-        for proc in procs:
-            proc_lines = lines[proc.start_idx : proc.end_idx + 1]
-            param_cf = {p.casefold() for p in proc.params}
-            emitted: set[tuple[int, str]] = set()
-            declared: list[tuple[str, int]] = []
-            decl_rel_indices: set[int] = set()
-            for rel_idx, pline in enumerate(proc_lines[1:], 1):
-                m = var_local_re.match(pline)
-                if not m:
+        reads: set[tuple[int, str]] = set()
+        execute_builders: dict[int, set[str]] = {}
+        for node in nodes:
+            if node.type != "identifier" or node.id in declaration_ids:
+                continue
+            parent = node.parent
+            if lines[node.start_point[0]].lstrip().startswith("#"):
+                continue
+            if parent.type in {
+                "procedure_definition",
+                "function_definition",
+                "method_call",
+                "new_expression",
+                "annotation",
+                "preprocessor",
+                "label",
+                "goto_statement",
+            }:
+                continue
+            scope = node_scopes[node.id]
+            name = node.text.decode("utf-8").casefold()
+            owner = scope if name in scopes[scope] or name in parameters[scope] else 0
+            reads.add((owner, name))
+            ancestor = parent
+            while ancestor is not None and ancestor.type not in {
+                "execute_statement",
+                "procedure_definition",
+                "function_definition",
+                "source_file",
+            }:
+                ancestor = ancestor.parent
+            if ancestor is not None and ancestor.type == "execute_statement":
+                execute_builders.setdefault(scope, set()).add(name)
+
+        # Preserve the documented dynamic receiver recognition only in code
+        # passed to Execute or in the variables building that code.
+        for node in nodes:
+            if node.type != "string":
+                continue
+            scope = node_scopes[node.id]
+            ancestor = node.parent
+            while ancestor is not None and ancestor.type not in {
+                "assignment_statement",
+                "execute_statement",
+                "procedure_definition",
+                "function_definition",
+                "source_file",
+            }:
+                ancestor = ancestor.parent
+            if ancestor is None:
+                continue
+            is_execute = ancestor.type == "execute_statement"
+            if ancestor.type == "assignment_statement":
+                target = ancestor.named_children[0]
+                is_execute = target.type == "identifier" and target.text.decode(
+                    "utf-8"
+                ).casefold() in execute_builders.get(scope, set())
+            if not is_execute:
+                continue
+            for match in re.finditer(r"\b(\w+)\s*\.", node.text.decode("utf-8")):
+                name = match.group(1).casefold()
+                reads.add((scope if name in scopes[scope] else 0, name))
+
+        diags: list[Diagnostic] = []
+        for scope, symbols in scopes.items():
+            for name, (node, exported) in symbols.items():
+                if exported or (scope, name) in reads:
                     continue
-                decl_rel_indices.add(rel_idx)
-                for var_name in (n.strip() for n in m.group("names").split(",") if n.strip()):
-                    declared.append((var_name, rel_idx))
-
-            declared_cf = {n.casefold() for n, _ in declared}
-            body_lo = proc.start_idx + 1
-            body_hi = proc.end_idx - 1
-            proc_read_counts: Counter[str] = Counter()
-            for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
-                for read_name in line_read_names[abs_idx]:
-                    proc_read_counts[read_name] += 1
-
-            dynamic_execute_builder_vars: set[str] = set()
-            for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
-                if not line_has_dynamic_execute_call(lines[abs_idx]):
-                    continue
-                dynamic_execute_builder_vars.update(line_read_names[abs_idx])
-                dynamic_execute_builder_vars.discard("выполнить")
-                dynamic_execute_builder_vars.discard("execute")
-
-            dynamic_string_reads: set[str] = set()
-            if dynamic_execute_builder_vars:
-                for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
-                    assigned_name = leading_assignment_name(lines[abs_idx])
-                    if assigned_name is None or assigned_name not in dynamic_execute_builder_vars:
-                        continue
-                    dynamic_string_reads.update(dotted_roots_in_strings(lines[abs_idx]))
-                for abs_idx in range(max(body_lo, 0), min(body_hi, len(lines) - 1) + 1):
-                    if line_has_dynamic_execute_call(lines[abs_idx]):
-                        dynamic_string_reads.update(dotted_roots_in_strings(lines[abs_idx]))
-            for read_name in dynamic_string_reads:
-                proc_read_counts[read_name] += 1
-
-            def emit_unused(
-                abs_line: int,
-                var_name: str,
-                emitted_local: set[tuple[int, str]] = emitted,
-            ) -> None:
-                key = (abs_line, var_name.casefold())
-                if key in emitted_local:
-                    return
-                emitted_local.add(key)
-                char_pos = lines[abs_line].find(var_name) if var_name in lines[abs_line] else 0
+                row, byte_col = node.start_point
+                end_row, end_byte_col = node.end_point
+                character = utf8_byte_offset_to_lsp_character(lines[row], byte_col)
+                end_character = utf8_byte_offset_to_lsp_character(lines[end_row], end_byte_col)
                 diags.append(
                     Diagnostic(
                         file=self.path,
-                        line=abs_line + 1,
-                        character=char_pos,
-                        end_line=abs_line + 1,
-                        end_character=char_pos + len(var_name),
+                        line=row + 1,
+                        character=character,
+                        end_line=end_row + 1,
+                        end_character=end_character,
                         severity=Severity.WARNING,
                         code="BSL007",
+                        message_args=(node.text.decode("utf-8"),),
                     )
                 )
-
-            for var_name, rel_idx in declared:
-                abs_decl = proc.start_idx + rel_idx
-                uses = proc_read_counts.get(var_name.casefold(), 0) - (
-                    1 if var_name.casefold() in line_read_names[abs_decl] else 0
-                )
-                if uses > 0:
-                    continue
-                emit_unused(abs_decl, var_name)
-
-            implicit_first_unused: dict[str, tuple[str, int]] = {}
-            for rel_idx, pline in enumerate(proc_lines[1:], 1):
-                abs_line = proc.start_idx + rel_idx
-                if abs_line >= proc.end_idx:
-                    continue
-                match = module_assign_re.match(pline)
-                if not match:
-                    continue
-                var_name = match.group(1)
-                var_cf = var_name.casefold()
-                if var_cf in param_cf or var_cf in declared_cf or var_cf in module_declared_cf:
-                    continue
-                if rel_idx in decl_rel_indices:
-                    continue
-                if proc_read_counts.get(var_cf, 0) > 0:
-                    continue
-                implicit_first_unused.setdefault(var_cf, (var_name, abs_line))
-            for var_name, abs_line in sorted(
-                implicit_first_unused.values(), key=lambda item: item[1]
-            ):
-                emit_unused(abs_line, var_name)
-
-            loop_headers_by_var: dict[str, set[int]] = {}
-            for rel_idx, pline in enumerate(proc_lines[1:], 1):
-                abs_line = proc.start_idx + rel_idx
-                if abs_line >= proc.end_idx:
-                    continue
-                m_for = re_for_index_header.match(pline)
-                if m_for:
-                    loop_headers_by_var.setdefault(m_for.group(1).casefold(), set()).add(abs_line)
-
-            emitted_loop_vars: set[str] = set()
-            for rel_idx, pline in enumerate(proc_lines[1:], 1):
-                abs_line = proc.start_idx + rel_idx
-                if abs_line >= proc.end_idx:
-                    continue
-                m_for = re_for_index_header.match(pline)
-                if not m_for:
-                    continue
-                var_name = m_for.group(1)
-                var_cf = var_name.casefold()
-                if var_cf in param_cf or var_cf in emitted_loop_vars:
-                    continue
-                if any(header < abs_line for header in loop_headers_by_var.get(var_cf, set())):
-                    continue
-                used = False
-                for abs_idx in range(abs_line + 1, min(proc.end_idx, len(lines))):
-                    if abs_idx in loop_headers_by_var.get(var_cf, set()):
-                        continue
-                    if var_cf in line_read_names[abs_idx]:
-                        used = True
-                        break
-                if not used:
-                    emit_unused(abs_line, var_name)
-                    emitted_loop_vars.add(var_cf)
-        return diags
+        return sorted(diags, key=lambda diag: (diag.line, diag.character))
 
     def validate_bsl051_unreachable_code(
         self,

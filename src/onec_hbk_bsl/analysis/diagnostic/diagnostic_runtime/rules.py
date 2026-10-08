@@ -437,6 +437,7 @@ def _diagnostics_bsl042_unused_local_method(context: DiagnosticDocumentContext) 
                 end_character=end_col or len(line_text),
                 severity=Severity.WARNING,
                 code="BSL042",
+                message_args=(proc.name,),
             )
         )
     return diags
@@ -464,31 +465,58 @@ def _diagnostics_bsl052_identical_expressions(
         operator_text = _ts_node_text(operator).casefold()
         if operator_text in {"+", "*", "."}:
             continue
-        left_key = _bsl052_expression_key(left)
-        right_key = _bsl052_expression_key(right)
-        if not left_key or not right_key:
-            continue
-        duplicate_key = left_key if left_key == right_key else None
-        if duplicate_key is None and operator_text in {"и", "and", "или", "or"}:
-            duplicate_key = _bsl052_transitive_duplicate_key(node, operator_text)
-        if duplicate_key is None:
-            continue
-        if operator_text == "/" and duplicate_key in _BSL052_DEFAULT_POPULAR_DIVISORS:
-            continue
-        operand_text = _bsl052_operand_display(left if left_key == duplicate_key else right)
-        storage.add_range(
-            code="BSL052",
-            message_args=(_ts_node_text(operator), operand_text),
-            line=int(node.start_point[0]) + 1,
-            character=utf8_byte_offset_to_lsp_character(
-                context.lines[int(node.start_point[0])], int(node.start_point[1])
-            ),
-            end_line=int(node.end_point[0]) + 1,
-            end_character=utf8_byte_offset_to_lsp_character(
-                context.lines[int(node.end_point[0])], int(node.end_point[1])
-            ),
-            severity=Severity.ERROR,
-        )
+        anchor = node
+        while getattr(getattr(anchor, "parent", None), "type", None) in {
+            "expression",
+            "binary_expression",
+            "parenthesized_expression",
+            "unary_expression",
+        }:
+            anchor = anchor.parent
+        matches: list[Any] = []
+        if operator_text in {"и", "and", "или", "or"}:
+            parent = node.parent
+            while getattr(parent, "type", None) == "expression":
+                parent = parent.parent
+            parent_parts = _bsl052_binary_parts(parent)
+            if (
+                parent_parts is not None
+                and _ts_node_text(parent_parts[1]).casefold() == operator_text
+            ):
+                continue
+            operands = _bsl052_logical_operands(node, operator_text)
+            keys = [_bsl052_expression_key(operand) for operand in operands]
+            tail = operands[-1]
+            tail_keys: set[tuple[Any, ...]] = set()
+            while True:
+                tail_operands = _bsl052_logical_operands(tail, operator_text)
+                if len(tail_operands) < 2:
+                    break
+                tail_keys.update(_bsl052_expression_key(item) for item in tail_operands)
+                tail = tail_operands[-1]
+            matches = [
+                operand
+                for index, operand in enumerate(operands[:-1])
+                if keys[index] in keys[index + 1 :] or keys[index] in tail_keys
+            ]
+        else:
+            left_key = _bsl052_expression_key(left)
+            if left_key and left_key == _bsl052_expression_key(right):
+                if (
+                    operator_text != "/"
+                    or _ts_node_text(left).strip() not in _BSL052_DEFAULT_POPULAR_DIVISORS
+                ):
+                    matches = [left]
+        for operand in matches:
+            storage.add_range(
+                code="BSL052",
+                message_args=(_ts_node_text(operator), _bsl052_operand_display(operand)),
+                line=int(anchor.start_point[0]),
+                character=_point_char(context.lines, anchor.start_point),
+                end_line=int(anchor.end_point[0]),
+                end_character=_point_char(context.lines, anchor.end_point),
+                severity=Severity.ERROR,
+            )
     return storage.diagnostics
 
 
@@ -512,26 +540,65 @@ def _bsl052_binary_parts(node: Any) -> tuple[Any, Any, Any] | None:
     return children[op_index - 1], children[op_index], children[op_index + 1]
 
 
-def _bsl052_expression_key(node: Any) -> str:
-    return re.sub(r"\s+", "", _ts_node_text(node)).casefold()
+def _bsl052_expression_key(node: Any) -> tuple[Any, ...]:
+    children = [
+        child
+        for child in _ts_children(node)
+        if getattr(child, "type", None) not in {"line_comment", "comment"}
+    ]
+    node_type = getattr(node, "type", None)
+    if node_type in {"expression", "const_expression", "parenthesized_expression"}:
+        meaningful = [child for child in children if getattr(child, "type", None) not in {"(", ")"}]
+        if len(meaningful) == 1:
+            return _bsl052_expression_key(meaningful[0])
+    if node_type == "binary_expression":
+        parts = _bsl052_binary_parts(node)
+        if parts is not None:
+            operator = _ts_node_text(parts[1]).casefold()
+            operator = {"и": "and", "или": "or"}.get(operator, operator)
+            operands = (_bsl052_expression_key(parts[0]), _bsl052_expression_key(parts[2]))
+            if operator in {"=", "*", "and", "or"}:
+                operands = tuple(sorted(operands, key=repr))
+            return (node_type, operator, operands)
+    if node_type in {"string", "date"}:
+        return (node_type, _ts_node_text(node))
+    if children:
+        return (node_type, tuple(_bsl052_expression_key(child) for child in children))
+    return (node_type, _ts_node_text(node).casefold())
 
 
 def _bsl052_operand_display(node: Any) -> str:
-    return " ".join(_ts_node_text(node).split())
+    children = [
+        child
+        for child in _ts_children(node)
+        if getattr(child, "type", None) not in {"line_comment", "comment", "(", ")"}
+    ]
+    if (
+        getattr(node, "type", None)
+        in {"expression", "parenthesized_expression", "const_expression"}
+        and len(children) == 1
+    ):
+        return _bsl052_operand_display(children[0])
+    if getattr(node, "type", None) == "binary_expression":
+        parts = _bsl052_binary_parts(node)
+        if parts is not None:
+            return f"{_bsl052_operand_display(parts[0])} {_ts_node_text(parts[1])} {_bsl052_operand_display(parts[2])}"
+    return _ts_node_text(node).strip()
 
 
-def _bsl052_transitive_duplicate_key(node: Any, operator_text: str) -> str | None:
+def _bsl052_logical_operands(node: Any, operator_text: str) -> list[Any]:
     operands: list[Any] = []
 
-    def collect(current: Any) -> None:
-        if getattr(current, "type", None) == "expression":
-            expr_children = [
+    def collect(current: Any, *, root: bool = False) -> None:
+        node_type = getattr(current, "type", None)
+        if node_type == "expression" or (root and node_type == "parenthesized_expression"):
+            children = [
                 child
                 for child in _ts_children(current)
-                if getattr(child, "type", None) not in {"line_comment", "comment"}
+                if getattr(child, "type", None) not in {"line_comment", "comment", "(", ")"}
             ]
-            if len(expr_children) == 1:
-                collect(expr_children[0])
+            if len(children) == 1:
+                collect(children[0], root=root)
                 return
         if getattr(current, "type", None) == "binary_expression":
             parts = _bsl052_binary_parts(current)
@@ -541,16 +608,8 @@ def _bsl052_transitive_duplicate_key(node: Any, operator_text: str) -> str | Non
                 return
         operands.append(current)
 
-    collect(node)
-    seen: set[str] = set()
-    for operand in operands:
-        key = _bsl052_expression_key(operand)
-        if not key:
-            continue
-        if key in seen:
-            return key
-        seen.add(key)
-    return None
+    collect(node, root=True)
+    return operands
 
 
 def _bsl042_is_extension_override(lines: list[str], proc_start_idx: int) -> bool:
@@ -1630,32 +1689,41 @@ class DoubleNegativesRule(DiagnosticRuntimeRule):
     def _single_expression_term(cls, expr: Any) -> Any | None:
         if getattr(expr, "type", None) != "expression":
             return None
-        terms = [child for child in _ts_children(expr) if child.type != ";"]
+        terms = [
+            child
+            for child in _ts_children(expr)
+            if child.type not in {";", "line_comment", "comment"}
+        ]
         return terms[0] if len(terms) == 1 else None
 
     @classmethod
-    def _text_starts_with_not_paren(cls, node: Any) -> bool:
-        text = _ts_node_text(node).casefold().lstrip()
-        return text.startswith("не (") or text.startswith("not (")
-
-    @classmethod
-    def _parent_binary_operator(cls, node: Any) -> str:
+    def _ungroup_expression(cls, node: Any) -> Any:
         current = node
-        while getattr(current, "parent", None) is not None:
-            current = current.parent
-            if getattr(current, "type", None) == "binary_expression":
-                return cls._operator_text(current)
-            if getattr(current, "type", None) != "expression":
-                return ""
-        return ""
+        while getattr(current, "type", None) in {"expression", "parenthesized_expression"}:
+            terms = [
+                child
+                for child in _ts_children(current)
+                if child.type not in {"(", ")", "line_comment", "comment"}
+            ]
+            if len(terms) != 1:
+                break
+            current = terms[0]
+        return current
 
     @classmethod
-    def _is_nested_in_logical_expression(cls, node: Any) -> bool:
-        return cls._parent_binary_operator(node) in {"и", "and", "или", "or"}
+    def _representing_end_node(cls, operand: Any) -> Any:
+        semantic = cls._ungroup_expression(operand)
+        if getattr(semantic, "type", None) in {"binary_expression", "unary_expression"}:
+            operator = cls._operator(semantic)
+            if operator is not None:
+                return operator
+        return semantic
 
     @classmethod
     def _binary_parts(cls, node: Any) -> tuple[Any, Any, Any] | None:
-        children = _ts_children(node)
+        children = [
+            child for child in _ts_children(node) if child.type not in {"line_comment", "comment"}
+        ]
         for idx, child in enumerate(children):
             if getattr(child, "type", None) != "operator":
                 continue
@@ -1669,34 +1737,46 @@ class DoubleNegativesRule(DiagnosticRuntimeRule):
     @classmethod
     def _binary_diagnostic_nodes(cls, node: Any) -> tuple[Any, Any] | None:
         parts = cls._binary_parts(node)
-        if parts is None:
+        if parts is None or _diag.tree_has_errors(node):
             return None
         left, _operator, right = parts
         left_unary = cls._single_expression_term(left)
-        if not cls._is_not_unary(left_unary):
-            return None
-        if cls._is_nested_in_logical_expression(node) and cls._text_starts_with_not_paren(node):
-            return None
-        start = cls._operator(left_unary)
-        if start is None:
-            return None
-        return start, right
+        if cls._is_not_unary(left_unary):
+            start = cls._operator(left_unary)
+            return (start, cls._representing_end_node(right)) if start is not None else None
+        parent = getattr(node, "parent", None)
+        while getattr(parent, "type", None) in {"expression", "parenthesized_expression"}:
+            parent = parent.parent
+        if cls._is_not_unary(parent):
+            start = cls._operator(parent)
+            return (start, cls._representing_end_node(right)) if start is not None else None
+        return None
 
     @classmethod
     def _nested_unary_diagnostic_nodes(cls, node: Any) -> tuple[Any, Any] | None:
-        if not cls._is_not_unary(node):
+        if not cls._is_not_unary(node) or _diag.tree_has_errors(node):
             return None
-        if cls._parent_binary_operator(node):
-            return None
-        expr = cls._expression_child(node)
-        inner = cls._single_expression_term(expr)
-        if not cls._is_not_unary(inner):
+        inner = cls._ungroup_expression(cls._expression_child(node))
+        if getattr(inner, "type", None) == "binary_expression" and cls._operator_text(inner) in {
+            "=",
+            "<>",
+            "<",
+            ">",
+            "<=",
+            ">=",
+        }:
+            left = cls._expression_child(inner)
+            if not cls._is_not_unary(cls._single_expression_term(left)):
+                return None
+            operand = inner
+        elif cls._is_not_unary(inner):
+            operand = cls._expression_child(inner)
+        else:
             return None
         start = cls._operator(node)
-        operand = cls._expression_child(inner)
         if start is None or operand is None:
             return None
-        return start, operand
+        return start, cls._representing_end_node(operand)
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
         root = getattr(getattr(context, "tree", None), "root_node", None)
@@ -2140,6 +2220,12 @@ class MagicNumberRule(DiagnosticRuntimeRule):
             if self._wrong_error_number(number):
                 self._add_number(storage, context.lines, number, value)
                 continue
+            invocation = self._ancestor_of_type(
+                number, {"new_expression_method", "new_expression", "method_call"}
+            )
+            if getattr(invocation, "type", None) == "new_expression_method":
+                self._add_number(storage, context.lines, number, value)
+                continue
             expression = self._expression_ancestor(number)
             if expression is None:
                 continue
@@ -2236,30 +2322,47 @@ class MagicNumberRule(DiagnosticRuntimeRule):
 
     @classmethod
     def _wrong_expression(cls, expression: Any) -> bool:
-        if cls._ancestor_of_type(expression, {"return_statement"}) is not None:
-            return True
-        if cls._argument_index(expression) is not None:
-            return True
-        if cls._ancestor_of_type(expression, {"binary_expression"}) is not None:
-            return True
-        return cls._meaningful_expression_child_count(expression) > 1 or cls._has_binary_parent(
-            expression
+        current = expression
+        has_binary_operation = any(
+            getattr(child, "type", None) == "binary_expression" for child in _ts_children(current)
         )
-
-    @staticmethod
-    def _meaningful_expression_child_count(expression: Any) -> int:
-        return sum(
-            1
-            for child in _ts_children(expression)
-            if getattr(child, "type", None) not in {";", "line_comment", "comment"}
-        )
-
-    @staticmethod
-    def _has_binary_parent(expression: Any) -> bool:
-        parent = getattr(expression, "parent", None)
-        return getattr(parent, "type", None) == "expression" and any(
-            getattr(child, "type", None) == "operator" for child in _ts_children(parent)
-        )
+        while getattr(getattr(current, "parent", None), "type", None) in {
+            "binary_expression",
+            "unary_expression",
+            "parenthesized_expression",
+            "expression",
+        }:
+            current = current.parent
+            has_binary_operation |= getattr(current, "type", None) == "binary_expression"
+        if cls._argument_is_simple_number(current):
+            parent = getattr(current, "parent", None)
+            if getattr(parent, "type", None) == "return_statement":
+                return False
+            args = parent
+            method = getattr(args, "parent", None)
+            if (
+                getattr(args, "type", None) == "arguments"
+                and getattr(method, "type", None) == "method_call"
+            ):
+                identifier = next(
+                    (
+                        child
+                        for child in _ts_children(method)
+                        if getattr(child, "type", None) == "identifier"
+                    ),
+                    None,
+                )
+                owner = getattr(method, "parent", None)
+                if _ts_node_text(identifier).casefold() in {"дата", "date"} and (
+                    getattr(owner, "type", None) != "call_expression"
+                    or cls._call_receiver(owner) is None
+                ):
+                    return False
+        if cls._argument_index(current) is not None:
+            return True
+        if getattr(getattr(current, "parent", None), "type", None) == "new_expression_method":
+            return True
+        return has_binary_operation
 
     @classmethod
     def _inside_structure_or_correspondence(
@@ -2631,66 +2734,49 @@ class MagicDateRule(DiagnosticRuntimeRule):
 
 class UselessTernaryOperatorRule(DiagnosticRuntimeRule):
     code = "BSL265"
-    _boolean_operand_re = re.compile(
-        r"^\s*(?:Истина|True|Ложь|False)\s*$", re.IGNORECASE | re.UNICODE
-    )
-    _simple_member_re = re.compile(r"^\s*[\wА-Яа-яЁё]+(?:\.[\wА-Яа-яЁё]+)+\s*$", re.UNICODE)
-    _boolean_expr_re = re.compile(
-        r"(<>\s*0|=\s*(?:Истина|True|Ложь|False)\b|"
-        r"\b(?:И|And|ИЛИ|Or|НЕ|Not)\b|"
-        r"(?:^|\.)\s*(?:Имеется|Имеются|Есть|Заполнено|Пустая|Пустой|Is|Has)\w*\s*\()",
-        re.IGNORECASE | re.UNICODE,
-    )
-    _comment_re = re.compile(r"^\s*//")
 
-    @classmethod
-    def _is_boolean_operand(cls, text: str) -> bool:
-        return bool(cls._boolean_operand_re.match(text))
-
-    @classmethod
-    def _is_boolean_expression(cls, text: str) -> bool:
-        return bool(cls._boolean_expr_re.search(text))
-
-    @classmethod
-    def _is_simple_member_access(cls, text: str) -> bool:
-        return bool(cls._simple_member_re.match(text))
+    @staticmethod
+    def _is_boolean_literal(expression: Any) -> bool:
+        current = expression
+        while getattr(current, "type", None) in {"expression", "const_expression"}:
+            children = [
+                child
+                for child in _ts_children(current)
+                if getattr(child, "type", None) not in {"line_comment", "comment"}
+            ]
+            if len(children) != 1:
+                return False
+            current = children[0]
+        return getattr(current, "type", None) == "boolean"
 
     def run(self, context: DiagnosticDocumentContext) -> list[Diagnostic]:
+        root = getattr(context.tree, "root_node", None)
+        if root is None:
+            return []
         storage = DiagnosticStorage(context.path)
-        for span in _ternary_spans(context):
-            line_text = context.lines[span.line] if span.line < len(context.lines) else ""
-            if self._comment_re.match(line_text):
+        if context.ts_nodes_for_types is not None:
+            nodes = context.ts_nodes_for_types(context.tree, {"ternary_expression"})[
+                "ternary_expression"
+            ]
+        else:
+            nodes = [node for node in _ts_walk(root) if node.type == "ternary_expression"]
+        for node in nodes:
+            if _diag.tree_has_errors(node):
                 continue
-            ternary_text = context.content[span.start : span.end]
-            open_pos = ternary_text.find("(")
-            close_pos = ternary_text.rfind(")")
-            if open_pos < 0 or close_pos <= open_pos:
+            expressions = [child for child in _ts_children(node) if child.type == "expression"]
+            if len(expressions) != 3:
                 continue
-            parts = _split_top_level_args(ternary_text[open_pos + 1 : close_pos])
-            if len(parts) < 3:
-                continue
-            condition_is_bool = self._is_boolean_operand(parts[0])
-            then_is_bool = self._is_boolean_operand(parts[1])
-            else_is_bool = self._is_boolean_operand(parts[2])
-            both_branches_bool = then_is_bool and else_is_bool
-            one_boolean_branch_with_boolean_value = (
-                then_is_bool
-                and (
-                    self._is_boolean_expression(parts[2])
-                    or (
-                        self._is_simple_member_access(parts[0])
-                        and self._is_simple_member_access(parts[2])
-                    )
-                )
-            ) or (else_is_bool and self._is_boolean_expression(parts[1]))
-            if condition_is_bool or both_branches_bool or one_boolean_branch_with_boolean_value:
-                storage.add_range(
+            condition, true_branch, false_branch = expressions
+            if self._is_boolean_literal(condition) or (
+                self._is_boolean_literal(true_branch) and self._is_boolean_literal(false_branch)
+            ):
+                _add_node_range(
+                    storage,
                     code=self.code,
-                    line=span.line,
-                    character=span.col,
-                    end_line=span.end_line,
-                    end_character=span.end_col,
                     severity=Severity.INFORMATION,
+                    lines=context.lines,
+                    start_node=node,
+                    end_node=node,
                 )
         return storage.diagnostics
 
@@ -6430,18 +6516,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
         if code == "BSL007":
             return model.validate_bsl007_unused_local_variable(
                 lines=context.lines,
-                procs=procs,
                 snapshot=snapshot,
-                strip_inline_comment_preserve_strings_fn=(
-                    _diag._strip_inline_comment_preserve_strings
-                ),
-                bsl007_strip_double_quoted_segments_fn=(_diag._bsl007_strip_double_quoted_segments),
-                bsl007_simple_assign_at_start_re=_diag._BSL007_SIMPLE_ASSIGN_AT_START,
-                var_local_re=_diag._RE_VAR_LOCAL,
-                region_line_re=_diag._RE_REGION_LINE,
-                preproc_line_re=_diag._RE_PREPROC_LINE,
-                compiler_directive_re=_diag._RE_COMPILER_DIRECTIVE,
-                module_assign_re=_diag._RE_MODULE_ASSIGN,
             )
         if code == "BSL008":
             diags: list[Diagnostic] = []
@@ -6456,8 +6531,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 )
             return diags
         if code == "BSL009":
-            if not _diag._ts_tree_ok_for_rules(context.tree):
-                return []
             candidate_nodes = None
             if context.ts_nodes_for_types is not None:
                 candidate_nodes = context.ts_nodes_for_types(
@@ -6491,6 +6564,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     end_character=fact.end_character,
                     severity=Severity.WARNING,
                     code="BSL011",
+                    message_args=("body", fact.complexity, engine.max_cognitive_complexity),
                 )
                 for fact in snapshot.module_body_cognitive_complexity_facts(
                     engine.max_cognitive_complexity
@@ -6627,7 +6701,8 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                     file=context.path,
                     line=fact.line_idx + 1,
                     character=fact.character,
-                    end_line=fact.line_idx + 1,
+                    end_line=(fact.end_line_idx if fact.end_line_idx is not None else fact.line_idx)
+                    + 1,
                     end_character=fact.end_character,
                     severity=Severity.INFORMATION,
                     code=code,
@@ -6655,7 +6730,7 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 )
             return diags
         if code == "BSL033":
-            if _diag._ts_tree_ok_for_rules(context.tree):
+            if context.tree is not None and getattr(context.tree, "root_node", None) is not None:
                 nodes_by_type = (
                     context.ts_nodes_for_types(
                         context.tree,
@@ -6678,7 +6753,6 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                 return _diag._diagnostics_bsl033_from_tree(
                     context.path,
                     context.lines,
-                    procs,
                     assignment_nodes=nodes_by_type["assignment_statement"],
                     method_call_nodes=nodes_by_type["method_call"],
                 )
@@ -6857,8 +6931,6 @@ class DeprecatedApiDiagnosticsRule(DiagnosticRuntimeRule):
                 bsl175_child_form_items_re=_diag._RE_BSL175_CHILD_FORM_ITEMS,
                 bsl175_enum_replacements=_diag._BSL175_ENUM_REPLACEMENTS,
                 bsl175_enum_name_re=_diag._RE_BSL175_ENUM_NAME,
-                bsl175_global_method_re=_diag._RE_BSL175_GLOBAL_METHOD,
-                bsl175_global_methods=_diag._BSL175_GLOBAL_METHODS,
             )
             if diag.code == self.code
         ]

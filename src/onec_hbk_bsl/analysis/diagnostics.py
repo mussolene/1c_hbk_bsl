@@ -283,6 +283,10 @@ _CODES_EMIT_DIAGNOSTIC_INSIDE_STRING_LITERAL: frozenset[str] = frozenset(
         "BSL030",
         # CodeBlockBeforeSub spans the whole module-body block, including string literals.
         "BSL155",
+        # Self-assignment may include string literals as index keys.
+        "BSL009",
+        # Duplicate operands can be string literals or expressions containing them.
+        "BSL052",
         # Duplicated-branch diagnostics may span statements containing string literals.
         "BSL197",
         "BSL198",
@@ -1787,117 +1791,420 @@ RULE_DESCRIPTIONS_RU: dict[str, str] = {
 # expose this next to the local, occurrence-specific ``message`` so agents can
 # reason from the same rule wording as BSLLS without losing local details.
 RULE_MESSAGES_RU: dict[str, str] = {
+    "BSL002": 'Длина метода "%s" равна %s, что больше установленного лимита в %s строк',
+    "BSL003": 'Переместите неэкспортный метод "%s" из области "%s"',
+    "BSL008": 'Сократите количество возвратов в методе "%s" с "%s" до максимально допустимого "%s"',
+    "BSL011": 'Уменьшите когнитивную сложность "%s" с %s до %s',
+    "BSL015": "Уменьшите количество необязательных параметров c %s до допустимого %s",
+    "BSL019": 'Уменьшите цикломатическую сложность "%s" с %s до %s',
+    "BSL031": "Уменьшите количество параметров c %s до допустимого %s",
+    "BSL042": 'Метод "%s" не вызывается в теле модуля',
+    "BSL062": 'Уберите неиспользуемый параметр "%s"',
     "BSL001": "Ошибка разбора исходного кода. %s",
+    "BSL004": "Наполните блок кодом или удалите его",
+    "BSL005": "Используется хранение в коде ip-адреса",
+    "BSL006": "Используется хранение в коде пути к файлу",
+    "BSL007": "Удалите неиспользуемую переменную %s",
+    "BSL009": "Удалите бесполезное присваивание переменной самой себе",
+    "BSL012": "Используется хранение конфиденциальной информации в коде",
+    "BSL013": "Программные модули не должны иметь закомментированных фрагментов кода",
+    "BSL017": "Не следует размещать экспортные методы в модулях команд и общих команд",
+    "BSL020": "Превышен допустимый уровень вложенности управляющих конструкций",
+    "BSL024": "Между символами комментария '//' и самим текстом комментария должен быть пробел.",
+    "BSL025": 'Удалите ";"',
+    "BSL027": 'Оператор "Перейти" не должен использоваться',
+    "BSL028": 'Отсутствует код в блоке "Исключение"',
+    "BSL030": "Пропущена точка с запятой в конце выражения",
+    "BSL032": 'Функция не содержит "Возврат"',
+    "BSL033": "Необходимо модифицировать запрос для поддержки множества значений и удалить цикл",
+    "BSL036": "Выделите условие оператора Если в отдельный метод или переменную",
+    "BSL039": "Не рекомендуется использовать вложенный тернарный оператор",
+    "BSL040": 'Вместо устаревшего свойства "ЭтаФорма" следует использовать "ЭтотОбъект"',
+    "BSL041": 'Не следует использовать устаревший метод "Сообщить"',
+    "BSL051": "Исправьте алгоритм, т.к. этот код никогда не будет исполнен",
     "BSL052": 'Слева и справа от оператора "%s" находятся одинаковые подвыражения: "%s"',
+    "BSL054": (
+        "Не рекомендуется использовать экспортные переменные. Это может стать источником "
+        "трудновоспроизводимых ошибок"
+    ),
+    "BSL055": "Удалите лишние последовательные пустые строки",
+    "BSL060": "Использование двойных отрицаний усложняет понимание кода",
+    "BSL064": 'Процедура содержит "Возврат" со значением',
+    "BSL065": "Добавьте описание возвращаемого значения функции",
+    "BSL066": 'Используйте "СтрНайти" вместо устаревшего "Найти"',
+    "BSL077": "Нужно изменить запрос, добавив упорядочивание",
+    "BSL097": 'Используйте "ТекущаяДатаСеанса" вместо устаревшего "ТекущаяДата"',
+    "BSL148": "Не все пути выполнения функции возвращают значение",
+    "BSL151": (
+        "Метод 'НачатьТранзакцию' должен быть за пределами блока 'Попытка-Исключение' "
+        "непосредственно перед оператором 'Попытка'"
+    ),
     "BSL152": "Переместите методы в Служебный Программный интерфейс",
     "BSL154": "Проверьте корректность выполнения кода после асинхронного метода <%s>",
+    "BSL155": "Необходимо разместить тело модуля после определения методов",
+    "BSL156": "Переместите код в область",
+    "BSL157": (
+        "Метод 'ЗафиксироватьТранзакцию' должен идти последним в блоке 'Попытка' перед "
+        "оператором 'Исключение'"
+    ),
     "BSL158": "Переименуйте переменную, т.к %s - это имя общего модуля",
     "BSL159": "Общий модуль недопустимого типа",
     "BSL160": (
         "Общий модуль должен иметь хотя бы один экспортный метод, а также область "
         '"ПрограммныйИнтерфейс" или "СлужебныйПрограммныйИнтерфейс".'
     ),
+    "BSL161": 'Добавьте постфикс "ПовтИсп" к имени общего модуля',
+    "BSL162": 'Добавьте постфикс "Клиент" к имени общего модуля',
+    "BSL163": 'Добавьте постфикс "КлиентСервер" к имени общего модуля',
+    "BSL164": 'Добавьте постфикс "ПолныеПрава" к имени общего модуля',
+    "BSL165": 'Добавьте постфикс "Глобальный" к имени общего модуля',
+    "BSL166": 'Удалите постфикс "Клиент" у глобального модуля',
+    "BSL167": 'Добавьте постфикс "ВызовСервера" к имени общего модуля',
+    "BSL168": "Переименуйте общий модуль",
     "BSL169": 'Укажите директиву компиляции у метода "%s"',
     "BSL170": "Удалите директиву компиляции",
-    "BSL174": 'Не указан флаг "Запрет незаполненных значений" у измерения "%s" метаданного "%s"',
+    "BSL171": (
+        "Воспользуйтесь 'классическим' способом создания многострочных литералов, используя "
+        "`|` и `+`"
+    ),
+    "BSL172": "Добавьте проверку признака ОбменДанными.Загрузка в самом начале процедуры",
+    "BSL174": ('Не указан флаг "Запрет незаполненных значений" у измерения "%s" метаданного "%s"'),
     "BSL176": 'Удалите обращение к устаревшему "%s".%s',
+    "BSL179": 'Замените устаревшее использование типа "УправляемаяФорма"',
+    "BSL180": "Проверьте отключение безопасного режима",
     "BSL182": 'Удалите проверку параметра "АвтоТест"',
+    "BSL183": "Запрещено выполнение произвольного кода на сервере",
+    "BSL184": (
+        "Выполнение произвольного кода в общем модуле на сервере является потенциальной "
+        "уязвимостью "
+    ),
+    "BSL185": "Проверьте запуск внешнего приложения",
+    "BSL186": "Не используйте запятые для параметров по умолчанию в конце вызова метода.",
     "BSL187": (
         "Для полей из соединений добавьте проверки полей через Есть NULL или используйте "
         "приведение через ЕстьNULL или используйте внутреннее соединение"
     ),
+    "BSL188": "Проверьте обращение к файловой системе",
     "BSL189": "Запрещено использовать имя `%s` для `%s`",
+    "BSL190": "Не рекомендуемое использование метода ДанныеФормыВЗначение",
     "BSL191": 'Перепишите запрос без использования "ПОЛНОЕ ВНЕШНЕЕ СОЕДИНЕНИЕ"',
     "BSL192": 'Уберите слово "Получить" из имени функции',
     "BSL193": "Параметр функции не должен возвращать значение",
+    "BSL194": "Проверьте правильность возврата одного и того же примитивного значения в функции",
+    "BSL195": "Не рекомендуемое использование метода ПолучитьФорму",
     "BSL196": 'Метод "%s" должен быть удален или переименован',
+    "BSL197": (
+        'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся блоки кода'
+    ),
+    "BSL198": (
+        'Синтаксическая конструкция "Если...Тогда...ИначеЕсли..." содержит повторяющиеся условия'
+    ),
+    "BSL199": (
+        'Синтаксическая конструкция вида "Если...Тогда...ИначеЕсли..." должна содержать ветвь '
+        '"Иначе".'
+    ),
+    "BSL200": "Проверьте правильность переноса операндов, операторов и параметров",
     "BSL201": "Нужно исправить выражение в соответствии со стандартом",
     "BSL202": 'Исправьте передачу параметров при вызове метода "СтрШаблон"',
+    "BSL203": "Проверьте обращение к Интернет-ресурсам",
+    "BSL204": "Нужно исправить недопустимый символ",
+    "BSL205": "Для проверки прав доступа в коде следует использовать метод ПравоДоступа",
     "BSL206": "Не следует использовать соединения с вложенными запросами",
+    "BSL207": "Не следует использовать соединения с виртуальными таблицами",
+    "BSL208": "Нельзя использовать латинские и кириллические символы в одном идентификаторе",
+    "BSL209": "Обнаружен оператор 'ИЛИ' в условии соединения",
+    "BSL210": 'Не следует использовать логическое "ИЛИ" в секции "ГДЕ" запроса',
     "BSL211": "Переименуйте объект конфигурации `%s` так, чтобы длина наименования была меньше %s",
     "BSL212": "Укажите обязательный параметр %s",
     "BSL213": "Метод %s общего модуля %s не существует",
     "BSL214": 'Заполните обработчик подписки на событие "%s"',
+    "BSL215": "Необходимо добавить описание всех параметров метода",
+    "BSL217": (
+        "Нужно добавить удаление данных из временного хранилища после использования, вызвав "
+        '"УдалитьИзВременногоХранилища"'
+    ),
+    "BSL218": "Нужно добавить удаление временного файла после использования",
+    "BSL219": "Добавьте описание переменной",
     "BSL220": "Проверьте корректность многострочного литерала",
     "BSL223": "Не используйте конструкторы с параметрами при объявлении структуры",
+    "BSL225": "Уменьшите количество значений свойств, передаваемых в конструктор структуры",
+    "BSL226": "Проверить потенциально вредоносное использование метода ПользователиОС",
+    "BSL227": "Перенесите выражение на новую строку",
+    "BSL228": "Переместите необязательные параметры после обязательных",
+    "BSL229": "Поддержка обычного приложения",
     "BSL231": "Проверьте обращение к методу %s привилегированного модуля",
     "BSL232": "Исходный код модуля отсутствует из-за защиты паролем. %s",
+    "BSL233": "Добавьте описание метода программного интерфейса",
+    "BSL234": "Обнаружено разыменование ссылочного поля",
+    "BSL235": "Текст запроса должен быть корректным и открываться конструктором запросов",
+    "BSL237": (
+        "Избавьтесь от избыточного обращения внутри модуля через его имя или псевдоним ЭтотОбъект"
+    ),
+    "BSL238": 'Избавьтесь от получения поля "Ссылка" в запросе.',
     "BSL239": 'Переименуйте параметр "%s" так, чтобы он не совпадал с зарезервированным словом.',
     "BSL240": "Параметр %s перезаписывается без использования",
     "BSL241": "Измените имя `%s`, чтобы оно не совпадало с родительским `%s`",
-    "BSL242": 'Укажите существующий обработчик вместо несуществующего "%s" у регламентного задания "%s"',
+    "BSL242": (
+        'Укажите существующий обработчик вместо несуществующего "%s" у регламентного задания "%s"'
+    ),
     "BSL243": "Удалите вставку коллекции в саму себя",
     "BSL244": (
         "В событиях ПриАктивизацииСтроки и НачалоВыбора не должно быть вызовов серверных "
         'процедур. Процедура "%s" выполняется на сервере, что может привести к проблемам.'
     ),
+    "BSL245": "Запрещено создавать серверные экспортные методы в форме",
     "BSL246": 'У роли "%s" установлен флажок «Устанавливать права для новых объектов»',
+    "BSL247": "Проверьте установку привилегированного режима",
+    "BSL248": "Указано несколько директив компиляции",
+    "BSL250": "Не рекомендуемый вызов функции КаталогВременныхФайлов()",
+    "BSL251": "Используйте конструкцию Если-Иначе вместо тернарного оператора",
+    "BSL252": "Свойство ЭтотОбъект доступно только для чтения",
     "BSL253": "Не указан таймаут при работе с внешним ресурсом",
+    "BSL255": "Не следует использовать исключения для приведения значения к типу",
+    "BSL257": "Унарный плюс в конкатенации строк потенциально приводит к ошибке времени выполнения",
+    "BSL258": "Замените конструкцию ОБЪЕДИНИТЬ на ОБЪЕДИНИТЬ ВСЕ",
     "BSL260": "Небезопасное использование метода НайтиПоКоду()",
     "BSL261": "Используйте явное сравнение с Булево при вызове БезопасныйРежим()",
+    "BSL262": 'Исправьте передачу неверных параметров в методе "ЗаписьЖурналаРегистрации"',
+    "BSL263": "Итератор не используется в теле цикла",
+    "BSL264": "Избавьтесь от использования объекта `СистемнаяИнформация`",
+    "BSL265": "Бесполезный тернарный оператор",
     "BSL266": "Не следует присваивать параметру Отказ значение отличное от Истина",
+    "BSL267": "Запрещено использование возможности выполнения внешнего кода",
     "BSL269": "Измените выражение, чтобы не использовать 'ПОДОБНО'",
     "BSL271": 'Проверить, что задействованы аналоги "%s" при работе в Unix-клиенте.',
+    "BSL273": "Не следует использовать виртуальные таблицы без параметров",
     "BSL274": 'Не указан путь к данным у реквизита формы "%s". Форма "%s".',
-    "BSL275": 'Создайте функцию-обработчик "%s" или исправьте некорректный обработчик http-сервиса "%s"',
+    "BSL275": (
+        'Создайте функцию-обработчик "%s" или исправьте некорректный обработчик http-сервиса "%s"'
+    ),
+    "BSL276": (
+        "Использовать функцию ПродолжитьВызов() можно только в расширениях и только в методах "
+        "с аннотацией &Вместо."
+    ),
+    "BSL277": "Метод ОтменитьТранзакцию() должен быть в попытке и первым методом блока исключения",
+    "BSL279": 'В текстах модулях не допускается использовать букву "Ё".',
 }
 
 # ---------------------------------------------------------------------------
 # Fix hints — actionable one-line suggestions keyed by rule code
 # ---------------------------------------------------------------------------
 
-_BSLLS_LSP_HINT_RULE_NAMES: frozenset[str] = frozenset(
-    {
-        "CanonicalSpellingKeywords",
-        "CodeOutOfRegion",
-        "CommandModuleExportMethods",
-        "CommonModuleNameWords",
-        "ConsecutiveEmptyLines",
-        "DeprecatedAttributes8312",
-        "DeprecatedMethods8310",
-        "DeprecatedMethods8317",
-        "DeprecatedTypeManagedForm",
-        "DuplicateRegion",
-        "EmptyRegion",
-        "EmptyStatement",
-        "FormDataToValue",
-        "FunctionNameStartsWithGet",
-        "IncorrectLineBreak",
-        "NonStandardRegion",
-        "MissingSpace",
-        "PublicMethodsDescription",
-        "RedundantAccessToObject",
-        "SpaceAtStartComment",
-        "Typo",
-        "UsageWriteLogEvent",
-        "UselessTernaryOperator",
-        "UsingServiceTag",
-        "YoLetterUsage",
-    }
-)
-_BSLLS_LSP_WARNING_RULE_NAMES: frozenset[str] = frozenset(
-    {
-        "ExternalAppStarting",
-        "UsingExternalCodeTools",
-    }
-)
+# BSLLS v1.0.7 DiagnosticMetadata and DiagnosticInfo.computeLSPSeverity.
+# Keep CLI severity policy in RULE_METADATA independent of LSP presentation.
+_BSLLS_LSP_SEVERITY_BY_RULE_NAME: dict[str, Severity] = {
+    **dict.fromkeys(
+        (
+            "ParseError",
+            "UsingHardcodeNetworkAddress",
+            "UsingHardcodePath",
+            "SelfAssign",
+            "UsingHardcodeSecretInformation",
+            "MissingCodeTryCatchEx",
+            "FunctionShouldHaveReturn",
+            "CreateQueryInCycle",
+            "UnreachableCode",
+            "IdenticalExpressions",
+            "ProcedureReturnsValue",
+            "DeprecatedCurrentDate",
+            "BeginTransactionBeforeTryCatch",
+            "CodeBlockBeforeSub",
+            "CommitTransactionOutsideTryCatch",
+            "CommonModuleAssign",
+            "CommonModuleInvalidType",
+            "DataExchangeLoading",
+            "DeletingCollectionItem",
+            "DisableSafeMode",
+            "ExecuteExternalCode",
+            "FieldsFromJoinsWithoutIsNull",
+            "FileSystemAccess",
+            "ForbiddenMetadataName",
+            "FunctionReturnsSamePrimitive",
+            "GetFormMethod",
+            "GlobalContextMethodCollision8312",
+            "IncorrectUseLikeInQuery",
+            "IncorrectUseOfStrTemplate",
+            "InternetAccess",
+            "InvalidCharacterInFile",
+            "MetadataObjectNameLength",
+            "MissedRequiredParameter",
+            "MissingCommonModuleMethod",
+            "MissingEventSubscriptionHandler",
+            "MissingTemporaryFileDeletion",
+            "MultilineStringInQuery",
+            "MultilingualStringHasAllDeclaredLanguages",
+            "MultilingualStringUsingWithTemplate",
+            "PairingBrokenTransaction",
+            "QueryToMissingMetadata",
+            "SameMetadataObjectAndChildNames",
+            "ScheduledJobHandler",
+            "SelfInsertion",
+            "ServerCallsInFormEvents",
+            "ServerSideExportFormMethod",
+            "SetPermissionsForNewObjects",
+            "SeveralCompilerDirectives",
+            "StyleElementConstructors",
+            "ThisObjectAssign",
+            "TimeoutsInExternalResources",
+            "UnaryPlusInConcatenation",
+            "UnknownPreprocessorSymbol",
+            "UnsafeSafeModeMethodCall",
+            "UseLessForEach",
+            "UsingLikeInQuery",
+            "UsingObjectNotAvailableUnix",
+            "VirtualTableCallWithoutParameters",
+            "WrongDataPathForFormElements",
+            "WrongHttpServiceHandler",
+            "WrongUseFunctionProceedWithCall",
+            "WrongUseOfRollbackTransactionMethod",
+            "WrongWebServiceHandler",
+        ),
+        Severity.ERROR,
+    ),
+    **dict.fromkeys(
+        (
+            "MethodSize",
+            "NonExportMethodsInApiRegion",
+            "EmptyCodeBlock",
+            "UnusedLocalVariable",
+            "CognitiveComplexity",
+            "CyclomaticComplexity",
+            "NestedStatements",
+            "UsingModalWindows",
+            "UsingGoto",
+            "NestedTernaryOperator",
+            "UnusedLocalMethod",
+            "ExportVariables",
+            "DoubleNegatives",
+            "UnusedParameters",
+            "MissingReturnedValueDescription",
+            "SelectTopWithoutOrderBy",
+            "AllFunctionPathMustHaveReturn",
+            "AssignAliasFieldsInQuery",
+            "BadWords",
+            "CachedPublic",
+            "CodeAfterAsyncCall",
+            "CommonModuleNameCached",
+            "CommonModuleNameClientServer",
+            "CommonModuleNameFullAccess",
+            "CommonModuleNameGlobal",
+            "CommonModuleNameGlobalClient",
+            "CompilationDirectiveLost",
+            "CompilationDirectiveNeedLess",
+            "CrazyMultilineString",
+            "DenyIncompleteValues",
+            "DuplicatedInsertionIntoCollection",
+            "ExecuteExternalCodeInCommonModule",
+            "ExternalAppStarting",
+            "ExtraCommas",
+            "FullOuterJoinQuery",
+            "FunctionOutParameter",
+            "IfElseDuplicatedCondition",
+            "IfElseIfEndsWithElse",
+            "IsInRoleMethod",
+            "JoinWithSubQuery",
+            "JoinWithVirtualTable",
+            "LogicalOrInJoinQuerySection",
+            "LogicalOrInTheWhereSectionOfQuery",
+            "MissingParameterDescription",
+            "MissingTempStorageDeletion",
+            "OSUsersMethod",
+            "OrderOfParams",
+            "OrdinaryAppSupport",
+            "PrivilegedModuleMethodCall",
+            "ProtectedModule",
+            "QueryNestedFieldsByDot",
+            "QueryParseError",
+            "RefOveruse",
+            "ReservedParameterNames",
+            "RewriteMethodParameter",
+            "SetPrivilegedMode",
+            "TempFilesDir",
+            "TransferringParametersBetweenClientAndServer",
+            "TryNumber",
+            "UnsafeFindByCode",
+            "UseSystemInformation",
+            "UsingCancelParameter",
+            "UsingExternalCodeTools",
+            "UsingFindElementByString",
+            "UsingSynchronousCalls",
+        ),
+        Severity.WARNING,
+    ),
+    **dict.fromkeys(
+        (
+            "TooManyReturns",
+            "CommentedCode",
+            "LineLength",
+            "NumberOfOptionalParams",
+            "MagicNumber",
+            "SemicolonPresence",
+            "NumberOfParams",
+            "DuplicateStringLiteral",
+            "IfConditionComplexity",
+            "UsingThisForm",
+            "DeprecatedMessage",
+            "MagicDate",
+            "DeprecatedFind",
+            "CommonModuleMissingAPI",
+            "CommonModuleNameClient",
+            "CommonModuleNameServerCall",
+            "DeprecatedMethodCall",
+            "ExcessiveAutoTestCheck",
+            "IfElseDuplicatedCodeBlock",
+            "LatinAndCyrillicSymbolInWord",
+            "MissingVariablesDescription",
+            "NestedConstructorsInStructureDeclaration",
+            "NestedFunctionInParameters",
+            "NumberOfValuesInStructureConstructor",
+            "OneStatementPerLine",
+            "TernaryOperatorUsage",
+            "UnionAll",
+        ),
+        Severity.INFORMATION,
+    ),
+    **dict.fromkeys(
+        (
+            "NonStandardRegion",
+            "CommandModuleExportMethods",
+            "UsingServiceTag",
+            "SpaceAtStartComment",
+            "EmptyStatement",
+            "EmptyRegion",
+            "ConsecutiveEmptyLines",
+            "DuplicateRegion",
+            "CanonicalSpellingKeywords",
+            "CodeOutOfRegion",
+            "CommonModuleNameWords",
+            "DeprecatedAttributes8312",
+            "DeprecatedTypeManagedForm",
+            "FormDataToValue",
+            "FunctionNameStartsWithGet",
+            "IncorrectLineBreak",
+            "MissingSpace",
+            "PublicMethodsDescription",
+            "RedundantAccessToObject",
+            "Typo",
+            "UsageWriteLogEvent",
+            "UselessTernaryOperator",
+            "YoLetterUsage",
+        ),
+        Severity.HINT,
+    ),
+}
 
 
 def lsp_compat_severity(code: str, severity: Severity) -> Severity:
-    """
-    Map internal severities to BSLLS-like LSP-facing severities.
+    """Apply the upstream LSP level without changing the internal CLI policy.
 
-    BSLLS exposes ``CODE_SMELL + INFO`` as LSP ``Hint``. Internally we keep the
-    original severity for CLI/text reports, but LSP-facing parity should use the
-    hint level for such diagnostics.
+    CODE_SMELL maps INFO/MINOR/MAJOR/CRITICAL/BLOCKER to Hint/Information/
+    Warning/Warning/Warning. SECURITY_HOTSPOT maps to Warning, other types
+    to Error. An explicit upstream lspSeverity takes precedence.
+    Unknown and removed upstream rules retain their supplied severity.
     """
     meta = RULE_METADATA.get(code, {})
     rule_name = str(meta.get("name") or code)
-    if severity == Severity.ERROR and rule_name in _BSLLS_LSP_WARNING_RULE_NAMES:
-        return Severity.WARNING
-    if severity == Severity.INFORMATION and rule_name in _BSLLS_LSP_HINT_RULE_NAMES:
-        return Severity.HINT
-    return severity
+    return _BSLLS_LSP_SEVERITY_BY_RULE_NAME.get(rule_name, severity)
 
 
 # ---------------------------------------------------------------------------
@@ -2444,7 +2751,6 @@ def _caller_is_client_method(
 # BSL215/BSL233 — compiler directive (e.g. &НаКлиенте) preceding a proc header
 _RE_COMPILER_DIRECTIVE = re.compile(r"^\s*&\w+\s*$")
 # BSL240 / write-only var assignment
-_RE_MODULE_ASSIGN = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_ASSIGN_LHS = re.compile(r"^\s*(?P<name>\w+)\s*=(?!=)", re.IGNORECASE)
 _RE_BSL192_GET = re.compile(r"^Получить.*$", re.IGNORECASE)
 _RE_BSL266_CANCEL = re.compile(r"^(?:Отказ|Cancel)$", re.IGNORECASE)
@@ -2675,31 +2981,6 @@ _RE_REGION_LINE = re.compile(r"^\s*#(?:Область|Region|КонецОбла�
 _RE_PREPROC_LINE = re.compile(r"^\s*#", re.IGNORECASE)
 
 # BSL007 — «read» of a simple identifier: LHS of ``Имя =`` does not count as a use.
-_BSL007_SIMPLE_ASSIGN_AT_START = re.compile(r"^\s*(\w+)\s*=(?!=)", re.IGNORECASE)
-
-
-def _bsl007_strip_double_quoted_segments(line: str) -> str:
-    """Replace BSL string literals with spaces (doubled-quote escape)."""
-    out: list[str] = []
-    i, n = 0, len(line)
-    while i < n:
-        if line[i] == '"':
-            out.append(" ")
-            j = i + 1
-            while j < n:
-                if line[j] == '"':
-                    j += 1
-                    if j < n and line[j] == '"':
-                        j += 1
-                    else:
-                        break
-                else:
-                    j += 1
-            i = j
-        else:
-            out.append(line[i])
-            i += 1
-    return "".join(out)
 
 
 # BSLLS allowTrailingPartsInAnotherLanguage=true (default).
@@ -2814,7 +3095,6 @@ _BSL175_ENUM_REPLACEMENTS: dict[str, str] = {
     "horizontal": "AlwaysHorizontal",
     "горизонтальная": "ГоризонтальнаяВсегда",
 }
-_BSL175_GLOBAL_METHODS = frozenset({"очиститьжурналрегистрации", "cleareventlog"})
 _RE_BSL175_ATTRIBUTE = re.compile(
     r"\b(?:ОбластьПостроенияДиаграммы|ChartPlotArea|Диаграмма|Chart|"
     r"ДиаграммаГанта|GanttChart|СводнаяДиаграмма|PivotChart)\.(?P<name>\w+)\b",
@@ -2828,10 +3108,6 @@ _RE_BSL175_METHOD = re.compile(
 _RE_BSL175_CHILD_FORM_ITEMS = re.compile(
     r"\b(?:ГруппировкаПодчиненныхЭлементовФормы|ChildFormItemsGroup)\.(?P<name>\w+)\b",
     re.IGNORECASE | re.UNICODE,
-)
-_RE_BSL175_GLOBAL_METHOD = re.compile(
-    r"\b(?P<name>ОчиститьЖурналРегистрации|ClearEventLog)\s*\(",
-    re.IGNORECASE,
 )
 _RE_BSL175_ENUM_NAME = re.compile(r"\b(?P<name>ОриентацияМетокДиаграммы)\b", re.IGNORECASE)
 
@@ -3008,22 +3284,34 @@ def _ts_parent_of_type(node: Any, node_types: set[str] | frozenset[str]) -> Any 
 
 
 def _bsl033_assignment_target(assignment: Any) -> str:
-    identifier = _ts_child_of_type(assignment, "identifier")
-    return _ts_node_text(identifier).casefold() if identifier is not None else ""
+    target = assignment.child_by_field_name("left")
+    if target is None or target.type not in {"identifier", "property_access"}:
+        return ""
+    return "".join(_ts_node_text(target).split()).casefold()
 
 
 def _bsl033_expression_query_types(expr: Any, variable_types: dict[str, set[str]]) -> set[str]:
-    children = getattr(expr, "children", []) or []
+    children = expr.named_children
     if len(children) != 1:
         return set()
     child = children[0]
-    child_type = getattr(child, "type", None)
-    if child_type == "new_expression":
-        type_node = _ts_child_of_type(child, "identifier")
-        type_name = _ts_node_text(type_node).casefold() if type_node is not None else ""
+    if child.type in {"new_expression", "new_expression_method"}:
+        type_node = child.child_by_field_name("type")
+        if type_node is None:
+            return set()
+        if child.type == "new_expression_method":
+            while type_node.type in {"expression", "const_expression"}:
+                if len(type_node.named_children) != 1:
+                    return set()
+                type_node = type_node.named_children[0]
+            if type_node.type != "string":
+                return set()
+            type_name = _ts_node_text(type_node)[1:-1].casefold()
+        else:
+            type_name = _ts_node_text(type_node).casefold()
         return {type_name} if type_name in _BSL033_QUERY_TYPES else set()
-    if child_type == "identifier":
-        return set(variable_types.get(_ts_node_text(child).casefold(), set()))
+    if child.type in {"identifier", "property_access"}:
+        return set(variable_types.get("".join(_ts_node_text(child).split()).casefold(), set()))
     return set()
 
 
@@ -3032,30 +3320,16 @@ def _bsl033_method_name(method_call: Any) -> str:
     return _ts_node_text(ident).casefold() if ident is not None else ""
 
 
-def _bsl033_receiver_from_access(access: Any, stop_before: Any | None = None) -> str:
-    for child in getattr(access, "children", []) or []:
-        if child is stop_before:
-            return ""
-        if getattr(child, "type", None) == "access":
-            receiver = _bsl033_receiver_from_access(child)
-            if receiver:
-                return receiver
-        if getattr(child, "type", None) == "identifier":
-            return _ts_node_text(child).casefold()
-    return ""
-
-
 def _bsl033_receiver_name(method_call: Any) -> str:
-    parent = getattr(method_call, "parent", None)
-    if getattr(parent, "type", None) == "access":
-        return _bsl033_receiver_from_access(parent, stop_before=method_call)
-    if getattr(parent, "type", None) == "call_expression":
-        for child in getattr(parent, "children", []) or []:
-            if child is method_call:
-                break
-            if getattr(child, "type", None) == "access":
-                return _bsl033_receiver_from_access(child)
-    return ""
+    parent = method_call.parent
+    if parent is None or parent.type not in {"access", "call_expression"}:
+        return ""
+    receiver_parts = []
+    for child in parent.children:
+        if child == method_call:
+            break
+        receiver_parts.append(_ts_node_text(child))
+    return "".join("".join(receiver_parts).split()).rstrip(".").casefold()
 
 
 def _bsl033_range_node(method_call: Any) -> Any:
@@ -3071,7 +3345,6 @@ def _bsl033_range_node(method_call: Any) -> Any:
 def _diagnostics_bsl033_from_tree(
     path: str,
     lines: list[str],
-    procs: list[_ProcInfo],
     *,
     assignment_nodes: list[Any],
     method_call_nodes: list[Any],
@@ -3085,57 +3358,51 @@ def _diagnostics_bsl033_from_tree(
             0 if getattr(node, "type", None) == "assignment_statement" else 1,
         ),
     )
-    node_idx = 0
-    for proc in sorted(procs, key=lambda item: item.start_idx):
-        variable_types: dict[str, set[str]] = {}
-        while (
-            node_idx < len(proc_nodes)
-            and getattr(proc_nodes[node_idx], "start_point", (0, 0))[0] <= proc.start_idx
-        ):
-            node_idx += 1
-        current_idx = node_idx
-        while current_idx < len(proc_nodes):
-            node = proc_nodes[current_idx]
-            row = getattr(node, "start_point", (0, 0))[0]
-            if row >= proc.end_idx:
-                break
-            current_idx += 1
-            node_type = getattr(node, "type", None)
-            if node_type == "method_call" and _bsl033_method_name(node) not in {
-                "выполнить",
-                "execute",
-            }:
-                continue
-            if node_type == "assignment_statement":
-                target = _bsl033_assignment_target(node)
-                expr = _ts_child_of_type(node, "expression")
-                if target and expr is not None:
-                    variable_types[target] = _bsl033_expression_query_types(expr, variable_types)
-                continue
-            if node_type != "method_call":
-                continue
-            if _ts_parent_of_type(node, _BSL033_LOOP_NODE_TYPES) is None:
-                continue
-            receiver = _bsl033_receiver_name(node)
-            if not receiver or not (variable_types.get(receiver, set()) & _BSL033_QUERY_TYPES):
-                continue
-            range_node = _bsl033_range_node(node)
-            start_row, start_byte = range_node.start_point
-            end_row, end_byte = range_node.end_point
-            start_line = lines[start_row] if 0 <= start_row < len(lines) else ""
-            end_line = lines[end_row] if 0 <= end_row < len(lines) else ""
-            diags.append(
-                Diagnostic(
-                    file=path,
-                    line=start_row + 1,
-                    character=utf8_byte_offset_to_lsp_character(start_line, start_byte),
-                    end_line=end_row + 1,
-                    end_character=utf8_byte_offset_to_lsp_character(end_line, end_byte),
-                    severity=Severity.WARNING,
-                    code="BSL033",
-                )
+    variable_types_by_scope: dict[int, dict[str, set[str]]] = {}
+    for node in proc_nodes:
+        if node.has_error:
+            continue
+        scope = _ts_parent_of_type(node, {"procedure_definition", "function_definition"})
+        scope_key = scope.id if scope is not None else 0
+        variable_types = variable_types_by_scope.setdefault(scope_key, {})
+        loop = _ts_parent_of_type(node, _BSL033_LOOP_NODE_TYPES)
+        if loop is not None and loop.type == "for_each_statement":
+            do_token = _ts_child_of_type(loop, "DO_KEYWORD")
+            if do_token is not None and node.start_byte < do_token.end_byte:
+                loop = _ts_parent_of_type(loop, _BSL033_LOOP_NODE_TYPES)
+        if node.type == "assignment_statement":
+            target = _bsl033_assignment_target(node)
+            expr = node.child_by_field_name("right")
+            if target and expr is not None:
+                types = _bsl033_expression_query_types(expr, variable_types)
+                if loop is not None:
+                    variable_types.setdefault(target, set()).update(types)
+                else:
+                    variable_types[target] = types
+            continue
+        if node.type != "method_call" or _bsl033_method_name(node) not in {"выполнить", "execute"}:
+            continue
+        if loop is None:
+            continue
+        receiver = _bsl033_receiver_name(node)
+        if not receiver or not (variable_types.get(receiver, set()) & _BSL033_QUERY_TYPES):
+            continue
+        range_node = _bsl033_range_node(node)
+        start_row, start_byte = range_node.start_point
+        end_row, end_byte = range_node.end_point
+        start_line = lines[start_row] if 0 <= start_row < len(lines) else ""
+        end_line = lines[end_row] if 0 <= end_row < len(lines) else ""
+        diags.append(
+            Diagnostic(
+                file=path,
+                line=start_row + 1,
+                character=utf8_byte_offset_to_lsp_character(start_line, start_byte),
+                end_line=end_row + 1,
+                end_character=utf8_byte_offset_to_lsp_character(end_line, end_byte),
+                severity=Severity.WARNING,
+                code="BSL033",
             )
-        node_idx = current_idx
+        )
     return diags
 
 
@@ -3253,25 +3520,38 @@ def _ts_node_is_under_parameters(node: Any) -> bool:
     return False
 
 
-def _ts_assignment_is_bare_self_assign(node: Any) -> bool:
-    """``identifier = identifier`` only (not ``Obj.Field = Field``)."""
-    if getattr(node, "type", None) != "assignment_statement":
+def _ts_assignment_is_self_assign(node: Any) -> bool:
+    """Compare operand tokens, preserving case inside string literals."""
+    if getattr(node, "type", None) != "assignment_statement" or tree_has_errors(node):
         return False
-    ch = getattr(node, "children", []) or []
-    if not ch or getattr(ch[0], "type", None) != "identifier":
+    children = [
+        child
+        for child in getattr(node, "children", ())
+        if getattr(child, "type", None) not in {"line_comment", "comment", ";"}
+    ]
+    if len(children) != 3 or getattr(children[1], "type", None) != "=":
         return False
-    left = _ts_node_text(ch[0])
-    expr_node = None
-    for c in ch:
-        if getattr(c, "type", None) == "expression":
-            expr_node = c
-            break
-    if expr_node is None:
+    if getattr(children[2], "type", None) != "expression":
         return False
-    ech = getattr(expr_node, "children", []) or []
-    if len(ech) != 1 or getattr(ech[0], "type", None) != "identifier":
-        return False
-    return left == _ts_node_text(ech[0])
+
+    def tokens(operand: Any) -> tuple[str, ...]:
+        result: list[str] = []
+        stack = [operand]
+        while stack:
+            current = stack.pop()
+            if getattr(current, "type", None) in {"line_comment", "comment"}:
+                continue
+            if getattr(current, "type", None) == "string":
+                result.append(_ts_node_text(current))
+                continue
+            descendants = getattr(current, "children", ())
+            if descendants:
+                stack.extend(reversed(descendants))
+            else:
+                result.append(_ts_node_text(current).casefold())
+        return tuple(result)
+
+    return tokens(children[0]) == tokens(children[2])
 
 
 def _diagnostics_bsl009_from_tree(
@@ -3281,26 +3561,27 @@ def _diagnostics_bsl009_from_tree(
     candidate_nodes: list[Any] | None = None,
 ) -> list[Diagnostic]:
     diags: list[Diagnostic] = []
+    source_lines = _ts_node_text(root).splitlines()
 
     def check_node(node: Any) -> None:
         if (
             getattr(node, "type", None) == "assignment_statement"
             and not _ts_node_is_under_parameters(node)
-            and _ts_assignment_is_bare_self_assign(node)
+            and _ts_assignment_is_self_assign(node)
         ):
             start = node.start_point
             end = node.end_point
             for child in getattr(node, "children", []) or []:
                 if getattr(child, "type", None) == "expression":
-                    end = child.start_point
+                    end = child.end_point
                     break
             diags.append(
                 Diagnostic(
                     file=path,
                     line=start[0] + 1,
-                    character=start[1],
+                    character=utf8_byte_offset_to_lsp_character(source_lines[start[0]], start[1]),
                     end_line=end[0] + 1,
-                    end_character=end[1],
+                    end_character=utf8_byte_offset_to_lsp_character(source_lines[end[0]], end[1]),
                     severity=Severity.ERROR,
                     code="BSL009",
                 )
