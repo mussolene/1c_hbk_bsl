@@ -725,7 +725,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.52...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.53...HEAD
+[0.8.53]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.52...v0.8.53
 [0.8.52]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.51...v0.8.52
 [0.8.51]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.50...v0.8.51
 [0.8.50]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.49...v0.8.50
