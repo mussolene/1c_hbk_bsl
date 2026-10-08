@@ -20,6 +20,8 @@ import {
   Executable,
   LanguageClient,
   LanguageClientOptions,
+  DocumentSymbolRequest,
+  FoldingRangeRequest,
   RevealOutputChannelOn,
   ServerOptions,
   TransportKind,
@@ -91,6 +93,21 @@ const PLATFORM_ASSETS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 let client: LanguageClient | undefined;
+
+class BslLanguageClient extends LanguageClient {
+  override registerFeature(feature: Parameters<LanguageClient["registerFeature"]>[0]): void {
+    // Структура и сворачивание принадлежат локальным провайдерам редактора.
+    // Повторная регистрация через LSP создает второй источник в навигации.
+    if (
+      "registrationType" in feature &&
+      (feature.registrationType.method === DocumentSymbolRequest.method ||
+        feature.registrationType.method === FoldingRangeRequest.method)
+    ) {
+      return;
+    }
+    super.registerFeature(feature);
+  }
+}
 let statusBarItem: vscode.StatusBarItem | undefined;
 
 /** Set after a successful `resolveBinaryPath` — used by commands when falling back to CLI (no PATH). */
@@ -197,7 +214,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const serverOptions = buildServerOptions(binaryPath, config);
   const clientOptions = buildClientOptions(channel, context);
 
-  client = new LanguageClient(LANGUAGE_CLIENT_ID, brand, serverOptions, clientOptions);
+  client = new BslLanguageClient(LANGUAGE_CLIENT_ID, brand, serverOptions, clientOptions);
 
   // Commands
   context.subscriptions.push(
@@ -539,14 +556,6 @@ function buildClientOptions(
     documentSelector: LSP_BSL_DOCUMENT_SELECTOR,
     outputChannel,
     revealOutputChannelOn: RevealOutputChannelOn.Error,
-    middleware: {
-      provideDocumentSymbols(document) {
-        return provideFastBslDocumentSymbols(document);
-      },
-      provideFoldingRanges(document) {
-        return provideFastBslFoldingRanges(document);
-      },
-    },
     initializationFailedHandler: (error) => {
       const text = error instanceof Error ? error.stack ?? error.message : String(error);
       logLine(`LSP initialization failed:\n${text}`);
