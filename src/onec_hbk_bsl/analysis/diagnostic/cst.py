@@ -170,21 +170,6 @@ def _diag(
     )
 
 
-def _expr_is_only_string_literal(expr: Any) -> bool:
-    if getattr(expr, "type", None) != "expression":
-        return False
-    ech = [c for c in getattr(expr, "children", []) or [] if c.type != ";"]
-    if len(ech) != 1:
-        return False
-    ce = ech[0]
-    if getattr(ce, "type", None) != "const_expression":
-        return False
-    for c in getattr(ce, "children", []) or []:
-        if getattr(c, "type", None) == "string":
-            return True
-    return False
-
-
 def ts_clause_body_is_empty(body: list[Any]) -> bool:
     """True if clause body has no executable statements (only comments / bare ``;``)."""
     for c in body:
@@ -401,30 +386,6 @@ def _bsl004_emit_empty_loop_body(
     _bsl004_append_empty_opening_block(path, diags, opener_node, ch[do_index], lines)
 
 
-def _try_except_has_only_comments_or_empty(
-    try_node: Any,
-) -> bool:
-    """True if between EXCEPT_KEYWORD and ENDTRY_KEYWORD there are no executable nodes."""
-    ch = getattr(try_node, "children", []) or []
-    i_except = None
-    i_end = None
-    for i, c in enumerate(ch):
-        if getattr(c, "type", None) == "EXCEPT_KEYWORD":
-            i_except = i
-        elif getattr(c, "type", None) == "ENDTRY_KEYWORD":
-            i_end = i
-            break
-    if i_except is None or i_end is None or i_end <= i_except:
-        return False
-    for c in ch[i_except + 1 : i_end]:
-        ct = getattr(c, "type", None)
-        if ct == "line_comment":
-            continue
-        if ct != ";":
-            return False
-    return True
-
-
 def diagnostics_bsl004_from_tree(
     path: str,
     root: Any,
@@ -448,42 +409,6 @@ def diagnostics_bsl004_from_tree(
         for node in candidate_nodes:
             visit(node)
     return diags
-
-
-def _else_clause_is_empty(else_node: Any) -> bool:
-    ch = [c for c in getattr(else_node, "children", []) or []]
-    if not ch:
-        return True
-    if getattr(ch[0], "type", None) != "ELSE_KEYWORD":
-        return False
-    rest = ch[1:]
-    if not rest:
-        return True
-    for c in rest:
-        if getattr(c, "type", None) != "line_comment":
-            return False
-    return True
-
-
-def _loop_body_has_executable(loop_node: Any) -> bool:
-    ch = getattr(loop_node, "children", []) or []
-    i_do = None
-    i_end = None
-    for i, c in enumerate(ch):
-        if getattr(c, "type", None) == "DO_KEYWORD":
-            i_do = i
-        elif getattr(c, "type", None) == "ENDDO_KEYWORD":
-            i_end = i
-            break
-    if i_do is None or i_end is None or i_end <= i_do:
-        return True
-    for c in ch[i_do + 1 : i_end]:
-        ct = getattr(c, "type", None)
-        if ct == "line_comment":
-            continue
-        if ct != ";":
-            return True
-    return False
 
 
 def loop_body_line_indices_0(root: Any) -> set[int]:

@@ -492,7 +492,7 @@ def test_all_rule_pages_have_current_generated_headers_and_localized_description
         assert "Engineering contract" not in actual
         assert '<div class="doc-lang doc-lang-ru"' in actual
         assert '<div class="doc-lang doc-lang-en"' in actual
-        assert f"# {path.stem} —" in actual
+        assert f"# {path.stem} -" in actual
         assert path.is_relative_to(root / "docs")
 
 

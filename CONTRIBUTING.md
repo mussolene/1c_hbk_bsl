@@ -9,7 +9,7 @@ Thank you for your interest in contributing!
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
 - git
-- Node.js 20+ (only if working on the VSCode extension)
+- Node.js 24 (used by CI, only needed for the VSCode extension)
 
 ### Install (Python)
 
@@ -56,7 +56,7 @@ npm run compile
 ./.venv/bin/python -m pytest --cov-report=html
 
 # Single test file
-./.venv/bin/python -m pytest tests/test_diagnostics.py -v
+./.venv/bin/python -m pytest tests/test_config.py -q --no-cov
 ```
 
 ## Code Style

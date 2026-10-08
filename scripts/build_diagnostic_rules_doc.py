@@ -8,6 +8,8 @@ Internal implementation dossiers are deliberately excluded from public docs.
 
 from __future__ import annotations
 
+import inspect
+import json
 import sys
 from pathlib import Path
 
@@ -23,7 +25,50 @@ ENGINEERING_CONTRACT_START = "<!-- engineering-contract:start -->"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from onec_hbk_bsl.analysis.diagnostics import RULE_DESCRIPTIONS_RU, RULE_METADATA  # noqa: E402
+from onec_hbk_bsl.analysis.diagnostics import (  # noqa: E402
+    RULE_DESCRIPTIONS_RU,
+    RULE_METADATA,
+    DiagnosticEngine,
+    resolve_rule_token_to_code,
+)
+from onec_hbk_bsl.cli.config import (  # noqa: E402
+    _BSLLS_DISABLED_BY_DEFAULT,
+    _BSLLS_PARAMETER_KEYS,
+    BslConfig,
+)
+
+ENGINE_DEFAULTS = inspect.signature(DiagnosticEngine).parameters
+DEFAULT_ENGINE = DiagnosticEngine()
+BSLLS_DISABLED_CODES = {resolve_rule_token_to_code(alias) for alias in _BSLLS_DISABLED_BY_DEFAULT}
+
+
+def build_parameter_table(code: str, *, english: bool) -> list[str]:
+    """Render only parameters supported by the authoritative BSLLS adapter."""
+    parameters = _BSLLS_PARAMETER_KEYS.get(code, {})
+    if not parameters:
+        return []
+    lines = [
+        "## Supported parameters" if english else "## Поддерживаемые параметры",
+        "",
+        "| TOML | BSLLS JSON | Default |" if english else "| TOML | BSLLS JSON | По умолчанию |",
+        "|---|---|---|",
+    ]
+    for bslls_key, (native_key, _) in parameters.items():
+        default = ENGINE_DEFAULTS[native_key.replace("-", "_")].default
+        value = _escape_table_cell(json.dumps(default, ensure_ascii=False))
+        lines.append(f"| `{native_key}` | `{bslls_key}` | `{value}` |")
+    lines.extend(
+        [
+            "",
+            "TOML keys belong in `[tool.onec-hbk-bsl]`; JSON keys belong in "
+            f"`diagnostics.parameters.{RULE_METADATA[code]['name']}`."
+            if english
+            else "Ключи TOML задаются в `[tool.onec-hbk-bsl]`, ключи JSON в "
+            f"`diagnostics.parameters.{RULE_METADATA[code]['name']}`.",
+            "",
+        ]
+    )
+    return lines
 
 
 def _rule_sort_key(code: str) -> tuple[int, str]:
@@ -44,8 +89,10 @@ def build_rule_header(code: str) -> str:
     meta = RULE_METADATA[code]
     alias = str(meta.get("name", "")).strip()
     severity = str(meta.get("severity", "")).strip()
-    tags = ", ".join(f"`{tag}`" for tag in meta.get("tags", [])) or "—"
+    tags = ", ".join(f"`{tag}`" for tag in meta.get("tags", [])) or "-"
     implemented = "Да" if bool(meta.get("implemented", True)) else "Нет"
+    default_enabled = DEFAULT_ENGINE._rule_enabled(code)
+    bslls_enabled = code not in BSLLS_DISABLED_CODES
     ru_description = RULE_DESCRIPTIONS_RU.get(code, str(meta.get("description", "")))
     en_description = str(meta.get("description", "")).strip()
     bslls_off = f"// BSLLS:{alias}-off" if alias else "// BSLLS-off"
@@ -92,10 +139,14 @@ def build_rule_header(code: str) -> str:
             f"| Код правила | `{code}` |",
             f"| Совместимый псевдоним | `{alias}` |",
             f"| Серьёзность | `{severity}` |",
-            "| Включено по умолчанию | Да |",
-            f"| Реализовано | {implemented} |",
+            f"| Без конфигурации | {'Да' if default_enabled else 'Нет'} |",
+            f"| BSLLS JSON, режим `ON` без переопределений | {'Да' if bslls_enabled else 'Нет'} |",
+            f"| Флаг реестра `implemented` | {implemented} |",
             f"| Теги | {tags} |",
             "",
+            "Флаг `implemented` отражает реестр и не подтверждает проверенное совпадение с BSLLS.",
+            "",
+            *build_parameter_table(code, english=False),
             "## Поведение",
             "",
             f"- Публичный идентификатор `{code}` и псевдоним `{alias}` стабильны.",
@@ -105,7 +156,7 @@ def build_rule_header(code: str) -> str:
             "",
             "## Настройка и подавление",
             "",
-            "Код `BSL###` — основной стабильный идентификатор. Совместимый псевдоним",
+            "Код `BSL###` - основной стабильный идентификатор. Совместимый псевдоним",
             "принимается в `select`, `ignore` и совместимых блоковых комментариях.",
             "",
             "```toml",
@@ -169,10 +220,14 @@ def build_rule_header(code: str) -> str:
             f"| Rule code | `{code}` |",
             f"| Compatible alias | `{alias}` |",
             f"| Severity | `{severity}` |",
-            "| Enabled by default | Yes |",
-            f"| Implemented | {'Yes' if implemented == 'Да' else 'No'} |",
+            f"| Without configuration | {'Yes' if default_enabled else 'No'} |",
+            f"| BSLLS JSON, `ON` mode without overrides | {'Yes' if bslls_enabled else 'No'} |",
+            f"| Registry flag `implemented` | {'Yes' if implemented == 'Да' else 'No'} |",
             f"| Tags | {tags} |",
             "",
+            "The `implemented` flag describes the registry; it does not certify verified BSLLS parity.",
+            "",
+            *build_parameter_table(code, english=True),
             "## Behavior",
             "",
             f"- The public identifier `{code}` and alias `{alias}` are stable.",
@@ -256,7 +311,7 @@ def render_rule_page(code: str, current: str) -> str:
     ru_title = RULE_DESCRIPTIONS_RU.get(code, code)
     en_title = str(RULE_METADATA[code].get("description", code))
     title = (
-        f'# {code} — <span class="doc-lang doc-lang-ru">{ru_title}</span>'
+        f'# {code} - <span class="doc-lang doc-lang-ru">{ru_title}</span>'
         f'<span class="doc-lang doc-lang-en">{en_title}</span>'
     )
     header = build_rule_header(code)
@@ -300,6 +355,11 @@ def build_markdown() -> str:
         "ведёт на единственную страницу с описанием, примерами, настройкой и",
         "способами подавления.",
         "",
+        "Без конфигурации движок выбирает все публичные правила. При загрузке BSLLS JSON",
+        "режим `ON` (также режим по умолчанию) использует отдельный набор включённых правил.",
+        "Параметры, `select`, `ignore` и подавления могут изменить результат.",
+        "Флаг реестра `implemented` не подтверждает проверенное совпадение поведения с BSLLS.",
+        "",
         "</div>",
         "",
         '<div class="doc-lang doc-lang-en" markdown="1">',
@@ -308,13 +368,18 @@ def build_markdown() -> str:
         "rule code links to its single page with usage documentation, examples,",
         "configuration, and suppressions.",
         "",
+        "Without configuration, the engine selects every public rule. Loading BSLLS JSON",
+        "in `ON` mode (also the default mode) uses a separate enabled rule set.",
+        "Parameters, `select`, `ignore`, and suppressions can change the result.",
+        "The registry flag `implemented` does not certify verified BSLLS behavior parity.",
+        "",
         "</div>",
         "",
         '<div class="doc-lang doc-lang-ru" markdown="1">',
         "",
         "## Идентификаторы",
         "",
-        "- `BSL###` — основной стабильный код для вывода, `select`, `ignore`,",
+        "- `BSL###` - основной стабильный код для вывода, `select`, `ignore`,",
         "  `onec-hbk-bsl.toml`, SARIF/JSON и `// noqa: BSL###`.",
         "- Совместимый псевдоним можно использовать во входной конфигурации и",
         "  комментариях `// BSLLS:<RuleName>-off/on`; вывод всегда использует `BSL###`.",
@@ -352,8 +417,15 @@ def build_markdown() -> str:
         row = [
             f"[`{code}`]({_rule_page_link(code)})",
             f"`{meta.get('name', '')}`",
-            '<span class="doc-lang doc-lang-ru">Да</span>'
-            '<span class="doc-lang doc-lang-en">Yes</span>',
+            (
+                '<span class="doc-lang doc-lang-ru">Да</span>'
+                '<span class="doc-lang doc-lang-en">Yes</span>'
+            )
+            if DEFAULT_ENGINE._rule_enabled(code)
+            else (
+                '<span class="doc-lang doc-lang-ru">Нет</span>'
+                '<span class="doc-lang doc-lang-en">No</span>'
+            ),
             str(meta.get("severity", "")),
             '<span class="doc-lang doc-lang-ru">'
             f"{RULE_DESCRIPTIONS_RU.get(code, str(meta.get('description', '')))}</span>"
@@ -362,6 +434,41 @@ def build_markdown() -> str:
             tags,
         ]
         lines.append("| " + " | ".join(_escape_table_cell(cell) for cell in row) + " |")
+    lines.extend(
+        [
+            "",
+            '## <span class="doc-lang doc-lang-ru">Параметры TOML</span>'
+            '<span class="doc-lang doc-lang-en">TOML parameters</span>',
+            "",
+            '<div class="doc-lang doc-lang-ru" markdown="1">',
+            "",
+            "Значения по умолчанию берутся из конструктора движка. Ключи задаются в",
+            "`[tool.onec-hbk-bsl]`. Таблица содержит параметры, передаваемые слоем конфигурации",
+            "в движок; поддерживаемые ключи BSLLS JSON указаны на страницах отдельных правил.",
+            "",
+            "</div>",
+            "",
+            '<div class="doc-lang doc-lang-en" markdown="1">',
+            "",
+            "Defaults come from the engine constructor. Set these keys in",
+            "`[tool.onec-hbk-bsl]`. The table lists parameters forwarded by the configuration",
+            "layer to the engine; supported BSLLS JSON keys appear on individual rule pages.",
+            "",
+            "</div>",
+            "",
+            '| TOML | <span class="doc-lang doc-lang-ru">По умолчанию</span>'
+            '<span class="doc-lang doc-lang-en">Default</span> |',
+            "|---|---|",
+        ]
+    )
+    for name, parameter in ENGINE_DEFAULTS.items():
+        key = name.replace("_", "-")
+        if parameter.default is inspect.Parameter.empty:
+            continue
+        if name not in BslConfig({key: parameter.default}).engine_kwargs():
+            continue
+        value = _escape_table_cell(json.dumps(parameter.default, ensure_ascii=False))
+        lines.append(f"| `{key}` | `{value}` |")
     return "\n".join(lines) + "\n"
 
 

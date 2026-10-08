@@ -214,16 +214,6 @@ def _find_child(elem: ET.Element, local_name: str) -> ET.Element | None:
     return None
 
 
-def _find_descendant(elem: ET.Element, *path: str) -> ET.Element | None:
-    """Walk a sequence of local tag names to find a nested element."""
-    current = elem
-    for name in path:
-        current = _find_child(current, name)
-        if current is None:
-            return None
-    return current
-
-
 def _find_first_descendant(elem: ET.Element, local_name: str) -> ET.Element | None:
     """Find the first descendant by local tag name."""
     for descendant in elem.iter():

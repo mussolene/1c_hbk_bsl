@@ -6,6 +6,11 @@
 ведёт на единственную страницу с описанием, примерами, настройкой и
 способами подавления.
 
+Без конфигурации движок выбирает все публичные правила. При загрузке BSLLS JSON
+режим `ON` (также режим по умолчанию) использует отдельный набор включённых правил.
+Параметры, `select`, `ignore` и подавления могут изменить результат.
+Флаг реестра `implemented` не подтверждает проверенное совпадение поведения с BSLLS.
+
 </div>
 
 <div class="doc-lang doc-lang-en" markdown="1">
@@ -14,13 +19,18 @@ This reference is generated from the `onec-hbk-bsl` runtime registry. Every
 rule code links to its single page with usage documentation, examples,
 configuration, and suppressions.
 
+Without configuration, the engine selects every public rule. Loading BSLLS JSON
+in `ON` mode (also the default mode) uses a separate enabled rule set.
+Parameters, `select`, `ignore`, and suppressions can change the result.
+The registry flag `implemented` does not certify verified BSLLS behavior parity.
+
 </div>
 
 <div class="doc-lang doc-lang-ru" markdown="1">
 
 ## Идентификаторы
 
-- `BSL###` — основной стабильный код для вывода, `select`, `ignore`,
+- `BSL###` - основной стабильный код для вывода, `select`, `ignore`,
   `onec-hbk-bsl.toml`, SARIF/JSON и `// noqa: BSL###`.
 - Совместимый псевдоним можно использовать во входной конфигурации и
   комментариях `// BSLLS:<RuleName>-off/on`; вывод всегда использует `BSL###`.
@@ -224,3 +234,39 @@ configuration, and suppressions.
 | [`BSL277`](rule-contracts/BSL277.md) | `WrongUseOfRollbackTransactionMethod` | <span class="doc-lang doc-lang-ru">Да</span><span class="doc-lang doc-lang-en">Yes</span> | ERROR | <span class="doc-lang doc-lang-ru">Некорректное использование метода ОтменитьТранзакцию()</span><span class="doc-lang doc-lang-en">Not recommended using of RollbackTransaction method</span> | transaction, error-handling |
 | [`BSL278`](rule-contracts/BSL278.md) | `WrongWebServiceHandler` | <span class="doc-lang doc-lang-ru">Да</span><span class="doc-lang doc-lang-en">Yes</span> | ERROR | <span class="doc-lang doc-lang-ru">Неверно задан обработчик операции web-сервиса</span><span class="doc-lang doc-lang-en">Wrong handler for web service</span> | correctness, web-service |
 | [`BSL279`](rule-contracts/BSL279.md) | `YoLetterUsage` | <span class="doc-lang doc-lang-ru">Да</span><span class="doc-lang doc-lang-en">Yes</span> | INFORMATION | <span class="doc-lang doc-lang-ru">Использование буквы "ё" в текстах модулей</span><span class="doc-lang doc-lang-en">Using Russian character "yo" ("ё") in code</span> | style, convention |
+
+## <span class="doc-lang doc-lang-ru">Параметры TOML</span><span class="doc-lang doc-lang-en">TOML parameters</span>
+
+<div class="doc-lang doc-lang-ru" markdown="1">
+
+Значения по умолчанию берутся из конструктора движка. Ключи задаются в
+`[tool.onec-hbk-bsl]`. Таблица содержит параметры, передаваемые слоем конфигурации
+в движок; поддерживаемые ключи BSLLS JSON указаны на страницах отдельных правил.
+
+</div>
+
+<div class="doc-lang doc-lang-en" markdown="1">
+
+Defaults come from the engine constructor. Set these keys in
+`[tool.onec-hbk-bsl]`. The table lists parameters forwarded by the configuration
+layer to the engine; supported BSLLS JSON keys appear on individual rule pages.
+
+</div>
+
+| TOML | <span class="doc-lang doc-lang-ru">По умолчанию</span><span class="doc-lang doc-lang-en">Default</span> |
+|---|---|
+| `max-proc-lines` | `200` |
+| `max-returns` | `3` |
+| `max-cognitive-complexity` | `15` |
+| `max-mccabe-complexity` | `20` |
+| `max-nesting-depth` | `4` |
+| `max-line-length` | `120` |
+| `max-optional-params` | `3` |
+| `max-params` | `7` |
+| `max-bool-ops` | `3` |
+| `min-duplicate-uses` | `3` |
+| `max-module-lines` | `1000` |
+| `bad-words-pattern` | `""` |
+| `bad-words-find-in-comments` | `true` |
+| `reserved-parameter-names-pattern` | `""` |
+| `bsl148-loops-executed-at-least-once` | `true` |

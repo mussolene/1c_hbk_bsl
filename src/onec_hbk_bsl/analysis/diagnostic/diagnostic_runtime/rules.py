@@ -4303,10 +4303,6 @@ class CodeBlockBeforeSubRule(DiagnosticRuntimeRule):
         return None
 
     @classmethod
-    def _is_executable_body_node(cls, node: Any) -> bool:
-        return cls._executable_body_span(node) is not None
-
-    @classmethod
     def _executable_body_span(cls, node: Any) -> tuple[Any, Any] | None:
         node_type = getattr(node, "type", None)
         if node_type in cls._ignored_before_body_types:
@@ -5407,36 +5403,6 @@ class TryNumberRule(DiagnosticRuntimeRule):
                     end_character=end,
                 )
         return storage.diagnostics
-
-    @staticmethod
-    def _try_code_block_calls(
-        try_node: Any,
-        global_calls: list[dict[str, Any]],
-        call_starts: list[int],
-    ) -> list[dict[str, Any]]:
-        children = list(getattr(try_node, "children", []) or [])
-        try_idx = next(
-            (
-                idx
-                for idx, child in enumerate(children)
-                if getattr(child, "type", None) == "TRY_KEYWORD"
-            ),
-            None,
-        )
-        except_idx = next(
-            (
-                idx
-                for idx, child in enumerate(children)
-                if getattr(child, "type", None) == "EXCEPT_KEYWORD"
-            ),
-            len(children),
-        )
-        if try_idx is None:
-            return []
-        calls: list[dict[str, Any]] = []
-        for child in children[try_idx + 1 : except_idx]:
-            calls.extend(_calls_in_node(child, global_calls, call_starts))
-        return calls
 
 
 class UseLessForEachRule(DiagnosticRuntimeRule):

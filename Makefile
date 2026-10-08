@@ -35,10 +35,10 @@ test:
 	$(PYTHON3) -m pytest
 
 lint:
-	ruff check src tests
+	$(PYTHON3) -m ruff check src tests scripts
 
 fmt:
-	ruff format src tests
+	$(PYTHON3) -m ruff format src tests scripts
 
 check-all: lint test
 
@@ -85,15 +85,17 @@ build-fast:
 	$(PYTHON3) -m PyInstaller --clean --noconfirm \
 		--onedir \
 		--name $(BIN_NAME) \
+		--specpath build/pyinstaller \
 		--workpath build/pyinstaller \
 		--distpath $(DIST_DIR) \
 		--paths src \
-		--add-data "data:data" \
-		--add-data "$(SPELLCHECKER_RES):spellchecker/resources" \
+		--collect-data onec_hbk_bsl.data.platform_api \
+		--add-data "$(SPELLCHECKER_RES)/ru.json.gz:spellchecker/resources" \
 		--collect-data onec_hbk_bsl.analysis.bsl_typo \
+		--collect-submodules onec_hbk_bsl.analysis.diagnostic \
 		--hidden-import spellchecker \
 		--copy-metadata mcp \
-		--copy-metadata onec-hbk-bsl \
+		--copy-metadata onec-hbk-bsl-core \
 		--hidden-import uvicorn.loops \
 		--hidden-import uvicorn.loops.auto \
 		--hidden-import uvicorn.protocols.http.auto \
@@ -170,9 +172,8 @@ clean:
 	rm -f $(EXTENSION_BIN)
 	rmdir $(EXTENSION_BIN_DIR) 2>/dev/null || true
 	rm -rf build/
-	find . -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	find . -name "*.pyc" -delete 2>/dev/null || true
-	find . -name "*.sqlite" -delete 2>/dev/null || true
+	find src tests scripts -type d -name "__pycache__" -prune -exec rm -rf {} +
+	find src tests scripts -type f -name "*.pyc" -delete
 	@echo "✓ Очищено"
 
 # ── Индексация (для разработки) ───────────────────────────────────────────────

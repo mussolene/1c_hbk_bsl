@@ -3,7 +3,7 @@
 PyInstaller spec: single-file CLI (LSP, MCP, --check, --index, …).
 
 Build from repo root:
-  python -m PyInstaller --clean --noconfirm --workpath build/pyinstaller --distpath dist packaging/onec-hbk-bsl.spec
+  ./.venv/bin/python -m PyInstaller --clean --noconfirm --workpath build/pyinstaller --distpath dist packaging/onec-hbk-bsl.spec
 
 Dependency closure comes from Analysis() tracing imports from __main__.py — not from whatever
 extra packages happen to be installed in the build venv. Only non-import assets we add below.

@@ -302,16 +302,6 @@ class BslParser:
         first = value.split(None, 1)[0].rstrip(";,.")
         return bool(first and "ё" in first.casefold() and first.replace("_", "").isalnum())
 
-    @staticmethod
-    def _prev_sibling_type(node: Any) -> str:
-        """Return the node type of the previous sibling in the parent, or ''."""
-        parent = getattr(node, "parent", None)
-        if parent is None:
-            return ""
-        children = list(parent.children)
-        idx = next((i for i, c in enumerate(children) if c.id == node.id), -1)
-        return children[idx - 1].type if idx > 0 else ""
-
     def _prev_sibling_ends_with_while(self, node: Any) -> bool:
         """Return True when the ';' ERROR should be suppressed as a КонецЦикла; artifact.
 

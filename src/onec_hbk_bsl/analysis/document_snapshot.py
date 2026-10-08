@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 import threading
-from bisect import bisect_left
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -48,14 +47,6 @@ except Exception:  # pragma: no cover - optional parser dependency fallback
     _TsParser = None  # type: ignore[assignment]
 from onec_hbk_bsl.parser.bsl_parser import BslParser
 
-_RE_REGION_OPEN = re.compile(
-    r"^\s*#(?:Область|Region)\s+(?P<name>.+?)\s*$",
-    re.IGNORECASE | re.MULTILINE,
-)
-_RE_REGION_CLOSE = re.compile(
-    r"^\s*#(?:КонецОбласти|EndRegion)\b.*$",
-    re.IGNORECASE | re.MULTILINE,
-)
 _RE_QUERY_TEXT_START = re.compile(r'"\s*(?:ВЫБРАТЬ|SELECT)\b', re.IGNORECASE)
 _RE_QUERY_INLINE_COMMENT = re.compile(r"\s*//.*$")
 _CC_OPEN = re.compile(
@@ -1477,15 +1468,6 @@ def find_exported_procedure_names_in_content(content: str) -> frozenset[str]:
     return find_exported_procedure_names_from_tree(tree)
 
 
-def _line_break_positions(content: str) -> list[int]:
-    breaks: list[int] = []
-    start = content.find("\n")
-    while start != -1:
-        breaks.append(start)
-        start = content.find("\n", start + 1)
-    return breaks
-
-
 def _point_row_column(point: Any) -> tuple[int, int]:
     row = getattr(point, "row", None)
     column = getattr(point, "column", None)
@@ -1511,49 +1493,6 @@ def _char_offset_for_ts_point(
     else:
         char_col = len(raw[: max(0, byte_col)].decode("utf-8", errors="replace"))
     return line_starts[row] + char_col
-
-
-def _line_index_for_offset(line_breaks: list[int], offset: int) -> int:
-    return bisect_left(line_breaks, offset)
-
-
-def _find_regions(content: str) -> list[RegionInfo]:
-    line_breaks = _line_break_positions(content)
-    opens_iter = iter(_RE_REGION_OPEN.finditer(content))
-    closes_iter = iter(_RE_REGION_CLOSE.finditer(content))
-    next_open = next(opens_iter, None)
-    next_close = next(closes_iter, None)
-    stack: list[tuple[str, int]] = []
-    result: list[RegionInfo] = []
-
-    while next_open is not None or next_close is not None:
-        open_pos = next_open.start() if next_open is not None else None
-        close_pos = next_close.start() if next_close is not None else None
-        use_open = close_pos is None or (open_pos is not None and open_pos <= close_pos)
-
-        if use_open and next_open is not None:
-            stack.append(
-                (
-                    next_open.group("name"),
-                    _line_index_for_offset(line_breaks, next_open.start()),
-                )
-            )
-            next_open = next(opens_iter, None)
-            continue
-
-        if next_close is not None:
-            end_idx = _line_index_for_offset(line_breaks, next_close.start())
-            if stack:
-                name, start_idx = stack.pop()
-                result.append(RegionInfo(name=name, start_idx=start_idx, end_idx=end_idx))
-            next_close = next(closes_iter, None)
-
-    # Unclosed regions are retained with a short synthetic span to preserve fallback behavior.
-    for name, start_idx in stack:
-        result.append(RegionInfo(name=name, start_idx=start_idx, end_idx=start_idx + 1))
-
-    result.sort(key=lambda region: region.start_idx)
-    return result
 
 
 def _find_regions_from_tree(tree: Any) -> list[RegionInfo]:
@@ -3120,14 +3059,6 @@ class DocumentSnapshot:
                 )
         self._select_top_without_order_facts = facts
         return facts
-
-    def _region_is_empty(self, region: RegionInfo) -> bool:
-        for line_idx in range(region.start_idx + 1, min(region.end_idx, len(self.lines))):
-            stripped = self.lines[line_idx].strip()
-            if not stripped or stripped.startswith("//") or stripped.startswith("#"):
-                continue
-            return False
-        return True
 
     def line_too_long_facts(self, max_line_length: int) -> list[LineDiagnosticFact]:
         """Return cached BSL014 line-length facts for the configured limit."""

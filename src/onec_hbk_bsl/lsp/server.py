@@ -233,10 +233,6 @@ def _workspace_index_mode(workspace_root: str) -> str:
     return _resolve_workspace_index_config(workspace_root)[0]
 
 
-def _workspace_index_max_bytes(workspace_root: str) -> int:
-    return _resolve_workspace_index_config(workspace_root)[1]
-
-
 # Map BSL severity → LSP DiagnosticSeverity
 _SEV_MAP = {
     Severity.ERROR: DiagnosticSeverity.Error,
@@ -3410,30 +3406,6 @@ def _extract_scope_vars_from_proc(proc_node: Any, cursor_line0: int) -> list[_Lo
     return list(seen.values())
 
 
-def _extract_scope_vars(tree: Any, cursor_line0: int) -> list[_LocalVar]:
-    """Extract local variables visible at cursor_line0 (0-based row).
-
-    Finds the enclosing procedure/function, then collects:
-    - parameters (with Знач/Val distinction)
-    - Перем declarations
-    - loop iterators (Для Каждого/Для)
-    - assignment targets (А = ...)
-    Only returns declarations at or before cursor_line0.
-    Results are deduplicated by name (first occurrence wins for navigation).
-    """
-    root = getattr(tree, "root_node", None)
-    if root is None:
-        return []
-    # Only works with real tree-sitter trees (bytes text)
-    if not isinstance(getattr(root, "text", None), (bytes, type(None))):
-        return []
-
-    proc_node = _find_proc_at_line(root, cursor_line0)
-    if proc_node is None:
-        return []
-    return _extract_scope_vars_from_proc(proc_node, cursor_line0)
-
-
 def _iter_proc_nodes(node: Any) -> list[Any]:
     """Return all procedure/function nodes under *node* without descending into nested routines."""
     out: list[Any] = []
@@ -3586,19 +3558,6 @@ def _cached_scope_vars(
                     seen[key] = var
             return list(seen.values())
     return []
-
-
-def _cached_parse_tree(ls: BslLanguageServer, uri: str, content: str) -> Any | None:
-    """Return a cached parse tree for a document when available."""
-    cache = _get_lsp_document_context(
-        ls,
-        uri,
-        content,
-        allow_sync_build=_allow_sync_local_scope_parse(content),
-    )
-    if cache is None or cache.content_hash != _content_cache_key(content):
-        return None
-    return cache.tree
 
 
 def _cached_type_engine(

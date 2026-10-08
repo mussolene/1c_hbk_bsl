@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 
@@ -11,6 +12,12 @@ SPEC = importlib.util.spec_from_file_location("verify_release", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 verify_release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verify_release)
+
+DOC_SCRIPT = SCRIPT.with_name("build_diagnostic_rules_doc.py")
+DOC_SPEC = importlib.util.spec_from_file_location("build_diagnostic_rules_doc", DOC_SCRIPT)
+assert DOC_SPEC is not None and DOC_SPEC.loader is not None
+rule_docs = importlib.util.module_from_spec(DOC_SPEC)
+DOC_SPEC.loader.exec_module(rule_docs)
 
 
 def _coverage(path: Path, parser_covered: int = 63) -> Path:
@@ -299,3 +306,57 @@ def test_core_and_meta_package_public_metadata_match() -> None:
 
 def test_community_files_have_required_reporting_and_reproduction_fields() -> None:
     verify_release.verify_community_files()
+
+
+def test_rule_headers_distinguish_engine_and_bslls_defaults(monkeypatch) -> None:
+    header = rule_docs.build_rule_header("BSL008")
+    assert "| Without configuration | Yes |" in header
+    assert "| BSLLS JSON, `ON` mode without overrides | No |" in header
+    assert "| BSLLS JSON, `ON` mode without overrides | Yes |" in rule_docs.build_rule_header(
+        "BSL002"
+    )
+    monkeypatch.setitem(rule_docs.RULE_METADATA["BSL008"], "implemented", False)
+    assert "| Registry flag `implemented` | No |" in rule_docs.build_rule_header("BSL008")
+    assert "does not certify verified BSLLS parity" in header
+
+
+def test_rule_parameters_follow_configuration_mapping_and_engine_defaults(monkeypatch) -> None:
+    assert "| `max-line-length` | `maxLineLength` | `120` |" in rule_docs.build_rule_header(
+        "BSL014"
+    )
+    defaults = dict(rule_docs.ENGINE_DEFAULTS)
+    defaults["max_line_length"] = defaults["max_line_length"].replace(default=81)
+    monkeypatch.setattr(rule_docs, "ENGINE_DEFAULTS", defaults)
+    monkeypatch.setitem(
+        rule_docs._BSLLS_PARAMETER_KEYS,
+        "BSL014",
+        {"lineLimit": ("max-line-length", int)},
+    )
+    header = rule_docs.build_rule_header("BSL014")
+    assert "| `max-line-length` | `lineLimit` | `81` |" in header
+    assert "`maxLineLength`" not in header
+    assert "diagnostics.parameters.LineLength" in header
+
+
+def test_native_parameter_reference_excludes_internal_constructor_options() -> None:
+    markdown = rule_docs.build_markdown()
+    assert "| `max-mccabe-complexity` | `20` |" in markdown
+    assert "| `min-duplicate-uses` | `3` |" in markdown
+    assert "| `max-module-lines` | `1000` |" in markdown
+    for name, parameter in rule_docs.ENGINE_DEFAULTS.items():
+        if parameter.default is inspect.Parameter.empty:
+            continue
+        key = name.replace("_", "-")
+        if name not in rule_docs.BslConfig({key: parameter.default}).engine_kwargs():
+            assert f"| `{key}` |" not in markdown
+
+
+@pytest.mark.parametrize("code", sorted(rule_docs.RULE_METADATA))
+def test_rule_generation_preserves_curated_bodies_and_is_idempotent(code: str) -> None:
+    current = (rule_docs.CONTRACTS_DIR / f"{code}.md").read_text(encoding="utf-8")
+    body = current.split(rule_docs.RULE_HEADER_END, 1)[1]
+    rendered = rule_docs.render_rule_page(code, current)
+    assert rendered.split(rule_docs.RULE_HEADER_END, 1)[1] == body
+    assert rule_docs.render_rule_page(code, rendered) == rendered
+    assert "\u2014" not in rendered.split(rule_docs.RULE_HEADER_END, 1)[0]
+    assert "\u2013" not in rendered.split(rule_docs.RULE_HEADER_END, 1)[0]
