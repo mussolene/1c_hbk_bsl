@@ -882,6 +882,7 @@ def _calc_complexity_metrics_from_lines(
             and not ternary_paren_stack
             and paren_depth == 0
             and not any(marker in folded_line for marker in _COMPLEXITY_LINE_MARKERS)
+            and _RE_MCCABE_BOOL.search(line_no_strings) is None
             and not (proc_name and proc_name.casefold() in folded_line)
         ):
             continue
@@ -906,23 +907,27 @@ def _calc_complexity_metrics_from_lines(
         )
         if not bool_expr_open:
             bool_last_op = None
+        # The controlling branch encloses its condition as well as its body.
+        # In particular, a ternary in an If/While condition sees this nesting.
+        if _CC_OPEN.match(line_no_strings):
+            cognitive += 1 + nesting
+            nesting += 1
+        elif _CC_CLOSE.match(line_no_strings):
+            nesting = max(0, nesting - 1)
+        elif _CC_ELSE.match(line_no_strings):
+            cognitive += 1
+        elif re.match(r"^\s*(?:Перейти|Goto)\b", line_no_strings, re.IGNORECASE):
+            cognitive += 1
         ternary_count = len(_RE_MCCABE_TERNARY.findall(line_no_strings))
         cognitive += _count_cognitive_ternary_ops(
             line_no_strings,
             nesting,
             ternary_paren_stack,
         )
+        if _CC_INLINE_EXCEPT_CLOSE.match(line_no_strings):
+            nesting = max(0, nesting - 1)
         has_self_call = _line_has_self_call(line_no_strings, proc_name)
         if has_self_call:
-            cognitive += 1
-        if _CC_OPEN.match(line):
-            cognitive += 1 + nesting
-            nesting += 1
-            if _CC_INLINE_EXCEPT_CLOSE.match(line_no_strings):
-                nesting = max(0, nesting - 1)
-        elif _CC_CLOSE.match(line):
-            nesting = max(0, nesting - 1)
-        elif _CC_ELSE.match(line):
             cognitive += 1
 
         if _RE_MCCABE_BRANCH.match(line_no_strings):
@@ -1762,7 +1767,9 @@ class DocumentSnapshot:
     _complexity_metrics_cache: dict[tuple[tuple[int, int], ...], list[tuple[int, int]]] | None = (
         None
     )
-    _module_body_cognitive_facts_cache: dict[int, list[CognitiveComplexityFact]] | None = None
+    _module_body_complexity_facts_cache: (
+        dict[tuple[int, str], list[CognitiveComplexityFact]] | None
+    ) = None
     _missing_space_facts: list[LineDiagnosticFact] | None = None
     _incorrect_line_break_facts: list[LineDiagnosticFact] | None = None
     _hardcoded_credential_facts: list[LineDiagnosticFact] | None = None
@@ -2027,66 +2034,75 @@ class DocumentSnapshot:
         self,
         max_cognitive_complexity: int,
     ) -> list[CognitiveComplexityFact]:
-        """Return cached BSL011 facts for complex module-body code blocks."""
-        if self._module_body_cognitive_facts_cache is None:
-            self._module_body_cognitive_facts_cache = {}
-        cached = self._module_body_cognitive_facts_cache.get(max_cognitive_complexity)
+        """Preserve the BSL011 snapshot interface used by process workers."""
+        return self.module_body_complexity_facts(max_cognitive_complexity, metric="cognitive")
+
+    def module_body_complexity_facts(
+        self,
+        max_complexity: int,
+        *,
+        metric: str,
+    ) -> list[CognitiveComplexityFact]:
+        """Return one aggregate module-body fact, excluding method complexity."""
+        if metric not in {"cognitive", "mccabe"}:
+            raise ValueError(f"Unsupported complexity metric: {metric}")
+        if self._module_body_complexity_facts_cache is None:
+            self._module_body_complexity_facts_cache = {}
+        key = (max_complexity, metric)
+        cached = self._module_body_complexity_facts_cache.get(key)
         if cached is not None:
             return cached
 
-        facts: list[CognitiveComplexityFact] = []
+        ranges: list[tuple[int, int]] = []
         cursor = 0
         for proc in sorted(self.procedures, key=lambda item: item.start_idx):
-            facts.extend(
-                self._module_body_cognitive_complexity_facts_for_range(
-                    cursor,
-                    proc.start_idx - 1,
-                    max_cognitive_complexity,
-                )
-            )
+            if cursor < proc.start_idx:
+                ranges.append((cursor, proc.start_idx - 1))
             cursor = max(cursor, proc.end_idx + 1)
-        facts.extend(
-            self._module_body_cognitive_complexity_facts_for_range(
-                cursor,
-                len(self.lines) - 1,
-                max_cognitive_complexity,
-            )
-        )
-        self._module_body_cognitive_facts_cache[max_cognitive_complexity] = facts
-        return facts
+        if cursor < len(self.lines):
+            ranges.append((cursor, len(self.lines) - 1))
 
-    def _module_body_cognitive_complexity_facts_for_range(
-        self,
-        start_idx: int,
-        end_idx: int,
-        max_cognitive_complexity: int,
-    ) -> list[CognitiveComplexityFact]:
-        if start_idx > end_idx:
-            return []
-        cognitive, _mccabe = _calc_complexity_metrics_from_lines(
-            self.lines,
-            start_idx - 1,
-            end_idx + 1,
-            masked_lines=self.counter_lines,
-        )
-        if cognitive <= max_cognitive_complexity:
-            return []
-        for idx in range(start_idx, min(end_idx + 1, len(self.lines))):
-            line = self.lines[idx]
-            if not line.strip() or line.lstrip().startswith(("//", "|")):
-                continue
-            match = re.search(r"\S+", line)
-            if match is None:
-                continue
-            return [
-                CognitiveComplexityFact(
-                    complexity=cognitive,
-                    line_idx=idx,
-                    character=match.start(),
-                    end_character=match.end(),
-                )
-            ]
-        return []
+        complexity = 0
+        for start_idx, end_idx in ranges:
+            cognitive, mccabe = _calc_complexity_metrics_from_lines(
+                self.lines,
+                start_idx - 1,
+                end_idx + 1,
+                masked_lines=self.counter_lines,
+            )
+            # Only methods have the implicit entry path counted by McCabe.
+            complexity += cognitive if metric == "cognitive" else mccabe - 1
+
+        facts: list[CognitiveComplexityFact] = []
+        if complexity > max_complexity:
+            root = getattr(self.tree, "root_node", None)
+            stack = list(reversed(getattr(root, "named_children", ())))
+            while stack:
+                node = stack.pop()
+                if node.type in {"procedure_definition", "function_definition"}:
+                    continue
+                if node.type.endswith("_statement"):
+                    token = node
+                    while token.children:
+                        token = token.children[0]
+                    line_idx, character = _ts_point_to_line_lsp_character(
+                        self.lines, token.start_point
+                    )
+                    _end_line_idx, end_character = _ts_point_to_line_lsp_character(
+                        self.lines, token.end_point
+                    )
+                    facts.append(
+                        CognitiveComplexityFact(
+                            complexity=complexity,
+                            line_idx=line_idx,
+                            character=character,
+                            end_character=end_character,
+                        )
+                    )
+                    break
+                stack.extend(reversed(node.named_children))
+        self._module_body_complexity_facts_cache[key] = facts
+        return facts
 
     @property
     def missing_space_facts(self) -> list[LineDiagnosticFact]:

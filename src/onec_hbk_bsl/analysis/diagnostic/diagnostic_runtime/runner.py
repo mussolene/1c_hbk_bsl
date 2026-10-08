@@ -731,20 +731,23 @@ def _run_core_fact_rule(
                         lines=lines,
                     )
                 )
-        if code == "BSL011":
-            diags.extend(
-                Diagnostic(
-                    file=path,
-                    line=fact.line_idx + 1,
-                    character=fact.character,
-                    end_line=fact.line_idx + 1,
-                    end_character=fact.end_character,
-                    severity=Severity.WARNING,
-                    code="BSL011",
-                    message_args=("body", fact.complexity, max_cognitive_complexity),
-                )
-                for fact in facts
+        diags.extend(
+            Diagnostic(
+                file=path,
+                line=fact.line_idx + 1,
+                character=fact.character,
+                end_line=fact.line_idx + 1,
+                end_character=fact.end_character,
+                severity=Severity.WARNING,
+                code=code,
+                message_args=(
+                    "body",
+                    fact.complexity,
+                    max_cognitive_complexity if code == "BSL011" else max_mccabe_complexity,
+                ),
             )
+            for fact in facts
+        )
         return diags
 
     severity_by_code = {
@@ -780,6 +783,10 @@ def _core_fact_rows_for_code(
     if code == "BSL011":
         return list(
             snapshot.module_body_cognitive_complexity_facts(engine.max_cognitive_complexity)
+        )
+    if code == "BSL019":
+        return list(
+            snapshot.module_body_complexity_facts(engine.max_mccabe_complexity, metric="mccabe")
         )
     if code == "BSL012":
         return list(snapshot.hardcoded_credential_facts)

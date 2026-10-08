@@ -1,14 +1,14 @@
 """
-Tests for FileWatcher — debounce logic and internal helpers.
-
-The blocking ``watch()`` method is not tested end-to-end (it requires watchfiles
-and a real filesystem); instead we test the debounce helpers directly.
+Tests for FileWatcher debounce logic and real filesystem indexing.
 """
 
 from __future__ import annotations
 
 import sys
+import threading
 import time
+from pathlib import Path
+from queue import Queue
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -212,9 +212,7 @@ class TestWatchEvents:
         cb.assert_called_once()
         assert set(cb.call_args.args[0]) == {"/save.bsl", "/old.bsl", "/renamed.OS"}
 
-    def test_watch_exit_discards_pending_paths(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_watch_exit_discards_pending_paths(self, monkeypatch: pytest.MonkeyPatch) -> None:
         timer = MagicMock()
         monkeypatch.setattr("onec_hbk_bsl.indexer.watcher.threading.Timer", timer)
 
@@ -229,3 +227,122 @@ class TestWatchEvents:
         call = timer.call_args
         call.args[1](*call.kwargs["args"])
         cb.assert_not_called()
+
+
+@pytest.mark.integration
+def test_real_watchfiles_batches_converge_to_exact_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import watchfiles.main
+
+    from onec_hbk_bsl.indexer.incremental import IncrementalIndexer
+
+    monkeypatch.setenv("BSL_INDEX_MODE", "full")
+    monkeypatch.setenv("BSL_INDEX_PARSE_WORKERS", "2")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    indexer = IncrementalIndexer(db_path=str(tmp_path / "symbols.sqlite"), quiet=True)
+    watcher = FileWatcher(debounce=0.05)
+    ready = threading.Event()
+    completed: Queue = Queue()
+    observed: set[str] = set()
+    native_notify = watchfiles.main.RustNotify
+
+    def notify_ready(*args, **kwargs):
+        # Observe registration only; the real native worker delivers every event.
+        native = native_notify(*args, **kwargs)
+        ready.set()
+        return native
+
+    monkeypatch.setattr(watchfiles.main, "RustNotify", notify_ready)
+    initial = {workspace / f"module_{i:02d}.bsl": f"Initial{i}" for i in range(32)}
+    for path, name in initial.items():
+        path.write_text(f"Procedure {name}()\nOldTarget();\nEndProcedure\n", encoding="utf-8")
+    assert indexer._index_files([str(path) for path in initial], str(workspace)) == {
+        "indexed": 32,
+        "skipped": 0,
+        "pruned": 0,
+        "errors": 0,
+    }
+    assert len(indexer.index.find_callers("OldTarget", limit=100)) == 32
+
+    def on_change(paths: list[str]) -> None:
+        try:
+            result = indexer._index_files(paths, str(workspace))
+            actual = {
+                path: tuple(symbol["name"] for symbol in indexer.index.get_file_symbols(path))
+                for path in indexer.index.get_indexed_files()
+            }
+            completed.put((paths, result, actual))
+        except Exception as exc:
+            completed.put(exc)
+
+    def run_watch() -> None:
+        try:
+            watcher.watch(str(workspace), on_change)
+        except Exception as exc:
+            completed.put(exc)
+
+    def await_index(expected: dict[Path, str]) -> None:
+        deadline = time.monotonic() + 15
+        expected_symbols = {str(path): (name,) for path, name in expected.items()}
+        while True:
+            update = completed.get(timeout=max(0, deadline - time.monotonic()))
+            if isinstance(update, Exception):
+                raise update
+            paths, result, actual = update
+            observed.update(paths)
+            assert result["errors"] == 0
+            if actual == expected_symbols:
+                return
+
+    worker = threading.Thread(target=run_watch, name="test-real-bsl-watch", daemon=True)
+    worker.start()
+    try:
+        assert ready.wait(timeout=10), "Native watchfiles registration did not complete"
+        saved = {path: f"Saved{i}" for i, path in enumerate(initial)}
+        for path, name in saved.items():
+            path.write_text(f"Procedure {name}()\nSavedTarget();\nEndProcedure\n", encoding="utf-8")
+        await_index(saved)
+        assert indexer.index.find_callers("OldTarget", limit=100) == []
+        assert len(indexer.index.find_callers("SavedTarget", limit=100)) == 32
+
+        created_files = {workspace / f"created_{i:02d}.bsl": f"Transient{i}" for i in range(32)}
+        for path, name in created_files.items():
+            path.write_text(f"Procedure {name}()\nEndProcedure\n", encoding="utf-8")
+        await_index(saved | created_files)
+
+        final: dict[Path, str] = {}
+        for i, path in enumerate(initial):
+            if i < 16:
+                renamed = workspace / f"renamed_{i:02d}.OS"
+                path.rename(renamed)
+                final[renamed] = saved[path]
+            else:
+                path.unlink()
+        for i, created in enumerate(created_files):
+            replacement = workspace / f"replacement_{i:02d}.tmp"
+            replacement.write_text(
+                f"Procedure Final{i}()\nFinalTarget();\nEndProcedure\n", encoding="utf-8"
+            )
+            replacement.replace(created)
+            final[created] = f"Final{i}"
+        ignored = workspace / "ignored.txt"
+        ignored.write_text("Procedure Ignored()\nEndProcedure\n", encoding="utf-8")
+        await_index(final)
+
+        assert observed.issuperset(str(path) for path in initial)
+        assert observed.issuperset(str(path) for path in final)
+        assert str(ignored) not in observed
+        assert indexer.index.find_symbol("Ignored") == []
+        assert indexer.index.find_symbol("Transient0") == []
+        assert indexer.index.find_callers("OldTarget", limit=100) == []
+        assert len(indexer.index.find_callers("SavedTarget", limit=100)) == 16
+        assert len(indexer.index.find_callers("FinalTarget", limit=100)) == 32
+    finally:
+        watcher.stop()
+        worker.join(timeout=10)
+        indexer.index.close()
+    assert not worker.is_alive()
+    assert watcher._pending == set()
+    assert watcher._timer is None

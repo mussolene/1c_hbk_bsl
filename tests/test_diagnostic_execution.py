@@ -7,6 +7,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
 from types import SimpleNamespace
 
+import pytest
+
 import onec_hbk_bsl.analysis.diagnostic.execution as diagnostic_execution
 from onec_hbk_bsl.analysis.diagnostic.cst import iter_ts_nodes
 from onec_hbk_bsl.analysis.diagnostic.diagnostic_runtime.context import DiagnosticDocumentContext
@@ -437,6 +439,38 @@ def test_core_complexity_fallback_reads_metrics_from_request_snapshot() -> None:
 
     assert [diag.code for diag in CoreDiagnosticsRule("BSL011").run(context)] == ["BSL011"]
     assert [diag.code for diag in CoreDiagnosticsRule("BSL019").run(context)] == ["BSL019"]
+
+
+@pytest.mark.parametrize("code", ["BSL011", "BSL019"])
+def test_module_body_complexity_matches_direct_and_serialized_fact_execution(code: str) -> None:
+    content = "If A Then\nEndIf;\nProcedure Test()\nEndProcedure\nIf B Then\nEndIf;\n"
+    snapshot = build_document_snapshot("Module.bsl", content=content)
+    engine = DiagnosticEngine(select={code}, max_cognitive_complexity=1, max_mccabe_complexity=1)
+    context = DiagnosticDocumentContext(
+        path=snapshot.path,
+        content=content,
+        lines=snapshot.lines,
+        tree=snapshot.tree,
+        snapshot=snapshot,
+        diagnostics_engine=engine,
+    )
+    direct = CoreDiagnosticsRule(code).run(context)
+    tasks = []
+    append_diagnostic_runtime_rule_tasks(
+        tasks,
+        engine=engine,
+        path=snapshot.path,
+        content=content,
+        lines=snapshot.lines,
+        tree=snapshot.tree,
+        snapshot=snapshot,
+    )
+    fact_tasks = [task for task in tasks if getattr(task, "code", None) == code]
+    assert len(fact_tasks) == 1
+    restored_tasks = pickle.loads(pickle.dumps(fact_tasks))  # noqa: S301 - test-owned payload
+    serialized_facts = execute_diagnostic_rule_tasks(restored_tasks)
+    assert len(direct) == 1
+    assert serialized_facts == direct
 
 
 def test_runtime_cst_prewarm_uses_enabled_rule_contracts() -> None:

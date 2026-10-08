@@ -6668,6 +6668,21 @@ class CoreDiagnosticsRule(DiagnosticRuntimeRule):
                         lines=context.lines,
                     )
                 )
+            diags.extend(
+                Diagnostic(
+                    file=context.path,
+                    line=fact.line_idx + 1,
+                    character=fact.character,
+                    end_line=fact.line_idx + 1,
+                    end_character=fact.end_character,
+                    severity=Severity.WARNING,
+                    code="BSL019",
+                    message_args=("body", fact.complexity, engine.max_mccabe_complexity),
+                )
+                for fact in snapshot.module_body_complexity_facts(
+                    engine.max_mccabe_complexity, metric="mccabe"
+                )
+            )
             return diags
         if code == "BSL020":
             ts_diags = _diagnostics_bsl020_nested_statements(context)

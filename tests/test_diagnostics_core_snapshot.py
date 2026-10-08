@@ -295,6 +295,73 @@ class TestBsl011CognitiveComplexity:
         diags = _check(content, tmp_path, max_cognitive_complexity=0, select={"BSL011"})
         assert "BSL011" not in _codes(diags)
 
+    @pytest.mark.parametrize("keyword", ["Перейти", "Goto"])
+    def test_goto_counts_without_nesting_surcharge(self, tmp_path: Path, keyword: str) -> None:
+        content = (
+            f"Procedure Test()\n If A Then\n  {keyword} ~Label;\n EndIf;\n ~Label:\nEndProcedure\n"
+        )
+        diags = _check(content, tmp_path, select={"BSL011"}, max_cognitive_complexity=1)
+        assert [d.message for d in diags] == ['Уменьшите когнитивную сложность "Test" с 2 до 1']
+
+    @pytest.mark.parametrize("condition", ["If ?(A,True,False) Then", "If\n ?(A,True,False) Then"])
+    def test_ternary_condition_is_nested_in_branch(self, tmp_path: Path, condition: str) -> None:
+        content = f"Procedure Test()\n {condition}\n EndIf;\nEndProcedure\n"
+        diags = _check(content, tmp_path, select={"BSL011"}, max_cognitive_complexity=2)
+        assert [d.message for d in diags] == ['Уменьшите когнитивную сложность "Test" с 3 до 2']
+
+    def test_goto_text_in_comments_and_strings_does_not_count(self, tmp_path: Path) -> None:
+        content = 'Procedure Test()\n X = "Goto ~Label;";\n // Goto ~Label;\nEndProcedure\n'
+        assert not _check(content, tmp_path, select={"BSL011"}, max_cognitive_complexity=0)
+
+    @pytest.mark.parametrize("rule", ["BSL011", "BSL019"])
+    def test_boolean_continuations_in_column_zero(self, tmp_path: Path, rule: str) -> None:
+        content = "Procedure Test()\nX = A\nИ B\nИЛИ C;\nEndProcedure\n"
+        diags = _check(
+            content, tmp_path, select={rule}, max_cognitive_complexity=1, max_mccabe_complexity=2
+        )
+        expected = (
+            'Уменьшите когнитивную сложность "Test" с 2 до 1'
+            if rule == "BSL011"
+            else 'Уменьшите цикломатическую сложность "Test" с 3 до 2'
+        )
+        assert [d.message for d in diags] == [expected]
+
+    @pytest.mark.parametrize("rule", ["BSL011", "BSL019"])
+    def test_module_body_aggregates_both_sides_of_method(self, tmp_path: Path, rule: str) -> None:
+        content = "If A Then\nEndIf;\nProcedure Test()\nEndProcedure\nIf B Then\nEndIf;\n"
+        diags = _check(
+            content, tmp_path, select={rule}, max_cognitive_complexity=1, max_mccabe_complexity=1
+        )
+        assert len(diags) == 1
+        assert '"body" с 2 до 1' in diags[0].message
+        assert (diags[0].line, diags[0].character, diags[0].end_character) == (1, 0, 2)
+
+    @pytest.mark.parametrize("rule", ["BSL011", "BSL019"])
+    def test_module_body_anchor_skips_declaration_and_region(
+        self, tmp_path: Path, rule: str
+    ) -> None:
+        content = "Var A;\n// comment\n#Region Test\nIf A Then\nEndIf;\n#EndRegion\n"
+        diags = _check(
+            content, tmp_path, select={rule}, max_cognitive_complexity=0, max_mccabe_complexity=0
+        )
+        assert len(diags) == 1
+        assert (diags[0].line, diags[0].character, diags[0].end_character) == (4, 0, 2)
+
+    def test_module_body_has_no_implicit_mccabe_entry(self, tmp_path: Path) -> None:
+        content = "X = 1;\nProcedure Test()\nEndProcedure\n"
+        diags = _check(content, tmp_path, select={"BSL019"}, max_mccabe_complexity=0)
+        assert len(diags) == 1
+        assert '"Test" с 1 до 0' in diags[0].message
+
+    @pytest.mark.parametrize(
+        "marker", ["noqa: BSL019", "bsl-disable: BSL019", "BSLLS:CyclomaticComplexity-off"]
+    )
+    def test_module_body_mccabe_respects_anchor_suppression(
+        self, tmp_path: Path, marker: str
+    ) -> None:
+        content = f"If A Then // {marker}\nEndIf;\n"
+        assert not _check(content, tmp_path, select={"BSL019"}, max_mccabe_complexity=0)
+
 
 # BSL012 — TestBsl012HardcodeCredentials
 class TestBsl012HardcodeCredentials:
