@@ -105,6 +105,63 @@ class TestBulkWrite:
 
 
 class TestUpsertAndFind:
+    def test_file_update_and_removal_use_one_transaction_each(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        conn = symbol_index._conn()
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
+            symbol_index.remove_file(SAMPLE_FILE)
+        finally:
+            conn.set_trace_callback(None)
+
+        boundaries = [sql for sql in statements if sql.startswith(("BEGIN", "COMMIT"))]
+        assert boundaries == ["BEGIN IMMEDIATE", "COMMIT", "BEGIN IMMEDIATE", "COMMIT"]
+        assert not conn.in_transaction
+
+    def test_failed_file_update_preserves_symbols_calls_and_search(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        import pytest
+
+        symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
+        # Fail after replacement symbols and one call have already been inserted.
+        with pytest.raises(sqlite3.IntegrityError):
+            symbol_index.upsert_file(
+                SAMPLE_FILE,
+                [{"name": "Замена", "kind": "procedure"}],
+                [SAMPLE_CALLS[0], {"callee_name": "Ошибка", "caller_line": None}],
+            )
+
+        assert symbol_index.find_symbol("Замена") == []
+        assert len(symbol_index.find_symbol("ОбработатьЗаказ")) == 1
+        assert len(symbol_index.find_symbol("Обраб", fuzzy=True)) == 1
+        assert len(symbol_index.find_callees(SAMPLE_FILE)) == len(SAMPLE_CALLS)
+        assert not symbol_index._conn().in_transaction
+
+    def test_failed_file_removal_restores_symbols_and_calls(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        import pytest
+
+        symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
+        conn = symbol_index._conn()
+        conn.execute(
+            "CREATE TRIGGER reject_call_delete BEFORE DELETE ON calls "
+            "BEGIN SELECT RAISE(ABORT, 'test removal failure'); END"
+        )
+        try:
+            with pytest.raises(sqlite3.IntegrityError, match="test removal failure"):
+                symbol_index.remove_file(SAMPLE_FILE)
+        finally:
+            conn.execute("DROP TRIGGER reject_call_delete")
+
+        assert len(symbol_index.find_symbol("Обраб", fuzzy=True)) == 1
+        assert len(symbol_index.find_callees(SAMPLE_FILE)) == len(SAMPLE_CALLS)
+        assert not conn.in_transaction
+
     def test_upsert_and_find_exact(self, symbol_index: SymbolIndex) -> None:
         symbol_index.upsert_file(SAMPLE_FILE, SAMPLE_SYMBOLS, SAMPLE_CALLS)
 
@@ -416,6 +473,57 @@ class TestCorruptDatabaseRecovery:
 
 
 class TestMetadataMembers:
+    def test_failed_metadata_replacement_preserves_existing_data(
+        self, symbol_index: SymbolIndex
+    ) -> None:
+        import pytest
+
+        symbol_index.upsert_metadata(
+            [
+                MetaObject(
+                    name="Товары",
+                    kind="Catalog",
+                    members=[
+                        MetaMember(
+                            name="Артикул",
+                            kind="attribute",
+                            parent_name="Товары",
+                            parent_kind="Catalog",
+                        )
+                    ],
+                )
+            ]
+        )
+        conn = symbol_index._conn()
+        conn.execute(
+            "CREATE TRIGGER reject_meta_insert BEFORE INSERT ON meta_members "
+            "WHEN new.name = 'Ошибка' BEGIN SELECT RAISE(ABORT, 'test metadata failure'); END"
+        )
+        try:
+            with pytest.raises(sqlite3.IntegrityError, match="test metadata failure"):
+                symbol_index.upsert_metadata(
+                    [
+                        MetaObject(
+                            name="Замена",
+                            kind="Catalog",
+                            members=[
+                                MetaMember(
+                                    name="Ошибка",
+                                    kind="attribute",
+                                    parent_name="Замена",
+                                    parent_kind="Catalog",
+                                )
+                            ],
+                        )
+                    ]
+                )
+        finally:
+            conn.execute("DROP TRIGGER reject_meta_insert")
+
+        assert [member["name"] for member in symbol_index.get_meta_members("Товары")] == ["Артикул"]
+        assert symbol_index.get_meta_members("Замена") == []
+        assert not conn.in_transaction
+
     def test_get_meta_members_returns_more_than_legacy_page_limit(
         self, symbol_index: SymbolIndex
     ) -> None:
@@ -1369,6 +1477,73 @@ class TestIncrementalIndexerExtended:
 
 
 class TestIndexScopeAndLifecycle:
+    def test_close_waits_for_migration_before_closing_connections(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import threading
+
+        import pytest
+
+        started = threading.Event()
+        release = threading.Event()
+        joining = threading.Event()
+        closed = threading.Event()
+        connections: list[sqlite3.Connection] = []
+        errors: list[Exception] = []
+        migrated: list[int] = []
+
+        def slow_migration(index: SymbolIndex) -> None:
+            conn = index._conn()
+            connections.append(conn)
+            started.set()
+            try:
+                if not release.wait(timeout=5.0):
+                    raise TimeoutError("migration was not released")
+                migrated.append(conn.execute("SELECT 42").fetchone()[0])
+            except Exception as exc:
+                errors.append(exc)
+
+        monkeypatch.setattr(SymbolIndex, "_migrate_background_locked", slow_migration)
+        index = SymbolIndex(str(tmp_path / "migration.sqlite"))
+        migration = index._migration_thread
+        real_join = migration.join
+
+        def accelerated_join(timeout: float | None = None) -> None:
+            # Exercise an expired bounded wait without delaying the suite by 10 seconds.
+            joining.set()
+            real_join(timeout=0.01 if timeout is not None else None)
+
+        monkeypatch.setattr(migration, "join", accelerated_join)
+
+        def close_index() -> None:
+            try:
+                index.close()
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                closed.set()
+
+        closer = threading.Thread(target=close_index)
+        try:
+            assert started.wait(timeout=2.0)
+            closer.start()
+            assert joining.wait(timeout=2.0)
+            assert not closed.wait(timeout=0.1), "close returned while migration was still active"
+        finally:
+            release.set()
+            real_join(timeout=2.0)
+            if closer.ident is not None:
+                closer.join(timeout=2.0)
+            index.close()
+
+        assert not migration.is_alive()
+        assert not closer.is_alive()
+        assert errors == []
+        assert migrated == [42]
+        for conn in connections:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                conn.execute("SELECT 1")
+
     def test_git_discovery_includes_tracked_and_nonignored_only(self, tmp_path: Path) -> None:
         import subprocess
 

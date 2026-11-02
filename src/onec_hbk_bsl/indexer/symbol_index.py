@@ -571,7 +571,10 @@ class SymbolIndex:
         if migration is not None and migration is not threading.current_thread():
             join = getattr(migration, "join", None)
             if join is not None:
-                join(timeout=10.0)
+                # SQLite releases the GIL during execute(). Closing its connection
+                # after a timed-out join can invalidate the handle still in use
+                # by the migration, causing a native crash instead of an exception.
+                join()
         if self.db_path == ":memory:":
             if self._mem_conn and not self._is_closed(self._mem_conn):
                 self._mem_conn.close()
@@ -750,6 +753,9 @@ class SymbolIndex:
             self._upsert_file_impl(conn, file_path, symbols, calls, now)
         else:
             with conn:
+                # isolation_level=None disables implicit BEGIN, including inside
+                # with conn. Keep all rows and FTS updates in one atomic commit.
+                conn.execute("BEGIN IMMEDIATE")
                 self._upsert_file_impl(conn, file_path, symbols, calls, now)
 
     def remove_file(self, file_path: str) -> None:
@@ -760,6 +766,7 @@ class SymbolIndex:
             conn.execute("DELETE FROM calls WHERE caller_file = ?", (file_path,))
         else:
             with conn:
+                conn.execute("BEGIN IMMEDIATE")
                 conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
                 conn.execute("DELETE FROM calls WHERE caller_file = ?", (file_path,))
 
@@ -1139,6 +1146,7 @@ class SymbolIndex:
         total_members = 0
 
         with conn:
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute("DELETE FROM meta_members")
             conn.execute("DELETE FROM meta_objects")
 
