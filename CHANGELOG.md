@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.54] - 2026-11-02
+
+### Fixed
+
+- Устранена гонка при закрытии индекса: соединения SQLite закрываются только
+  после завершения фоновой миграции. Ранее миграция дольше 10 секунд могла
+  продолжить работу с закрытым соединением и вызвать SIGSEGV при запуске LSP.
+- Обновление и удаление данных файла, а также замена метаданных выполняются
+  в явных транзакциях. Устранена отдельная фиксация каждой строки, увеличивавшая
+  запись на диск при обновлении индекса; ошибки больше не оставляют частично
+  замененные символы, вызовы и метаданные.
+- Обновлены зависимости инструмента публикации VSIX: устранена уязвимость
+  высокой серьезности в цепочке `@azure/identity` и `@azure/msal-node`.
+
 ## [0.8.53] - 2026-10-08
 
 ### Fixed
@@ -725,7 +739,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 30+ diagnostic rules (BSL001–BSL055)
 - Standalone native binary (no system Python required)
 
-[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.53...HEAD
+[Unreleased]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.54...HEAD
+[0.8.54]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.53...v0.8.54
 [0.8.53]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.52...v0.8.53
 [0.8.52]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.51...v0.8.52
 [0.8.51]: https://github.com/mussolene/1c_hbk_bsl/compare/v0.8.50...v0.8.51
